@@ -1,7 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/ffi.dart';
-import 'package:frostsnapp/image_converter.dart';
+import 'package:frostsnap/image_converter.dart';
+import 'package:frostsnap/src/rust/api/qr.dart';
 
 class SendScanBody extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -56,7 +56,7 @@ class _SendScanBodyState extends State<SendScanBody> {
     );
     newController.initialize().then((_) async {
       setState(() => controller = newController);
-      final qrReader = await api.newQrReader();
+      final qrReader = QrReader();
       controller?.startImageStream((image) async {
         late final String? newScanData;
         try {
@@ -89,21 +89,20 @@ class _SendScanBodyState extends State<SendScanBody> {
       initCamera(context);
     }
 
-    final cameraPreview =
-        (widget.cameras.isEmpty)
-            ? AspectRatio(
-              aspectRatio: 1,
-              child: Center(child: Text('No cameras found.')),
-            )
-            : (controller == null)
-            ? AspectRatio(
-              aspectRatio: 1,
-              child: Center(child: CircularProgressIndicator()),
-            )
-            : ClipRRect(
-              borderRadius: BorderRadius.circular(28.0),
-              child: CameraPreview(controller!),
-            );
+    final cameraPreview = (widget.cameras.isEmpty)
+        ? AspectRatio(
+            aspectRatio: 1,
+            child: Center(child: Text('No cameras found.')),
+          )
+        : (controller == null)
+        ? AspectRatio(
+            aspectRatio: 1,
+            child: Center(child: CircularProgressIndicator()),
+          )
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(28.0),
+            child: CameraPreview(controller!),
+          );
 
     final stack = Stack(
       children: [
@@ -139,8 +138,8 @@ class _SendScanBodyState extends State<SendScanBody> {
 
     return PopScope<String>(
       canPop: false,
-      onPopInvokedWithResult:
-          (didPop, scanResult) => onPop(context, didPop, scanResult),
+      onPopInvokedWithResult: (didPop, scanResult) =>
+          onPop(context, didPop, scanResult),
       child: stack,
     );
   }

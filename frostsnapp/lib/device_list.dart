@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/device.dart';
-import 'package:frostsnapp/device_settings.dart';
-import 'package:frostsnapp/device_setup.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/device.dart';
+import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/device_setup.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'global.dart';
 
 typedef RemovedDeviceBuilder =
@@ -28,8 +29,7 @@ const double iconSize = 20.0;
 class DeviceList extends StatefulWidget {
   final DeviceBuilder deviceBuilder;
 
-  const DeviceList({Key? key, this.deviceBuilder = buildInteractiveDevice})
-    : super(key: key);
+  const DeviceList({super.key, this.deviceBuilder = buildInteractiveDevice});
 
   @override
   State<StatefulWidget> createState() => _DeviceListState();
@@ -58,14 +58,14 @@ class _DeviceListState extends State<DeviceList> {
       } else {
         for (final change in update.changes) {
           switch (change.kind) {
-            case DeviceListChangeKind.Added:
+            case DeviceListChangeKind.added:
               {
                 deviceListKey.currentState!.insertItem(
                   change.index,
                   duration: const Duration(milliseconds: 800),
                 );
               }
-            case DeviceListChangeKind.Removed:
+            case DeviceListChangeKind.removed:
               {
                 deviceListKey.currentState!.removeItem(change.index, (
                   BuildContext context,
@@ -142,10 +142,9 @@ class _DeviceListState extends State<DeviceList> {
         );
       },
       initialItemCount: currentListState.devices.length,
-      scrollDirection:
-          orientation == Orientation.landscape
-              ? Axis.horizontal
-              : Axis.vertical,
+      scrollDirection: orientation == Orientation.landscape
+          ? Axis.horizontal
+          : Axis.vertical,
     );
 
     return Stack(
@@ -174,10 +173,9 @@ class DeviceBoxContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final animationBegin =
-        orientation == Orientation.landscape
-            ? const Offset(8.0, 0.0)
-            : const Offset(0.0, 8.0);
+    final animationBegin = orientation == Orientation.landscape
+        ? const Offset(8.0, 0.0)
+        : const Offset(0.0, 8.0);
     return SlideTransition(
       position: animation.drive(
         Tween(begin: animationBegin, end: const Offset(0.0, 0.0)),
@@ -244,15 +242,14 @@ class DeviceListWithIcons extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
-        children:
-            icon != null
-                ? [
-                  label,
-                  SizedBox(height: 4),
-                  SizedBox(height: iconSize, child: icon),
-                  SizedBox(height: 4),
-                ]
-                : [label],
+        children: icon != null
+            ? [
+                label,
+                SizedBox(height: 4),
+                SizedBox(height: iconSize, child: icon),
+                SizedBox(height: 4),
+              ]
+            : [label],
       ),
     );
   }

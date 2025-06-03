@@ -105,9 +105,9 @@ jobs:
       - name: Upload APK (Android)
         uses: "./.github/actions/upload-artifact"
         with:
-          friendly: "Frostsnapp.apk"
-          description: "Frostsnapp for android"
-          name: Frostsnapp-${{ github.sha }}.apk
+          friendly: "Frostsnap.apk"
+          description: "Frostsnap for android"
+          name: Frostsnap-${{ github.sha }}.apk
           path: frostsnapp/build/app/outputs/apk/release/app-release.apk
       - name: Upload App Bundle (Android)
         uses: "./.github/actions/upload-artifact"
@@ -136,7 +136,7 @@ jobs:
 
       - uses: "./.github/actions/upload-artifact"
         with:
-          name: Frostsnapp-${{ github.sha }}-linux-x64
+          name: Frostsnap-${{ github.sha }}-linux-x64
           path: frostsnapp/build/linux/x64/release/bundle
       - name: Check Cargo.lock not dirty
         run: git diff --exit-code Cargo.lock
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: Frostsnapp-${{ github.sha }}-linux-x64
+          name: Frostsnap-${{ github.sha }}-linux-x64
           path: frostsnapp/build/linux/x64/release/bundle
       - uses: taiki-e/install-action@just
       - run: just frostsnapp/build-appimage
@@ -157,25 +157,24 @@ jobs:
       - name: Upload AppImage
         uses: "./.github/actions/upload-artifact"
         with:
-          friendly: Frostsnapp.AppImage
+          friendly: Frostsnap.AppImage
           description: "AppImage for x86_64 Linux"
-          name: Frostsnapp-${{ github.sha }}-x64.AppImage
-          path: frostsnapp/Frostsnapp-x86_64.AppImage
+          name: Frostsnap-${{ github.sha }}-x64.AppImage
+          path: frostsnapp/Frostsnap-x86_64.AppImage
 
-  # XXX: Disabled because flutter linting is annoying rn.
-  # XXX: Renable when you get a chance
-  # flutter-analyze:
-  #   name: Flutter Analyze
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: "./.github/actions/generate-frb"
+  flutter-analyze:
+    name: Flutter Analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: "./.github/actions/generate-frb"
+      - uses: "./.github/actions/fetch-dart-deps"
 
-  #     - uses: subosito/flutter-action@v2
-  #       with:
-  #         channel: stable
-  #         cache: true
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
 
-  #     - uses: taiki-e/install-action@just
-  #     - run: dart format --version
-  #     - run: just lint-app
+      - uses: taiki-e/install-action@just
+      - run: dart format --version
+      - run: just lint-app

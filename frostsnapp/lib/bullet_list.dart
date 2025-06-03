@@ -9,17 +9,16 @@ class BulletList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children:
-          bullets.map((bullet) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('\u2022'),
-                SizedBox(width: 5),
-                Flexible(child: bullet),
-              ],
-            );
-          }).toList(),
+      children: bullets.map((bullet) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('\u2022'),
+            SizedBox(width: 5),
+            Flexible(child: bullet),
+          ],
+        );
+      }).toList(),
     );
   }
 }

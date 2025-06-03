@@ -5,10 +5,10 @@ class GoalProgressIndicator extends StatelessWidget {
   final int progress;
 
   const GoalProgressIndicator({
-    Key? key,
+    super.key,
     required this.goal,
     required this.progress,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -50,10 +50,10 @@ class AnimatedCustomProgressIndicator extends StatefulWidget {
   final int total;
 
   const AnimatedCustomProgressIndicator({
-    Key? key,
+    super.key,
     required this.progress,
     required this.total,
-  }) : super(key: key);
+  });
 
   @override
   State<AnimatedCustomProgressIndicator> createState() =>

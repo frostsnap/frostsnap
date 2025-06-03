@@ -126,22 +126,21 @@ class _SpinningSyncButtonState extends State<SpinningSyncButton> {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      onPressed:
-          _isAnimating
-              ? null
-              : () async {
+      onPressed: _isAnimating
+          ? null
+          : () async {
+              setState(() {
+                _isAnimating = true;
+              });
+              _spinController.add(true);
+              await widget.onPressed();
+              _spinController.add(false);
+              if (mounted) {
                 setState(() {
-                  _isAnimating = true;
+                  _isAnimating = false;
                 });
-                _spinController.add(true);
-                await widget.onPressed();
-                _spinController.add(false);
-                if (mounted) {
-                  setState(() {
-                    _isAnimating = false;
-                  });
-                }
-              },
+              }
+            },
       icon: SpinningSyncIcon(spinStream: _spinController.stream),
     );
   }

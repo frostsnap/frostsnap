@@ -4,17 +4,19 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/animated_check.dart';
-import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
-import 'package:frostsnapp/device_settings.dart';
-import 'package:frostsnapp/hex.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/hex.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/keygen.dart';
+import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/theme.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:sliver_tools/sliver_tools.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 import 'global.dart';
 import 'wallet_device_list.dart';
 
@@ -170,7 +172,7 @@ class WalletCreateException implements Exception {
 }
 
 class WalletCreateForm {
-  BitcoinNetwork network = BitcoinNetwork.mainnet(bridge: api);
+  BitcoinNetwork network = BitcoinNetwork.bitcoin;
   String? name;
 
   final Set<DeviceId> selectedDevices = deviceIdSet([]);
@@ -849,14 +851,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
-  Widget buildDeviceTrailingRename(
-    BuildContext context,
-    ConnectedDevice device, {
-    void Function()? onPressed,
-  }) {
-    return IconButton(onPressed: onPressed, icon: Icon(Icons.edit_rounded));
-  }
-
   Widget buildThresholdBody(BuildContext context) {
     final theme = Theme.of(context);
     final form = _controller.form;
@@ -1072,7 +1066,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
             SegmentedButton<String>(
               showSelectedIcon: false,
-              segments: BitcoinNetwork.supportedNetworks(bridge: coord.bridge)
+              segments: BitcoinNetwork.supportedNetworks()
                   .map(
                     (network) => ButtonSegment(
                       value: network.name(),
@@ -1089,10 +1083,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 _isAdvancedOptionsHidden = true;
                 final selected = selectedSet.first;
                 _controller.setNetwork(
-                  BitcoinNetwork.fromString(
-                    bridge: coord.bridge,
-                    string: selected,
-                  )!,
+                  BitcoinNetwork.fromString(string: selected)!,
                 );
               },
             ),
@@ -1115,9 +1106,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       deleteIcon: Icon(Icons.clear_rounded),
                       onDeleted: () {
                         _isAdvancedOptionsHidden = true;
-                        _controller.setNetwork(
-                          BitcoinNetwork.mainnet(bridge: coord.bridge),
-                        );
+                        _controller.setNetwork(BitcoinNetwork.bitcoin);
                       },
                     ),
                   TextButton.icon(
@@ -1204,8 +1193,9 @@ class _LargeCircularProgressIndicatorState
   void didUpdateWidget(covariant LargeCircularProgressIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.progress != widget.progress ||
-        oldWidget.total != widget.total)
+        oldWidget.total != widget.total) {
       _initAnimation();
+    }
   }
 
   @override

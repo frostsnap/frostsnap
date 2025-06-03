@@ -5,18 +5,20 @@ members = [
     "device",
     "frostsnap_coordinator",
     "frostsnap_comms",
-    "frostsnapp/native",
+    "frostsnapp/rust",
     "frostsnap_embedded",
 ]
 resolver = "2"
 
 
 [workspace.dependencies]
-bincode = { version = "2.0.0-rc.3", features = [
+bincode = { version = "=2.0.0-rc.3", features = [
     "serde",
     "alloc",
     "derive",
 ], default-features = false }
+# Can be removed after we upgrade to bincode version 2
+bincode_derive = { version = "=2.0.0-rc.3" }
 serde = { version = "1", features = [
     "derive",
     "alloc",

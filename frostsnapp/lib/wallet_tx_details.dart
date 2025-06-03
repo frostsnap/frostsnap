@@ -4,14 +4,18 @@ import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/animated_check.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/device_action_fullscreen_dialog.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/theme.dart';
-import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnap/animated_check.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -99,12 +103,11 @@ class TxSentOrReceivedTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isSigning = signingState != null;
-    final accentColor =
-        isSigning
-            ? theme.colorScheme.primary
-            : txDetails.isSend
-            ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
-            : Colors.green.harmonizeWith(theme.colorScheme.primary);
+    final accentColor = isSigning
+        ? theme.colorScheme.primary
+        : txDetails.isSend
+        ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
+        : Colors.green.harmonizeWith(theme.colorScheme.primary);
 
     return ListTile(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
@@ -116,10 +119,12 @@ class TxSentOrReceivedTile extends StatelessWidget {
             child: Text(
               signingDone
                   ? needsBroadcast
-                      ? 'Signed'
-                      : txDetails.isSend
-                      ? (txDetails.isConfirmed ? 'Confirmed' : 'Confirming...')
-                      : (txDetails.isConfirmed ? 'Received' : 'Receiving...')
+                        ? 'Signed'
+                        : txDetails.isSend
+                        ? (txDetails.isConfirmed
+                              ? 'Confirmed'
+                              : 'Confirming...')
+                        : (txDetails.isConfirmed ? 'Received' : 'Receiving...')
                   : 'Signing...',
             ),
           ),
@@ -133,31 +138,30 @@ class TxSentOrReceivedTile extends StatelessWidget {
           ),
         ],
       ),
-      subtitle:
-          hideSubtitle
-              ? null
-              : Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                mainAxisSize: MainAxisSize.max,
-                children: [
+      subtitle: hideSubtitle
+          ? null
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                Flexible(
+                  child: Text(
+                    signingDone
+                        ? txDetails.lastUpdateString
+                        : '${signingState!.neededFrom.length - signingState!.gotShares.length} signatures left',
+                    overflow: TextOverflow.fade,
+                  ),
+                ),
+                if (!signingDone || needsBroadcast)
                   Flexible(
                     child: Text(
-                      signingDone
-                          ? txDetails.lastUpdateString
-                          : '${signingState!.neededFrom.length - signingState!.gotShares.length} signatures left',
-                      overflow: TextOverflow.fade,
+                      signingDone ? 'Tap to broadcast' : 'Tap to continue',
+                      style: TextStyle(color: theme.colorScheme.primary),
+                      textAlign: TextAlign.end,
                     ),
                   ),
-                  if (!signingDone || needsBroadcast)
-                    Flexible(
-                      child: Text(
-                        signingDone ? 'Tap to broadcast' : 'Tap to continue',
-                        style: TextStyle(color: theme.colorScheme.primary),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                ],
-              ),
+              ],
+            ),
       leading: Badge(
         alignment: AlignmentDirectional.bottomEnd,
         label: Icon(
@@ -167,21 +171,19 @@ class TxSentOrReceivedTile extends StatelessWidget {
               ? Icons.visibility_off
               : Icons.hourglass_top_rounded,
           size: 12.0,
-          color:
-              (isSigning || needsBroadcast)
-                  ? theme.colorScheme.outline
-                  : theme.colorScheme.onSurface,
+          color: (isSigning || needsBroadcast)
+              ? theme.colorScheme.outline
+              : theme.colorScheme.onSurface,
         ),
         isLabelVisible: !txDetails.isConfirmed,
         backgroundColor: Colors.transparent,
         child: Icon(
           txDetails.isSend ? Icons.north_east : Icons.south_east,
-          color:
-              txDetails.isConfirmed
-                  ? accentColor
-                  : (isSigning || needsBroadcast)
-                  ? theme.colorScheme.outlineVariant
-                  : theme.colorScheme.onSurfaceVariant,
+          color: txDetails.isConfirmed
+              ? accentColor
+              : (isSigning || needsBroadcast)
+              ? theme.colorScheme.outlineVariant
+              : theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -264,10 +266,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     title: 'Confirm transaction on device',
   );
 
-  bool? get signingDone =>
-      signingState == null
-          ? null
-          : signingState!.gotShares.length >= signingState!.neededFrom.length;
+  bool? get signingDone => signingState == null
+      ? null
+      : signingState!.gotShares.length >= signingState!.neededFrom.length;
 
   onTxStateData(TxState data) {
     final tx = data.txs.firstWhereOrNull((tx) => tx.txid == txDetails.tx.txid);
@@ -393,9 +394,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 secondChild: buildSignAndBroadcastCard(context),
                 crossFadeState:
                     ((signingDone ?? true) &&
-                            (broadcastDone ?? txDetails.tx.timestamp() != null))
-                        ? CrossFadeState.showFirst
-                        : CrossFadeState.showSecond,
+                        (broadcastDone ?? txDetails.tx.timestamp() != null))
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
                 duration: Durations.medium3,
                 sizeCurve: Curves.easeInOutCubicEmphasized,
               ),
@@ -420,8 +421,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               value:
                   (signingState?.gotShares.length ?? 0) /
                   (signingState?.neededFrom.length ?? 1),
-              backgroundColor:
-                  Theme.of(context).colorScheme.surfaceContainerHighest,
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest,
               strokeCap: StrokeCap.round,
             ),
             Text(
@@ -484,10 +486,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               child: Text('Cancel'),
             ),
             FilledButton(
-              onPressed:
-                  (signingDone ?? true && !isBroadcasting)
-                      ? () async => broadcast(context)
-                      : null,
+              onPressed: (signingDone ?? true && !isBroadcasting)
+                  ? () async => broadcast(context)
+                  : null,
               child: Text('Broadcast Transaction'),
             ),
           ],
@@ -528,10 +529,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           child: child,
         );
       }(buildBroadcastNeededColumn(context)),
-      crossFadeState:
-          (signingDone ?? true)
-              ? CrossFadeState.showSecond
-              : CrossFadeState.showFirst,
+      crossFadeState: (signingDone ?? true)
+          ? CrossFadeState.showSecond
+          : CrossFadeState.showFirst,
       duration: Durations.medium3,
       sizeCurve: Curves.easeInOutCubicEmphasized,
     );
@@ -540,22 +540,21 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   showCancelBroadcastDialog(BuildContext context) async {
     final result = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text('Cancel Transaction'),
-            content: Text('No Bitcoin will be sent.'),
-            actionsAlignment: MainAxisAlignment.spaceBetween,
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text('Back'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text('I\'m Sure!'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: Text('Cancel Transaction'),
+        content: Text('No Bitcoin will be sent.'),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Back'),
           ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('I\'m Sure!'),
+          ),
+        ],
+      ),
     );
     if (result ?? false) {
       if (ssid == null) return;
@@ -567,22 +566,21 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   showCancelSigningDialog(BuildContext context) async {
     final result = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text('Cancel Transaction'),
-            content: Text('No Bitcoin will be sent.'),
-            actionsAlignment: MainAxisAlignment.spaceBetween,
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text('Back'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text('I\'m Sure!'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: Text('Cancel Transaction'),
+        content: Text('No Bitcoin will be sent.'),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Back'),
           ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('I\'m Sure!'),
+          ),
+        ],
+      ),
     );
     if (result ?? false) {
       if (ssid == null) return;
@@ -605,9 +603,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           (ssid == null)
               ? (_) => false
               : (_) async {
-                await coord.forgetFinishedSignSession(ssid: ssid!);
-                return true;
-              },
+                  await coord.forgetFinishedSignSession(ssid: ssid!);
+                  return true;
+                },
           onError: (_) => false,
         );
     final broadcasted = await Future.any<bool>([
@@ -651,15 +649,14 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               ActionChip(
                 avatar: Icon(Icons.publish),
                 label: Text('Rebroadcast'),
-                onPressed:
-                    () => rebroadcastAction(context, txid: txDetails.tx.txid),
+                onPressed: () =>
+                    rebroadcastAction(context, txid: txDetails.tx.txid),
               ),
             ActionChip(
               avatar: Icon(Icons.open_in_new),
               label: Text('View in Explorer'),
-              onPressed:
-                  () async =>
-                      await explorerAction(context, txid: txDetails.tx.txid),
+              onPressed: () async =>
+                  await explorerAction(context, txid: txDetails.tx.txid),
             ),
           ],
         ),
@@ -682,7 +679,8 @@ Widget buildDetailsColumn(
     children: [
       if (txDetails.isSend)
         ...txDetails.tx.recipients().where((info) => !info.isMine).map((info) {
-          final address = info.address(network: walletCtx.network);
+          debugPrint("${walletCtx.superWallet.isDisposed}");
+          final address = info.address(network: walletCtx.network)?.toString();
           return Column(
             children: [
               ListTile(
@@ -693,22 +691,16 @@ Widget buildDetailsColumn(
                   style: monospaceTextStyle,
                   textAlign: TextAlign.end,
                 ),
-                onTap:
-                    address == null
-                        ? null
-                        : () =>
-                            copyAction(context, 'Recipient address', address),
+                onTap: address == null
+                    ? null
+                    : () => copyAction(context, 'Recipient address', address),
               ),
               ListTile(
                 dense: dense,
                 leading: Text('\u2570 Amount'),
                 title: SatoshiText(value: info.amount, showSign: false),
-                onTap:
-                    () => copyAction(
-                      context,
-                      'Recipient amount',
-                      '${info.amount}',
-                    ),
+                onTap: () =>
+                    copyAction(context, 'Recipient amount', '${info.amount}'),
               ),
             ],
           );
@@ -748,12 +740,11 @@ Widget buildDetailsColumn(
                 : 'None',
             textAlign: TextAlign.end,
           ),
-          onTap:
-              () => copyAction(
-                context,
-                'Confirmation count',
-                '${txDetails.confirmations}',
-              ),
+          onTap: () => copyAction(
+            context,
+            'Confirmation count',
+            '${txDetails.confirmations}',
+          ),
         ),
       ListTile(
         dense: dense,
