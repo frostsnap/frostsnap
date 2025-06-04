@@ -5,7 +5,7 @@
 
 #[macro_use]
 extern crate alloc;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use core::borrow::BorrowMut;
 use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
@@ -382,11 +382,15 @@ where
                                 write!(&mut string, "internal transfer").unwrap();
                             } else {
                                 for (address, value) in foreign_recipients {
-                                    writeln!(&mut string, "send {value} to {address}").unwrap();
+                                    // writeln!(&mut string, "send {value} to {address}").unwrap();
+                                    self.display.show_tx_details(
+                                        &address.to_string(),
+                                        &value.to_btc().to_string(),
+                                        &fee.to_btc().to_string(),
+                                    );
                                 }
                             }
-                            write!(&mut string, "fee: {fee}").unwrap();
-                            self.display.print(string);
+                            // write!(&mut string, "fee: {fee}").unwrap();
                         }
                     },
                     Prompt::KeyGen { phase } => {
