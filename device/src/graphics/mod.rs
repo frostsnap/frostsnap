@@ -532,6 +532,66 @@ where
         .unwrap();
     }
 
+    pub fn show_tx_details(&mut self, address: &str, amount: &str, fee_amount: &str) {
+        let mut body = self.body();
+        let mut y_offset = 5;
+        let mut x_offset = 0;
+
+        Text::with_alignment(
+            &format!("Amount: {}", amount),
+            Point::new((body.size().width / 2) as i32, y_offset),
+            U8g2TextStyle::new(FONT_MED, COLORS.info),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+
+        y_offset += 25;
+
+        let vertical_spacing = 25_i32;
+        let chunked_address = chunk_string(address.to_string(), 4);
+
+        let mut i = 0;
+        for row_chunks in chunked_address.chunks(3) {
+            for item in row_chunks {
+                let text_color = { COLORS.primary };
+
+                if item == chunked_address.last().unwrap() {
+                    Text::with_alignment(
+                        item,
+                        Point::new((body.size().width / 2) as i32, y_offset),
+                        U8g2TextStyle::new(FONT_MED, text_color),
+                        Alignment::Center,
+                    )
+                    .draw(&mut body)
+                    .unwrap();
+                } else {
+                    Text::new(
+                        item,
+                        Point::new(x_offset, y_offset),
+                        U8g2TextStyle::new(FONT_MED, text_color),
+                    )
+                    .draw(&mut body)
+                    .unwrap();
+                }
+
+                x_offset += 80;
+                i += 1;
+            }
+            y_offset += vertical_spacing;
+            x_offset = 5;
+        }
+
+        Text::with_alignment(
+            &format!("Fee: {}", fee_amount),
+            Point::new((body.size().width / 2) as i32, y_offset),
+            U8g2TextStyle::new(FONT_SMALL, COLORS.secondary),
+            Alignment::Center,
+        )
+        .draw(&mut body)
+        .unwrap();
+    }
+
     pub fn wipe_data_warning(&mut self) {
         let mut body = self.body();
         Text::with_alignment(
