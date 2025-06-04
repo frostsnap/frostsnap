@@ -1060,8 +1060,9 @@ class BackupWarningBanner extends StatelessWidget {
     final streamedBanner = StreamBuilder<BackupRun>(
       stream: backupStream,
       builder: (context, snapshot) {
-        final backupRun = snapshot.data;
-        final hideBanner = backupRun == null || isBackupDone(backupRun);
+        // final backupRun = snapshot.data;
+        final hideBanner =
+            true; // backupRun == null || isBackupDone(backupRun);
         return hideBanner ? SizedBox.shrink() : banner;
       },
     );
