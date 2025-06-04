@@ -68,7 +68,7 @@ Future<void> main() async {
       final (coord_, appCtx_) = await api.load(appDir: appDirPath);
       coord = coord_;
       appCtx = appCtx_;
-      globalHostPortHandler = HostPortHandler(null);
+      globalHostPortHandler = null;
     }
     coord.startThread();
   } on PanicException catch (e) {

@@ -1,24 +1,14 @@
 use crate::frb_generated::StreamSink;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
-pub use frostsnap_coordinator::PortOpenError;
-pub use std::sync::mpsc::SyncSender;
-pub use std::sync::{Arc, Mutex, RwLock};
-// use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::PortDesc;
+use frostsnap_coordinator::{cdc_acm_usb::CdcAcmSerial, PortOpenError, Serial, SerialPort};
+use std::os::fd::OwnedFd;
+use std::os::unix::io::FromRawFd;
+pub use std::sync::mpsc::SyncSender;
+pub use std::sync::{Arc, Mutex, RwLock}; // For Unix-like systems (Android is Linux-based) // For read/write traits
 
-lazy_static::lazy_static! {
-    static ref PORT_EVENT_STREAM: RwLock<Option<StreamSink<PortEvent>>> = RwLock::default();
-}
-
-#[derive(Debug)]
-#[frb(non_opaque)]
-pub enum PortEvent {
-    Open { request: PortOpen },
-    Write { request: PortWrite },
-    Read { request: PortRead },
-    BytesToRead { request: PortBytesToRead },
-}
+use tracing::{event, Level};
 
 #[frb(mirror(PortDesc))]
 pub struct _PortDesc {
@@ -27,98 +17,89 @@ pub struct _PortDesc {
     pub pid: u16,
 }
 
+// ========== stuff below here is only used on android
+
 #[derive(Debug)]
+#[frb(opaque)]
 pub struct PortOpen {
     pub id: String,
-    pub baud_rate: u32,
-    pub ready: SyncSender<Result<(), PortOpenError>>,
+    ready: SyncSender<Result<i32, PortOpenError>>,
 }
 
 impl PortOpen {
-    pub fn satisfy(&self, err: Option<String>) {
+    pub fn satisfy(self, fd: i32, err: Option<String>) {
         let result = match err {
             Some(err) => Err(frostsnap_coordinator::PortOpenError::Other(err.into())),
-            None => Ok(()),
+            None => Ok(fd),
         };
 
         let _ = self.ready.send(result);
     }
 }
 
-#[derive(Debug)]
-pub struct PortRead {
-    pub id: String,
-    pub len: u32,
-    pub ready: SyncSender<Result<Vec<u8>, String>>,
-}
-
-impl PortRead {
-    pub fn satisfy(&self, bytes: Vec<u8>, err: Option<String>) {
-        let result = match err {
-            Some(err) => Err(err),
-            None => Ok(bytes),
-        };
-
-        let _ = self.ready.send(result);
-    }
-}
-
-#[derive(Debug)]
-pub struct PortWrite {
-    pub id: String,
-    pub bytes: Vec<u8>,
-    pub ready: SyncSender<Result<(), String>>,
-}
-
-impl PortWrite {
-    pub fn satisfy(&self, err: Option<String>) {
-        let result = match err {
-            Some(err) => Err(err),
-            None => Ok(()),
-        };
-
-        let _ = self.ready.send(result);
-    }
-}
-
-#[derive(Debug)]
-pub struct PortBytesToRead {
-    pub id: String,
-    pub ready: SyncSender<u32>,
-}
-
-impl PortBytesToRead {
-    pub fn satisfy(&self, bytes_to_read: u32) {
-        let _ = self.ready.send(bytes_to_read);
-    }
-}
-
-pub fn sub_port_events(event_stream: StreamSink<PortEvent>) {
-    let mut v = PORT_EVENT_STREAM
-        .write()
-        .expect("lock must not be poisoned");
-    *v = Some(event_stream);
-}
-
-#[allow(unused)]
-pub(crate) fn emit_event(event: PortEvent) -> Result<()> {
-    let stream = PORT_EVENT_STREAM.read().expect("lock must not be poisoned");
-
-    let stream = stream.as_ref().expect("init_events must be called first");
-
-    stream.add(event).unwrap();
-
-    Ok(())
-}
-
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 #[frb(opaque)]
 pub struct FfiSerial {
     pub(crate) available_ports: Arc<Mutex<Vec<PortDesc>>>,
+    pub(crate) open_requests: Arc<Mutex<Option<StreamSink<PortOpen>>>>,
 }
 
 impl FfiSerial {
     pub fn set_available_ports(&self, ports: Vec<PortDesc>) {
+        event!(Level::INFO, "ports: {:?}", ports);
         *self.available_ports.lock().unwrap() = ports
+    }
+
+    pub fn sub_open_requests(&mut self, sink: StreamSink<PortOpen>) {
+        if self.open_requests.lock().unwrap().replace(sink).is_some() {
+            event!(Level::WARN, "resubscribing to open requests");
+        }
+    }
+}
+
+impl Serial for FfiSerial {
+    fn available_ports(&self) -> Vec<PortDesc> {
+        self.available_ports.lock().unwrap().clone()
+    }
+
+    fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(0);
+
+        loop {
+            let open_requests = self.open_requests.lock().unwrap();
+            match &*open_requests {
+                Some(sink) => {
+                    sink.add(PortOpen {
+                        id: id.into(),
+                        ready: tx,
+                    })
+                    .map_err(|e| PortOpenError::Other(anyhow!("sink error: {e}").into()))?;
+                    break;
+                }
+                None => {
+                    drop(open_requests);
+                    event!(Level::WARN, "dart port open listener is not listening yet. blocking while waiting for it.");
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        }
+
+        let raw_fd = rx.recv().map_err(|e| PortOpenError::Other(Box::new(e)))??;
+        if raw_fd < 0 {
+            return Err(PortOpenError::Other(
+                anyhow!("OS failed to open UBS device {id}:  FD was < 0").into(),
+            ));
+        }
+
+        let fd =
+            // SAFETY: on the host side (e.g. android) we've dup'd and detached this file
+            // descriptor. we're the only owner of it at the moment so it's fine for us to turn it
+            // into an `OwnedFd` which will close it when it's dropped.
+            unsafe { OwnedFd::from_raw_fd(raw_fd) };
+
+        let cdc_acm = CdcAcmSerial::new_auto(fd, id.to_string(), baud_rate)
+            .map_err(|e| PortOpenError::Other(e.into()))?;
+
+        Ok(Box::new(cdc_acm))
     }
 }

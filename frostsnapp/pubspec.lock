@@ -979,15 +979,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.4"
-  usb_serial:
-    dependency: "direct main"
-    description:
-      path: "."
-      ref: "87239570a43751883b5df059b703d22fd15f52cc"
-      resolved-ref: "87239570a43751883b5df059b703d22fd15f52cc"
-      url: "https://github.com/LLFourn/usbserial.git"
-    source: git
-    version: "0.5.1"
   vector_graphics:
     dependency: transitive
     description:
