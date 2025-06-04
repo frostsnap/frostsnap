@@ -14,51 +14,50 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tracing::{event, Level};
-use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt, Registry};
 
 impl super::Api {
     pub fn turn_logging_on(&self, level: LogLevel, log_stream: StreamSink<String>) -> Result<()> {
         // Global default subscriber must only be set once.
         if crate::logger::set_dart_logger(log_stream) {
+            let targets = Targets::new()
+                .with_target("nusb", Level::INFO)
+                .with_default(Level::from(level));
+
             #[cfg(not(target_os = "android"))]
-            let subscriber = {
-                event!(Level::INFO, "logging to stderr and Dart logger");
-                tracing_subscriber::fmt()
-                    .with_max_level(tracing::Level::from(level))
-                    .without_time()
-                    .pretty()
-                    .finish()
+            {
+                let fmt_layer = tracing_subscriber::fmt::layer().without_time().pretty();
+
+                Registry::default()
+                    .with(targets.clone())
+                    .with(fmt_layer)
                     .with(crate::logger::dart_logger())
-            };
+                    .try_init()?;
+            }
 
             #[cfg(target_os = "android")]
-            let subscriber = {
-                event!(Level::INFO, "logging to logcat and dart logger");
+            {
                 use tracing_logcat::{LogcatMakeWriter, LogcatTag};
-                use tracing_subscriber::fmt::format::Format;
+                use tracing_subscriber::{fmt::format::Format, layer::Layer};
 
                 let writer = LogcatMakeWriter::new(LogcatTag::Fixed("frostsnap/rust".to_owned()))
-                    .expect("Failed to initialize logcat writer");
+                    .expect("logcat writer");
 
-                tracing_subscriber::fmt()
-                    .event_format(
-                        Format::default()
-                            .with_level(true) // Keep level in message (e.g., "[INFO]")
-                            .with_target(true) // Keep target in message (e.g., "my_module::function")
-                            .without_time() // Logcat adds its own time, so avoid duplication
-                            .compact(),
-                    )
+                let fmt_layer = tracing_subscriber::fmt::layer()
+                    .event_format(Format::default().with_target(true).without_time().compact())
                     .with_writer(writer)
                     .with_ansi(false)
-                    .with_max_level(tracing::Level::from(level))
-                    .finish()
+                    .with_filter(targets.clone());
+
+                Registry::default()
+                    .with(targets.clone())
+                    .with(fmt_layer)
                     .with(crate::logger::dart_logger())
-            };
+                    .try_init()?;
+            }
 
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Failed to set global tracing subscriber");
-
-            tracing::info!("Rust tracing initialized (Android)!");
+            event!(Level::INFO, "Rust tracing initialised");
         }
         Ok(())
     }
