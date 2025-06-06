@@ -1556,6 +1556,25 @@ impl Coordinator {
         )
     }
 
+    pub fn check_physical_backup_is_expected(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        phase: PhysicalBackupPhase,
+        device_id: DeviceId,
+    ) -> SyncReturn<bool> {
+        SyncReturn(
+            self.0
+                .inner()
+                .check_physical_backup_matches_expected(
+                    access_structure_ref,
+                    *phase.0,
+                    device_id,
+                    crate::TEMP_KEY,
+                )
+                .unwrap_or(false),
+        )
+    }
+
     pub fn exit_recovery_mode(&self, device_id: DeviceId) {
         self.0.exit_recovery_mode(device_id, crate::TEMP_KEY);
     }
