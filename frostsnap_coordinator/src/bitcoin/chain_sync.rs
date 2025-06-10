@@ -1,34 +1,39 @@
 //! We keep chain at arms length from the rest of the code by only communicating through mpsc channels.
 use anyhow::{anyhow, Result};
-use async_std::net::TcpStream;
 pub use bdk_chain::spk_client::SyncRequest;
 use bdk_chain::{
-    bitcoin::{self, Transaction},
-    miniscript::{Descriptor, DescriptorPublicKey},
-    spk_client::{self, FullScanResult},
-    ConfirmationBlockTime,
+    bitcoin::{self, BlockHash},
+    spk_client::{self, FullScanResponse},
+    CheckPoint, ConfirmationBlockTime,
 };
-use bdk_electrum_c::Emitter;
+use bdk_electrum_streaming::{
+    electrum_streaming_client::{request, Request},
+    run_async, AsyncReceiver, AsyncState, Cache, DerivedSpkTracker, ReqCoord, Update,
+};
 use frostsnap_core::MasterAppkey;
+use futures::pin_mut;
 use futures::{
     channel::{mpsc, oneshot},
-    executor::block_on,
-    future::Either,
+    executor::{block_on, block_on_stream},
+    select,
     stream::FuturesUnordered,
     FutureExt, StreamExt,
 };
-use futures_rustls::{
-    client::TlsStream, pki_types::ServerName, rustls::RootCertStore, TlsConnector,
-};
+use rustls::pki_types;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
+    fmt::Debug,
     ops::Deref,
-    sync::{
-        mpsc::{sync_channel, Receiver, SyncSender},
-        Arc,
-    },
+    sync::{self, Arc},
     time::Duration,
 };
+use tokio::io::AsyncWriteExt;
+use tokio_rustls::{
+    client::TlsStream,
+    rustls::{self},
+    TlsConnector,
+};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{event, Level};
 
 use crate::Sink;
@@ -38,35 +43,20 @@ use super::{
     wallet::{CoordSuperWallet, KeychainId},
 };
 
+#[derive(Debug)]
 pub struct ReqAndResponse<I, O> {
     request: I,
-    response: OneshotSender<O>,
+    response: oneshot::Sender<O>,
 }
 
 impl<I: Send, O: Send> ReqAndResponse<I, O> {
-    pub fn new(request: I) -> (Self, Receiver<O>) {
-        let (sender, receiver) = sync_channel(1);
-        (
-            Self {
-                request,
-                response: OneshotSender { inner: sender },
-            },
-            receiver,
-        )
+    pub fn new(request: I) -> (Self, oneshot::Receiver<O>) {
+        let (response, response_recv) = oneshot::channel();
+        (Self { request, response }, response_recv)
     }
 
-    pub fn into_tuple(self) -> (I, OneshotSender<O>) {
+    pub fn into_tuple(self) -> (I, oneshot::Sender<O>) {
         (self.request, self.response)
-    }
-}
-
-pub struct OneshotSender<O> {
-    inner: SyncSender<O>,
-}
-
-impl<O: Send> OneshotSender<O> {
-    pub fn send(self, value: O) {
-        let _ = self.inner.send(value);
     }
 }
 
@@ -75,73 +65,123 @@ pub const SUPPORTED_NETWORKS: [bitcoin::Network; 4] = {
     [Bitcoin, Signet, Testnet, Regtest]
 };
 
-pub type SyncResponse = spk_client::SyncResult<ConfirmationBlockTime>;
+pub type SyncResponse = spk_client::SyncResponse<ConfirmationBlockTime>;
+pub type KeychainClient = bdk_electrum_streaming::AsyncClient<KeychainId>;
+pub type KeychainClientReceiver = bdk_electrum_streaming::AsyncReceiver<KeychainId>;
 
 /// The messages the client can send to the backend
 pub enum Message {
     ChangeUrlReq(ReqAndResponse<String, Result<()>>),
-    MonitorDescriptor(KeychainId, Box<Descriptor<DescriptorPublicKey>>),
-    BroadcastReq(ReqAndResponse<Transaction, Result<()>>),
-    EstimateFee(ReqAndResponse<BTreeSet<usize>, Result<BTreeMap<usize, bitcoin::FeeRate>>>),
     SetStatusSink(Box<dyn Sink<ChainStatus>>),
     Reconnect,
+}
+
+impl std::fmt::Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Message::ChangeUrlReq(_) => write!(f, "Message::ChangeUrlReq"),
+            Message::SetStatusSink(_) => write!(f, "Message::SetStatusSink"),
+            Message::Reconnect => write!(f, "Message::Reconnect"),
+        }
+    }
+}
+
+impl Message {
+    pub fn is_status_sink(&self) -> bool {
+        match self {
+            Message::SetStatusSink(_) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Opaque API to the chain
 #[derive(Clone)]
 pub struct ChainClient {
-    req_sender: SyncSender<Message>,
+    req_sender: mpsc::UnboundedSender<Message>,
+    client: KeychainClient,
 }
 
 impl ChainClient {
-    pub fn new() -> (Self, ConnectionHandler) {
-        let (req_sender, req_recv) = sync_channel(1);
-        (Self { req_sender }, ConnectionHandler { req_recv })
+    pub fn new(genesis_hash: BlockHash) -> (Self, ConnectionHandler) {
+        let (req_sender, req_recv) = mpsc::unbounded();
+        let (client, client_recv) = KeychainClient::new();
+        let cache = Cache::default();
+        (
+            Self {
+                req_sender,
+                client: client.clone(),
+            },
+            ConnectionHandler {
+                req_recv,
+                client_recv,
+                cache,
+                client,
+                genesis_hash,
+            },
+        )
     }
 
     pub fn check_and_set_electrum_server_url(&self, url: String) -> Result<()> {
         let (req, response) = ReqAndResponse::new(url);
-        self.req_sender.send(Message::ChangeUrlReq(req)).unwrap();
-        response.recv()?
+        self.req_sender
+            .unbounded_send(Message::ChangeUrlReq(req))
+            .unwrap();
+        block_on(response)??;
+        Ok(())
     }
 
-    pub fn monitor_keychain(&self, keychain: KeychainId) {
+    pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
         let descriptor = descriptor_for_account_keychain(
             keychain,
             // this does not matter
             bitcoin::NetworkKind::Main,
         );
-        self.req_sender
-            .send(Message::MonitorDescriptor(keychain, Box::new(descriptor)))
-            .unwrap();
+        self.client
+            .track_descriptor(keychain, descriptor, next_index)
+            .expect("must track keychain");
     }
 
-    pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<()> {
+    pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<bitcoin::Txid> {
         event!(
             Level::DEBUG,
             "WE ARE BROADCASTING {}",
             transaction.compute_txid()
         );
-        let (req, response) = ReqAndResponse::new(transaction);
-        self.req_sender.send(Message::BroadcastReq(req)).unwrap();
-        response.recv()?
+        block_on(self.client.send_request(request::BroadcastTx(transaction)))
     }
 
     pub fn estimate_fee(
         &self,
         target_blocks: impl IntoIterator<Item = usize>,
     ) -> Result<BTreeMap<usize, bitcoin::FeeRate>> {
-        let (req, response) = ReqAndResponse::new(target_blocks.into_iter().collect());
-        self.req_sender.send(Message::EstimateFee(req)).unwrap();
-        response.recv()?
+        use futures::FutureExt;
+        block_on_stream(
+            target_blocks
+                .into_iter()
+                .map(|number| {
+                    self.client
+                        .send_request(request::EstimateFee { number })
+                        .map(move |result| {
+                            result
+                                .map(|resp| resp.fee_rate.map(|fee_rate| (number, fee_rate)))
+                                .transpose()
+                        })
+                })
+                .collect::<FuturesUnordered<_>>(),
+        )
+        .flatten()
+        .collect()
     }
 
     pub fn set_status_sink(&self, sink: Box<dyn Sink<ChainStatus>>) {
-        self.req_sender.send(Message::SetStatusSink(sink)).unwrap();
+        self.req_sender
+            .unbounded_send(Message::SetStatusSink(sink))
+            .unwrap();
     }
 
     pub fn reconnect(&self) {
-        self.req_sender.send(Message::Reconnect).unwrap();
+        self.req_sender.unbounded_send(Message::Reconnect).unwrap();
     }
 }
 
@@ -157,16 +197,20 @@ pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str 
 }
 
 pub struct ConnectionHandler {
-    req_recv: Receiver<Message>,
+    client: KeychainClient,
+    client_recv: KeychainClientReceiver,
+    req_recv: mpsc::UnboundedReceiver<Message>,
+    cache: Cache,
+    genesis_hash: BlockHash,
 }
 
 #[derive(Debug, Clone)]
 pub struct UpdateIter {
-    update_recv: Arc<futures::lock::Mutex<mpsc::UnboundedReceiver<FullScanResult<KeychainId>>>>,
+    update_recv: Arc<futures::lock::Mutex<mpsc::UnboundedReceiver<FullScanResponse<KeychainId>>>>,
 }
 
 impl Iterator for UpdateIter {
-    type Item = FullScanResult<KeychainId>;
+    type Item = FullScanResponse<KeychainId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         block_on(async { self.update_recv.lock().await.next().await })
@@ -174,196 +218,254 @@ impl Iterator for UpdateIter {
 }
 
 impl ConnectionHandler {
-    pub fn run<SW>(
-        self,
-        url: String,
-        super_wallet: SW,
-        mut update_action: impl FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>)
-            + Send
-            + 'static,
-    ) where
-        SW: Deref<Target = std::sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
+    // TODO: Do something with this.
+    const _PING_DELAY: Duration = Duration::from_secs(5);
+    const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
+
+    pub fn run<SW, F>(mut self, url: String, super_wallet: SW, update_action: F)
+    where
+        SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
+        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send + 'static,
     {
-        let super_wallet_ = super_wallet.lock().unwrap();
-        let lookahead = super_wallet_.lookahead();
-        let (mut emitter, cmd_sender, mut update_recv) =
-            Emitter::<KeychainId>::new(super_wallet_.chain_tip(), lookahead);
-        emitter.insert_txs(super_wallet_.tx_cache());
-        drop(super_wallet_);
-        let target_server = Arc::new(std::sync::Mutex::new(TargetServer { url, conn: None }));
-        let status_sink = Arc::new(std::sync::Mutex::<Box<dyn Sink<ChainStatus>>>::new(
-            Box::new(()),
-        ));
-        let (start_conn_signal, start_conn) = oneshot::channel::<()>();
+        tracing::debug!("Running ConnectionHandler");
 
+        let lookahead: u32;
+        let chain_tip: CheckPoint;
         {
-            const PING_DELAY: Duration = Duration::from_secs(5);
-            const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
-            let target_server = Arc::clone(&target_server);
-            let status_sink = status_sink.clone();
-            // Run thread which handles the electrum connection.
-            std::thread::spawn(move || {
-                // Only start connection after getting first `Message` request.
-                let _ = block_on(start_conn);
-                loop {
-                    let mut target_server = target_server.lock().unwrap();
-                    let url = target_server.url.clone();
-                    let span = tracing::span!(Level::INFO, "connection", url = url);
-                    let _enter = span.enter();
-                    status_sink.lock().unwrap().send(ChainStatus {
-                        electrum_url: url.clone(),
-                        state: ChainStatusState::Connecting,
-                    });
-
-                    let conn = target_server.conn.take();
-                    drop(target_server);
-                    let conn_res = match conn {
-                        Some(conn) => {
-                            event!(Level::INFO, "Using newly establised connection");
-                            Ok(conn)
-                        }
-                        None => {
-                            event!(Level::INFO, "No existing connection. Connecting.");
-                            connect(&url)
-                        }
-                    };
-
-                    status_sink.lock().unwrap().send(ChainStatus {
-                        electrum_url: url.clone(),
-                        state: ChainStatusState::Connected,
-                    });
-
-                    match conn_res {
-                        Ok(conn) => {
-                            let close_res = block_on(match conn {
-                                Conn::Tcp(conn) => Either::Left(emitter.run(PING_DELAY, conn)),
-                                Conn::Ssl(conn) => Either::Right(emitter.run(PING_DELAY, conn)),
-                            });
-                            match close_res {
-                                Ok(_) => event!(Level::INFO, "connection closed gracefully"),
-                                Err(e) => event!(
-                                    Level::WARN,
-                                    error = e.to_string(),
-                                    "connection closed with error"
-                                ),
-                            }
-                        }
-                        Err(err) => {
-                            tracing::error!("Connection {} failed to open: {}", url.clone(), err);
-                        }
-                    };
-                    status_sink.lock().unwrap().send(ChainStatus {
-                        electrum_url: url.clone(),
-                        state: ChainStatusState::Disconnected,
-                    });
-                    std::thread::sleep(RECONNECT_DELAY);
-                }
-            });
+            let super_wallet = super_wallet.lock().expect("must lock");
+            lookahead = super_wallet.lookahead();
+            chain_tip = super_wallet.chain_tip();
+            self.cache.txs.extend(super_wallet.tx_cache());
+            self.cache.anchors.extend(super_wallet.anchor_cache());
         }
 
-        {
-            let target_server = Arc::clone(&target_server);
-            let req_recv = self.req_recv;
-            let status_sink = status_sink.clone();
-            let mut start_conn_signal = Some(start_conn_signal);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("cannot build tokio runtime");
 
-            // Run thread which responds to `Message` requests.
-            std::thread::spawn(move || loop {
-                let msg = req_recv.recv().expect("sender never disappears");
-                // as soon as we receive the first request request for this network we tell the
-                // connection handler to start.
-                if let Some(signal) = start_conn_signal.take() {
-                    let _ = signal.send(());
-                }
-                match msg {
-                    Message::ChangeUrlReq(ReqAndResponse { request, response }) => {
-                        let url = request;
-                        match connect(&url) {
-                            Ok(conn) => {
-                                *target_server.lock().unwrap() = TargetServer {
-                                    url,
-                                    conn: Some(conn),
-                                };
-                                block_on(cmd_sender.close()).expect("conn handler thread failed");
-                                response.send(Ok(()));
-                            }
-                            Err(e) => response.send(Err(e)),
-                        }
-                    }
-                    Message::MonitorDescriptor(keychain, descriptor) => {
-                        cmd_sender
-                            .insert_descriptor(keychain, *descriptor, lookahead)
-                            .expect("must insert descriptor");
-                    }
-                    Message::BroadcastReq(ReqAndResponse { request, response }) => {
-                        let cmd_sender = cmd_sender.clone();
-                        std::thread::spawn(move || {
-                            let res = block_on(cmd_sender.broadcast_tx(request));
-                            tracing::info!("Tx broadcast response: {:?}", res);
-                            response.send(res);
-                        });
-                    }
-                    Message::EstimateFee(ReqAndResponse { request, response }) => {
-                        let cmd_sender = cmd_sender.clone();
-                        std::thread::spawn(move || {
-                            use bdk_electrum_c::electrum_c::request::EstimateFee;
-                            let mut futs = request
-                                .into_iter()
-                                .map(|number| {
-                                    let req = EstimateFee { number };
-                                    cmd_sender
-                                        .request(req)
-                                        .map(move |res_fut| (number, res_fut))
-                                })
-                                .collect::<FuturesUnordered<_>>();
-                            let resp = block_on(async move {
-                                let mut out = BTreeMap::<usize, bitcoin::FeeRate>::new();
-                                while let Some((req, res)) = futs.next().await {
-                                    if let Some(fee_rate) = res?.fee_rate {
-                                        out.insert(req, fee_rate);
-                                    }
-                                }
-                                anyhow::Result::Ok(out)
-                            });
-                            response.send(resp);
-                        });
-                    }
-                    Message::SetStatusSink(sink) => {
-                        *status_sink.lock().unwrap() = sink;
-                    }
-                    Message::Reconnect => {
-                        block_on(cmd_sender.close()).expect("conn handler thread failed");
-                    }
-                }
-            });
-        }
+        let (mut update_sender, update_recv) = mpsc::unbounded::<Update<KeychainId>>();
 
-        // Run thread which responds to wallet updates emitted from the Electrum chain source.
-        std::thread::spawn(move || {
-            block_on(async move {
-                while let Some(update) = update_recv.next().await {
-                    let master_appkeys = update
-                        .last_active_indices
-                        .keys()
-                        .map(|(k, _)| *k)
-                        .collect::<Vec<_>>();
-                    let mut wallet = super_wallet.lock().unwrap();
-                    let changed = match wallet.apply_update(update) {
-                        Ok(changed) => changed,
-                        Err(err) => {
-                            tracing::error!("Failed to apply wallet update: {}", err);
-                            continue;
-                        }
-                    };
-                    if changed {
-                        for master_appkey in master_appkeys {
-                            let txs = wallet.list_transactions(master_appkey);
-                            update_action(master_appkey, txs);
-                        }
-                    }
-                }
-            })
+        let _wallet_updates_jh = rt.spawn_blocking({
+            let super_wallet = super_wallet.clone();
+            move || Self::handle_wallet_updates(super_wallet, update_recv, update_action)
         });
+
+        rt.block_on({
+            let mut state = AsyncState::<KeychainId>::new(
+                ReqCoord::new(rand::random::<u32>()),
+                self.cache,
+                DerivedSpkTracker::new(lookahead),
+                chain_tip,
+            );
+
+            let mut conn_stage = TargetServer { url, conn: None };
+            let mut conn_opt = Option::<Conn>::None;
+
+            let mut sink_stage = Option::<Box<dyn Sink<ChainStatus>>>::None;
+            let mut sink: Box<dyn Sink<ChainStatus>> = Box::new(());
+
+            async move {
+                // Make sure we have a status sync before handling connection.
+                while let Some(msg) = self.req_recv.next().await {
+                    let is_status_sink = msg.is_status_sink();
+                    Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage, &self.client, false).await;
+                    if is_status_sink {
+                        break;
+                    }
+                }
+
+                // Reconnection loop.
+                loop {
+                    if let Some(new_conn) = conn_stage.conn.take() {
+                        conn_opt = Some(new_conn);
+                    }
+                    if let Some(new_sink) = sink_stage.take() {
+                        sink = new_sink;
+                    }
+
+                    let conn_fut = Self::try_connect_and_run(
+                        self.genesis_hash,
+                        conn_stage.url.clone(),
+                        &mut conn_opt,
+                        &mut state,
+                        &mut self.client_recv,
+                        &mut update_sender,
+                        &*sink,
+                    )
+                    .fuse();
+
+                    {
+                        pin_mut!(conn_fut);
+                        loop {
+                            select! {
+                                _ = conn_fut => break,
+                                msg_opt = self.req_recv.next() => match msg_opt {
+                                    Some(msg) => {
+                                        tracing::info!(msg = msg.to_string(), "Got message");
+                                        Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage, &self.client, true).await
+                                    },
+                                    None => return,
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(old_conn) = conn_opt.take() {
+                        let shutdown_result = match old_conn {
+                            Conn::Tcp((rh, wh)) => rh.unsplit(wh).shutdown().await,
+                            Conn::Ssl((rh, wh)) => rh.unsplit(wh).shutdown().await,
+                        };
+                        tracing::info!(result = ?shutdown_result, "Connection shutdown");
+                    }
+                }
+            }
+        });
+    }
+
+    async fn try_connect_and_run(
+        genesis_hash: BlockHash,
+        url: String,
+        conn_opt: &mut Option<Conn>,
+        state: &mut AsyncState<KeychainId>,
+        client_recv: &mut AsyncReceiver<KeychainId>,
+        update_sender: &mut mpsc::UnboundedSender<Update<KeychainId>>,
+        status_sink: &dyn Sink<ChainStatus>,
+    ) {
+        let conn = match conn_opt {
+            Some(conn) => {
+                status_sink.send(ChainStatus::new(&url, ChainStatusState::Connected));
+                tracing::info!("Using previously established connection with {}.", url);
+                conn
+            }
+            conn_opt => {
+                status_sink.send(ChainStatus::new(&url, ChainStatusState::Connecting));
+                tracing::info!("No existing connection. Connecting to {}.", url);
+                match connect(&url, genesis_hash).await {
+                    Ok(conn) => {
+                        status_sink.send(ChainStatus::new(&url, ChainStatusState::Connected));
+                        tracing::info!("Connection established with {}.", url);
+                        conn_opt.insert(conn)
+                    }
+                    Err(err) => {
+                        status_sink.send(ChainStatus::new(&url, ChainStatusState::Disconnected));
+                        tracing::error!(
+                            err = err.to_string(),
+                            url,
+                            "failed to connect, reconnecting in {}s",
+                            Self::RECONNECT_DELAY.as_secs()
+                        );
+                        tokio::time::sleep(Self::RECONNECT_DELAY).await;
+                        return;
+                    }
+                }
+            }
+        };
+        let conn_result = match conn {
+            Conn::Tcp((read_half, write_half)) => {
+                run_async(
+                    state,
+                    update_sender,
+                    client_recv,
+                    read_half.compat(),
+                    write_half.compat_write(),
+                )
+                .await
+            }
+            Conn::Ssl((read_half, write_half)) => {
+                run_async(
+                    state,
+                    update_sender,
+                    client_recv,
+                    read_half.compat(),
+                    write_half.compat_write(),
+                )
+                .await
+            }
+        };
+        // TODO: This is not necessarily a closed connection.
+        match conn_result {
+            Ok(_) => tracing::info!(url, "Connection service stopped gracefully"),
+            Err(err) => tracing::warn!(url, ?err, "Connection service stopped"),
+        };
+        status_sink.send(ChainStatus::new(&url, ChainStatusState::Disconnected));
+        tokio::time::sleep(Self::RECONNECT_DELAY).await;
+    }
+
+    /// Handle a single message.
+    ///
+    /// Note that this requires a tokio runtime with networking as we need to handle
+    /// connect/reconnect logic.
+    ///
+    /// * `sink_stage` stages changes to the `ChainStatus` sink which updates the Flutter UI about
+    ///   connection status.
+    /// * `conn_stage` stages changes to the connection.
+    async fn handle_msg(
+        genesis_hash: BlockHash,
+        msg: Message,
+        sink_stage: &mut Option<Box<dyn Sink<ChainStatus>>>,
+        conn_stage: &mut TargetServer,
+        client: &KeychainClient,
+        with_stop: bool,
+    ) {
+        match msg {
+            Message::ChangeUrlReq(ReqAndResponse { request, response }) => {
+                tracing::info!(msg = "ChangeUrlReq", url = request.clone());
+                let url = request;
+                match connect(&url, genesis_hash).await {
+                    Ok(conn) => {
+                        let conn = Some(conn);
+                        *conn_stage = TargetServer { url, conn };
+                        let _ = response.send(Ok(()));
+                    }
+                    Err(err) => {
+                        let _ = response.send(Err(err));
+                        return;
+                    }
+                }
+            }
+            Message::SetStatusSink(sink) => {
+                tracing::info!(msg = "SetStatusSink");
+                *sink_stage = Some(sink);
+            }
+            Message::Reconnect => {
+                tracing::info!(msg = "Reconnect");
+            }
+        }
+        if with_stop {
+            let _ = client.stop().await;
+        }
+    }
+
+    fn handle_wallet_updates<SW, F>(
+        super_wallet: SW,
+        update_recv: mpsc::UnboundedReceiver<Update<KeychainId>>,
+        mut action: F,
+    ) where
+        SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
+        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send,
+    {
+        for update in block_on_stream(update_recv) {
+            let master_appkeys = update
+                .last_active_indices
+                .keys()
+                .map(|(k, _)| *k)
+                .collect::<Vec<_>>();
+            let mut wallet = super_wallet.lock().unwrap();
+            let changed = match wallet.apply_update(update) {
+                Ok(changed) => changed,
+                Err(err) => {
+                    tracing::error!("Failed to apply wallet update: {}", err);
+                    continue;
+                }
+            };
+            if changed {
+                for master_appkey in master_appkeys {
+                    let txs = wallet.list_transactions(master_appkey);
+                    action(master_appkey, txs);
+                }
+            }
+        }
     }
 }
 
@@ -373,6 +475,15 @@ pub struct ChainStatus {
     pub state: ChainStatusState,
 }
 
+impl ChainStatus {
+    pub fn new(url: &str, state: ChainStatusState) -> Self {
+        Self {
+            electrum_url: url.to_string(),
+            state,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum ChainStatusState {
     Connected,
@@ -380,7 +491,66 @@ pub enum ChainStatusState {
     Connecting,
 }
 
-fn connect(url: &str) -> Result<Conn> {
+async fn check_conn<R, W>(rh: R, mut wh: W, genesis_hash: BlockHash) -> Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use bdk_electrum_streaming::electrum_streaming_client as client;
+    use client::request;
+    use client::RawNotificationOrResponse;
+    use client::RawRequest;
+    use futures::io::BufReader;
+
+    let banner_id = rand::random::<u32>();
+    let features_id = banner_id.wrapping_add(1);
+
+    for raw_req in [
+        RawRequest::from_request(banner_id, request::Banner),
+        RawRequest::from_request(features_id, request::Features),
+    ] {
+        client::io::tokio_write(&mut wh, raw_req).await?;
+    }
+
+    let mut banner_resp = Option::<<request::Banner as Request>::Response>::None;
+    let mut features_resp = Option::<<request::Features as Request>::Response>::None;
+
+    let mut read_stream = client::io::ReadStreamer::new(BufReader::new(rh.compat())).take(2);
+    while let Some(result) = read_stream.next().await {
+        let raw_resp = match result? {
+            RawNotificationOrResponse::Notification(_) => Err(anyhow!("unexpected notification")),
+            RawNotificationOrResponse::Response(resp) => Ok(resp),
+        }?;
+        // let resp_id = raw_resp.id;
+        let resp_val = raw_resp
+            .result
+            .map_err(|err| anyhow!("server responded with error: {err}"))?;
+
+        if raw_resp.id == banner_id {
+            let banner = &*banner_resp.insert(client::serde_json::from_value(resp_val)?);
+            tracing::info!(banner, "Connected to Electrum server");
+            continue;
+        }
+
+        if raw_resp.id == features_id {
+            let features = &*features_resp.insert(client::serde_json::from_value(resp_val)?);
+            if genesis_hash != features.genesis_hash {
+                return Err(anyhow!("Electrum server is on the wrong network"));
+            }
+            continue;
+        }
+
+        return Err(anyhow!("Unexpected response from server"));
+    }
+
+    if banner_resp.is_none() || features_resp.is_none() {
+        return Err(anyhow!("Missing responses from Electrum server"));
+    }
+
+    Ok(())
+}
+
+async fn connect(url: &str, genesis_hash: BlockHash) -> Result<Conn> {
     let (is_ssl, socket_addr) = match url.split_once("://") {
         Some(("ssl", socket_addr)) => (true, socket_addr.to_owned()),
         Some(("tcp", socket_addr)) => (false, socket_addr.to_owned()),
@@ -390,35 +560,43 @@ fn connect(url: &str) -> Result<Conn> {
         None => (false, url.to_owned()),
     };
     tracing::info!("Connecting to {} ...", url);
-    let conn_res = block_on(async {
-        if is_ssl {
-            let mut root_store = RootCertStore::empty();
-            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            let config = futures_rustls::rustls::ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_no_client_auth();
-            let connector = TlsConnector::from(Arc::new(config));
-            let host = socket_addr
-                .clone()
-                .split_once(":")
-                .map(|(host, _)| host.to_string())
-                .unwrap_or(socket_addr.clone());
-            let dnsname = ServerName::try_from(host)?;
-            let conn = async_std::net::TcpStream::connect(socket_addr).await?;
-            let conn = connector.connect(dnsname, conn).await?;
-            anyhow::Ok(Conn::Ssl(Box::new(conn)))
-        } else {
-            let conn = async_std::net::TcpStream::connect(socket_addr).await?;
-            anyhow::Ok(Conn::Tcp(conn))
-        }
-    });
+    if is_ssl {
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let host = socket_addr
+            .clone()
+            .split_once(":")
+            .map(|(host, _)| host.to_string())
+            .unwrap_or(socket_addr.clone());
+        let dnsname = pki_types::ServerName::try_from(host)?;
 
-    conn_res
+        let sock = tokio::net::TcpStream::connect(socket_addr).await?;
+
+        let connector = TlsConnector::from(Arc::new(config));
+        let stream = connector.connect(dnsname, sock).await?;
+        let (mut rh, mut wh) = tokio::io::split(stream);
+        check_conn(&mut rh, &mut wh, genesis_hash)
+            .await
+            .inspect_err(|e| tracing::error!(e = e.to_string()))?;
+        anyhow::Ok(Conn::Ssl((rh, wh)))
+    } else {
+        let sock = tokio::net::TcpStream::connect(socket_addr).await?;
+        let (mut rh, mut wh) = tokio::io::split(sock);
+        check_conn(&mut rh, &mut wh, genesis_hash)
+            .await
+            .inspect_err(|e| tracing::error!(e = e.to_string()))?;
+        anyhow::Ok(Conn::Tcp((rh, wh)))
+    }
 }
 
+type SplitConn<T> = (tokio::io::ReadHalf<T>, tokio::io::WriteHalf<T>);
+
 enum Conn {
-    Tcp(TcpStream),
-    Ssl(Box<TlsStream<TcpStream>>),
+    Tcp(SplitConn<tokio::net::TcpStream>),
+    Ssl(SplitConn<TlsStream<tokio::net::TcpStream>>),
 }
 
 struct TargetServer {

@@ -2,12 +2,12 @@ use super::{chain_sync::ChainClient, multi_x_descriptor_for_account};
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
-    bitcoin::{self, bip32, Amount, OutPoint, ScriptBuf, TxOut, Txid},
+    bitcoin::{self, bip32, Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid},
     indexed_tx_graph::{self},
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
-    ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
+    CanonicalizationParams, ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
@@ -79,8 +79,25 @@ impl CoordSuperWallet {
     }
 
     /// Transaction cache for the chain client.
-    pub fn tx_cache(&self) -> impl Iterator<Item = Arc<bitcoin::Transaction>> + '_ {
-        self.tx_graph.graph().full_txs().map(|tx_node| tx_node.tx)
+    pub fn tx_cache(&self) -> impl Iterator<Item = (Txid, Arc<bitcoin::Transaction>)> + '_ {
+        self.tx_graph
+            .graph()
+            .full_txs()
+            .map(|tx_node| (tx_node.txid, tx_node.tx))
+    }
+
+    pub fn anchor_cache(
+        &self,
+    ) -> impl Iterator<Item = ((Txid, BlockHash), ConfirmationBlockTime)> + '_ {
+        self.tx_graph
+            .graph()
+            .all_anchors()
+            .iter()
+            .flat_map(|(&txid, anchors)| {
+                anchors
+                    .iter()
+                    .map(move |&anchor| ((txid, anchor.block_id.hash), anchor))
+            })
     }
 
     pub fn lookahead(&self) -> u32 {
@@ -146,7 +163,13 @@ impl CoordSuperWallet {
                     .index
                     .insert_descriptor(keychain_id, descriptor)
                     .expect("two keychains must not have the same spks");
-                self.chain_client.monitor_keychain(keychain_id);
+                let lookahead = self.lookahead();
+                let next_index = self
+                    .tx_graph
+                    .index
+                    .last_revealed_index(keychain_id)
+                    .map_or(lookahead, |lr| lr + lookahead + 1);
+                self.chain_client.monitor_keychain(keychain_id, next_index);
             }
             let all_txs = self
                 .tx_graph
@@ -302,7 +325,11 @@ impl CoordSuperWallet {
         let mut txs = self
             .tx_graph
             .graph()
-            .list_canonical_txs(self.chain.as_ref(), self.chain.tip().block_id())
+            .list_canonical_txs(
+                self.chain.as_ref(),
+                self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
+            )
             .collect::<Vec<_>>();
 
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
@@ -311,13 +338,13 @@ impl CoordSuperWallet {
                 let inner = canonical_tx.tx_node.tx.clone();
                 let txid = canonical_tx.tx_node.txid;
                 let confirmation_time = match canonical_tx.chain_position {
-                    ChainPosition::Confirmed(conf_time) => Some(ConfirmationTime {
-                        height: conf_time.block_id.height,
-                        time: conf_time.confirmation_time,
+                    ChainPosition::Confirmed { anchor, .. } => Some(ConfirmationTime {
+                        height: anchor.block_id.height,
+                        time: anchor.confirmation_time,
                     }),
                     _ => None,
                 };
-                let last_seen = canonical_tx.tx_node.last_seen_unconfirmed;
+                let last_seen = canonical_tx.tx_node.last_seen;
                 let prevouts =
                     self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
                 let is_mine = inner
@@ -343,7 +370,10 @@ impl CoordSuperWallet {
             .collect()
     }
 
-    pub fn apply_update(&mut self, update: bdk_electrum_c::Update<KeychainId>) -> Result<bool> {
+    pub fn apply_update(
+        &mut self,
+        update: bdk_electrum_streaming::Update<KeychainId>,
+    ) -> Result<bool> {
         let mut db = self.db.lock().unwrap();
         let changed = self
             .tx_graph
@@ -388,6 +418,7 @@ impl CoordSuperWallet {
             .filter_chain_unspents(
                 self.chain.as_ref(),
                 self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
                 self.tx_graph
                     .index
                     .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
@@ -554,6 +585,7 @@ impl CoordSuperWallet {
             .filter_chain_unspents(
                 self.chain.as_ref(),
                 self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
                 self.tx_graph
                     .index
                     .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),

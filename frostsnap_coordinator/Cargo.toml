@@ -17,14 +17,12 @@ rusqlite.workspace = true
 futures.workspace = true
 rand.workspace = true
 
-bdk_chain = { version = "0.20", features = ["rusqlite"] }
-bdk_electrum_c = { version = "0.7.2" }
+bdk_chain = { version = "0.23", features = ["rusqlite"] }
+bdk_electrum_streaming = { version = "0.5" }
 bdk_coin_select = { version = "0.3" }
 
-futures-rustls = { version = "0.26", default-features = false, features = [
-  "tls12",
-  "ring",
-] }
-futures-timer = "3.0.3"
-async-std = { version = "1.13" }
 webpki-roots = { version = "0.26" }
+
+tokio = { version = "1.45", features = ["net", "rt", "time"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["tls12", "ring"] }
+tokio-util = { version = "0.7", features = ["compat"] }
