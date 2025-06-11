@@ -44,12 +44,20 @@ class SettingsContext extends InheritedWidget {
     return false;
   }
 
-  Stream<ChainStatus>? chainStatusStream(BitcoinNetwork network) {
+  Stream<ChainStatus> chainStatusStream(BitcoinNetwork network) {
     final stream = chainStatuses.firstWhereOrNull((record) {
       return record.$1.name() == network.name();
     })?.$2;
 
-    return stream;
+    if (stream == null) {
+      final stream = this.settings
+          .subscribeChainStatus(network: network)
+          .toBehaviorSubject();
+      this.chainStatuses.add((network, stream));
+      return stream;
+    } else {
+      return stream;
+    }
   }
 
   Wallet? loadWallet({required KeyId keyId}) {
