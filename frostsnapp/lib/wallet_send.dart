@@ -583,10 +583,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
           child: Dialog(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: 580),
-              child: SendScanBody(
-                cameras: snapshot.data ?? [],
-                initialSelected: 0,
-              ),
+              child: (snapshot.hasData)
+                  ? SendScanBody(
+                      cameras: snapshot.requireData,
+                      initialSelected: 0,
+                    )
+                  : SizedBox(),
             ),
           ),
         ),
