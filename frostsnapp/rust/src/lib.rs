@@ -1,7 +1,6 @@
 pub mod api;
 mod coordinator;
 mod device_list;
-pub mod ffi_serial_port;
 mod frb_generated;
 pub mod logger;
 pub mod sink_wrap;

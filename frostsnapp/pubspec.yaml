@@ -41,10 +41,6 @@ dependencies:
   flutter_svg: ^2.0.10
   # needed for firstWhereOrNull and other useful extensions
   collection: ^1.0.0
-  usb_serial:
-    git:
-      url: "https://github.com/LLFourn/usbserial.git"
-      ref: "87239570a43751883b5df059b703d22fd15f52cc"
   file_picker: 8.1.2
   camera: ^0.11.0
   zxing2: ^0.2.3

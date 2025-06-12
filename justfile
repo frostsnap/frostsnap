@@ -44,8 +44,11 @@ dart-format-check-app:
 lint-app +ARGS="": dart-format-check-app
     ( cd frostsnapp; flutter analyze {{ARGS}} )
 
-fix-dart:
+fix-dart: maybe-gen
     ( cd frostsnapp && dart format . && dart fix --apply && flutter analyze )
+
+maybe-gen:
+    just "frostsnapp/maybe-gen"
 
 gen:
     just "frostsnapp/gen"
