@@ -34,7 +34,7 @@ impl BackupManager {
 
     pub fn start_backup_run(
         &mut self,
-        access_structure: super::coordinator::AccessStructure,
+        access_structure: &super::coordinator::AccessStructure,
     ) -> Result<()> {
         let access_structure_ref = access_structure.access_structure_ref();
         {
