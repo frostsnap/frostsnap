@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/device.dart';
-import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/ffi.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/snackbar.dart';
+import 'package:frostsnap/device.dart';
+import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/device_list.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 
 Future<bool> backupDeviceDialog(
   BuildContext context, {
@@ -13,13 +14,12 @@ Future<bool> backupDeviceDialog(
   required AccessStructure accessStructure,
 }) async {
   Future<bool> displayBackupOnDevice() async {
-    final displayStream =
-        coord
-            .displayBackup(
-              id: deviceId,
-              accessStructureRef: accessStructure.accessStructureRef(),
-            )
-            .asBroadcastStream();
+    final displayStream = coord
+        .displayBackup(
+          id: deviceId,
+          accessStructureRef: accessStructure.accessStructureRef(),
+        )
+        .asBroadcastStream();
     final deviceName = coord.getDeviceName(id: deviceId);
     final confirmed = await showDeviceActionDialog<bool>(
       context: context,
@@ -111,10 +111,9 @@ Future<bool?> verifyBackup(
   DeviceId deviceId,
   AccessStructureRef accessStructureRef,
 ) async {
-  final backupEntry =
-      coord
-          .tellDeviceToEnterPhysicalBackup(deviceId: deviceId)
-          .asBroadcastStream();
+  final backupEntry = coord
+      .tellDeviceToEnterPhysicalBackup(deviceId: deviceId)
+      .asBroadcastStream();
 
   final aborted = backupEntry.firstWhere((state) => state.abort != null).then((
     state,
@@ -133,13 +132,12 @@ Future<bool?> verifyBackup(
         stream: backupEntry,
         builder: (context, snapshot) {
           final entered = snapshot.data?.entered;
-          final outcome =
-              entered == null
-                  ? null
-                  : coord.checkPhysicalBackup(
-                    accessStructureRef: accessStructureRef,
-                    phase: entered,
-                  );
+          final outcome = entered == null
+              ? null
+              : coord.checkPhysicalBackup(
+                  accessStructureRef: accessStructureRef,
+                  phase: entered,
+                );
           return Column(
             children: [
               DialogHeader(child: Text("Enter the backup on the device.")),

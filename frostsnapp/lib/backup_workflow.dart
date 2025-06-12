@@ -2,11 +2,12 @@ import 'dart:async';
 import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/show_backup.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/show_backup.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 
 class BackupChecklist extends StatelessWidget {
   final ScrollController? scrollController;
@@ -46,31 +47,28 @@ class BackupChecklist extends StatelessWidget {
     if (shouldWarn) {
       final result = await showDialog<bool>(
         context: context,
-        builder:
-            (BuildContext context) => AlertDialog(
-              title: Text('That was quick!'),
-              content: const Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('A backup of a device was performed recently.'),
-                  SizedBox(height: 12),
-                  Text(
-                    'Make sure your devices are secured in separate locations!',
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: Text('Back'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: Text('Show Backup'),
-                ),
-              ],
+        builder: (BuildContext context) => AlertDialog(
+          title: Text('That was quick!'),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('A backup of a device was performed recently.'),
+              SizedBox(height: 12),
+              Text('Make sure your devices are secured in separate locations!'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Back'),
             ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('Show Backup'),
+            ),
+          ],
+        ),
       );
       if (context.mounted && result == true) {
         await _handleBackupDevice(context, deviceId);
@@ -184,20 +182,18 @@ class BackupChecklist extends StatelessWidget {
 
             final backupRun = snapshot.data!;
             final allDevices = accessStructure.devices();
-            final completedDevices =
-                allDevices
-                    .where(
-                      (deviceId) =>
-                          backupRun.devices.any(
-                            (d) =>
-                                deviceIdEquals(d.$1, deviceId) && d.$2 != null,
-                          ) ||
-                          // if the device is not mentioned in the list assume it's completed
-                          backupRun.devices.none(
-                            (d) => deviceIdEquals(d.$1, deviceId),
-                          ),
-                    )
-                    .toList();
+            final completedDevices = allDevices
+                .where(
+                  (deviceId) =>
+                      backupRun.devices.any(
+                        (d) => deviceIdEquals(d.$1, deviceId) && d.$2 != null,
+                      ) ||
+                      // if the device is not mentioned in the list assume it's completed
+                      backupRun.devices.none(
+                        (d) => deviceIdEquals(d.$1, deviceId),
+                      ),
+                )
+                .toList();
 
             final devicesList = allDevices.map((deviceId) {
               final deviceName = coord.getDeviceName(id: deviceId) ?? "";
@@ -240,32 +236,30 @@ class BackupChecklist extends StatelessWidget {
                         ),
                       const SizedBox(width: 8),
                       FilledButton(
-                        style:
-                            isCompleted
-                                ? FilledButton.styleFrom(
-                                  backgroundColor:
-                                      theme.colorScheme.surfaceContainerLow,
-                                  foregroundColor:
-                                      theme.colorScheme.onSurfaceVariant,
-                                )
-                                : FilledButton.styleFrom(
-                                  backgroundColor: theme.colorScheme.primary,
-                                ),
-                        onPressed:
-                            () async =>
-                                await showThatWasQuickDialog(context, deviceId),
-                        child:
-                            isCompleted ? const Text('Show') : Text("I'm here"),
+                        style: isCompleted
+                            ? FilledButton.styleFrom(
+                                backgroundColor:
+                                    theme.colorScheme.surfaceContainerLow,
+                                foregroundColor:
+                                    theme.colorScheme.onSurfaceVariant,
+                              )
+                            : FilledButton.styleFrom(
+                                backgroundColor: theme.colorScheme.primary,
+                              ),
+                        onPressed: () async =>
+                            await showThatWasQuickDialog(context, deviceId),
+                        child: isCompleted
+                            ? const Text('Show')
+                            : Text("I'm here"),
                       ),
                       const SizedBox(width: 16),
                       Icon(
                         isCompleted
                             ? Icons.check_circle
                             : Icons.circle_outlined,
-                        color:
-                            isCompleted
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
+                        color: isCompleted
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
                       ),
                     ],
                   ),
@@ -279,10 +273,9 @@ class BackupChecklist extends StatelessWidget {
                 const SizedBox(height: 24),
                 Center(
                   child: FilledButton(
-                    onPressed:
-                        completedDevices.length == allDevices.length
-                            ? () => Navigator.pop(context)
-                            : null,
+                    onPressed: completedDevices.length == allDevices.length
+                        ? () => Navigator.pop(context)
+                        : null,
                     child: const Text('Done'),
                   ),
                 ),

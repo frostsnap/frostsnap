@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/theme.dart';
+import 'package:frostsnap/theme.dart';
 
 class LogPane extends StatefulWidget {
   final Stream<String> logStream;
@@ -44,30 +44,29 @@ class _LogPane extends State<LogPane> {
 
   @override
   Widget build(BuildContext context) {
-    final List<TextSpan> logSpans =
-        _logs.map((log) {
-          try {
-            if (!log.startsWith("20")) {
-              throw Exception("not this millenium or not a date");
-            }
-            final sections = log.split(RegExp(r' +'));
-            return TextSpan(
-              children: [
-                TextSpan(
-                  text: sections.sublist(0, 2).join(" "),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: _getLevelColor(context, sections[1]),
-                  ),
-                ),
-                TextSpan(text: ' ${sections.sublist(2).join(" ")}'),
-                TextSpan(text: '\n'),
-              ],
-            );
-          } catch (e) {
-            return TextSpan(text: log);
-          }
-        }).toList();
+    final List<TextSpan> logSpans = _logs.map((log) {
+      try {
+        if (!log.startsWith("20")) {
+          throw Exception("not this millenium or not a date");
+        }
+        final sections = log.split(RegExp(r' +'));
+        return TextSpan(
+          children: [
+            TextSpan(
+              text: sections.sublist(0, 2).join(" "),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: _getLevelColor(context, sections[1]),
+              ),
+            ),
+            TextSpan(text: ' ${sections.sublist(2).join(" ")}'),
+            TextSpan(text: '\n'),
+          ],
+        );
+      } catch (e) {
+        return TextSpan(text: log);
+      }
+    }).toList();
 
     final theme = Theme.of(context);
     return Padding(

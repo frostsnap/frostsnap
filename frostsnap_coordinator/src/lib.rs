@@ -25,7 +25,6 @@ pub mod persist;
 
 pub trait Sink<M>: Send + 'static {
     fn send(&self, state: M);
-    fn close(&self);
     fn inspect<F: Fn(&M)>(self, f: F) -> SinkInspect<Self, F>
     where
         Self: Sized,
@@ -36,7 +35,6 @@ pub trait Sink<M>: Send + 'static {
 
 impl<M> Sink<M> for () {
     fn send(&self, _: M) {}
-    fn close(&self) {}
 }
 
 pub struct SinkInspect<S, F> {
@@ -48,9 +46,5 @@ impl<M, S: Sink<M>, F: Fn(&M) + Send + 'static> Sink<M> for SinkInspect<S, F> {
     fn send(&self, state: M) {
         (self.f)(&state);
         self.inner.send(state);
-    }
-
-    fn close(&self) {
-        self.inner.close()
     }
 }

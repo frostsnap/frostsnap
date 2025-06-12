@@ -1,6 +1,6 @@
 {
-    "name": "frostsnapp",
-    "short_name": "frostsnapp",
+    "name": "Frostsnap",
+    "short_name": "Frostsnap",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

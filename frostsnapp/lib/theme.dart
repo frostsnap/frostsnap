@@ -60,27 +60,25 @@ Future<T?> showBottomSheetOrDialog<T>(
     ),
   );
 
-  final result =
-      isDialog
-          ? showDialog<T>(
-            context: context,
-            builder:
-                (context) => Dialog(
-                  backgroundColor: backgroundColor,
-                  clipBehavior: Clip.hardEdge,
-                  child: column,
-                ),
-          )
-          : showModalBottomSheet<T>(
-            context: context,
-            clipBehavior: Clip.hardEdge,
+  final result = isDialog
+      ? showDialog<T>(
+          context: context,
+          builder: (context) => Dialog(
             backgroundColor: backgroundColor,
-            isScrollControlled: true,
-            useSafeArea: true,
-            isDismissible: true,
-            showDragHandle: false,
-            builder: (context) => column,
-          );
+            clipBehavior: Clip.hardEdge,
+            child: column,
+          ),
+        )
+      : showModalBottomSheet<T>(
+          context: context,
+          clipBehavior: Clip.hardEdge,
+          backgroundColor: backgroundColor,
+          isScrollControlled: true,
+          useSafeArea: true,
+          isDismissible: true,
+          showDragHandle: false,
+          builder: (context) => column,
+        );
 
   // FIXME: Actually this is not quite right since showDialog returns before the
   // route has been disposed in the lifecycle according to ChatGPT. The solution
@@ -170,19 +168,18 @@ class _TopBarState extends State<TopBar> {
     final theme = Theme.of(context);
     final maybeDragHandle = SizedBox(
       height: 20.0,
-      child:
-          widget.isDialog
-              ? null
-              : Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outline,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+      child: widget.isDialog
+          ? null
+          : Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outline,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
+            ),
     );
     final headline = Padding(
       padding: TopBar.headerPadding,
@@ -233,8 +230,8 @@ class _TopBarState extends State<TopBar> {
           secondChild: SizedBox(height: 1),
           crossFadeState:
               scrollController.hasClients && scrollController.offset > 0
-                  ? CrossFadeState.showFirst
-                  : CrossFadeState.showSecond,
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
           duration: TopBar.animationDuration,
         );
       },

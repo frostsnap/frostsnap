@@ -2,20 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/animated_check.dart';
-import 'package:frostsnapp/backup_workflow.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/device.dart';
-import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/hex.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/progress_indicator.dart';
-import 'package:frostsnapp/theme.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/animated_check.dart';
+import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device.dart';
+import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/device_list.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/hex.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/keygen.dart';
+import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/progress_indicator.dart';
+import 'package:frostsnap/theme.dart';
 
 class KeyNamePage extends StatefulWidget {
   const KeyNamePage({super.key});
@@ -27,7 +30,7 @@ class KeyNamePage extends StatefulWidget {
 class _KeyNamePageState extends State<KeyNamePage> {
   final TextEditingController _keyNameController = TextEditingController();
   final FocusNode _keyNameFocusNode = FocusNode();
-  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.mainnet(bridge: api);
+  BitcoinNetwork bitcoinNetwork = BitcoinNetwork.bitcoin;
 
   @override
   void initState() {

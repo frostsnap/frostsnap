@@ -1,37 +1,91 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:usb_serial/usb_serial.dart';
+import 'package:flutter/services.dart'; // Required for MethodChannel
+import 'package:frostsnap/src/rust/api/port.dart'; // Assuming PortDesc is here
+import 'package:usb_serial/usb_serial.dart'; // Assuming UsbDevice and UsbEvent are here
 import 'package:collection/collection.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
 
 class HostPortHandler {
   Map<String, SerialPort> openPorts = {};
   final FfiSerial? ffiserial;
-  StreamSubscription<PortEvent>? subscription;
+  StreamSubscription<PortEvent>? _rustPortEventsSubscription;
+  StreamSubscription<UsbEvent>? _usbSystemEventsSubscription;
+
+  // Must match the one in MainActivity.kt
+  static const _usbDeviceChannel = MethodChannel(
+    'com.frostsnap/usb_device_channel',
+  );
+
+  // Stores devices that have been explicitly approved via MainActivity's notification
+  final Map<String, PortDesc> _approvedDevices = {};
 
   HostPortHandler(this.ffiserial) {
     if (ffiserial == null) {
       return;
     }
-    UsbSerial.usbEventStream?.listen((UsbEvent msg) {
-      if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
-        openPorts.remove(msg.device?.deviceName);
+
+    // Listen for native calls from MainActivity
+    _usbDeviceChannel.setMethodCallHandler(_handleNativeDeviceAttached);
+    debugPrint(
+      "HostPortHandler: MethodCallHandler set up for USB device attachments from native.",
+    );
+
+    // Listen for general USB attach/detach events from the usb_serial plugin
+    _usbSystemEventsSubscription = UsbSerial.usbEventStream?.listen((
+      UsbEvent msg,
+    ) {
+      if (msg.device == null) {
+        debugPrint(
+          "HostPortHandler: Received USB event with null device or deviceName.",
+        );
+        return;
       }
-      debugPrint("Scanning devices because of new USB event");
-      scanDevices();
+      final deviceName = msg.device!.deviceName;
+
+      if (msg.event == UsbEvent.ACTION_USB_DETACHED) {
+        debugPrint("HostPortHandler: USB DETACHED event for $deviceName");
+        openPorts.remove(deviceName)?.close();
+        _approvedDevices.remove(deviceName);
+        _updateFfiAvailablePorts();
+      } else if (msg.event == UsbEvent.ACTION_USB_ATTACHED) {
+        // We DON'T automatically add this device.
+        // We wait for MainActivity to notify us via MethodChannel if this device
+        // was launched via device_filter and the user confirmed the system dialog.
+        debugPrint(
+          "HostPortHandler: General USB ATTACHED event for $deviceName. Waiting for potential native confirmation if it was a filtered device.",
+        );
+        // If this device was NOT from a device_filter (e.g. user plugs in a random USB serial device),
+        // and you still want to handle it, you might need a different flow here.
+        // For now, we are focusing on the device_filter initiated flow.
+      }
     });
-    subscription = api.subPortEvents().listen((event) async {
+
+    // Listen to port events from Rust/FFI
+    _rustPortEventsSubscription = subPortEvents().listen((event) async {
       switch (event) {
         case PortEvent_Open(:final request):
           {
             try {
+              // Check if the device was approved via MainActivity
+              final approvedDeviceDesc = _approvedDevices[request.id];
+              if (approvedDeviceDesc == null) {
+                throw "Device ${request.id} has not been approved for connection via system dialog.";
+              }
+
               var port = openPorts[request.id];
-              port ??= await SerialPort.open(request.id, request.baudRate);
+              // Pass the PortDesc (which has VID/PID) from the approved list
+              port ??= await SerialPort.open(
+                request.id,
+                request.baudRate,
+                approvedDeviceDesc,
+              );
               openPorts[request.id] = port;
               request.satisfy();
-            } catch (e) {
+            } catch (e, s) {
+              debugPrint(
+                "HostPortHandler: Error opening port ${request.id}: $e\n$s",
+              );
               request.satisfy(err: e.toString());
             }
           }
@@ -49,7 +103,7 @@ class HostPortHandler {
           {
             try {
               var port = _getPort(request.id);
-              port.write(request.bytes);
+              await port.write(request.bytes);
               request.satisfy();
             } catch (e) {
               request.satisfy(err: e.toString());
@@ -59,89 +113,233 @@ class HostPortHandler {
           {
             var port = openPorts[request.id];
             if (port == null) {
-              debugPrint("port for ${request.id} no longer connected");
+              debugPrint(
+                "port for ${request.id} no longer connected (for BytesToRead)",
+              );
             }
             request.satisfy(bytesToRead: port?.buffer.length ?? 0);
           }
       }
     });
 
-    subscription!.onError((error) {
-      debugPrint("port event stream error: $error");
+    _rustPortEventsSubscription!.onError((error, stackTrace) {
+      debugPrint(
+        "HostPortHandler: Rust port event stream error: $error\n$stackTrace",
+      );
     });
 
-    subscription!.onDone(() {
-      debugPrint("port event stream finished (but this should never happen!)");
+    _rustPortEventsSubscription!.onDone(() {
+      debugPrint(
+        "HostPortHandler: Rust port event stream finished (this should ideally not happen if app is running).",
+      );
     });
-    debugPrint("Android serial port handler started");
+
+    // Initial update to FFI layer (might be an empty list at startup)
+    _updateFfiAvailablePorts();
+
+    debugPrint("HostPortHandler: Android serial port handler started.");
   }
 
-  void scanDevices() async {
-    if (ffiserial != null) {
-      List<UsbDevice> devices = await UsbSerial.listDevices();
-      final List<PortDesc> portDescriptions =
-          devices
-              .where((device) => device.vid != null && device.pid != null)
-              .map(
-                (device) => PortDesc(
-                  id: device.deviceName,
-                  pid: device.pid!,
-                  vid: device.vid!,
-                ),
-              )
-              .toList();
-      await ffiserial!.setAvailablePorts(ports: portDescriptions);
+  // Handles method calls from MainActivity.kt
+  Future<dynamic> _handleNativeDeviceAttached(MethodCall call) async {
+    debugPrint(
+      "HostPortHandler: Received method call from native: ${call.method}",
+    );
+    switch (call.method) {
+      case 'onUsbDeviceAttached':
+        final Map<dynamic, dynamic>? deviceDetails = call.arguments as Map?;
+        if (deviceDetails != null) {
+          final int? vid = deviceDetails['vid'] as int?;
+          final int? pid = deviceDetails['pid'] as int?;
+          final String? deviceName = deviceDetails['deviceName'] as String?;
+
+          if (vid != null && pid != null && deviceName != null) {
+            debugPrint(
+              "HostPortHandler: USB Device Attached via native call: Name: $deviceName, VID: $vid, PID: $pid",
+            );
+
+            final newPortDesc = PortDesc(id: deviceName, pid: pid, vid: vid);
+
+            // Add to our list of approved devices and update FFI
+            _approvedDevices[deviceName] = newPortDesc;
+            _updateFfiAvailablePorts();
+
+            return "Dart: Successfully processed attached device $deviceName"; // Confirmation for native side
+          } else {
+            final errorMsg =
+                "HostPortHandler: Insufficient device details from native for onUsbDeviceAttached. Details: $deviceDetails";
+            debugPrint(errorMsg);
+            throw PlatformException(code: "ARGUMENT_ERROR", message: errorMsg);
+          }
+        } else {
+          const errorMsg =
+              "HostPortHandler: No arguments received for onUsbDeviceAttached.";
+          debugPrint(errorMsg);
+          throw PlatformException(code: "ARGUMENT_ERROR", message: errorMsg);
+        }
+      default:
+        final errorMsg =
+            "HostPortHandler: Unknown method from native: ${call.method}";
+        debugPrint(errorMsg);
+        throw MissingPluginException(errorMsg);
     }
   }
+
+  // Updates the FFI layer with the current list of approved devices
+  void _updateFfiAvailablePorts() {
+    if (ffiserial != null) {
+      final List<PortDesc> portDescriptions = _approvedDevices.values.toList();
+      debugPrint(
+        "HostPortHandler: Updating FFI with available ports: ${portDescriptions.map((p) => p.id).join(', ')}",
+      );
+      ffiserial!.setAvailablePorts(ports: portDescriptions);
+    }
+  }
+
+  // The old scanDevices() is removed as we now rely on native notifications for approved devices.
+  // If you need a way to list devices that were "always allowed" at startup without a new intent,
+  // that would require a more complex mechanism, potentially involving the plugin checking permissions
+  // for all listed devices (which usb_serial doesn't easily expose without trying to open).
 
   SerialPort _getPort(String id) {
     var port = openPorts[id];
     if (port == null) {
-      throw "port $id has been disconnected";
+      throw "HostPortHandler: Port '$id' is not open or has been disconnected.";
     }
     return port;
+  }
+
+  void dispose() {
+    debugPrint("HostPortHandler: Disposing...");
+    _rustPortEventsSubscription?.cancel();
+    _usbSystemEventsSubscription?.cancel();
+    _usbDeviceChannel.setMethodCallHandler(
+      null,
+    ); // Important to clear the handler
+    openPorts.forEach((_, port) => port.close());
+    openPorts.clear();
+    _approvedDevices.clear();
+    _updateFfiAvailablePorts(); // Inform FFI that ports are gone
   }
 }
 
 class SerialPort {
-  UsbPort? port;
+  UsbPort? _flutterUsbPort;
   Uint8List buffer = Uint8List(0);
+  final PortDesc _portDesc; // Store the original PortDesc for reference
 
-  static Future<SerialPort> open(String id, int baudRate) async {
-    final deviceList = await UsbSerial.listDevices();
-    final serialport = SerialPort();
-    final device = deviceList.firstWhereOrNull(
-      (device) => device.deviceName == id,
+  // Private constructor, called by the static open method
+  SerialPort._internal(this._portDesc);
+
+  static Future<SerialPort> open(
+    String id,
+    int baudRate,
+    PortDesc approvedDeviceDesc,
+  ) async {
+    // 'id' is device.deviceName. 'approvedDeviceDesc' comes from our _approvedDevices list.
+    debugPrint(
+      "SerialPort: Attempting to open '$id' (VID:${approvedDeviceDesc.vid}, PID:${approvedDeviceDesc.pid}) with baud: $baudRate",
     );
-    if (device == null) {
-      throw "Device $id is not connected";
-    } else {
-      var port = await device.create();
-      var opened = await port!.open();
-      if (!opened) {
-        throw "Couldn't open device $id";
-      }
 
-      // port.setPortParameters(baudRate, UsbPort.DATABITS_8, UsbPort.STOPBITS_1,
-      //     UsbPort.PARITY_NONE);
-      serialport.port = port;
-      final inputStream = serialport.port!.inputStream as Stream<Uint8List>;
-      inputStream.forEach((Uint8List bytes) {
-        serialport.buffer = Uint8List.fromList(serialport.buffer + bytes);
-      });
+    final serialPort = SerialPort._internal(approvedDeviceDesc);
 
-      return serialport;
+    // We need to find the UsbDevice object from the plugin's list to call create() on it.
+    // MainActivity already gave us the green light for this device (VID/PID/deviceName).
+    List<UsbDevice> devices = await UsbSerial.listDevices();
+    UsbDevice? deviceToOpen = devices.firstWhereOrNull(
+      (d) =>
+          d.deviceName == id &&
+          d.vid == approvedDeviceDesc.vid &&
+          d.pid == approvedDeviceDesc.pid,
+    );
+
+    if (deviceToOpen == null) {
+      throw "SerialPort: Device '$id' (VID:${approvedDeviceDesc.vid}, PID:${approvedDeviceDesc.pid}) not found in UsbSerial.listDevices(). Was it detached?";
     }
+
+    // This is the critical point: deviceToOpen.create() calls the native plugin.
+    // If MainActivity's flow worked (user clicked "OK", session permission granted),
+    // this should ideally NOT show another permission dialog.
+    serialPort._flutterUsbPort = await deviceToOpen.create();
+    debugPrint(
+      "SerialPort: usb_serial plugin's device.create() called for '$id'.",
+    );
+
+    if (serialPort._flutterUsbPort == null) {
+      throw "SerialPort: device.create() returned null for '$id'. Plugin failed to create port.";
+    }
+
+    var opened = await serialPort._flutterUsbPort!.open();
+    if (!opened) {
+      await serialPort.close(); // Ensure resources are released if open fails
+      throw "SerialPort: Couldn't open UsbPort for device '$id' via plugin (open() returned false).";
+    }
+    debugPrint("SerialPort: UsbPort opened for '$id' via plugin.");
+
+    final inputStream = serialPort._flutterUsbPort!.inputStream;
+    if (inputStream == null) {
+      await serialPort.close();
+      throw "SerialPort: Input stream is null after opening port for '$id'.";
+    }
+
+    inputStream.listen(
+      (Uint8List bytes) {
+        var newBuffer = Uint8List(serialPort.buffer.length + bytes.length);
+        newBuffer.setAll(0, serialPort.buffer);
+        newBuffer.setAll(serialPort.buffer.length, bytes);
+        serialPort.buffer = newBuffer;
+      },
+      onError: (error) {
+        debugPrint("SerialPort: Error on input stream for '$id': $error");
+        serialPort.close(); // Close port on stream error
+      },
+      onDone: () {
+        debugPrint("SerialPort: Input stream done for '$id'.");
+        serialPort.close(); // Port is no longer usable if stream is done
+      },
+      cancelOnError: true, // Automatically cancels subscription on error
+    );
+
+    return serialPort;
   }
 
   Uint8List read(int len) {
+    if (_flutterUsbPort == null) {
+      throw "SerialPort: Port '$id' not open for read.";
+    }
     len = min(len, buffer.length);
     var res = buffer.sublist(0, len);
     buffer = buffer.sublist(len);
     return res;
   }
 
-  void write(Uint8List bytes) {
-    port!.write(bytes);
+  Future<void> write(Uint8List bytes) async {
+    if (_flutterUsbPort == null) {
+      throw "SerialPort: Port '$id' not open for write.";
+    }
+    try {
+      await _flutterUsbPort!.write(bytes);
+    } catch (e) {
+      debugPrint("SerialPort: Error writing to port '$id': $e");
+      rethrow;
+    }
   }
+
+  Future<void> close() async {
+    if (_flutterUsbPort != null) {
+      try {
+        await _flutterUsbPort!.close();
+        debugPrint("SerialPort: UsbPort closed for '${_portDesc.id}'.");
+      } catch (e) {
+        debugPrint(
+          "SerialPort: Error closing UsbPort for '${_portDesc.id}': $e",
+        );
+      } finally {
+        _flutterUsbPort = null;
+      }
+    }
+    buffer = Uint8List(0); // Clear buffer
+  }
+
+  String get id => _portDesc.id;
 }

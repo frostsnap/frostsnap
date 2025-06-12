@@ -2,14 +2,16 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/animated_check.dart';
-import 'package:frostsnapp/device_action.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/device_list.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/animated_check.dart';
+import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/device_list.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'hex.dart';
 
 class SignMessagePage extends StatelessWidget {
@@ -34,7 +36,7 @@ class SignMessagePage extends StatelessWidget {
 class SignMessageForm extends StatefulWidget {
   final FrostKey frostKey;
 
-  const SignMessageForm({Key? key, required this.frostKey}) : super(key: key);
+  const SignMessageForm({super.key, required this.frostKey});
 
   @override
   State<SignMessageForm> createState() => _SignMessageFormState();
@@ -66,14 +68,13 @@ class _SignMessageFormState extends State<SignMessageForm> {
     if (buttonReady) {
       submitButtonOnPressed = () async {
         final message = _messageController.text;
-        final signingStream =
-            coord
-                .startSigning(
-                  accessStructureRef: accessStructure.accessStructureRef(),
-                  devices: selected.toList(),
-                  message: message,
-                )
-                .toBehaviorSubject();
+        final signingStream = coord
+            .startSigning(
+              accessStructureRef: accessStructure.accessStructureRef(),
+              devices: selected.toList(),
+              message: message,
+            )
+            .toBehaviorSubject();
 
         await signMessageWorkflowDialog(context, signingStream, message);
         if (context.mounted) {
@@ -103,10 +104,9 @@ class _SignMessageFormState extends State<SignMessageForm> {
           Expanded(
             child: SigningDeviceSelector(
               frostKey: widget.frostKey,
-              onChanged:
-                  (selectedDevices) => setState(() {
-                    selected = selectedDevices;
-                  }),
+              onChanged: (selectedDevices) => setState(() {
+                selected = selectedDevices;
+              }),
             ),
           ),
           ElevatedButton(
@@ -124,10 +124,10 @@ class SigningDeviceSelector extends StatefulWidget {
   final Function(Set<DeviceId>)? onChanged;
 
   const SigningDeviceSelector({
-    Key? key,
+    super.key,
     required this.frostKey,
     this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   State<SigningDeviceSelector> createState() => _SigningDeviceSelectorState();

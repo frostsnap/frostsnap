@@ -3,21 +3,23 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnapp/address.dart';
-import 'package:frostsnapp/access_structures.dart';
-import 'package:frostsnapp/backup_workflow.dart';
-import 'package:frostsnapp/bullet_list.dart';
-import 'package:frostsnapp/contexts.dart';
-import 'package:frostsnapp/electrum_server_settings.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/logs.dart';
-import 'package:frostsnapp/todo.dart';
-import 'package:frostsnapp/wallet.dart';
+import 'package:frostsnap/address.dart';
+import 'package:frostsnap/access_structures.dart';
+import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/bullet_list.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/electrum_server_settings.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/logs.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/settings.dart';
+import 'package:frostsnap/todo.dart';
+import 'package:frostsnap/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/icons.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/icons.dart';
 
 class SettingsContext extends InheritedWidget {
   final Settings settings;
@@ -42,13 +44,20 @@ class SettingsContext extends InheritedWidget {
     return false;
   }
 
-  Stream<ChainStatus>? chainStatusStream(BitcoinNetwork network) {
-    final stream =
-        chainStatuses.firstWhereOrNull((record) {
-          return record.$1.name() == network.name();
-        })?.$2;
+  Stream<ChainStatus> chainStatusStream(BitcoinNetwork network) {
+    final stream = chainStatuses.firstWhereOrNull((record) {
+      return record.$1.name() == network.name();
+    })?.$2;
 
-    return stream;
+    if (stream == null) {
+      final stream = this.settings
+          .subscribeChainStatus(network: network)
+          .toBehaviorSubject();
+      this.chainStatuses.add((network, stream));
+      return stream;
+    } else {
+      return stream;
+    }
   }
 
   Wallet? loadWallet({required KeyId keyId}) {
@@ -314,26 +323,22 @@ class SettingsCategory extends StatelessWidget {
                         body: body,
                       );
                     },
-                    transitionsBuilder: (
-                      context,
-                      animation,
-                      secondaryAnimation,
-                      child,
-                    ) {
-                      const begin = Offset(1.0, 0.0);
-                      const end = Offset.zero;
-                      const curve = Curves.ease;
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                          const begin = Offset(1.0, 0.0);
+                          const end = Offset.zero;
+                          const curve = Curves.ease;
 
-                      var tween = Tween(
-                        begin: begin,
-                        end: end,
-                      ).chain(CurveTween(curve: curve));
+                          var tween = Tween(
+                            begin: begin,
+                            end: end,
+                          ).chain(CurveTween(curve: curve));
 
-                      return SlideTransition(
-                        position: animation.drive(tween),
-                        child: child,
-                      );
-                    },
+                          return SlideTransition(
+                            position: animation.drive(tween),
+                            child: child,
+                          );
+                        },
                   ),
                 );
                 item.onClose?.call();
@@ -440,14 +445,13 @@ class _ExportDescriptorPageState extends State<ExportDescriptorPage>
                   : "This app is managing a wallet in addition to the external wallet",
             ),
             value: _signingOnly,
-            onChanged:
-                _showQrCode
-                    ? (value) {
-                      setState(() {
-                        _signingOnly = value;
-                      });
-                    }
-                    : null,
+            onChanged: _showQrCode
+                ? (value) {
+                    setState(() {
+                      _signingOnly = value;
+                    });
+                  }
+                : null,
           ),
           SizedBox(height: 16.0),
           if (_showQrCode)
@@ -531,7 +535,7 @@ class ChainStatusIcon extends StatelessWidget {
     final VoidCallback? onPressed;
     final theme = Theme.of(context);
 
-    if (chainStatus.state == ChainStatusState.Connected) {
+    if (chainStatus.state == ChainStatusState.connected) {
       onPressed = () {
         WalletContext.of(context)?.superWallet.reconnect();
       };
@@ -540,13 +544,13 @@ class ChainStatusIcon extends StatelessWidget {
     }
 
     switch (chainStatus.state) {
-      case ChainStatusState.Connected:
+      case ChainStatusState.connected:
         statusName = "Connected";
         iconData = Icons.link_rounded;
         iconColor = theme.colorScheme.primary;
         break;
-      case ChainStatusState.Connecting:
-      case ChainStatusState.Disconnected:
+      case ChainStatusState.connecting:
+      case ChainStatusState.disconnected:
         statusName = "Disconnected";
         iconData = Icons.link_off_rounded;
         iconColor = theme.colorScheme.error;
@@ -562,7 +566,7 @@ class ChainStatusIcon extends StatelessWidget {
             icon: Icon(iconData, color: iconColor),
             onPressed: onPressed,
           ),
-          if (chainStatus.state == ChainStatusState.Connecting)
+          if (chainStatus.state == ChainStatusState.connecting)
             Positioned(
               bottom: 0,
               right: 0,
@@ -605,9 +609,8 @@ class DeleteWalletPage extends StatelessWidget {
                   const Text('Balance: '),
                   StreamBuilder(
                     stream: walletCtx.txStream,
-                    builder:
-                        (context, snapshot) =>
-                            SatoshiText(value: snapshot.data?.balance ?? 0),
+                    builder: (context, snapshot) =>
+                        SatoshiText(value: snapshot.data?.balance ?? 0),
                   ),
                   //UpdatingBalance(txStream: walletCtx.txStream),
                 ],
@@ -648,22 +651,21 @@ class DeleteWalletPage extends StatelessWidget {
                   showDialog(
                     context: context,
                     barrierDismissible: false,
-                    builder:
-                        (context) => AlertDialog(
-                          title: Text('Wallet Deleted'),
-                          content: Text(
-                            'The wallet has been successfully deleted.',
-                          ),
-                          actions: [
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(context); // close popup
-                                Navigator.pop(context); // close delete page
-                              },
-                              child: Text('OK'),
-                            ),
-                          ],
+                    builder: (context) => AlertDialog(
+                      title: Text('Wallet Deleted'),
+                      content: Text(
+                        'The wallet has been successfully deleted.',
+                      ),
+                      actions: [
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context); // close popup
+                            Navigator.pop(context); // close delete page
+                          },
+                          child: Text('OK'),
                         ),
+                      ],
+                    ),
                   );
                 }
               },
@@ -742,21 +744,19 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
         width: 120,
         height: 120,
         decoration: BoxDecoration(
-          color:
-              _isPressed
-                  ? theme.colorScheme.secondary
-                  : theme.colorScheme.tertiary,
+          color: _isPressed
+              ? theme.colorScheme.secondary
+              : theme.colorScheme.tertiary,
           shape: BoxShape.circle,
-          boxShadow:
-              _isPressed
-                  ? []
-                  : [
-                    BoxShadow(
-                      color: Colors.black26,
-                      offset: Offset(0, 4),
-                      blurRadius: 4.0,
-                    ),
-                  ],
+          boxShadow: _isPressed
+              ? []
+              : [
+                  BoxShadow(
+                    color: Colors.black26,
+                    offset: Offset(0, 4),
+                    blurRadius: 4.0,
+                  ),
+                ],
         ),
         child: Stack(
           alignment: Alignment.center,
@@ -819,10 +819,10 @@ class BitcoinNetworkChooser extends StatelessWidget {
   final ValueChanged<BitcoinNetwork> onChanged;
 
   const BitcoinNetworkChooser({
-    Key? key,
+    super.key,
     required this.value,
     required this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -836,21 +836,17 @@ class BitcoinNetworkChooser extends StatelessWidget {
           value: value.name(),
           onChanged: (String? newValue) {
             if (newValue != null) {
-              final network =
-                  BitcoinNetwork.fromString(string: newValue, bridge: api)!;
+              final network = BitcoinNetwork.fromString(string: newValue)!;
               onChanged(network);
             }
           },
-          items:
-              BitcoinNetwork.supportedNetworks(bridge: api).map((network) {
-                final name = network.name();
-                return DropdownMenuItem<String>(
-                  value: name,
-                  child: Text(
-                    name == "bitcoin" ? "Bitcoin (BTC)" : network.name(),
-                  ),
-                );
-              }).toList(),
+          items: BitcoinNetwork.supportedNetworks().map((network) {
+            final name = network.name();
+            return DropdownMenuItem<String>(
+              value: name,
+              child: Text(name == "bitcoin" ? "Bitcoin (BTC)" : network.name()),
+            );
+          }).toList(),
         ),
       ],
     );

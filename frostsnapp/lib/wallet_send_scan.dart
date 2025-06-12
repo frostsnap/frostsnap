@@ -1,7 +1,8 @@
 import 'package:camera/camera.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/ffi.dart';
-import 'package:frostsnapp/image_converter.dart';
+import 'package:frostsnap/image_converter.dart';
+import 'package:frostsnap/src/rust/api/qr.dart';
 
 class SendScanBody extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -19,21 +20,29 @@ class SendScanBody extends StatefulWidget {
 
 class _SendScanBodyState extends State<SendScanBody> {
   final utils = ImageUtils();
+  final qrReader = QrReader();
 
   // Ensure that we only pop once.
   bool popped = false;
   late int selected;
-  CameraController? controller;
+  final List<CameraController?> controllers = [];
 
   @override
   void initState() {
     super.initState();
     selected = widget.initialSelected;
+    for (final (i, _) in widget.cameras.indexed) {
+      controllers.insert(i, null);
+    }
+    setCamera(context);
   }
 
   @override
   void dispose() async {
-    controller?.dispose();
+    for (final controller in controllers) {
+      await controller?.dispose();
+    }
+    qrReader.dispose();
     super.dispose();
   }
 
@@ -44,75 +53,86 @@ class _SendScanBodyState extends State<SendScanBody> {
     }
   }
 
-  initCamera(BuildContext context) {
+  setCamera(BuildContext context) async {
     if (widget.cameras.isEmpty) return;
-    controller?.dispose();
-    controller?.setFocusMode(FocusMode.auto);
-    final newController = CameraController(
+    final selected = this.selected;
+
+    // stop all.
+    for (var i = 0; i < controllers.length; i++) {
+      final controller = controllers[i];
+      if (controller != null) {
+        if (context.mounted) setState(() => controllers[i] = null);
+        await controller.stopImageStream();
+      }
+    }
+
+    // start the one that is selected.
+    final controller = CameraController(
       widget.cameras[selected],
       ResolutionPreset.low,
       enableAudio: false,
       fps: 1,
     );
-    newController.initialize().then((_) async {
-      setState(() => controller = newController);
-      final qrReader = await api.newQrReader();
-      controller?.startImageStream((image) async {
-        late final String? newScanData;
-        try {
-          final pngImage = await utils.convertImagetoPng(image);
-          newScanData = await qrReader.findAddressFromBytes(bytes: pngImage);
-        } catch (e) {
-          newScanData = null; // TODO: Report error.
-        }
+    await controller.initialize();
+    await controller.setFocusMode(FocusMode.auto);
+    await controller.startImageStream((image) async {
+      late final String? newScanData;
+      try {
+        final pngImage = await utils.convertImagetoPng(image);
+        newScanData = await qrReader.findAddressFromBytes(bytes: pngImage);
+      } catch (e) {
+        newScanData = null; // TODO: Report error.
+      }
 
-        if (context.mounted && !popped && newScanData != null) {
-          popped = true;
-          // Manually invoke `onPop` as we aren't within `PopScope`.
-          onPop(context, false, newScanData);
-        }
-      });
+      if (context.mounted && !popped && newScanData != null) {
+        popped = true;
+        // Manually invoke `onPop` as we aren't within `PopScope`.
+        onPop(context, false, newScanData);
+      }
     });
+    if (mounted) setState(() => controllers[selected] = controller);
   }
 
   /// This stops the image stream before popping to stop it interfering with the pop animation.
   void onPop(BuildContext context, bool didPop, String? scanResult) async {
     if (didPop) return;
-    await (controller?.stopImageStream() ?? Future.value()).then(
-      (_) => (context.mounted) ? Navigator.pop(context, scanResult) : null,
-    );
+
+    for (final (_, controller) in controllers.indexed) {
+      try {
+        await controller?.stopImageStream();
+      } catch (Exception) {
+        // ignore exception
+      }
+      ;
+    }
+
+    if (context.mounted) Navigator.pop(context, scanResult);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (controller == null) {
-      initCamera(context);
-    }
+    final controller = controllers.elementAtOrNull(selected);
 
-    final cameraPreview =
-        (widget.cameras.isEmpty)
-            ? AspectRatio(
-              aspectRatio: 1,
-              child: Center(child: Text('No cameras found.')),
-            )
-            : (controller == null)
-            ? AspectRatio(
-              aspectRatio: 1,
-              child: Center(child: CircularProgressIndicator()),
-            )
-            : ClipRRect(
-              borderRadius: BorderRadius.circular(28.0),
-              child: CameraPreview(controller!),
-            );
+    final cameraPreview = (widget.cameras.isEmpty)
+        ? AspectRatio(
+            aspectRatio: 1.5,
+            child: Center(child: Text('No cameras found.')),
+          )
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(28.0),
+            child: (controller == null)
+                ? AspectRatio(
+                    aspectRatio: 1.5,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : CameraPreview(controller),
+          );
 
     final stack = Stack(
       children: [
-        AnimatedSwitcher(
-          duration: Durations.long1,
-          switchInCurve: Curves.easeInOutCubicEmphasized,
-          transitionBuilder: (Widget child, Animation<double> animation) {
-            return FadeTransition(opacity: animation, child: child);
-          },
+        AnimatedSize(
+          duration: Durations.medium4,
+          curve: Curves.easeInOutCubicEmphasized,
           child: cameraPreview,
         ),
         Positioned(
@@ -129,7 +149,7 @@ class _SendScanBodyState extends State<SendScanBody> {
           child: IconButton.filledTonal(
             onPressed: () {
               incrementSelected();
-              initCamera(context);
+              setCamera(context);
             },
             icon: Icon(Icons.flip_camera_android),
           ),
@@ -139,8 +159,8 @@ class _SendScanBodyState extends State<SendScanBody> {
 
     return PopScope<String>(
       canPop: false,
-      onPopInvokedWithResult:
-          (didPop, scanResult) => onPop(context, didPop, scanResult),
+      onPopInvokedWithResult: (didPop, scanResult) =>
+          onPop(context, didPop, scanResult),
       child: stack,
     );
   }

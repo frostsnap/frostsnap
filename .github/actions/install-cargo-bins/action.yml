@@ -14,7 +14,8 @@ runs:
       id: hash_rust_bins
       shell: sh
       run: |
-        hash=$(cd frostsnapp; just --show install-cargo-bins | sha256sum | cut -d ' ' -f1)
+        # hash all the cargo binary versions
+        hash=$( (cd frostsnapp; just flutter_rust_bridge_version; just --show install-cargo-bins) | sha256sum | cut -d ' ' -f1)
         echo "hash=$hash" >> $GITHUB_OUTPUT
 
     - name: Cache Rust Binaries

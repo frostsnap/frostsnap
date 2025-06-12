@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'ffi.dart' if (dart.library.html) 'ffi_web.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'global.dart';
 
 typedef OnDeviceListChange = Function(DeviceListState);
@@ -51,9 +51,9 @@ class _SliverDeviceListState extends State<SliverDeviceList> {
     if (listState != null) {
       for (final change in update.changes) {
         switch (change.kind) {
-          case DeviceListChangeKind.Added:
+          case DeviceListChangeKind.added:
             listState.insertItem(change.index);
-          case DeviceListChangeKind.Removed:
+          case DeviceListChangeKind.removed:
             listState.removeItem(
               change.index,
               (context, animation) =>
@@ -87,8 +87,9 @@ class _SliverDeviceListState extends State<SliverDeviceList> {
       sizeFactor: animation.drive(
         CurveTween(curve: Curves.easeInOutCubicEmphasized),
       ),
-      child:
-          device == null ? SizedBox() : widget.deviceBuilder(context, device),
+      child: device == null
+          ? SizedBox()
+          : widget.deviceBuilder(context, device),
     );
   }
 }

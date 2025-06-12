@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/bridge_definitions.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/restoration.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/restoration.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 
 class AccessStructureListWidget extends StatelessWidget {
   final List<AccessStructure> accessStructures;
@@ -30,11 +31,10 @@ class AccessStructureWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final devices =
-        accessStructure
-            .devices()
-            .map((id) => coord.getDeviceName(id: id) ?? "??")
-            .toList();
+    final devices = accessStructure
+        .devices()
+        .map((id) => coord.getDeviceName(id: id) ?? "??")
+        .toList();
     final threshold = accessStructure.threshold();
     final theme = Theme.of(context);
     return Stack(

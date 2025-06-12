@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/ffi.dart';
-import 'package:frostsnapp/settings.dart';
-import 'package:frostsnapp/progress_indicator.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/progress_indicator.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:rxdart/rxdart.dart';
 
 class ElectrumServerSettingsPage extends StatelessWidget {
@@ -13,7 +14,7 @@ class ElectrumServerSettingsPage extends StatelessWidget {
     final settingsStream = Rx.combineLatest2(
       settings.electrumSettings,
       settings.developerSettings,
-      (electrum, developer) {
+      (ElectrumSettings electrum, DeveloperSettings developer) {
         return (
           developerMode: developer.developerMode,
           servers: electrum.electrumServers,
@@ -29,21 +30,20 @@ class ElectrumServerSettingsPage extends StatelessWidget {
           final servers = snap.data?.servers ?? [];
           final developerMode = snap.data?.developerMode ?? false;
           return ListView(
-            children:
-                servers.map((record) {
-                  final (network, url) = record;
-                  return Column(
-                    children: [
-                      if (network.isMainnet() || developerMode) ...[
-                        SizedBox(height: 10),
-                        ElectrumServerSettingWidget(
-                          network: network,
-                          initialUrl: url,
-                        ),
-                      ],
-                    ],
-                  );
-                }).toList(),
+            children: servers.map((record) {
+              final (network, url) = record;
+              return Column(
+                children: [
+                  if (network.isMainnet() || developerMode) ...[
+                    SizedBox(height: 10),
+                    ElectrumServerSettingWidget(
+                      network: network,
+                      initialUrl: url,
+                    ),
+                  ],
+                ],
+              );
+            }).toList(),
           );
         },
       ),
@@ -145,13 +145,12 @@ class _ElectrumServerSettingWidgetState
               controller: _controller,
               decoration: InputDecoration(
                 border: OutlineInputBorder(),
-                suffixIcon:
-                    _controller.text != _originalUrl
-                        ? IconButton(
-                          icon: Icon(Icons.undo),
-                          onPressed: _resetToOriginal,
-                        )
-                        : null,
+                suffixIcon: _controller.text != _originalUrl
+                    ? IconButton(
+                        icon: Icon(Icons.undo),
+                        onPressed: _resetToOriginal,
+                      )
+                    : null,
               ),
             ),
             SizedBox(height: 8),

@@ -1,22 +1,27 @@
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnapp/ffi.dart';
-import 'package:frostsnapp/global.dart';
-import 'package:frostsnapp/id_ext.dart';
-import 'package:frostsnapp/stream_ext.dart';
-import 'package:frostsnapp/wallet.dart';
-import 'package:frostsnapp/wallet_list_controller.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/backup_manager.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/init.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_list_controller.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
   final AppCtx appCtx;
 
   const FrostsnapContext({
-    Key? key,
+    super.key,
     required this.logStream,
     required this.appCtx,
-    required Widget child,
-  }) : super(key: key, child: child);
+    required super.child,
+  });
 
   static FrostsnapContext? of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<FrostsnapContext>();
@@ -48,8 +53,9 @@ class SuperWalletContext extends InheritedWidget {
   Stream<BackupRun> backupStream(KeyId keyId) {
     var stream = _backupStreams[keyId];
     if (stream == null) {
-      stream =
-          appCtx.backupManager.backupStream(keyId: keyId).toBehaviorSubject();
+      stream = appCtx.backupManager
+          .backupStream(keyId: keyId)
+          .toBehaviorSubject();
       _backupStreams[keyId] = stream;
     }
     return stream;
@@ -81,10 +87,9 @@ class SuperWalletContext extends InheritedWidget {
     // Get or create tx stream
     var stream = _txStreams[keyId];
     if (stream == null) {
-      stream =
-          superWallet
-              .subTxState(masterAppkey: masterAppkey)
-              .toBehaviorSubject();
+      stream = superWallet
+          .subTxState(masterAppkey: masterAppkey)
+          .toBehaviorSubject();
       _txStreams[keyId] = stream;
     }
 
@@ -139,10 +144,7 @@ class WalletContext extends InheritedWidget {
     required Widget child,
   }) : super(
          // a wallet context implies a key context so we wrap the child in one also
-         child: KeyContext(
-           keyId: api.masterAppkeyExtToKeyId(masterAppkey: wallet.masterAppkey),
-           child: child,
-         ),
+         child: KeyContext(keyId: wallet.masterAppkey.keyId(), child: child),
        );
 
   static WalletContext? of(BuildContext context) {
@@ -168,8 +170,8 @@ class WalletContext extends InheritedWidget {
 
   SuperWallet get superWallet => wallet.superWallet;
   MasterAppkey get masterAppkey => wallet.masterAppkey;
-  get keyId => api.masterAppkeyExtToKeyId(masterAppkey: wallet.masterAppkey);
-  get network => wallet.superWallet.network;
+  KeyId get keyId => wallet.masterAppkey.keyId();
+  BitcoinNetwork get network => wallet.superWallet.network;
 }
 
 class KeyContext extends InheritedWidget {
@@ -207,8 +209,8 @@ class HomeContext extends InheritedWidget {
     required this.scaffoldKey,
     required this.walletListController,
     required this.confettiController,
-    required Widget child,
-  }) : super(child: child);
+    required super.child,
+  });
 
   static HomeContext? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<HomeContext>();
