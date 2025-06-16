@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_settings.dart';
@@ -75,7 +76,19 @@ class WalletHome extends StatelessWidget {
               spacing: 20.0,
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                  child: SvgPicture.asset(
+                    'assets/frostsnap-logo.svg',
+                    fit: BoxFit.fitWidth,
+                    height: 100,
+                    colorFilter: ColorFilter.mode(
+                      theme.colorScheme.primary,
+                      BlendMode.srcATop,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(10.0),
                   child: Text(
                     'Let\'s Get Started',
                     style: theme.textTheme.headlineLarge,
@@ -559,12 +572,21 @@ class WalletDrawer extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         List<Widget> children = [
-          AppBar(
-            title: Text('Wallets'),
-            titleTextStyle: theme.textTheme.titleMedium,
-            primary: false,
-            automaticallyImplyLeading: false,
-            forceMaterialTransparency: true,
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10.0,
+              vertical: 5.0,
+            ),
+            child: SvgPicture.asset(
+              'assets/frostsnap-logo.svg',
+              // width: logoWidth,
+              fit: BoxFit.fitWidth,
+              height: 100,
+              colorFilter: ColorFilter.mode(
+                theme.colorScheme.primary,
+                BlendMode.srcATop,
+              ),
+            ),
           ),
         ];
         if (controller.wallets.isEmpty) {
