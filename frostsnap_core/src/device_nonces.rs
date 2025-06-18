@@ -295,16 +295,16 @@ impl SecretNonceSlot {
         })
     }
 
-    pub fn are_nonces_available(&self, index: u32, n: u32) -> Result<(), NoncesUnavaillable> {
+    pub fn are_nonces_available(&self, index: u32, n: u32) -> Result<(), NoncesUnavailable> {
         let current = self.index;
         let requested = index;
 
         if requested < current {
-            return Err(NoncesUnavaillable::IndexUsed { current, requested });
+            return Err(NoncesUnavailable::IndexUsed { current, requested });
         }
 
         if index.saturating_add(n) == u32::MAX {
-            return Err(NoncesUnavaillable::Overflow);
+            return Err(NoncesUnavailable::Overflow);
         }
 
         Ok(())
@@ -329,7 +329,7 @@ impl SecretNonceSlot {
             .take(length)
             .collect::<VecDeque<_>>();
 
-        assert_eq!(nonces.len(), length, "there weren't enough noces for that");
+        assert_eq!(nonces.len(), length, "there weren't enough nonces for that");
 
         NonceStreamSegment {
             stream_id: self.nonce_stream_id,
@@ -361,21 +361,21 @@ impl NonceStreamSlot for MemoryNonceSlot {
 }
 
 #[derive(Clone, Debug)]
-pub enum NoncesUnavaillable {
+pub enum NoncesUnavailable {
     IndexUsed { current: u32, requested: u32 },
     Overflow,
 }
 
-impl core::fmt::Display for NoncesUnavaillable {
+impl core::fmt::Display for NoncesUnavailable {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            NoncesUnavaillable::IndexUsed { current, requested } => {
+            NoncesUnavailable::IndexUsed { current, requested } => {
                 write!(
                     f,
                     "Attempt to reuse nonces! Current index: {current}. Requested: {requested}."
                 )
             }
-            NoncesUnavaillable::Overflow => {
+            NoncesUnavailable::Overflow => {
                 write!(f, "nonces were requested beyond the final index")
             }
         }
@@ -383,4 +383,4 @@ impl core::fmt::Display for NoncesUnavaillable {
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for NoncesUnavaillable {}
+impl std::error::Error for NoncesUnavailable {}
