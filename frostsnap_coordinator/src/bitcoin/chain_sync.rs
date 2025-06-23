@@ -491,6 +491,8 @@ pub enum ChainStatusState {
     Connecting,
 }
 
+/// Check that the connection actually connects to an Electrum server and the server is on the right
+/// network.
 async fn check_conn<R, W>(rh: R, mut wh: W, genesis_hash: BlockHash) -> Result<()>
 where
     R: tokio::io::AsyncRead + Unpin,
@@ -499,52 +501,42 @@ where
     use bdk_electrum_streaming::electrum_streaming_client as client;
     use client::request;
     use client::RawNotificationOrResponse;
-    use client::RawRequest;
     use futures::io::BufReader;
 
-    let banner_id = rand::random::<u32>();
-    let features_id = banner_id.wrapping_add(1);
+    let features_id = rand::random::<u32>();
+    let features_req = client::RawRequest::from_request(features_id, request::Features);
+    client::io::tokio_write(&mut wh, features_req).await?;
 
-    for raw_req in [
-        RawRequest::from_request(banner_id, request::Banner),
-        RawRequest::from_request(features_id, request::Features),
-    ] {
-        client::io::tokio_write(&mut wh, raw_req).await?;
+    let mut read_stream = client::io::ReadStreamer::new(BufReader::new(rh.compat()));
+    let raw_incoming = read_stream
+        .next()
+        .await
+        .ok_or(anyhow!("failed to get response from server"))??;
+
+    let raw_resp = match raw_incoming {
+        RawNotificationOrResponse::Notification(_) => {
+            return Err(anyhow!("Received unexpected notification from server"))
+        }
+        RawNotificationOrResponse::Response(raw_resp) => raw_resp,
+    };
+
+    if raw_resp.id != features_id {
+        return Err(anyhow!(
+            "Response id {} does not match request id {}",
+            raw_resp.id,
+            features_id
+        ));
     }
 
-    let mut banner_resp = Option::<<request::Banner as Request>::Response>::None;
-    let mut features_resp = Option::<<request::Features as Request>::Response>::None;
+    let raw_val = raw_resp
+        .result
+        .map_err(|err| anyhow!("Server responded with error: {err}"))?;
 
-    let mut read_stream = client::io::ReadStreamer::new(BufReader::new(rh.compat())).take(2);
-    while let Some(result) = read_stream.next().await {
-        let raw_resp = match result? {
-            RawNotificationOrResponse::Notification(_) => Err(anyhow!("unexpected notification")),
-            RawNotificationOrResponse::Response(resp) => Ok(resp),
-        }?;
-        // let resp_id = raw_resp.id;
-        let resp_val = raw_resp
-            .result
-            .map_err(|err| anyhow!("server responded with error: {err}"))?;
+    let features: <request::Features as Request>::Response =
+        client::serde_json::from_value(raw_val)?;
 
-        if raw_resp.id == banner_id {
-            let banner = &*banner_resp.insert(client::serde_json::from_value(resp_val)?);
-            tracing::info!(banner, "Connected to Electrum server");
-            continue;
-        }
-
-        if raw_resp.id == features_id {
-            let features = &*features_resp.insert(client::serde_json::from_value(resp_val)?);
-            if genesis_hash != features.genesis_hash {
-                return Err(anyhow!("Electrum server is on the wrong network"));
-            }
-            continue;
-        }
-
-        return Err(anyhow!("Unexpected response from server"));
-    }
-
-    if banner_resp.is_none() || features_resp.is_none() {
-        return Err(anyhow!("Missing responses from Electrum server"));
+    if genesis_hash != features.genesis_hash {
+        return Err(anyhow!("Electrum server is on a different network"));
     }
 
     Ok(())
