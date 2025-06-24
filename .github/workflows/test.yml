@@ -99,7 +99,7 @@ jobs:
           link-to-sdk: true
           add-to-path: true
       - name: Build App APK
-        run: just frostsnapp/build apk --release
+        run: just frostsnapp/build apk --release --target-platform android-arm64,android-arm
       - name: Build appbundle
         run: just frostsnapp/build appbundle --release
       - name: Upload APK (Android)
