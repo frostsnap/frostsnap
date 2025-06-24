@@ -48,69 +48,53 @@ type Fb = Framebuffer<
 #[derive(Debug)]
 pub struct AlphabeticKeyboard {
     scroll_position: i32, // Current scroll offset
-    framebuffer: Box<Fb>, // Boxed fixed-length array for the framebuffer
-    needs_redraw: bool,   // Flag indicating if the keyboard needs to be redrawn
-    max_scroll: i32,
-    keyspace: Rectangle,
+    framebuffer: Box<Fb>, // Boxed framebuffer
+    needs_redraw: bool,   // Flag to trigger redraw
+    keyspace: Rectangle,  // Area where keys are drawn
 }
 
 impl AlphabeticKeyboard {
-    // Create a new AlphabeticKeyboard instance
-    pub fn new(visible_height: u32) -> Self {
-        // Allocate the framebuffer on the heap using Box
-
-        // Calculate max_scroll based on the visible height of the screen
-        let max_scroll = (FRAMEBUFFER_HEIGHT as i32 - visible_height as i32).max(0);
-
+    /// Create a new AlphabeticKeyboard instance.
+    pub fn new() -> Self {
         let keyspace = Rectangle::new(
             Point::new(0, BAR_HEIGHT as i32),
             Size {
-                height: FRAMEBUFFER_HEIGHT - BAR_HEIGHT,
                 width: FRAMEBUFFER_WIDTH,
+                height: FRAMEBUFFER_HEIGHT - BAR_HEIGHT,
             },
         );
 
         let mut keyboard = Self {
             framebuffer: Box::new(Fb::new()),
-            scroll_position: 0, // Start at the top of the keyboard
-            max_scroll,         // Set the maximum scroll value
-            needs_redraw: true, // Initial rendering required
+            scroll_position: 0,
+            needs_redraw: true,
             keyspace,
         };
 
-        // Render the full keyboard to the framebuffer
         keyboard.render_full_keyboard();
-
         keyboard
     }
 
-    // Scroll the keyboard by a specified amount (positive to scroll up, negative to scroll down)
+    /// Scroll the keyboard by the given amount, wrapping around infinitely.
     pub fn scroll(&mut self, amount: i32) {
-        let new_position = (self.scroll_position - amount).clamp(0, self.max_scroll);
-        // Only update if the scroll position changes
-        if new_position != self.scroll_position {
-            self.scroll_position = new_position;
-            self.needs_redraw = true; // Mark for redraw
-        }
+        let height = FRAMEBUFFER_HEIGHT as i32;
+        self.scroll_position = (self.scroll_position - amount).rem_euclid(height);
+        self.needs_redraw = true;
     }
 
-    // Render the full keyboard to the framebuffer (called once during initialization)
+    /// Render the static full keyboard into the framebuffer.
     fn render_full_keyboard(&mut self) {
-        let mut keyspace = self.framebuffer.cropped(&self.keyspace);
-        // the space where keys will be drawn is a bit smaller than the framebuffer
-        // because of the top and bottom bars
-
+        let mut keyspace_fb = self.framebuffer.cropped(&self.keyspace);
         let character_style = U8g2TextStyle::new(FONT_LARGE, BinaryColor::On);
-        // Draw all the keys into the framebuffer
+
         for (row_index, row) in KEYBOARD_KEYS.iter().enumerate() {
             for (col_index, &key) in row.iter().enumerate() {
                 let x = col_index as i32 * KEY_WIDTH as i32;
                 let y = row_index as i32 * KEY_HEIGHT as i32;
-
-                // Draw the key label
                 let position = Point::new(x + (KEY_WIDTH as i32 / 2), y + (KEY_HEIGHT as i32 / 2));
+
                 let _ = Text::with_text_style(
-                    &ToString::to_string(&key),
+                    &key.to_string(),
                     position,
                     character_style.clone(),
                     TextStyleBuilder::new()
@@ -118,19 +102,20 @@ impl AlphabeticKeyboard {
                         .baseline(Baseline::Middle)
                         .build(),
                 )
-                .draw(&mut keyspace);
+                .draw(&mut keyspace_fb);
             }
         }
 
         let bar_style = PrimitiveStyleBuilder::new()
-            //NOTE: Disable bar for now
             .fill_color(BinaryColor::Off)
             .build();
         let bar_size = Size::new(FRAMEBUFFER_WIDTH, BAR_HEIGHT);
+
+        // Top bar
         let _ = Rectangle::new(Point::zero(), bar_size)
             .into_styled(bar_style)
             .draw(self.framebuffer.as_mut());
-
+        // Bottom bar
         let _ = Rectangle::new(
             Point::new(0, FRAMEBUFFER_HEIGHT as i32 - BAR_HEIGHT as i32),
             bar_size,
@@ -139,76 +124,107 @@ impl AlphabeticKeyboard {
         .draw(self.framebuffer.as_mut());
     }
 
-    // Draw the currently visible portion of the keyboard
+    /// Draw the visible portion of the keyboard, handling wrapping.
     pub fn draw(&mut self, target: &mut impl DrawTarget<Color = Rgb565>) {
-        // Only draw if a redraw is needed
-        if self.needs_redraw {
-            // Get the height of the visible area from the DrawTarget's bounding box
-            let visible_height = target.bounding_box().size.height as usize;
+        if !self.needs_redraw {
+            return;
+        }
 
-            // Calculate the number of pixels to skip for the current scroll position
-            let skip_pixels = self.scroll_position as usize * FRAMEBUFFER_WIDTH as usize;
+        let size = target.bounding_box().size;
+        let visible_rows = size.height as usize;
+        let width = FRAMEBUFFER_WIDTH as usize;
+        let frame_height = FRAMEBUFFER_HEIGHT as usize;
 
-            // Clip and draw the portion of the framebuffer based on scroll_position
+        // Start index in the framebuffer data
+        let start = (self.scroll_position as usize * width) % (frame_height * width);
+        let pixels_visible = visible_rows * width;
+        let until_end = frame_height * width - start;
+
+        let map_color = |r: RawU1| match BinaryColor::from(r) {
+            BinaryColor::On => KEYBOARD_COLOR,
+            BinaryColor::Off => COLORS.background,
+        };
+
+        if pixels_visible <= until_end {
+            // One contiguous block
             let _ = target.fill_contiguous(
-                &Rectangle::new(Point::new(0, 0), target.bounding_box().size),
+                &Rectangle::new(Point::zero(), size),
                 RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
                     .into_iter()
-                    .skip(skip_pixels)
-                    .take(FRAMEBUFFER_WIDTH as usize * visible_height)
-                    .map(|r| match BinaryColor::from(r) {
-                        BinaryColor::Off => COLORS.background,
-                        BinaryColor::On => KEYBOARD_COLOR,
-                    }),
+                    .skip(start)
+                    .take(pixels_visible)
+                    .map(map_color),
+            );
+        } else {
+            // Two blocks: bottom of framebuffer then top
+            let first_rows = until_end / width;
+            let second_rows = visible_rows - first_rows;
+
+            // First segment
+            let _ = target.fill_contiguous(
+                &Rectangle::new(
+                    Point::zero(),
+                    Size::new(FRAMEBUFFER_WIDTH, first_rows as u32),
+                ),
+                RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
+                    .into_iter()
+                    .skip(start)
+                    .take(until_end)
+                    .map(map_color),
             );
 
-            // Reset the redraw flag
-            self.needs_redraw = false;
+            // Second segment
+            let _ = target.fill_contiguous(
+                &Rectangle::new(
+                    Point::new(0, first_rows as i32),
+                    Size::new(FRAMEBUFFER_WIDTH, second_rows as u32),
+                ),
+                RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
+                    .into_iter()
+                    .take(second_rows * width)
+                    .map(map_color),
+            );
         }
+
+        self.needs_redraw = false;
     }
 
-    // Handle a touch event and return an Option<KeyTouch>
+    /// Handle a touch, mapping to a key and returning its rectangle in screen coordinates.
     pub fn handle_touch(&self, mut point: Point) -> Option<KeyTouch> {
-        // Use scroll_position directly as it represents the pixel offset
-        let scroll_offset = self.scroll_position;
-        if self.keyspace.contains(point) {
-            point -= self.keyspace.top_left;
-        } else {
+        if !self.keyspace.contains(point) {
             return None;
         }
 
-        // Adjust the y-coordinate of the touch based on the current scroll position
-        let adjusted_y = point.y + scroll_offset;
+        // Convert to keyspace coordinates
+        point -= self.keyspace.top_left;
 
-        // Calculate the row and column index based on touch coordinates
-        let col_index = point.x / KEY_WIDTH as i32;
-        let row_index = adjusted_y / KEY_HEIGHT as i32;
+        // y in framebuffer
+        let fb_y = (point.y + self.scroll_position).rem_euclid(FRAMEBUFFER_HEIGHT as i32);
+        let col = (point.x / KEY_WIDTH as i32) as usize;
+        let row = (fb_y / KEY_HEIGHT as i32) as usize;
 
-        // Ensure indices are within the valid range
-        if (0..4).contains(&col_index) && (0..7).contains(&row_index) {
-            // Find the key character from the KEYBOARD_KEYS array
-            let key = KEYBOARD_KEYS[row_index as usize][col_index as usize];
+        if col < 4 && row < TOTAL_ROWS {
+            let key = KEYBOARD_KEYS[row][col];
 
-            // Calculate the top-left corner of the key's rectangle
-            let x = col_index * KEY_WIDTH as i32;
-            let y = row_index * KEY_HEIGHT as i32 - scroll_offset + self.keyspace.top_left.y;
+            // Compute on-screen y
+            let pos_in_fb = (row as i32) * KEY_HEIGHT as i32;
+            let screen_y = if pos_in_fb >= self.scroll_position {
+                pos_in_fb - self.scroll_position
+            } else {
+                (FRAMEBUFFER_HEIGHT as i32 - self.scroll_position) + pos_in_fb
+            };
+            let x = (col as i32) * KEY_WIDTH as i32;
+            let y = screen_y + self.keyspace.top_left.y;
 
-            // Create the rectangle for the key clamped so the y-value is no less than 0 so the
-            // rectange doesn't overflow into the space above.
-            let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT))
-                .resized_height((KEY_HEIGHT as i32 + y.min(0)) as u32, AnchorY::Bottom);
-
+            let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
             return Some(KeyTouch::new(key, rect));
         }
-
         None
     }
 
+    /// Handle vertical drag gestures to scroll.
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
-        let scroll_amount = match prev_y {
-            Some(prev_y) => new_y as i32 - prev_y as i32,
-            None => 0,
-        };
-        self.scroll(scroll_amount);
+        let delta = prev_y.map_or(0, |p| new_y as i32 - p as i32);
+        self.scroll(delta);
     }
 }
