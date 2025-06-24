@@ -1,6 +1,5 @@
-use super::key_touch::KeyTouch;
-use super::{icons, FONT_LARGE};
-use crate::graphics::palette::COLORS;
+use crate::{Key, KeyTouch, icons, FONT_LARGE};
+use crate::palette::PALETTE;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use embedded_graphics::framebuffer::{buffer_size, Framebuffer};
@@ -11,7 +10,6 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::text::{Alignment, Baseline, Text, TextStyleBuilder};
 use embedded_graphics::{image::GetPixel, pixelcolor::Rgb565, primitives::Rectangle};
-use micromath::F32Ext;
 use u8g2_fonts::U8g2TextStyle;
 
 const N_CHARACTERS: usize = 15 * 4 - 2;
@@ -42,7 +40,7 @@ impl Bech32InputPreview {
             Size {
                 width: backspace_width,
                 height: visible_area.height - progress_height,
-            },
+            }
         );
 
         let preview_width = usable_width - backspace_rect.size.width;
@@ -55,7 +53,7 @@ impl Bech32InputPreview {
             Size {
                 width: preview_width,
                 height: FONT_SIZE.height,
-            },
+            }
         );
 
         let progress_rect = Rectangle::new(
@@ -77,7 +75,7 @@ impl Bech32InputPreview {
 
     pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
         if self.backspace_rect.contains(point) {
-            Some(KeyTouch::new('⌫', self.backspace_rect))
+            Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
         } else {
             None
         }
@@ -99,7 +97,7 @@ impl Bech32InputPreview {
         current_time: crate::Instant,
     ) {
         if !self.init_draw {
-            let _ = target.clear(COLORS.background);
+            let _ = target.clear(PALETTE.background);
             icons::backspace()
                 .with_color(Rgb565::new(31, 20, 12))
                 // shift the icon over to the left of the backspace rectangle
@@ -180,7 +178,7 @@ impl Bech32Framebuf {
             current_time: None,
             target_position: Self::chunk_end_for_character(0),
             redraw: true,
-            color: COLORS.primary,
+            color: PALETTE.primary,
         };
 
         for i in 0..N_CHARACTERS {
@@ -206,12 +204,17 @@ impl Bech32Framebuf {
             return;
         }
         let duration_millis = current_time
-            .checked_duration_since(*last_draw_time)
-            .unwrap()
-            .to_millis();
+            .duration_since(*last_draw_time)
+            .unwrap();
         const VELOCITY: f32 = 0.05; // pixels per ms
 
-        let distance = (duration_millis as f32 * VELOCITY).round() as i32;
+        // Manual rounding for no_std environment
+        let float_distance = duration_millis as f32 * VELOCITY;
+        let distance = if float_distance >= 0.0 {
+            (float_distance + 0.5) as i32
+        } else {
+            (float_distance - 0.5) as i32
+        };
         if distance == 0 && !self.redraw {
             return;
         }
@@ -227,7 +230,7 @@ impl Bech32Framebuf {
         let window_start = self.current_position.saturating_sub(width) as usize;
         let window_width = width.min(self.current_position);
         let left_padding = core::iter::repeat_n(
-            COLORS.background,
+            PALETTE.background,
             width.saturating_sub(self.current_position) as usize,
         );
         let fb = &self.framebuffer;
@@ -238,7 +241,7 @@ impl Bech32Framebuf {
 
             left_padding.clone().chain((start..end).map(move |x| {
                 match fb.pixel(Point::new(x as i32, y as i32)).unwrap().luma() {
-                    0x00 => COLORS.background,
+                    0x00 => PALETTE.background,
                     0x01 => Rgb565::new(20, 41, 22),
                     0x02 => color,
                     0x03 => color,
@@ -269,7 +272,7 @@ impl Bech32Framebuf {
                     Gray2::WHITE
                 } else {
                     Gray2::new(0x01)
-                },
+                }
             ),
             TextStyleBuilder::new()
                 .alignment(Alignment::Left)
@@ -345,6 +348,23 @@ impl Bech32Framebuf {
         };
 
         chunk_index * (chunk_width + GAP_WIDTH) + current_chunk_width
+    }
+}
+
+impl crate::Widget for Bech32InputPreview {
+    type Color = Rgb565;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        self.draw(target, current_time);
+        Ok(())
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(self.preview_rect.size.width, self.preview_rect.size.height + self.backspace_rect.size.height))
     }
 }
 

@@ -1,14 +1,12 @@
-use crate::graphics::palette::COLORS;
-
-use super::icons;
-use super::key_touch::KeyTouch;
+use crate::palette::PALETTE;
+use crate::{icons, Key, KeyTouch};
 use alloc::string::ToString;
 use embedded_graphics::mono_font::{ascii::*, MonoTextStyle};
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
-    text::{Alignment, Baseline, Text, TextStyleBuilder},
+    text::{Alignment, Baseline, Text, TextStyleBuilder}
 };
 
 // Constants for the keyboard layout
@@ -39,7 +37,7 @@ impl NumericKeyboard {
             key_size: Size {
                 width: key_width,
                 height: key_height,
-            },
+            }
         }
     }
 
@@ -75,7 +73,7 @@ impl NumericKeyboard {
                     };
 
                     if !is_disabled {
-                        return Some(KeyTouch::new(key, rect));
+                        return Some(KeyTouch::new(Key::Keyboard(key), rect));
                     } else {
                         return None;
                     }
@@ -112,7 +110,7 @@ impl NumericKeyboard {
                     let _ = rect
                         .into_styled(
                             PrimitiveStyleBuilder::new()
-                                .fill_color(COLORS.background)
+                                .fill_color(PALETTE.background)
                                 .build(),
                         )
                         .draw(target);
@@ -124,16 +122,16 @@ impl NumericKeyboard {
                 );
                 let color = match self.disable_empty_input_keys {
                     true => match key {
-                        '1'..='9' => COLORS.primary,
-                        '0' | '⌫' | '✓' => COLORS.disabled,
+                        '1'..='9' => PALETTE.primary,
+                        '0' | '⌫' | '✓' => PALETTE.surface_variant,
                         _ => unreachable!(),
-                    },
+                    }
                     false => match key {
-                        '0'..='9' => COLORS.primary,
+                        '0'..='9' => PALETTE.primary,
                         '⌫' => Rgb565::RED,
                         '✓' => Rgb565::GREEN,
                         _ => unreachable!(),
-                    },
+                    }
                 };
                 match key {
                     '0'..='9' => {

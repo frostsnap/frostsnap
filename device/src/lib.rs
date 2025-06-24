@@ -20,6 +20,7 @@ pub mod io;
 pub mod ota;
 pub mod panic;
 pub mod partitions;
+pub mod touch_calibration;
 pub mod ui;
 
 #[derive(Debug, Clone)]
