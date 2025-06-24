@@ -1,9 +1,10 @@
-use alloc::string::ToString;
+use alloc::{string::ToString, format};
+use crate::FONT_LARGE;
 use embedded_graphics::{
     draw_target::DrawTarget,
     pixelcolor::Rgb565,
     prelude::*,
-    text::{Alignment, Baseline, Text, TextStyleBuilder},
+    text::{Alignment, Baseline, Text, TextStyleBuilder}
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -57,7 +58,7 @@ impl ShareIndexInputDisplay {
         let _ = Text::with_text_style(
             &text,
             Point::new((display_size.width / 2) as i32, 15),
-            U8g2TextStyle::new(super::FONT_LARGE, Rgb565::WHITE),
+            U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
             TextStyleBuilder::new()
                 .alignment(Alignment::Center)
                 .baseline(Baseline::Top)

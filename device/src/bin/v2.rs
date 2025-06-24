@@ -604,7 +604,11 @@ where
                 EnteringBackupStage::ShareIndex { phase, screen } => {
                     let mut next_screen = None;
                     if let Some((point, _, lift_up)) = current_touch {
-                        if let Some(share_index) = screen.handle_touch(point, now, lift_up) {
+                        if let Some(share_index) = screen.handle_touch(
+                            point,
+                            frostsnap_embedded_widgets::Instant::from_millis(now.duration_since_epoch().to_millis()),
+                            lift_up
+                        ) {
                             next_screen = Some(EnteringBackupStage::Share {
                                 phase: phase.clone(),
                                 screen: EnterShareScreen::new(
@@ -614,7 +618,10 @@ where
                             });
                         }
                     }
-                    screen.draw(&mut self.display.display, now);
+                    screen.draw(
+                        &mut self.display.display,
+                        frostsnap_embedded_widgets::Instant::from_millis(now.duration_since_epoch().to_millis())
+                    );
                     if let Some(next_screen) = next_screen {
                         *stage = next_screen;
                     }
@@ -629,7 +636,11 @@ where
                                 );
                             }
                             _ => {
-                                screen.handle_touch(point, now, lift_up);
+                                screen.handle_touch(
+                                    point,
+                                    frostsnap_embedded_widgets::Instant::from_millis(now.duration_since_epoch().to_millis()),
+                                    lift_up
+                                );
                                 if screen.is_finished() {
                                     match screen.try_create_share() {
                                         Ok(secret_share) => {
@@ -650,7 +661,10 @@ where
                         }
                     }
 
-                    screen.draw(&mut self.display.display, now)
+                    screen.draw(
+                        &mut self.display.display,
+                        frostsnap_embedded_widgets::Instant::from_millis(now.duration_since_epoch().to_millis())
+                    )
                 }
             },
             _ => { /* no user actions to poll */ }

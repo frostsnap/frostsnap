@@ -9,13 +9,13 @@ use embedded_graphics::{
     },
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
-    text::{Alignment, Baseline, Text, TextStyleBuilder},
+    text::{Alignment, Baseline, Text, TextStyleBuilder}
 };
 use u8g2_fonts::U8g2TextStyle;
 
-use crate::graphics::palette::COLORS;
+use crate::palette::PALETTE;
 
-use super::{key_touch::KeyTouch, FONT_LARGE};
+use crate::{Key, KeyTouch, FONT_LARGE};
 
 // Constants for the framebuffer and keyboard dimensions
 const FRAMEBUFFER_WIDTH: u32 = 240;
@@ -68,7 +68,7 @@ impl Bech32Keyboard {
             Size {
                 height: FRAMEBUFFER_HEIGHT - BAR_HEIGHT,
                 width: FRAMEBUFFER_WIDTH,
-            },
+            }
         );
 
         let mut keyboard = Self {
@@ -158,7 +158,7 @@ impl Bech32Keyboard {
                     .skip(skip_pixels)
                     .take(FRAMEBUFFER_WIDTH as usize * visible_height)
                     .map(|r| match BinaryColor::from(r) {
-                        BinaryColor::Off => COLORS.background,
+                        BinaryColor::Off => PALETTE.background,
                         BinaryColor::On => KEYBOARD_COLOR,
                     }),
             );
@@ -199,13 +199,13 @@ impl Bech32Keyboard {
             let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT))
                 .resized_height((KEY_HEIGHT as i32 + y.min(0)) as u32, AnchorY::Bottom);
 
-            return Some(KeyTouch::new(key, rect));
+            return Some(KeyTouch::new(Key::Keyboard(key), rect));
         }
 
         None
     }
 
-    pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
+    pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
         let scroll_amount = match prev_y {
             Some(prev_y) => new_y as i32 - prev_y as i32,
             None => 0,
