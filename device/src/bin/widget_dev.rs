@@ -16,7 +16,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_device::{
-    graphics::widgets::EnterShareScreen,
+    graphics::widgets::EnterBip39ShareScreen,
     touch_calibration::adjust_touch_point,
     Instant,
 };
@@ -80,9 +80,9 @@ fn main() -> ! {
     // Turn on backlight
     bl.set_high();
 
-    // Initialize the EnterShareScreen widget
+    // Initialize the EnterBip39ShareScreen widget
     let screen_size = Size::new(240, 280);
-    let mut enter_share_screen = EnterShareScreen::new(screen_size, 1); // Share index 1
+    let mut enter_share_screen = EnterBip39ShareScreen::new(screen_size, 1); // Share index 1
     
     let mut last_touch = None;
 

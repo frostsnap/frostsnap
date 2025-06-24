@@ -16,6 +16,8 @@ mod enter_share_screen;
 pub use enter_share_screen::*;
 mod alphabetic_keyboard;
 pub use alphabetic_keyboard::*;
+mod enter_bip39_share_screen;
+pub use enter_bip39_share_screen::*;
 
 mod icons;
 

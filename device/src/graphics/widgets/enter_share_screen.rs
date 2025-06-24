@@ -1,13 +1,13 @@
 use crate::graphics::palette::COLORS;
 
-use super::{Bech32InputPreview, AlphabeticKeyboard, KeyTouch};
+use super::{Bech32InputPreview, Bech32Keyboard, KeyTouch};
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_core::schnorr_fun::frost::SecretShare;
 
 #[derive(Debug)]
 pub struct EnterShareScreen {
-    alphabetic_keyboard: AlphabeticKeyboard,
+    bech32_keyboard: Bech32Keyboard,
     backup_input_preview: Bech32InputPreview,
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
@@ -26,10 +26,10 @@ impl EnterShareScreen {
             Rectangle::new(Point::zero(), Size::new(area.width, preview_height as u32));
         let backup_input_preview = Bech32InputPreview::new(input_display_rect.size, 15 * 4 - 2);
 
-        let alphabetic_keyboard = AlphabeticKeyboard::new(keyboard_rect.size.height);
+        let bech32_keyboard = Bech32Keyboard::new(keyboard_rect.size.height);
 
         Self {
-            alphabetic_keyboard,
+            bech32_keyboard,
             backup_input_preview,
             touches: vec![],
             keyboard_rect,
@@ -43,7 +43,7 @@ impl EnterShareScreen {
         target: &mut D,
         current_time: crate::Instant,
     ) {
-        self.alphabetic_keyboard
+        self.bech32_keyboard
             .draw(&mut target.cropped(&self.keyboard_rect));
         self.backup_input_preview
             .draw(&mut target.cropped(&self.input_display_rect), current_time);
@@ -83,7 +83,7 @@ impl EnterShareScreen {
         } else {
             let key_touch = if self.keyboard_rect.contains(point) {
                 let translated_point = point - self.keyboard_rect.top_left;
-                self.alphabetic_keyboard
+                self.bech32_keyboard
                     .handle_touch(translated_point)
                     .map(|mut key_touch| {
                         key_touch.translate(self.keyboard_rect.top_left);
@@ -131,7 +131,7 @@ impl EnterShareScreen {
         if let Some(active_touch) = self.touches.last_mut() {
             active_touch.cancel()
         }
-        self.alphabetic_keyboard.handle_vertical_drag(prev_y, new_y);
+        self.bech32_keyboard.handle_vertical_drag(prev_y, new_y);
     }
 }
 
