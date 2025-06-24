@@ -14,6 +14,8 @@ mod share_index_input;
 pub use share_index_input::*;
 mod enter_share_screen;
 pub use enter_share_screen::*;
+mod alphabetic_keyboard;
+pub use alphabetic_keyboard::*;
 
 mod icons;
 
