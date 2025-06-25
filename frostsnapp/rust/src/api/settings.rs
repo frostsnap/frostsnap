@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::bitcoin::chain_sync::{
@@ -10,6 +11,7 @@ use frostsnap_coordinator::settings::Settings as RSettings;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use crate::frb_generated::StreamSink;
 use crate::sink_wrap::SinkWrap;
@@ -63,17 +65,23 @@ impl Settings {
 
         for network in SUPPORTED_NETWORKS {
             let electrum_url = persisted.get_electrum_server(network);
-            let (chain_api, conn_handler) = ChainClient::new();
+            let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
+            let (chain_api, conn_handler) = ChainClient::new(genesis_hash);
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
             // FIXME: the dependency relationship here is overly convoluted.
-            conn_handler.run(electrum_url, super_wallet.inner.clone(), {
-                let wallet_streams = super_wallet.wallet_streams.clone();
-                move |master_appkey, txs| {
-                    let wallet_streams = wallet_streams.lock().unwrap();
-                    if let Some(stream) = wallet_streams.get(&master_appkey) {
-                        stream.add(txs.into()).unwrap();
-                    }
+            thread::spawn({
+                let super_wallet = super_wallet.clone();
+                move || {
+                    conn_handler.run(electrum_url, super_wallet.inner.clone(), {
+                        let wallet_streams = super_wallet.wallet_streams.clone();
+                        move |master_appkey, txs| {
+                            let wallet_streams = wallet_streams.lock().unwrap();
+                            if let Some(stream) = wallet_streams.get(&master_appkey) {
+                                stream.add(txs.into()).unwrap();
+                            }
+                        }
+                    })
                 }
             });
             loaded_wallets.insert(network, super_wallet);
