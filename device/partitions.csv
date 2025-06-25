@@ -4,7 +4,8 @@ otadata,  data, ota,        0xd000,   0x2000
 factory,  app,  factory,   0x10000, 0x140000
 ota_0,    app,  ota_0,    0x150000, 0x140000
 ota_1,    app,  ota_1,    0x290000, 0x140000
-nvs,      data, nvs,      0x3D0000,  0x30000
+nvs,      data, nvs,      0x3D0000,  0x2E000
+factory_data, data, nvs, 0x3FE000, 0x2000
 
 # Notes:
 # - The partition table is at 0x8000..0x9000 which I think is why things start after that.

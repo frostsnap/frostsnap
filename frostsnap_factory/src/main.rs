@@ -2,8 +2,8 @@ use aes::cipher::BlockEncryptMut as _;
 use clap::Parser;
 use core::fmt;
 use frostsnap_comms::factory::{
-    pad_message_for_rsa, DeviceFactorySend, Esp32DsKey, FactoryDownstream, FactorySend,
-    GenuineCheckKey, DS_KEY_SIZE_BITS, FACTORY_SEND_TEST_KEY,
+    pad_message_for_rsa, Certificate, DeviceFactorySend, Esp32DsKey, FactoryDownstream,
+    FactorySend, DS_KEY_SIZE_BITS, FACTORY_SEND_TEST_KEY,
 };
 use frostsnap_comms::{ReceiveSerial, MAGIC_BYTES_PERIOD};
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
@@ -16,12 +16,16 @@ use num_bigint_dig as num_bigint;
 use num_traits::identities::{One, Zero};
 use num_traits::ToPrimitive;
 use rand::{CryptoRng, RngCore};
+use rsa::pkcs1::EncodeRsaPublicKey;
 use rsa::traits::PublicKeyParts as _;
 use rsa::{pkcs8::DecodePrivateKey, traits::PrivateKeyParts as _, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::error::Error;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::*;
+
+pub mod serial_number;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -47,10 +51,8 @@ const FACTORY_KEY: [u8; 32] = [
 ];
 
 fn main() -> ! {
-    // Initialize the subscriber with pretty formatting.
-    tracing_subscriber::fmt()
-        .pretty() // Enables pretty formatting
-        .init();
+    tracing_subscriber::fmt().pretty().init();
+
     // let args = Args::parse();
 
     let serial = DesktopSerial::default();
@@ -90,7 +92,7 @@ fn main() -> ! {
 
         for (port_id, connection) in connection_state.iter_mut() {
             info_span!("polling port", port = port_id.to_string()).in_scope(|| {
-                match connection.state {
+                match &connection.state {
                     ConnectionState::WaitingForMagic { last_wrote } => {
                         match connection.port.read_for_magic_bytes() {
                             Ok(supported_features) => match supported_features {
@@ -139,6 +141,8 @@ fn main() -> ! {
                                 generate_ds_key(&mut rng)
                             };
 
+                            let rsa_pub_key = rsa_priv_key.to_public_key();
+
                             let esp32_ds_key = esp32_ds_key_from_keys(&rsa_priv_key, hmac_key);
                             rsa_key_lookup.insert(hmac_key, rsa_priv_key.to_public_key());
 
@@ -149,30 +153,33 @@ fn main() -> ! {
                                 )))
                                 .unwrap();
 
-                            connection.state = ConnectionState::SettingDsKey;
+                            connection.state = ConnectionState::SettingDsKey { rsa_pub_key };
                         }
                     }
-                    ConnectionState::SettingDsKey => {
+                    ConnectionState::SettingDsKey { rsa_pub_key } => {
                         if let Some(ReceiveSerial::Message(DeviceFactorySend::SetDs {
                             signature,
-                            hmac_key,
                         })) = connection.port.try_read_message().unwrap()
                         {
-                            let pub_key = rsa_key_lookup.get(&hmac_key).expect("we just sent it!");
-
                             // same challenge as before..
                             let challenge = hex::decode(DS_CHALLENGE).unwrap();
                             let message_digest: [u8; 32] = sha2::Sha256::digest(challenge).into();
 
                             let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
-                            let _ = pub_key
+                            let _ = rsa_pub_key
                                 .verify(padding, &message_digest, &signature)
                                 .expect("Signature from device failed to verify!");
 
                             println!("Device RSA signature verifcation succeeded!");
 
                             // create genuine certificate
-                            let genuine_certificate = generate_genuine_key(&mut rng);
+                            let serial_number = serial_number::get_next_serial_number()
+                                .expect("serial number file should exist!");
+                            let genuine_certificate = generate_genuine_certificate(
+                                &rsa_pub_key,
+                                serial_number,
+                                "BLACK".to_string(),
+                            );
                             connection
                                 .port
                                 .raw_send(ReceiveSerial::Message(
@@ -293,25 +300,40 @@ fn generate_ds_key(rng: &mut (impl RngCore + CryptoRng)) -> (RsaPrivateKey, [u8;
     (priv_key, hmac_key)
 }
 
-fn generate_genuine_key(rng: &mut impl RngCore) -> GenuineCheckKey {
-    let mut genuine_key = [0u8; 32];
-    rng.fill_bytes(&mut genuine_key);
-
+fn generate_genuine_certificate(
+    rsa_public_key: &RsaPublicKey,
+    serial_number: u32,
+    case_color: String,
+) -> Certificate {
     let certificate = {
+        let pem_bytes = rsa_public_key.to_pkcs1_der().unwrap().to_vec();
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+
         let factory_secret = Scalar::<Secret, NonZero>::from_bytes(FACTORY_KEY).unwrap();
         let factory_keypair = KeyPair::new_xonly(factory_secret);
         let schnorr = frostsnap_core::schnorr_fun::new_with_synthetic_nonces::<
             sha2::Sha256,
             rand::rngs::ThreadRng,
         >();
-        let message = Message::<Public>::plain("frostsnap-genuine-key", &genuine_key);
-        schnorr.sign(&factory_keypair, message)
+
+        let message = Message::<Public>::plain("frostsnap-genuine-key", &pem_bytes);
+        let signature = schnorr.sign(&factory_keypair, message);
+
+        Certificate {
+            rsa_key: pem_bytes,
+            serial_number,
+            timestamp,
+            case_color,
+            signature,
+            factory_key: factory_keypair.public_key(),
+        }
     };
 
-    GenuineCheckKey {
-        genuine_key,
-        certificate,
-    }
+    certificate
 }
 
 struct Connection {
@@ -324,7 +346,9 @@ enum ConnectionState {
     },
     Connected,
     InitEntropy,
-    SettingDsKey,
+    SettingDsKey {
+        rsa_pub_key: RsaPublicKey,
+    },
     SavingGenuineCertificate,
 }
 
