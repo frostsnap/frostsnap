@@ -4,7 +4,9 @@ pub use bitcoin::{
     Txid,
 };
 use flutter_rust_bridge::frb; // or, for example, easy_ext's;
-use frostsnap_coordinator::bitcoin::chain_sync::{default_electrum_server, SUPPORTED_NETWORKS};
+use frostsnap_coordinator::bitcoin::chain_sync::{
+    default_backup_electrum_server, default_electrum_server, SUPPORTED_NETWORKS,
+};
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
 use frostsnap_core::message::EncodedSignature;
@@ -56,6 +58,9 @@ pub trait BitcoinNetworkExt {
     #[frb(sync)]
     fn default_electrum_server(&self) -> String;
 
+    #[frb(sync)]
+    fn default_backup_electrum_server(&self) -> String;
+
     #[frb(ignore)]
     fn bdk_file(&self, app_dir: impl AsRef<Path>) -> PathBuf;
 
@@ -106,6 +111,11 @@ impl BitcoinNetworkExt for BitcoinNetwork {
     #[frb(sync)]
     fn default_electrum_server(&self) -> String {
         default_electrum_server(*self).to_string()
+    }
+
+    #[frb(sync)]
+    fn default_backup_electrum_server(&self) -> String {
+        default_backup_electrum_server(*self).to_string()
     }
 
     #[frb(ignore)]

@@ -31,14 +31,34 @@ class ElectrumServerSettingsPage extends StatelessWidget {
           final developerMode = snap.data?.developerMode ?? false;
           return ListView(
             children: servers.map((record) {
-              final (network, url) = record;
+              final network = record.network;
+              final url = record.url;
+              final backupUrl = record.backupUrl;
               return Column(
                 children: [
                   if (network.isMainnet() || developerMode) ...[
                     SizedBox(height: 10),
-                    ElectrumServerSettingWidget(
-                      network: network,
-                      initialUrl: url,
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8.0,
+                          horizontal: 12.0,
+                        ),
+                        child: Column(
+                          children: [
+                            ElectrumServerSettingWidget(
+                              network: network,
+                              initialUrl: url,
+                              isBackup: false,
+                            ),
+                            ElectrumServerSettingWidget(
+                              network: network,
+                              initialUrl: backupUrl,
+                              isBackup: true,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ],
@@ -54,11 +74,13 @@ class ElectrumServerSettingsPage extends StatelessWidget {
 class ElectrumServerSettingWidget extends StatefulWidget {
   final BitcoinNetwork network;
   final String initialUrl;
+  final bool isBackup;
 
   const ElectrumServerSettingWidget({
     super.key,
     required this.network,
     required this.initialUrl,
+    required this.isBackup,
   });
 
   @override
@@ -79,6 +101,12 @@ class _ElectrumServerSettingWidgetState
     _controller = TextEditingController(text: _originalUrl);
   }
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   Future<void> _confirmServerUrl() async {
     setState(() {
       _isTestingConnection = true;
@@ -90,6 +118,7 @@ class _ElectrumServerSettingWidgetState
       await settingsCtx.settings.checkAndSetElectrumServer(
         network: widget.network,
         url: _controller.text,
+        isBackup: widget.isBackup,
       );
     } catch (e) {
       error = e.toString();
@@ -118,15 +147,17 @@ class _ElectrumServerSettingWidgetState
   }
 
   void _resetToOriginal() {
-    setState(() {
-      _controller.text = _originalUrl;
-    });
+    setState(() => _controller.text = _originalUrl);
   }
 
   void _restoreDefault() {
-    setState(() {
-      _controller.text = widget.network.defaultElectrumServer();
-    });
+    if (widget.isBackup) {
+      var defaultBackupServer = widget.network.defaultBackupElectrumServer();
+      setState(() => _controller.text = defaultBackupServer);
+    } else {
+      var defaultElectrumServer = widget.network.defaultElectrumServer();
+      setState(() => _controller.text = defaultElectrumServer);
+    }
   }
 
   @override
@@ -137,7 +168,9 @@ class _ElectrumServerSettingWidgetState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.network.name(),
+              widget.isBackup
+                  ? '${widget.network.name()} (backup)'
+                  : widget.network.name(),
               style: Theme.of(context).textTheme.titleMedium,
             ),
             SizedBox(height: 8),
@@ -155,16 +188,16 @@ class _ElectrumServerSettingWidgetState
             ),
             SizedBox(height: 8),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.end,
+              spacing: 8,
               children: [
-                ElevatedButton(
-                  onPressed: _isTestingConnection ? null : _confirmServerUrl,
-                  child: Text("Connect & Save"),
-                ),
-                SizedBox(width: 8),
-                ElevatedButton(
+                TextButton(
                   onPressed: _isTestingConnection ? null : _restoreDefault,
                   child: Text("Restore Default"),
+                ),
+                FilledButton(
+                  onPressed: _isTestingConnection ? null : _confirmServerUrl,
+                  child: Text("Connect & Save"),
                 ),
               ],
             ),
