@@ -4,7 +4,7 @@ use embedded_storage::nor_flash::NorFlash;
 use crate::FlashPartition;
 const WORD_SIZE: u32 = core::mem::size_of::<u32>() as u32;
 // so we get some buffer exhaustion while writing if we're testing
-const WRITE_BUF_SIZE: usize = if cfg!(debug_assertions) { 512 } else { 32 };
+pub const WRITE_BUF_SIZE: usize = if cfg!(debug_assertions) { 512 } else { 32 };
 
 pub struct NorFlashLog<'a, S> {
     flash: FlashPartition<'a, S>,

@@ -1,9 +1,15 @@
 use crate::{Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN};
 use alloc::{string::String, vec::Vec};
-use frostsnap_core::{schnorr_fun::Signature, Gist};
+use frostsnap_core::{
+    schnorr_fun::{
+        fun::{marker::EvenY, Point},
+        Signature,
+    },
+    Gist,
+};
 
 pub const DS_KEY_SIZE_BITS: usize = 3072;
-pub const DS_KEY_SIZE_BYTES: usize = 384;
+pub const DS_KEY_SIZE_BYTES: usize = DS_KEY_SIZE_BITS / 8;
 
 pub const DEVICE_SHOW_TEST_VECTOR: bool = false;
 pub const FACTORY_SEND_TEST_KEY: bool = true;
@@ -53,10 +59,7 @@ pub struct FactoryDownstream;
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum DeviceFactorySend {
     InitEntropyOk,
-    SetDs {
-        signature: [u8; 384],
-        hmac_key: [u8; 32], // send this back so the coordinator can lookup the RSA public key
-    },
+    SetDs { signature: [u8; 384] },
     SavedGenuineCertificate,
 }
 
@@ -64,7 +67,7 @@ pub enum DeviceFactorySend {
 pub enum FactorySend {
     InitEntropy([u8; 32]),
     SetEsp32DsKey(Esp32DsKey),
-    SetGenuineCertificate(GenuineCheckKey),
+    SetGenuineCertificate(Certificate),
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
@@ -75,14 +78,23 @@ pub struct Esp32DsKey {
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
-pub struct GenuineCheckKey {
-    pub genuine_key: [u8; 32],
-    pub certificate: Signature,
+pub struct Certificate {
+    pub rsa_key: Vec<u8>,
+    pub serial_number: u32,
+    pub timestamp: u64,
+    pub case_color: String,
+    pub signature: Signature,
+    pub factory_key: Point<EvenY>,
 }
 
 impl Gist for DeviceFactorySend {
     fn gist(&self) -> String {
-        todo!()
+        match self {
+            DeviceFactorySend::InitEntropyOk => "InitEntropyOk",
+            DeviceFactorySend::SetDs { .. } => "SetDs",
+            DeviceFactorySend::SavedGenuineCertificate => "SavedGenuineCertificate",
+        }
+        .into()
     }
 }
 
