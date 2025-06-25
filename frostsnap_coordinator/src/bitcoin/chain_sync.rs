@@ -336,6 +336,7 @@ impl ConnectionHandler {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn try_connect_and_run(
         genesis_hash: BlockHash,
         url: String,
@@ -354,19 +355,18 @@ impl ConnectionHandler {
             }
             conn_opt => {
                 for url in [url.as_str(), backup_url.as_str()] {
-                    status_sink.send(ChainStatus::new(&url, ChainStatusState::Connecting));
+                    status_sink.send(ChainStatus::new(url, ChainStatusState::Connecting));
                     tracing::info!("No existing connection. Connecting to {}.", url);
 
-                    match Conn::with_timeout(genesis_hash, &url, CONNECT_TIMEOUT).await {
+                    match Conn::with_timeout(genesis_hash, url, CONNECT_TIMEOUT).await {
                         Ok(conn) => {
-                            status_sink.send(ChainStatus::new(&url, ChainStatusState::Connected));
+                            status_sink.send(ChainStatus::new(url, ChainStatusState::Connected));
                             tracing::info!("Connection established with {}.", url);
                             *conn_opt = Some(conn);
                             break;
                         }
                         Err(err) => {
-                            status_sink
-                                .send(ChainStatus::new(&url, ChainStatusState::Disconnected));
+                            status_sink.send(ChainStatus::new(url, ChainStatusState::Disconnected));
                             tracing::error!(err = err.to_string(), url, "failed to connect",);
                         }
                     }
