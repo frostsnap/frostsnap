@@ -88,10 +88,7 @@ impl std::fmt::Display for Message {
 
 impl Message {
     pub fn is_status_sink(&self) -> bool {
-        match self {
-            Message::SetStatusSink(_) => true,
-            _ => false,
-        }
+        matches!(self, Message::SetStatusSink(_))
     }
 }
 
