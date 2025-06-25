@@ -18,6 +18,8 @@ mod alphabetic_keyboard;
 pub use alphabetic_keyboard::*;
 mod enter_bip39_share_screen;
 pub use enter_bip39_share_screen::*;
+mod bip39_input_preview;
+pub use bip39_input_preview::*;
 
 mod icons;
 

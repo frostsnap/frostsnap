@@ -1,17 +1,17 @@
-use crate::graphics::palette::COLORS;
-
-use super::{AlphabeticKeyboard, KeyTouch};
-use alloc::{string::String, vec::Vec};
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
+use super::{AlphabeticKeyboard, Bip39InputPreview, KeyTouch};
+use alloc::{vec::Vec, string::String};
+use embedded_graphics::{
+    pixelcolor::Rgb565, 
+    prelude::*, 
+    primitives::Rectangle,
+};
 
 #[derive(Debug)]
 pub struct EnterBip39ShareScreen {
     alphabetic_keyboard: AlphabeticKeyboard,
-    words: Vec<String>,
-    current_word: String,
+    bip39_input: Bip39InputPreview,
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
-    input_display_rect: Rectangle,
     share_index: u16,
 }
 
@@ -26,14 +26,13 @@ impl EnterBip39ShareScreen {
             Rectangle::new(Point::zero(), Size::new(area.width, preview_height as u32));
 
         let alphabetic_keyboard = AlphabeticKeyboard::new();
+        let bip39_input = Bip39InputPreview::new(input_display_rect);
 
         Self {
             alphabetic_keyboard,
-            words: Vec::new(),
-            current_word: String::new(),
+            bip39_input,
             touches: vec![],
             keyboard_rect,
-            input_display_rect,
             share_index,
         }
     }
@@ -43,12 +42,15 @@ impl EnterBip39ShareScreen {
         target: &mut D,
         current_time: crate::Instant,
     ) {
+        // Draw keyboard
         self.alphabetic_keyboard
             .draw(&mut target.cropped(&self.keyboard_rect));
         
-        // TODO: Draw word input preview
-        // TODO: Draw current word and suggestions
+        // Draw BIP39 input preview
+        let input_display_rect = Rectangle::new(Point::zero(), Size::new(target.bounding_box().size.width, 60));
+        self.bip39_input.draw(&mut target.cropped(&input_display_rect), current_time);
         
+        // Draw touches
         self.touches.retain_mut(|touch| {
             touch.draw(target, current_time);
             !touch.is_finished()
@@ -57,30 +59,41 @@ impl EnterBip39ShareScreen {
 
     pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
         if lift_up {
+            // First check if we're tapping the input area to accept autocomplete
+            if self.bip39_input.contains(point) && self.bip39_input.has_current_word() {
+                // Cancel any active touch before accepting
+                if let Some(active_touch) = self.touches.last_mut() {
+                    active_touch.cancel();
+                }
+                self.bip39_input.try_accept_autocomplete();
+                return;
+            }
+            
+            // Otherwise process normal key release
             if let Some(active_touch) = self.touches.last_mut() {
                 if let Some(key) = active_touch.let_go(current_time) {
                     match key {
                         ' ' => {
-                            // Space - finish current word
-                            if !self.current_word.is_empty() {
-                                self.words.push(self.current_word.clone());
-                                self.current_word.clear();
-                            }
+                            // Space - accepts autocomplete if available
+                            self.bip39_input.accept_word();
                         }
-                        '<' => {
+                        '⌫' => {
                             // Backspace
-                            self.current_word.pop();
+                            self.bip39_input.backspace();
                         }
                         c if c.is_alphabetic() => {
                             // Add letter to current word
-                            self.current_word.push(c.to_lowercase().next().unwrap_or(c));
+                            self.bip39_input.push_letter(c);
                         }
                         _ => {} // Ignore other characters
                     }
                 }
             }
         } else {
-            let key_touch = if self.keyboard_rect.contains(point) {
+            // Check backspace button in input preview
+            let key_touch = if let Some(key_touch) = self.bip39_input.handle_touch(point) {
+                Some(key_touch)
+            } else if self.keyboard_rect.contains(point) {
                 let translated_point = point - self.keyboard_rect.top_left;
                 self.alphabetic_keyboard
                     .handle_touch(translated_point)
@@ -106,12 +119,11 @@ impl EnterBip39ShareScreen {
     }
 
     pub fn is_finished(&self) -> bool {
-        // BIP39 mnemonics can be 12, 15, 18, 21, or 24 words
-        [12, 15, 18, 21, 24].contains(&self.words.len())
+        self.bip39_input.is_finished()
     }
 
     pub fn get_mnemonic(&self) -> String {
-        self.words.join(" ")
+        self.bip39_input.get_mnemonic()
     }
 
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
@@ -120,5 +132,9 @@ impl EnterBip39ShareScreen {
             active_touch.cancel()
         }
         self.alphabetic_keyboard.handle_vertical_drag(prev_y, new_y);
+    }
+    
+    pub fn needs_redraw(&self) -> bool {
+        !self.touches.is_empty()
     }
 }
