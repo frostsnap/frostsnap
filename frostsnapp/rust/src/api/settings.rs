@@ -2,13 +2,11 @@ use anyhow::{anyhow, Result};
 use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
-use frostsnap_coordinator::bitcoin::chain_sync::{
-    default_electrum_server, ChainClient, SUPPORTED_NETWORKS,
-};
+use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, SUPPORTED_NETWORKS};
 pub use frostsnap_coordinator::bitcoin::chain_sync::{ChainStatus, ChainStatusState};
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::settings::Settings as RSettings;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
