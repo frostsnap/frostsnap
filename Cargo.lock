@@ -1180,7 +1180,7 @@ version = "0.1.0"
 source = "git+https://github.com/frostsnap/esp-hal?branch=ds#6ecaa2eb75d4d97de877c18d13bfd07d251da971"
 dependencies = [
  "quote",
- "syn 2.0.96",
+ "syn 2.0.104",
  "termcolor",
 ]
 
