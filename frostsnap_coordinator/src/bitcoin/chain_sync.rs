@@ -534,9 +534,9 @@ where
     use client::RawNotificationOrResponse;
     use futures::io::BufReader;
 
-    let features_id = rand::random::<u32>();
-    let features_req = client::RawRequest::from_request(features_id, request::Features);
-    client::io::tokio_write(&mut wh, features_req).await?;
+    let req_id = rand::random::<u32>();
+    let req = client::RawRequest::from_request(req_id, request::Header { height: 0 });
+    client::io::tokio_write(&mut wh, req).await?;
 
     let mut read_stream = client::io::ReadStreamer::new(BufReader::new(rh.compat()));
     let raw_incoming = read_stream
@@ -551,11 +551,11 @@ where
         RawNotificationOrResponse::Response(raw_resp) => raw_resp,
     };
 
-    if raw_resp.id != features_id {
+    if raw_resp.id != req_id {
         return Err(anyhow!(
             "Response id {} does not match request id {}",
             raw_resp.id,
-            features_id
+            req_id
         ));
     }
 
@@ -563,10 +563,9 @@ where
         .result
         .map_err(|err| anyhow!("Server responded with error: {err}"))?;
 
-    let features: <request::Features as Request>::Response =
-        client::serde_json::from_value(raw_val)?;
+    let resp: <request::Header as Request>::Response = client::serde_json::from_value(raw_val)?;
 
-    if genesis_hash != features.genesis_hash {
+    if genesis_hash != resp.header.block_hash() {
         return Err(anyhow!("Electrum server is on a different network"));
     }
 
