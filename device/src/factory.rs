@@ -1,7 +1,8 @@
 use crate::ds::{ds_words_to_bytes, sign_like_test_vectors, standard_rsa_sign};
 use crate::factory::DEVICE_SHOW_TEST_VECTOR;
-use crate::flash::{Blob, FlashBlob};
+use crate::flash::FactoryData;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 use cst816s::CST816S;
 use embedded_graphics::{
     mono_font::{ascii::*, MonoTextStyle},
@@ -14,6 +15,7 @@ use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, 
 use esp_hal::{hmac::Hmac, peripherals::DS, timer, usb_serial_jtag::UsbSerialJtag, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
+use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::SeedableRng;
 
 // mod screen_test;
@@ -116,33 +118,39 @@ where
     }
 
     let _ = efuse.set_efuse_key(RSA_EFUSE_KEY_SLOT, KeyPurpose::Ds, true, hmac_key);
-    let signature = standard_rsa_sign(ds, encrypted_params, &challenge);
+    let signature = standard_rsa_sign(ds, encrypted_params.clone(), &challenge);
 
     let signature = ds_words_to_bytes(&signature);
     upstream
-        .send(DeviceFactorySend::SetDs {
-            signature,
-            hmac_key,
-        })
+        .send(DeviceFactorySend::SetDs { signature })
         .unwrap();
     text_display!(display, "Set DS and signed");
 
-    let GenuineCheckKey {
-        genuine_key,
-        certificate,
-    } = read_message!(upstream, FactorySend::SetGenuineCertificate);
+    let certificate = read_message!(upstream, FactorySend::SetGenuineCertificate);
 
-    // let blob = Blob::new(encrypted_params, hmac_key, genuine_key, certificate);
-    // let flash = RefCell::new(FlashStorage::new());
-    // let mut partitions = crate::partitions::Partitions::load(&flash);
-    // let mut flash_blob = FlashBlob::new(partitions.blob);
-    // flash_blob.write_blob(&blob);
+    let factory_data = FactoryData::new(encrypted_params, certificate);
+
+    let flash = RefCell::new(FlashStorage::new());
+    let mut partitions = crate::partitions::Partitions::load(&flash);
+    let _ = partitions
+        .factory_data
+        .erase_and_write_this::<{ frostsnap_embedded::WRITE_BUF_SIZE }>(factory_data)
+        .unwrap();
+
+    {
+        // double check it was written successfully
+        let _read_factory_data = bincode::decode_from_reader::<FactoryData, _, _>(
+            partitions.factory_data.bincode_reader(),
+            ABWRITE_BINCODE_CONFIG,
+        )
+        .expect("we should have been able to read the factory data back out!");
+    }
 
     upstream
         .send(DeviceFactorySend::SavedGenuineCertificate)
         .unwrap();
 
-    text_display!(display, "Pretended to save blob");
+    text_display!(display, "Saved encrypted params and certificate!");
 
     // Burn EFUSES
 
@@ -154,7 +162,7 @@ where
             .expect("error during hmac efuse init");
     let final_rng = hmac_keys.fixed_entropy.mix_in_rng(&mut rng);
 
-    (rng, hmac_keys)
+    (final_rng, hmac_keys)
 }
 
 pub fn extract_entropy(
