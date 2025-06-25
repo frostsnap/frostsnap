@@ -1,6 +1,6 @@
 use crate::FlashPartition;
 use embedded_storage::nor_flash::NorFlash;
-const ABWRITE_BINCODE_CONFIG: bincode::config::Configuration<
+pub const ABWRITE_BINCODE_CONFIG: bincode::config::Configuration<
     bincode::config::LittleEndian,
     bincode::config::Fixint,
     bincode::config::NoLimit,
