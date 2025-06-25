@@ -65,6 +65,8 @@ impl Settings {
 
         for network in SUPPORTED_NETWORKS {
             let electrum_url = persisted.get_electrum_server(network);
+            let backup_electrum_url = persisted.get_backup_electrum_server(network);
+
             let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
             let (chain_api, conn_handler) = ChainClient::new(genesis_hash);
             let super_wallet =
@@ -73,15 +75,20 @@ impl Settings {
             thread::spawn({
                 let super_wallet = super_wallet.clone();
                 move || {
-                    conn_handler.run(electrum_url, super_wallet.inner.clone(), {
-                        let wallet_streams = super_wallet.wallet_streams.clone();
-                        move |master_appkey, txs| {
-                            let wallet_streams = wallet_streams.lock().unwrap();
-                            if let Some(stream) = wallet_streams.get(&master_appkey) {
-                                stream.add(txs.into()).unwrap();
+                    conn_handler.run(
+                        electrum_url,
+                        backup_electrum_url,
+                        super_wallet.inner.clone(),
+                        {
+                            let wallet_streams = super_wallet.wallet_streams.clone();
+                            move |master_appkey, txs| {
+                                let wallet_streams = wallet_streams.lock().unwrap();
+                                if let Some(stream) = wallet_streams.get(&master_appkey) {
+                                    stream.add(txs.into()).unwrap();
+                                }
                             }
-                        }
-                    })
+                        },
+                    )
                 }
             });
             loaded_wallets.insert(network, super_wallet);
@@ -142,12 +149,13 @@ impl Settings {
         &mut self,
         network: BitcoinNetwork,
         url: String,
+        is_backup: bool,
     ) -> Result<()> {
         let chain_api = self
             .chain_clients
             .get(&network)
             .ok_or_else(|| anyhow!("network not supported {}", network))?;
-        chain_api.check_and_set_electrum_server_url(url.clone())?;
+        chain_api.check_and_set_electrum_server_url(url.clone(), is_backup)?;
         let mut db = self.db.lock().unwrap();
         self.settings.mutate2(&mut *db, |settings, update| {
             settings.set_electrum_server(network, url, update);
@@ -185,20 +193,31 @@ impl DeveloperSettings {
     }
 }
 
+pub struct ElectrumServer {
+    pub network: BitcoinNetwork,
+    pub url: String,
+    pub backup_url: String,
+}
+
 pub struct ElectrumSettings {
-    pub electrum_servers: Vec<(BitcoinNetwork, String)>,
+    pub electrum_servers: Vec<ElectrumServer>,
 }
 
 impl ElectrumSettings {
     fn from_settings(settings: &RSettings) -> Self {
-        let servers_with_defaults_overridden = SUPPORTED_NETWORKS
+        let electrum_servers = SUPPORTED_NETWORKS
             .into_iter()
-            .map(|network| (network, default_electrum_server(network).to_string()))
-            .chain(settings.electrum_servers.clone())
-            .collect::<BTreeMap<_, _>>();
-        ElectrumSettings {
-            electrum_servers: servers_with_defaults_overridden.into_iter().collect(),
-        }
+            .map(|network| {
+                let url = settings.get_electrum_server(network);
+                let backup_url = settings.get_backup_electrum_server(network);
+                ElectrumServer {
+                    network,
+                    url,
+                    backup_url,
+                }
+            })
+            .collect::<Vec<_>>();
+        ElectrumSettings { electrum_servers }
     }
 }
 
