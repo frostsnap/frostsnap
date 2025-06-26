@@ -6,7 +6,7 @@ import 'serialport.dart';
 
 late Coordinator coord;
 late Api api;
-late HostPortHandler globalHostPortHandler;
+late HostPortHandler? globalHostPortHandler;
 
 class GlobalStreams {
   /// Gets new updates from the device list
