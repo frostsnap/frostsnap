@@ -1,10 +1,6 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, KeyTouch};
-use alloc::{vec::Vec, string::String};
-use embedded_graphics::{
-    pixelcolor::Rgb565, 
-    prelude::*, 
-    primitives::Rectangle,
-};
+use alloc::{string::String, vec::Vec};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
 #[derive(Debug)]
 pub struct EnterBip39ShareScreen {
@@ -45,11 +41,15 @@ impl EnterBip39ShareScreen {
         // Draw keyboard
         self.alphabetic_keyboard
             .draw(&mut target.cropped(&self.keyboard_rect));
-        
+
         // Draw BIP39 input preview
-        let input_display_rect = Rectangle::new(Point::zero(), Size::new(target.bounding_box().size.width, 60));
-        self.bip39_input.draw(&mut target.cropped(&input_display_rect), current_time);
-        
+        let input_display_rect = Rectangle::new(
+            Point::zero(),
+            Size::new(target.bounding_box().size.width, 60),
+        );
+        self.bip39_input
+            .draw(&mut target.cropped(&input_display_rect), current_time);
+
         // Draw touches
         self.touches.retain_mut(|touch| {
             touch.draw(target, current_time);
@@ -68,7 +68,7 @@ impl EnterBip39ShareScreen {
                 self.bip39_input.try_accept_autocomplete();
                 return;
             }
-            
+
             // Otherwise process normal key release
             if let Some(active_touch) = self.touches.last_mut() {
                 if let Some(key) = active_touch.let_go(current_time) {
@@ -133,7 +133,7 @@ impl EnterBip39ShareScreen {
         }
         self.alphabetic_keyboard.handle_vertical_drag(prev_y, new_y);
     }
-    
+
     pub fn needs_redraw(&self) -> bool {
         !self.touches.is_empty()
     }

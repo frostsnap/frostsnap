@@ -12,13 +12,14 @@ use esp_hal::{
     i2c::master::{Config as i2cConfig, I2c},
     peripherals::Peripherals,
     prelude::*,
-    spi::{master::{Config as spiConfig, Spi}, SpiMode},
+    spi::{
+        master::{Config as spiConfig, Spi},
+        SpiMode,
+    },
     timer::timg::TimerGroup,
 };
 use frostsnap_device::{
-    graphics::widgets::EnterBip39ShareScreen,
-    touch_calibration::adjust_touch_point,
-    Instant,
+    graphics::widgets::EnterBip39ShareScreen, touch_calibration::adjust_touch_point, Instant,
 };
 use mipidsi::{models::ST7789, options::ColorInversion};
 
@@ -30,7 +31,7 @@ fn main() -> ! {
         config.cpu_clock = CpuClock::max();
         config
     });
-    
+
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer = timg0.timer0;
 
@@ -83,7 +84,7 @@ fn main() -> ! {
     // Initialize the EnterBip39ShareScreen widget
     let screen_size = Size::new(240, 280);
     let mut enter_share_screen = EnterBip39ShareScreen::new(screen_size, 1); // Share index 1
-    
+
     let mut last_touch = None;
 
     // Main loop
@@ -94,17 +95,18 @@ fn main() -> ! {
         // Check for touch events
         if let Some(touch_event) = capsense.read_one_touch_event(true) {
             // Apply touch calibration adjustments
-            let (adjusted_x, adjusted_y) = adjust_touch_point(touch_event.x as i32, touch_event.y as i32);
+            let (adjusted_x, adjusted_y) =
+                adjust_touch_point(touch_event.x as i32, touch_event.y as i32);
             let touch_point = Point::new(adjusted_x, adjusted_y);
             let lift_up = touch_event.action == 1;
             let gesture = touch_event.gesture;
-            
+
             // Store last touch for drag calculations
             let prev_touch = last_touch.take();
             if !lift_up {
                 last_touch = Some((touch_point, adjusted_y as u32));
             }
-            
+
             // Handle gestures
             match gesture {
                 TouchGesture::SlideUp | TouchGesture::SlideDown => {

@@ -1,7 +1,6 @@
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
-    geometry::AnchorY,
     iterator::raw::RawDataSlice,
     pixelcolor::{
         raw::{LittleEndian, RawU1},

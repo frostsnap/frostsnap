@@ -10,6 +10,7 @@ use ui::UserInteraction;
 #[macro_use]
 extern crate alloc;
 
+pub mod bip39_words;
 pub mod device_config;
 pub mod efuse;
 pub mod esp32_run;
@@ -22,7 +23,6 @@ pub mod panic;
 pub mod partitions;
 pub mod touch_calibration;
 pub mod ui;
-pub mod bip39_words;
 
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
