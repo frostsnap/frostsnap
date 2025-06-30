@@ -296,20 +296,40 @@ impl ConnectionHandler {
                         sink = new_sink;
                     }
 
-                    let conn_fut = Self::try_connect_and_run(
-                        self.genesis_hash,
-                        conn_stage.url.clone(),
-                        conn_stage.backup_url.clone(),
-                        &mut conn_opt,
-                        &mut state,
-                        &mut self.client_recv,
-                        &mut update_sender,
-                        &*sink,
-                    )
-                    .fuse();
-
                     {
+                        let conn_fut = Self::try_connect_and_run(
+                            self.genesis_hash,
+                            conn_stage.url.clone(),
+                            conn_stage.backup_url.clone(),
+                            &mut conn_opt,
+                            &mut state,
+                            &mut self.client_recv,
+                            &mut update_sender,
+                            &*sink,
+                        )
+                        .fuse();
+                        let ping_fut = async {
+                            loop {
+                                tokio::time::sleep(Duration::from_secs(5 * 60)).await;
+
+                                let req_fut = self.client.send_request(request::Ping).fuse();
+                                let req_timeout_fut = tokio::time::sleep(Duration::from_secs(10)).fuse();
+                                pin_mut!(req_fut);
+                                pin_mut!(req_timeout_fut);
+                                select! {
+                                    result = req_fut => {
+                                        result?;
+                                        tracing::info!("Received pong from server");
+                                    },
+                                    _ = req_timeout_fut => {
+                                        let err = anyhow!("Timeout waiting for pong");
+                                        return Result::<()>::Err(err);
+                                    },
+                                }
+                            }
+                        }.fuse();
                         pin_mut!(conn_fut);
+                        pin_mut!(ping_fut);
                         loop {
                             select! {
                                 _ = conn_fut => break,
@@ -319,7 +339,12 @@ impl ConnectionHandler {
                                         Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage, &self.client, true).await
                                     },
                                     None => return,
-                                }
+                                },
+                                result = ping_fut => {
+                                    if let Err(err) = result {
+                                        tracing::error!(error = err.to_string(), "Failed to keep connection alive");
+                                    }
+                                },
                             }
                         }
                     }
