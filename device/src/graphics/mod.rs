@@ -242,7 +242,7 @@ where
             .unwrap();
 
         TextBox::with_textbox_style(
-            &format!("{}/{}", used, free),
+            &format!("{used}/{free}"),
             Rectangle::new(point, size),
             MonoTextStyle::new(&ascii::FONT_7X14, COLORS.success),
             TextBoxStyleBuilder::new()

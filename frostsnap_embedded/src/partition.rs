@@ -201,7 +201,7 @@ impl<S: NorFlash> bincode::de::read::Reader for BincodeFlashReader<'_, S> {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), bincode::error::DecodeError> {
         // this only works because we're using the "bytewise-read" feature of esp-storage
         self.flash.read(self.pos, bytes).map_err(|e| {
-            bincode::error::DecodeError::OtherString(format!("Flash read error {:?}", e))
+            bincode::error::DecodeError::OtherString(format!("Flash read error {e:?}"))
         })?;
         self.pos += bytes.len() as u32;
         Ok(())
@@ -261,7 +261,7 @@ impl<S: NorFlash, const BUFFER_SIZE: usize> bincode::enc::write::Writer
             if self.buf_index == BUFFER_SIZE {
                 self.flash
                     .nor_write(self.word_pos * S::WRITE_SIZE as u32, &self.buf[..])
-                    .map_err(|e| bincode::error::EncodeError::OtherString(format!("{:?}", e)))?;
+                    .map_err(|e| bincode::error::EncodeError::OtherString(format!("{e:?}")))?;
                 self.buf_index = 0;
                 self.word_pos += (BUFFER_SIZE / S::WRITE_SIZE) as u32;
             }

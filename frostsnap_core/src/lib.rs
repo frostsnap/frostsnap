@@ -129,11 +129,10 @@ impl core::fmt::Display for Error {
         match self {
             Error::MessageKind { state, kind } => write!(
                 f,
-                "Unexpected message of kind {} for this state {}",
-                kind, state
+                "Unexpected message of kind {kind} for this state {state}",
             ),
             Error::InvalidMessage { kind, reason } => {
-                write!(f, "Invalid message of kind {}: {}", kind, reason)
+                write!(f, "Invalid message of kind {kind}: {reason}")
             }
         }
     }
@@ -142,8 +141,8 @@ impl core::fmt::Display for Error {
 impl Error {
     pub fn gist(&self) -> String {
         match self {
-            Error::MessageKind { state, kind } => format!("mk!{} {}", kind, state),
-            Error::InvalidMessage { kind, reason } => format!("im!{}: {}", kind, reason),
+            Error::MessageKind { state, kind } => format!("mk!{kind} {state}"),
+            Error::InvalidMessage { kind, reason } => format!("im!{kind}: {reason}"),
         }
     }
 }

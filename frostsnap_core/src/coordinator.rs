@@ -674,8 +674,7 @@ impl FrostCoordinator {
 
         if n_devices < *threshold as usize {
             panic!(
-                "caller needs to ensure that threshold < devices.len(). Tried {}-of-{}",
-                threshold, n_devices
+                "caller needs to ensure that threshold < devices.len(). Tried {threshold}-of-{n_devices}",
             );
         }
         let share_receivers_enckeys = device_to_share_index
@@ -1369,19 +1368,17 @@ impl fmt::Display for StartSignError {
             } => {
                 write!(
                     f,
-                    "Need more than {} signers for threshold {}",
-                    selected, threshold
+                    "Need more than {selected} signers for threshold {threshold}",
                 )
             }
             StartSignError::CantSignInState { in_state } => {
-                write!(f, "Can't sign in state {}", in_state)
+                write!(f, "Can't sign in state {in_state}")
             }
             StartSignError::NotEnoughNoncesForDevice(not_enough_nonces) => not_enough_nonces.fmt(f),
             StartSignError::DeviceNotPartOfKey { device_id } => {
                 write!(
                     f,
-                    "Don't know the share index for device that was part of sign request. ID: {}",
-                    device_id
+                    "Don't know the share index for device that was part of sign request. ID: {device_id}",
                 )
             }
             StartSignError::UnknownKey { key_id } => write!(

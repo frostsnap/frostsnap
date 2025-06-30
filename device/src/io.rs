@@ -189,7 +189,7 @@ where
 impl<T, D> Writer for SerialInterface<'_, T, D> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         match self.io.write_bytes(bytes) {
-            Err(e) => Err(EncodeError::OtherString(format!("{:?}", e))),
+            Err(e) => Err(EncodeError::OtherString(format!("{e:?}"))),
             Ok(()) => Ok(()),
         }
     }

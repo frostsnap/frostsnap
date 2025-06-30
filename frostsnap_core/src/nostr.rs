@@ -43,7 +43,7 @@ impl UnsignedEvent {
         let mut hash = Sha256::default();
         hash.update(serialized_event.to_string().as_bytes());
         let hash_result = hash.finalize();
-        let hash_result_str = format!("{:x}", hash_result);
+        let hash_result_str = format!("{hash_result:x}");
 
         Self {
             id: hash_result_str,

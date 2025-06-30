@@ -250,7 +250,7 @@ impl Gist for CoordinatorSendBody {
     fn gist(&self) -> String {
         match self {
             CoordinatorSendBody::Core(core) => core.gist(),
-            _ => format!("{:?}", self),
+            _ => format!("{self:?}"),
         }
     }
 }
@@ -401,7 +401,7 @@ pub enum CommsMisc {
 
 impl Gist for CommsMisc {
     fn gist(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 }
 
@@ -471,7 +471,7 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
-            _ => format!("{:?}", self),
+            _ => format!("{self:?}"),
         }
     }
 }

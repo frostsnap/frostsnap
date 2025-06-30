@@ -1048,8 +1048,7 @@ impl fmt::Display for RestorationError {
             ),
             RestorationError::ThresholdDoesntMatch { expected, got } => write!(
                 f,
-                "The threshold was entered wrongly or one of the shares is wrong. Expected a threshold of {}, got {}",
-                expected, got
+                "The threshold was entered wrongly or one of the shares is wrong. Expected a threshold of {expected}, got {got}",
             ),
         }
     }
