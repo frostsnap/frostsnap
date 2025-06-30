@@ -1,4 +1,5 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, KeyTouch};
+use crate::bip39_words;
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
@@ -24,13 +25,17 @@ impl EnterBip39ShareScreen {
         let alphabetic_keyboard = AlphabeticKeyboard::new();
         let bip39_input = Bip39InputPreview::new(input_display_rect);
 
-        Self {
+        let mut screen = Self {
             alphabetic_keyboard,
             bip39_input,
             touches: vec![],
             keyboard_rect,
             share_index,
-        }
+        };
+
+        // Initialize valid keys for empty input
+        screen.update_valid_keys();
+        screen
     }
 
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
@@ -65,7 +70,10 @@ impl EnterBip39ShareScreen {
                 if let Some(active_touch) = self.touches.last_mut() {
                     active_touch.cancel();
                 }
-                self.bip39_input.try_accept_autocomplete();
+
+                if self.bip39_input.try_accept_autocomplete() {
+                    self.update_valid_keys();
+                }
                 return;
             }
 
@@ -76,16 +84,15 @@ impl EnterBip39ShareScreen {
                         ' ' => {
                             // Space - accepts autocomplete if available
                             self.bip39_input.accept_word();
+                            self.update_valid_keys();
                         }
                         '⌫' => {
                             // Backspace
                             self.bip39_input.backspace();
+                            self.update_valid_keys();
                         }
                         c if c.is_alphabetic() => {
-                            // Only add letter if it would result in a valid word prefix
-                            if self.bip39_input.can_accept_letter(c) {
-                                self.bip39_input.push_letter(c);
-                            }
+                            self.push_letter_and_autocomplete(c);
                         }
                         _ => {} // Ignore other characters
                     }
@@ -108,22 +115,14 @@ impl EnterBip39ShareScreen {
             };
 
             if let Some(key_touch) = key_touch {
-                // Check if this key press would be valid before adding the touch
-                let should_add_touch = match key_touch.key {
-                    c if c.is_alphabetic() => self.bip39_input.can_accept_letter(c),
-                    _ => true, // Always allow non-alphabetic keys (space, backspace)
-                };
-                
-                if should_add_touch {
-                    if let Some(last) = self.touches.last_mut() {
-                        if last.key == key_touch.key {
-                            self.touches.pop();
-                        } else {
-                            last.cancel();
-                        }
+                if let Some(last) = self.touches.last_mut() {
+                    if last.key == key_touch.key {
+                        self.touches.pop();
+                    } else {
+                        last.cancel();
                     }
-                    self.touches.push(key_touch);
                 }
+                self.touches.push(key_touch);
             }
         }
     }
@@ -146,5 +145,27 @@ impl EnterBip39ShareScreen {
 
     pub fn needs_redraw(&self) -> bool {
         !self.touches.is_empty()
+    }
+
+    fn update_valid_keys(&mut self) {
+        let current_word = self.bip39_input.current_word();
+        let valid_letters = bip39_words::get_valid_next_letters(current_word);
+
+        self.alphabetic_keyboard.set_valid_keys(valid_letters);
+    }
+
+    fn push_letter_and_autocomplete(&mut self, letter: char) {
+        let word_completed = self.bip39_input.push_letter(letter);
+
+        if !word_completed {
+            let valid_letters =
+                bip39_words::get_valid_next_letters(self.bip39_input.current_word());
+            let valid_count = valid_letters.0.iter().filter(|&&v| v).count();
+            if valid_count == 1 {
+                self.bip39_input.try_accept_autocomplete();
+            }
+        }
+
+        self.update_valid_keys();
     }
 }

@@ -132,7 +132,7 @@ impl AutocompleteDisplay {
             )
             .draw(target)?;
         } else {
-            target.clear(COLORS.background);
+            let _ = target.clear(COLORS.background);
         }
         self.redraw = false;
         Ok(())
@@ -259,7 +259,7 @@ impl Bip39InputPreview {
         let _ = self.progress.draw(&mut target.cropped(&self.progress_rect));
     }
 
-    pub fn push_letter(&mut self, letter: char) {
+    pub fn push_letter(&mut self, letter: char) -> bool {
         // Add uppercase letter to framebuffer
         let upper_letter = letter.to_uppercase().next().unwrap_or(letter);
         self.framebuf.add_character(upper_letter);
@@ -271,6 +271,9 @@ impl Bip39InputPreview {
         if bip39_words::is_valid_bip39_word(current_word) {
             self.framebuf.mark_word_boundary();
             self.update_progress();
+            true // Word was completed
+        } else {
+            false // Word not yet complete
         }
     }
 
@@ -332,9 +335,13 @@ impl Bip39InputPreview {
         // Convert to uppercase since our word list is uppercase
         let upper_letter = letter.to_uppercase().next().unwrap_or(letter);
         let potential_word = format!("{}{}", current_word, upper_letter);
-        
+
         // Check if any BIP39 word starts with this prefix
         bip39_words::first_word_with_prefix(&potential_word).is_some()
+    }
+
+    pub fn current_word(&self) -> &str {
+        self.framebuf.current_word()
     }
 
     pub fn is_finished(&self) -> bool {
@@ -592,7 +599,7 @@ impl Bip39Framebuf {
     }
 
     pub fn current_word(&self) -> &str {
-        self.characters.split_whitespace().last().unwrap_or("")
+        self.characters.rsplit(' ').next().unwrap_or("")
     }
 
     pub fn move_to_current_word(&mut self) {

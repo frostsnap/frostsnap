@@ -264,3 +264,72 @@ pub fn words_with_prefix(prefix: &str) -> impl Iterator<Item = &'static str> + '
     // This is much faster than filtering all 2048 words
     first_word_with_prefix(prefix).into_iter()
 }
+
+/// Represents which letters (A-Z) are valid next characters
+#[derive(Debug, Clone, Copy)]
+pub struct ValidLetters(pub [bool; 26]);
+
+const DEFAULT_VALID_LETTERS: [bool; 26] = [
+    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true, false, /* no letter starts with x */
+    true, true,
+];
+
+impl Default for ValidLetters {
+    fn default() -> Self {
+        Self(DEFAULT_VALID_LETTERS)
+    }
+}
+
+impl ValidLetters {
+    /// Create a new ValidLetters with all letters invalid
+    pub fn all_false() -> Self {
+        Self([false; 26])
+    }
+
+    /// Set a letter as valid (letter should be uppercase A-Z)
+    pub fn set(&mut self, letter: char) {
+        if let Some(idx) = Self::letter_to_index(letter) {
+            self.0[idx] = true;
+        }
+    }
+
+    /// Check if a letter is valid
+    pub fn is_valid(&self, letter: char) -> bool {
+        Self::letter_to_index(letter)
+            .map(|idx| self.0[idx])
+            .unwrap_or(false)
+    }
+
+    fn letter_to_index(letter: char) -> Option<usize> {
+        match letter {
+            'A'..='Z' => Some((letter as u8 - b'A') as usize),
+            _ => None,
+        }
+    }
+}
+
+/// Returns which next letters are possible after `prefix` in the BIP39 list.
+pub fn get_valid_next_letters(prefix: &str) -> ValidLetters {
+    if prefix.is_empty() {
+        // For empty prefix, return the default which has all letters except X
+        return ValidLetters::default();
+    }
+    // 1) Lower bound: first index where word >= prefix
+    let start = BIP39_WORDS.partition_point(|w| &w[..prefix.len().min(w.len())] < prefix);
+    let mut valid = ValidLetters::all_false();
+
+    // 2) Walk forward, strip off the prefix, and collect the very next char
+    for &word in &BIP39_WORDS[start..] {
+        if let Some(rest) = word.strip_prefix(prefix) {
+            if let Some(ch) = rest.chars().next() {
+                valid.set(ch);
+            }
+        } else {
+            // as soon as strip_prefix fails, we’re past the matching block
+            break;
+        }
+    }
+
+    valid
+}
