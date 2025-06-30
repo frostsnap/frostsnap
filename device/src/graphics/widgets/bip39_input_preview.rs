@@ -327,6 +327,16 @@ impl Bip39InputPreview {
         !self.framebuf.current_word().is_empty()
     }
 
+    pub fn can_accept_letter(&self, letter: char) -> bool {
+        let current_word = self.framebuf.current_word();
+        // Convert to uppercase since our word list is uppercase
+        let upper_letter = letter.to_uppercase().next().unwrap_or(letter);
+        let potential_word = format!("{}{}", current_word, upper_letter);
+        
+        // Check if any BIP39 word starts with this prefix
+        bip39_words::first_word_with_prefix(&potential_word).is_some()
+    }
+
     pub fn is_finished(&self) -> bool {
         self.framebuf.word_count() == 24
     }

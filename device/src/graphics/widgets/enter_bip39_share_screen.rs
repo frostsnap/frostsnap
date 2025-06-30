@@ -82,8 +82,10 @@ impl EnterBip39ShareScreen {
                             self.bip39_input.backspace();
                         }
                         c if c.is_alphabetic() => {
-                            // Add letter to current word
-                            self.bip39_input.push_letter(c);
+                            // Only add letter if it would result in a valid word prefix
+                            if self.bip39_input.can_accept_letter(c) {
+                                self.bip39_input.push_letter(c);
+                            }
                         }
                         _ => {} // Ignore other characters
                     }
@@ -106,14 +108,22 @@ impl EnterBip39ShareScreen {
             };
 
             if let Some(key_touch) = key_touch {
-                if let Some(last) = self.touches.last_mut() {
-                    if last.key == key_touch.key {
-                        self.touches.pop();
-                    } else {
-                        last.cancel();
+                // Check if this key press would be valid before adding the touch
+                let should_add_touch = match key_touch.key {
+                    c if c.is_alphabetic() => self.bip39_input.can_accept_letter(c),
+                    _ => true, // Always allow non-alphabetic keys (space, backspace)
+                };
+                
+                if should_add_touch {
+                    if let Some(last) = self.touches.last_mut() {
+                        if last.key == key_touch.key {
+                            self.touches.pop();
+                        } else {
+                            last.cancel();
+                        }
                     }
+                    self.touches.push(key_touch);
                 }
-                self.touches.push(key_touch);
             }
         }
     }
