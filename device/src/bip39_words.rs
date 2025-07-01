@@ -335,3 +335,27 @@ pub fn get_valid_next_letters(prefix: &str) -> ValidLetters {
 
     valid
 }
+
+/// Count how many words match the prefix, but stop counting after `max_count`
+/// This is efficient for checking if there's exactly one match or more than one
+pub fn count_words_with_prefix(prefix: &str, max_count: usize) -> usize {
+    if prefix.is_empty() {
+        return BIP39_WORDS.len();
+    }
+    
+    let start = BIP39_WORDS.partition_point(|w| &w[..prefix.len().min(w.len())] < prefix);
+    let mut count = 0;
+    
+    for &word in &BIP39_WORDS[start..] {
+        if word.starts_with(prefix) {
+            count += 1;
+            if count >= max_count {
+                return count;
+            }
+        } else {
+            break;
+        }
+    }
+    
+    count
+}

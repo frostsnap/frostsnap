@@ -87,62 +87,6 @@ const MAX_CHARS: usize = 25 * 8;
 const FONT_SIZE: Size = Size::new(16, 24);
 const FRAMEBUFFER_WIDTH: u32 = MAX_CHARS as u32 * FONT_SIZE.width as u32;
 
-#[derive(Debug, Default)]
-struct AutocompleteDisplay {
-    suggestion: Option<(&'static str, u8)>,
-    redraw: bool,
-}
-
-impl AutocompleteDisplay {
-    fn new() -> Self {
-        Self {
-            suggestion: None,
-            redraw: true,
-        }
-    }
-
-    fn update(&mut self, current_word: &str) {
-        self.redraw = true;
-
-        if current_word.is_empty() {
-            self.suggestion = None;
-        } else {
-            // Word list is uppercase, current_word is already uppercase
-            if let Some(suggestion) = bip39_words::first_word_with_prefix(current_word) {
-                self.suggestion = Some((suggestion, (current_word.len() as u8)));
-            } else {
-                self.suggestion = None;
-            }
-        }
-    }
-
-    fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D) -> Result<(), D::Error> {
-        if !self.redraw {
-            return Ok(());
-        }
-        if let &Some((suggestion, pos)) = &self.suggestion {
-            Text::with_text_style(
-                &suggestion[pos as usize..],
-                Point::new(pos as i32 * FONT_SIZE.width as i32, 0),
-                U8g2TextStyle::new(FONT_LARGE, Rgb565::new(10, 20, 10)),
-                TextStyleBuilder::new()
-                    .alignment(Alignment::Left)
-                    .baseline(Baseline::Top)
-                    .build(),
-            )
-            .draw(target)?;
-        } else {
-            let _ = target.clear(COLORS.background);
-        }
-        self.redraw = false;
-        Ok(())
-    }
-
-    fn get_suggestion(&self) -> Option<&'static str> {
-        self.suggestion.map(|(suggestion, _)| suggestion)
-    }
-}
-
 type Fb = Framebuffer<
     Gray2,
     RawU2,
@@ -161,6 +105,13 @@ pub struct Bip39InputPreview {
     progress: Bip39ProgressBars,
     framebuf: Bip39Framebuf,
     init_draw: bool,
+    last_autocomplete: Option<AutocompleteState>,
+}
+
+#[derive(Debug, Clone)]
+struct AutocompleteState {
+    prefix_len: usize,      // Length of the word before autocomplete
+    completed_word: String, // The full completed word
 }
 
 impl Bip39InputPreview {
@@ -206,6 +157,7 @@ impl Bip39InputPreview {
             progress,
             framebuf,
             init_draw: false,
+            last_autocomplete: None,
         }
     }
 
@@ -260,6 +212,9 @@ impl Bip39InputPreview {
     }
 
     pub fn push_letter(&mut self, letter: char) -> bool {
+        // Clear last autocomplete since we're typing manually
+        self.last_autocomplete = None;
+
         // Add uppercase letter to framebuffer
         let upper_letter = letter.to_uppercase().next().unwrap_or(letter);
         self.framebuf.add_character(upper_letter);
@@ -278,23 +233,69 @@ impl Bip39InputPreview {
     }
 
     pub fn backspace(&mut self) {
+        // Clear autocomplete state since we're modifying manually
+        self.last_autocomplete = None;
+
         let current_word = self.framebuf.current_word();
-        if current_word.is_empty() && self.framebuf.word_count() > 0 {
-            // If no current word, we're at a word boundary
-            // Remove the space first
+        if current_word.is_empty() {
+            // If no current word, we're at a word boundary Remove the space first
             self.framebuf.backspace();
             self.update_progress();
-        } else if !current_word.is_empty() {
+        }
+
+        // Delete characters until we reach a state with multiple possibilities
+        loop {
             self.framebuf.backspace();
+
+            let current_prefix = self.framebuf.current_word();
+            if current_prefix.is_empty() {
+                break;
+            }
+
+            // Stop when we have multiple possibilities (more than 1 word)
+            if bip39_words::count_words_with_prefix(current_prefix, 2) > 1 {
+                break;
+            }
         }
     }
 
     pub fn accept_word(&mut self) {
         let current_word = self.framebuf.current_word();
         if !current_word.is_empty() {
+            // Clear autocomplete history when manually accepting
+            self.last_autocomplete = None;
             self.framebuf.mark_word_boundary();
             self.update_progress();
         }
+    }
+
+    /// Unified autocomplete method that tracks what was autocompleted
+    pub fn autocomplete_word(&mut self, target_word: &str) -> bool {
+        let current_prefix = self.framebuf.current_word();
+
+        // Validate that target_word starts with current_prefix
+        if !target_word.starts_with(current_prefix) {
+            return false;
+        }
+
+        // Store the autocomplete state
+        self.last_autocomplete = Some(AutocompleteState {
+            prefix_len: current_prefix.len(),
+            completed_word: target_word.to_string(),
+        });
+
+        // Add the remaining characters
+        let remaining = &target_word[current_prefix.len()..];
+        for c in remaining.chars() {
+            let upper_c = c.to_uppercase().next().unwrap_or(c);
+            self.framebuf.add_character(upper_c);
+        }
+
+        // Accept the completed word
+        self.framebuf.mark_word_boundary();
+        self.update_progress();
+
+        true
     }
 
     fn update_progress(&mut self) {
@@ -305,18 +306,8 @@ impl Bip39InputPreview {
     pub fn try_accept_autocomplete(&mut self) -> bool {
         let current_word = self.framebuf.current_word();
         if !current_word.is_empty() {
-            if let Some(suggestion) = self.framebuf.autocomplete.get_suggestion() {
-                // Complete the word with the suggestion
-                let remaining = &suggestion[current_word.len()..];
-                for c in remaining.chars() {
-                    let upper_c = c.to_uppercase().next().unwrap_or(c);
-                    self.framebuf.add_character(upper_c);
-                }
-
-                // Accept the completed word
-                self.framebuf.mark_word_boundary();
-                self.update_progress();
-                return true;
+            if let Some(suggestion) = bip39_words::first_word_with_prefix(current_word) {
+                return self.autocomplete_word(suggestion);
             }
         }
         false
@@ -350,6 +341,21 @@ impl Bip39InputPreview {
 
     pub fn get_mnemonic(&self) -> String {
         self.framebuf.characters.clone()
+    }
+
+    /// Get the number of BIP39 words that match the current input prefix
+    pub fn get_matching_word_count(&self) -> usize {
+        let current_word = self.current_word();
+        if current_word.is_empty() {
+            0
+        } else {
+            bip39_words::words_with_prefix(current_word).count()
+        }
+    }
+
+    /// Check if the last action was an autocomplete
+    pub fn was_last_action_autocomplete(&self) -> bool {
+        self.last_autocomplete.is_some()
     }
 }
 
@@ -422,10 +428,9 @@ pub struct Bip39Framebuf {
     target_position: u32,
     color: Rgb565,
     redraw: bool,
-    autocomplete: AutocompleteDisplay,
 }
 
-const WORD_START: u32 = 120;
+const WORD_START: u32 = 50;
 
 impl Bip39Framebuf {
     pub fn new() -> Self {
@@ -441,7 +446,6 @@ impl Bip39Framebuf {
             target_position: WORD_START,
             redraw: true,
             color: COLORS.primary,
-            autocomplete: AutocompleteDisplay::new(),
         };
 
         self_
@@ -449,10 +453,6 @@ impl Bip39Framebuf {
 
     pub fn add_character(&mut self, c: char) {
         self.characters.push(c);
-        // Update autocomplete with just the current word
-        // Get current word as String to avoid borrow issues
-        self.autocomplete
-            .update(self.characters.split_whitespace().last().unwrap_or(""));
         let char_index = self.characters.len() - 1;
         let char_pos = Self::position_for_character_in_framebuf(char_index);
 
@@ -511,8 +511,6 @@ impl Bip39Framebuf {
             }
         }
 
-        self.autocomplete
-            .update(self.characters.split_whitespace().last().unwrap_or(""));
         self.redraw = true;
     }
 
@@ -525,21 +523,14 @@ impl Bip39Framebuf {
         let last_draw_time = self.current_time.get_or_insert(current_time);
 
         if self.current_position == self.target_position && !self.redraw {
-            // only draw autocomplete when the text is stationairy
-            let autocomplete_space = bb.resized_width(WORD_START, AnchorX::Right);
-            let _ = self.autocomplete.draw(
-                &mut target
-                    .clipped(&autocomplete_space)
-                    .cropped(&autocomplete_space),
-            );
-
+            // Autocomplete display removed - using word selector instead
             *last_draw_time = current_time;
         } else {
             let duration_millis = current_time
                 .checked_duration_since(*last_draw_time)
                 .unwrap()
                 .to_millis();
-            const VELOCITY: f32 = 0.08; // pixels per ms
+            const VELOCITY: f32 = 0.09; // pixels per ms
 
             let distance = (duration_millis as f32 * VELOCITY).round() as i32;
             if distance == 0 && !self.redraw {

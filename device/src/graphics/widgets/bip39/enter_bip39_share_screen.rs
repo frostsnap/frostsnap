@@ -1,12 +1,15 @@
-use super::{AlphabeticKeyboard, Bip39InputPreview};
+use super::{AlphabeticKeyboard, Bip39InputPreview, WordSelector};
 use crate::bip39_words;
 use crate::graphics::widgets::KeyTouch;
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
+pub const MAX_WORD_SELECTOR_WORDS: usize = 5;
+
 #[derive(Debug)]
 pub struct EnterBip39ShareScreen {
     alphabetic_keyboard: AlphabeticKeyboard,
+    word_selector: Option<WordSelector>,
     bip39_input: Bip39InputPreview,
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
@@ -28,6 +31,7 @@ impl EnterBip39ShareScreen {
 
         let mut screen = Self {
             alphabetic_keyboard,
+            word_selector: None,
             bip39_input,
             touches: vec![],
             keyboard_rect,
@@ -44,9 +48,13 @@ impl EnterBip39ShareScreen {
         target: &mut D,
         current_time: crate::Instant,
     ) {
-        // Draw keyboard
-        self.alphabetic_keyboard
-            .draw(&mut target.cropped(&self.keyboard_rect));
+        // Draw keyboard or word selector
+        if let Some(ref mut word_selector) = self.word_selector {
+            word_selector.draw(&mut target.cropped(&self.keyboard_rect));
+        } else {
+            self.alphabetic_keyboard
+                .draw(&mut target.cropped(&self.keyboard_rect));
+        }
 
         // Draw BIP39 input preview
         let input_display_rect = Rectangle::new(
@@ -82,11 +90,6 @@ impl EnterBip39ShareScreen {
             if let Some(active_touch) = self.touches.last_mut() {
                 if let Some(key) = active_touch.let_go(current_time) {
                     match key {
-                        ' ' => {
-                            // Space - accepts autocomplete if available
-                            self.bip39_input.accept_word();
-                            self.update_valid_keys();
-                        }
                         '⌫' => {
                             // Backspace
                             self.bip39_input.backspace();
@@ -94,6 +97,20 @@ impl EnterBip39ShareScreen {
                         }
                         c if c.is_alphabetic() => {
                             self.push_letter_and_autocomplete(c);
+                        }
+                        c if c.is_numeric() => {
+                            // Handle word selector index
+                            if let Some(ref word_selector) = self.word_selector {
+                                if let Some(digit) = c.to_digit(10) {
+                                    if let Some(word) =
+                                        word_selector.get_word_by_index(digit as usize)
+                                    {
+                                        // Use unified autocomplete method
+                                        self.bip39_input.autocomplete_word(word);
+                                        self.update_valid_keys();
+                                    }
+                                }
+                            }
                         }
                         _ => {} // Ignore other characters
                     }
@@ -105,12 +122,21 @@ impl EnterBip39ShareScreen {
                 Some(key_touch)
             } else if self.keyboard_rect.contains(point) {
                 let translated_point = point - self.keyboard_rect.top_left;
-                self.alphabetic_keyboard
-                    .handle_touch(translated_point)
-                    .map(|mut key_touch| {
-                        key_touch.translate(self.keyboard_rect.top_left);
-                        key_touch
-                    })
+                if let Some(ref word_selector) = self.word_selector {
+                    word_selector
+                        .handle_touch(translated_point)
+                        .map(|mut key_touch| {
+                            key_touch.translate(self.keyboard_rect.top_left);
+                            key_touch
+                        })
+                } else {
+                    self.alphabetic_keyboard
+                        .handle_touch(translated_point)
+                        .map(|mut key_touch| {
+                            key_touch.translate(self.keyboard_rect.top_left);
+                            key_touch
+                        })
+                }
             } else {
                 None
             };
@@ -141,17 +167,55 @@ impl EnterBip39ShareScreen {
         if let Some(active_touch) = self.touches.last_mut() {
             active_touch.cancel()
         }
-        self.alphabetic_keyboard.handle_vertical_drag(prev_y, new_y);
+        // Only handle drag for keyboard, not word selector
+        if self.word_selector.is_none() {
+            self.alphabetic_keyboard.handle_vertical_drag(prev_y, new_y);
+        }
     }
 
     pub fn needs_redraw(&self) -> bool {
         !self.touches.is_empty()
+            || self
+                .word_selector
+                .as_ref()
+                .map_or(false, |ws| ws.needs_redraw())
     }
 
     fn update_valid_keys(&mut self) {
         let current_word = self.bip39_input.current_word();
-        let valid_letters = bip39_words::get_valid_next_letters(current_word);
 
+        // Check if we should show the word selector when we have a partial word
+        if !current_word.is_empty() {
+            let word_count = bip39_words::count_words_with_prefix(current_word, MAX_WORD_SELECTOR_WORDS + 1);
+            if word_count > 0 && word_count <= MAX_WORD_SELECTOR_WORDS {
+                // Create word selector if needed
+                if self.word_selector.is_none() {
+                    self.word_selector = Some(WordSelector::new(self.keyboard_rect.size));
+                    // Clear keyboard touches when switching to word selector (keep backspace touches)
+                    self.touches.retain(|touch| touch.key == '⌫');
+                }
+                if let Some(ref mut word_selector) = self.word_selector {
+                    word_selector.update_words(current_word);
+                }
+            } else {
+                // Clear word selector if we shouldn't show it
+                if self.word_selector.is_some() {
+                    // Clear word selector touches when switching back to keyboard (keep backspace touches)
+                    self.touches.retain(|touch| touch.key == '⌫');
+                }
+                self.word_selector = None;
+            }
+        } else {
+            // Clear word selector
+            if self.word_selector.is_some() {
+                // Clear word selector touches when switching back to keyboard (keep backspace touches)
+                self.touches.retain(|touch| touch.key == '⌫');
+            }
+            self.word_selector = None;
+        }
+
+        // Always update keyboard valid keys (even if word selector is showing)
+        let valid_letters = bip39_words::get_valid_next_letters(current_word);
         self.alphabetic_keyboard.set_valid_keys(valid_letters);
     }
 
@@ -159,10 +223,8 @@ impl EnterBip39ShareScreen {
         let word_completed = self.bip39_input.push_letter(letter);
 
         if !word_completed {
-            let valid_letters =
-                bip39_words::get_valid_next_letters(self.bip39_input.current_word());
-            let valid_count = valid_letters.0.iter().filter(|&&v| v).count();
-            if valid_count == 1 {
+            // Auto-complete if there's only one possible word
+            if bip39_words::count_words_with_prefix(self.bip39_input.current_word(), 2) == 1 {
                 self.bip39_input.try_accept_autocomplete();
             }
         }
