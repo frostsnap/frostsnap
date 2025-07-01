@@ -177,8 +177,7 @@ impl core::fmt::Display for SignTaskError {
         match self {
             SignTaskError::WrongKey { got, expected } => write!(
                 f,
-                "sign task was for key {} but got an item for key {}",
-                expected, got
+                "sign task was for key {expected} but got an item for key {got}",
             ),
             SignTaskError::InvalidBitcoinTransaction => {
                 write!(f, "Bitcoin transaction input value was less than outputs")

@@ -403,10 +403,9 @@ where
                     }
                     Prompt::NewName { old_name, new_name } => match old_name {
                         Some(old_name) => self.display.print(format!(
-                            "Rename this device from '{}' to '{}'?",
-                            old_name, new_name
+                            "Rename this device from '{old_name}' to '{new_name}'?",
                         )),
-                        None => self.display.print(format!("Confirm name '{}'?", new_name)),
+                        None => self.display.print(format!("Confirm name '{new_name}'?")),
                     },
                     Prompt::DisplayBackupRequest { phase } => self
                         .display
@@ -731,7 +730,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             location.line(),
             info
         ),
-        None => write!(&mut panic_buf, "{}", info),
+        None => write!(&mut panic_buf, "{info}"),
     };
 
     let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
