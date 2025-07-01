@@ -1,3 +1,5 @@
+use crate::graphics::widgets::{KeyTouch, FONT_LARGE};
+use crate::{bip39_words::ValidLetters, graphics::palette::COLORS};
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
@@ -11,9 +13,6 @@ use embedded_graphics::{
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use u8g2_fonts::U8g2TextStyle;
-
-use super::{key_touch::KeyTouch, FONT_LARGE};
-use crate::{bip39_words::ValidLetters, graphics::palette::COLORS};
 
 // Constants for framebuffer and keyboard dimensions
 const FRAMEBUFFER_WIDTH: u32 = 240;

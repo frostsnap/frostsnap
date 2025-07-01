@@ -258,11 +258,13 @@ pub fn first_word_with_prefix(prefix: &str) -> Option<&'static str> {
     Some(BIP39_WORDS[pos])
 }
 
-/// Get all words that start with the given prefix (for compatibility)
+/// Get all words that start with the given prefix
 pub fn words_with_prefix(prefix: &str) -> impl Iterator<Item = &'static str> + '_ {
-    // For now, just return the first match as an iterator
-    // This is much faster than filtering all 2048 words
-    first_word_with_prefix(prefix).into_iter()
+    let start = BIP39_WORDS.partition_point(|w| w < &prefix);
+    BIP39_WORDS[start..]
+        .iter()
+        .copied()
+        .take_while(move |w| !prefix.is_empty() && w.starts_with(prefix))
 }
 
 /// Represents which letters (A-Z) are valid next characters

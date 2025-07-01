@@ -1,5 +1,6 @@
-use super::{AlphabeticKeyboard, Bip39InputPreview, KeyTouch};
+use super::{AlphabeticKeyboard, Bip39InputPreview};
 use crate::bip39_words;
+use crate::graphics::widgets::KeyTouch;
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 

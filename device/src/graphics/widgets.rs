@@ -14,12 +14,9 @@ mod share_index_input;
 pub use share_index_input::*;
 mod enter_share_screen;
 pub use enter_share_screen::*;
-mod alphabetic_keyboard;
-pub use alphabetic_keyboard::*;
-mod enter_bip39_share_screen;
-pub use enter_bip39_share_screen::*;
-mod bip39_input_preview;
-pub use bip39_input_preview::*;
+
+mod bip39;
+pub use bip39::*;
 
 mod icons;
 

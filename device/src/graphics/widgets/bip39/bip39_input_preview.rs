@@ -1,6 +1,6 @@
-use super::{icons, KeyTouch, FONT_LARGE};
 use crate::bip39_words;
 use crate::graphics::palette::COLORS;
+use crate::graphics::widgets::{icons, KeyTouch, FONT_LARGE};
 
 use alloc::{
     boxed::Box,
