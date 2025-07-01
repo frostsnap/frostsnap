@@ -1,10 +1,10 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, WordSelector};
 use crate::bip39_words;
 use crate::graphics::widgets::KeyTouch;
-use alloc::{string::String, vec::Vec};
+use alloc::{string::{String, ToString}, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
-pub const MAX_WORD_SELECTOR_WORDS: usize = 5;
+pub const MAX_WORD_SELECTOR_WORDS: usize = 6;
 
 #[derive(Debug)]
 pub struct EnterBip39ShareScreen {
@@ -48,21 +48,23 @@ impl EnterBip39ShareScreen {
         target: &mut D,
         current_time: crate::Instant,
     ) {
-        // Draw keyboard or word selector
+        // Draw either word selector full-screen or normal keyboard + input
         if let Some(ref mut word_selector) = self.word_selector {
-            word_selector.draw(&mut target.cropped(&self.keyboard_rect));
+            // Full-screen word selector
+            word_selector.draw(target);
         } else {
+            // Normal keyboard and input preview
             self.alphabetic_keyboard
                 .draw(&mut target.cropped(&self.keyboard_rect));
-        }
 
-        // Draw BIP39 input preview
-        let input_display_rect = Rectangle::new(
-            Point::zero(),
-            Size::new(target.bounding_box().size.width, 60),
-        );
-        self.bip39_input
-            .draw(&mut target.cropped(&input_display_rect), current_time);
+            // Draw BIP39 input preview
+            let input_display_rect = Rectangle::new(
+                Point::zero(),
+                Size::new(target.bounding_box().size.width, 60),
+            );
+            self.bip39_input
+                .draw(&mut target.cropped(&input_display_rect), current_time);
+        }
 
         // Draw touches
         self.touches.retain_mut(|touch| {
@@ -87,7 +89,9 @@ impl EnterBip39ShareScreen {
             }
 
             // Otherwise process normal key release
-            if let Some(active_touch) = self.touches.last_mut() {
+            // Find the last non-cancelled touch
+            if let Some(active_touch) = self.touches.iter_mut().rev().find(|t| !t.has_been_let_go())
+            {
                 if let Some(key) = active_touch.let_go(current_time) {
                     match key {
                         '⌫' => {
@@ -117,28 +121,25 @@ impl EnterBip39ShareScreen {
                 }
             }
         } else {
-            // Check backspace button in input preview
-            let key_touch = if let Some(key_touch) = self.bip39_input.handle_touch(point) {
-                Some(key_touch)
-            } else if self.keyboard_rect.contains(point) {
-                let translated_point = point - self.keyboard_rect.top_left;
-                if let Some(ref word_selector) = self.word_selector {
-                    word_selector
-                        .handle_touch(translated_point)
-                        .map(|mut key_touch| {
-                            key_touch.translate(self.keyboard_rect.top_left);
-                            key_touch
-                        })
-                } else {
+            // Handle touch for different modes
+            let key_touch = if let Some(ref word_selector) = self.word_selector {
+                // Word selector is full-screen, handle its touches directly
+                word_selector.handle_touch(point)
+            } else {
+                // Normal mode: check input preview first, then keyboard
+                if let Some(key_touch) = self.bip39_input.handle_touch(point) {
+                    Some(key_touch)
+                } else if self.keyboard_rect.contains(point) {
+                    let translated_point = point - self.keyboard_rect.top_left;
                     self.alphabetic_keyboard
                         .handle_touch(translated_point)
                         .map(|mut key_touch| {
                             key_touch.translate(self.keyboard_rect.top_left);
                             key_touch
                         })
+                } else {
+                    None
                 }
-            } else {
-                None
             };
 
             if let Some(key_touch) = key_touch {
@@ -150,6 +151,13 @@ impl EnterBip39ShareScreen {
                     }
                 }
                 self.touches.push(key_touch);
+            } else {
+                // No valid key was touched - cancel any active touch
+                if let Some(last) = self.touches.last_mut() {
+                    if !last.is_finished() {
+                        last.cancel();
+                    }
+                }
             }
         }
     }
@@ -173,49 +181,52 @@ impl EnterBip39ShareScreen {
         }
     }
 
-    pub fn needs_redraw(&self) -> bool {
-        !self.touches.is_empty()
-            || self
-                .word_selector
-                .as_ref()
-                .map_or(false, |ws| ws.needs_redraw())
-    }
-
     fn update_valid_keys(&mut self) {
         let current_word = self.bip39_input.current_word();
 
         // Check if we should show the word selector when we have a partial word
         if !current_word.is_empty() {
-            let word_count = bip39_words::count_words_with_prefix(current_word, MAX_WORD_SELECTOR_WORDS + 1);
+            let word_count =
+                bip39_words::count_words_with_prefix(current_word, MAX_WORD_SELECTOR_WORDS + 1);
             if word_count > 0 && word_count <= MAX_WORD_SELECTOR_WORDS {
-                // Create word selector if needed
-                if self.word_selector.is_none() {
-                    self.word_selector = Some(WordSelector::new(self.keyboard_rect.size));
-                    // Clear keyboard touches when switching to word selector (keep backspace touches)
-                    self.touches.retain(|touch| touch.key == '⌫');
-                }
-                if let Some(ref mut word_selector) = self.word_selector {
-                    word_selector.update_words(current_word);
-                }
+                // Create word selector with the matching words
+                let full_screen_size = Size::new(
+                    self.keyboard_rect.size.width,
+                    self.keyboard_rect.size.height + 60, // Add input preview height
+                );
+                let matching_words: Vec<_> = bip39_words::words_with_prefix(current_word)
+                    .take(MAX_WORD_SELECTOR_WORDS)
+                    .collect();
+                self.word_selector = Some(WordSelector::new(
+                    full_screen_size,
+                    matching_words,
+                    current_word.to_string(),
+                ));
+                // Clear all touches when switching to word selector
+                self.touches.clear();
             } else {
                 // Clear word selector if we shouldn't show it
                 if self.word_selector.is_some() {
-                    // Clear word selector touches when switching back to keyboard (keep backspace touches)
-                    self.touches.retain(|touch| touch.key == '⌫');
+                    // Clear all touches when switching back to keyboard
+                    self.touches.clear();
+                    // Force redraw of input preview (including progress bar)
+                    self.bip39_input.force_redraw();
                 }
                 self.word_selector = None;
             }
         } else {
             // Clear word selector
             if self.word_selector.is_some() {
-                // Clear word selector touches when switching back to keyboard (keep backspace touches)
-                self.touches.retain(|touch| touch.key == '⌫');
+                // Clear all touches when switching back to keyboard
+                self.touches.clear();
+                // Force redraw of input preview (including progress bar)
+                self.bip39_input.force_redraw();
             }
             self.word_selector = None;
         }
 
         // Always update keyboard valid keys (even if word selector is showing)
-        let valid_letters = bip39_words::get_valid_next_letters(current_word);
+        let valid_letters = bip39_words::get_valid_next_letters(self.bip39_input.current_word());
         self.alphabetic_keyboard.set_valid_keys(valid_letters);
     }
 

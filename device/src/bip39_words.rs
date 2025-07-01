@@ -342,10 +342,10 @@ pub fn count_words_with_prefix(prefix: &str, max_count: usize) -> usize {
     if prefix.is_empty() {
         return BIP39_WORDS.len();
     }
-    
+
     let start = BIP39_WORDS.partition_point(|w| &w[..prefix.len().min(w.len())] < prefix);
     let mut count = 0;
-    
+
     for &word in &BIP39_WORDS[start..] {
         if word.starts_with(prefix) {
             count += 1;
@@ -356,6 +356,6 @@ pub fn count_words_with_prefix(prefix: &str, max_count: usize) -> usize {
             break;
         }
     }
-    
+
     count
 }

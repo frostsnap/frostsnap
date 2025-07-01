@@ -1,10 +1,9 @@
-use crate::bip39_words;
 use crate::graphics::palette::COLORS;
-use crate::graphics::widgets::FONT_LARGE;
-use super::enter_bip39_share_screen::MAX_WORD_SELECTOR_WORDS;
+use crate::graphics::widgets::{icons, KeyTouch, FONT_LARGE};
 
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 use embedded_graphics::{
+    geometry::AnchorX,
     pixelcolor::Rgb565,
     prelude::*,
     primitives::{PrimitiveStyle, Rectangle},
@@ -15,112 +14,134 @@ use u8g2_fonts::U8g2TextStyle;
 #[derive(Debug)]
 pub struct WordSelector {
     words: Vec<&'static str>,
+    prefix: String,
     needs_redraw: bool,
     size: Size,
+    backspace_rect: Rectangle,
 }
 
 impl WordSelector {
-    pub fn new(size: Size) -> Self {
+    pub fn new(size: Size, words: Vec<&'static str>, prefix: String) -> Self {
+        // Backspace button in the same position as input preview
+        let backspace_width = size.width / 4;
+        let backspace_height = 60; // Same height as input preview
+        let backspace_rect = Rectangle::new(
+            Point::new(size.width as i32 - backspace_width as i32, 0),
+            Size {
+                width: backspace_width,
+                height: backspace_height,
+            },
+        );
+
         Self {
-            words: Vec::new(),
+            words,
+            prefix,
             needs_redraw: true,
             size,
+            backspace_rect,
         }
     }
 
-    /// Update the word list based on the current prefix
-    pub fn update_words(&mut self, prefix: &str) -> usize {
-        self.words.clear();
-        
-        if prefix.is_empty() {
-            return 0;
-        }
-        
-        // Get all words that start with the prefix
-        let all_matching_words: Vec<_> = bip39_words::words_with_prefix(prefix).collect();
-        let total_count = all_matching_words.len();
-        
-        // Only store up to MAX_WORD_SELECTOR_WORDS for display
-        if total_count <= MAX_WORD_SELECTOR_WORDS {
-            self.words = all_matching_words;
-            self.needs_redraw = true;
-        }
-        
-        total_count
+    /// Get the touch rectangle for a word at the given index
+    fn word_rect(&self, index: usize) -> Rectangle {
+        let text_y_start = 30;
+        let available_height = self.size.height - text_y_start as u32;
+        let word_height = available_height / self.words.len() as u32;
+
+        let y_pos = text_y_start + (index as u32 * word_height) as i32;
+        Rectangle::new(
+            Point::new(0, y_pos),
+            Size::new(
+                self.size.width - self.backspace_rect.size.width,
+                word_height,
+            ),
+        )
     }
-    
-    
-    /// Draw the word selector
+
+    /// Draw the full-screen word selector
     pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D) {
         if !self.needs_redraw {
             return;
         }
-        
-        // Clear the entire target area first
+
+        // Clear the entire screen
         let bounds = Rectangle::new(Point::zero(), self.size);
         let _ = bounds
             .into_styled(PrimitiveStyle::with_fill(COLORS.background))
             .draw(target);
-        
+
+        // Draw backspace button
+        icons::backspace()
+            .with_color(Rgb565::new(31, 20, 12))
+            .with_center(
+                self.backspace_rect
+                    .resized_width(self.backspace_rect.size.width / 2, AnchorX::Left)
+                    .center(),
+            )
+            .draw(target);
+
         if self.words.is_empty() {
             self.needs_redraw = false;
             return;
         }
-        
-        // Calculate button positions
-        let button_height = self.size.height / self.words.len() as u32;
-        
-        // Draw each word button
+
+        // Draw each word with left alignment and padding
         for (i, &word) in self.words.iter().enumerate() {
-            let rect = Rectangle::new(
-                Point::new(0, (i as u32 * button_height) as i32),
-                Size::new(self.size.width, button_height),
-            );
-            
-            // Draw word text (no border)
+            let rect = self.word_rect(i);
+            let padding_x = 40; // Horizontal padding to center words
+            let text_pos = Point::new(rect.top_left.x + padding_x, rect.center().y);
+
+            // First draw the full word in grey
             let _ = Text::with_text_style(
                 word,
-                rect.center(),
-                U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+                text_pos,
+                U8g2TextStyle::new(FONT_LARGE, Rgb565::new(10, 20, 10)), // Grey color
                 TextStyleBuilder::new()
-                    .alignment(Alignment::Center)
+                    .alignment(Alignment::Left)
                     .baseline(Baseline::Middle)
                     .build(),
             )
             .draw(target);
+
+            // Then draw the prefix in primary color on top (if we have a prefix)
+            if !self.prefix.is_empty() {
+                let _ = Text::with_text_style(
+                    &self.prefix,
+                    text_pos,
+                    U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+                    TextStyleBuilder::new()
+                        .alignment(Alignment::Left)
+                        .baseline(Baseline::Middle)
+                        .build(),
+                )
+                .draw(target);
+            }
         }
-        
+
         self.needs_redraw = false;
     }
-    
-    /// Handle touch input and return a KeyTouch for the selected word
-    pub fn handle_touch(&self, point: Point) -> Option<crate::graphics::widgets::KeyTouch> {
-        if self.words.is_empty() {
-            return None;
+
+    /// Handle touch input and return a KeyTouch for the selected word or backspace
+    pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
+        // Check backspace button first
+        if self.backspace_rect.contains(point) {
+            return Some(KeyTouch::new('⌫', self.backspace_rect));
         }
-        
-        let button_height = self.size.height / self.words.len() as u32;
-        
-        for (i, &word) in self.words.iter().enumerate() {
-            let rect = Rectangle::new(
-                Point::new(0, (i as u32 * button_height) as i32),
-                Size::new(self.size.width, button_height),
-            );
+
+        // Check word buttons using word_rect function
+        for (i, _) in self.words.iter().enumerate() {
+            let rect = self.word_rect(i);
             if rect.contains(point) {
                 // Return a special key for word selection (using index as char)
-                return Some(crate::graphics::widgets::KeyTouch::new(
-                    char::from_digit(i as u32, 10).unwrap_or('0'),
+                return Some(KeyTouch::new(
+                    char::from_digit(i as u32, 10).expect("unreachable"),
                     rect,
                 ));
             }
         }
         None
     }
-    
-    pub fn needs_redraw(&self) -> bool {
-        self.needs_redraw
-    }
-    
+
     /// Get word by index (used when processing the key touch)
     pub fn get_word_by_index(&self, index: usize) -> Option<&'static str> {
         self.words.get(index).copied()

@@ -357,6 +357,13 @@ impl Bip39InputPreview {
     pub fn was_last_action_autocomplete(&self) -> bool {
         self.last_autocomplete.is_some()
     }
+    
+    /// Force redraw of the input preview (including progress bar)
+    pub fn force_redraw(&mut self) {
+        self.init_draw = false;
+        self.framebuf.redraw = true;
+        self.progress.redraw = true;
+    }
 }
 
 #[derive(Debug)]

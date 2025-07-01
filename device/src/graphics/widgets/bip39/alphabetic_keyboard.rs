@@ -254,17 +254,17 @@ impl AlphabeticKeyboard {
         if col < TOTAL_COLS && row < TOTAL_ROWS {
             let idx = row * TOTAL_COLS + col;
             let key = KEYBOARD_KEYS[row][col];
-            
+
             // Ignore blank spaces (represented as ' ' in the layout)
             if key == ' ' {
                 return None;
             }
-            
-            // If this key is currently greyed out (disabled), ignore the touch
+
+            // Only allow touches on enabled keys (KEYBOARD_COLOR)
             if self.key_colors[idx] != KEYBOARD_COLOR {
                 return None;
             }
-            
+
             let pos_in_fb = row as i32 * KEY_HEIGHT as i32;
             let screen_y = if pos_in_fb >= self.scroll_position {
                 pos_in_fb - self.scroll_position
