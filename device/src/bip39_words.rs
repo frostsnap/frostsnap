@@ -1,5 +1,95 @@
 //\! BIP39 English word list
-//\! Generated from https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt
+
+/// Check if a word is in the BIP39 word list using binary search
+pub fn is_valid_bip39_word(word: &str) -> bool {
+    BIP39_WORDS.binary_search(&word).is_ok()
+}
+
+/// Get all words that start with the given prefix
+pub fn words_with_prefix(prefix: &str) -> &'static [&'static str] {
+    if prefix.is_empty() {
+        return &BIP39_WORDS;
+    }
+
+    let start = BIP39_WORDS.partition_point(|w| w < &prefix);
+
+    // Find the end of the matching words
+    let mut end = start;
+    while end < BIP39_WORDS.len() && BIP39_WORDS[end].starts_with(prefix) {
+        end += 1;
+    }
+
+    &BIP39_WORDS[start..end]
+}
+
+/// Returns which next letters are possible after `prefix` in the BIP39 list.
+pub fn get_valid_next_letters(prefix: &str) -> ValidLetters {
+    if prefix.is_empty() {
+        // For empty prefix, return the default which has all letters except X
+        return ValidLetters::default();
+    }
+    // 1) Lower bound: first index where word >= prefix
+    let start = BIP39_WORDS.partition_point(|w| &w[..prefix.len().min(w.len())] < prefix);
+    let mut valid = ValidLetters::all_false();
+
+    // 2) Walk forward, strip off the prefix, and collect the very next char
+    for &word in &BIP39_WORDS[start..] {
+        if let Some(rest) = word.strip_prefix(prefix) {
+            if let Some(ch) = rest.chars().next() {
+                valid.set(ch);
+            }
+        } else {
+            // as soon as strip_prefix fails, we’re past the matching block
+            break;
+        }
+    }
+
+    valid
+}
+
+/// Represents which letters (A-Z) are valid next characters
+#[derive(Debug, Clone, Copy)]
+pub struct ValidLetters(pub [bool; 26]);
+
+const DEFAULT_VALID_LETTERS: [bool; 26] = [
+    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true, false, /* no letter starts with x */
+    true, true,
+];
+
+impl Default for ValidLetters {
+    fn default() -> Self {
+        Self(DEFAULT_VALID_LETTERS)
+    }
+}
+
+impl ValidLetters {
+    /// Create a new ValidLetters with all letters invalid
+    pub fn all_false() -> Self {
+        Self([false; 26])
+    }
+
+    /// Set a letter as valid (letter should be uppercase A-Z)
+    pub fn set(&mut self, letter: char) {
+        if let Some(idx) = Self::letter_to_index(letter) {
+            self.0[idx] = true;
+        }
+    }
+
+    /// Check if a letter is valid
+    pub fn is_valid(&self, letter: char) -> bool {
+        Self::letter_to_index(letter)
+            .map(|idx| self.0[idx])
+            .unwrap_or(false)
+    }
+
+    fn letter_to_index(letter: char) -> Option<usize> {
+        match letter {
+            'A'..='Z' => Some((letter as u8 - b'A') as usize),
+            _ => None,
+        }
+    }
+}
 
 /// The complete BIP39 English word list (2048 words)
 pub static BIP39_WORDS: [&str; 2048] = [
@@ -215,147 +305,3 @@ pub static BIP39_WORDS: [&str; 2048] = [
     "WRITE", "WRONG", "YARD", "YEAR", "YELLOW", "YOU", "YOUNG", "YOUTH", "ZEBRA", "ZERO", "ZONE",
     "ZOO",
 ];
-
-/// Check if a word is in the BIP39 word list using binary search
-pub fn is_valid_bip39_word(word: &str) -> bool {
-    BIP39_WORDS.binary_search(&word).is_ok()
-}
-
-/// Get the first word that starts with the given prefix using binary search
-pub fn first_word_with_prefix(prefix: &str) -> Option<&'static str> {
-    if prefix.is_empty() {
-        return None;
-    }
-
-    // Binary search to find the first word that is >= prefix
-    let pos = match BIP39_WORDS.binary_search_by(|word| {
-        if word.starts_with(prefix) {
-            core::cmp::Ordering::Equal
-        } else {
-            (*word).cmp(prefix)
-        }
-    }) {
-        Ok(pos) => {
-            // Found a word that starts with prefix
-            // But we need to find the FIRST one (there might be earlier matches)
-            let mut first_pos = pos;
-            while first_pos > 0 && BIP39_WORDS[first_pos - 1].starts_with(prefix) {
-                first_pos -= 1;
-            }
-            first_pos
-        }
-        Err(pos) => {
-            // No exact match, but pos is where it would be inserted
-            // Check if the word at this position starts with our prefix
-            if pos < BIP39_WORDS.len() && BIP39_WORDS[pos].starts_with(prefix) {
-                pos
-            } else {
-                return None;
-            }
-        }
-    };
-
-    Some(BIP39_WORDS[pos])
-}
-
-/// Get all words that start with the given prefix
-pub fn words_with_prefix(prefix: &str) -> impl Iterator<Item = &'static str> + '_ {
-    let start = BIP39_WORDS.partition_point(|w| w < &prefix);
-    BIP39_WORDS[start..]
-        .iter()
-        .copied()
-        .take_while(move |w| !prefix.is_empty() && w.starts_with(prefix))
-}
-
-/// Represents which letters (A-Z) are valid next characters
-#[derive(Debug, Clone, Copy)]
-pub struct ValidLetters(pub [bool; 26]);
-
-const DEFAULT_VALID_LETTERS: [bool; 26] = [
-    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
-    true, true, true, true, true, true, true, false, /* no letter starts with x */
-    true, true,
-];
-
-impl Default for ValidLetters {
-    fn default() -> Self {
-        Self(DEFAULT_VALID_LETTERS)
-    }
-}
-
-impl ValidLetters {
-    /// Create a new ValidLetters with all letters invalid
-    pub fn all_false() -> Self {
-        Self([false; 26])
-    }
-
-    /// Set a letter as valid (letter should be uppercase A-Z)
-    pub fn set(&mut self, letter: char) {
-        if let Some(idx) = Self::letter_to_index(letter) {
-            self.0[idx] = true;
-        }
-    }
-
-    /// Check if a letter is valid
-    pub fn is_valid(&self, letter: char) -> bool {
-        Self::letter_to_index(letter)
-            .map(|idx| self.0[idx])
-            .unwrap_or(false)
-    }
-
-    fn letter_to_index(letter: char) -> Option<usize> {
-        match letter {
-            'A'..='Z' => Some((letter as u8 - b'A') as usize),
-            _ => None,
-        }
-    }
-}
-
-/// Returns which next letters are possible after `prefix` in the BIP39 list.
-pub fn get_valid_next_letters(prefix: &str) -> ValidLetters {
-    if prefix.is_empty() {
-        // For empty prefix, return the default which has all letters except X
-        return ValidLetters::default();
-    }
-    // 1) Lower bound: first index where word >= prefix
-    let start = BIP39_WORDS.partition_point(|w| &w[..prefix.len().min(w.len())] < prefix);
-    let mut valid = ValidLetters::all_false();
-
-    // 2) Walk forward, strip off the prefix, and collect the very next char
-    for &word in &BIP39_WORDS[start..] {
-        if let Some(rest) = word.strip_prefix(prefix) {
-            if let Some(ch) = rest.chars().next() {
-                valid.set(ch);
-            }
-        } else {
-            // as soon as strip_prefix fails, we’re past the matching block
-            break;
-        }
-    }
-
-    valid
-}
-
-/// Count how many words match the prefix, but stop counting after `max_count`
-/// This is efficient for checking if there's exactly one match or more than one
-pub fn count_words_with_prefix(prefix: &str, max_count: usize) -> usize {
-    if prefix.is_empty() {
-        return BIP39_WORDS.len();
-    }
-
-    let start = BIP39_WORDS.partition_point(|w| &w[..prefix.len().min(w.len())] < prefix);
-    let mut count = 0;
-
-    for &word in &BIP39_WORDS[start..] {
-        if word.starts_with(prefix) {
-            count += 1;
-            if count >= max_count {
-                return count;
-            }
-        } else {
-            break;
-        }
-    }
-
-    count
-}

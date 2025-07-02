@@ -1,7 +1,7 @@
 use crate::graphics::palette::COLORS;
 use crate::graphics::widgets::{icons, KeyTouch, FONT_LARGE};
 
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
 use embedded_graphics::{
     geometry::AnchorX,
     pixelcolor::Rgb565,
@@ -13,7 +13,7 @@ use u8g2_fonts::U8g2TextStyle;
 
 #[derive(Debug)]
 pub struct WordSelector {
-    words: Vec<&'static str>,
+    words: &'static [&'static str],
     prefix: String,
     needs_redraw: bool,
     size: Size,
@@ -21,7 +21,7 @@ pub struct WordSelector {
 }
 
 impl WordSelector {
-    pub fn new(size: Size, words: Vec<&'static str>, prefix: String) -> Self {
+    pub fn new(size: Size, words: &'static [&'static str], prefix: String) -> Self {
         // Backspace button in the same position as input preview
         let backspace_width = size.width / 4;
         let backspace_height = 60; // Same height as input preview
@@ -91,11 +91,11 @@ impl WordSelector {
             let padding_x = 40; // Horizontal padding to center words
             let text_pos = Point::new(rect.top_left.x + padding_x, rect.center().y);
 
-            // First draw the full word in grey
+            // First draw the full word in green (same as progress bar)
             let _ = Text::with_text_style(
                 word,
                 text_pos,
-                U8g2TextStyle::new(FONT_LARGE, Rgb565::new(10, 20, 10)), // Grey color
+                U8g2TextStyle::new(FONT_LARGE, Rgb565::new(8, 49, 16)), // Green color from progress bar
                 TextStyleBuilder::new()
                     .alignment(Alignment::Left)
                     .baseline(Baseline::Middle)

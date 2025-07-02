@@ -1,3 +1,4 @@
+use super::progress_bars::ProgressBars;
 use crate::bip39_words;
 use crate::graphics::palette::COLORS;
 use crate::graphics::widgets::{icons, KeyTouch, FONT_LARGE};
@@ -98,20 +99,13 @@ type Fb = Framebuffer<
 
 #[derive(Debug)]
 pub struct Bip39InputPreview {
-    area: Rectangle,
+    pub(super) area: Rectangle,
     preview_rect: Rectangle,
     backspace_rect: Rectangle,
     progress_rect: Rectangle,
-    progress: Bip39ProgressBars,
+    progress: ProgressBars,
     framebuf: Bip39Framebuf,
     init_draw: bool,
-    last_autocomplete: Option<AutocompleteState>,
-}
-
-#[derive(Debug, Clone)]
-struct AutocompleteState {
-    prefix_len: usize,      // Length of the word before autocomplete
-    completed_word: String, // The full completed word
 }
 
 impl Bip39InputPreview {
@@ -143,11 +137,8 @@ impl Bip39InputPreview {
         );
 
         // 24 words maximum for BIP39
-        let progress = Bip39ProgressBars::new(24);
+        let progress = ProgressBars::new(24);
         let framebuf = Bip39Framebuf::new();
-
-        // Position cursor at fixed location relative to preview area
-        let _cursor_position = Point::new(backspace_rect.top_left.x - WORD_START as i32, 0);
 
         Self {
             area,
@@ -157,7 +148,6 @@ impl Bip39InputPreview {
             progress,
             framebuf,
             init_draw: false,
-            last_autocomplete: None,
         }
     }
 
@@ -201,59 +191,27 @@ impl Bip39InputPreview {
         self.framebuf
             .draw(&mut target.cropped(&self.preview_rect), current_time);
 
-        // // Draw cursor at fixed position only if we haven't entered all 24 words
-        // if self.words.len() < MAX_WORDS {
-        //     self.cursor
-        //         .draw(&mut target.cropped(&self.preview_rect), current_time);
-        // }
-
         // Always draw progress bars (they have their own redraw logic)
         let _ = self.progress.draw(&mut target.cropped(&self.progress_rect));
     }
 
-    pub fn push_letter(&mut self, letter: char) -> bool {
-        // Clear last autocomplete since we're typing manually
-        self.last_autocomplete = None;
-
+    pub fn push_letter(&mut self, letter: char) {
         // Add uppercase letter to framebuffer
         let upper_letter = letter.to_uppercase().next().unwrap_or(letter);
         self.framebuf.add_character(upper_letter);
-
-        // Get current word from characters string
-        let current_word = self.framebuf.current_word();
-
-        // Check if the current word is now a complete valid BIP39 word
-        if bip39_words::is_valid_bip39_word(current_word) {
-            self.framebuf.mark_word_boundary();
-            self.update_progress();
-            true // Word was completed
-        } else {
-            false // Word not yet complete
-        }
     }
 
     pub fn backspace(&mut self) {
-        // Clear autocomplete state since we're modifying manually
-        self.last_autocomplete = None;
-
-        let current_word = self.framebuf.current_word();
-        if current_word.is_empty() {
-            // If no current word, we're at a word boundary Remove the space first
-            self.framebuf.backspace();
-            self.update_progress();
-        }
-
         // Delete characters until we reach a state with multiple possibilities
         loop {
             self.framebuf.backspace();
-
             let current_prefix = self.framebuf.current_word();
             if current_prefix.is_empty() {
                 break;
             }
 
             // Stop when we have multiple possibilities (more than 1 word)
-            if bip39_words::count_words_with_prefix(current_prefix, 2) > 1 {
+            if bip39_words::words_with_prefix(current_prefix).len() > 1 {
                 break;
             }
         }
@@ -262,14 +220,12 @@ impl Bip39InputPreview {
     pub fn accept_word(&mut self) {
         let current_word = self.framebuf.current_word();
         if !current_word.is_empty() {
-            // Clear autocomplete history when manually accepting
-            self.last_autocomplete = None;
             self.framebuf.mark_word_boundary();
             self.update_progress();
         }
     }
 
-    /// Unified autocomplete method that tracks what was autocompleted
+    /// Unified autocomplete method
     pub fn autocomplete_word(&mut self, target_word: &str) -> bool {
         let current_prefix = self.framebuf.current_word();
 
@@ -277,12 +233,6 @@ impl Bip39InputPreview {
         if !target_word.starts_with(current_prefix) {
             return false;
         }
-
-        // Store the autocomplete state
-        self.last_autocomplete = Some(AutocompleteState {
-            prefix_len: current_prefix.len(),
-            completed_word: target_word.to_string(),
-        });
 
         // Add the remaining characters
         let remaining = &target_word[current_prefix.len()..];
@@ -303,32 +253,12 @@ impl Bip39InputPreview {
         self.progress.progress(self.framebuf.word_count());
     }
 
-    pub fn try_accept_autocomplete(&mut self) -> bool {
-        let current_word = self.framebuf.current_word();
-        if !current_word.is_empty() {
-            if let Some(suggestion) = bip39_words::first_word_with_prefix(current_word) {
-                return self.autocomplete_word(suggestion);
-            }
-        }
-        false
-    }
-
     pub fn contains(&self, point: Point) -> bool {
         self.preview_rect.contains(point)
     }
 
     pub fn has_current_word(&self) -> bool {
         !self.framebuf.current_word().is_empty()
-    }
-
-    pub fn can_accept_letter(&self, letter: char) -> bool {
-        let current_word = self.framebuf.current_word();
-        // Convert to uppercase since our word list is uppercase
-        let upper_letter = letter.to_uppercase().next().unwrap_or(letter);
-        let potential_word = format!("{}{}", current_word, upper_letter);
-
-        // Check if any BIP39 word starts with this prefix
-        bip39_words::first_word_with_prefix(&potential_word).is_some()
     }
 
     pub fn current_word(&self) -> &str {
@@ -349,80 +279,15 @@ impl Bip39InputPreview {
         if current_word.is_empty() {
             0
         } else {
-            bip39_words::words_with_prefix(current_word).count()
+            bip39_words::words_with_prefix(current_word).len()
         }
     }
 
-    /// Check if the last action was an autocomplete
-    pub fn was_last_action_autocomplete(&self) -> bool {
-        self.last_autocomplete.is_some()
-    }
-    
     /// Force redraw of the input preview (including progress bar)
     pub fn force_redraw(&mut self) {
         self.init_draw = false;
         self.framebuf.redraw = true;
         self.progress.redraw = true;
-    }
-}
-
-#[derive(Debug)]
-pub struct Bip39ProgressBars {
-    total_bar_number: usize,
-    progress: usize,
-    redraw: bool,
-}
-
-impl Bip39ProgressBars {
-    pub fn new(total_bar_number: usize) -> Self {
-        Self {
-            total_bar_number,
-            progress: 0,
-            redraw: true,
-        }
-    }
-
-    pub fn progress(&mut self, progress: usize) {
-        self.redraw = self.redraw || progress != self.progress;
-        self.progress = progress;
-    }
-}
-
-impl Bip39ProgressBars {
-    fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, display: &mut D) -> Result<(), D::Error> {
-        if !self.redraw {
-            return Ok(());
-        }
-
-        const GAP_WIDTH: u32 = 2; // Smaller gap for 24 bars
-        let size = display.bounding_box().size;
-
-        let bar_width = (size.width - (self.total_bar_number as u32 - 1) * GAP_WIDTH)
-            / self.total_bar_number as u32;
-        let bar_height = size.height;
-
-        for i in 0..self.total_bar_number {
-            let x_offset = i as u32 * (bar_width + GAP_WIDTH);
-
-            let color = if i < self.progress {
-                Rgb565::new(8, 49, 16) // Draw green for progress
-            } else {
-                Rgb565::new(16, 32, 16) // Draw grey for remaining bars
-            };
-
-            // Define the rectangle for the bar
-            let bar = Rectangle::new(
-                Point::new(x_offset as i32, 0),
-                Size::new(bar_width, bar_height),
-            );
-
-            // Draw the bar
-            bar.into_styled(PrimitiveStyle::with_fill(color))
-                .draw(display)?;
-        }
-
-        self.redraw = false;
-        Ok(())
     }
 }
 
@@ -537,7 +402,7 @@ impl Bip39Framebuf {
                 .checked_duration_since(*last_draw_time)
                 .unwrap()
                 .to_millis();
-            const VELOCITY: f32 = 0.09; // pixels per ms
+            const VELOCITY: f32 = 0.08; // pixels per ms
 
             let distance = (duration_millis as f32 * VELOCITY).round() as i32;
             if distance == 0 && !self.redraw {

@@ -1,6 +1,7 @@
 mod alphabetic_keyboard;
 mod bip39_input_preview;
 mod enter_bip39_share_screen;
+mod progress_bars;
 mod word_selector;
 
 pub use alphabetic_keyboard::AlphabeticKeyboard;

@@ -1,7 +1,10 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, WordSelector};
 use crate::bip39_words;
 use crate::graphics::widgets::KeyTouch;
-use alloc::{string::{String, ToString}, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
 pub const MAX_WORD_SELECTOR_WORDS: usize = 6;
@@ -75,19 +78,6 @@ impl EnterBip39ShareScreen {
 
     pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
         if lift_up {
-            // First check if we're tapping the input area to accept autocomplete
-            if self.bip39_input.contains(point) && self.bip39_input.has_current_word() {
-                // Cancel any active touch before accepting
-                if let Some(active_touch) = self.touches.last_mut() {
-                    active_touch.cancel();
-                }
-
-                if self.bip39_input.try_accept_autocomplete() {
-                    self.update_valid_keys();
-                }
-                return;
-            }
-
             // Otherwise process normal key release
             // Find the last non-cancelled touch
             if let Some(active_touch) = self.touches.iter_mut().rev().find(|t| !t.has_been_let_go())
@@ -186,17 +176,15 @@ impl EnterBip39ShareScreen {
 
         // Check if we should show the word selector when we have a partial word
         if !current_word.is_empty() {
-            let word_count =
-                bip39_words::count_words_with_prefix(current_word, MAX_WORD_SELECTOR_WORDS + 1);
-            if word_count > 0 && word_count <= MAX_WORD_SELECTOR_WORDS {
+            let matching_words = bip39_words::words_with_prefix(current_word);
+            
+            if !matching_words.is_empty() && matching_words.len() <= MAX_WORD_SELECTOR_WORDS {
                 // Create word selector with the matching words
                 let full_screen_size = Size::new(
                     self.keyboard_rect.size.width,
-                    self.keyboard_rect.size.height + 60, // Add input preview height
+                    self.keyboard_rect.size.height + self.bip39_input.area.size.height, // Add input preview height
                 );
-                let matching_words: Vec<_> = bip39_words::words_with_prefix(current_word)
-                    .take(MAX_WORD_SELECTOR_WORDS)
-                    .collect();
+
                 self.word_selector = Some(WordSelector::new(
                     full_screen_size,
                     matching_words,
@@ -231,13 +219,11 @@ impl EnterBip39ShareScreen {
     }
 
     fn push_letter_and_autocomplete(&mut self, letter: char) {
-        let word_completed = self.bip39_input.push_letter(letter);
-
-        if !word_completed {
-            // Auto-complete if there's only one possible word
-            if bip39_words::count_words_with_prefix(self.bip39_input.current_word(), 2) == 1 {
-                self.bip39_input.try_accept_autocomplete();
-            }
+        self.bip39_input.push_letter(letter);
+        let words_with_prefix = bip39_words::words_with_prefix(self.bip39_input.current_word());
+        
+        if words_with_prefix.len() == 1 {
+            self.bip39_input.autocomplete_word(words_with_prefix[0]);
         }
 
         self.update_valid_keys();
