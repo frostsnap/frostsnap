@@ -305,3 +305,40 @@ pub static BIP39_WORDS: [&str; 2048] = [
     "WRITE", "WRONG", "YARD", "YEAR", "YELLOW", "YOU", "YOUNG", "YOUTH", "ZEBRA", "ZERO", "ZONE",
     "ZOO",
 ];
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+    use super::*;
+    use alloc::{string::String, vec::Vec};
+    use secp256kfun::hex;
+    use sha2::{digest::Digest, Sha256};
+
+    #[test]
+    fn test_bip39_wordlist_hash() {
+        // The official BIP39 English wordlist from:
+        // https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt
+        // has this SHA256 hash when words are lowercase and joined with newlines
+        const EXPECTED_HASH: &str =
+            "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda";
+
+        // Convert our uppercase words to lowercase and join with newlines
+        let wordlist_string: String = BIP39_WORDS
+            .iter()
+            .map(|word| word.to_lowercase())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Calculate SHA256 hash
+        let mut hasher = Sha256::new();
+        hasher.update(wordlist_string.as_bytes());
+        hasher.update(b"\n");
+        let result = hasher.finalize();
+        let hash_hex = hex::encode(&result);
+
+        assert_eq!(
+            hash_hex, EXPECTED_HASH,
+            "BIP39 wordlist hash mismatch! The wordlist may have been modified."
+        );
+    }
+}

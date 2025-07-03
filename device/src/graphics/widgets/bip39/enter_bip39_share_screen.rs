@@ -1,11 +1,11 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, WordSelector};
-use crate::bip39_words;
 use crate::graphics::widgets::KeyTouch;
 use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
+use frostsnap_backup::bip39_words;
 
 pub const MAX_WORD_SELECTOR_WORDS: usize = 6;
 

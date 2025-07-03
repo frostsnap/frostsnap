@@ -10,7 +10,6 @@ use ui::UserInteraction;
 #[macro_use]
 extern crate alloc;
 
-pub mod bip39_words;
 pub mod device_config;
 pub mod efuse;
 pub mod esp32_run;

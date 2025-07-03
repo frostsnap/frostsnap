@@ -1,5 +1,7 @@
-use crate::graphics::widgets::{KeyTouch, FONT_LARGE};
-use crate::{bip39_words::ValidLetters, graphics::palette::COLORS};
+use crate::graphics::{
+    palette::COLORS,
+    widgets::{KeyTouch, FONT_LARGE},
+};
 use alloc::{boxed::Box, string::ToString, vec::Vec};
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
@@ -12,6 +14,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
+use frostsnap_backup::bip39_words::ValidLetters;
 use u8g2_fonts::U8g2TextStyle;
 
 // Constants for framebuffer and keyboard dimensions
