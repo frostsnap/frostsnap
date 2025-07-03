@@ -44,19 +44,21 @@ type Fb = Framebuffer<
 
 #[derive(Debug)]
 pub struct AlphabeticKeyboard {
-    scroll_position: i32,      // Current scroll offset
-    framebuffer: Box<Fb>,      // Boxed framebuffer
-    needs_redraw: bool,        // Flag to trigger redraw
-    enabled_keys: Vec<char>,   // List of enabled keys in compact layout order
+    scroll_position: i32,    // Current scroll offset
+    framebuffer: Box<Fb>,    // Boxed framebuffer
+    needs_redraw: bool,      // Flag to trigger redraw
+    enabled_keys: Vec<char>, // List of enabled keys in compact layout order
+    visible_height: u32,
 }
 
 impl AlphabeticKeyboard {
-    pub fn new() -> Self {
+    pub fn new(visible_height: u32) -> Self {
         let mut keyboard = Self {
             framebuffer: Box::new(Fb::new()),
             scroll_position: 0,
             needs_redraw: true,
             enabled_keys: Vec::new(),
+            visible_height,
         };
 
         // Initialize with default valid letters
@@ -67,21 +69,14 @@ impl AlphabeticKeyboard {
     pub fn scroll(&mut self, amount: i32) {
         // Calculate the effective height based on enabled keys
         let num_enabled = self.enabled_keys.len();
-        if num_enabled == 0 {
-            return;
-        }
-
-        let rows_needed = (num_enabled + TOTAL_COLS - 1) / TOTAL_COLS;
-        let effective_height = (rows_needed * KEY_HEIGHT as usize) as i32;
-
-        if effective_height > KEY_HEIGHT as i32 {
-            let new_scroll_position = (self.scroll_position - amount)
-                .clamp(0, (effective_height - KEY_HEIGHT as i32).max(0));
-            self.needs_redraw = new_scroll_position != self.scroll_position;
-            self.scroll_position = new_scroll_position;
-        }
+        let rows_needed = num_enabled.div_ceil(TOTAL_COLS);
+        let keyboard_buffer_height = rows_needed * KEY_HEIGHT as usize;
+        let max_scroll = keyboard_buffer_height.saturating_sub(self.visible_height as usize);
+        let new_scroll_position = (self.scroll_position - amount).clamp(0, max_scroll as i32);
+        self.needs_redraw = new_scroll_position != self.scroll_position;
+        self.scroll_position = new_scroll_position;
     }
-    
+
     pub fn reset_scroll(&mut self) {
         if self.scroll_position != 0 {
             self.scroll_position = 0;
@@ -92,14 +87,14 @@ impl AlphabeticKeyboard {
     fn render_compact_keyboard(&mut self) {
         // Clear the framebuffer
         let _ = self.framebuffer.clear(BinaryColor::Off);
-        
+
         let character_style = U8g2TextStyle::new(FONT_LARGE, BinaryColor::On);
 
         // Draw only enabled keys in compact layout
         for (idx, &key) in self.enabled_keys.iter().enumerate() {
             let row = idx / TOTAL_COLS;
             let col = idx % TOTAL_COLS;
-            
+
             let x = col as i32 * KEY_WIDTH as i32;
             let y = row as i32 * KEY_HEIGHT as i32;
             let position = Point::new(x + (KEY_WIDTH as i32 / 2), y + (KEY_HEIGHT as i32 / 2));
@@ -140,11 +135,11 @@ impl AlphabeticKeyboard {
         // Calculate how many rows we need for compact layout
         let rows_needed = (self.enabled_keys.len() + TOTAL_COLS - 1) / TOTAL_COLS;
         let compact_height = (rows_needed * KEY_HEIGHT as usize) as u32;
-        
+
         // Calculate the height of content we'll draw from the framebuffer
-        let content_height = (compact_height.saturating_sub(self.scroll_position as u32))
-            .min(bounds.size.height);
-        
+        let content_height =
+            (compact_height.saturating_sub(self.scroll_position as u32)).min(bounds.size.height);
+
         // Calculate pixels to skip based on scroll position
         let skip_pixels = (self.scroll_position.max(0) as usize) * FRAMEBUFFER_WIDTH as usize;
 
@@ -157,10 +152,10 @@ impl AlphabeticKeyboard {
                 BinaryColor::Off => COLORS.background,
                 BinaryColor::On => KEYBOARD_COLOR,
             });
-        
+
         let padding_pixels = core::iter::repeat(COLORS.background)
             .take(FRAMEBUFFER_WIDTH as usize * (bounds.size.height - content_height) as usize);
-        
+
         let _ = target.fill_contiguous(
             &Rectangle::new(Point::zero(), bounds.size),
             framebuffer_pixels.chain(padding_pixels),

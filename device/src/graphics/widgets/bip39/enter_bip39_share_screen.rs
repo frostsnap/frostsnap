@@ -29,7 +29,7 @@ impl EnterBip39ShareScreen {
         let input_display_rect =
             Rectangle::new(Point::zero(), Size::new(area.width, preview_height as u32));
 
-        let alphabetic_keyboard = AlphabeticKeyboard::new();
+        let alphabetic_keyboard = AlphabeticKeyboard::new(keyboard_rect.size.height);
         let bip39_input = Bip39InputPreview::new(input_display_rect);
 
         let mut screen = Self {
@@ -177,7 +177,7 @@ impl EnterBip39ShareScreen {
         // Check if we should show the word selector when we have a partial word
         if !current_word.is_empty() {
             let matching_words = bip39_words::words_with_prefix(current_word);
-            
+
             if !matching_words.is_empty() && matching_words.len() <= MAX_WORD_SELECTOR_WORDS {
                 // Create word selector with the matching words
                 let full_screen_size = Size::new(
@@ -221,7 +221,7 @@ impl EnterBip39ShareScreen {
     fn push_letter_and_autocomplete(&mut self, letter: char) {
         self.bip39_input.push_letter(letter);
         let words_with_prefix = bip39_words::words_with_prefix(self.bip39_input.current_word());
-        
+
         if words_with_prefix.len() == 1 {
             self.bip39_input.autocomplete_word(words_with_prefix[0]);
         }

@@ -215,6 +215,8 @@ impl Bip39InputPreview {
                 break;
             }
         }
+
+        self.update_progress();
     }
 
     pub fn accept_word(&mut self) {
@@ -472,10 +474,6 @@ impl Bip39Framebuf {
     }
 
     pub fn word_count(&self) -> usize {
-        if self.characters.is_empty() {
-            0
-        } else {
-            self.characters.split_whitespace().count()
-        }
+        self.characters.chars().filter(|c| *c == ' ').count()
     }
 }
