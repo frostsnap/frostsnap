@@ -263,6 +263,7 @@ pub struct Bip39Framebuf {
     current_position: u32, // Current vertical scroll position
     current_time: Option<crate::Instant>,
     target_position: u32, // Target vertical scroll position
+    animation_start_time: Option<crate::Instant>, // When current animation started
     color: Rgb565,
     pub(super) redraw: bool,
 }
@@ -328,6 +329,7 @@ impl Bip39Framebuf {
             current_position: 0,
             current_time: None,
             target_position: 0,
+            animation_start_time: None,
             color: COLORS.primary,
             redraw: true,
         }
@@ -440,6 +442,7 @@ impl Bip39Framebuf {
         // Update target if it changed
         if new_target != self.target_position {
             self.target_position = new_target;
+            self.animation_start_time = Some(current_time); // Reset animation start
             self.redraw = true;
         }
 
@@ -448,28 +451,74 @@ impl Bip39Framebuf {
             self.current_position = self.target_position;
         }
 
-        // Animate scrolling using time-based velocity
+        // Animate scrolling using acceleration
         let last_draw_time = self.current_time.get_or_insert(current_time);
 
         if self.current_position != self.target_position {
-            let duration_millis = current_time
+            // Calculate time since animation started
+            let animation_elapsed = if let Some(start_time) = self.animation_start_time {
+                current_time
+                    .checked_duration_since(start_time)
+                    .unwrap()
+                    .to_millis() as f32
+            } else {
+                self.animation_start_time = Some(current_time);
+                0.0
+            };
+
+            // Accelerating curve: starts slow, speeds up
+            // Using a quadratic function for smooth acceleration
+            const ACCELERATION: f32 = 0.00000005; // Acceleration factor (5x faster)
+            const MIN_VELOCITY: f32 = 0.0005; // Minimum velocity to ensure it starts moving
+
+            // Calculate current velocity based on time elapsed
+            let velocity = MIN_VELOCITY + (ACCELERATION * animation_elapsed * animation_elapsed);
+
+            // Calculate distance to move this frame
+            let frame_duration = current_time
                 .checked_duration_since(*last_draw_time)
                 .unwrap()
-                .to_millis();
+                .to_millis() as f32;
 
-            const VELOCITY: f32 = 0.01; // pixels per millisecond for vertical scrolling
+            // For upward scrolling, we want positive distance to move up (decrease position)
+            // When velocity is negative, we actually want to move down briefly
+            let distance = (frame_duration * velocity).round() as i32;
 
-            let distance = (duration_millis as f32 * VELOCITY).round() as i32;
-            if distance > 0 {
+            // Only proceed if we're actually going to move
+            if distance != 0 {
                 *last_draw_time = current_time;
 
-                let direction = self.target_position as i32 - self.current_position as i32;
-                let traveled = direction.clamp(-distance, distance);
-                self.current_position = ((self.current_position as i32) + traveled) as u32;
+                // Direction: negative means scrolling up (decreasing position)
+                let direction =
+                    (self.target_position as i32 - self.current_position as i32).signum();
+
+                // Apply the velocity in the correct direction
+                // For upward scroll (direction < 0), positive velocity should decrease position
+                let position_change = if direction < 0 {
+                    -distance // Upward scroll
+                } else {
+                    distance // Downward scroll
+                };
+
+                let new_position = (self.current_position as i32 + position_change).max(0);
+
+                // Check if we've reached or passed the target
+                if (direction < 0 && new_position <= self.target_position as i32)
+                    || (direction > 0 && new_position >= self.target_position as i32)
+                    || direction == 0
+                {
+                    self.current_position = self.target_position;
+                    self.animation_start_time = None; // Animation complete
+                } else {
+                    self.current_position = new_position as u32;
+                }
+
                 self.redraw = true; // Keep redrawing until animation completes
             }
+            // If distance is 0, we don't update last_draw_time, allowing frame_duration to accumulate
         } else {
             *last_draw_time = current_time;
+            self.animation_start_time = None;
         }
 
         // Only redraw if needed
@@ -519,11 +568,17 @@ impl Bip39Framebuf {
     pub fn set_current_input(&mut self, word_index: usize) {
         if word_index < TOTAL_WORDS {
             self.current_input = word_index;
-            // When explicitly setting the word, jump directly without animation
-            // Force recalculation of target position
-            self.target_position = 0; // Will be recalculated in draw()
-            self.current_position = 0; // Will be set to target_position in draw()
-            self.current_time = None; // Reset time to trigger immediate jump
+
+            // Calculate the correct scroll position for this word
+            // We want the word to be visible, so we scroll to show it
+            let row_height = FONT_SIZE.height + VERTICAL_PAD;
+            let word_position = word_index as u32 * row_height;
+
+            // Just set both positions to the word's position
+            // The draw method will adjust if needed based on visible height
+            self.current_position = word_position;
+            self.target_position = word_position;
+            self.animation_start_time = None; // Clear any ongoing animation
             self.redraw = true;
         }
     }
