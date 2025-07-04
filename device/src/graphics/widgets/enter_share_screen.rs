@@ -1,6 +1,6 @@
 use crate::graphics::palette::COLORS;
 
-use super::{Bech32InputPreview, Bech32Keyboard, KeyTouch};
+use super::{Bech32InputPreview, Bech32Keyboard, Key, KeyTouch};
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_core::schnorr_fun::frost::SecretShare;
@@ -58,23 +58,25 @@ impl EnterShareScreen {
         if lift_up {
             if let Some(active_touch) = self.touches.last_mut() {
                 if let Some(key) = active_touch.let_go(current_time) {
-                    self.backup_input_preview.add_character(key);
-                    if self.backup_input_preview.is_finished() && !self.is_share_valid() {
-                        self.backup_input_preview.set_input_color(COLORS.error);
-                    } else {
-                        self.backup_input_preview.set_input_color(COLORS.primary);
-                    }
+                    if let Key::Keyboard(c) = key {
+                        self.backup_input_preview.add_character(c);
+                        if self.backup_input_preview.is_finished() && !self.is_share_valid() {
+                            self.backup_input_preview.set_input_color(COLORS.error);
+                        } else {
+                            self.backup_input_preview.set_input_color(COLORS.primary);
+                        }
 
-                    for (magic_string, backup) in [
-                        ("00000", TEST_BACKUP_1),
-                        ("00002", TEST_BACKUP_1A),
-                        ("22220", TEST_BACKUP_2),
-                        ("33330", TEST_BACKUP_3),
-                    ] {
-                        if self.backup_input_preview.get_input() == magic_string {
-                            self.backup_input_preview.clear();
-                            for c in backup {
-                                self.backup_input_preview.add_character(c);
+                        for (magic_string, backup) in [
+                            ("00000", TEST_BACKUP_1),
+                            ("00002", TEST_BACKUP_1A),
+                            ("22220", TEST_BACKUP_2),
+                            ("33330", TEST_BACKUP_3),
+                        ] {
+                            if self.backup_input_preview.get_input() == magic_string {
+                                self.backup_input_preview.clear();
+                                for c in backup {
+                                    self.backup_input_preview.add_character(c);
+                                }
                             }
                         }
                     }

@@ -1,4 +1,4 @@
-use super::key_touch::KeyTouch;
+use super::key_touch::{Key, KeyTouch};
 use super::{icons, FONT_LARGE};
 use crate::graphics::palette::COLORS;
 use alloc::boxed::Box;
@@ -77,7 +77,7 @@ impl Bech32InputPreview {
 
     pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
         if self.backspace_rect.contains(point) {
-            Some(KeyTouch::new('⌫', self.backspace_rect))
+            Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
         } else {
             None
         }

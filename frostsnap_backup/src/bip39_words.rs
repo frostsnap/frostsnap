@@ -49,7 +49,10 @@ pub fn get_valid_next_letters(prefix: &str) -> ValidLetters {
 
 /// Represents which letters (A-Z) are valid next characters
 #[derive(Debug, Clone, Copy)]
-pub struct ValidLetters(pub [bool; 26]);
+pub struct ValidLetters {
+    letters: [bool; 26],
+    count: u8, // Cache the count of enabled letters
+}
 
 const DEFAULT_VALID_LETTERS: [bool; 26] = [
     true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
@@ -59,30 +62,81 @@ const DEFAULT_VALID_LETTERS: [bool; 26] = [
 
 impl Default for ValidLetters {
     fn default() -> Self {
-        Self(DEFAULT_VALID_LETTERS)
+        let count = DEFAULT_VALID_LETTERS.iter().filter(|&&b| b).count() as u8;
+        Self {
+            letters: DEFAULT_VALID_LETTERS,
+            count,
+        }
     }
 }
 
 impl ValidLetters {
     /// Create a new ValidLetters with all letters invalid
     pub fn all_false() -> Self {
-        Self([false; 26])
+        Self {
+            letters: [false; 26],
+            count: 0,
+        }
+    }
+    
+    /// Create a new ValidLetters with all letters valid
+    pub fn all_valid() -> Self {
+        Self {
+            letters: [true; 26],
+            count: 26,
+        }
     }
 
     /// Set a letter as valid (letter should be uppercase A-Z)
     pub fn set(&mut self, letter: char) {
         if let Some(idx) = Self::letter_to_index(letter) {
-            self.0[idx] = true;
+            if !self.letters[idx] {
+                self.letters[idx] = true;
+                self.count += 1;
+            }
         }
     }
 
     /// Check if a letter is valid
     pub fn is_valid(&self, letter: char) -> bool {
         Self::letter_to_index(letter)
-            .map(|idx| self.0[idx])
+            .map(|idx| self.letters[idx])
             .unwrap_or(false)
     }
 
+    /// Get the nth enabled letter (returns None if index is out of bounds)
+    pub fn nth_enabled(&self, n: usize) -> Option<char> {
+        let mut count = 0;
+        for (idx, &is_valid) in self.letters.iter().enumerate() {
+            if is_valid {
+                if count == n {
+                    return Some((b'A' + idx as u8) as char);
+                }
+                count += 1;
+            }
+        }
+        None
+    }
+    
+    /// Count the number of enabled letters (cached)
+    pub fn count_enabled(&self) -> usize {
+        self.count as usize
+    }
+    
+    /// Returns an iterator over all valid letters
+    pub fn iter_valid(&self) -> impl Iterator<Item = char> + '_ {
+        self.letters
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, &is_valid)| {
+                if is_valid {
+                    Some((b'A' + idx as u8) as char)
+                } else {
+                    None
+                }
+            })
+    }
+    
     fn letter_to_index(letter: char) -> Option<usize> {
         match letter {
             'A'..='Z' => Some((letter as u8 - b'A') as usize),

@@ -5,9 +5,18 @@ use embedded_graphics::{
 };
 use fugit::Duration;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Keyboard(char),
+    WordSelector(usize),
+    EditWord(usize),
+    NavBack,
+    NavForward,
+}
+
 #[derive(Debug)]
 pub struct KeyTouch {
-    pub key: char,
+    pub key: Key,
     rect: Rectangle,
     let_go: Option<crate::Instant>,
     last_draw: Option<u8>,
@@ -20,7 +29,7 @@ impl KeyTouch {
         self.rect.top_left += point;
     }
     // Create a new KeyTouch
-    pub fn new(key: char, rect: Rectangle) -> Self {
+    pub fn new(key: Key, rect: Rectangle) -> Self {
         Self {
             key,
             rect,
@@ -30,7 +39,7 @@ impl KeyTouch {
             cancel: false,
         }
     }
-    pub fn let_go(&mut self, current_time: crate::Instant) -> Option<char> {
+    pub fn let_go(&mut self, current_time: crate::Instant) -> Option<Key> {
         if self.cancel || self.let_go.is_some() {
             return None;
         }

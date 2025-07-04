@@ -117,7 +117,7 @@ fn main() -> ! {
                 }
                 _ => {
                     // Handle regular touches (taps, lift up)
-                    enter_share_screen.handle_touch(touch_point, current_time, lift_up);
+                    enter_share_screen.handle_touch(touch_point, current_time, lift_up, screen_size);
                 }
             }
         }

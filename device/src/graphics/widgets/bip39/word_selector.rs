@@ -1,5 +1,5 @@
 use crate::graphics::palette::COLORS;
-use crate::graphics::widgets::{icons, KeyTouch, FONT_LARGE};
+use crate::graphics::widgets::{icons, Key, KeyTouch, FONT_LARGE};
 
 use alloc::string::String;
 use embedded_graphics::{
@@ -125,18 +125,15 @@ impl WordSelector {
     pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
         // Check backspace button first
         if self.backspace_rect.contains(point) {
-            return Some(KeyTouch::new('⌫', self.backspace_rect));
+            return Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect));
         }
 
         // Check word buttons using word_rect function
         for (i, _) in self.words.iter().enumerate() {
             let rect = self.word_rect(i);
             if rect.contains(point) {
-                // Return a special key for word selection (using index as char)
-                return Some(KeyTouch::new(
-                    char::from_digit(i as u32, 10).expect("unreachable"),
-                    rect,
-                ));
+                // Return a WordSelector key with the index
+                return Some(KeyTouch::new(Key::WordSelector(i), rect));
             }
         }
         None

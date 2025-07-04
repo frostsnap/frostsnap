@@ -1,11 +1,13 @@
 use super::progress_bars::ProgressBars;
 use crate::graphics::palette::COLORS;
-use crate::graphics::widgets::{icons, KeyTouch, FONT_LARGE};
+use crate::graphics::widgets::{icons, Key, KeyTouch, FONT_LARGE};
 use alloc::{
     boxed::Box,
+    rc::Rc,
     string::{String, ToString},
-    vec::Vec,
+    vec,
 };
+use core::cell::RefCell;
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
     geometry::AnchorX,
@@ -23,16 +25,17 @@ use micromath::F32Ext;
 use u8g2_fonts::U8g2TextStyle;
 
 // Constants for vertical BIP39 word display
-const TOTAL_WORDS: usize = 25;
-const FONT_SIZE: Size = Size::new(16, 24);
-// 180 pixels width / 16 pixels per char = 11.25 chars total
-// So we can fit 11 chars total
+pub(super) const TOTAL_WORDS: usize = 25;
+pub(super) const FONT_SIZE: Size = Size::new(16, 24);
+pub(super) const VERTICAL_PAD: u32 = 10; // 5px top + 5px bottom padding per word
+                                         // 180 pixels width / 16 pixels per char = 11.25 chars total
+                                         // So we can fit 11 chars total
 const INDEX_CHARS: usize = 3; // "25."
 const SPACE_BETWEEN: usize = 1;
-const FB_WIDTH: u32 = 180; // Target width is 180
-const FB_HEIGHT: u32 = (TOTAL_WORDS * FONT_SIZE.height as usize) as u32;
+pub(super) const FB_WIDTH: u32 = 180; // Target width is 180
+pub(super) const FB_HEIGHT: u32 = TOTAL_WORDS as u32 * (FONT_SIZE.height + VERTICAL_PAD);
 
-type Fb = Framebuffer<
+pub(super) type Fb = Framebuffer<
     Gray2,
     RawU2,
     LittleEndian,
@@ -64,14 +67,16 @@ impl Bip39InputPreview {
             },
         );
 
+        // Preview rect should show at least one full row with padding
+        let row_height = FONT_SIZE.height + VERTICAL_PAD;
         let preview_rect = Rectangle::new(
             Point::new(
                 0,
-                ((area.size.height - progress_height) as i32 - FONT_SIZE.height as i32) / 2,
+                ((area.size.height - progress_height) as i32 - row_height as i32) / 2,
             ),
             Size {
                 width: area.size.width - backspace_width,
-                height: FONT_SIZE.height,
+                height: row_height,
             },
         );
 
@@ -97,7 +102,10 @@ impl Bip39InputPreview {
 
     pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
         if self.backspace_rect.contains(point) {
-            Some(KeyTouch::new('⌫', self.backspace_rect))
+            Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
+        } else if self.area.contains(point) {
+            // Tap on the input preview area triggers the entered words view
+            Some(KeyTouch::new(Key::EditWord(0), self.area))
         } else {
             None
         }
@@ -148,14 +156,10 @@ impl Bip39InputPreview {
     pub fn backspace(&mut self) {
         // Delete characters until we reach a state with multiple possibilities
         loop {
-            self.framebuf.backspace();
+            let went_back_to_prev_word = self.framebuf.backspace();
             let current_prefix = self.framebuf.current_input();
-            if current_prefix.is_empty() {
-                break;
-            }
-
             // Stop when we have multiple possibilities (more than 1 word)
-            if bip39_words::words_with_prefix(current_prefix).len() > 1 {
+            if bip39_words::words_with_prefix(current_prefix).len() > 1 || went_back_to_prev_word {
                 break;
             }
         }
@@ -219,6 +223,10 @@ impl Bip39InputPreview {
         self.framebuf.words.join(" ")
     }
 
+    pub fn get_framebuffer(&self) -> Rc<RefCell<Fb>> {
+        self.framebuf.framebuffer.clone()
+    }
+
     /// Get the number of BIP39 words that match the current input prefix
     pub fn get_matching_word_count(&self) -> usize {
         let current_word = self.current_word();
@@ -235,13 +243,23 @@ impl Bip39InputPreview {
         self.framebuf.redraw = true;
         self.progress.redraw = true;
     }
+
+    /// Set the current word being edited
+    pub fn set_editing_word(&mut self, word_index: usize) {
+        self.framebuf.set_current_input(word_index);
+    }
+
+    /// Get the current word index being edited
+    pub fn get_current_word_index(&self) -> usize {
+        self.framebuf.current_input
+    }
 }
 
 #[derive(Debug)]
 pub struct Bip39Framebuf {
-    framebuffer: Box<Fb>,
-    words: Vec<String>,
-    current_input: String,
+    framebuffer: Rc<RefCell<Fb>>,
+    words: [String; TOTAL_WORDS],
+    current_input: usize,  // Index of current word being edited
     current_position: u32, // Current vertical scroll position
     current_time: Option<crate::Instant>,
     target_position: u32, // Target vertical scroll position
@@ -255,14 +273,40 @@ impl Bip39Framebuf {
         // Clear the framebuffer
         let _ = fb.clear(Gray2::BLACK);
 
-        // Pre-render word indices
+        // Pre-render word indices with aligned dots
         for i in 0..TOTAL_WORDS {
-            let y = (i * FONT_SIZE.height as usize) as i32;
-            let index = format!("{}.", i + 1);
-            // Move the number to the right by starting at x=8 (half a character width)
+            let y =
+                (i as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as i32 + (VERTICAL_PAD / 2) as i32;
+            let number = (i + 1).to_string();
+
+            // Position dot at a fixed location (2.5 chars from left)
+            let dot_x = 40; // 2.5 * 16 pixels
+
+            // Calculate number position to right-align before the dot
+            let number_x = if i < 9 {
+                // Single digit: one char before dot
+                dot_x - FONT_SIZE.width as i32 // 40 - 16 = 24
+            } else {
+                // Double digit: two chars before dot
+                dot_x - (2 * FONT_SIZE.width as i32) // 40 - 32 = 8
+            };
+
+            // Draw the number
             let _ = Text::with_text_style(
-                &index,
-                Point::new(8, y),
+                &number,
+                Point::new(number_x, y),
+                U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)),
+                TextStyleBuilder::new()
+                    .alignment(Alignment::Left)
+                    .baseline(Baseline::Top)
+                    .build(),
+            )
+            .draw(&mut *fb);
+
+            // Draw the dot at the fixed position
+            let _ = Text::with_text_style(
+                ".",
+                Point::new(dot_x, y),
                 U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)),
                 TextStyleBuilder::new()
                     .alignment(Alignment::Left)
@@ -272,10 +316,15 @@ impl Bip39Framebuf {
             .draw(&mut *fb);
         }
 
+        // Create empty strings array
+        let words: [String; TOTAL_WORDS] = vec![String::new(); TOTAL_WORDS]
+            .try_into()
+            .expect("vec of correct size");
+
         Self {
-            framebuffer: fb,
-            words: Vec::new(),
-            current_input: String::new(),
+            framebuffer: Rc::new(RefCell::new(*fb)),
+            words,
+            current_input: 0,
             current_position: 0,
             current_time: None,
             target_position: 0,
@@ -286,15 +335,17 @@ impl Bip39Framebuf {
 
     pub fn add_character(&mut self, c: char) {
         let upper = c.to_uppercase().next().unwrap_or(c);
-        self.current_input.push(upper);
+        self.words[self.current_input].push(upper);
 
         // Draw the character directly to the framebuffer
-        let word_idx = self.words.len();
-        let char_idx = self.current_input.len() - 1;
+        let word_idx = self.current_input;
+        let char_idx = self.words[word_idx].len() - 1;
         let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_idx) * FONT_SIZE.width as usize;
-        let y = word_idx * FONT_SIZE.height as usize;
+        let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
+            + (VERTICAL_PAD / 2) as usize;
 
-        let mut char_frame = self.framebuffer.cropped(&Rectangle::new(
+        let mut fb = self.framebuffer.borrow_mut();
+        let mut char_frame = fb.cropped(&Rectangle::new(
             Point::new(x as i32, y as i32),
             Size::new(FONT_SIZE.width, FONT_SIZE.height),
         ));
@@ -315,9 +366,9 @@ impl Bip39Framebuf {
     }
 
     pub fn mark_word_boundary(&mut self) {
-        if !self.current_input.is_empty() && self.words.len() < TOTAL_WORDS {
-            self.words.push(self.current_input.clone());
-            self.current_input.clear();
+        if !self.words[self.current_input].is_empty() && self.current_input < TOTAL_WORDS - 1 {
+            // Move to next word
+            self.current_input += 1;
 
             // Set target position to scroll up one line after entering a word
             // But only if we need to (when we have more words than visible lines)
@@ -326,65 +377,33 @@ impl Bip39Framebuf {
         }
     }
 
-    pub fn backspace(&mut self) {
-        if let Some(_) = self.current_input.pop() {
+    pub fn backspace(&mut self) -> bool {
+        if let Some(_) = self.words[self.current_input].pop() {
             // Clear the character from framebuffer
-            let word_idx = self.words.len();
-            let char_idx = self.current_input.len();
+            let word_idx = self.current_input;
+            let char_idx = self.words[word_idx].len();
             let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_idx) * FONT_SIZE.width as usize;
-            let y = word_idx * FONT_SIZE.height as usize;
+            let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
+                + (VERTICAL_PAD / 2) as usize;
 
-            let mut char_frame = self.framebuffer.cropped(&Rectangle::new(
+            let mut fb = self.framebuffer.borrow_mut();
+            let mut char_frame = fb.cropped(&Rectangle::new(
                 Point::new(x as i32, y as i32),
                 Size::new(FONT_SIZE.width, FONT_SIZE.height),
             ));
             let _ = char_frame.clear(Gray2::BLACK);
 
             self.redraw = true;
-        } else if let Some(prev_word) = self.words.pop() {
-            // Current input is empty, go back to previous word
-            self.current_input = prev_word;
-
-            // Clear the entire previous word line from framebuffer
-            let word_idx = self.words.len();
-            let start_x = (INDEX_CHARS + SPACE_BETWEEN) as usize * FONT_SIZE.width as usize;
-            let y = word_idx * FONT_SIZE.height as usize;
-            let width = self.current_input.len() * FONT_SIZE.width as usize;
-
-            let mut word_frame = self.framebuffer.cropped(&Rectangle::new(
-                Point::new(start_x as i32, y as i32),
-                Size::new(width as u32, FONT_SIZE.height),
-            ));
-            let _ = word_frame.clear(Gray2::BLACK);
-
-            // Now remove the last character
-            if let Some(_) = self.current_input.pop() {
-                // Re-draw the word without the last character
-                for (char_idx, ch) in self.current_input.chars().enumerate() {
-                    let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_idx)
-                        * FONT_SIZE.width as usize;
-
-                    let mut char_frame = self.framebuffer.cropped(&Rectangle::new(
-                        Point::new(x as i32, y as i32),
-                        Size::new(FONT_SIZE.width, FONT_SIZE.height),
-                    ));
-
-                    let _ = Text::with_text_style(
-                        &ch.to_string(),
-                        Point::zero(),
-                        U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)),
-                        TextStyleBuilder::new()
-                            .alignment(Alignment::Left)
-                            .baseline(Baseline::Top)
-                            .build(),
-                    )
-                    .draw(&mut char_frame);
-                }
-            }
-
+            false
+        } else if self.current_input > 0 {
+            // Current word is empty, go back to previous word
+            self.current_input -= 1;
             // Force recalculation of scroll position
             self.target_position = 0; // This will be recalculated in draw()
             self.redraw = true;
+            true
+        } else {
+            false
         }
     }
 
@@ -402,12 +421,18 @@ impl Bip39Framebuf {
             FB_WIDTH, bb.size.width
         );
 
-        // Calculate where we should be scrolled to based on current word
-        let current_word_line = self.words.len();
-        let visible_lines = bb.size.height as usize / FONT_SIZE.height as usize;
+        // Check if this is the first draw
+        let is_first_draw = self.current_time.is_none();
 
+        // Calculate where we should be scrolled to based on current word
+        let current_word_line = self.current_input;
+        let row_height = FONT_SIZE.height + VERTICAL_PAD;
+        let visible_lines = bb.size.height as usize / row_height as usize;
+
+        // Keep the current word visible within the viewport
         let new_target = if current_word_line >= visible_lines {
-            ((current_word_line - visible_lines + 1) * FONT_SIZE.height as usize) as u32
+            // Scroll so that the current word is at the bottom of the visible area
+            ((current_word_line + 1).saturating_sub(visible_lines) * row_height as usize) as u32
         } else {
             0
         };
@@ -416,6 +441,11 @@ impl Bip39Framebuf {
         if new_target != self.target_position {
             self.target_position = new_target;
             self.redraw = true;
+        }
+
+        // On first draw, jump directly to target position without animation
+        if is_first_draw {
+            self.current_position = self.target_position;
         }
 
         // Animate scrolling using time-based velocity
@@ -448,22 +478,28 @@ impl Bip39Framebuf {
         }
 
         // Skip to the correct starting position in the framebuffer
-        let skip_pixels = self.current_position as usize * FB_WIDTH as usize;
+        // current_position is already in pixels (Y coordinate), so we need to skip
+        // that many rows worth of pixels in the framebuffer
+        let skip_rows = self.current_position as usize;
+        let skip_pixels = skip_rows * FB_WIDTH as usize;
         let take_pixels = bb.size.height as usize * bb.size.width as usize;
 
-        let framebuffer_pixels = RawDataSlice::<RawU2, LittleEndian>::new(self.framebuffer.data())
-            .into_iter()
-            .skip(skip_pixels)
-            .take(take_pixels)
-            .map(|pixel| match Gray2::from(pixel).luma() {
-                0x00 => COLORS.background,
-                0x01 => Rgb565::new(20, 41, 22),
-                0x02 => self.color,
-                0x03 => self.color,
-                _ => COLORS.background,
-            });
+        {
+            let fb = self.framebuffer.borrow();
+            let framebuffer_pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb.data())
+                .into_iter()
+                .skip(skip_pixels)
+                .take(take_pixels)
+                .map(|pixel| match Gray2::from(pixel).luma() {
+                    0x00 => COLORS.background,
+                    0x01 => Rgb565::new(20, 41, 22),
+                    0x02 => self.color,
+                    0x03 => self.color,
+                    _ => COLORS.background,
+                });
 
-        let _ = target.fill_contiguous(&bb, framebuffer_pixels);
+            let _ = target.fill_contiguous(&bb, framebuffer_pixels);
+        }
 
         // Only clear redraw flag if animation is complete
         if self.current_position == self.target_position {
@@ -472,10 +508,23 @@ impl Bip39Framebuf {
     }
 
     pub fn current_input(&self) -> &str {
-        &self.current_input
+        &self.words[self.current_input]
     }
 
     pub fn word_count(&self) -> usize {
-        self.words.len()
+        // Count non-empty words
+        self.words.iter().filter(|w| !w.is_empty()).count()
+    }
+
+    pub fn set_current_input(&mut self, word_index: usize) {
+        if word_index < TOTAL_WORDS {
+            self.current_input = word_index;
+            // When explicitly setting the word, jump directly without animation
+            // Force recalculation of target position
+            self.target_position = 0; // Will be recalculated in draw()
+            self.current_position = 0; // Will be set to target_position in draw()
+            self.current_time = None; // Reset time to trigger immediate jump
+            self.redraw = true;
+        }
     }
 }
