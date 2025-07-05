@@ -11,7 +11,6 @@ use bdk_electrum_streaming::{
     run_async, AsyncReceiver, AsyncState, Cache, DerivedSpkTracker, ReqCoord, Update,
 };
 use frostsnap_core::MasterAppkey;
-use futures::pin_mut;
 use futures::{
     channel::{mpsc, oneshot},
     executor::{block_on, block_on_stream},
@@ -19,6 +18,7 @@ use futures::{
     stream::FuturesUnordered,
     FutureExt, StreamExt,
 };
+use futures::{pin_mut, select_biased};
 use rustls::pki_types;
 use std::{
     collections::BTreeMap,
@@ -142,12 +142,17 @@ impl ChainClient {
     }
 
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<bitcoin::Txid> {
-        event!(
-            Level::DEBUG,
-            "WE ARE BROADCASTING {}",
-            transaction.compute_txid()
-        );
+        let txid = transaction.compute_txid();
+        event!(Level::DEBUG, "Broadcasting: {}", transaction.compute_txid());
         block_on(self.client.send_request(request::BroadcastTx(transaction)))
+            .inspect_err(|err| {
+                tracing::error!(
+                    txid = txid.to_string(),
+                    error = err.to_string(),
+                    "Failed to broadcast tx"
+                )
+            })
+            .inspect(|txid| tracing::info!(txid = txid.to_string(), "Successfully broadcasted tx"))
     }
 
     pub fn estimate_fee(
@@ -161,8 +166,8 @@ impl ChainClient {
                 .map(|number| {
                     self.client
                         .send_request(request::EstimateFee { number })
-                        .map(move |result| {
-                            result
+                        .map(move |request_result| {
+                            request_result
                                 .map(|resp| resp.fee_rate.map(|fee_rate| (number, fee_rate)))
                                 .transpose()
                         })
@@ -229,9 +234,9 @@ impl Iterator for UpdateIter {
 }
 
 impl ConnectionHandler {
-    // TODO: Do something with this.
-    const _PING_DELAY: Duration = Duration::from_secs(5);
-    const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
+    const PING_DELAY: Duration = Duration::from_secs(210);
+    const PING_TIMEOUT: Duration = Duration::from_secs(5);
+    const RECONNECT_DELAY: Duration = Duration::from_millis(2100);
 
     pub fn run<SW, F>(mut self, url: String, backup_url: String, super_wallet: SW, update_action: F)
     where
@@ -310,10 +315,10 @@ impl ConnectionHandler {
                         .fuse();
                         let ping_fut = async {
                             loop {
-                                tokio::time::sleep(Duration::from_secs(5 * 60)).await;
+                                tokio::time::sleep(Self::PING_DELAY).await;
 
                                 let req_fut = self.client.send_request(request::Ping).fuse();
-                                let req_timeout_fut = tokio::time::sleep(Duration::from_secs(10)).fuse();
+                                let req_timeout_fut = tokio::time::sleep(Self::PING_TIMEOUT).fuse();
                                 pin_mut!(req_fut);
                                 pin_mut!(req_timeout_fut);
                                 select! {
@@ -331,8 +336,7 @@ impl ConnectionHandler {
                         pin_mut!(conn_fut);
                         pin_mut!(ping_fut);
                         loop {
-                            select! {
-                                _ = conn_fut => break,
+                            select_biased! {
                                 msg_opt = self.req_recv.next() => match msg_opt {
                                     Some(msg) => {
                                         tracing::info!(msg = msg.to_string(), "Got message");
@@ -343,7 +347,11 @@ impl ConnectionHandler {
                                 result = ping_fut => {
                                     if let Err(err) = result {
                                         tracing::error!(error = err.to_string(), "Failed to keep connection alive");
+                                        break;
                                     }
+                                },
+                                _ = conn_fut => {
+                                    break;
                                 },
                             }
                         }
@@ -383,7 +391,7 @@ impl ConnectionHandler {
                     status_sink.send(ChainStatus::new(url, ChainStatusState::Connecting));
                     tracing::info!("No existing connection. Connecting to {}.", url);
 
-                    match Conn::with_timeout(genesis_hash, url, CONNECT_TIMEOUT).await {
+                    match Conn::new(genesis_hash, url, CONNECT_TIMEOUT).await {
                         Ok(conn) => {
                             status_sink.send(ChainStatus::new(url, ChainStatusState::Connected));
                             tracing::info!("Connection established with {}.", url);
@@ -464,7 +472,7 @@ impl ConnectionHandler {
                     is_backup = request.is_backup,
                 );
 
-                match Conn::with_timeout(genesis_hash, &request.url, CONNECT_TIMEOUT).await {
+                match Conn::new(genesis_hash, &request.url, CONNECT_TIMEOUT).await {
                     Ok(conn) => {
                         if request.is_backup {
                             conn_stage.backup_url = request.url.clone();
@@ -605,7 +613,20 @@ enum Conn {
 }
 
 impl Conn {
-    async fn new(genesis_hash: BlockHash, url: &str) -> Result<Self> {
+    async fn new(genesis_hash: BlockHash, url: &str, timeout: Duration) -> Result<Self> {
+        let connect_fut = Self::_new(genesis_hash, url).fuse();
+        pin_mut!(connect_fut);
+
+        let timeout_fut = tokio::time::sleep(timeout).fuse();
+        pin_mut!(timeout_fut);
+
+        select! {
+            conn_res = connect_fut => conn_res,
+            _ = timeout_fut => Err(anyhow!("Timed out")),
+        }
+    }
+
+    async fn _new(genesis_hash: BlockHash, url: &str) -> Result<Self> {
         let (is_ssl, socket_addr) = match url.split_once("://") {
             Some(("ssl", socket_addr)) => (true, socket_addr.to_owned()),
             Some(("tcp", socket_addr)) => (false, socket_addr.to_owned()),
@@ -627,9 +648,7 @@ impl Conn {
                 .map(|(host, _)| host.to_string())
                 .unwrap_or(socket_addr.clone());
             let dnsname = pki_types::ServerName::try_from(host)?;
-
             let sock = tokio::net::TcpStream::connect(socket_addr).await?;
-
             let connector = TlsConnector::from(Arc::new(config));
             let stream = connector.connect(dnsname, sock).await?;
             let (mut rh, mut wh) = tokio::io::split(stream);
@@ -644,19 +663,6 @@ impl Conn {
                 .await
                 .inspect_err(|e| tracing::error!(e = e.to_string()))?;
             anyhow::Ok(Conn::Tcp((rh, wh)))
-        }
-    }
-
-    async fn with_timeout(genesis_hash: BlockHash, url: &str, timeout: Duration) -> Result<Self> {
-        let connect_fut = Self::new(genesis_hash, url).fuse();
-        pin_mut!(connect_fut);
-
-        let timeout_fut = tokio::time::sleep(timeout).fuse();
-        pin_mut!(timeout_fut);
-
-        select! {
-            conn_res = connect_fut => conn_res,
-            _ = timeout_fut => Err(anyhow!("")),
         }
     }
 }

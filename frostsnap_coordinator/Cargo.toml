@@ -18,7 +18,7 @@ futures.workspace = true
 rand.workspace = true
 
 bdk_chain = { version = "0.23", features = ["rusqlite"] }
-bdk_electrum_streaming = { version = "0.5" }
+bdk_electrum_streaming = { version = "0.5.1" }
 bdk_coin_select = { version = "0.3" }
 
 webpki-roots = { version = "0.26" }

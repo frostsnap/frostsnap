@@ -679,7 +679,6 @@ Widget buildDetailsColumn(
     children: [
       if (txDetails.isSend)
         ...txDetails.tx.recipients().where((info) => !info.isMine).map((info) {
-          debugPrint("${walletCtx.superWallet.isDisposed}");
           final address = info.address(network: walletCtx.network)?.toString();
           return Column(
             children: [
