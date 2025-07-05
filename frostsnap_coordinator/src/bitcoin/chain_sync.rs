@@ -142,12 +142,21 @@ impl ChainClient {
     }
 
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<bitcoin::Txid> {
-        event!(
-            Level::DEBUG,
-            "WE ARE BROADCASTING {}",
-            transaction.compute_txid()
-        );
-        block_on(self.client.send_request(request::BroadcastTx(transaction)))
+        event!(Level::DEBUG, "Broadcasting: {}", transaction.compute_txid());
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("cannot build tokio runtime");
+
+        rt.block_on(async {
+            tokio::time::timeout(
+                CONNECT_TIMEOUT,
+                self.client.send_request(request::BroadcastTx(transaction)),
+            )
+            .await
+            .map_err(|_| anyhow!("Broadcast timeout"))?
+        })
     }
 
     pub fn estimate_fee(
@@ -155,22 +164,40 @@ impl ChainClient {
         target_blocks: impl IntoIterator<Item = usize>,
     ) -> Result<BTreeMap<usize, bitcoin::FeeRate>> {
         use futures::FutureExt;
-        block_on_stream(
-            target_blocks
-                .into_iter()
-                .map(|number| {
-                    self.client
-                        .send_request(request::EstimateFee { number })
-                        .map(move |result| {
-                            result
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("cannot build tokio runtime");
+
+        rt.block_on(async {
+            block_on_stream(
+                target_blocks
+                    .into_iter()
+                    .map(|number| {
+                        tokio::time::timeout(
+                            CONNECT_TIMEOUT,
+                            self.client.send_request(request::EstimateFee { number }),
+                        )
+                        .map(move |timeout_result| {
+                            let request_result = match timeout_result {
+                                Ok(result) => result,
+                                Err(_) => {
+                                    Err(anyhow!("Request timeout for fee rate target {}", number)
+                                        .into())
+                                }
+                            };
+
+                            request_result
                                 .map(|resp| resp.fee_rate.map(|fee_rate| (number, fee_rate)))
                                 .transpose()
                         })
-                })
-                .collect::<FuturesUnordered<_>>(),
-        )
-        .flatten()
-        .collect()
+                    })
+                    .collect::<FuturesUnordered<_>>(),
+            )
+            .flatten()
+            .collect()
+        })
     }
 
     pub fn set_status_sink(&self, sink: Box<dyn Sink<ChainStatus>>) {
