@@ -140,6 +140,9 @@ class CargoKitPlugin implements Plugin<Project> {
             //     platforms.add("android-x86")
             //     platforms.add("android-x64")
             // }
+            
+            // Also remove x86 platforms for all build types (including release)
+            platforms.removeAll { it == "android-x86" || it == "android-x64" }
 
             // The task name depends on plugin properties, which are not available
             // at this point
