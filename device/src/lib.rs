@@ -20,6 +20,7 @@ pub mod io;
 pub mod ota;
 pub mod panic;
 pub mod partitions;
+pub mod secure_boot;
 pub mod ui;
 
 #[derive(Debug, Clone)]

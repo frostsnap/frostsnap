@@ -3,4 +3,5 @@
 otadata,data,ota,0xe000,8K,
 ota_0,app,ota_0,0x10000,1280K,
 ota_1,app,ota_1,0x150000,1280K,
-nvs,data,nvs,0x290000,1460K,
+nvs,data,nvs,0x290000,1444K,
+esp_secure_cert,data,nvs,0x3f9000,16K,

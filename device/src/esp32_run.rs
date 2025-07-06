@@ -9,7 +9,7 @@ use crate::{
 };
 use alloc::{collections::VecDeque, string::ToString, vec::Vec};
 use core::cell::RefCell;
-use esp_hal::{gpio, sha::Sha, timer};
+use esp_hal::{gpio, rsa::Rsa, sha::Sha, timer, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
@@ -30,6 +30,7 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub timer: &'a T,
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
+    pub rsa: Rsa<'a, Blocking>,
     pub hmac_keys: EfuseHmacKeys<'a>,
 }
 
@@ -49,6 +50,7 @@ where
             timer,
             downstream_detect,
             mut sha256,
+            mut rsa,
             mut hmac_keys,
         } = self;
 
@@ -314,6 +316,7 @@ where
                                                             if downstream_connection_state == DownstreamConnectionState::Established { Some(downstream_serial.inner_mut()) } else { None },
                                                             &mut ui,
                                                             &mut sha256,
+                                                            &mut rsa
                                                         );
                                                         reset(&mut upstream_serial);
                                                     } else {
