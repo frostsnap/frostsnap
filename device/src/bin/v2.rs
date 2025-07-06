@@ -12,29 +12,17 @@ use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_hal as hal;
 use esp_hal::{
-    delay::Delay,
-    gpio::{Input, Level, Output, Pull},
-    hmac::Hmac,
-    i2c::master::{Config as i2cConfig, I2c},
-    ledc::{
+    delay::Delay, gpio::{Input, Level, Output, Pull}, hmac::Hmac, i2c::master::{Config as i2cConfig, I2c}, ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
-    },
-    peripherals::Peripherals,
-    prelude::*,
-    rng::Trng,
-    spi::{
+    }, peripherals::Peripherals, prelude::*, rng::Trng, rsa::Rsa, spi::{
         master::{Config as spiConfig, Spi},
         SpiMode,
-    },
-    timer::{
+    }, timer::{
         self,
         timg::{Timer, TimerGroup},
-    },
-    uart::{self, Uart},
-    usb_serial_jtag::UsbSerialJtag,
-    Blocking,
+    }, uart::{self, Uart}, usb_serial_jtag::UsbSerialJtag, Blocking
 };
 use frostsnap_comms::Downstream;
 use frostsnap_core::{schnorr_fun::fun::hex, SignTask};
@@ -156,7 +144,8 @@ fn main() -> ! {
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
     let sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
-
+    let rsa = Rsa::new(peripherals.RSA);
+    
     let mut adc = peripherals.ADC1;
     let hal_rng = Trng::new(peripherals.RNG, &mut adc);
 
@@ -238,6 +227,7 @@ fn main() -> ! {
         timer: &timer0,
         downstream_detect,
         sha256,
+        rsa,
         hmac_keys,
         ds,
     };

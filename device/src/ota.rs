@@ -1,13 +1,14 @@
 use crate::{
     io::SerialIo,
     partitions::{EspFlashPartition, PartitionExt},
+    secure_boot,
     ui::{self, UserInteraction},
 };
 use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
-use esp_hal::sha::Sha;
 use esp_hal::time::Duration;
 use esp_hal::timer;
+use esp_hal::{rsa::Rsa, sha::Sha, Blocking};
 use frostsnap_comms::{
     CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
     FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -22,16 +23,7 @@ pub struct OtaPartitions<'a> {
 }
 
 /// CRC used by out bootloader (and incidentally python's binutils crc32 function when passed 0xFFFFFFFF as the init).
-const CRC: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::Algorithm {
-    width: 32,
-    poly: 0x04c11db7,
-    init: 0x0,
-    refin: true,
-    refout: true,
-    xorout: 0xffffffff,
-    check: 0xcbf43926, // This is just for reference
-    residue: 0xdebb20e3,
-});
+const CRC: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
 
 const SECTOR_SIZE: u32 = 4096;
 const SECTORS_PER_IMAGE: u32 = FIRMWARE_IMAGE_SIZE / SECTOR_SIZE;
@@ -304,6 +296,7 @@ impl FirmwareUpgradeMode<'_> {
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
         timer: &T,
+        rsa: &mut Rsa<'_, Blocking>,
     ) {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {
@@ -430,6 +423,8 @@ impl FirmwareUpgradeMode<'_> {
                     expected_digest
                 );
             }
+
+            secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
             ota.switch_partition(*ota_slot, OtaMetadata {});
         }
     }
