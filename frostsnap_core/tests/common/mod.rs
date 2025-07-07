@@ -278,13 +278,12 @@ impl Run {
         purpose: KeyPurpose,
     ) -> Self {
         let mut run = Self::start_after_keygen(n_devices, threshold, env, rng, purpose);
-        for device_id in run.device_set() {
-            run.extend(run.coordinator.maybe_request_nonce_replenishment(
-                device_id,
-                n_nonce_streams,
-                rng,
-            ));
-        }
+
+        run.extend(run.coordinator.maybe_request_nonce_replenishment(
+            &run.device_set(),
+            n_nonce_streams,
+            rng,
+        ));
         run.run_until_finished(env, rng).unwrap();
 
         run

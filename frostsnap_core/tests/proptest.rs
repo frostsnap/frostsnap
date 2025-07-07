@@ -639,7 +639,7 @@ impl StateMachineTest for HappyPathTest {
             }
             Transition::CNonceReplenish { device_id } => {
                 let messages = run.coordinator.maybe_request_nonce_replenishment(
-                    device_id,
+                    &BTreeSet::from([device_id]),
                     ref_state.n_desired_nonce_streams_coord,
                     rng,
                 );

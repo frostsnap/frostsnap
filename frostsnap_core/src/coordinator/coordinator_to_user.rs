@@ -9,6 +9,9 @@ pub enum CoordinatorToUserMessage {
     },
     Signing(CoordinatorToUserSigningMessage),
     Restoration(super::restoration::ToUserRestoration),
+    ReplenishedNonces {
+        device_id: DeviceId,
+    },
 }
 
 impl Gist for CoordinatorToUserMessage {

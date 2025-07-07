@@ -7,6 +7,7 @@ use frostsnap_coordinator::{
     bitcoin::chain_sync::ChainStatus,
     firmware_upgrade::FirmwareUpgradeConfirmState,
     keygen::KeyGenState,
+    nonce_replenish::NonceReplenishState,
     signing::SigningState,
     verify_address::VerifyAddressProtocolState,
 };
@@ -34,6 +35,7 @@ bridge_sink!(f32);
 bridge_sink!(ChainStatus);
 bridge_sink!(DeviceListUpdate);
 bridge_sink!(KeyState);
+bridge_sink!(NonceReplenishState);
 bridge_sink!(());
 bridge_sink!(crate::api::recovery::EnterPhysicalBackupState);
 bridge_sink!(crate::api::recovery::WaitForRecoveryShareState);
