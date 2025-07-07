@@ -81,7 +81,7 @@ impl ValidLetters {
             count: 0,
         }
     }
-    
+
     /// Create a new ValidLetters with all letters valid
     pub fn all_valid() -> Self {
         Self {
@@ -120,12 +120,12 @@ impl ValidLetters {
         }
         None
     }
-    
+
     /// Count the number of enabled letters (cached)
     pub fn count_enabled(&self) -> usize {
         self.count as usize
     }
-    
+
     /// Returns an iterator over all valid letters
     pub fn iter_valid(&self) -> impl Iterator<Item = char> + '_ {
         self.letters
@@ -139,7 +139,7 @@ impl ValidLetters {
                 }
             })
     }
-    
+
     fn letter_to_index(letter: char) -> Option<usize> {
         match letter {
             'A'..='Z' => Some((letter as u8 - b'A') as usize),

@@ -1,4 +1,4 @@
-use crate::graphics::{palette::COLORS, widgets::FONT_SMALL};
+use crate::graphics::{palette::COLORS, widgets::{FONT_SMALL, FONT_LARGE}};
 use alloc::{boxed::Box, format};
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
@@ -8,14 +8,14 @@ use embedded_graphics::{
         Gray2, Rgb565,
     },
     prelude::*,
-    primitives::{PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
+    primitives::{PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use frostsnap_backup::bip39_words::FROSTSNAP_BACKUP_WORDS;
 use u8g2_fonts::U8g2TextStyle;
 
 pub const SUBMIT_BUTTON_HEIGHT: u32 = 80; // Height of the button area
-pub const SUBMIT_BUTTON_WIDTH: u32 = 180; // Width matching the entered words
+pub const SUBMIT_BUTTON_WIDTH: u32 = 240; // Full screen width
 
 // Framebuffer type for the button
 type ButtonFb = Framebuffer<
@@ -62,16 +62,13 @@ impl SubmitBackupButton {
 
         match &self.state {
             SubmitBackupState::Complete { .. } => {
-                // Draw "Submit" button with bright gray
+                // Fill entire button area with success color
                 let button_rect = Rectangle::new(
-                    Point::new(
-                        (SUBMIT_BUTTON_WIDTH / 2 - 60) as i32,
-                        (SUBMIT_BUTTON_HEIGHT / 2 - 20) as i32,
-                    ),
-                    Size::new(120, 40),
+                    Point::zero(),
+                    Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
                 );
 
-                let _ = RoundedRectangle::with_equal_corners(button_rect, Size::new(8, 8))
+                let _ = button_rect
                     .into_styled(
                         PrimitiveStyleBuilder::new()
                             .fill_color(Gray2::new(0x03)) // Brightest gray for success
@@ -81,8 +78,11 @@ impl SubmitBackupButton {
 
                 let _ = Text::with_text_style(
                     "Submit",
-                    button_rect.center(),
-                    U8g2TextStyle::new(FONT_SMALL, Gray2::BLACK),
+                    Point::new(
+                        (SUBMIT_BUTTON_WIDTH / 2) as i32,
+                        (SUBMIT_BUTTON_HEIGHT / 2) as i32,
+                    ),
+                    U8g2TextStyle::new(FONT_LARGE, Gray2::BLACK),
                     TextStyleBuilder::new()
                         .alignment(Alignment::Center)
                         .baseline(Baseline::Middle)
@@ -91,18 +91,29 @@ impl SubmitBackupButton {
                 .draw(&mut *self.framebuffer);
             }
             SubmitBackupState::Incomplete { words_entered } => {
-                // Draw error text in medium gray
-                let error_text = format!(
-                    "Enter all {} words\n({}/{} completed)",
-                    FROSTSNAP_BACKUP_WORDS, words_entered, FROSTSNAP_BACKUP_WORDS
+                // Fill entire button area with disabled gray
+                let button_rect = Rectangle::new(
+                    Point::zero(),
+                    Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
                 );
+
+                let _ = button_rect
+                    .into_styled(
+                        PrimitiveStyleBuilder::new()
+                            .fill_color(Gray2::new(0x01)) // Dark gray for disabled
+                            .build(),
+                    )
+                    .draw(&mut *self.framebuffer);
+                
+                // Draw count in large text
+                let count_text = format!("{}/{}", words_entered, FROSTSNAP_BACKUP_WORDS);
                 let _ = Text::with_text_style(
-                    &error_text,
+                    &count_text,
                     Point::new(
                         (SUBMIT_BUTTON_WIDTH / 2) as i32,
                         (SUBMIT_BUTTON_HEIGHT / 2) as i32,
                     ),
-                    U8g2TextStyle::new(FONT_SMALL, Gray2::new(0x01)), // Dark gray -> error red
+                    U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)), // Medium gray for text
                     TextStyleBuilder::new()
                         .alignment(Alignment::Center)
                         .baseline(Baseline::Middle)
@@ -111,14 +122,28 @@ impl SubmitBackupButton {
                 .draw(&mut *self.framebuffer);
             }
             SubmitBackupState::InvalidChecksum => {
-                // Draw error text in medium gray
+                // Fill entire button area with disabled gray
+                let button_rect = Rectangle::new(
+                    Point::zero(),
+                    Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
+                );
+
+                let _ = button_rect
+                    .into_styled(
+                        PrimitiveStyleBuilder::new()
+                            .fill_color(Gray2::new(0x01)) // Dark gray for disabled
+                            .build(),
+                    )
+                    .draw(&mut *self.framebuffer);
+                
+                // Draw error text
                 let _ = Text::with_text_style(
-                    "Invalid checksum!\nDouble-check words",
+                    "Invalid checksum",
                     Point::new(
                         (SUBMIT_BUTTON_WIDTH / 2) as i32,
                         (SUBMIT_BUTTON_HEIGHT / 2) as i32,
                     ),
-                    U8g2TextStyle::new(FONT_SMALL, Gray2::new(0x01)), // Dark gray -> error red
+                    U8g2TextStyle::new(FONT_SMALL, Gray2::new(0x02)), // Medium gray for text
                     TextStyleBuilder::new()
                         .alignment(Alignment::Center)
                         .baseline(Baseline::Middle)
@@ -140,7 +165,7 @@ impl SubmitBackupButton {
         let pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb_data)
             .into_iter()
             .map(|pixel| match Gray2::from(pixel).luma() {
-                0x01 => COLORS.error,   // Dark gray -> error red
+                0x01 => Rgb565::new(6, 12, 6), // Dark gray -> disabled gray (neutral gray in RGB565)
                 0x02 => COLORS.primary, // Medium gray -> normal text
                 0x03 => COLORS.success, // Bright gray -> success green
                 _ => COLORS.background,
@@ -174,11 +199,7 @@ impl SubmitBackupButton {
     }
 
     pub fn handle_touch(&self, point: Point) -> bool {
-        // Only handle touch if we're in complete state
-        if self.bounds.contains(point) && self.is_complete() {
-            true
-        } else {
-            false
-        }
+        // Handle touch for the entire button area, but only return true if complete
+        self.bounds.contains(point) && self.is_complete()
     }
 }

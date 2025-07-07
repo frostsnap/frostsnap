@@ -1,4 +1,5 @@
 use super::progress_bars::ProgressBars;
+use super::submit_backup_button::SubmitBackupState;
 use crate::graphics::palette::COLORS;
 use crate::graphics::widgets::{icons, Key, KeyTouch, FONT_LARGE};
 use alloc::{
@@ -8,9 +9,8 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::slice::Iter;
-use super::submit_backup_button::SubmitBackupState;
 use core::cell::RefCell;
+use core::slice::Iter;
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
     geometry::AnchorX,
@@ -33,9 +33,10 @@ pub(super) const FONT_SIZE: Size = Size::new(16, 24);
 pub(super) const VERTICAL_PAD: u32 = 10; // 5px top + 5px bottom padding per word
                                          // 180 pixels width / 16 pixels per char = 11.25 chars total
                                          // So we can fit 11 chars total
-const INDEX_CHARS: usize = 3; // "25."
+const INDEX_CHARS: usize = 2; // "25" (no dot)
 const SPACE_BETWEEN: usize = 1;
-pub(super) const FB_WIDTH: u32 = 180; // Target width is 180
+const PREVIEW_LEFT_PAD: i32 = 4; // Left padding for preview rect
+pub(super) const FB_WIDTH: u32 = 176; // Divisible by 4 for Gray2 alignment
 pub(super) const FB_HEIGHT: u32 = TOTAL_WORDS as u32 * (FONT_SIZE.height + VERTICAL_PAD);
 
 pub(super) type Fb = Framebuffer<
@@ -60,13 +61,12 @@ impl Bip39Words {
     }
 
     pub fn completed_words(&self) -> impl Iterator<Item = (usize, &'static str)> + '_ {
-        self.words.iter()
+        self.words
+            .iter()
             .enumerate()
-            .filter_map(|(idx, cow)| {
-                match cow {
-                    Cow::Borrowed(s) if !s.is_empty() => Some((idx, *s)),
-                    _ => None,
-                }
+            .filter_map(|(idx, cow)| match cow {
+                Cow::Borrowed(s) if !s.is_empty() => Some((idx, *s)),
+                _ => None,
             })
     }
 
@@ -81,20 +81,23 @@ impl Bip39Words {
     pub fn iter(&self) -> Iter<'_, Cow<'static, str>> {
         self.words.iter()
     }
-    
+
     pub fn get_submit_button_state(&self) -> SubmitBackupState {
         // Count completed words
         let completed_count = self.completed_words().count();
-        
+
         if completed_count < TOTAL_WORDS {
-            SubmitBackupState::Incomplete { words_entered: completed_count }
+            SubmitBackupState::Incomplete {
+                words_entered: completed_count,
+            }
         } else {
             // All words entered, collect them into array
-            let mut words_array: [&'static str; FROSTSNAP_BACKUP_WORDS] = [""; FROSTSNAP_BACKUP_WORDS];
+            let mut words_array: [&'static str; FROSTSNAP_BACKUP_WORDS] =
+                [""; FROSTSNAP_BACKUP_WORDS];
             for (idx, word) in self.completed_words() {
                 words_array[idx] = word;
             }
-            
+
             // TODO: Implement proper BIP39 checksum validation
             // For now, just return Complete if all words are filled
             SubmitBackupState::Complete { words: words_array }
@@ -129,11 +132,11 @@ impl Bip39InputPreview {
         let row_height = FONT_SIZE.height + VERTICAL_PAD;
         let preview_rect = Rectangle::new(
             Point::new(
-                0,
+                PREVIEW_LEFT_PAD,
                 ((area.size.height - progress_height) as i32 - row_height as i32) / 2,
             ),
             Size {
-                width: area.size.width - backspace_width,
+                width: FB_WIDTH, // Must match framebuffer width exactly
                 height: row_height,
             },
         );
@@ -238,16 +241,17 @@ impl Bip39InputPreview {
         // Find the matching BIP39 word and store as static reference
         if let Ok(idx) = bip39_words::BIP39_WORDS.binary_search(&target_word) {
             let mut words = self.framebuf.words.borrow_mut();
-            *words.get_mut(self.framebuf.current_input) = Cow::Borrowed(bip39_words::BIP39_WORDS[idx]);
+            *words.get_mut(self.framebuf.current_input) =
+                Cow::Borrowed(bip39_words::BIP39_WORDS[idx]);
             drop(words);
-            
+
             // Redraw the word in the framebuffer
             self.framebuf.redraw_current_word();
-            
+
             // Accept the completed word
             self.framebuf.mark_word_boundary();
             self.update_progress();
-            
+
             true
         } else {
             false
@@ -276,7 +280,10 @@ impl Bip39InputPreview {
     }
 
     pub fn get_mnemonic(&self) -> String {
-        self.framebuf.words.borrow().iter()
+        self.framebuf
+            .words
+            .borrow()
+            .iter()
             .take(FROSTSNAP_BACKUP_WORDS - 1)
             .map(|w| w.as_ref())
             .collect::<Vec<_>>()
@@ -313,12 +320,12 @@ impl Bip39InputPreview {
     pub fn get_current_word_index(&self) -> usize {
         self.framebuf.current_input
     }
-    
+
     /// Get all the words entered so far
     pub fn get_words(&self) -> Vec<String> {
         self.framebuf.get_words()
     }
-    
+
     /// Get a shared reference to the words array
     pub fn get_words_ref(&self) -> Rc<RefCell<Bip39Words>> {
         self.framebuf.words.clone()
@@ -350,34 +357,22 @@ impl Bip39Framebuf {
                 (i as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as i32 + (VERTICAL_PAD / 2) as i32;
             let number = (i + 1).to_string();
 
-            // Position dot at a fixed location (2.5 chars from left)
-            let dot_x = 40; // 2.5 * 16 pixels
+            // Right-align numbers at 2 characters from left (no dots)
+            let number_right_edge = 32; // 2 * 16 pixels
 
-            // Calculate number position to right-align before the dot
+            // Calculate number position to right-align
             let number_x = if i < 9 {
-                // Single digit: one char before dot
-                dot_x - FONT_SIZE.width as i32 // 40 - 16 = 24
+                // Single digit: right-aligned at position
+                number_right_edge - FONT_SIZE.width as i32
             } else {
-                // Double digit: two chars before dot
-                dot_x - (2 * FONT_SIZE.width as i32) // 40 - 32 = 8
+                // Double digit: starts at position 0
+                0
             };
 
             // Draw the number
             let _ = Text::with_text_style(
                 &number,
                 Point::new(number_x, y),
-                U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)),
-                TextStyleBuilder::new()
-                    .alignment(Alignment::Left)
-                    .baseline(Baseline::Top)
-                    .build(),
-            )
-            .draw(&mut *fb);
-
-            // Draw the dot at the fixed position
-            let _ = Text::with_text_style(
-                ".",
-                Point::new(dot_x, y),
                 U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)),
                 TextStyleBuilder::new()
                     .alignment(Alignment::Left)
@@ -402,19 +397,19 @@ impl Bip39Framebuf {
 
     pub fn add_character(&mut self, c: char) {
         let upper = c.to_uppercase().next().unwrap_or(c);
-        
+
         // Get mutable access to the current word
         let mut words = self.words.borrow_mut();
         let word = words.get_mut(self.current_input);
         word.to_mut().push(upper);
-        
+
         // Draw the character directly to the framebuffer
         let word_idx = self.current_input;
         let char_idx = word.len() - 1;
         let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_idx) * FONT_SIZE.width as usize;
         let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
             + (VERTICAL_PAD / 2) as usize;
-        
+
         drop(words); // Release the borrow before borrowing framebuffer
 
         let mut fb = self.framebuffer.borrow_mut();
@@ -455,18 +450,18 @@ impl Bip39Framebuf {
     pub fn backspace(&mut self) -> bool {
         let mut words = self.words.borrow_mut();
         let word = words.get_mut(self.current_input);
-        
+
         if !word.is_empty() {
             // Remove last character
             word.to_mut().pop();
-            
+
             // Clear the character from framebuffer
             let word_idx = self.current_input;
             let char_idx = word.len();
             let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_idx) * FONT_SIZE.width as usize;
             let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
                 + (VERTICAL_PAD / 2) as usize;
-            
+
             drop(words); // Release the borrow before borrowing framebuffer
 
             let mut fb = self.framebuffer.borrow_mut();
@@ -481,7 +476,7 @@ impl Bip39Framebuf {
         } else if self.current_input > 0 {
             // Current word is empty, go back to previous word
             self.current_input -= 1;
-            
+
             // Force recalculation of scroll position
             self.target_position = 0; // This will be recalculated in draw()
             self.redraw = true;
@@ -646,26 +641,29 @@ impl Bip39Framebuf {
         // Count non-empty words - a word is complete if it's not an empty borrow
         self.words.borrow().iter().filter(|w| !w.is_empty()).count()
     }
-    
+
     fn redraw_current_word(&mut self) {
         // Clear and redraw the current word in the framebuffer
         let word_idx = self.current_input;
         let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
             + (VERTICAL_PAD / 2) as usize;
-        
+
         let words = self.words.borrow();
         let current_word = words.get(word_idx);
-        
+
         let mut fb = self.framebuffer.borrow_mut();
-        
+
         // Clear the entire word area
         let word_rect = Rectangle::new(
-            Point::new(((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as i32, y as i32),
+            Point::new(
+                ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as i32,
+                y as i32,
+            ),
             Size::new(FONT_SIZE.width * 8, FONT_SIZE.height), // Max 8 chars
         );
         let mut word_frame = fb.cropped(&word_rect);
         let _ = word_frame.clear(Gray2::BLACK);
-        
+
         // Redraw each character
         for (i, ch) in current_word.chars().enumerate() {
             let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + i) * FONT_SIZE.width as usize;
@@ -673,7 +671,7 @@ impl Bip39Framebuf {
                 Point::new(x as i32, y as i32),
                 Size::new(FONT_SIZE.width, FONT_SIZE.height),
             ));
-            
+
             let _ = Text::with_text_style(
                 &ch.to_string(),
                 Point::zero(),
@@ -690,7 +688,7 @@ impl Bip39Framebuf {
     pub fn set_current_input(&mut self, word_index: usize) {
         if word_index < TOTAL_WORDS {
             self.current_input = word_index;
-            
+
             // Calculate the correct scroll position for this word
             // We want the word to be visible, so we scroll to show it
             let row_height = FONT_SIZE.height + VERTICAL_PAD;
@@ -701,16 +699,18 @@ impl Bip39Framebuf {
             self.current_position = word_position;
             self.target_position = word_position;
             self.animation_start_time = None; // Clear any ongoing animation
-            
+
             // Redraw the current word to ensure it's displayed properly
             self.redraw_current_word();
             self.redraw = true;
         }
     }
-    
+
     pub fn get_words(&self) -> Vec<String> {
         // Convert Cow array to Vec<String> for compatibility
-        self.words.borrow().iter()
+        self.words
+            .borrow()
+            .iter()
             .map(|word| word.to_string())
             .collect()
     }
