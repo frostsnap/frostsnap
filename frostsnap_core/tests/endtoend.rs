@@ -38,6 +38,9 @@ struct TestEnv {
     pub backups: BTreeMap<DeviceId, (String, String)>,
     pub physical_backups_entered: Vec<PhysicalBackupPhase>,
 
+    // nonces
+    pub received_nonce_replenishes: BTreeSet<DeviceId>,
+
     // signing
     pub received_signing_shares: BTreeMap<SignSessionId, BTreeSet<DeviceId>>,
     pub sign_tasks: BTreeMap<DeviceId, CheckedSignTask>,
@@ -196,6 +199,9 @@ impl common::Env for TestEnv {
                     }
                     _ => { /* ignored */ }
                 }
+            }
+            CoordinatorToUserMessage::ReplenishedNonces { device_id } => {
+                self.received_nonce_replenishes.insert(device_id);
             }
         }
     }
@@ -1013,10 +1019,11 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
     // now we simulate reconnecting the device. The coordinator should recognise once of its nonce
     // streams has less nonces than usual and reset that stream. Since the device never signed the
     // request it should happily reset the stream to what it was before.
-    run.extend(
-        run.coordinator
-            .maybe_request_nonce_replenishment(device_id, 1, &mut test_rng),
-    );
+    run.extend(run.coordinator.maybe_request_nonce_replenishment(
+        &BTreeSet::from([device_id]),
+        1,
+        &mut test_rng,
+    ));
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     let nonces_available = run.coordinator.nonces_available(device_id);

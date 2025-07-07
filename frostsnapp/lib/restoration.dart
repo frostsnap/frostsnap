@@ -2,12 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
+import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/wallet_create.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
   final RestoringKey restoringKey;
@@ -217,6 +220,24 @@ class WalletRecoveryPage extends StatelessWidget {
                                     .finishRestoring(
                                       restorationId: restoringKey.restorationId,
                                     );
+
+                                await MaybeFullscreenDialog.show<bool>(
+                                  context: context,
+                                  child: NonceReplenishWidget(
+                                    stream: coord
+                                        .replenishNonces(
+                                          devices: restoringKey.sharesObtained
+                                              .map((share) => share.deviceId)
+                                              .toList(),
+                                        )
+                                        .toBehaviorSubject(),
+                                    onCancel: () {
+                                      coord.cancelProtocol();
+                                      Navigator.pop(context, false);
+                                    },
+                                  ),
+                                );
+
                                 onWalletRecovered(accessStructureRef);
                               } catch (e) {
                                 if (context.mounted) {
