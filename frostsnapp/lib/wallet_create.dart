@@ -8,6 +8,7 @@ import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_settings.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -471,12 +472,31 @@ class WalletCreateController extends ChangeNotifier {
   void next(BuildContext context) async {
     if (!await _handleNext(context)) return;
     if (!context.mounted) return;
+
     final nextStep = WalletCreateStep.values.elementAtOrNull(_step.index + 1);
     if (nextStep != null) {
       _step = nextStep;
       notifyListeners();
     } else {
-      Navigator.pop(context, _asRef);
+      // wallet creation complete - now show nonce replenishment
+      if (context.mounted) {
+        await MaybeFullscreenDialog.show<bool>(
+          context: context,
+          child: NonceReplenishWidget(
+            stream: coord
+                .replenishNonces(devices: form.selectedDevices.toList())
+                .toBehaviorSubject(),
+            onCancel: () {
+              coord.cancelProtocol();
+              Navigator.pop(context, false);
+            },
+          ),
+        );
+
+        if (context.mounted) {
+          Navigator.pop(context, _asRef);
+        }
+      }
     }
   }
 
