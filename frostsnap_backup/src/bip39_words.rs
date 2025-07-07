@@ -1,5 +1,8 @@
 //\! BIP39 English word list
 
+/// Number of BIP39 words used in Frostsnap backup
+pub const FROSTSNAP_BACKUP_WORDS: usize = 25;
+
 /// Check if a word is in the BIP39 word list using binary search
 pub fn is_valid_bip39_word(word: &str) -> bool {
     BIP39_WORDS.binary_search(&word).is_ok()

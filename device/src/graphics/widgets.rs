@@ -21,3 +21,4 @@ pub use bip39::*;
 mod icons;
 
 pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
+pub use crate::graphics::FONT_SMALL;

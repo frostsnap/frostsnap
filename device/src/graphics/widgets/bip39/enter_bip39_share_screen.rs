@@ -1,11 +1,11 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, EnteredWords, WordSelector};
 use crate::graphics::widgets::{Key, KeyTouch};
 use alloc::{
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
-use frostsnap_backup::bip39_words;
+use frostsnap_backup::bip39_words::{self, FROSTSNAP_BACKUP_WORDS};
 
 pub const MAX_WORD_SELECTOR_WORDS: usize = 6;
 
@@ -18,6 +18,8 @@ pub struct EnterBip39ShareScreen {
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
     share_index: u16,
+    mnemonic_complete: bool,
+    needs_redraw: bool,
 }
 
 impl EnterBip39ShareScreen {
@@ -41,6 +43,8 @@ impl EnterBip39ShareScreen {
             touches: vec![],
             keyboard_rect,
             share_index,
+            mnemonic_complete: false,
+            needs_redraw: true,
         };
 
         // Initialize valid keys for empty input
@@ -53,8 +57,34 @@ impl EnterBip39ShareScreen {
         target: &mut D,
         current_time: crate::Instant,
     ) {
-        // Draw either entered words, word selector full-screen or normal keyboard + input
-        if let Some(ref mut entered_words) = self.entered_words {
+        if self.mnemonic_complete {
+            // Only draw if we just transitioned to complete state
+            if self.needs_redraw {
+                // Draw green checkmark in the center
+                use crate::graphics::palette::COLORS;
+                use embedded_graphics::primitives::PrimitiveStyleBuilder;
+                use embedded_iconoir::size48px::actions::Check;
+                use crate::graphics::widgets::icons::Icon;
+                
+                // Clear background
+                let bounds = target.bounding_box();
+                let _ = bounds
+                    .into_styled(
+                        PrimitiveStyleBuilder::new()
+                            .fill_color(COLORS.background)
+                            .build(),
+                    )
+                    .draw(target);
+                
+                // Draw large green checkmark in center
+                Icon::<Check>::default()
+                    .with_color(COLORS.success)
+                    .with_center(bounds.center())
+                    .draw(target);
+                
+                self.needs_redraw = false;
+            }
+        } else if let Some(ref mut entered_words) = self.entered_words {
             // Full-screen entered words view
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
@@ -111,15 +141,20 @@ impl EnterBip39ShareScreen {
                             // If EditWord(0) is from input preview tap, show entered words view
                             // Otherwise, it's from EnteredWords view, so edit specific word
                             if word_index == 0 && self.entered_words.is_none() {
+                                // Clear touches first to ensure no pending operations
+                                self.touches.clear();
+                                
                                 // Show EnteredWords view, scrolled to show current word at bottom
                                 let framebuffer = self.bip39_input.get_framebuffer();
                                 let current_word_index = self.bip39_input.get_current_word_index();
-                                self.entered_words = Some(EnteredWords::new_with_word_at_bottom(
+                                let words_ref = self.bip39_input.get_words_ref();
+                                let mut entered_words = EnteredWords::new(
                                     framebuffer, 
                                     screen_size,
-                                    current_word_index
-                                ));
-                                self.touches.clear();
+                                    words_ref
+                                );
+                                entered_words.scroll_to_word_at_bottom(current_word_index);
+                                self.entered_words = Some(entered_words);
                             } else if self.entered_words.is_some() {
                                 // Exit EnteredWords view and start editing the selected word
                                 self.entered_words = None;
@@ -141,11 +176,18 @@ impl EnterBip39ShareScreen {
                         Key::NavForward => {
                             // Go forward to next word
                             let current_index = self.bip39_input.get_current_word_index();
-                            if current_index < 24 { // 25 total words, 0-indexed
+                            if current_index < FROSTSNAP_BACKUP_WORDS - 1 { // 25 total words, 0-indexed
                                 self.bip39_input.set_editing_word(current_index + 1);
                                 self.update_valid_keys();
                                 self.bip39_input.force_redraw();
                             }
+                        }
+                        Key::Submit => {
+                            // User pressed submit button - close entered words view and mark as complete
+                            self.entered_words = None;
+                            self.touches.clear();
+                            self.mnemonic_complete = true;
+                            self.needs_redraw = true;
                         }
                         _ => {} // Ignore other keyboard characters
                     }
@@ -197,7 +239,7 @@ impl EnterBip39ShareScreen {
     }
 
     pub fn is_finished(&self) -> bool {
-        self.bip39_input.is_finished()
+        self.mnemonic_complete
     }
 
     pub fn get_mnemonic(&self) -> String {
@@ -220,7 +262,7 @@ impl EnterBip39ShareScreen {
     }
 
     fn update_valid_keys(&mut self) {
-        let current_word = self.bip39_input.current_word().to_string();
+        let current_word = self.bip39_input.current_word();
 
         // Check if we should show the word selector when we have a partial word
         if !current_word.is_empty() {
@@ -263,7 +305,8 @@ impl EnterBip39ShareScreen {
         }
 
         // Always update keyboard valid keys (even if word selector is showing)
-        let valid_letters = bip39_words::get_valid_next_letters(self.bip39_input.current_word());
+        let current = self.bip39_input.current_word();
+        let valid_letters = bip39_words::get_valid_next_letters(&current);
         self.alphabetic_keyboard.set_valid_keys(valid_letters);
         
         // Update the current word index on the keyboard
@@ -279,7 +322,8 @@ impl EnterBip39ShareScreen {
             self.bip39_input.push_letter('U');
         }
         
-        let words_with_prefix = bip39_words::words_with_prefix(self.bip39_input.current_word());
+        let current = self.bip39_input.current_word();
+        let words_with_prefix = bip39_words::words_with_prefix(&current);
 
         if words_with_prefix.len() == 1 {
             self.bip39_input.autocomplete_word(words_with_prefix[0]);

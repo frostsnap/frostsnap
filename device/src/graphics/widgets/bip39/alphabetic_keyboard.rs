@@ -43,7 +43,7 @@ pub struct AlphabeticKeyboard {
     needs_redraw: bool,      // Flag to trigger redraw
     enabled_keys: ValidLetters, // Which keys are enabled
     visible_height: u32,
-    current_word_index: usize, // Current word being edited (0-24)
+    current_word_index: usize, // Current word being edited (0-24 for 25 words)
 }
 
 impl AlphabeticKeyboard {
@@ -150,7 +150,7 @@ impl AlphabeticKeyboard {
             }
 
             // Draw forward button only if not at last word
-            if self.current_word_index < 24 {
+            if self.current_word_index < 24 { // 0-24 for 25 words
                 icons::Icon::<NavArrowRight>::default()
                     .with_color(KEYBOARD_COLOR)
                     .with_center(Point::new(bounds.size.width as i32 - button_size as i32 / 2 - 20, bounds.size.height as i32 / 2))
@@ -206,7 +206,7 @@ impl AlphabeticKeyboard {
                 return Some(KeyTouch::new(Key::NavBack, rect));
             }
             // Check forward button area (right side) - only if we can go forward
-            else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 {
+            else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 { // 0-24 for 25 words
                 let rect = Rectangle::new(
                     Point::new((screen_width / 2) as i32, 0),
                     Size::new(screen_width / 2, screen_height)

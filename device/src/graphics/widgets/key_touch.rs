@@ -12,6 +12,7 @@ pub enum Key {
     EditWord(usize),
     NavBack,
     NavForward,
+    Submit,
 }
 
 #[derive(Debug)]
