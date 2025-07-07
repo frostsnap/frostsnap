@@ -1,3 +1,4 @@
+use super::cursor::Cursor;
 use super::progress_bars::ProgressBars;
 use super::submit_backup_button::SubmitBackupState;
 use crate::graphics::palette::COLORS;
@@ -30,14 +31,16 @@ use u8g2_fonts::U8g2TextStyle;
 // Constants for vertical BIP39 word display
 pub(super) const TOTAL_WORDS: usize = FROSTSNAP_BACKUP_WORDS;
 pub(super) const FONT_SIZE: Size = Size::new(16, 24);
-pub(super) const VERTICAL_PAD: u32 = 10; // 5px top + 5px bottom padding per word
+pub(super) const VERTICAL_PAD: u32 = 12; // 6px top + 6px bottom padding per word
                                          // 180 pixels width / 16 pixels per char = 11.25 chars total
                                          // So we can fit 11 chars total
 const INDEX_CHARS: usize = 2; // "25" (no dot)
 const SPACE_BETWEEN: usize = 1;
 const PREVIEW_LEFT_PAD: i32 = 4; // Left padding for preview rect
+pub(super) const TOP_PADDING: u32 = 10; // Top padding before first word
 pub(super) const FB_WIDTH: u32 = 176; // Divisible by 4 for Gray2 alignment
-pub(super) const FB_HEIGHT: u32 = TOTAL_WORDS as u32 * (FONT_SIZE.height + VERTICAL_PAD);
+pub(super) const FB_HEIGHT: u32 =
+    TOP_PADDING + (TOTAL_WORDS as u32 * (FONT_SIZE.height + VERTICAL_PAD));
 
 pub(super) type Fb = Framebuffer<
     Gray2,
@@ -114,6 +117,7 @@ pub struct Bip39InputPreview {
     progress: ProgressBars,
     framebuf: Bip39Framebuf,
     init_draw: bool,
+    cursor: Cursor,
 }
 
 impl Bip39InputPreview {
@@ -128,16 +132,12 @@ impl Bip39InputPreview {
             },
         );
 
-        // Preview rect should show at least one full row with padding
-        let row_height = FONT_SIZE.height + VERTICAL_PAD;
+        // Preview rect should use full available height
         let preview_rect = Rectangle::new(
-            Point::new(
-                PREVIEW_LEFT_PAD,
-                ((area.size.height - progress_height) as i32 - row_height as i32) / 2,
-            ),
+            Point::new(PREVIEW_LEFT_PAD, 0),
             Size {
                 width: FB_WIDTH, // Must match framebuffer width exactly
-                height: row_height,
+                height: area.size.height - progress_height,
             },
         );
 
@@ -158,6 +158,7 @@ impl Bip39InputPreview {
             progress,
             framebuf,
             init_draw: false,
+            cursor: Cursor::new(Point::zero()), // Will update position in draw
         }
     }
 
@@ -203,6 +204,11 @@ impl Bip39InputPreview {
         // Always draw the framebuffer (it has its own redraw logic)
         self.framebuf
             .draw(&mut target.cropped(&self.preview_rect), current_time);
+
+        // Draw cursor if on current word
+        if self.framebuf.current_input < FROSTSNAP_BACKUP_WORDS {
+            self.draw_cursor(&mut target.cropped(&self.preview_rect), current_time);
+        }
 
         // Always draw progress bars (they have their own redraw logic)
         let _ = self.progress.draw(&mut target.cropped(&self.progress_rect));
@@ -330,6 +336,39 @@ impl Bip39InputPreview {
     pub fn get_words_ref(&self) -> Rc<RefCell<Bip39Words>> {
         self.framebuf.words.clone()
     }
+
+    /// Get the number of words that have been entered
+    pub fn word_count(&self) -> usize {
+        self.framebuf.word_count()
+    }
+
+    /// Fast forward any ongoing scrolling animation
+    pub fn fast_forward_scrolling(&mut self) {
+        self.framebuf.fast_forward_scrolling();
+    }
+
+    fn draw_cursor<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) {
+        // Calculate cursor position based on current word and character count
+        let current_word = self.framebuf.current_input();
+        let char_count = current_word.len();
+        
+        // Calculate x position for cursor
+        let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_count) * FONT_SIZE.width as usize;
+        
+        // Fixed Y position - cursor always appears at the same vertical position
+        // This should be in the middle of the preview area
+        let y = target.bounding_box().size.height as i32 / 2 - FONT_SIZE.height as i32 / 2;
+        
+        // Update cursor position
+        self.cursor.set_position(Point::new(x as i32, y));
+        
+        // Let the cursor handle its own drawing and blinking
+        self.cursor.draw(target, current_time);
+    }
 }
 
 #[derive(Debug)]
@@ -342,6 +381,7 @@ pub struct Bip39Framebuf {
     target_position: u32, // Target vertical scroll position
     animation_start_time: Option<crate::Instant>, // When current animation started
     color: Rgb565,
+    viewport_height: u32, // Height of the visible area
     pub(super) redraw: bool,
 }
 
@@ -353,8 +393,9 @@ impl Bip39Framebuf {
 
         // Pre-render word indices with aligned dots
         for i in 0..TOTAL_WORDS {
-            let y =
-                (i as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as i32 + (VERTICAL_PAD / 2) as i32;
+            let y = TOP_PADDING as i32
+                + (i as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as i32
+                + (VERTICAL_PAD / 2) as i32;
             let number = (i + 1).to_string();
 
             // Right-align numbers at 2 characters from left (no dots)
@@ -391,6 +432,7 @@ impl Bip39Framebuf {
             target_position: 0,
             animation_start_time: None,
             color: COLORS.primary,
+            viewport_height: 34, // Default viewport height
             redraw: true,
         }
     }
@@ -407,7 +449,8 @@ impl Bip39Framebuf {
         let word_idx = self.current_input;
         let char_idx = word.len() - 1;
         let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_idx) * FONT_SIZE.width as usize;
-        let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
+        let y = TOP_PADDING as usize
+            + (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
             + (VERTICAL_PAD / 2) as usize;
 
         drop(words); // Release the borrow before borrowing framebuffer
@@ -434,13 +477,16 @@ impl Bip39Framebuf {
     }
 
     pub fn mark_word_boundary(&mut self) {
-        let words = self.words.borrow();
-        let current_word = words.get(self.current_input);
-        if !current_word.is_empty() {
-            // Move to next word if not at the end
-            if self.current_input < TOTAL_WORDS - 1 {
-                self.current_input += 1;
-            }
+        let should_advance = {
+            let words = self.words.borrow();
+            let current_word = words.get(self.current_input);
+            !current_word.is_empty() && self.current_input < TOTAL_WORDS - 1
+        };
+
+        if should_advance {
+            self.current_input += 1;
+            // Update scroll position with animation
+            self.update_scroll_position(false);
             self.redraw = true;
         }
         // Note: The word is already validated and stored as a static BIP39 word
@@ -448,21 +494,27 @@ impl Bip39Framebuf {
     }
 
     pub fn backspace(&mut self) -> bool {
-        let mut words = self.words.borrow_mut();
-        let word = words.get_mut(self.current_input);
+        let (is_empty, char_to_clear) = {
+            let mut words = self.words.borrow_mut();
+            let word = words.get_mut(self.current_input);
 
-        if !word.is_empty() {
-            // Remove last character
-            word.to_mut().pop();
+            if !word.is_empty() {
+                // Remove last character
+                word.to_mut().pop();
+                let char_idx = word.len();
+                (false, Some(char_idx))
+            } else {
+                (true, None)
+            }
+        };
 
+        if let Some(char_idx) = char_to_clear {
             // Clear the character from framebuffer
             let word_idx = self.current_input;
-            let char_idx = word.len();
             let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + char_idx) * FONT_SIZE.width as usize;
-            let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
+            let y = TOP_PADDING as usize
+                + (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
                 + (VERTICAL_PAD / 2) as usize;
-
-            drop(words); // Release the borrow before borrowing framebuffer
 
             let mut fb = self.framebuffer.borrow_mut();
             let mut char_frame = fb.cropped(&Rectangle::new(
@@ -473,12 +525,12 @@ impl Bip39Framebuf {
 
             self.redraw = true;
             false
-        } else if self.current_input > 0 {
+        } else if is_empty && self.current_input > 0 {
             // Current word is empty, go back to previous word
             self.current_input -= 1;
 
-            // Force recalculation of scroll position
-            self.target_position = 0; // This will be recalculated in draw()
+            // Update scroll position without animation
+            self.update_scroll_position(true);
             self.redraw = true;
             true
         } else {
@@ -503,27 +555,14 @@ impl Bip39Framebuf {
         // Check if this is the first draw
         let is_first_draw = self.current_time.is_none();
 
-        // Calculate where we should be scrolled to based on current word
-        let current_word_line = self.current_input;
-        let row_height = FONT_SIZE.height + VERTICAL_PAD;
-        let visible_lines = bb.size.height as usize / row_height as usize;
-
-        // Keep the current word visible within the viewport
-        let new_target = if current_word_line >= visible_lines {
-            // Scroll so that the current word is at the bottom of the visible area
-            ((current_word_line + 1).saturating_sub(visible_lines) * row_height as usize) as u32
-        } else {
-            0
-        };
-
-        // Update target if it changed
-        if new_target != self.target_position {
-            self.target_position = new_target;
-            self.animation_start_time = Some(current_time); // Reset animation start
-            self.redraw = true;
+        // Update viewport height if it changed
+        if self.viewport_height != bb.size.height {
+            self.viewport_height = bb.size.height;
+            // Recalculate target position with new viewport
+            self.update_scroll_position(is_first_draw);
         }
 
-        // On first draw, jump directly to target position without animation
+        // On first draw, jump to target position
         if is_first_draw {
             self.current_position = self.target_position;
         }
@@ -645,7 +684,8 @@ impl Bip39Framebuf {
     fn redraw_current_word(&mut self) {
         // Clear and redraw the current word in the framebuffer
         let word_idx = self.current_input;
-        let y = (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
+        let y = TOP_PADDING as usize
+            + (word_idx as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as usize
             + (VERTICAL_PAD / 2) as usize;
 
         let words = self.words.borrow();
@@ -688,20 +728,38 @@ impl Bip39Framebuf {
     pub fn set_current_input(&mut self, word_index: usize) {
         if word_index < TOTAL_WORDS {
             self.current_input = word_index;
-
-            // Calculate the correct scroll position for this word
-            // We want the word to be visible, so we scroll to show it
-            let row_height = FONT_SIZE.height + VERTICAL_PAD;
-            let word_position = word_index as u32 * row_height;
-
-            // Just set both positions to the word's position
-            // The draw method will adjust if needed based on visible height
-            self.current_position = word_position;
-            self.target_position = word_position;
-            self.animation_start_time = None; // Clear any ongoing animation
-
-            // Redraw the current word to ensure it's displayed properly
+            self.update_scroll_position(true); // true = skip animation
             self.redraw_current_word();
+            self.redraw = true;
+        }
+    }
+
+    // Calculate the target scroll position based on current word and viewport
+    fn calculate_target_position(&self, viewport_height: u32) -> u32 {
+        let row_height = FONT_SIZE.height + VERTICAL_PAD;
+        let visible_lines = viewport_height as usize / row_height as usize;
+
+        // Keep the current word visible within the viewport
+        if self.current_input >= visible_lines {
+            // Scroll so that the current word is at the bottom of the visible area
+            ((self.current_input + 1).saturating_sub(visible_lines) * row_height as usize) as u32
+        } else {
+            0
+        }
+    }
+
+    // Update scroll position (called when word changes)
+    pub fn update_scroll_position(&mut self, skip_animation: bool) {
+        let new_target = self.calculate_target_position(self.viewport_height);
+
+        if new_target != self.target_position {
+            self.target_position = new_target;
+            if skip_animation {
+                self.current_position = new_target;
+                self.animation_start_time = None;
+            } else {
+                self.animation_start_time = self.current_time;
+            }
             self.redraw = true;
         }
     }
@@ -713,5 +771,12 @@ impl Bip39Framebuf {
             .iter()
             .map(|word| word.to_string())
             .collect()
+    }
+
+    /// Fast forward scrolling by jumping to target position
+    pub fn fast_forward_scrolling(&mut self) {
+        self.redraw = self.current_position != self.target_position;
+        self.current_position = self.target_position;
+        self.animation_start_time = None;
     }
 }

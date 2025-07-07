@@ -1,12 +1,21 @@
+use crate::graphics::palette::COLORS;
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::*,
+    primitives::{PrimitiveStyle, Rectangle},
+};
+
+use super::bip39_input_preview::FONT_SIZE;
+
 #[derive(Debug)]
-struct Cursor {
+pub(super) struct Cursor {
     visible: bool,
     last_toggle: Option<crate::Instant>,
     pub position: Point,
 }
 
 impl Cursor {
-    fn new(position: Point) -> Self {
+    pub(super) fn new(position: Point) -> Self {
         Self {
             visible: true,
             last_toggle: None,
@@ -14,7 +23,15 @@ impl Cursor {
         }
     }
 
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    pub(super) fn set_position(&mut self, new_position: Point) {
+        if self.position != new_position {
+            self.position = new_position;
+            self.visible = true;
+            self.last_toggle = None;
+        }
+    }
+
+    pub(super) fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut D,
         current_time: crate::Instant,

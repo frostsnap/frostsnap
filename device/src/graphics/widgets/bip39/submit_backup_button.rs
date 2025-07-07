@@ -1,4 +1,7 @@
-use crate::graphics::{palette::COLORS, widgets::{FONT_SMALL, FONT_LARGE}};
+use crate::graphics::{
+    palette::COLORS,
+    widgets::{FONT_LARGE, FONT_SMALL},
+};
 use alloc::{boxed::Box, format};
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
@@ -8,7 +11,7 @@ use embedded_graphics::{
         Gray2, Rgb565,
     },
     prelude::*,
-    primitives::{PrimitiveStyleBuilder, Rectangle},
+    primitives::{PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use frostsnap_backup::bip39_words::FROSTSNAP_BACKUP_WORDS;
@@ -63,21 +66,26 @@ impl SubmitBackupButton {
         match &self.state {
             SubmitBackupState::Complete { .. } => {
                 // Fill entire button area with success color
-                let button_rect = Rectangle::new(
-                    Point::zero(),
-                    Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
+                let button_rect = RoundedRectangle::with_equal_corners(
+                    Rectangle::new(
+                        Point::new(4, 4),
+                        Size::new(SUBMIT_BUTTON_WIDTH - 8, SUBMIT_BUTTON_HEIGHT - 8),
+                    ),
+                    Size::new(35, 35), // 35px corner radius
                 );
 
                 let _ = button_rect
                     .into_styled(
                         PrimitiveStyleBuilder::new()
                             .fill_color(Gray2::new(0x03)) // Brightest gray for success
+                            .stroke_color(Gray2::new(0x02))
+                            .stroke_width(2)
                             .build(),
                     )
                     .draw(&mut *self.framebuffer);
 
                 let _ = Text::with_text_style(
-                    "Submit",
+                    "SUBMIT",
                     Point::new(
                         (SUBMIT_BUTTON_WIDTH / 2) as i32,
                         (SUBMIT_BUTTON_HEIGHT / 2) as i32,
@@ -92,19 +100,24 @@ impl SubmitBackupButton {
             }
             SubmitBackupState::Incomplete { words_entered } => {
                 // Fill entire button area with disabled gray
-                let button_rect = Rectangle::new(
-                    Point::zero(),
-                    Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
+                let button_rect = RoundedRectangle::with_equal_corners(
+                    Rectangle::new(
+                        Point::new(4, 4),
+                        Size::new(SUBMIT_BUTTON_WIDTH - 8, SUBMIT_BUTTON_HEIGHT - 8),
+                    ),
+                    Size::new(35, 35), // 35px corner radius
                 );
 
                 let _ = button_rect
                     .into_styled(
                         PrimitiveStyleBuilder::new()
                             .fill_color(Gray2::new(0x01)) // Dark gray for disabled
+                            .stroke_color(Gray2::new(0x02))
+                            .stroke_width(1)
                             .build(),
                     )
                     .draw(&mut *self.framebuffer);
-                
+
                 // Draw count in large text
                 let count_text = format!("{}/{}", words_entered, FROSTSNAP_BACKUP_WORDS);
                 let _ = Text::with_text_style(
@@ -123,19 +136,24 @@ impl SubmitBackupButton {
             }
             SubmitBackupState::InvalidChecksum => {
                 // Fill entire button area with disabled gray
-                let button_rect = Rectangle::new(
-                    Point::zero(),
-                    Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
+                let button_rect = RoundedRectangle::with_equal_corners(
+                    Rectangle::new(
+                        Point::new(4, 4),
+                        Size::new(SUBMIT_BUTTON_WIDTH - 8, SUBMIT_BUTTON_HEIGHT - 8),
+                    ),
+                    Size::new(35, 35), // 35px corner radius
                 );
 
                 let _ = button_rect
                     .into_styled(
                         PrimitiveStyleBuilder::new()
                             .fill_color(Gray2::new(0x01)) // Dark gray for disabled
+                            .stroke_color(Gray2::new(0x02))
+                            .stroke_width(1)
                             .build(),
                     )
                     .draw(&mut *self.framebuffer);
-                
+
                 // Draw error text
                 let _ = Text::with_text_style(
                     "Invalid checksum",
@@ -166,8 +184,8 @@ impl SubmitBackupButton {
             .into_iter()
             .map(|pixel| match Gray2::from(pixel).luma() {
                 0x01 => Rgb565::new(6, 12, 6), // Dark gray -> disabled gray (neutral gray in RGB565)
-                0x02 => COLORS.primary, // Medium gray -> normal text
-                0x03 => COLORS.success, // Bright gray -> success green
+                0x02 => COLORS.primary,        // Medium gray -> normal text
+                0x03 => COLORS.success,        // Bright gray -> success green
                 _ => COLORS.background,
             });
 
