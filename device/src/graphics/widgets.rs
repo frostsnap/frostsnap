@@ -19,6 +19,8 @@ mod bip39;
 pub use bip39::*;
 
 mod icons;
+mod memory_debug;
+pub use memory_debug::MemoryDebugWidget;
 
 pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
 pub use crate::graphics::FONT_SMALL;

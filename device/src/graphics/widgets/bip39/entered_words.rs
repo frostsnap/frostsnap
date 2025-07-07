@@ -139,7 +139,7 @@ impl EnteredWords {
                 
                 // Draw the button directly to the target
                 let mut button_target = cropped_target.cropped(&button_viewport);
-                self.submit_button.draw_rgb(&mut button_target, adjusted_button_rect);
+                let _ = self.submit_button.draw(&mut button_target, adjusted_button_rect);
             }
         }
         
