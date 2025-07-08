@@ -204,8 +204,8 @@ impl<'a> EfuseHmacKeys<'a> {
         read_protect: bool,
         rng: &mut impl RngCore,
     ) -> Result<Self, EfuseError> {
-        let share_encryption_key_id = hmac::KeyId::Key0;
-        let fixed_entropy_key_id = hmac::KeyId::Key1;
+        let share_encryption_key_id = hmac::KeyId::Key1;
+        let fixed_entropy_key_id = hmac::KeyId::Key2;
 
         for key_id in [share_encryption_key_id, fixed_entropy_key_id] {
             efuse.init_key(key_id as u8, KeyPurpose::HmacUpstream, read_protect, rng)?;

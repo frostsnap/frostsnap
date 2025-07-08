@@ -118,7 +118,12 @@ impl<'a> OtaPartitions<'a> {
         };
 
         let target = self.otadata_sectors()[slot];
-        target.erase_all().expect("failed to erase");
+        // Use secure boot compatible erase when secure boot is enabled
+        if secure_boot::is_secure_boot_enabled() {
+            target.secure_erase_all().expect("failed to erase");
+        } else {
+            target.erase_all().expect("failed to erase");
+        }
         let mut writer = target.bincode_writer_remember_to_flush::<64>();
         bincode::encode_into_writer(&otadata, &mut writer, OTADATA_BINCODE_CONFIG)
             .expect("failed to write otadata");
@@ -223,7 +228,14 @@ impl FirmwareUpgradeMode<'_> {
                                 .iter()
                                 .any(|byte| *byte != 0xff)
                             {
-                                partition.erase_sector(*seq).expect("must erase sector");
+                                // Use secure boot compatible erase when secure boot is enabled
+                                if secure_boot::is_secure_boot_enabled() {
+                                    partition
+                                        .secure_erase_sector(*seq)
+                                        .expect("must erase sector");
+                                } else {
+                                    partition.erase_sector(*seq).expect("must erase sector");
+                                }
                             }
                             *seq += 1;
                             if *seq == SECTORS_PER_IMAGE {
@@ -408,7 +420,9 @@ impl FirmwareUpgradeMode<'_> {
                     expected_digest);
             }
 
-            secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
+            if secure_boot::is_secure_boot_enabled() {
+                secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
+            }
             ota.switch_partition(*ota_slot, OtaMetadata::default());
         }
     }

@@ -8,6 +8,9 @@ alias erase := erase-device
 flash BOARD=default_board +ARGS="":
     cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,ota_0 {{ARGS}}
 
+flash-secure:
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x10000 target/riscv32imc-unknown-none-elf/release/firmware.bin
+
 erase-device +ARGS="nvs":
     cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
 
@@ -21,6 +24,11 @@ save-image BOARD=default_board +ARGS="":
     espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
     espsecure.py sign_data -v 2 -k device/secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
 
+test-secure-boot BOARD=default_board +ARGS="":
+    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
+    espsecure.py sign_data -v 2 -k device/evil_secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
+    just run
+    
 test-ordinary +ARGS="":
     cargo test {{ARGS}} {{ordinary_crates}}
 
