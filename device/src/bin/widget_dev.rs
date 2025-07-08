@@ -84,34 +84,33 @@ fn main() -> ! {
     // Turn on backlight
     bl.set_high();
 
-    // Test BIP39 words - using indexes into BIP39_WORDS
-    // Using first 25 words: ABANDON(0) through ADAPT(25)
+    // Test BIP39 words - using random indexes
     const TEST_WORDS: [&'static str; 25] = [
-        BIP39_WORDS[0],   // ABANDON
-        BIP39_WORDS[1],   // ABILITY
-        BIP39_WORDS[2],   // ABLE
-        BIP39_WORDS[3],   // ABOUT
-        BIP39_WORDS[4],   // ABOVE
-        BIP39_WORDS[5],   // ABSENT
-        BIP39_WORDS[6],   // ABSORB
-        BIP39_WORDS[7],   // ABSTRACT
-        BIP39_WORDS[8],   // ABSURD
-        BIP39_WORDS[9],   // ABUSE
-        BIP39_WORDS[10],  // ACCESS
-        BIP39_WORDS[11],  // ACCIDENT
-        BIP39_WORDS[12],  // ACCOUNT
-        BIP39_WORDS[13],  // ACCUSE
-        BIP39_WORDS[14],  // ACHIEVE
-        BIP39_WORDS[15],  // ACID
-        BIP39_WORDS[16],  // ACOUSTIC
-        BIP39_WORDS[17],  // ACQUIRE
-        BIP39_WORDS[18],  // ACROSS
-        BIP39_WORDS[19],  // ACT
-        BIP39_WORDS[20],  // ACTION
-        BIP39_WORDS[21],  // ACTOR
-        BIP39_WORDS[22],  // ACTRESS
-        BIP39_WORDS[23],  // ACTUAL
-        BIP39_WORDS[24],  // ADAPT
+        BIP39_WORDS[42],    // anchor
+        BIP39_WORDS[256],   // castle
+        BIP39_WORDS[512],   // erosion
+        BIP39_WORDS[1024],  // marble
+        BIP39_WORDS[128],   // biology
+        BIP39_WORDS[777],   // goose
+        BIP39_WORDS[1337],  // pistol
+        BIP39_WORDS[999],   // lemon
+        BIP39_WORDS[444],   // despair
+        BIP39_WORDS[1111],  // mountain
+        BIP39_WORDS[222],   // budget
+        BIP39_WORDS[1500],  // ritual
+        BIP39_WORDS[666],   // flag
+        BIP39_WORDS[1234],  // option
+        BIP39_WORDS[567],   // evidence
+        BIP39_WORDS[890],   // hip
+        BIP39_WORDS[345],   // conduct
+        BIP39_WORDS[1800],  // smooth
+        BIP39_WORDS[1900],  // spy
+        BIP39_WORDS[2000],  // sugar
+        BIP39_WORDS[150],   // blouse
+        BIP39_WORDS[1750],  // skin
+        BIP39_WORDS[333],   // coin
+        BIP39_WORDS[1999],  // suffer
+        BIP39_WORDS[2047],  // zoo
     ];
     
     // Initialize the DisplaySeedWords widget
