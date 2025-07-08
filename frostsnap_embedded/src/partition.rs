@@ -129,6 +129,26 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
         .map_err(|e| e.kind())
     }
 
+    /// Secure boot compatible erase - writes 0xFF instead of using ROM erase commands
+    pub fn secure_erase_sector(&self, sector: u32) -> Result<(), NorFlashErrorKind> {
+        if sector >= self.n_sectors {
+            return Err(NorFlashErrorKind::OutOfBounds);
+        }
+        
+        // Create a sector filled with 0xFF (erased state)
+        let erased_sector = [0xffu8; SECTOR_SIZE];
+        self.nor_write_sector(sector, &erased_sector)
+    }
+
+    /// Secure boot compatible erase all - writes 0xFF to all sectors instead of using ROM erase commands
+    pub fn secure_erase_all(&self) -> Result<(), NorFlashErrorKind> {
+        let erased_sector = [0xffu8; SECTOR_SIZE];
+        for sector in 0..self.n_sectors {
+            self.nor_write_sector(sector, &erased_sector)?;
+        }
+        Ok(())
+    }
+
     pub fn is_empty(&self) -> Result<bool, NorFlashErrorKind> {
         for sector in 0..self.n_sectors {
             let data = self.read_sector(sector)?;
