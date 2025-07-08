@@ -296,6 +296,11 @@ fn find_secure_boot_key() -> Option<[u8; 32]> {
     None
 }
 
+/// Check if secure boot is enabled by looking for secure boot key digests in eFuse
+pub fn is_secure_boot_enabled() -> bool {
+    find_secure_boot_key().is_some()
+}
+
 pub fn verify_secure_boot<S>(
     app_partition: &FlashPartition<S>,
     rsa: &mut Rsa<'_, Blocking>,

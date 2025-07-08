@@ -271,7 +271,7 @@ where
             self.display.clear();
         }
         self.display
-            .header(self.device_name.as_deref().unwrap_or("New Device"));
+            .header(self.device_name.as_deref().unwrap_or("New Device2"));
 
         match self.workflow.borrow_mut() {
             Workflow::None => {
