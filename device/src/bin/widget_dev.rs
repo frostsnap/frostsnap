@@ -18,12 +18,12 @@ use esp_hal::{
     },
     timer::timg::TimerGroup,
 };
+use frostsnap_backup::bip39_words::BIP39_WORDS;
 use frostsnap_device::{
-    graphics::widgets::{DisplaySeedWords, MemoryDebugWidget}, 
-    touch_calibration::adjust_touch_point, 
+    graphics::widgets::{DisplaySeedWords, MemoryDebugWidget},
+    touch_calibration::adjust_touch_point,
     Instant,
 };
-use frostsnap_backup::bip39_words::BIP39_WORDS;
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 #[entry]
@@ -86,38 +86,38 @@ fn main() -> ! {
 
     // Test BIP39 words - using random indexes
     const TEST_WORDS: [&'static str; 25] = [
-        BIP39_WORDS[42],    // anchor
-        BIP39_WORDS[256],   // castle
-        BIP39_WORDS[512],   // erosion
-        BIP39_WORDS[1024],  // marble
-        BIP39_WORDS[128],   // biology
-        BIP39_WORDS[777],   // goose
-        BIP39_WORDS[1337],  // pistol
-        BIP39_WORDS[999],   // lemon
-        BIP39_WORDS[444],   // despair
-        BIP39_WORDS[1111],  // mountain
-        BIP39_WORDS[222],   // budget
-        BIP39_WORDS[1500],  // ritual
-        BIP39_WORDS[666],   // flag
-        BIP39_WORDS[1234],  // option
-        BIP39_WORDS[567],   // evidence
-        BIP39_WORDS[890],   // hip
-        BIP39_WORDS[345],   // conduct
-        BIP39_WORDS[1800],  // smooth
-        BIP39_WORDS[1900],  // spy
-        BIP39_WORDS[2000],  // sugar
-        BIP39_WORDS[150],   // blouse
-        BIP39_WORDS[1750],  // skin
-        BIP39_WORDS[333],   // coin
-        BIP39_WORDS[1999],  // suffer
-        BIP39_WORDS[2047],  // zoo
+        BIP39_WORDS[42],   // anchor
+        BIP39_WORDS[256],  // castle
+        BIP39_WORDS[512],  // erosion
+        BIP39_WORDS[1024], // marble
+        BIP39_WORDS[128],  // biology
+        BIP39_WORDS[777],  // goose
+        BIP39_WORDS[1337], // pistol
+        BIP39_WORDS[999],  // lemon
+        BIP39_WORDS[444],  // despair
+        BIP39_WORDS[1111], // mountain
+        BIP39_WORDS[222],  // budget
+        BIP39_WORDS[1500], // ritual
+        BIP39_WORDS[666],  // flag
+        BIP39_WORDS[1234], // option
+        BIP39_WORDS[567],  // evidence
+        BIP39_WORDS[890],  // hip
+        BIP39_WORDS[345],  // conduct
+        BIP39_WORDS[1800], // smooth
+        BIP39_WORDS[1900], // spy
+        BIP39_WORDS[2000], // sugar
+        BIP39_WORDS[150],  // blouse
+        BIP39_WORDS[1750], // skin
+        BIP39_WORDS[333],  // coin
+        BIP39_WORDS[1999], // suffer
+        BIP39_WORDS[2047], // zoo
     ];
-    
+
     // Initialize the DisplaySeedWords widget
     let screen_size = Size::new(240, 280);
     let share_index = 42; // Example share index
     let mut display_widget = DisplaySeedWords::new(screen_size, TEST_WORDS, share_index);
-    
+
     // Initialize memory debug widget
     let mut mem_debug = MemoryDebugWidget::new(240, 280);
 
@@ -149,7 +149,7 @@ fn main() -> ! {
 
         // Draw the display widget
         display_widget.draw(&mut display, current_time);
-        
+
         // Update and draw memory debug info
         mem_debug.update(esp_alloc::HEAP.used(), esp_alloc::HEAP.free());
         mem_debug.draw(&mut display, current_time).unwrap();

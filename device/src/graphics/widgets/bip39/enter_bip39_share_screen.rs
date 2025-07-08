@@ -17,6 +17,7 @@ pub struct EnterBip39ShareScreen {
     share_index: u16,
     mnemonic_complete: bool,
     needs_redraw: bool,
+    size: Size,
 }
 
 impl EnterBip39ShareScreen {
@@ -42,6 +43,7 @@ impl EnterBip39ShareScreen {
             share_index,
             mnemonic_complete: false,
             needs_redraw: true,
+            size: area,
         };
 
         // Initialize valid keys for empty input
@@ -111,13 +113,7 @@ impl EnterBip39ShareScreen {
         self.touches.retain(|touch| !touch.is_finished());
     }
 
-    pub fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        lift_up: bool,
-        screen_size: Size,
-    ) {
+    pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
         if lift_up {
             // Otherwise process normal key release
             // Find the last non-cancelled touch
@@ -147,7 +143,7 @@ impl EnterBip39ShareScreen {
                                         let framebuffer = self.bip39_input.get_framebuffer();
                                         let words_ref = self.bip39_input.get_words_ref();
                                         let mut entered_words =
-                                            EnteredWords::new(framebuffer, screen_size, words_ref);
+                                            EnteredWords::new(framebuffer, self.size, words_ref);
                                         entered_words
                                             .scroll_to_word_at_bottom(FROSTSNAP_BACKUP_WORDS - 1);
                                         self.entered_words = Some(entered_words);
@@ -166,7 +162,7 @@ impl EnterBip39ShareScreen {
                                 let current_word_index = self.bip39_input.get_current_word_index();
                                 let words_ref = self.bip39_input.get_words_ref();
                                 let mut entered_words =
-                                    EnteredWords::new(framebuffer, screen_size, words_ref);
+                                    EnteredWords::new(framebuffer, self.size, words_ref);
                                 entered_words.scroll_to_word_at_bottom(current_word_index);
                                 self.entered_words = Some(entered_words);
                             } else if self.entered_words.is_some() {

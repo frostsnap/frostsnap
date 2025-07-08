@@ -213,8 +213,6 @@ impl DisplaySeedWords {
                     if let Some(ref mut current) = self.current_touch {
                         if current.key != key_touch.key {
                             current.cancel();
-                        } else {
-                            return;
                         }
                     }
                     self.current_touch = Some(key_touch);
