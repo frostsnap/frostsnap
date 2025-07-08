@@ -19,10 +19,11 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_device::{
-    graphics::widgets::{EnterBip39ShareScreen, MemoryDebugWidget}, 
+    graphics::widgets::{DisplaySeedWords, MemoryDebugWidget}, 
     touch_calibration::adjust_touch_point, 
     Instant,
 };
+use frostsnap_backup::bip39_words::BIP39_WORDS;
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 #[entry]
@@ -83,9 +84,40 @@ fn main() -> ! {
     // Turn on backlight
     bl.set_high();
 
-    // Initialize the EnterBip39ShareScreen widget
+    // Test BIP39 words - using indexes into BIP39_WORDS
+    // Using first 25 words: ABANDON(0) through ADAPT(25)
+    const TEST_WORDS: [&'static str; 25] = [
+        BIP39_WORDS[0],   // ABANDON
+        BIP39_WORDS[1],   // ABILITY
+        BIP39_WORDS[2],   // ABLE
+        BIP39_WORDS[3],   // ABOUT
+        BIP39_WORDS[4],   // ABOVE
+        BIP39_WORDS[5],   // ABSENT
+        BIP39_WORDS[6],   // ABSORB
+        BIP39_WORDS[7],   // ABSTRACT
+        BIP39_WORDS[8],   // ABSURD
+        BIP39_WORDS[9],   // ABUSE
+        BIP39_WORDS[10],  // ACCESS
+        BIP39_WORDS[11],  // ACCIDENT
+        BIP39_WORDS[12],  // ACCOUNT
+        BIP39_WORDS[13],  // ACCUSE
+        BIP39_WORDS[14],  // ACHIEVE
+        BIP39_WORDS[15],  // ACID
+        BIP39_WORDS[16],  // ACOUSTIC
+        BIP39_WORDS[17],  // ACQUIRE
+        BIP39_WORDS[18],  // ACROSS
+        BIP39_WORDS[19],  // ACT
+        BIP39_WORDS[20],  // ACTION
+        BIP39_WORDS[21],  // ACTOR
+        BIP39_WORDS[22],  // ACTRESS
+        BIP39_WORDS[23],  // ACTUAL
+        BIP39_WORDS[24],  // ADAPT
+    ];
+    
+    // Initialize the DisplaySeedWords widget
     let screen_size = Size::new(240, 280);
-    let mut enter_share_screen = EnterBip39ShareScreen::new(screen_size, 1); // Share index 1
+    let share_index = 42; // Example share index
+    let mut display_widget = DisplaySeedWords::new(screen_size, TEST_WORDS, share_index);
     
     // Initialize memory debug widget
     let mut mem_debug = MemoryDebugWidget::new(240, 280);
@@ -112,23 +144,12 @@ fn main() -> ! {
                 last_touch = Some((touch_point, adjusted_y as u32));
             }
 
-            // Handle gestures
-            match gesture {
-                TouchGesture::SlideUp | TouchGesture::SlideDown => {
-                    // Only handle vertical drag, no key presses
-                    if let Some((_, prev_y)) = prev_touch {
-                        enter_share_screen.handle_vertical_drag(Some(prev_y), adjusted_y as u32);
-                    }
-                }
-                _ => {
-                    // Handle regular touches (taps, lift up)
-                    enter_share_screen.handle_touch(touch_point, current_time, lift_up, screen_size);
-                }
-            }
+            // Handle touches for the display widget
+            display_widget.handle_touch(touch_point, current_time, lift_up);
         }
 
-        // Draw the enter share screen
-        enter_share_screen.draw(&mut display, current_time);
+        // Draw the display widget
+        display_widget.draw(&mut display, current_time);
         
         // Update and draw memory debug info
         mem_debug.update(esp_alloc::HEAP.used(), esp_alloc::HEAP.free());
