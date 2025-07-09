@@ -28,6 +28,7 @@ pub struct DisplaySeedWords {
     page_handler: PageTransitionHandler,
     nav_buttons: NavigationButtons,
     current_touch: Option<KeyTouch>,
+    button_area: Rectangle,
 }
 
 fn render_page_to_fb(
@@ -148,6 +149,11 @@ impl DisplaySeedWords {
         let nav_buttons =
             NavigationButtons::new(Size::new(area.width, BUTTON_AREA_HEIGHT), 0, total_pages);
 
+        let button_area = Rectangle::new(
+            Point::new(0, CONTENT_HEIGHT as i32),
+            Size::new(area.width, BUTTON_AREA_HEIGHT),
+        );
+
         // Initialize the first page
         page_handler.init_page(|fb| {
             render_page_to_fb(0, share_index, &words, fb);
@@ -161,6 +167,7 @@ impl DisplaySeedWords {
             page_handler,
             nav_buttons,
             current_touch: None,
+            button_area,
         }
     }
 
@@ -173,11 +180,7 @@ impl DisplaySeedWords {
         self.page_handler.draw(target, current_time);
 
         // Draw navigation buttons in a cropped view
-        let button_area = Rectangle::new(
-            Point::new(0, CONTENT_HEIGHT as i32),
-            Size::new(target.bounding_box().size.width, BUTTON_AREA_HEIGHT),
-        );
-        let mut button_target = target.cropped(&button_area);
+        let mut button_target = target.cropped(&self.button_area);
         self.nav_buttons.draw(&mut button_target, current_time);
 
         // Draw current touch if any

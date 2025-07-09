@@ -2,6 +2,7 @@ use crate::graphics::palette::COLORS;
 use alloc::boxed::Box;
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
+    iterator::raw::RawDataSlice,
     pixelcolor::{
         raw::{LittleEndian, RawU2},
         Gray2, Rgb565,
@@ -10,7 +11,7 @@ use embedded_graphics::{
     primitives::Rectangle,
 };
 
-use super::framebuffer_slide_iterator::{slide_framebuffers, SlideDirection};
+use super::framebuffer_slide_iterator::{SlideDirection, SlideIterator};
 
 const ANIMATION_DURATION_MS: u64 = 300;
 
@@ -44,7 +45,7 @@ impl PageTransitionHandler {
     pub fn new(area: Rectangle) -> Self {
         let width = area.size.width as usize;
         let height = area.size.height as usize;
-        
+
         Self {
             area,
             current_fb: Box::new(Framebuffer::new()),
@@ -109,7 +110,8 @@ impl PageTransitionHandler {
         // Calculate animation progress and direction
         let (progress, direction) = match &self.animation {
             Some(anim) => {
-                let elapsed = anim.start_time
+                let elapsed = anim
+                    .start_time
                     .and_then(|start| current_time.checked_duration_since(start))
                     .map(|d| d.to_millis() as f32 / ANIMATION_DURATION_MS as f32)
                     .unwrap_or(0.0)
@@ -122,9 +124,9 @@ impl PageTransitionHandler {
         // Calculate how many pixels to take from next framebuffer
         let next_pixels = (self.width as f32 * progress) as usize;
 
-        let pixels = slide_framebuffers(
-            self.current_fb.data(),
-            self.next_fb.data(),
+        let pixels = SlideIterator::new_overlapping(
+            RawDataSlice::<RawU2, LittleEndian>::new(self.current_fb.data()).into_iter(),
+            RawDataSlice::<RawU2, LittleEndian>::new(self.next_fb.data()).into_iter(),
             self.width,
             next_pixels,
             direction,
@@ -145,7 +147,7 @@ impl PageTransitionHandler {
             core::mem::swap(&mut self.current_fb, &mut self.next_fb);
             self.animation = None;
         }
-        
+
         // Clear init_draw flag after first draw
         self.init_draw = false;
     }

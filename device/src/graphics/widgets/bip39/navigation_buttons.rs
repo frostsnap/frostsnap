@@ -63,7 +63,7 @@ impl NavigationButtons {
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut D,
-        current_time: crate::Instant,
+        _current_time: crate::Instant,
     ) {
         if !self.needs_redraw {
             return;
