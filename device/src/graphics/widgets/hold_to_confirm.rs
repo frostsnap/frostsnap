@@ -1,5 +1,5 @@
 use super::Widget;
-use crate::{Instant, graphics::palette::COLORS};
+use crate::{Instant, graphics::palette::PALETTE};
 use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -205,7 +205,7 @@ impl<W> HoldToConfirmWidget<W> {
             target.draw_iter(
                 self.border_pixels
                     .iter()
-                    .map(|&point| Pixel(point, COLORS.hold_border))
+                    .map(|&point| Pixel(point, PALETTE.outline))
             )?;
             self.border_drawn = true;
         }
@@ -222,7 +222,7 @@ impl<W> HoldToConfirmWidget<W> {
                 target.draw_iter(
                     self.border_pixels[current_progress_pixels..last_progress_pixels]
                         .iter()
-                        .map(|&point| Pixel(point, COLORS.hold_border))
+                        .map(|&point| Pixel(point, PALETTE.outline))
                 )?;
             }
 
@@ -236,7 +236,7 @@ impl<W> HoldToConfirmWidget<W> {
                 target.draw_iter(
                     self.border_pixels[snake_start..snake_end]
                         .iter()
-                        .map(|&point| Pixel(point, COLORS.hold_progress))
+                        .map(|&point| Pixel(point, PALETTE.primary))
                 )?;
             }
         }

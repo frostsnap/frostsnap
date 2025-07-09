@@ -1,5 +1,5 @@
 use crate::graphics::{
-    palette::COLORS,
+    palette::PALETTE,
     widgets::{FONT_LARGE, FONT_SMALL},
 };
 use alloc::{boxed::Box, format};
@@ -183,10 +183,10 @@ impl SubmitBackupButton {
         let pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb_data)
             .into_iter()
             .map(|pixel| match Gray2::from(pixel).luma() {
-                0x01 => Rgb565::new(6, 12, 6), // Dark gray -> disabled gray (neutral gray in RGB565)
-                0x02 => COLORS.primary,        // Medium gray -> normal text
-                0x03 => COLORS.success,        // Bright gray -> success green
-                _ => COLORS.background,
+                0x01 => PALETTE.on_surface_variant, // Dark gray -> disabled gray
+                0x02 => PALETTE.primary_container,  // Medium gray -> normal text
+                0x03 => PALETTE.tertiary,           // Bright gray -> success green
+                _ => PALETTE.background,
             });
 
         target.fill_contiguous(&bounds, pixels)

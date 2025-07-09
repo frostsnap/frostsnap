@@ -1,7 +1,7 @@
 use super::cursor::Cursor;
 use super::progress_bars::ProgressBars;
 use super::submit_backup_button::SubmitBackupState;
-use crate::graphics::palette::COLORS;
+use crate::graphics::palette::PALETTE;
 use crate::graphics::widgets::{icons, Key, KeyTouch, Widget, FONT_LARGE};
 use alloc::{
     borrow::Cow,
@@ -333,13 +333,13 @@ impl Widget for Bip39InputPreview {
             let _ = clear_rect
                 .into_styled(
                     PrimitiveStyleBuilder::new()
-                        .fill_color(COLORS.background)
+                        .fill_color(PALETTE.background)
                         .build(),
                 )
                 .draw(target);
 
             icons::backspace()
-                .with_color(Rgb565::new(31, 20, 12))
+                .with_color(PALETTE.error)
                 .with_center(
                     self.backspace_rect
                         .resized_width(self.backspace_rect.size.width / 2, AnchorX::Left)
@@ -441,7 +441,7 @@ impl Bip39Framebuf {
             current_time: None,
             target_position: 0,
             animation_start_time: None,
-            color: COLORS.primary,
+            color: PALETTE.on_background,
             viewport_height: 34, // Default viewport height
             redraw: true,
         }
@@ -776,11 +776,11 @@ impl Widget for Bip39Framebuf {
                 .skip(skip_pixels)
                 .take(take_pixels)
                 .map(|pixel| match Gray2::from(pixel).luma() {
-                    0x00 => COLORS.background,
-                    0x01 => Rgb565::new(20, 41, 22),
+                    0x00 => PALETTE.background,
+                    0x01 => PALETTE.on_surface_variant,
                     0x02 => self.color,
                     0x03 => self.color,
-                    _ => COLORS.background,
+                    _ => PALETTE.background,
                 });
 
             target.fill_contiguous(&bb, framebuffer_pixels)?;

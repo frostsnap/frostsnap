@@ -1,3 +1,4 @@
+use crate::graphics::palette::PALETTE;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
@@ -81,7 +82,7 @@ impl ScrollBar {
                 let _ = old_indicator
                     .into_styled(
                         PrimitiveStyleBuilder::new()
-                            .fill_color(Rgb565::new(8, 8, 8))
+                            .fill_color(PALETTE.surface_variant)
                             .build(),
                     )
                     .draw(target);
@@ -96,7 +97,7 @@ impl ScrollBar {
                 let _ = track
                     .into_styled(
                         PrimitiveStyleBuilder::new()
-                            .fill_color(Rgb565::new(8, 8, 8))
+                            .fill_color(PALETTE.surface_variant)
                             .build(),
                     )
                     .draw(target);
@@ -110,7 +111,7 @@ impl ScrollBar {
             let _ = indicator
                 .into_styled(
                     PrimitiveStyleBuilder::new()
-                        .fill_color(Rgb565::new(20, 20, 20))
+                        .fill_color(PALETTE.on_surface_variant)
                         .build(),
                 )
                 .draw(target);

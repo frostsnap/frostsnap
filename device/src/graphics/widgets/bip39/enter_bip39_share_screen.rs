@@ -60,7 +60,7 @@ impl EnterBip39ShareScreen {
             // Only draw if we just transitioned to complete state
             if self.needs_redraw {
                 // Draw green checkmark in the center
-                use crate::graphics::palette::COLORS;
+                use crate::graphics::palette::PALETTE;
                 use crate::graphics::widgets::icons::Icon;
                 use embedded_graphics::primitives::PrimitiveStyleBuilder;
                 use embedded_iconoir::size48px::actions::Check;
@@ -70,14 +70,14 @@ impl EnterBip39ShareScreen {
                 let _ = bounds
                     .into_styled(
                         PrimitiveStyleBuilder::new()
-                            .fill_color(COLORS.background)
+                            .fill_color(PALETTE.background)
                             .build(),
                     )
                     .draw(target);
 
                 // Draw large green checkmark in center
                 Icon::<Check>::default()
-                    .with_color(COLORS.success)
+                    .with_color(PALETTE.tertiary)
                     .with_center(bounds.center())
                     .draw(target);
 
@@ -145,7 +145,7 @@ impl EnterBip39ShareScreen {
                                         let mut entered_words =
                                             EnteredWords::new(framebuffer, self.size, words_ref);
                                         entered_words
-                                            .scroll_to_word_at_bottom(FROSTSNAP_BACKUP_WORDS - 1);
+                                            .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
                                         self.entered_words = Some(entered_words);
                                     }
                                 }
@@ -163,7 +163,7 @@ impl EnterBip39ShareScreen {
                                 let words_ref = self.bip39_input.get_words_ref();
                                 let mut entered_words =
                                     EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words.scroll_to_word_at_bottom(current_word_index);
+                                entered_words.scroll_to_word_at_top(current_word_index);
                                 self.entered_words = Some(entered_words);
                             } else if self.entered_words.is_some() {
                                 // Exit EnteredWords view and start editing the selected word
@@ -365,7 +365,7 @@ impl EnterBip39ShareScreen {
                 let framebuffer = self.bip39_input.get_framebuffer();
                 let words_ref = self.bip39_input.get_words_ref();
                 let mut entered_words = EnteredWords::new(framebuffer, screen_size, words_ref);
-                entered_words.scroll_to_word_at_bottom(FROSTSNAP_BACKUP_WORDS - 1);
+                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
                 self.entered_words = Some(entered_words);
             }
         }
@@ -384,7 +384,7 @@ impl Widget for EnterBip39ShareScreen {
             // Only draw if we just transitioned to complete state
             if self.needs_redraw {
                 // Draw green checkmark in the center
-                use crate::graphics::palette::COLORS;
+                use crate::graphics::palette::PALETTE;
                 use crate::graphics::widgets::icons::Icon;
                 use embedded_graphics::primitives::PrimitiveStyleBuilder;
                 use embedded_iconoir::size48px::actions::Check;
@@ -394,14 +394,14 @@ impl Widget for EnterBip39ShareScreen {
                 bounds
                     .into_styled(
                         PrimitiveStyleBuilder::new()
-                            .fill_color(COLORS.background)
+                            .fill_color(PALETTE.background)
                             .build(),
                     )
                     .draw(target)?;
 
                 // Draw large green checkmark in center
                 Icon::<Check>::default()
-                    .with_color(COLORS.success)
+                    .with_color(PALETTE.tertiary)
                     .with_center(bounds.center())
                     .draw(target);
 
@@ -476,7 +476,7 @@ impl Widget for EnterBip39ShareScreen {
                                         let mut entered_words =
                                             EnteredWords::new(framebuffer, self.size, words_ref);
                                         entered_words
-                                            .scroll_to_word_at_bottom(FROSTSNAP_BACKUP_WORDS - 1);
+                                            .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
                                         self.entered_words = Some(entered_words);
                                     }
                                 }
@@ -494,7 +494,7 @@ impl Widget for EnterBip39ShareScreen {
                                 let words_ref = self.bip39_input.get_words_ref();
                                 let mut entered_words =
                                     EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words.scroll_to_word_at_bottom(current_word_index);
+                                entered_words.scroll_to_word_at_top(current_word_index);
                                 self.entered_words = Some(entered_words);
                             } else if self.entered_words.is_some() {
                                 // Exit EnteredWords view and start editing the selected word

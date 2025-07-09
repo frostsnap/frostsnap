@@ -1,4 +1,4 @@
-use crate::graphics::palette::COLORS;
+use crate::graphics::palette::PALETTE;
 use crate::graphics::widgets::{Key, KeyTouch};
 use alloc::rc::Rc;
 use core::cell::RefCell;
@@ -84,16 +84,14 @@ impl EnteredWords {
         }
     }
 
-    pub fn scroll_to_word_at_bottom(&mut self, word_index: usize) {
+    pub fn scroll_to_word_at_top(&mut self, word_index: usize) {
         let row_height = FONT_SIZE.height + VERTICAL_PAD;
 
-        // Calculate scroll to show word at bottom of scrollable area (above button)
-        let scrollable_height = self.visible_size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32;
-        // Include TOP_PADDING in the word position calculation
-        let word_bottom = TOP_PADDING as i32 + ((word_index + 1) as i32 * row_height as i32);
-        let desired_scroll = word_bottom - scrollable_height;
+        // Calculate scroll to show word at top of scrollable area
+        let desired_scroll = word_index as i32 * row_height as i32;
 
         // Calculate max scroll (words with top padding)
+        let scrollable_height = self.visible_size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32;
         let max_scroll = (TOTAL_CONTENT_HEIGHT as i32).saturating_sub(scrollable_height);
         self.scroll_position = desired_scroll.clamp(0, max_scroll);
         self.scroll_bar.set_scroll_position(self.scroll_position as u32);
@@ -112,7 +110,7 @@ impl EnteredWords {
             let _ = bounds
                 .into_styled(
                     PrimitiveStyleBuilder::new()
-                        .fill_color(COLORS.background)
+                        .fill_color(PALETTE.background)
                         .build(),
                 )
                 .draw(target);
@@ -143,11 +141,11 @@ impl EnteredWords {
                     .skip(skip_pixels)
                     .take(take_pixels)
                     .map(|pixel| match Gray2::from(pixel).luma() {
-                        0x00 => COLORS.background,
+                        0x00 => PALETTE.background,
                         0x01 => Rgb565::new(20, 41, 22),
-                        0x02 => COLORS.primary,
-                        0x03 => COLORS.primary,
-                        _ => COLORS.background,
+                        0x02 => PALETTE.on_background,
+                        0x03 => PALETTE.on_background,
+                        _ => PALETTE.background,
                     });
 
                 let words_rect = Rectangle::new(

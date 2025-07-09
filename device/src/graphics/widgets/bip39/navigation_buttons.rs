@@ -1,4 +1,4 @@
-use crate::graphics::palette::COLORS;
+use crate::graphics::palette::PALETTE;
 use crate::graphics::widgets::{icons, Key, KeyTouch, FONT_SMALL};
 use embedded_graphics::{
     pixelcolor::Rgb565,
@@ -69,12 +69,12 @@ impl NavigationButtons {
             return;
         }
 
-        let _ = target.fill_solid(&target.bounding_box(), COLORS.background);
+        let _ = target.fill_solid(&target.bounding_box(), PALETTE.background);
 
         // Draw previous button (only if not at first page)
         if self.current_page > 0 {
             icons::Icon::<NavArrowLeft>::default()
-                .with_color(COLORS.primary)
+                .with_color(PALETTE.primary_container)
                 .with_center(self.prev_button_rect.center())
                 .draw(target);
         }
@@ -82,7 +82,7 @@ impl NavigationButtons {
         // Draw next button (only if not on last page)
         if self.current_page < self.total_pages - 1 {
             icons::Icon::<NavArrowRight>::default()
-                .with_color(COLORS.primary)
+                .with_color(PALETTE.primary_container)
                 .with_center(self.next_button_rect.center())
                 .draw(target);
         }
@@ -95,7 +95,7 @@ impl NavigationButtons {
         let _ = Text::with_text_style(
             &counter_text,
             counter_position,
-            U8g2TextStyle::new(FONT_SMALL, COLORS.primary),
+            U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background),
             TextStyleBuilder::new()
                 .alignment(Alignment::Center)
                 .baseline(Baseline::Middle)

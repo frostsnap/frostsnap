@@ -1,3 +1,4 @@
+use crate::graphics::palette::PALETTE;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
@@ -41,9 +42,9 @@ impl ProgressBars {
             let x_offset = i as u32 * (bar_width + GAP_WIDTH);
 
             let color = if i < self.progress {
-                Rgb565::new(8, 49, 16) // Draw green for progress
+                PALETTE.tertiary // Draw green for progress
             } else {
-                Rgb565::new(16, 32, 16) // Draw grey for remaining bars
+                PALETTE.surface_variant // Draw grey for remaining bars
             };
 
             // Define the rectangle for the bar

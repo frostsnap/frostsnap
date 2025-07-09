@@ -1,5 +1,5 @@
 use crate::graphics::{
-    palette::COLORS,
+    palette::PALETTE,
     widgets::{Widget, FONT_LARGE},
 };
 use alloc::{boxed::Box, string::ToString};
@@ -26,7 +26,7 @@ const KEY_WIDTH: u32 = FRAMEBUFFER_WIDTH / TOTAL_COLS as u32;
 const KEY_HEIGHT: u32 = 50;
 const TOTAL_ROWS: usize = 7;
 const FRAMEBUFFER_HEIGHT: u32 = TOTAL_ROWS as u32 * KEY_HEIGHT;
-const KEYBOARD_COLOR: Rgb565 = Rgb565::new(25, 52, 26);
+// Remove this inline color - we'll use PALETTE.primary_container for keys
 
 type Fb = Framebuffer<
     BinaryColor,
@@ -155,8 +155,8 @@ impl Widget for AlphabeticKeyboard {
         // Draw based on layout
         if self.enabled_keys.count_enabled() == 0 {
             // Draw navigation buttons when no keys are enabled
-            let left_arrow = NavArrowLeft::new(COLORS.primary);
-            let right_arrow = NavArrowRight::new(COLORS.primary);
+            let left_arrow = NavArrowLeft::new(PALETTE.on_background);
+            let right_arrow = NavArrowRight::new(PALETTE.on_background);
             
             let screen_width = bounds.size.width;
             let screen_height = bounds.size.height;
@@ -167,7 +167,7 @@ impl Widget for AlphabeticKeyboard {
             Rectangle::new(Point::zero(), bounds.size)
                 .into_styled(
                     PrimitiveStyleBuilder::new()
-                        .fill_color(COLORS.background)
+                        .fill_color(PALETTE.background)
                         .build(),
                 )
                 .draw(target)?;
@@ -200,7 +200,7 @@ impl Widget for AlphabeticKeyboard {
             Text::with_text_style(
                 &text,
                 Point::new((screen_width / 2) as i32, (screen_height / 2) as i32),
-                U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+                U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background),
                 text_style,
             )
             .draw(target)?;
@@ -218,11 +218,11 @@ impl Widget for AlphabeticKeyboard {
                     .skip(skip_pixels)
                     .take(FRAMEBUFFER_WIDTH as usize * content_height as usize)
                     .map(|r| match BinaryColor::from(r) {
-                        BinaryColor::Off => COLORS.background,
-                        BinaryColor::On => KEYBOARD_COLOR,
+                        BinaryColor::Off => PALETTE.background,
+                        BinaryColor::On => PALETTE.primary_container,
                     });
 
-                let padding_pixels = core::iter::repeat(COLORS.background)
+                let padding_pixels = core::iter::repeat(PALETTE.background)
                     .take(FRAMEBUFFER_WIDTH as usize * (bounds.size.height - content_height) as usize);
 
                 target.fill_contiguous(
@@ -234,6 +234,56 @@ impl Widget for AlphabeticKeyboard {
 
         self.needs_redraw = false;
         Ok(())
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: crate::Instant,
+        _lift_up: bool,
+    ) -> Option<crate::graphics::widgets::KeyTouch> {
+        use crate::graphics::widgets::{Key, KeyTouch};
+        
+        if self.enabled_keys.count_enabled() == 0 {
+            // Handle navigation button touches
+            let screen_width = FRAMEBUFFER_WIDTH;
+            let screen_height = self.visible_height;
+            
+            // Check back button area (left side) - only if we can go back
+            if point.x < (screen_width / 2) as i32 && self.current_word_index > 0 {
+                let rect = Rectangle::new(
+                    Point::new(0, 0),
+                    Size::new(screen_width / 2, screen_height)
+                );
+                return Some(KeyTouch::new(Key::NavBack, rect));
+            }
+            // Check forward button area (right side) - only if we can go forward
+            else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 { // 0-24 for 25 words
+                let rect = Rectangle::new(
+                    Point::new((screen_width / 2) as i32, 0),
+                    Size::new(screen_width / 2, screen_height)
+                );
+                return Some(KeyTouch::new(Key::NavForward, rect));
+            }
+        }
+
+        // In compact layout, keys are positioned differently
+        let col = (point.x / KEY_WIDTH as i32) as usize;
+        let row = ((point.y + self.scroll_position) / KEY_HEIGHT as i32) as usize;
+
+        if col < TOTAL_COLS {
+            let idx = row * TOTAL_COLS + col;
+            // Use nth_enabled to get the key at this index
+            if let Some(key) = self.enabled_keys.nth_enabled(idx) {
+                // Calculate the screen position of the key in compact layout
+                let x = col as i32 * KEY_WIDTH as i32;
+                let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
+                let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
+
+                return Some(KeyTouch::new(Key::Keyboard(key), rect));
+            }
+        }
+        None
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {

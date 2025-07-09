@@ -18,14 +18,14 @@ use esp_hal::{
     },
     timer::timg::TimerGroup,
 };
-use frostsnap_backup::bip39_words::BIP39_WORDS;
 use frostsnap_device::{
     graphics::widgets::{
-        memory_debug::MemoryDebugWidget, DisplaySeedWords, HoldToConfirmWidget, Widget,
+        memory_debug::MemoryDebugWidget, EnterBip39ShareScreen, Widget,
     },
     touch_calibration::adjust_touch_point,
     Instant,
 };
+use cst816s::TouchGesture;
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 #[entry]
@@ -86,49 +86,15 @@ fn main() -> ! {
     // Turn on backlight
     bl.set_high();
 
-    // Test BIP39 words - using random indexes
-    const TEST_WORDS: [&'static str; 25] = [
-        BIP39_WORDS[42],   // anchor
-        BIP39_WORDS[256],  // castle
-        BIP39_WORDS[512],  // erosion
-        BIP39_WORDS[1024], // marble
-        BIP39_WORDS[128],  // biology
-        BIP39_WORDS[777],  // goose
-        BIP39_WORDS[1337], // pistol
-        BIP39_WORDS[999],  // lemon
-        BIP39_WORDS[444],  // despair
-        BIP39_WORDS[1111], // mountain
-        BIP39_WORDS[222],  // budget
-        BIP39_WORDS[1500], // ritual
-        BIP39_WORDS[666],  // flag
-        BIP39_WORDS[1234], // option
-        BIP39_WORDS[567],  // evidence
-        BIP39_WORDS[890],  // hip
-        BIP39_WORDS[345],  // conduct
-        BIP39_WORDS[1800], // smooth
-        BIP39_WORDS[1900], // spy
-        BIP39_WORDS[2000], // sugar
-        BIP39_WORDS[150],  // blouse
-        BIP39_WORDS[1750], // skin
-        BIP39_WORDS[333],  // coin
-        BIP39_WORDS[1999], // suffer
-        BIP39_WORDS[2047], // zoo
-    ];
-
-    // Initialize the DisplaySeedWords widget
+    // Initialize the EnterBip39ShareScreen widget
     let screen_size = Size::new(240, 280);
-    let share_index = 42; // Example share index
-    let display_widget = DisplaySeedWords::new(screen_size, TEST_WORDS, share_index);
-
-    // Wrap it in HoldToConfirmWidget
-    let mut hold_to_confirm =
-        HoldToConfirmWidget::new(display_widget).with_screen_size(screen_size);
-    hold_to_confirm.enable(); // Enable hold to confirm
+    let share_index = 1; // Share index 1
+    let mut enter_bip39_screen = EnterBip39ShareScreen::new(screen_size, share_index);
 
     // Initialize memory debug widget
     let mut mem_debug = MemoryDebugWidget::new(240, 280);
 
-    let mut last_touch = None;
+    let mut last_touch: Option<(Point, u32)> = None;
 
     // Main loop
     loop {
@@ -144,27 +110,42 @@ fn main() -> ! {
                     adjust_touch_point(touch_event.x as i32, touch_event.y as i32);
                 let touch_point = Point::new(adjusted_x, adjusted_y);
                 let lift_up = touch_event.action == 1;
-                let _gesture = touch_event.gesture;
+                let gesture = touch_event.gesture;
+
+                // Handle gestures
+                match gesture {
+                    TouchGesture::SlideUp | TouchGesture::SlideDown => {
+                        // Handle vertical drag
+                        enter_bip39_screen.handle_vertical_drag(
+                            last_touch.map(|(_, y)| y),
+                            adjusted_y as u32,
+                        );
+                    }
+                    _ => {
+                        // Handle all other touches (including None, SingleTap, etc.)
+                        enter_bip39_screen.handle_touch(touch_point, current_time, lift_up);
+                    }
+                }
 
                 // Store last touch for drag calculations
-                let _prev_touch = last_touch.take();
+                let prev_touch = last_touch.take();
                 if !lift_up {
                     last_touch = Some((touch_point, adjusted_y as u32));
                 }
-
-                // Handle touches for the hold to confirm widget
-                hold_to_confirm.handle_touch(touch_point, current_time, lift_up);
             }
         }
 
-        // Draw continuously for smooth animations
-        // Draw the hold to confirm widget
-        let _ = hold_to_confirm.draw(&mut display, current_time);
+        // Draw the EnterBip39ShareScreen widget
+        let _ = enter_bip39_screen.draw(&mut display, current_time);
 
-        // Check if confirmation is complete
-        if hold_to_confirm.is_completed() {
-            // You could reset or disable it here
-            // hold_to_confirm.reset();
+        // Check if the share entry is complete
+        if enter_bip39_screen.is_finished() {
+            // You could handle completion here
+            // For example, try to create the share:
+            // match enter_bip39_screen.try_create_share() {
+            //     Ok(share) => { /* Handle successful share */ }
+            //     Err(e) => { /* Handle error */ }
+            // }
         }
 
         // Update and draw memory debug info

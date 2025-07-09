@@ -1,4 +1,4 @@
-use crate::graphics::palette::COLORS;
+use crate::graphics::palette::PALETTE;
 use crate::graphics::widgets::Widget;
 use embedded_graphics::{
     pixelcolor::Rgb565,
@@ -62,11 +62,11 @@ impl Widget for Cursor {
                 // Draw or clear based on new visibility state
                 if self.visible {
                     cursor_rect
-                        .into_styled(PrimitiveStyle::with_fill(COLORS.primary))
+                        .into_styled(PrimitiveStyle::with_fill(PALETTE.primary))
                         .draw(target)?;
                 } else {
                     cursor_rect
-                        .into_styled(PrimitiveStyle::with_fill(COLORS.background))
+                        .into_styled(PrimitiveStyle::with_fill(PALETTE.background))
                         .draw(target)?;
                 }
             }
@@ -74,7 +74,7 @@ impl Widget for Cursor {
             // First time - draw cursor
             self.last_toggle = Some(current_time);
             cursor_rect
-                .into_styled(PrimitiveStyle::with_fill(COLORS.primary))
+                .into_styled(PrimitiveStyle::with_fill(PALETTE.primary))
                 .draw(target)?;
         }
         

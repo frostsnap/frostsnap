@@ -1,4 +1,4 @@
-use crate::graphics::palette::COLORS;
+use crate::graphics::palette::PALETTE;
 use crate::graphics::widgets::{icons, Key, KeyTouch, FONT_LARGE};
 
 use alloc::string::String;
@@ -67,12 +67,12 @@ impl WordSelector {
         // Clear the entire screen
         let bounds = Rectangle::new(Point::zero(), self.size);
         let _ = bounds
-            .into_styled(PrimitiveStyle::with_fill(COLORS.background))
+            .into_styled(PrimitiveStyle::with_fill(PALETTE.background))
             .draw(target);
 
         // Draw backspace button
         icons::backspace()
-            .with_color(Rgb565::new(31, 20, 12))
+            .with_color(PALETTE.error)
             .with_center(
                 self.backspace_rect
                     .resized_width(self.backspace_rect.size.width / 2, AnchorX::Left)
@@ -95,7 +95,7 @@ impl WordSelector {
             let _ = Text::with_text_style(
                 word,
                 text_pos,
-                U8g2TextStyle::new(FONT_LARGE, Rgb565::new(8, 49, 16)), // Green color from progress bar
+                U8g2TextStyle::new(FONT_LARGE, PALETTE.tertiary), // Green color
                 TextStyleBuilder::new()
                     .alignment(Alignment::Left)
                     .baseline(Baseline::Middle)
@@ -108,7 +108,7 @@ impl WordSelector {
                 let _ = Text::with_text_style(
                     &self.prefix,
                     text_pos,
-                    U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+                    U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background),
                     TextStyleBuilder::new()
                         .alignment(Alignment::Left)
                         .baseline(Baseline::Middle)
