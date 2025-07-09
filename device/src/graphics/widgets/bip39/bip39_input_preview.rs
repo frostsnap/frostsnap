@@ -2,7 +2,7 @@ use super::cursor::Cursor;
 use super::progress_bars::ProgressBars;
 use super::submit_backup_button::SubmitBackupState;
 use crate::graphics::palette::COLORS;
-use crate::graphics::widgets::{icons, Key, KeyTouch, FONT_LARGE};
+use crate::graphics::widgets::{icons, Key, KeyTouch, Widget, FONT_LARGE};
 use alloc::{
     borrow::Cow,
     boxed::Box,
@@ -162,58 +162,6 @@ impl Bip39InputPreview {
         }
     }
 
-    pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
-        if self.backspace_rect.contains(point) {
-            Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
-        } else if self.area.contains(point) {
-            // Tap on the input preview area triggers the entered words view
-            Some(KeyTouch::new(Key::EditWord(0), self.area))
-        } else {
-            None
-        }
-    }
-
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) {
-        // Draw backspace icon on first draw
-        if !self.init_draw {
-            // Clear the entire area first
-            let clear_rect = Rectangle::new(Point::zero(), self.area.size);
-            let _ = clear_rect
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .fill_color(COLORS.background)
-                        .build(),
-                )
-                .draw(target);
-
-            icons::backspace()
-                .with_color(Rgb565::new(31, 20, 12))
-                .with_center(
-                    self.backspace_rect
-                        .resized_width(self.backspace_rect.size.width / 2, AnchorX::Left)
-                        .center(),
-                )
-                .draw(target);
-            self.init_draw = true;
-        }
-
-        // Always draw the framebuffer (it has its own redraw logic)
-        self.framebuf
-            .draw(&mut target.cropped(&self.preview_rect), current_time);
-
-        // Draw cursor if on current word
-        if self.framebuf.current_input < FROSTSNAP_BACKUP_WORDS {
-            self.draw_cursor(&mut target.cropped(&self.preview_rect), current_time);
-        }
-
-        // Always draw progress bars (they have their own redraw logic)
-        let _ = self.progress.draw(&mut target.cropped(&self.progress_rect));
-    }
-
     pub fn push_letter(&mut self, letter: char) {
         // Add uppercase letter to framebuffer
         let upper_letter = letter.to_uppercase().next().unwrap_or(letter);
@@ -351,7 +299,7 @@ impl Bip39InputPreview {
         &mut self,
         target: &mut D,
         current_time: crate::Instant,
-    ) {
+    ) -> Result<(), D::Error> {
         // Calculate cursor position based on current word and character count
         let current_word = self.framebuf.current_input();
         let char_count = current_word.len();
@@ -367,7 +315,69 @@ impl Bip39InputPreview {
         self.cursor.set_position(Point::new(x as i32, y));
         
         // Let the cursor handle its own drawing and blinking
-        self.cursor.draw(target, current_time);
+        self.cursor.draw(target, current_time)?;
+        Ok(())
+    }
+}
+
+impl Widget for Bip39InputPreview {
+    fn draw<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        // Draw backspace icon on first draw
+        if !self.init_draw {
+            // Clear the entire area first
+            let clear_rect = Rectangle::new(Point::zero(), self.area.size);
+            let _ = clear_rect
+                .into_styled(
+                    PrimitiveStyleBuilder::new()
+                        .fill_color(COLORS.background)
+                        .build(),
+                )
+                .draw(target);
+
+            icons::backspace()
+                .with_color(Rgb565::new(31, 20, 12))
+                .with_center(
+                    self.backspace_rect
+                        .resized_width(self.backspace_rect.size.width / 2, AnchorX::Left)
+                        .center(),
+                )
+                .draw(target);
+            self.init_draw = true;
+        }
+
+        // Always draw the framebuffer (it has its own redraw logic)
+        self.framebuf
+            .draw(&mut target.cropped(&self.preview_rect), current_time)?;
+
+        // Draw cursor if on current word
+        if self.framebuf.current_input < FROSTSNAP_BACKUP_WORDS {
+            self.draw_cursor(&mut target.cropped(&self.preview_rect), current_time);
+        }
+
+        // Always draw progress bars (they have their own redraw logic)
+        self.progress.draw(&mut target.cropped(&self.progress_rect))?;
+        
+        Ok(())
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: crate::Instant,
+        _lift_up: bool,
+    ) -> Option<KeyTouch> {
+        if self.backspace_rect.contains(point) {
+            Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
+        } else if self.area.contains(point) {
+            // Tap on the input preview area triggers the entered words view
+            Some(KeyTouch::new(Key::EditWord(0), self.area))
+        } else {
+            None
+        }
     }
 }
 
@@ -538,140 +548,6 @@ impl Bip39Framebuf {
         }
     }
 
-    pub fn draw(
-        &mut self,
-        target: &mut impl DrawTarget<Color = Rgb565>,
-        current_time: crate::Instant,
-    ) {
-        let bb = target.bounding_box();
-
-        // Assert that framebuffer width matches target width
-        assert_eq!(
-            FB_WIDTH, bb.size.width,
-            "Framebuffer width ({}) must match target width ({})",
-            FB_WIDTH, bb.size.width
-        );
-
-        // Check if this is the first draw
-        let is_first_draw = self.current_time.is_none();
-
-        // Update viewport height if it changed
-        if self.viewport_height != bb.size.height {
-            self.viewport_height = bb.size.height;
-            // Recalculate target position with new viewport
-            self.update_scroll_position(is_first_draw);
-        }
-
-        // On first draw, jump to target position
-        if is_first_draw {
-            self.current_position = self.target_position;
-        }
-
-        // Animate scrolling using acceleration
-        let last_draw_time = self.current_time.get_or_insert(current_time);
-
-        if self.current_position != self.target_position {
-            // Calculate time since animation started
-            let animation_elapsed = if let Some(start_time) = self.animation_start_time {
-                current_time
-                    .checked_duration_since(start_time)
-                    .unwrap()
-                    .to_millis() as f32
-            } else {
-                self.animation_start_time = Some(current_time);
-                0.0
-            };
-
-            // Accelerating curve: starts slow, speeds up
-            // Using a quadratic function for smooth acceleration
-            const ACCELERATION: f32 = 0.00000005; // Acceleration factor (5x faster)
-            const MIN_VELOCITY: f32 = 0.0005; // Minimum velocity to ensure it starts moving
-
-            // Calculate current velocity based on time elapsed
-            let velocity = MIN_VELOCITY + (ACCELERATION * animation_elapsed * animation_elapsed);
-
-            // Calculate distance to move this frame
-            let frame_duration = current_time
-                .checked_duration_since(*last_draw_time)
-                .unwrap()
-                .to_millis() as f32;
-
-            // For upward scrolling, we want positive distance to move up (decrease position)
-            // When velocity is negative, we actually want to move down briefly
-            let distance = (frame_duration * velocity).round() as i32;
-
-            // Only proceed if we're actually going to move
-            if distance != 0 {
-                *last_draw_time = current_time;
-
-                // Direction: negative means scrolling up (decreasing position)
-                let direction =
-                    (self.target_position as i32 - self.current_position as i32).signum();
-
-                // Apply the velocity in the correct direction
-                // For upward scroll (direction < 0), positive velocity should decrease position
-                let position_change = if direction < 0 {
-                    -distance // Upward scroll
-                } else {
-                    distance // Downward scroll
-                };
-
-                let new_position = (self.current_position as i32 + position_change).max(0);
-
-                // Check if we've reached or passed the target
-                if (direction < 0 && new_position <= self.target_position as i32)
-                    || (direction > 0 && new_position >= self.target_position as i32)
-                    || direction == 0
-                {
-                    self.current_position = self.target_position;
-                    self.animation_start_time = None; // Animation complete
-                } else {
-                    self.current_position = new_position as u32;
-                }
-
-                self.redraw = true; // Keep redrawing until animation completes
-            }
-            // If distance is 0, we don't update last_draw_time, allowing frame_duration to accumulate
-        } else {
-            *last_draw_time = current_time;
-            self.animation_start_time = None;
-        }
-
-        // Only redraw if needed
-        if !self.redraw {
-            return;
-        }
-
-        // Skip to the correct starting position in the framebuffer
-        // current_position is already in pixels (Y coordinate), so we need to skip
-        // that many rows worth of pixels in the framebuffer
-        let skip_rows = self.current_position as usize;
-        let skip_pixels = skip_rows * FB_WIDTH as usize;
-        let take_pixels = bb.size.height as usize * bb.size.width as usize;
-
-        {
-            let fb = self.framebuffer.try_borrow().unwrap();
-            let framebuffer_pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb.data())
-                .into_iter()
-                .skip(skip_pixels)
-                .take(take_pixels)
-                .map(|pixel| match Gray2::from(pixel).luma() {
-                    0x00 => COLORS.background,
-                    0x01 => Rgb565::new(20, 41, 22),
-                    0x02 => self.color,
-                    0x03 => self.color,
-                    _ => COLORS.background,
-                });
-
-            let _ = target.fill_contiguous(&bb, framebuffer_pixels);
-        }
-
-        // Only clear redraw flag if animation is complete
-        if self.current_position == self.target_position {
-            self.redraw = false;
-        }
-    }
-
     pub fn current_input(&self) -> String {
         self.words.borrow().get(self.current_input).to_string()
     }
@@ -778,5 +654,143 @@ impl Bip39Framebuf {
         self.redraw = self.current_position != self.target_position;
         self.current_position = self.target_position;
         self.animation_start_time = None;
+    }
+}
+
+impl Widget for Bip39Framebuf {
+    fn draw<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        let bb = target.bounding_box();
+
+        // Assert that framebuffer width matches target width
+        assert_eq!(
+            FB_WIDTH, bb.size.width,
+            "Framebuffer width ({}) must match target width ({})",
+            FB_WIDTH, bb.size.width
+        );
+
+        // Check if this is the first draw
+        let is_first_draw = self.current_time.is_none();
+
+        // Update viewport height if it changed
+        if self.viewport_height != bb.size.height {
+            self.viewport_height = bb.size.height;
+            // Recalculate target position with new viewport
+            self.update_scroll_position(is_first_draw);
+        }
+
+        // On first draw, jump to target position
+        if is_first_draw {
+            self.current_position = self.target_position;
+        }
+
+        // Animate scrolling using acceleration
+        let last_draw_time = self.current_time.get_or_insert(current_time);
+
+        if self.current_position != self.target_position {
+            // Calculate time since animation started
+            let animation_elapsed = if let Some(start_time) = self.animation_start_time {
+                current_time
+                    .checked_duration_since(start_time)
+                    .unwrap()
+                    .to_millis() as f32
+            } else {
+                self.animation_start_time = Some(current_time);
+                0.0
+            };
+
+            // Accelerating curve: starts slow, speeds up
+            // Using a quadratic function for smooth acceleration
+            const ACCELERATION: f32 = 0.00000005; // Acceleration factor (5x faster)
+            const MIN_VELOCITY: f32 = 0.0005; // Minimum velocity to ensure it starts moving
+
+            // Calculate current velocity based on time elapsed
+            let velocity = MIN_VELOCITY + (ACCELERATION * animation_elapsed * animation_elapsed);
+
+            // Calculate distance to move this frame
+            let frame_duration = current_time
+                .checked_duration_since(*last_draw_time)
+                .unwrap()
+                .to_millis() as f32;
+
+            // For upward scrolling, we want positive distance to move up (decrease position)
+            // When velocity is negative, we actually want to move down briefly
+            let distance = (frame_duration * velocity).round() as i32;
+
+            // Only proceed if we're actually going to move
+            if distance != 0 {
+                *last_draw_time = current_time;
+
+                // Direction: negative means scrolling up (decreasing position)
+                let direction =
+                    (self.target_position as i32 - self.current_position as i32).signum();
+
+                // Apply the velocity in the correct direction
+                // For upward scroll (direction < 0), positive velocity should decrease position
+                let position_change = if direction < 0 {
+                    -distance // Upward scroll
+                } else {
+                    distance // Downward scroll
+                };
+
+                let new_position = (self.current_position as i32 + position_change).max(0);
+
+                // Check if we've reached or passed the target
+                if (direction < 0 && new_position <= self.target_position as i32)
+                    || (direction > 0 && new_position >= self.target_position as i32)
+                    || direction == 0
+                {
+                    self.current_position = self.target_position;
+                    self.animation_start_time = None; // Animation complete
+                } else {
+                    self.current_position = new_position as u32;
+                }
+
+                self.redraw = true; // Keep redrawing until animation completes
+            }
+            // If distance is 0, we don't update last_draw_time, allowing frame_duration to accumulate
+        } else {
+            *last_draw_time = current_time;
+            self.animation_start_time = None;
+        }
+
+        // Only redraw if needed
+        if !self.redraw {
+            return Ok(());
+        }
+
+        // Skip to the correct starting position in the framebuffer
+        // current_position is already in pixels (Y coordinate), so we need to skip
+        // that many rows worth of pixels in the framebuffer
+        let skip_rows = self.current_position as usize;
+        let skip_pixels = skip_rows * FB_WIDTH as usize;
+        let take_pixels = bb.size.height as usize * bb.size.width as usize;
+
+        {
+            let fb = self.framebuffer.try_borrow().unwrap();
+            let framebuffer_pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb.data())
+                .into_iter()
+                .skip(skip_pixels)
+                .take(take_pixels)
+                .map(|pixel| match Gray2::from(pixel).luma() {
+                    0x00 => COLORS.background,
+                    0x01 => Rgb565::new(20, 41, 22),
+                    0x02 => self.color,
+                    0x03 => self.color,
+                    _ => COLORS.background,
+                });
+
+            target.fill_contiguous(&bb, framebuffer_pixels)?;
+        }
+
+        // Only clear redraw flag if animation is complete
+        if self.current_position == self.target_position {
+            self.redraw = false;
+        }
+        
+        Ok(())
     }
 }

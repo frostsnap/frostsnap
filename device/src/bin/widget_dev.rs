@@ -2,7 +2,7 @@
 #![no_main]
 
 extern crate alloc;
-use cst816s::{TouchGesture, CST816S};
+use cst816s::CST816S;
 use display_interface_spi::SPIInterface;
 use embedded_graphics::prelude::*;
 use esp_hal::{
@@ -20,7 +20,7 @@ use esp_hal::{
 };
 use frostsnap_backup::bip39_words::BIP39_WORDS;
 use frostsnap_device::{
-    graphics::widgets::{DisplaySeedWords, MemoryDebugWidget},
+    graphics::widgets::{memory_debug::MemoryDebugWidget, DisplaySeedWords, Widget},
     touch_calibration::adjust_touch_point,
     Instant,
 };

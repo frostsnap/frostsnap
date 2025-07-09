@@ -6,6 +6,7 @@ use embedded_graphics::{
     text::{Alignment, Text},
 };
 use crate::Instant;
+use super::Widget;
 
 #[derive(Debug)]
 pub struct MemoryDebugWidget {
@@ -102,7 +103,14 @@ impl MemoryDebugWidget {
         }
     }
     
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D, current_time: Instant) -> Result<(), D::Error> {
+}
+
+impl Widget for MemoryDebugWidget {
+    fn draw<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
         // Check if we should redraw (every 1 second)
         if let Some(last_time) = self.last_draw_time {
             if let Some(duration) = current_time.checked_duration_since(last_time) {

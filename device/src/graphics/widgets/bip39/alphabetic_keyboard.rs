@@ -1,10 +1,11 @@
 use crate::graphics::{
     palette::COLORS,
-    widgets::{icons, Key, KeyTouch, FONT_LARGE},
+    widgets::{Widget, FONT_LARGE},
 };
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
+    image::Image,
     iterator::raw::RawDataSlice,
     pixelcolor::{
         raw::{LittleEndian, RawU1},
@@ -14,7 +15,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
-use embedded_iconoir::size32px::navigation::{NavArrowLeft, NavArrowRight};
+use embedded_iconoir::{size32px::navigation::{NavArrowLeft, NavArrowRight}, prelude::IconoirNewIcon};
 use frostsnap_backup::bip39_words::ValidLetters;
 use u8g2_fonts::U8g2TextStyle;
 
@@ -120,124 +121,6 @@ impl AlphabeticKeyboard {
         }
     }
 
-    pub fn draw(&mut self, target: &mut impl DrawTarget<Color = Rgb565>) {
-        if !self.needs_redraw {
-            return;
-        }
-
-        let bounds = target.bounding_box();
-
-        if self.enabled_keys.count_enabled() == 0 {
-            // Draw navigation buttons instead of keyboard
-            // Clear the background
-            let _ = bounds
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .fill_color(COLORS.background)
-                        .build(),
-                )
-                .draw(target);
-
-            // Draw navigation buttons only if they can be used
-            let button_size = 80u32;
-            
-            // Draw back button only if not at first word
-            if self.current_word_index > 0 {
-                icons::Icon::<NavArrowLeft>::default()
-                    .with_color(KEYBOARD_COLOR)
-                    .with_center(Point::new(button_size as i32 / 2 + 20, bounds.size.height as i32 / 2))
-                    .draw(target);
-            }
-
-            // Draw forward button only if not at last word
-            if self.current_word_index < 24 { // 0-24 for 25 words
-                icons::Icon::<NavArrowRight>::default()
-                    .with_color(KEYBOARD_COLOR)
-                    .with_center(Point::new(bounds.size.width as i32 - button_size as i32 / 2 - 20, bounds.size.height as i32 / 2))
-                    .draw(target);
-            }
-        } else {
-            // Draw normal keyboard
-            let num_rendered = self.enabled_keys.count_enabled();
-            let rows = (num_rendered + TOTAL_COLS - 1) / TOTAL_COLS;
-            let compact_height = (rows * KEY_HEIGHT as usize) as u32;
-
-            // Calculate the height of content we'll draw from the framebuffer
-            let content_height =
-                (compact_height.saturating_sub(self.scroll_position as u32)).min(bounds.size.height);
-
-            // Calculate pixels to skip based on scroll position
-            let skip_pixels = (self.scroll_position.max(0) as usize) * FRAMEBUFFER_WIDTH as usize;
-
-            // Draw the framebuffer content followed by background padding
-            let framebuffer_pixels = RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
-                .into_iter()
-                .skip(skip_pixels)
-                .take(FRAMEBUFFER_WIDTH as usize * content_height as usize)
-                .map(|r| match BinaryColor::from(r) {
-                    BinaryColor::Off => COLORS.background,
-                    BinaryColor::On => KEYBOARD_COLOR,
-                });
-
-            let padding_pixels = core::iter::repeat(COLORS.background)
-                .take(FRAMEBUFFER_WIDTH as usize * (bounds.size.height - content_height) as usize);
-
-            let _ = target.fill_contiguous(
-                &Rectangle::new(Point::zero(), bounds.size),
-                framebuffer_pixels.chain(padding_pixels),
-            );
-        }
-
-        self.needs_redraw = false;
-    }
-
-    pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
-        if self.enabled_keys.count_enabled() == 0 {
-            // Handle navigation button touches
-            let screen_width = FRAMEBUFFER_WIDTH;
-            let screen_height = self.visible_height;
-            
-            // Check back button area (left side) - only if we can go back
-            if point.x < (screen_width / 2) as i32 && self.current_word_index > 0 {
-                let rect = Rectangle::new(
-                    Point::new(0, 0),
-                    Size::new(screen_width / 2, screen_height)
-                );
-                return Some(KeyTouch::new(Key::NavBack, rect));
-            }
-            // Check forward button area (right side) - only if we can go forward
-            else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 { // 0-24 for 25 words
-                let rect = Rectangle::new(
-                    Point::new((screen_width / 2) as i32, 0),
-                    Size::new(screen_width / 2, screen_height)
-                );
-                return Some(KeyTouch::new(Key::NavForward, rect));
-            }
-        }
-
-        // In compact layout, keys are positioned differently
-        let col = (point.x / KEY_WIDTH as i32) as usize;
-        let row = ((point.y + self.scroll_position) / KEY_HEIGHT as i32) as usize;
-
-        if col < TOTAL_COLS {
-            let idx = row * TOTAL_COLS + col;
-            // Use nth_enabled to get the key at this index
-            if let Some(key) = self.enabled_keys.nth_enabled(idx) {
-                // Calculate the screen position of the key in compact layout
-                let x = col as i32 * KEY_WIDTH as i32;
-                let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
-                let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
-
-                return Some(KeyTouch::new(Key::Keyboard(key), rect));
-            }
-        }
-        None
-    }
-
-    pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
-        let delta = prev_y.map_or(0, |p| new_y as i32 - p as i32);
-        self.scroll(delta);
-    }
 
     pub fn set_valid_keys(&mut self, valid_letters: ValidLetters) {
         // Simply update the enabled keys
@@ -254,5 +137,107 @@ impl AlphabeticKeyboard {
             self.current_word_index = index;
             self.needs_redraw = true;
         }
+    }
+}
+
+impl Widget for AlphabeticKeyboard {
+    fn draw<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        target: &mut D,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        if !self.needs_redraw {
+            return Ok(());
+        }
+
+        let bounds = target.bounding_box();
+
+        // Draw based on layout
+        if self.enabled_keys.count_enabled() == 0 {
+            // Draw navigation buttons when no keys are enabled
+            let left_arrow = NavArrowLeft::new(COLORS.primary);
+            let right_arrow = NavArrowRight::new(COLORS.primary);
+            
+            let screen_width = bounds.size.width;
+            let screen_height = bounds.size.height;
+            let icon_size = 32;
+            let padding = 10;
+            
+            // Clear the area first
+            Rectangle::new(Point::zero(), bounds.size)
+                .into_styled(
+                    PrimitiveStyleBuilder::new()
+                        .fill_color(COLORS.background)
+                        .build(),
+                )
+                .draw(target)?;
+            
+            // Draw left arrow if not at the first word
+            if self.current_word_index > 0 {
+                let left_point = Point::new(
+                    padding,
+                    (screen_height / 2 - icon_size / 2) as i32,
+                );
+                Image::new(&left_arrow, left_point).draw(target)?;
+            }
+            
+            // Draw right arrow if not at the last word
+            if self.current_word_index < 24 {
+                let right_point = Point::new(
+                    (screen_width - icon_size - padding as u32) as i32,
+                    (screen_height / 2 - icon_size / 2) as i32,
+                );
+                Image::new(&right_arrow, right_point).draw(target)?;
+            }
+            
+            // Draw word number in the center
+            let text = format!("Word {}", self.current_word_index + 1);
+            let text_style = TextStyleBuilder::new()
+                .baseline(Baseline::Middle)
+                .alignment(Alignment::Center)
+                .build();
+            
+            Text::with_text_style(
+                &text,
+                Point::new((screen_width / 2) as i32, (screen_height / 2) as i32),
+                U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+                text_style,
+            )
+            .draw(target)?;
+        } else {
+            // Draw the framebuffer for compact keyboard
+            let content_height = ((self.framebuffer.size().height as i32 - self.scroll_position).max(0) as u32)
+                .min(bounds.size.height);
+
+            if content_height > 0 {
+                let skip_pixels = (self.scroll_position.max(0) as usize) * FRAMEBUFFER_WIDTH as usize;
+
+                // Draw the framebuffer content followed by background padding
+                let framebuffer_pixels = RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
+                    .into_iter()
+                    .skip(skip_pixels)
+                    .take(FRAMEBUFFER_WIDTH as usize * content_height as usize)
+                    .map(|r| match BinaryColor::from(r) {
+                        BinaryColor::Off => COLORS.background,
+                        BinaryColor::On => KEYBOARD_COLOR,
+                    });
+
+                let padding_pixels = core::iter::repeat(COLORS.background)
+                    .take(FRAMEBUFFER_WIDTH as usize * (bounds.size.height - content_height) as usize);
+
+                target.fill_contiguous(
+                    &Rectangle::new(Point::zero(), bounds.size),
+                    framebuffer_pixels.chain(padding_pixels),
+                )?;
+            }
+        }
+
+        self.needs_redraw = false;
+        Ok(())
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
+        let delta = prev_y.map_or(0, |p| new_y as i32 - p as i32);
+        self.scroll(delta);
     }
 }

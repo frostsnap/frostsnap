@@ -1,4 +1,5 @@
 use crate::graphics::palette::COLORS;
+use crate::graphics::widgets::Widget;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
@@ -31,11 +32,14 @@ impl Cursor {
         }
     }
 
-    pub(super) fn draw<D: DrawTarget<Color = Rgb565>>(
+}
+
+impl Widget for Cursor {
+    fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut D,
         current_time: crate::Instant,
-    ) {
+    ) -> Result<(), D::Error> {
         // Update visibility based on time
         let cursor_rect = Rectangle::new(
             Point::new(
@@ -57,21 +61,23 @@ impl Cursor {
 
                 // Draw or clear based on new visibility state
                 if self.visible {
-                    let _ = cursor_rect
+                    cursor_rect
                         .into_styled(PrimitiveStyle::with_fill(COLORS.primary))
-                        .draw(target);
+                        .draw(target)?;
                 } else {
-                    let _ = cursor_rect
+                    cursor_rect
                         .into_styled(PrimitiveStyle::with_fill(COLORS.background))
-                        .draw(target);
+                        .draw(target)?;
                 }
             }
         } else {
             // First time - draw cursor
             self.last_toggle = Some(current_time);
-            let _ = cursor_rect
+            cursor_rect
                 .into_styled(PrimitiveStyle::with_fill(COLORS.primary))
-                .draw(target);
+                .draw(target)?;
         }
+        
+        Ok(())
     }
 }

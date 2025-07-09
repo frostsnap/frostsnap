@@ -1,4 +1,4 @@
-use crate::graphics::widgets::{Key, KeyTouch, FONT_LARGE, FONT_SMALL};
+use crate::graphics::widgets::{Key, KeyTouch, Widget, FONT_LARGE, FONT_SMALL};
 use embedded_graphics::{
     pixelcolor::{Gray2, Rgb565},
     prelude::*,
@@ -171,27 +171,6 @@ impl DisplaySeedWords {
         }
     }
 
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) {
-        // Draw page content
-        self.page_handler.draw(target, current_time);
-
-        // Draw navigation buttons in a cropped view
-        let mut button_target = target.cropped(&self.button_area);
-        self.nav_buttons.draw(&mut button_target, current_time);
-
-        // Draw current touch if any
-        if let Some(ref mut touch) = self.current_touch {
-            touch.draw(target, current_time);
-            if touch.is_finished() {
-                self.current_touch = None;
-            }
-        }
-    }
-
     pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
         if lift_up {
             // Handle touch release
@@ -251,6 +230,74 @@ impl DisplaySeedWords {
             self.page_handler.next_page(|fb| {
                 render_page_to_fb(page, share_index, &words, fb);
             });
+        }
+    }
+}
+
+impl Widget for DisplaySeedWords {
+    fn draw<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        // Draw page content
+        self.page_handler.draw(target, current_time);
+
+        // Draw navigation buttons in a cropped view
+        let mut button_target = target.cropped(&self.button_area);
+        self.nav_buttons.draw(&mut button_target, current_time);
+
+        // Draw current touch if any
+        if let Some(ref mut touch) = self.current_touch {
+            touch.draw(target, current_time);
+            if touch.is_finished() {
+                self.current_touch = None;
+            }
+        }
+        
+        Ok(())
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        lift_up: bool,
+    ) -> Option<KeyTouch> {
+        if lift_up {
+            // Handle touch release
+            if let Some(ref mut touch) = self.current_touch {
+                if let Some(key) = touch.let_go(current_time) {
+                    match key {
+                        Key::NavBack => self.navigate_prev(),
+                        Key::NavForward => self.navigate_next(),
+                        _ => {}
+                    }
+                }
+            }
+            None
+        } else {
+            // Handle new touch
+            if point.y >= CONTENT_HEIGHT as i32 {
+                // Touch is in button area - translate to button coordinate system
+                let button_point = Point::new(point.x, point.y - CONTENT_HEIGHT as i32);
+                if let Some(mut key_touch) = self.nav_buttons.handle_touch(button_point) {
+                    // Translate the KeyTouch rectangle back to screen coordinates
+                    key_touch.translate(Point::new(0, CONTENT_HEIGHT as i32));
+                    // Cancel current touch if it's a different key
+                    if let Some(ref mut current) = self.current_touch {
+                        if current.key != key_touch.key {
+                            current.cancel();
+                        }
+                    }
+                    self.current_touch = Some(key_touch);
+                    None
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
     }
 }
