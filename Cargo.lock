@@ -201,9 +201,9 @@ dependencies = [
 
 [[package]]
 name = "bdk_electrum_streaming"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb76a331c33cf14b4a47378964c114d193343cbb7e3840f7683f787336e5f87d"
+checksum = "48f0804fd10f367e266320f6c9bf1959420179c766f9d9f2773c29a652e9b534"
 dependencies = [
  "anyhow",
  "bdk_core",

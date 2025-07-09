@@ -487,7 +487,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             ),
             FilledButton(
               onPressed: (signingDone ?? true && !isBroadcasting)
-                  ? () async => broadcast(context)
+                  ? () => broadcast(context)
                   : null,
               child: Text('Broadcast Transaction'),
             ),
@@ -597,8 +597,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final tx = await txDetails.tx.withSignatures(
       signatures: signingState?.finishedSignatures ?? [],
     );
-    final broadcastFut = walletCtx.wallet.superWallet
+    final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
+        .timeout(Duration(seconds: 5))
         .then<bool>(
           (ssid == null)
               ? (_) => false
@@ -608,10 +609,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 },
           onError: (_) => false,
         );
-    final broadcasted = await Future.any<bool>([
-      broadcastFut,
-      Future.delayed(Duration(seconds: 5), () => false),
-    ]);
     if (mounted) {
       if (broadcasted) {
         setState(() {
@@ -679,7 +676,6 @@ Widget buildDetailsColumn(
     children: [
       if (txDetails.isSend)
         ...txDetails.tx.recipients().where((info) => !info.isMine).map((info) {
-          debugPrint("${walletCtx.superWallet.isDisposed}");
           final address = info.address(network: walletCtx.network)?.toString();
           return Column(
             children: [

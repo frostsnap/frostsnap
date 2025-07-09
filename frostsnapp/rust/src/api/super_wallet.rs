@@ -142,7 +142,7 @@ impl SuperWallet {
     }
 
     pub fn mark_address_shared(
-        &mut self,
+        &self,
         master_appkey: MasterAppkey,
         derivation_index: u32,
     ) -> Result<bool> {
@@ -216,7 +216,7 @@ impl SuperWallet {
         )
     }
 
-    pub fn broadcast_tx(&mut self, master_appkey: MasterAppkey, tx: RTransaction) -> Result<()> {
+    pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: RTransaction) -> Result<()> {
         match self.chain_sync.broadcast(tx.clone()) {
             Ok(_) => {
                 event!(

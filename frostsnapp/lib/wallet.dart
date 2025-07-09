@@ -24,6 +24,7 @@ import 'package:frostsnap/wallet_receive.dart';
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
+import 'package:rxdart/rxdart.dart';
 
 class Wallet {
   final SuperWallet superWallet;
@@ -410,7 +411,12 @@ class _TxListState extends State<TxList> {
           ),
         ),
         StreamBuilder(
-          stream: walletCtx.signingSessionSignals,
+          stream: MergeStream([
+            walletCtx.signingSessionSignals,
+            // Also rebuild on canonical tx list changes since `unbroadcastedTxs` excludes from the
+            // canonical tx list.
+            walletCtx.txStream.map((_) => {}),
+          ]),
           builder: (context, snapshot) {
             final chainTipHeight = walletCtx.wallet.superWallet.height();
             final now = DateTime.now();
