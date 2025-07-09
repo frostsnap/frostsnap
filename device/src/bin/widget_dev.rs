@@ -20,7 +20,9 @@ use esp_hal::{
 };
 use frostsnap_backup::bip39_words::BIP39_WORDS;
 use frostsnap_device::{
-    graphics::widgets::{memory_debug::MemoryDebugWidget, DisplaySeedWords, Widget},
+    graphics::widgets::{
+        memory_debug::MemoryDebugWidget, DisplaySeedWords, HoldToConfirmWidget, Widget,
+    },
     touch_calibration::adjust_touch_point,
     Instant,
 };
@@ -116,7 +118,12 @@ fn main() -> ! {
     // Initialize the DisplaySeedWords widget
     let screen_size = Size::new(240, 280);
     let share_index = 42; // Example share index
-    let mut display_widget = DisplaySeedWords::new(screen_size, TEST_WORDS, share_index);
+    let display_widget = DisplaySeedWords::new(screen_size, TEST_WORDS, share_index);
+
+    // Wrap it in HoldToConfirmWidget
+    let mut hold_to_confirm =
+        HoldToConfirmWidget::new(display_widget).with_screen_size(screen_size);
+    hold_to_confirm.enable(); // Enable hold to confirm
 
     // Initialize memory debug widget
     let mut mem_debug = MemoryDebugWidget::new(240, 280);
@@ -128,27 +135,37 @@ fn main() -> ! {
         // Get current time
         let current_time = Instant::from_ticks(timer.now().ticks());
 
-        // Check for touch events
+        // Check for touch events (non-blocking)
         if let Some(touch_event) = capsense.read_one_touch_event(true) {
-            // Apply touch calibration adjustments
-            let (adjusted_x, adjusted_y) =
-                adjust_touch_point(touch_event.x as i32, touch_event.y as i32);
-            let touch_point = Point::new(adjusted_x, adjusted_y);
-            let lift_up = touch_event.action == 1;
-            let gesture = touch_event.gesture;
+            // Only process if we have valid coordinates
+            if touch_event.x > 0 || touch_event.y > 0 {
+                // Apply touch calibration adjustments
+                let (adjusted_x, adjusted_y) =
+                    adjust_touch_point(touch_event.x as i32, touch_event.y as i32);
+                let touch_point = Point::new(adjusted_x, adjusted_y);
+                let lift_up = touch_event.action == 1;
+                let _gesture = touch_event.gesture;
 
-            // Store last touch for drag calculations
-            let prev_touch = last_touch.take();
-            if !lift_up {
-                last_touch = Some((touch_point, adjusted_y as u32));
+                // Store last touch for drag calculations
+                let _prev_touch = last_touch.take();
+                if !lift_up {
+                    last_touch = Some((touch_point, adjusted_y as u32));
+                }
+
+                // Handle touches for the hold to confirm widget
+                hold_to_confirm.handle_touch(touch_point, current_time, lift_up);
             }
-
-            // Handle touches for the display widget
-            display_widget.handle_touch(touch_point, current_time, lift_up);
         }
 
-        // Draw the display widget
-        display_widget.draw(&mut display, current_time);
+        // Draw continuously for smooth animations
+        // Draw the hold to confirm widget
+        let _ = hold_to_confirm.draw(&mut display, current_time);
+
+        // Check if confirmation is complete
+        if hold_to_confirm.is_completed() {
+            // You could reset or disable it here
+            // hold_to_confirm.reset();
+        }
 
         // Update and draw memory debug info
         mem_debug.update(esp_alloc::HEAP.used(), esp_alloc::HEAP.free());

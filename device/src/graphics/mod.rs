@@ -177,6 +177,14 @@ where
     }
 
     pub fn button(&mut self) {
+        // rect.into_styled(
+        //     PrimitiveStyleBuilder::new()
+        //         .stroke_width(1)
+        //         .stroke_color(Rgb565::CSS_DARK_GRAY)
+        //         .build(),
+        // )
+        // .draw(&mut self.framebuf)
+        // .unwrap();
         self.button_with_image(&OpenSelectHandGesture::new(COLORS.primary));
     }
 

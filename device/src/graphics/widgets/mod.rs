@@ -5,6 +5,7 @@ pub mod bech32_keyboard;
 pub mod bip39;
 pub mod enter_share_index_screen;
 pub mod enter_share_screen;
+pub mod hold_to_confirm;
 pub mod icons;
 pub mod key_touch;
 pub mod memory_debug;
@@ -19,6 +20,7 @@ pub use bech32_keyboard::*;
 pub use bip39::*;
 pub use enter_share_index_screen::*;
 pub use enter_share_screen::*;
+pub use hold_to_confirm::*;
 pub use numeric_keyboard::*;
 pub use share_index_input::*;
 

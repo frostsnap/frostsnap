@@ -13,6 +13,8 @@ pub struct Palette {
     pub(crate) error: Rgb565,
     pub(crate) background: Rgb565,
     pub(crate) disabled: Rgb565,
+    pub(crate) hold_border: Rgb565,
+    pub(crate) hold_progress: Rgb565,
 }
 
 // Default color theme
@@ -25,4 +27,6 @@ pub const COLORS: Palette = Palette {
     error: Rgb565::RED,
     background: Rgb565::BLACK,
     disabled: Rgb565::CSS_DARK_GRAY,
+    hold_border: Rgb565::new(4, 8, 4), // Dark gray in RGB565
+    hold_progress: Rgb565::new(3, 37, 22),
 };
