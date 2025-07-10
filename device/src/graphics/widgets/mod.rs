@@ -11,6 +11,7 @@ pub mod key_touch;
 pub mod memory_debug;
 pub mod numeric_keyboard;
 pub mod share_index_input;
+pub mod sized_box;
 
 pub use key_touch::{Key, KeyTouch};
 
@@ -23,6 +24,7 @@ pub use enter_share_screen::*;
 pub use hold_to_confirm::*;
 pub use numeric_keyboard::*;
 pub use share_index_input::*;
+pub use sized_box::*;
 
 // Font re-exports
 use u8g2_fonts::fonts;
@@ -51,4 +53,9 @@ pub trait Widget {
 
     /// Handle vertical drag events. Returns true if the drag was handled.
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32) {}
+
+    /// Get the preferred size of this widget, if it has one
+    fn size_hint(&self) -> Option<Size> {
+        None
+    }
 }

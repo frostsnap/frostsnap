@@ -14,14 +14,13 @@ pub struct EnterBip39ShareScreen {
     bip39_input: Bip39InputPreview,
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
-    share_index: u16,
     mnemonic_complete: bool,
     needs_redraw: bool,
     size: Size,
 }
 
 impl EnterBip39ShareScreen {
-    pub fn new(area: Size, share_index: u16) -> Self {
+    pub fn new(area: Size) -> Self {
         let preview_height = 60;
         let keyboard_rect = Rectangle::new(
             Point::new(0, preview_height),
@@ -40,7 +39,6 @@ impl EnterBip39ShareScreen {
             bip39_input,
             touches: vec![],
             keyboard_rect,
-            share_index,
             mnemonic_complete: false,
             needs_redraw: true,
             size: area,
@@ -85,13 +83,15 @@ impl EnterBip39ShareScreen {
             }
         } else if let Some(ref mut entered_words) = self.entered_words {
             // Full-screen entered words view
+            // Update button state before drawing
+            entered_words.update_button_state();
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Full-screen word selector
             word_selector.draw(target);
         } else {
             // Normal keyboard and input preview
-            self.alphabetic_keyboard
+            let _ = self.alphabetic_keyboard
                 .draw(&mut target.cropped(&self.keyboard_rect), current_time);
 
             // Draw BIP39 input preview
@@ -99,7 +99,7 @@ impl EnterBip39ShareScreen {
                 Point::zero(),
                 Size::new(target.bounding_box().size.width, 60),
             );
-            self.bip39_input
+            let _ = self.bip39_input
                 .draw(&mut target.cropped(&input_display_rect), current_time);
         }
 
@@ -409,6 +409,8 @@ impl Widget for EnterBip39ShareScreen {
             }
         } else if let Some(ref mut entered_words) = self.entered_words {
             // Full-screen entered words view
+            // Update button state before drawing
+            entered_words.update_button_state();
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Full-screen word selector

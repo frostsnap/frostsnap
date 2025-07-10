@@ -2,7 +2,7 @@
 #![no_main]
 
 extern crate alloc;
-use cst816s::CST816S;
+use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
 use embedded_graphics::prelude::*;
 use esp_hal::{
@@ -18,14 +18,15 @@ use esp_hal::{
     },
     timer::timg::TimerGroup,
 };
+use frostsnap_backup::bip39_words::BIP39_WORDS;
 use frostsnap_device::{
     graphics::widgets::{
-        memory_debug::MemoryDebugWidget, EnterBip39ShareScreen, Widget,
+        memory_debug::MemoryDebugWidget, DisplaySeedWords, EnterBip39ShareScreen,
+        HoldToConfirmWidget, SizedBox, Widget,
     },
     touch_calibration::adjust_touch_point,
     Instant,
 };
-use cst816s::TouchGesture;
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 #[entry]
@@ -86,71 +87,120 @@ fn main() -> ! {
     // Turn on backlight
     bl.set_high();
 
-    // Initialize the EnterBip39ShareScreen widget
-    let screen_size = Size::new(240, 280);
-    let share_index = 1; // Share index 1
-    let mut enter_bip39_screen = EnterBip39ShareScreen::new(screen_size, share_index);
+    // Macro to run a widget with all the boilerplate handling
+    macro_rules! run_widget {
+        ($widget:expr) => {{
+            let mut widget = $widget;
+            let mut mem_debug = MemoryDebugWidget::new(240, 280);
+            let mut last_touch: Option<(Point, u32)> = None;
+            
+            // Clear the screen with background color
+            use frostsnap_device::graphics::palette::PALETTE;
+            let _ = display.clear(PALETTE.background);
 
-    // Initialize memory debug widget
-    let mut mem_debug = MemoryDebugWidget::new(240, 280);
+            // Main loop
+            loop {
+                // Get current time
+                let current_time = Instant::from_ticks(timer.now().ticks());
 
-    let mut last_touch: Option<(Point, u32)> = None;
+                // Check for touch events
+                if let Some(touch_event) = capsense.read_one_touch_event(true) {
+                    // Only process if we have valid coordinates
+                    if touch_event.x > 0 || touch_event.y > 0 {
+                        // Apply touch calibration adjustments
+                        let (adjusted_x, adjusted_y) =
+                            adjust_touch_point(touch_event.x as i32, touch_event.y as i32);
+                        let touch_point = Point::new(adjusted_x, adjusted_y);
+                        let lift_up = touch_event.action == 1;
+                        let gesture = touch_event.gesture;
 
-    // Main loop
-    loop {
-        // Get current time
-        let current_time = Instant::from_ticks(timer.now().ticks());
+                        // Handle vertical drag for widgets that support it
+                        match gesture {
+                            TouchGesture::SlideUp | TouchGesture::SlideDown => {
+                                widget.handle_vertical_drag(
+                                    last_touch.map(|(_, y)| y),
+                                    adjusted_y as u32,
+                                );
+                            }
+                            _ => {
+                                // Handle regular touches
+                                widget.handle_touch(touch_point, current_time, lift_up);
+                            }
+                        }
 
-        // Check for touch events (non-blocking)
-        if let Some(touch_event) = capsense.read_one_touch_event(true) {
-            // Only process if we have valid coordinates
-            if touch_event.x > 0 || touch_event.y > 0 {
-                // Apply touch calibration adjustments
-                let (adjusted_x, adjusted_y) =
-                    adjust_touch_point(touch_event.x as i32, touch_event.y as i32);
-                let touch_point = Point::new(adjusted_x, adjusted_y);
-                let lift_up = touch_event.action == 1;
-                let gesture = touch_event.gesture;
-
-                // Handle gestures
-                match gesture {
-                    TouchGesture::SlideUp | TouchGesture::SlideDown => {
-                        // Handle vertical drag
-                        enter_bip39_screen.handle_vertical_drag(
-                            last_touch.map(|(_, y)| y),
-                            adjusted_y as u32,
-                        );
-                    }
-                    _ => {
-                        // Handle all other touches (including None, SingleTap, etc.)
-                        enter_bip39_screen.handle_touch(touch_point, current_time, lift_up);
+                        // Store last touch for drag calculations
+                        if !lift_up {
+                            last_touch = Some((touch_point, adjusted_y as u32));
+                        } else {
+                            last_touch = None;
+                        }
                     }
                 }
 
-                // Store last touch for drag calculations
-                let prev_touch = last_touch.take();
-                if !lift_up {
-                    last_touch = Some((touch_point, adjusted_y as u32));
-                }
+                // Draw the widget
+                let _ = widget.draw(&mut display, current_time);
+
+                // Update and draw memory debug info
+                mem_debug.update(esp_alloc::HEAP.used(), esp_alloc::HEAP.free());
+                let _ = mem_debug.draw(&mut display, current_time);
             }
+        }};
+    }
+
+    // Configuration: Change this to select which widget to display
+    let show = "confirm_touch";
+
+    let screen_size = Size::new(240, 280);
+
+    // Create and run the selected widget
+    match show {
+        "bip39_entry" => {
+            // BIP39 entry screen
+            run_widget!(EnterBip39ShareScreen::new(screen_size));
         }
-
-        // Draw the EnterBip39ShareScreen widget
-        let _ = enter_bip39_screen.draw(&mut display, current_time);
-
-        // Check if the share entry is complete
-        if enter_bip39_screen.is_finished() {
-            // You could handle completion here
-            // For example, try to create the share:
-            // match enter_bip39_screen.try_create_share() {
-            //     Ok(share) => { /* Handle successful share */ }
-            //     Err(e) => { /* Handle error */ }
-            // }
+        "bip39_view" => {
+            // Display seed words - using random indices
+            const TEST_WORDS: [&'static str; 25] = [
+                BIP39_WORDS[1337],  // owner
+                BIP39_WORDS[432],   // deny
+                BIP39_WORDS[1789],  // survey
+                BIP39_WORDS[923],   // journey
+                BIP39_WORDS[567],   // embark
+                BIP39_WORDS[1456],  // recall
+                BIP39_WORDS[234],   // churn
+                BIP39_WORDS[1678],  // spawn
+                BIP39_WORDS[890],   // invest
+                BIP39_WORDS[345],   // crater
+                BIP39_WORDS[1234],  // neutral
+                BIP39_WORDS[678],   // fiscal
+                BIP39_WORDS[1890],  // thumb
+                BIP39_WORDS[456],   // diamond
+                BIP39_WORDS[1567],  // robot
+                BIP39_WORDS[789],   // guitar
+                BIP39_WORDS[1345],  // oyster
+                BIP39_WORDS[123],   // badge
+                BIP39_WORDS[1789],  // survey
+                BIP39_WORDS[567],   // embark
+                BIP39_WORDS[1012],  // lizard
+                BIP39_WORDS[1456],  // recall
+                BIP39_WORDS[789],   // guitar
+                BIP39_WORDS[1678],  // spawn
+                BIP39_WORDS[234],   // churn
+            ];
+            let share_index = 42;
+            run_widget!(DisplaySeedWords::new(screen_size, TEST_WORDS, share_index));
         }
-
-        // Update and draw memory debug info
-        mem_debug.update(esp_alloc::HEAP.used(), esp_alloc::HEAP.free());
-        mem_debug.draw(&mut display, current_time).unwrap();
+        "confirm_touch" => {
+            // Hold to confirm with empty widget (1.5 seconds to confirm)
+            let sized_box = SizedBox::new(screen_size);
+            let mut hold_to_confirm = HoldToConfirmWidget::new(sized_box, 1500.0);
+            hold_to_confirm.enable();
+            run_widget!(hold_to_confirm);
+        }
+        _ => {
+            // Default to BIP39 entry
+            run_widget!(EnterBip39ShareScreen::new(screen_size));
+        }
     }
 }
 

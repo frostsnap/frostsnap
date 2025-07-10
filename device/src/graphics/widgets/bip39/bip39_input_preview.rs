@@ -355,7 +355,7 @@ impl Widget for Bip39InputPreview {
 
         // Draw cursor if on current word
         if self.framebuf.current_input < FROSTSNAP_BACKUP_WORDS {
-            self.draw_cursor(&mut target.cropped(&self.preview_rect), current_time);
+            let _ = self.draw_cursor(&mut target.cropped(&self.preview_rect), current_time);
         }
 
         // Always draw progress bars (they have their own redraw logic)
@@ -390,7 +390,6 @@ pub struct Bip39Framebuf {
     current_time: Option<crate::Instant>,
     target_position: u32, // Target vertical scroll position
     animation_start_time: Option<crate::Instant>, // When current animation started
-    color: Rgb565,
     viewport_height: u32, // Height of the visible area
     pub(super) redraw: bool,
 }
@@ -420,11 +419,11 @@ impl Bip39Framebuf {
                 0
             };
 
-            // Draw the number
+            // Draw the number with a different gray level
             let _ = Text::with_text_style(
                 &number,
                 Point::new(number_x, y),
-                U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)),
+                U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x01)), // Use Gray level 1 for numbers
                 TextStyleBuilder::new()
                     .alignment(Alignment::Left)
                     .baseline(Baseline::Top)
@@ -441,7 +440,6 @@ impl Bip39Framebuf {
             current_time: None,
             target_position: 0,
             animation_start_time: None,
-            color: PALETTE.on_background,
             viewport_height: 34, // Default viewport height
             redraw: true,
         }
@@ -777,9 +775,9 @@ impl Widget for Bip39Framebuf {
                 .take(take_pixels)
                 .map(|pixel| match Gray2::from(pixel).luma() {
                     0x00 => PALETTE.background,
-                    0x01 => PALETTE.on_surface_variant,
-                    0x02 => self.color,
-                    0x03 => self.color,
+                    0x01 => PALETTE.outline,          // Numbers in subtle outline color
+                    0x02 => PALETTE.on_background,    // Words in normal text color
+                    0x03 => PALETTE.on_background,    // Also words
                     _ => PALETTE.background,
                 });
 

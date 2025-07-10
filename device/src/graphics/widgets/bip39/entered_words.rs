@@ -31,6 +31,7 @@ pub struct EnteredWords {
     visible_size: Size,
     needs_redraw: bool,
     submit_button: SubmitBackupButton,
+    button_needs_redraw: bool,
     scroll_bar: ScrollBar,
     first_draw: bool,
 }
@@ -79,6 +80,7 @@ impl EnteredWords {
             visible_size,
             needs_redraw: true,
             submit_button,
+            button_needs_redraw: true, // Draw button on first frame
             scroll_bar,
             first_draw: true,
         }
@@ -165,14 +167,26 @@ impl EnteredWords {
             Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
         );
 
-        // Draw the button
-        let _ = self.submit_button.draw(target, button_rect);
+        // Only draw the button if it needs redrawing
+        if self.button_needs_redraw {
+            let mut button_target = target.cropped(&button_rect);
+            let _ = self.submit_button.draw(&mut button_target, Rectangle::new(Point::zero(), button_rect.size));
+            self.button_needs_redraw = false;
+        }
 
         // Draw scroll bar
         self.scroll_bar.draw(target);
 
         self.needs_redraw = false;
         self.first_draw = false;
+    }
+    
+    pub fn update_button_state(&mut self) {
+        // Check if button state needs updating
+        let new_state = self.words.borrow().get_submit_button_state();
+        if self.submit_button.update_state(new_state) {
+            self.button_needs_redraw = true;
+        }
     }
 
     pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {

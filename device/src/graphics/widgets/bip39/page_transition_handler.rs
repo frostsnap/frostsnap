@@ -37,14 +37,12 @@ pub struct PageTransitionHandler {
     next_fb: Box<PageFramebuffer>,
     animation: Option<Animation>,
     width: usize,
-    height: usize,
     init_draw: bool,
 }
 
 impl PageTransitionHandler {
     pub fn new(area: Rectangle) -> Self {
         let width = area.size.width as usize;
-        let height = area.size.height as usize;
 
         Self {
             area,
@@ -52,7 +50,6 @@ impl PageTransitionHandler {
             next_fb: Box::new(Framebuffer::new()),
             animation: None,
             width,
-            height,
             init_draw: true,
         }
     }

@@ -37,14 +37,6 @@ impl ScrollBar {
         self.scroll_position = position;
     }
     
-    pub fn set_content_height(&mut self, height: u32) {
-        self.content_height = height;
-    }
-    
-    pub fn set_viewport_height(&mut self, height: u32) {
-        self.viewport_height = height;
-    }
-    
     pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D) {
         // Don't draw if content fits in viewport
         if self.content_height <= self.viewport_height {

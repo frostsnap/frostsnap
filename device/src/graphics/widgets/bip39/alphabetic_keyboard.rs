@@ -190,20 +190,7 @@ impl Widget for AlphabeticKeyboard {
                 Image::new(&right_arrow, right_point).draw(target)?;
             }
             
-            // Draw word number in the center
-            let text = format!("Word {}", self.current_word_index + 1);
-            let text_style = TextStyleBuilder::new()
-                .baseline(Baseline::Middle)
-                .alignment(Alignment::Center)
-                .build();
-            
-            Text::with_text_style(
-                &text,
-                Point::new((screen_width / 2) as i32, (screen_height / 2) as i32),
-                U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background),
-                text_style,
-            )
-            .draw(target)?;
+            // Removed word number display - not needed with navigation buttons
         } else {
             // Draw the framebuffer for compact keyboard
             let content_height = ((self.framebuffer.size().height as i32 - self.scroll_position).max(0) as u32)

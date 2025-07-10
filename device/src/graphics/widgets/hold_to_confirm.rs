@@ -55,11 +55,16 @@ pub struct HoldToConfirmWidget<W> {
     last_drawn_progress: f32,
     screen_size: Size,
     border_pixels: Vec<Point>, // Recorded border pixels
-    border_drawn: bool,             // Track if static border has been drawn
+    border_drawn: bool,        // Track if static border has been drawn
+    hold_duration_ms: f32,     // Milliseconds required to confirm
 }
 
-impl<W> HoldToConfirmWidget<W> {
-    pub fn new(child: W) -> Self {
+impl<W: Widget> HoldToConfirmWidget<W> {
+    pub fn new(child: W, hold_duration_ms: f32) -> Self {
+        // Get size from child widget - panic if it doesn't provide one
+        let screen_size = child.size_hint()
+            .expect("HoldToConfirmWidget requires a child widget that provides size_hint()");
+        
         Self {
             child,
             enabled: false,
@@ -67,16 +72,12 @@ impl<W> HoldToConfirmWidget<W> {
             completed: false,
             holding: false,
             last_update: None,
-            last_drawn_progress: -1.0,        // Force first draw
-            screen_size: Size::new(240, 280), // Default screen size
+            last_drawn_progress: -1.0,
+            screen_size,
             border_pixels: Vec::new(),
             border_drawn: false,
+            hold_duration_ms,
         }
-    }
-
-    pub fn with_screen_size(mut self, size: Size) -> Self {
-        self.screen_size = size;
-        self
     }
 
     pub fn enable(&mut self) {
@@ -106,6 +107,10 @@ impl<W> HoldToConfirmWidget<W> {
 
     pub fn is_completed(&self) -> bool {
         self.completed
+    }
+    
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
     }
 
     pub fn reset(&mut self) {
@@ -164,8 +169,8 @@ impl<W> HoldToConfirmWidget<W> {
                 }
 
                 if self.holding && !self.completed {
-                    // Build up progress: complete in 3000ms
-                    let increment = elapsed_ms / 3000.0;
+                    // Build up progress: complete in hold_duration_ms
+                    let increment = elapsed_ms / self.hold_duration_ms;
                     self.progress = (self.progress + increment).min(1.0);
 
                     if self.progress >= 1.0 {
@@ -205,7 +210,7 @@ impl<W> HoldToConfirmWidget<W> {
             target.draw_iter(
                 self.border_pixels
                     .iter()
-                    .map(|&point| Pixel(point, PALETTE.outline))
+                    .map(|&point| Pixel(point, PALETTE.surface_variant))
             )?;
             self.border_drawn = true;
         }
@@ -222,7 +227,7 @@ impl<W> HoldToConfirmWidget<W> {
                 target.draw_iter(
                     self.border_pixels[current_progress_pixels..last_progress_pixels]
                         .iter()
-                        .map(|&point| Pixel(point, PALETTE.outline))
+                        .map(|&point| Pixel(point, PALETTE.surface_variant))
                 )?;
             }
 
@@ -307,5 +312,9 @@ impl<W: Widget> Widget for HoldToConfirmWidget<W> {
             self.child.handle_vertical_drag(prev_y, new_y);
         }
         // When enabled, don't forward drag events
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.screen_size)
     }
 }

@@ -29,6 +29,7 @@ pub struct DisplaySeedWords {
     nav_buttons: NavigationButtons,
     current_touch: Option<KeyTouch>,
     button_area: Rectangle,
+    size: Size,
 }
 
 fn render_page_to_fb(
@@ -168,6 +169,7 @@ impl DisplaySeedWords {
             nav_buttons,
             current_touch: None,
             button_area,
+            size: area,
         }
     }
 
@@ -299,5 +301,9 @@ impl Widget for DisplaySeedWords {
                 None
             }
         }
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size)
     }
 }
