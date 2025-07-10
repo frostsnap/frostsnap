@@ -29,7 +29,7 @@ use frostsnap_core::coordinator::restoration::{
 };
 use frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
-    FrostCoordinator,
+    FrostCoordinator, NonceReplenishRequest,
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
@@ -417,16 +417,24 @@ impl FfiCoordinator {
             .unwrap_or(0)
     }
 
-    pub fn replenish_nonces(
-        &self,
-        devices: BTreeSet<DeviceId>,
-        sink: impl Sink<frostsnap_coordinator::nonce_replenish::NonceReplenishState>,
-    ) -> anyhow::Result<()> {
-        let ui_protocol = frostsnap_coordinator::nonce_replenish::NonceReplenishProtocol::new(
+    pub fn nonce_replenish_request(&self, devices: BTreeSet<DeviceId>) -> NonceReplenishRequest {
+        frostsnap_coordinator::nonce_replenish::NonceReplenishProtocol::create_nonce_request(
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             devices,
             N_NONCE_STREAMS,
             &mut rand::thread_rng(),
+        )
+    }
+
+    pub fn replenish_nonces(
+        &self,
+        nonce_request: NonceReplenishRequest,
+        devices: BTreeSet<DeviceId>,
+        sink: impl Sink<frostsnap_coordinator::nonce_replenish::NonceReplenishState>,
+    ) -> anyhow::Result<()> {
+        let ui_protocol = frostsnap_coordinator::nonce_replenish::NonceReplenishProtocol::new(
+            devices,
+            nonce_request,
             sink,
         );
 

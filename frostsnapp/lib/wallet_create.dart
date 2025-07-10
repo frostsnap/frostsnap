@@ -366,13 +366,15 @@ class WalletCreateController extends ChangeNotifier {
       _step = nextStep;
       notifyListeners();
     } else {
-      // wallet creation complete - now show nonce replenishment
-      if (context.mounted) {
+      // wallet creation complete - now show nonce replenishment if required
+      final devices = form.selectedDevices.toList();
+      final nonceRequest = await coord.createNonceRequest(devices: devices);
+      if (context.mounted && nonceRequest.someNoncesRequested()) {
         await MaybeFullscreenDialog.show<bool>(
           context: context,
           child: NonceReplenishWidget(
             stream: coord
-                .replenishNonces(devices: form.selectedDevices.toList())
+                .replenishNonces(nonceRequest: nonceRequest, devices: devices)
                 .toBehaviorSubject(),
             onCancel: () {
               coord.cancelProtocol();

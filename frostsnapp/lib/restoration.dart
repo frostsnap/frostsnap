@@ -116,22 +116,30 @@ class WalletRecoveryPage extends StatelessWidget {
                       encryptionKey: encryptionKey,
                     );
 
-                    await MaybeFullscreenDialog.show<bool>(
-                      context: context,
-                      child: NonceReplenishWidget(
-                        stream: coord
-                            .replenishNonces(
-                              devices: restoringKey.sharesObtained
-                                  .map((share) => share.deviceId)
-                                  .toList(),
-                            )
-                            .toBehaviorSubject(),
-                        onCancel: () {
-                          coord.cancelProtocol();
-                          Navigator.pop(context, false);
-                        },
-                      ),
-                    );
+                    final devices = restoringKey.sharesObtained
+                        .map((share) => share.deviceId)
+                        .toList();
+
+                    final nonceRequest = await coord
+                        .createNonceRequest(devices: devices);
+
+                    if (nonceRequest.someNoncesRequested()) {
+                      await MaybeFullscreenDialog.show<bool>(
+                        context: context,
+                        child: NonceReplenishWidget(
+                          stream: coord
+                              .replenishNonces(
+                                nonceRequest: nonceRequest,
+                                devices: devices,
+                              )
+                              .toBehaviorSubject(),
+                          onCancel: () {
+                            coord.cancelProtocol();
+                            Navigator.pop(context, false);
+                          },
+                        ),
+                      );
+                    }
 
                     onWalletRecovered(accessStructureRef);
                   } catch (e) {

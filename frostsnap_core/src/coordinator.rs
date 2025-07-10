@@ -1614,6 +1614,14 @@ pub struct NonceReplenishRequest {
     pub replenish_requests: BTreeMap<DeviceId, Vec<CoordNonceStreamState>>,
 }
 
+impl NonceReplenishRequest {
+    pub fn some_nonces_requested(&self) -> bool {
+        self.replenish_requests
+            .iter()
+            .any(|(_, streams)| !streams.is_empty())
+    }
+}
+
 impl IntoIterator for NonceReplenishRequest {
     type Item = CoordinatorSend;
     type IntoIter = std::vec::IntoIter<CoordinatorSend>;
