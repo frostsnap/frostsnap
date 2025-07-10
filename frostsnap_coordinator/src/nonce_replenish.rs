@@ -2,7 +2,7 @@ use crate::{Completion, Sink, UiProtocol};
 
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{CoordinatorToUserMessage, FrostCoordinator},
+    coordinator::{CoordinatorToUserMessage, FrostCoordinator, NonceReplenishRequest},
     DeviceId,
 };
 use std::collections::BTreeSet;
@@ -14,16 +14,20 @@ pub struct NonceReplenishProtocol {
 }
 
 impl NonceReplenishProtocol {
-    pub fn new(
+    pub fn create_nonce_request(
         coordinator: &mut FrostCoordinator,
         devices: BTreeSet<DeviceId>,
         desired_nonce_streams: usize,
         rng: &mut impl rand_core::RngCore,
+    ) -> NonceReplenishRequest {
+        coordinator.maybe_request_nonce_replenishment(&devices, desired_nonce_streams, rng)
+    }
+
+    pub fn new(
+        devices: BTreeSet<DeviceId>,
+        nonce_request: NonceReplenishRequest,
         sink: impl Sink<NonceReplenishState> + 'static,
     ) -> Self {
-        let nonce_request =
-            coordinator.maybe_request_nonce_replenishment(&devices, desired_nonce_streams, rng);
-
         let devices_with_messages: BTreeSet<DeviceId> = nonce_request
             .replenish_requests
             .iter()
@@ -31,7 +35,7 @@ impl NonceReplenishProtocol {
             .map(|(device_id, _)| *device_id)
             .collect();
 
-        // devices that don't need messages as already "received from"
+        // devices that don't need messages are considered complete
         let received_from: Vec<DeviceId> = devices
             .difference(&devices_with_messages)
             .copied()
@@ -47,7 +51,6 @@ impl NonceReplenishProtocol {
             sink: Box::new(sink),
         };
 
-        // Convert NonceReplenishRequest to messages
         for message in nonce_request {
             self_.messages.push(
                 message
