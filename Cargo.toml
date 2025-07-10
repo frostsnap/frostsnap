@@ -7,7 +7,7 @@ members = [
     "frostsnap_comms",
     "frostsnapp/rust",
     "frostsnap_embedded",
-    "frostsnap_backup",
+    "frostsnap_backup", "frostsnap_embedded_widgets",
 ]
 resolver = "2"
 
