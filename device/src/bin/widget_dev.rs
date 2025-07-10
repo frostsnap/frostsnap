@@ -21,7 +21,7 @@ use esp_hal::{
 use frostsnap_backup::bip39_words::BIP39_WORDS;
 use frostsnap_device::{
     graphics::widgets::{
-        memory_debug::MemoryDebugWidget, DisplaySeedWords, EnterBip39ShareScreen,
+        DisplaySeedWords, EnterBip39ShareScreen,
         HoldToConfirmWidget, SizedBox, Widget,
     },
     touch_calibration::adjust_touch_point,
@@ -91,7 +91,6 @@ fn main() -> ! {
     macro_rules! run_widget {
         ($widget:expr) => {{
             let mut widget = $widget;
-            let mut mem_debug = MemoryDebugWidget::new(240, 280);
             let mut last_touch: Option<(Point, u32)> = None;
             
             // Clear the screen with background color
@@ -139,10 +138,6 @@ fn main() -> ! {
 
                 // Draw the widget
                 let _ = widget.draw(&mut display, current_time);
-
-                // Update and draw memory debug info
-                mem_debug.update(esp_alloc::HEAP.used(), esp_alloc::HEAP.free());
-                let _ = mem_debug.draw(&mut display, current_time);
             }
         }};
     }
