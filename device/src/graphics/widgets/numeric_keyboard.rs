@@ -1,7 +1,7 @@
 use crate::graphics::palette::COLORS;
 
 use super::icons;
-use super::key_touch::KeyTouch;
+use super::key_touch::{Key, KeyTouch};
 use alloc::string::ToString;
 use embedded_graphics::mono_font::{ascii::*, MonoTextStyle};
 use embedded_graphics::{
@@ -75,7 +75,7 @@ impl NumericKeyboard {
                     };
 
                     if !is_disabled {
-                        return Some(KeyTouch::new(key, rect));
+                        return Some(KeyTouch::new(Key::Keyboard(key), rect));
                     } else {
                         return None;
                     }

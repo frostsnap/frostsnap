@@ -1,13 +1,24 @@
+use crate::graphics::palette::PALETTE;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment},
+    primitives::{PrimitiveStyleBuilder, Rectangle, RoundedRectangle, StrokeAlignment},
 };
 use fugit::Duration;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Keyboard(char),
+    WordSelector(usize),
+    EditWord(usize),
+    NavBack,
+    NavForward,
+    Submit,
+}
+
 #[derive(Debug)]
 pub struct KeyTouch {
-    pub key: char,
+    pub key: Key,
     rect: Rectangle,
     let_go: Option<crate::Instant>,
     last_draw: Option<u8>,
@@ -20,7 +31,7 @@ impl KeyTouch {
         self.rect.top_left += point;
     }
     // Create a new KeyTouch
-    pub fn new(key: char, rect: Rectangle) -> Self {
+    pub fn new(key: Key, rect: Rectangle) -> Self {
         Self {
             key,
             rect,
@@ -30,7 +41,7 @@ impl KeyTouch {
             cancel: false,
         }
     }
-    pub fn let_go(&mut self, current_time: crate::Instant) -> Option<char> {
+    pub fn let_go(&mut self, current_time: crate::Instant) -> Option<Key> {
         if self.cancel || self.let_go.is_some() {
             return None;
         }
@@ -57,13 +68,19 @@ impl KeyTouch {
         }
 
         let mut highlight_style = PrimitiveStyleBuilder::new()
-            .stroke_color(Rgb565::BLACK)
+            .stroke_color(PALETTE.background)
             .stroke_alignment(StrokeAlignment::Inside)
             .stroke_width(2)
             .build();
 
         if self.cancel {
-            let _ = self.rect.into_styled(highlight_style).draw(target);
+            // Draw rounded rectangle with corner radius
+            const CORNER_RADIUS: u32 = 8;
+            let rounded_rect = RoundedRectangle::with_equal_corners(
+                self.rect,
+                Size::new(CORNER_RADIUS, CORNER_RADIUS),
+            );
+            let _ = rounded_rect.into_styled(highlight_style).draw(target);
             self.finished = true;
             return;
         }
@@ -80,19 +97,47 @@ impl KeyTouch {
             None => 0.0,
         };
 
-        let whiteness = (31 - (fade_progress * 31.0) as u32) as u8;
-        if let Some(last_draw) = self.last_draw {
-            if whiteness == last_draw {
-                return;
+        // At the end of fade, use the exact background color
+        if fade_progress >= 1.0 {
+            highlight_style.stroke_color = Some(PALETTE.background);
+        } else {
+            // Calculate fade from primary to background color
+            let fade_factor = 1.0 - fade_progress;
+            
+            // Extract RGB components from both colors (in 5-6-5 format)
+            let primary_r = PALETTE.primary.r();
+            let primary_g = PALETTE.primary.g();
+            let primary_b = PALETTE.primary.b();
+            
+            let bg_r = PALETTE.background.r();
+            let bg_g = PALETTE.background.g();
+            let bg_b = PALETTE.background.b();
+            
+            // Interpolate from primary to background
+            let r = (primary_r as f32 * fade_factor + bg_r as f32 * fade_progress + 0.5) as u8;
+            let g = (primary_g as f32 * fade_factor + bg_g as f32 * fade_progress + 0.5) as u8;
+            let b = (primary_b as f32 * fade_factor + bg_b as f32 * fade_progress + 0.5) as u8;
+            
+            // Check if we need to redraw
+            if let Some(last_draw) = self.last_draw {
+                if r == last_draw && fade_progress < 1.0 {
+                    return;
+                }
             }
+            
+            self.last_draw = Some(r);
+            let fade_color = Rgb565::new(r, g, b);
+            highlight_style.stroke_color = Some(fade_color);
         }
-        let gray_color = Rgb565::new(whiteness, whiteness << 1, whiteness); // Notice the shift for green
 
-        highlight_style.stroke_color = Some(gray_color);
+        // Draw rounded rectangle with corner radius
+        const CORNER_RADIUS: u32 = 8;
+        let rounded_rect = RoundedRectangle::with_equal_corners(
+            self.rect,
+            Size::new(CORNER_RADIUS, CORNER_RADIUS),
+        );
+        let _ = rounded_rect.into_styled(highlight_style).draw(target);
 
-        let _ = self.rect.into_styled(highlight_style).draw(target);
-
-        self.last_draw = Some(whiteness);
         self.finished = fade_progress >= 1.0;
     }
 

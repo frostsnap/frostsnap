@@ -15,7 +15,7 @@ use u8g2_fonts::U8g2TextStyle;
 
 use crate::graphics::palette::COLORS;
 
-use super::{key_touch::KeyTouch, FONT_LARGE};
+use super::{key_touch::{Key, KeyTouch}, FONT_LARGE};
 
 // Constants for the framebuffer and keyboard dimensions
 const FRAMEBUFFER_WIDTH: u32 = 240;
@@ -199,7 +199,7 @@ impl Bech32Keyboard {
             let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT))
                 .resized_height((KEY_HEIGHT as i32 + y.min(0)) as u32, AnchorY::Bottom);
 
-            return Some(KeyTouch::new(key, rect));
+            return Some(KeyTouch::new(Key::Keyboard(key), rect));
         }
 
         None
