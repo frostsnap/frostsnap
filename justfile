@@ -9,13 +9,26 @@ flash BOARD=default_board +ARGS="":
     cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,ota_0 {{ARGS}}
 
 flash-secure:
-    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x10000 target/riscv32imc-unknown-none-elf/release/firmware.bin
+    just build-device
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x20000 target/riscv32imc-unknown-none-elf/release/firmware.bin
+
+flash-secure-new +ARGS="":
+    just build-device
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x0 device/bootloader.bin {{ARGS}}
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0xD000 device/partitions.bin {{ARGS}}
+    just flash-secure
+    just monitor
+
+monitor +ARGS="":
+    espflash monitor --no-stub
 
 erase-device +ARGS="nvs":
     cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
 
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
+    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
+    espsecure.py sign_data -v 2 -k device/secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
 
 build-deterministic:
     cd device && ./deterministic-build.sh
@@ -23,12 +36,8 @@ build-deterministic:
 build +ARGS="":
    (cd frostsnapp; just build {{ARGS}})
 
-save-image BOARD=default_board +ARGS="":
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
-    espsecure.py sign_data -v 2 -k device/secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
-
 test-secure-boot BOARD=default_board +ARGS="":
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
+    just build-device
     espsecure.py sign_data -v 2 -k device/evil_secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
     just run
     
