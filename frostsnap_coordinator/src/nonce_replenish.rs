@@ -58,7 +58,6 @@ impl NonceReplenishProtocol {
                     .expect("will only send messages to device"),
             );
         }
-
         self_
     }
 

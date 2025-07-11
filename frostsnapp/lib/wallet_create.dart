@@ -488,10 +488,10 @@ class WalletCreateController extends ChangeNotifier {
             stream: coord
                 .replenishNonces(nonceRequest: nonceRequest, devices: devices)
                 .toBehaviorSubject(),
-            onCancel: () {
-              coord.cancelProtocol();
-              Navigator.pop(context, false);
-            },
+            // onCancel: () {
+            //   coord.cancelProtocol();
+            //   Navigator.pop(context, false);
+            // },
           ),
         );
 
