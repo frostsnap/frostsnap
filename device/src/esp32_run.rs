@@ -415,7 +415,7 @@ where
                             if matches!(core_message, frostsnap_core::message::CoordinatorToDeviceMessage::OpenNonceStreams { .. }) {
                                 ui.set_busy_task(ui::BusyTask::GeneratingNonces);
                             } else {
-                                ui.clear_busy_task();
+                                ui.clear_busy_task();    
                             }
                             outbox.extend(
                                 signer
