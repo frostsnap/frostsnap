@@ -411,6 +411,14 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         }
                     },
                     CoordinatorSendBody::Core(core_message) => {
+                        if matches!(
+                            core_message,
+                            frostsnap_core::message::CoordinatorToDeviceMessage::OpenNonceStreams { .. }
+                        ) {
+                            ui.set_busy_task(ui::BusyTask::GeneratingNonces);
+                        } else {
+                            ui.clear_busy_task();
+                        }
                         outbox.extend(
                             signer
                                 .recv_coordinator_message(
@@ -420,7 +428,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                 )
                                 .expect("failed to process coordinator message"),
                         );
-                        ui.clear_busy_task();
                     }
                     CoordinatorSendBody::Upgrade(upgrade_message) => match upgrade_message {
                         CoordinatorUpgradeMessage::PrepareUpgrade {

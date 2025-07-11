@@ -1617,8 +1617,8 @@ pub struct NonceReplenishRequest {
 impl NonceReplenishRequest {
     pub fn some_nonces_requested(&self) -> bool {
         self.replenish_requests
-            .iter()
-            .any(|(_, streams)| !streams.is_empty())
+            .values()
+            .any(|streams| streams.iter().any(|stream| stream.remaining == 0))
     }
 }
 

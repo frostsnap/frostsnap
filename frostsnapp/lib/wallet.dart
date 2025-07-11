@@ -6,6 +6,9 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/keygen.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/sign_message.dart';
@@ -15,6 +18,7 @@ import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_add.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
@@ -143,8 +147,33 @@ class WalletHome extends StatelessWidget {
               WalletItemRestoration item => WalletRecoveryPage(
                 key: Key(item.restoringKey.restorationId.toHex()),
                 restoringKey: item.restoringKey,
-                onWalletRecovered: (accessStructureRef) {
+                onWalletRecovered: (accessStructureRef) async {
                   walletListController.selectWallet(accessStructureRef.keyId);
+
+                  final accessStructure = coord.getAccessStructure(
+                    asRef: accessStructureRef,
+                  )!; // we just made this access structure
+                  final devices = accessStructure.devices();
+                  final nonceRequest = await coord.createNonceRequest(
+                    devices: devices,
+                  );
+                  if (nonceRequest.someNoncesRequested()) {
+                    await MaybeFullscreenDialog.show<bool>(
+                      context: context,
+                      child: NonceReplenishWidget(
+                        stream: coord
+                            .replenishNonces(
+                              nonceRequest: nonceRequest,
+                              devices: devices,
+                            )
+                            .toBehaviorSubject(),
+                        onCancel: () {
+                          coord.cancelProtocol();
+                          Navigator.pop(context, false);
+                        },
+                      ),
+                    );
+                  }
                 },
               ),
             };
