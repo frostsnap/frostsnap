@@ -284,17 +284,6 @@ where
             .header(self.device_name.as_deref().unwrap_or("New Device"));
 
         match self.workflow.borrow_mut() {
-            Workflow::None => {
-                if let Some(busy_task) = &self.busy_task {
-                    match busy_task {
-                        BusyTask::KeyGen => self.display.print("Generating key.."),
-                        BusyTask::Signing => self.display.print("Signing.."),
-                        BusyTask::VerifyingShare => self.display.print("Verifying key.."),
-                        BusyTask::Loading => self.display.print("loading.."),
-                        BusyTask::GeneratingNonces => self.display.print("Generating nonces..."),
-                    }
-                }
-            }
             Workflow::FirmwareUpgrade(status) => match status {
                 FirmwareUpgradeStatus::Passive => self.display.print("FORWARD MODE"),
                 FirmwareUpgradeStatus::Erase { progress } => {
@@ -343,14 +332,26 @@ where
                     self.display.print("Waiting for FrostSnap app");
                 }
                 WaitingFor::CoordinatorInstruction { completed_task: _ } => {
-                    match &self.device_name {
-                        Some(label) => {
-                            self.display.ready_screen(label, self.recovery_mode);
+                    if let Some(busy_task) = &self.busy_task {
+                        match busy_task {
+                            BusyTask::KeyGen => self.display.print("Generating key.."),
+                            BusyTask::Signing => self.display.print("Signing.."),
+                            BusyTask::VerifyingShare => self.display.print("Verifying key.."),
+                            BusyTask::Loading => self.display.print("loading.."),
+                            BusyTask::GeneratingNonces => {
+                                self.display.print("Generating nonces...");
+                            }
                         }
-                        None => {
-                            self.display.new_device();
+                    } else {
+                        match &self.device_name {
+                            Some(label) => {
+                                self.display.ready_screen(label, self.recovery_mode);
+                            }
+                            None => {
+                                self.display.new_device();
+                            }
                         }
-                    };
+                    }
                 }
                 WaitingFor::CoordinatorResponse(response) => match response {
                     WaitingResponse::KeyGen => {
@@ -672,7 +673,7 @@ where
         self.changes = Some(task) == self.busy_task;
         self.busy_task = Some(task);
         // HACK: we only display busy task when workflow is None so poll only then to avoid triggering ui events.
-        if matches!(self.workflow, Workflow::None) {
+        if matches!(self.workflow, Workflow::WaitingFor(_)) {
             let _event = self.poll().is_none();
             assert!(_event, "no ui events can happen with None workflow");
         }
