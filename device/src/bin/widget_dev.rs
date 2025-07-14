@@ -19,14 +19,16 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_backup::bip39_words::BIP39_WORDS;
-use frostsnap_device::{
-    graphics::widgets::{
-        DisplaySeedWords, EnterBip39ShareScreen,
-        HoldToConfirmWidget, SizedBox, Widget,
-    },
-    touch_calibration::adjust_touch_point,
-    Instant,
+use frostsnap_device::touch_calibration::adjust_touch_point;
+use frostsnap_device::graphics::widgets::{
+    DisplaySeedWords, EnterBip39ShareScreen, EnterBip39T9Screen,
+    HoldToConfirm, SizedBox, Widget, Checkmark,
 };
+use frostsnap_embedded_widgets::{
+    palette::PALETTE,
+    widgets::{ColorMap, Column, Row, Text, HoldToConfirmButton, Center},
+};
+use embedded_graphics::pixelcolor::{Rgb565, BinaryColor};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 #[entry]
@@ -92,15 +94,15 @@ fn main() -> ! {
         ($widget:expr) => {{
             let mut widget = $widget;
             let mut last_touch: Option<(Point, u32)> = None;
-            
+
             // Clear the screen with background color
-            use frostsnap_device::graphics::palette::PALETTE;
+            use frostsnap_embedded_widgets::palette::PALETTE;
             let _ = display.clear(PALETTE.background);
 
             // Main loop
             loop {
                 // Get current time
-                let current_time = Instant::from_ticks(timer.now().ticks());
+                let current_time = timer.now();
 
                 // Check for touch events
                 if let Some(touch_event) = capsense.read_one_touch_event(true) {
@@ -116,14 +118,20 @@ fn main() -> ! {
                         // Handle vertical drag for widgets that support it
                         match gesture {
                             TouchGesture::SlideUp | TouchGesture::SlideDown => {
-                                widget.handle_vertical_drag(
+                                Widget::handle_vertical_drag(
+                                    &mut widget,
                                     last_touch.map(|(_, y)| y),
                                     adjusted_y as u32,
                                 );
                             }
                             _ => {
                                 // Handle regular touches
-                                widget.handle_touch(touch_point, current_time, lift_up);
+                                Widget::handle_touch(
+                                    &mut widget,
+                                    touch_point,
+                                    frostsnap_embedded_widgets::Instant::from_millis(current_time.duration_since_epoch().to_millis()),
+                                    lift_up,
+                                );
                             }
                         }
 
@@ -137,13 +145,13 @@ fn main() -> ! {
                 }
 
                 // Draw the widget
-                let _ = widget.draw(&mut display, current_time);
+                let _ = Widget::draw(&mut widget, &mut display, frostsnap_embedded_widgets::Instant::from_millis(current_time.duration_since_epoch().to_millis()));
             }
         }};
     }
 
     // Configuration: Change this to select which widget to display
-    let show = "confirm_touch";
+    let show = "checkmark";
 
     let screen_size = Size::new(240, 280);
 
@@ -156,41 +164,104 @@ fn main() -> ! {
         "bip39_view" => {
             // Display seed words - using random indices
             const TEST_WORDS: [&'static str; 25] = [
-                BIP39_WORDS[1337],  // owner
-                BIP39_WORDS[432],   // deny
-                BIP39_WORDS[1789],  // survey
-                BIP39_WORDS[923],   // journey
-                BIP39_WORDS[567],   // embark
-                BIP39_WORDS[1456],  // recall
-                BIP39_WORDS[234],   // churn
-                BIP39_WORDS[1678],  // spawn
-                BIP39_WORDS[890],   // invest
-                BIP39_WORDS[345],   // crater
-                BIP39_WORDS[1234],  // neutral
-                BIP39_WORDS[678],   // fiscal
-                BIP39_WORDS[1890],  // thumb
-                BIP39_WORDS[456],   // diamond
-                BIP39_WORDS[1567],  // robot
-                BIP39_WORDS[789],   // guitar
-                BIP39_WORDS[1345],  // oyster
-                BIP39_WORDS[123],   // badge
-                BIP39_WORDS[1789],  // survey
-                BIP39_WORDS[567],   // embark
-                BIP39_WORDS[1012],  // lizard
-                BIP39_WORDS[1456],  // recall
-                BIP39_WORDS[789],   // guitar
-                BIP39_WORDS[1678],  // spawn
-                BIP39_WORDS[234],   // churn
+                BIP39_WORDS[1337], // owner
+                BIP39_WORDS[432],  // deny
+                BIP39_WORDS[1789], // survey
+                BIP39_WORDS[923],  // journey
+                BIP39_WORDS[567],  // embark
+                BIP39_WORDS[1456], // recall
+                BIP39_WORDS[234],  // churn
+                BIP39_WORDS[1678], // spawn
+                BIP39_WORDS[890],  // invest
+                BIP39_WORDS[345],  // crater
+                BIP39_WORDS[1234], // neutral
+                BIP39_WORDS[678],  // fiscal
+                BIP39_WORDS[1890], // thumb
+                BIP39_WORDS[456],  // diamond
+                BIP39_WORDS[1567], // robot
+                BIP39_WORDS[789],  // guitar
+                BIP39_WORDS[1345], // oyster
+                BIP39_WORDS[123],  // badge
+                BIP39_WORDS[1789], // survey
+                BIP39_WORDS[567],  // embark
+                BIP39_WORDS[1012], // lizard
+                BIP39_WORDS[1456], // recall
+                BIP39_WORDS[789],  // guitar
+                BIP39_WORDS[1678], // spawn
+                BIP39_WORDS[234],  // churn
             ];
             let share_index = 42;
             run_widget!(DisplaySeedWords::new(screen_size, TEST_WORDS, share_index));
         }
         "confirm_touch" => {
             // Hold to confirm with empty widget (1.5 seconds to confirm)
-            let sized_box = SizedBox::new(screen_size);
-            let mut hold_to_confirm = HoldToConfirmWidget::new(sized_box, 1500.0);
+            let sized_box = SizedBox::<BinaryColor>::new(screen_size);
+            let mut hold_to_confirm = HoldToConfirm::new(sized_box, 1500.0);
             hold_to_confirm.enable();
-            run_widget!(hold_to_confirm);
+            
+            // Wrap with ColorMap to convert BinaryColor to Rgb565
+            let hold_to_confirm_rgb = ColorMap::new(hold_to_confirm, |color| {
+                use embedded_graphics::pixelcolor::BinaryColor;
+                match color {
+                    BinaryColor::On => PALETTE.primary,
+                    BinaryColor::Off => PALETTE.surface_variant,
+                }
+            });
+            
+            run_widget!(hold_to_confirm_rgb);
+        }
+        "bip39_t9" => {
+            // BIP39 T9 keyboard entry
+            run_widget!(EnterBip39T9Screen::new(screen_size));
+        }
+        "hold_button" => {
+            // Hold to confirm button centered on screen using Row and Column
+            let button_size = Size::new(200, 60);
+            let text_widget = Text::new("continue");
+            let mut button = HoldToConfirmButton::new(button_size, text_widget, 2000.0);
+            button.enable();
+
+            // Calculate spacing to center the button
+            let horizontal_spacer_width = (screen_size.width - button_size.width) / 2;
+            let vertical_spacer_height = (screen_size.height - button_size.height) / 2;
+
+            // Create centered layout with all widgets in Rgb565
+            let top_spacer = SizedBox::<Rgb565>::height(vertical_spacer_height);
+            let left_spacer = SizedBox::<Rgb565>::width(horizontal_spacer_width);
+            
+            // Wrap button to use Rgb565
+            let button_rgb = ColorMap::new(button, |color| {
+                use embedded_graphics::pixelcolor::BinaryColor;
+                match color {
+                    BinaryColor::On => PALETTE.primary,
+                    BinaryColor::Off => PALETTE.surface_variant,
+                }
+            });
+            
+            let column = Column::<_, Rgb565>::new((
+                top_spacer,
+                Row::<_, Rgb565>::new((left_spacer, button_rgb)),
+            ));
+
+            run_widget!(column);
+        }
+        "checkmark" => {
+            // Animated checkmark
+            let mut checkmark = Checkmark::new(Size::new(100, 100));
+            checkmark.start_animation();
+            
+            // Center the checkmark
+            let centered = Center::new(checkmark);
+            
+            // Wrap with ColorMap to convert BinaryColor to Rgb565
+            let checkmark_rgb = ColorMap::new(centered, |color| {
+                match color {
+                    BinaryColor::On => PALETTE.primary,
+                    BinaryColor::Off => PALETTE.background,
+                }
+            });
+            
+            run_widget!(checkmark_rgb);
         }
         _ => {
             // Default to BIP39 entry

@@ -9,6 +9,7 @@ u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }
 micromath = "0.2"
 frostsnap_backup = { workspace = true }
+frostsnap_core = { workspace = true }
 
 # For the simulator binary
 [target.'cfg(not(target_arch = "riscv32"))'.dependencies]

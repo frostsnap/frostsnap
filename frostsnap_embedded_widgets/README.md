@@ -19,7 +19,7 @@ A collection of embedded graphics widgets for the Frostsnap device, designed for
 - `WordSelector`: Word selection interface with fuzzy matching
 
 ### General Widgets
-- `HoldToConfirmWidget`: Wrapper widget that requires a long press to confirm actions
+- `HoldToConfirm`: Wrapper widget that requires a long press to confirm actions
 - `SizedBox`: Simple widget with fixed dimensions for layout purposes
 
 ### Components
