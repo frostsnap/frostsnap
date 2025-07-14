@@ -152,14 +152,18 @@ impl SuperWallet {
             .mark_address_shared(master_appkey, derivation_index)
     }
 
-    pub fn rebroadcast(&self, txid: String) {
+    pub fn rebroadcast(&self, txid: String) -> Result<()> {
         let txid = Txid::from_str(&txid).expect("Txid must be valid");
-        let super_wallet = self.inner.lock().unwrap();
-        if let Some(tx) = super_wallet.get_tx(txid) {
-            if let Err(err) = self.chain_sync.broadcast(tx.as_ref().clone()) {
-                tracing::error!("Rebroadcasting {} failed: {}", txid, err);
-            };
-        }
+        let wallet = self.inner.lock().unwrap();
+        let tx = wallet
+            .get_tx(txid)
+            .ok_or(anyhow::anyhow!("Transaction {txid} does not exist"))?;
+        drop(wallet);
+
+        self.chain_sync
+            .broadcast(tx.as_ref().clone())
+            .context("Rebroadcasting failed")?;
+        Ok(())
     }
 
     /// Returns feerate in sat/vB.
