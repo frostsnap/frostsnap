@@ -60,8 +60,6 @@ impl<I: Send, O: Send> ReqAndResponse<I, O> {
     }
 }
 
-pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-
 pub const SUPPORTED_NETWORKS: [bitcoin::Network; 4] = {
     use bitcoin::Network::*;
     [Bitcoin, Signet, Testnet, Regtest]
@@ -234,9 +232,10 @@ impl Iterator for UpdateIter {
 }
 
 impl ConnectionHandler {
-    const PING_DELAY: Duration = Duration::from_secs(210);
-    const PING_TIMEOUT: Duration = Duration::from_secs(5);
-    const RECONNECT_DELAY: Duration = Duration::from_millis(2100);
+    const PING_DELAY: Duration = Duration::from_secs(21);
+    const PING_TIMEOUT: Duration = Duration::from_secs(3);
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+    const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
     pub fn run<SW, F>(mut self, url: String, backup_url: String, super_wallet: SW, update_action: F)
     where
@@ -286,7 +285,7 @@ impl ConnectionHandler {
                 // Make sure we have a status sync before handling connection.
                 while let Some(msg) = self.req_recv.next().await {
                     let is_status_sink = msg.is_status_sink();
-                    Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage, &self.client, false).await;
+                    Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage).await;
                     if is_status_sink {
                         break;
                     }
@@ -323,37 +322,34 @@ impl ConnectionHandler {
                                 pin_mut!(req_timeout_fut);
                                 select! {
                                     result = req_fut => {
-                                        result?;
+                                        if let Err(err) = result {
+                                            return err;
+                                        }
                                         tracing::info!("Received pong from server");
                                     },
                                     _ = req_timeout_fut => {
-                                        let err = anyhow!("Timeout waiting for pong");
-                                        return Result::<()>::Err(err);
+                                        return anyhow!("Timeout waiting for pong");
                                     },
                                 }
                             }
                         }.fuse();
                         pin_mut!(conn_fut);
                         pin_mut!(ping_fut);
-                        loop {
-                            select_biased! {
-                                msg_opt = self.req_recv.next() => match msg_opt {
-                                    Some(msg) => {
-                                        tracing::info!(msg = msg.to_string(), "Got message");
-                                        Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage, &self.client, true).await
-                                    },
+                        select_biased! {
+                            msg_opt = self.req_recv.next() => {
+                                let msg = match msg_opt {
+                                    Some(msg) => msg,
                                     None => return,
-                                },
-                                result = ping_fut => {
-                                    if let Err(err) = result {
-                                        tracing::error!(error = err.to_string(), "Failed to keep connection alive");
-                                        break;
-                                    }
-                                },
-                                _ = conn_fut => {
-                                    break;
-                                },
+                                };
+                                tracing::info!(msg = msg.to_string(), "Handling message");
+                                Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage).await;
                             }
+                            err = ping_fut => {
+                                tracing::error!(error = err.to_string(), "Failed to keep connection alive");
+                            },
+                            _ = conn_fut => {
+                                tracing::debug!("Connection service stopped");
+                            },
                         }
                     }
 
@@ -391,7 +387,7 @@ impl ConnectionHandler {
                     status_sink.send(ChainStatus::new(url, ChainStatusState::Connecting));
                     tracing::info!("No existing connection. Connecting to {}.", url);
 
-                    match Conn::new(genesis_hash, url, CONNECT_TIMEOUT).await {
+                    match Conn::new(genesis_hash, url, Self::CONNECT_TIMEOUT).await {
                         Ok(conn) => {
                             status_sink.send(ChainStatus::new(url, ChainStatusState::Connected));
                             tracing::info!("Connection established with {}.", url);
@@ -461,8 +457,6 @@ impl ConnectionHandler {
         msg: Message,
         sink_stage: &mut Option<Box<dyn Sink<ChainStatus>>>,
         conn_stage: &mut TargetServer,
-        client: &KeychainClient,
-        with_stop: bool,
     ) {
         match msg {
             Message::ChangeUrlReq(ReqAndResponse { request, response }) => {
@@ -472,7 +466,7 @@ impl ConnectionHandler {
                     is_backup = request.is_backup,
                 );
 
-                match Conn::new(genesis_hash, &request.url, CONNECT_TIMEOUT).await {
+                match Conn::new(genesis_hash, &request.url, Self::CONNECT_TIMEOUT).await {
                     Ok(conn) => {
                         if request.is_backup {
                             conn_stage.backup_url = request.url.clone();
@@ -495,9 +489,6 @@ impl ConnectionHandler {
             Message::Reconnect => {
                 tracing::info!(msg = "Reconnect");
             }
-        }
-        if with_stop {
-            let _ = client.stop().await;
         }
     }
 
