@@ -1,6 +1,6 @@
 // Re-export widgets from frostsnap_embedded_widgets
 pub use frostsnap_embedded_widgets::{
-    bip39::*, checkmark::*, hold_to_confirm::*, icons, key_touch::{Key, KeyTouch}, 
+    bip39::*, checkmark::*, hold_to_confirm::*, hold_to_confirm_border::*, icons, key_touch::{Key, KeyTouch}, 
     memory_debug::*, sized_box::*, Widget as EmbeddedWidget, FONT_LARGE, FONT_MED, FONT_SMALL
 };
 

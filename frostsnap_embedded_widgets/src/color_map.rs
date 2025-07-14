@@ -11,19 +11,27 @@ use embedded_graphics::{
 /// A widget that maps colors from one color space to another.
 /// This allows widgets that draw in one color space (e.g., Rgb565) to be rendered
 /// to targets that expect a different color space (e.g., Gray2).
-pub struct ColorMap<W, C, F> {
+pub struct ColorMap<W: Widget, C> {
     child: W,
-    map_fn: F,
-    _phantom: core::marker::PhantomData<C>,
+    map_fn: fn(W::Color) -> C,
 }
 
-impl<W, C, F> ColorMap<W, C, F> {
-    pub fn new(child: W, map_fn: F) -> Self {
+impl<W: Widget, C> ColorMap<W, C> {
+    pub fn new(child: W, map_fn: fn(W::Color) -> C) -> Self {
         Self {
             child,
             map_fn,
-            _phantom: core::marker::PhantomData,
         }
+    }
+    
+    /// Get a reference to the inner widget
+    pub fn inner(&self) -> &W {
+        &self.child
+    }
+    
+    /// Get a mutable reference to the inner widget
+    pub fn inner_mut(&mut self) -> &mut W {
+        &mut self.child
     }
 }
 
@@ -84,12 +92,7 @@ where
     }
 }
 
-impl<W, C, F> Widget for ColorMap<W, C, F>
-where
-    W: Widget,
-    C: PixelColor,
-    F: Fn(W::Color) -> C,
-{
+impl<W: Widget, C: PixelColor> Widget for ColorMap<W, C> {
     type Color = C;
     
     fn draw<D: DrawTarget<Color = Self::Color>>(
@@ -121,6 +124,10 @@ where
 
     fn size_hint(&self) -> Option<Size> {
         self.child.size_hint()
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.child.force_full_redraw()
     }
 }
 

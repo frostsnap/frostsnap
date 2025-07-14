@@ -13,12 +13,9 @@ use frostsnap_embedded_widgets::{
     center::Center,
     checkmark::Checkmark,
     color_map::ColorMap,
-    column::Column,
-    hold_to_confirm::{HoldToConfirm, HoldToConfirmWithCheckmark},
-    hold_to_confirm_button::HoldToConfirmButton,
-    row::Row,
-    sized_box::SizedBox,
+    hold_to_confirm::HoldToConfirm,
     text::Text,
+    welcome::Welcome,
     Widget,
     Instant,
 };
@@ -111,8 +108,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     display.clear(PALETTE.background)?;
 
     // Create output settings with proper RGB color and scaling
+    // Device is 3.75cm (37.5mm) tall with 280 pixels = 0.134mm/pixel
+    // For a typical 96 DPI monitor (3.78 pixels/mm), life size would be scale ~0.5
+    // But that's too small, so we use scale 1 for a more practical size
+    // Scale 1 = 240x280 pixels on screen (about 6.3cm x 7.4cm on a 96 DPI monitor)
     let output_settings = OutputSettingsBuilder::new()
-        .scale(2) // Scale to 2x for a reasonable size (480x560 pixels)
+        .scale(1) // Life-size would be ~0.5, but 1 is more practical
         .pixel_spacing(0) // No spacing between pixels
         .build();
 
@@ -313,42 +314,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ))
         },
         "hold_confirm" => {
-            let child = SizedBox::<BinaryColor>::new(Size::new(200, 100));
-            let mut hold_to_confirm = HoldToConfirm::new(child, 3000.0);
-            hold_to_confirm.enable();
+            let widget = HoldToConfirm::new(Size::new(SCREEN_WIDTH, SCREEN_HEIGHT), 2000.0);
             
-            // Wrap with ColorMap to convert BinaryColor to Rgb565
-            let hold_to_confirm_rgb = ColorMap::new(hold_to_confirm, |color| {
-                match color {
-                    BinaryColor::On => PALETTE.primary,
-                    BinaryColor::Off => PALETTE.surface_variant,
-                }
-            });
-            
-            run_widget!(hold_to_confirm_rgb)
-        }
-        "hold_button" => {
-            let button_size = Size::new(200, 60);
-            let text_widget = Text::new("SUBMIT");
-            let mut button = HoldToConfirmButton::new(button_size, text_widget, 2000.0);
-            button.enable();
-            
-            // Wrap button with ColorMap to convert BinaryColor to Rgb565
-            let button_rgb = ColorMap::new(button, |color| {
-                match color {
-                    BinaryColor::On => PALETTE.primary,
-                    BinaryColor::Off => PALETTE.surface_variant,
-                }
-            });
-            
-            // Center the button
-            let centered = Center::new(button_rgb);
-            
-            run_widget!(centered)
+            run_widget!(widget)
         }
         "checkmark" => {
             // Animated checkmark
-            let mut checkmark = Checkmark::new(Size::new(50, 50));
+            let mut checkmark = Checkmark::new(Size::new(96, 96));
             checkmark.start_animation();
             
             // Wrap with ColorMap to convert BinaryColor to Rgb565
@@ -364,26 +336,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             run_widget!(centered)
         }
-        "hold_checkmark" => {
-            // Combined hold to confirm with checkmark animation
-            let mut widget = HoldToConfirmWithCheckmark::new(Size::new(100, 100), 2000.0);
-            widget.enable();
+        "welcome" => {
+            // Welcome screen widget
+            let widget = Welcome::new();
             
-            // Wrap with ColorMap to convert BinaryColor to Rgb565
-            let widget_rgb = ColorMap::new(widget, |color| {
-                match color {
-                    BinaryColor::On => PALETTE.primary,
-                    BinaryColor::Off => PALETTE.background,
-                }
-            });
-            
-            // Center the widget
-            let centered = Center::new(widget_rgb);
-            
-            run_widget!(centered)
+            run_widget!(widget)
         }
         _ => {
-            eprintln!("Unknown demo: {}. Available demos: bip39_entry, bip39_t9, bip39_display, hold_confirm, hold_button, checkmark, hold_checkmark", demo);
+            eprintln!("Unknown demo: {}. Available demos: bip39_entry, bip39_t9, bip39_display, hold_confirm, checkmark, welcome, hold_checkmark", demo);
             Ok(())
         }
     }

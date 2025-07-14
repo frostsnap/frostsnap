@@ -15,6 +15,7 @@ pub mod center;
 pub mod checkmark;
 pub mod color_map;
 pub mod column;
+pub mod fader;
 pub mod hold_to_confirm;
 pub mod hold_to_confirm_border;
 // pub mod hold_to_confirm_button;
@@ -36,6 +37,7 @@ pub use center::*;
 pub use checkmark::*;
 pub use color_map::*;
 pub use column::*;
+pub use fader::*;
 pub use hold_to_confirm::HoldToConfirm;
 pub use hold_to_confirm_border::HoldToConfirmBorder;
 // pub use hold_to_confirm_button::*;
@@ -86,6 +88,14 @@ pub trait Widget {
         Self: Sized,
     {
         color_map::ColorMap::new(self, map_fn)
+    }
+    
+    /// Force a full redraw of the widget
+    /// This is typically used when the widget needs to be redrawn completely,
+    /// such as when fading or other visual effects require a complete refresh
+    fn force_full_redraw(&mut self) {
+        // Default implementation does nothing
+        // Widgets that need this functionality should override
     }
 }
 

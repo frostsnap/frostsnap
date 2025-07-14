@@ -1,5 +1,5 @@
 use crate::{
-    hold_to_confirm::HoldToConfirm, Widget,
+    hold_to_confirm_border::HoldToConfirmBorder, Widget,
     Instant,
 };
 use embedded_graphics::{
@@ -10,7 +10,7 @@ use embedded_graphics::{
 };
 
 pub struct HoldToConfirmButton<W> {
-    hold_to_confirm: HoldToConfirm<ButtonWrapper<W>>,
+    hold_to_confirm: HoldToConfirmBorder<ButtonWrapper<W>>,
 }
 
 struct ButtonWrapper<W> {
@@ -45,7 +45,7 @@ impl<W: Widget<Color = BinaryColor>> Widget for ButtonWrapper<W> {
 impl<W: Widget<Color = BinaryColor>> HoldToConfirmButton<W> {
     pub fn new(size: Size, child: W, hold_duration_ms: f64) -> Self {
         let wrapper = ButtonWrapper { size, child };
-        let hold_to_confirm = HoldToConfirm::new(wrapper, hold_duration_ms as f32);
+        let hold_to_confirm = HoldToConfirmBorder::new(wrapper, hold_duration_ms as f32);
         
         Self {
             hold_to_confirm,

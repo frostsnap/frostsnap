@@ -26,7 +26,7 @@ impl<W: Widget> HoldToConfirmBorder<W> {
         let mut self_ = Self {
             child,
             progress: 0.0,
-            last_drawn_progress: -1.0,
+            last_drawn_progress: 0.0,
             screen_size,
             border_pixels: Vec::new(),
         };
@@ -83,24 +83,15 @@ impl<W: Widget> HoldToConfirmBorder<W> {
         self.border_pixels = pixels;
     }
 
-
     fn draw_border<D: DrawTarget<Color = BinaryColor>>(
         &mut self,
         target: &mut D,
     ) -> Result<(), D::Error> {
-        // Always draw the full border first
-        if self.last_drawn_progress < 0.0 {
-            target.draw_iter(
-                self.border_pixels
-                    .iter()
-                    .map(|&point| Pixel(point, BinaryColor::Off)),
-            )?;
-        }
-
         // Handle progress changes
         let total_pixels = self.border_pixels.len();
         let current_progress_pixels = (self.progress * total_pixels as f32) as usize;
-        let last_progress_pixels = (self.last_drawn_progress.max(0.0) * total_pixels as f32) as usize;
+        let last_progress_pixels =
+            (self.last_drawn_progress.max(0.0) * total_pixels as f32) as usize;
 
         if current_progress_pixels > last_progress_pixels {
             target.draw_iter(
@@ -155,5 +146,11 @@ impl<W: Widget<Color = BinaryColor>> Widget for HoldToConfirmBorder<W> {
 
     fn size_hint(&self) -> Option<Size> {
         Some(self.screen_size)
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.last_drawn_progress = 0.0;
+        // Also propagate to child
+        self.child.force_full_redraw();
     }
 }

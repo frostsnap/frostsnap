@@ -21,8 +21,7 @@ use esp_hal::{
 };
 use frostsnap_backup::bip39_words::BIP39_WORDS;
 use frostsnap_device::graphics::widgets::{
-    Checkmark, DisplaySeedWords, EnterBip39ShareScreen, EnterBip39T9Screen, HoldToConfirmBorder,
-    SizedBox, Widget,
+    Checkmark, DisplaySeedWords, EnterBip39ShareScreen, EnterBip39T9Screen, Widget,
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
 use frostsnap_embedded_widgets::{
@@ -208,21 +207,9 @@ fn main() -> ! {
             run_widget!(DisplaySeedWords::new(screen_size, TEST_WORDS, share_index));
         }
         "confirm_touch" => {
-            // Hold to confirm with empty widget (1.5 seconds to confirm)
-            let sized_box = SizedBox::<BinaryColor>::new(screen_size);
-            let mut hold_to_confirm = HoldToConfirmBorder::new(sized_box);
-            hold_to_confirm.set_progress(0.0);
-
-            // Wrap with ColorMap to convert BinaryColor to Rgb565
-            let hold_to_confirm_rgb = ColorMap::new(hold_to_confirm, |color| {
-                use embedded_graphics::pixelcolor::BinaryColor;
-                match color {
-                    BinaryColor::On => PALETTE.primary,
-                    BinaryColor::Off => PALETTE.surface_variant,
-                }
-            });
-
-            run_widget!(hold_to_confirm_rgb);
+            // Hold to confirm widget with checkmark (2 seconds to confirm)
+            let hold_to_confirm = HoldToConfirm::new(screen_size, 2000.0);
+            run_widget!(hold_to_confirm);
         }
         "bip39_t9" => {
             // BIP39 T9 keyboard entry

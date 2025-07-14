@@ -34,7 +34,7 @@ macro_rules! impl_column_for_tuple {
                 target: &mut D,
                 current_time: Instant,
             ) -> Result<(), D::Error> {
-                let mut y_offset = 0;
+                let y_offset = 0;
                 
                 let size = self.children.0.size_hint()
                     .expect("Column requires all children to have size_hint");
@@ -51,7 +51,7 @@ macro_rules! impl_column_for_tuple {
                 current_time: Instant,
                 is_release: bool,
             ) -> Option<crate::KeyTouch> {
-                let mut y_offset = 0;
+                let y_offset = 0;
                 
                 let size = self.children.0.size_hint()
                     .expect("Column requires all children to have size_hint");
@@ -82,6 +82,7 @@ macro_rules! impl_column_for_tuple {
         impl<$t1: Widget<Color = C>, $($tn: Widget<Color = C>),+, C: PixelColor> Widget for Column<($t1, $($tn,)+), C> {
             type Color = C;
             
+            #[allow(unused_assignments)]
             fn draw<D: DrawTarget<Color = C>>(
                 &mut self,
                 target: &mut D,
@@ -118,6 +119,7 @@ macro_rules! impl_column_for_tuple {
                 Ok(())
             }
             
+            #[allow(unused_assignments)]
             fn handle_touch(
                 &mut self,
                 point: Point,
