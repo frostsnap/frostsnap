@@ -62,7 +62,7 @@ pub trait UserInteraction {
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
                 completed_task: None,
             }),
-            Workflow::None | Workflow::Debug(_) => workflow,
+            Workflow::Debug(_) => workflow,
         };
         self.set_workflow(new_workflow);
     }
@@ -96,7 +96,6 @@ pub enum WaitingResponse {
 
 #[derive(Debug)]
 pub enum Workflow {
-    None,
     WaitingFor(WaitingFor),
     UserPrompt {
         prompt: Prompt,
@@ -152,7 +151,9 @@ pub enum EnteringBackupStage {
 
 impl Default for Workflow {
     fn default() -> Self {
-        Self::None
+        Self::WaitingFor(WaitingFor::CoordinatorInstruction {
+            completed_task: None,
+        })
     }
 }
 

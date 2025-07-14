@@ -372,7 +372,6 @@ class _ThresholdPageState extends State<ThresholdPage> {
                   }
 
                   if (context.mounted) {
-                    debugPrint("here");
                     Navigator.popUntil(context, (r) => r.isFirst);
                     final homeCtx = HomeContext.of(context)!;
                     homeCtx.openNewlyCreatedWallet(accessStructureRef.keyId);
