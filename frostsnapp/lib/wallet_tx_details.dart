@@ -19,6 +19,8 @@ import 'package:frostsnap/wallet.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+const BROADCAST_TIMEOUT = Duration(seconds: 3);
+
 class TxDetailsModel {
   /// The raw transaction.
   Transaction tx;
@@ -599,7 +601,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     );
     final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
-        .timeout(Duration(seconds: 5))
+        .timeout(BROADCAST_TIMEOUT)
         .then<bool>(
           (ssid == null)
               ? (_) => false
@@ -646,8 +648,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               ActionChip(
                 avatar: Icon(Icons.publish),
                 label: Text('Rebroadcast'),
-                onPressed: () =>
-                    rebroadcastAction(context, txid: txDetails.tx.txid),
+                onPressed: () async =>
+                    await rebroadcastAction(context, txid: txDetails.tx.txid),
               ),
             ActionChip(
               avatar: Icon(Icons.open_in_new),
@@ -763,9 +765,20 @@ copyAction(BuildContext context, String what, String data) {
   ).showSnackBar(SnackBar(content: Text('$what copied to clipboard')));
 }
 
-rebroadcastAction(BuildContext context, {required String txid}) {
+Future<void> rebroadcastAction(
+  BuildContext context, {
+  required String txid,
+}) async {
   final walletCtx = WalletContext.of(context)!;
-  walletCtx.superWallet.rebroadcast(txid: txid);
+  try {
+    await walletCtx.superWallet
+        .rebroadcast(txid: txid)
+        .timeout(BROADCAST_TIMEOUT);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to rebroadcast transaction: $e')),
+    );
+  }
   ScaffoldMessenger.of(
     context,
   ).showSnackBar(SnackBar(content: Text('Transaction rebroadcasted')));
