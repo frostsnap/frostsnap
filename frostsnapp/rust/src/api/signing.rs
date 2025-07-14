@@ -403,7 +403,7 @@ impl Coordinator {
                             txid: txid.to_string(),
                             confirmation_time: None,
                             last_seen: None,
-                            prevouts: prevouts,
+                            prevouts,
                             is_mine,
                         },
                     })
