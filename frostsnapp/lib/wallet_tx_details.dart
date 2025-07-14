@@ -19,6 +19,8 @@ import 'package:frostsnap/wallet.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+const BROADCAST_TIMEOUT = Duration(seconds: 3);
+
 class TxDetailsModel {
   /// The raw transaction.
   Transaction tx;
@@ -487,7 +489,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             ),
             FilledButton(
               onPressed: (signingDone ?? true && !isBroadcasting)
-                  ? () async => broadcast(context)
+                  ? () => broadcast(context)
                   : null,
               child: Text('Broadcast Transaction'),
             ),
@@ -597,8 +599,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final tx = await txDetails.tx.withSignatures(
       signatures: signingState?.finishedSignatures ?? [],
     );
-    final broadcastFut = walletCtx.wallet.superWallet
+    final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
+        .timeout(BROADCAST_TIMEOUT)
         .then<bool>(
           (ssid == null)
               ? (_) => false
@@ -608,10 +611,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 },
           onError: (_) => false,
         );
-    final broadcasted = await Future.any<bool>([
-      broadcastFut,
-      Future.delayed(Duration(seconds: 5), () => false),
-    ]);
     if (mounted) {
       if (broadcasted) {
         setState(() {
@@ -649,8 +648,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               ActionChip(
                 avatar: Icon(Icons.publish),
                 label: Text('Rebroadcast'),
-                onPressed: () =>
-                    rebroadcastAction(context, txid: txDetails.tx.txid),
+                onPressed: () async =>
+                    await rebroadcastAction(context, txid: txDetails.tx.txid),
               ),
             ActionChip(
               avatar: Icon(Icons.open_in_new),
@@ -679,7 +678,6 @@ Widget buildDetailsColumn(
     children: [
       if (txDetails.isSend)
         ...txDetails.tx.recipients().where((info) => !info.isMine).map((info) {
-          debugPrint("${walletCtx.superWallet.isDisposed}");
           final address = info.address(network: walletCtx.network)?.toString();
           return Column(
             children: [
@@ -767,9 +765,20 @@ copyAction(BuildContext context, String what, String data) {
   ).showSnackBar(SnackBar(content: Text('$what copied to clipboard')));
 }
 
-rebroadcastAction(BuildContext context, {required String txid}) {
+Future<void> rebroadcastAction(
+  BuildContext context, {
+  required String txid,
+}) async {
   final walletCtx = WalletContext.of(context)!;
-  walletCtx.superWallet.rebroadcast(txid: txid);
+  try {
+    await walletCtx.superWallet
+        .rebroadcast(txid: txid)
+        .timeout(BROADCAST_TIMEOUT);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to rebroadcast transaction: $e')),
+    );
+  }
   ScaffoldMessenger.of(
     context,
   ).showSnackBar(SnackBar(content: Text('Transaction rebroadcasted')));

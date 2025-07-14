@@ -1,4 +1,7 @@
-use crate::{bitcoin::chain_sync::default_electrum_server, persist::Persist};
+use crate::{
+    bitcoin::chain_sync::{default_backup_electrum_server, default_electrum_server},
+    persist::Persist,
+};
 use anyhow::Context as _;
 use bdk_chain::bitcoin;
 use core::str::FromStr;
@@ -9,6 +12,7 @@ use tracing::{event, Level};
 #[derive(Default)]
 pub struct Settings {
     pub electrum_servers: BTreeMap<bitcoin::Network, String>,
+    pub backup_electrum_servers: BTreeMap<bitcoin::Network, String>,
     pub developer_mode: bool,
 }
 
@@ -23,6 +27,13 @@ impl Settings {
             .cloned()
             .or(Some(default_electrum_server(network).to_string()))
             .expect("unsupported network")
+    }
+
+    pub fn get_backup_electrum_server(&self, network: bitcoin::Network) -> String {
+        self.backup_electrum_servers
+            .get(&network)
+            .cloned()
+            .unwrap_or(default_backup_electrum_server(network).to_string())
     }
 
     pub fn set_electrum_server(
@@ -44,11 +55,11 @@ impl Settings {
             Mutation::SetDeveloperMode { value } => {
                 self.developer_mode = value;
             }
-            Mutation::SetElectrumServer {
-                network,
-                url: value,
-            } => {
-                self.electrum_servers.insert(network, value);
+            Mutation::SetElectrumServer { network, url } => {
+                self.electrum_servers.insert(network, url);
+            }
+            Mutation::SetBackupElectrumServer { network, url } => {
+                self.backup_electrum_servers.insert(network, url);
             }
         }
     }
@@ -60,6 +71,10 @@ pub enum Mutation {
         value: bool,
     },
     SetElectrumServer {
+        network: bitcoin::Network,
+        url: String,
+    },
+    SetBackupElectrumServer {
         network: bitcoin::Network,
         url: String,
     },
@@ -145,19 +160,28 @@ impl Persist<rusqlite::Connection> for Settings {
                         params!["developer_mode", value.to_string()],
                     )?;
                 }
-                Mutation::SetElectrumServer {
-                    network,
-                    url: value,
-                } => {
+                Mutation::SetElectrumServer { network, url } => {
                     event!(
                         Level::DEBUG,
                         network = network.to_string(),
-                        value = value.to_string(),
+                        url,
                         "set electrum server for network"
                     );
                     conn.execute(
                         "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
-                        params![format!("electrum_server_{}", network), value.to_string()],
+                        params![format!("electrum_server_{}", network), url.to_string()],
+                    )?;
+                }
+                Mutation::SetBackupElectrumServer { network, url } => {
+                    event!(
+                        Level::DEBUG,
+                        network = network.to_string(),
+                        url,
+                        "set backup electrum server for network"
+                    );
+                    conn.execute(
+                        "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
+                        params![format!("backup_electrum_server_{}", network), url.to_string()],
                     )?;
                 }
             }

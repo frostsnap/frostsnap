@@ -11,7 +11,6 @@ use bdk_electrum_streaming::{
     run_async, AsyncReceiver, AsyncState, Cache, DerivedSpkTracker, ReqCoord, Update,
 };
 use frostsnap_core::MasterAppkey;
-use futures::pin_mut;
 use futures::{
     channel::{mpsc, oneshot},
     executor::{block_on, block_on_stream},
@@ -19,6 +18,7 @@ use futures::{
     stream::FuturesUnordered,
     FutureExt, StreamExt,
 };
+use futures::{pin_mut, select_biased};
 use rustls::pki_types;
 use std::{
     collections::BTreeMap,
@@ -71,7 +71,7 @@ pub type KeychainClientReceiver = bdk_electrum_streaming::AsyncReceiver<Keychain
 
 /// The messages the client can send to the backend
 pub enum Message {
-    ChangeUrlReq(ReqAndResponse<String, Result<()>>),
+    ChangeUrlReq(ReqAndResponse<TargetServerReq, Result<()>>),
     SetStatusSink(Box<dyn Sink<ChainStatus>>),
     Reconnect,
 }
@@ -119,8 +119,8 @@ impl ChainClient {
         )
     }
 
-    pub fn check_and_set_electrum_server_url(&self, url: String) -> Result<()> {
-        let (req, response) = ReqAndResponse::new(url);
+    pub fn check_and_set_electrum_server_url(&self, url: String, is_backup: bool) -> Result<()> {
+        let (req, response) = ReqAndResponse::new(TargetServerReq { url, is_backup });
         self.req_sender
             .unbounded_send(Message::ChangeUrlReq(req))
             .unwrap();
@@ -140,12 +140,17 @@ impl ChainClient {
     }
 
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<bitcoin::Txid> {
-        event!(
-            Level::DEBUG,
-            "WE ARE BROADCASTING {}",
-            transaction.compute_txid()
-        );
+        let txid = transaction.compute_txid();
+        event!(Level::DEBUG, "Broadcasting: {}", transaction.compute_txid());
         block_on(self.client.send_request(request::BroadcastTx(transaction)))
+            .inspect_err(|err| {
+                tracing::error!(
+                    txid = txid.to_string(),
+                    error = err.to_string(),
+                    "Failed to broadcast tx"
+                )
+            })
+            .inspect(|txid| tracing::info!(txid = txid.to_string(), "Successfully broadcasted tx"))
     }
 
     pub fn estimate_fee(
@@ -159,8 +164,8 @@ impl ChainClient {
                 .map(|number| {
                     self.client
                         .send_request(request::EstimateFee { number })
-                        .map(move |result| {
-                            result
+                        .map(move |request_result| {
+                            request_result
                                 .map(|resp| resp.fee_rate.map(|fee_rate| (number, fee_rate)))
                                 .transpose()
                         })
@@ -187,8 +192,20 @@ pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str 
         bitcoin::Network::Bitcoin => "tcp://electrum.frostsn.app:50001",
         // we're using the tcp:// version since ssl ain't working for some reason
         bitcoin::Network::Testnet => "tcp://electrum.blockstream.info:60001",
+        bitcoin::Network::Testnet4 => "ssl://blackie.c3-soft.com:57010",
         bitcoin::Network::Regtest => "tcp://localhost:60401",
         bitcoin::Network::Signet => "tcp://electrum.frostsn.app:60001",
+        _ => panic!("Unknown network"),
+    }
+}
+
+pub const fn default_backup_electrum_server(network: bitcoin::Network) -> &'static str {
+    match network {
+        bitcoin::Network::Bitcoin => "ssl://blockstream.info:700",
+        bitcoin::Network::Testnet => "ssl://blockstream.info:993",
+        bitcoin::Network::Testnet4 => "ssl://mempool.space:40002",
+        bitcoin::Network::Signet => "tcp://signet-electrumx.wakiyamap.dev:50001",
+        bitcoin::Network::Regtest => "tcp://127.0.0.1:51001",
         _ => panic!("Unknown network"),
     }
 }
@@ -215,11 +232,12 @@ impl Iterator for UpdateIter {
 }
 
 impl ConnectionHandler {
-    // TODO: Do something with this.
-    const _PING_DELAY: Duration = Duration::from_secs(5);
-    const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
+    const PING_DELAY: Duration = Duration::from_secs(21);
+    const PING_TIMEOUT: Duration = Duration::from_secs(3);
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+    const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
-    pub fn run<SW, F>(mut self, url: String, super_wallet: SW, update_action: F)
+    pub fn run<SW, F>(mut self, url: String, backup_url: String, super_wallet: SW, update_action: F)
     where
         SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
         F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send + 'static,
@@ -256,7 +274,8 @@ impl ConnectionHandler {
                 chain_tip,
             );
 
-            let mut conn_stage = TargetServer { url, conn: None };
+            let mut conn_stage = TargetServer { url, backup_url, conn: None, backup_conn: None };
+            // The current connection (if any).
             let mut conn_opt = Option::<Conn>::None;
 
             let mut sink_stage = Option::<Box<dyn Sink<ChainStatus>>>::None;
@@ -266,7 +285,7 @@ impl ConnectionHandler {
                 // Make sure we have a status sync before handling connection.
                 while let Some(msg) = self.req_recv.next().await {
                     let is_status_sink = msg.is_status_sink();
-                    Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage, &self.client, false).await;
+                    Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage).await;
                     if is_status_sink {
                         break;
                     }
@@ -274,37 +293,63 @@ impl ConnectionHandler {
 
                 // Reconnection loop.
                 loop {
-                    if let Some(new_conn) = conn_stage.conn.take() {
+                    if let Some(new_conn) = conn_stage.take_conn() {
                         conn_opt = Some(new_conn);
                     }
                     if let Some(new_sink) = sink_stage.take() {
                         sink = new_sink;
                     }
 
-                    let conn_fut = Self::try_connect_and_run(
-                        self.genesis_hash,
-                        conn_stage.url.clone(),
-                        &mut conn_opt,
-                        &mut state,
-                        &mut self.client_recv,
-                        &mut update_sender,
-                        &*sink,
-                    )
-                    .fuse();
-
                     {
-                        pin_mut!(conn_fut);
-                        loop {
-                            select! {
-                                _ = conn_fut => break,
-                                msg_opt = self.req_recv.next() => match msg_opt {
-                                    Some(msg) => {
-                                        tracing::info!(msg = msg.to_string(), "Got message");
-                                        Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage, &self.client, true).await
+                        let conn_fut = Self::try_connect_and_run(
+                            self.genesis_hash,
+                            conn_stage.url.clone(),
+                            conn_stage.backup_url.clone(),
+                            &mut conn_opt,
+                            &mut state,
+                            &mut self.client_recv,
+                            &mut update_sender,
+                            &*sink,
+                        )
+                        .fuse();
+                        let ping_fut = async {
+                            loop {
+                                tokio::time::sleep(Self::PING_DELAY).await;
+
+                                let req_fut = self.client.send_request(request::Ping).fuse();
+                                let req_timeout_fut = tokio::time::sleep(Self::PING_TIMEOUT).fuse();
+                                pin_mut!(req_fut);
+                                pin_mut!(req_timeout_fut);
+                                select! {
+                                    result = req_fut => {
+                                        if let Err(err) = result {
+                                            return err;
+                                        }
+                                        tracing::info!("Received pong from server");
                                     },
-                                    None => return,
+                                    _ = req_timeout_fut => {
+                                        return anyhow!("Timeout waiting for pong");
+                                    },
                                 }
                             }
+                        }.fuse();
+                        pin_mut!(conn_fut);
+                        pin_mut!(ping_fut);
+                        select_biased! {
+                            msg_opt = self.req_recv.next() => {
+                                let msg = match msg_opt {
+                                    Some(msg) => msg,
+                                    None => return,
+                                };
+                                tracing::info!(msg = msg.to_string(), "Handling message");
+                                Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage).await;
+                            }
+                            err = ping_fut => {
+                                tracing::error!(error = err.to_string(), "Failed to keep connection alive");
+                            },
+                            _ = conn_fut => {
+                                tracing::debug!("Connection service stopped");
+                            },
                         }
                     }
 
@@ -320,9 +365,11 @@ impl ConnectionHandler {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn try_connect_and_run(
         genesis_hash: BlockHash,
         url: String,
+        backup_url: String,
         conn_opt: &mut Option<Conn>,
         state: &mut AsyncState<KeychainId>,
         client_recv: &mut AsyncReceiver<KeychainId>,
@@ -336,21 +383,29 @@ impl ConnectionHandler {
                 conn
             }
             conn_opt => {
-                status_sink.send(ChainStatus::new(&url, ChainStatusState::Connecting));
-                tracing::info!("No existing connection. Connecting to {}.", url);
-                match connect(&url, genesis_hash).await {
-                    Ok(conn) => {
-                        status_sink.send(ChainStatus::new(&url, ChainStatusState::Connected));
-                        tracing::info!("Connection established with {}.", url);
-                        conn_opt.insert(conn)
+                for url in [url.as_str(), backup_url.as_str()] {
+                    status_sink.send(ChainStatus::new(url, ChainStatusState::Connecting));
+                    tracing::info!("No existing connection. Connecting to {}.", url);
+
+                    match Conn::new(genesis_hash, url, Self::CONNECT_TIMEOUT).await {
+                        Ok(conn) => {
+                            status_sink.send(ChainStatus::new(url, ChainStatusState::Connected));
+                            tracing::info!("Connection established with {}.", url);
+                            *conn_opt = Some(conn);
+                            break;
+                        }
+                        Err(err) => {
+                            status_sink.send(ChainStatus::new(url, ChainStatusState::Disconnected));
+                            tracing::error!(err = err.to_string(), url, "failed to connect",);
+                        }
                     }
-                    Err(err) => {
-                        status_sink.send(ChainStatus::new(&url, ChainStatusState::Disconnected));
+                }
+                match conn_opt {
+                    Some(conn) => conn,
+                    None => {
                         tracing::error!(
-                            err = err.to_string(),
-                            url,
-                            "failed to connect, reconnecting in {}s",
-                            Self::RECONNECT_DELAY.as_secs()
+                            reconnecting_in_secs = Self::RECONNECT_DELAY.as_secs_f32(),
+                            "Failed to connect to all Electrum servers"
                         );
                         tokio::time::sleep(Self::RECONNECT_DELAY).await;
                         return;
@@ -402,24 +457,30 @@ impl ConnectionHandler {
         msg: Message,
         sink_stage: &mut Option<Box<dyn Sink<ChainStatus>>>,
         conn_stage: &mut TargetServer,
-        client: &KeychainClient,
-        with_stop: bool,
     ) {
         match msg {
             Message::ChangeUrlReq(ReqAndResponse { request, response }) => {
-                tracing::info!(msg = "ChangeUrlReq", url = request.clone());
-                let url = request;
-                match connect(&url, genesis_hash).await {
+                tracing::info!(
+                    msg = "ChangeUrlReq",
+                    url = request.url,
+                    is_backup = request.is_backup,
+                );
+
+                match Conn::new(genesis_hash, &request.url, Self::CONNECT_TIMEOUT).await {
                     Ok(conn) => {
-                        let conn = Some(conn);
-                        *conn_stage = TargetServer { url, conn };
+                        if request.is_backup {
+                            conn_stage.backup_url = request.url.clone();
+                            conn_stage.backup_conn = Some(conn);
+                        } else {
+                            conn_stage.url = request.url.clone();
+                            conn_stage.conn = Some(conn);
+                        }
                         let _ = response.send(Ok(()));
                     }
                     Err(err) => {
                         let _ = response.send(Err(err));
-                        return;
                     }
-                }
+                };
             }
             Message::SetStatusSink(sink) => {
                 tracing::info!(msg = "SetStatusSink");
@@ -428,9 +489,6 @@ impl ConnectionHandler {
             Message::Reconnect => {
                 tracing::info!(msg = "Reconnect");
             }
-        }
-        if with_stop {
-            let _ = client.stop().await;
         }
     }
 
@@ -500,9 +558,9 @@ where
     use client::RawNotificationOrResponse;
     use futures::io::BufReader;
 
-    let features_id = rand::random::<u32>();
-    let features_req = client::RawRequest::from_request(features_id, request::Features);
-    client::io::tokio_write(&mut wh, features_req).await?;
+    let req_id = rand::random::<u32>();
+    let req = client::RawRequest::from_request(req_id, request::Header { height: 0 });
+    client::io::tokio_write(&mut wh, req).await?;
 
     let mut read_stream = client::io::ReadStreamer::new(BufReader::new(rh.compat()));
     let raw_incoming = read_stream
@@ -517,11 +575,11 @@ where
         RawNotificationOrResponse::Response(raw_resp) => raw_resp,
     };
 
-    if raw_resp.id != features_id {
+    if raw_resp.id != req_id {
         return Err(anyhow!(
             "Response id {} does not match request id {}",
             raw_resp.id,
-            features_id
+            req_id
         ));
     }
 
@@ -529,56 +587,13 @@ where
         .result
         .map_err(|err| anyhow!("Server responded with error: {err}"))?;
 
-    let features: <request::Features as Request>::Response =
-        client::serde_json::from_value(raw_val)?;
+    let resp: <request::Header as Request>::Response = client::serde_json::from_value(raw_val)?;
 
-    if genesis_hash != features.genesis_hash {
+    if genesis_hash != resp.header.block_hash() {
         return Err(anyhow!("Electrum server is on a different network"));
     }
 
     Ok(())
-}
-
-async fn connect(url: &str, genesis_hash: BlockHash) -> Result<Conn> {
-    let (is_ssl, socket_addr) = match url.split_once("://") {
-        Some(("ssl", socket_addr)) => (true, socket_addr.to_owned()),
-        Some(("tcp", socket_addr)) => (false, socket_addr.to_owned()),
-        Some((unknown_scheme, _)) => {
-            return Err(anyhow!("unknown url scheme '{unknown_scheme}'"));
-        }
-        None => (false, url.to_owned()),
-    };
-    tracing::info!("Connecting to {} ...", url);
-    if is_ssl {
-        let mut root_store = rustls::RootCertStore::empty();
-        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-        let host = socket_addr
-            .clone()
-            .split_once(":")
-            .map(|(host, _)| host.to_string())
-            .unwrap_or(socket_addr.clone());
-        let dnsname = pki_types::ServerName::try_from(host)?;
-
-        let sock = tokio::net::TcpStream::connect(socket_addr).await?;
-
-        let connector = TlsConnector::from(Arc::new(config));
-        let stream = connector.connect(dnsname, sock).await?;
-        let (mut rh, mut wh) = tokio::io::split(stream);
-        check_conn(&mut rh, &mut wh, genesis_hash)
-            .await
-            .inspect_err(|e| tracing::error!(e = e.to_string()))?;
-        anyhow::Ok(Conn::Ssl((rh, wh)))
-    } else {
-        let sock = tokio::net::TcpStream::connect(socket_addr).await?;
-        let (mut rh, mut wh) = tokio::io::split(sock);
-        check_conn(&mut rh, &mut wh, genesis_hash)
-            .await
-            .inspect_err(|e| tracing::error!(e = e.to_string()))?;
-        anyhow::Ok(Conn::Tcp((rh, wh)))
-    }
 }
 
 type SplitConn<T> = (tokio::io::ReadHalf<T>, tokio::io::WriteHalf<T>);
@@ -588,7 +603,76 @@ enum Conn {
     Ssl(SplitConn<TlsStream<tokio::net::TcpStream>>),
 }
 
+impl Conn {
+    async fn new(genesis_hash: BlockHash, url: &str, timeout: Duration) -> Result<Self> {
+        let connect_fut = Self::_new(genesis_hash, url).fuse();
+        pin_mut!(connect_fut);
+
+        let timeout_fut = tokio::time::sleep(timeout).fuse();
+        pin_mut!(timeout_fut);
+
+        select! {
+            conn_res = connect_fut => conn_res,
+            _ = timeout_fut => Err(anyhow!("Timed out")),
+        }
+    }
+
+    async fn _new(genesis_hash: BlockHash, url: &str) -> Result<Self> {
+        let (is_ssl, socket_addr) = match url.split_once("://") {
+            Some(("ssl", socket_addr)) => (true, socket_addr.to_owned()),
+            Some(("tcp", socket_addr)) => (false, socket_addr.to_owned()),
+            Some((unknown_scheme, _)) => {
+                return Err(anyhow!("unknown url scheme '{unknown_scheme}'"));
+            }
+            None => (false, url.to_owned()),
+        };
+        tracing::info!(url, "Connecting");
+        if is_ssl {
+            let mut root_store = rustls::RootCertStore::empty();
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let config = rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+            let host = socket_addr
+                .clone()
+                .split_once(":")
+                .map(|(host, _)| host.to_string())
+                .unwrap_or(socket_addr.clone());
+            let dnsname = pki_types::ServerName::try_from(host)?;
+            let sock = tokio::net::TcpStream::connect(socket_addr).await?;
+            let connector = TlsConnector::from(Arc::new(config));
+            let stream = connector.connect(dnsname, sock).await?;
+            let (mut rh, mut wh) = tokio::io::split(stream);
+            check_conn(&mut rh, &mut wh, genesis_hash)
+                .await
+                .inspect_err(|e| tracing::error!(e = e.to_string()))?;
+            anyhow::Ok(Conn::Ssl((rh, wh)))
+        } else {
+            let sock = tokio::net::TcpStream::connect(socket_addr).await?;
+            let (mut rh, mut wh) = tokio::io::split(sock);
+            check_conn(&mut rh, &mut wh, genesis_hash)
+                .await
+                .inspect_err(|e| tracing::error!(e = e.to_string()))?;
+            anyhow::Ok(Conn::Tcp((rh, wh)))
+        }
+    }
+}
+
 struct TargetServer {
     url: String,
+    backup_url: String,
     conn: Option<Conn>,
+    backup_conn: Option<Conn>,
+}
+
+impl TargetServer {
+    fn take_conn(&mut self) -> Option<Conn> {
+        self.conn.take().or_else(|| self.backup_conn.take())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TargetServerReq {
+    pub url: String,
+    pub is_backup: bool,
 }
