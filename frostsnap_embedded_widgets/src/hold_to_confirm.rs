@@ -1,126 +1,95 @@
-use super::{pixel_recorder::PixelRecorder, Widget};
-use alloc::vec::Vec;
+use crate::{
+    checkmark::Checkmark, color_map::ColorMap, hold_to_confirm_border::HoldToConfirmBorder,
+    palette::PALETTE, sized_box::SizedBox, Widget,
+};
 use embedded_graphics::{
     draw_target::DrawTarget,
-    pixelcolor::BinaryColor,
+    geometry::{Point, Size},
+    image::Image,
+    pixelcolor::{BinaryColor, Rgb565, Rgb888},
     prelude::*,
-    primitives::{PrimitiveStyle, Rectangle, RoundedRectangle},
+    primitives::{Circle, PrimitiveStyleBuilder, Rectangle},
 };
+use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
 
-#[derive(Debug)]
-pub struct HoldToConfirm<W> {
-    child: W,
-    enabled: bool,
-    progress: f32, // 0.0 to 1.0 (percentage of border completed)
-    completed: bool,
+// Circle dimensions - matching gradient_circle.rs
+const CIRCLE_RADIUS: u32 = 50;
+const CIRCLE_DIAMETER: u32 = CIRCLE_RADIUS * 2;
+
+/// A widget that combines HoldToConfirmBorder with a hand gesture icon and transitions to a checkmark
+pub struct HoldToConfirm {
+    hold_to_confirm_border: ColorMap<HoldToConfirmBorder<SizedBox<BinaryColor>>, Rgb565>,
+    checkmark: ColorMap<Checkmark, Rgb565>,
+    state: State,
+    size: Size,
+    icon_center: Point,
+    last_drawn_state: Option<State>,
     holding: bool,
+    last_drawn_holding: bool,
+    progress: f32,
     last_update: Option<crate::Instant>,
-    last_drawn_progress: f32,
-    screen_size: Size,
-    border_pixels: Vec<Point>, // Recorded border pixels
-    border_drawn: bool,        // Track if static border has been drawn
-    hold_duration_ms: f32,     // Milliseconds required to confirm
+    hold_duration_ms: f32,
+    completed: bool,
 }
 
-impl<W: Widget> HoldToConfirm<W> {
-    pub fn new(child: W, hold_duration_ms: f32) -> Self {
-        // Get size from child widget - panic if it doesn't provide one
-        let screen_size = child
-            .size_hint()
-            .expect("HoldToConfirm requires a child widget that provides size_hint()");
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum State {
+    WaitingForHold,
+    ShowingCheckmark,
+}
 
-        let mut self_ = Self {
-            child,
-            enabled: false,
-            progress: 0.0,
-            completed: false,
+impl HoldToConfirm {
+    pub fn new(size: Size, hold_duration_ms: f32) -> Self {
+        let sized_box = SizedBox::<BinaryColor>::new(size);
+        let hold_to_confirm_border_binary = HoldToConfirmBorder::new(sized_box);
+        let hold_to_confirm_border = hold_to_confirm_border_binary.color_map(|color| match color {
+            BinaryColor::On => Rgb565::GREEN,
+            BinaryColor::Off => PALETTE.background,
+        });
+
+        let checkmark_binary = Checkmark::new(Size::new(50, 50)); // Standard checkmark size
+        let checkmark = checkmark_binary.color_map(|color| match color {
+            BinaryColor::On => PALETTE.primary,
+            BinaryColor::Off => PALETTE.background,
+        });
+
+        // Position icon towards the bottom - leave some margin from the bottom edge
+        let icon_center = Point::new(size.width as i32 / 2, size.height as i32 - 80);
+
+        Self {
+            hold_to_confirm_border,
+            checkmark,
+            state: State::WaitingForHold,
+            size,
+            icon_center,
+            last_drawn_state: None,
             holding: false,
+            last_drawn_holding: false,
+            progress: 0.0,
             last_update: None,
-            last_drawn_progress: -1.0,
-            screen_size,
-            border_pixels: Vec::new(),
-            border_drawn: false,
             hold_duration_ms,
-        };
-
-        self_.record_border_pixels();
-
-        self_
+            completed: false,
+        }
     }
 
     pub fn enable(&mut self) {
-        self.enabled = true;
-        self.completed = false;
-        self.progress = 0.0;
-        self.holding = false;
-        self.last_update = None;
-        self.last_drawn_progress = -1.0;
-        self.border_drawn = false;
-    }
-
-    pub fn disable(&mut self) {
-        self.enabled = false;
-        self.completed = false;
-        self.progress = 0.0;
-        self.holding = false;
-        self.last_update = None;
-        self.last_drawn_progress = -1.0;
-        self.border_drawn = false;
-    }
-
-    pub fn is_completed(&self) -> bool {
-        self.completed
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
+        // Nothing to do - we handle everything internally
     }
 
     pub fn reset(&mut self) {
-        self.completed = false;
-        self.progress = 0.0;
+        self.hold_to_confirm_border.inner_mut().set_progress(0.0);
+        self.checkmark.inner_mut().reset();
+        self.state = State::WaitingForHold;
+        self.last_drawn_state = None;
         self.holding = false;
+        self.last_drawn_holding = false;
+        self.progress = 0.0;
         self.last_update = None;
-        self.last_drawn_progress = -1.0;
+        self.completed = false;
     }
 
-    fn record_border_pixels(&mut self) {
-        const CORNER_RADIUS: u32 = 42;
-        const BORDER_WIDTH: u32 = 6;
-
-        let mut recorder = PixelRecorder::new();
-
-        // Draw the rounded rectangle to the recorder
-        use embedded_graphics::primitives::CornerRadii;
-        let _ = RoundedRectangle::new(
-            Rectangle::new(Point::new(0, 0), self.screen_size),
-            CornerRadii::new(Size::new(CORNER_RADIUS, CORNER_RADIUS)),
-        )
-        .into_styled(PrimitiveStyle::with_stroke(BinaryColor::Off, BORDER_WIDTH))
-        .draw(&mut recorder);
-
-        // Get the pixels and sort them
-        let mut pixels = recorder.pixels;
-
-        // Sort by (y/3, distance from middle x)
-        let middle_x = self.screen_size.width as i32 / 2;
-        pixels.sort_by_key(|point| {
-            let mut y_bucket = point.y;
-
-            if y_bucket < BORDER_WIDTH as i32 {
-                y_bucket = 0;
-            } else if y_bucket > (self.screen_size.height - BORDER_WIDTH) as i32 {
-                y_bucket = i32::MAX;
-            }
-            let mut x_distance = (point.x - middle_x).abs() as i32;
-            if point.y > self.screen_size.height as i32 / 2 {
-                x_distance = -x_distance;
-            }
-
-            core::cmp::Reverse((y_bucket, x_distance))
-        });
-
-        self.border_pixels = pixels;
+    pub fn is_completed(&self) -> bool {
+        self.checkmark.inner().is_complete()
     }
 
     fn update_progress(&mut self, current_time: crate::Instant) {
@@ -162,71 +131,94 @@ impl<W: Widget> HoldToConfirm<W> {
             self.last_update = Some(current_time);
         }
     }
-
-    fn draw_border<D: DrawTarget<Color = BinaryColor>>(
-        &mut self,
-        target: &mut D,
-    ) -> Result<(), D::Error> {
-        const SNAKE_LENGTH: usize = 60; // Length of the snake in pixels
-
-        if !self.enabled {
-            return Ok(());
-        }
-
-        // Draw static border only once
-        if !self.border_drawn {
-            target.draw_iter(
-                self.border_pixels
-                    .iter()
-                    .map(|&point| Pixel(point, BinaryColor::Off)),
-            )?;
-            self.border_drawn = true;
-        }
-
-        // Handle progress changes
-        let total_pixels = self.border_pixels.len();
-        let current_progress_pixels = (self.progress * total_pixels as f32) as usize;
-        let last_progress_pixels = (self.last_drawn_progress * total_pixels as f32) as usize;
-
-        if current_progress_pixels > last_progress_pixels {
-            target.draw_iter(
-                self.border_pixels[last_progress_pixels..current_progress_pixels]
-                    .iter()
-                    .map(|&point| Pixel(point, BinaryColor::On)),
-            )?;
-        } else if current_progress_pixels < last_progress_pixels {
-            target.draw_iter(
-                self.border_pixels[current_progress_pixels..last_progress_pixels]
-                    .iter()
-                    .map(|&point| Pixel(point, BinaryColor::Off)),
-            )?;
-        }
-
-        self.last_drawn_progress = self.progress;
-        Ok(())
-    }
 }
 
-impl<W: Widget<Color = BinaryColor>> Widget for HoldToConfirm<W> {
-    type Color = BinaryColor;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+impl Widget for HoldToConfirm {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        // Always draw the child widget first
-        self.child.draw(target, current_time)?;
+        // Update progress based on holding state
+        if self.holding || self.progress > 0.0 {
+            self.update_progress(current_time);
+            // Update the border widget's progress
+            self.hold_to_confirm_border
+                .inner_mut()
+                .set_progress(self.progress);
+        }
 
-        // Only update and draw border if enabled
-        if self.enabled {
-            // Only update progress if we have started (holding or have progress)
-            if self.holding || self.progress > 0.0 {
-                self.update_progress(current_time);
+        // Check if hold to confirm just completed
+        if self.state == State::WaitingForHold && self.completed {
+            self.state = State::ShowingCheckmark;
+            self.checkmark.inner_mut().start_animation();
+        }
+
+        // Always draw hold to confirm border animation
+        self.hold_to_confirm_border.draw(target, current_time)?;
+
+        // Only redraw the center content if state changed or holding state changed
+        let should_redraw =
+            self.last_drawn_state != Some(self.state) || self.holding != self.last_drawn_holding;
+
+        if should_redraw {
+            match self.state {
+                State::WaitingForHold => {
+                    // Clear the area first
+                    let top_left =
+                        self.icon_center - Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
+                    let area =
+                        Rectangle::new(top_left, Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER));
+                    target.fill_solid(&area, PALETTE.background)?;
+
+                    // Draw circle with appropriate colors based on holding state
+                    let (fill_color, border_color) = if self.holding {
+                        // Green colors when holding
+                        let green_fill: Rgb565 = Rgb888::new(22, 163, 74).into(); // green-600
+                        (green_fill, Rgb565::GREEN)
+                    } else {
+                        // Regular colors when not holding
+                        (Rgb565::new(6, 16, 10), PALETTE.outline)
+                    };
+
+                    let circle_style = PrimitiveStyleBuilder::new()
+                        .fill_color(fill_color)
+                        .stroke_color(border_color)
+                        .stroke_width(2)
+                        .build();
+
+                    Circle::with_center(self.icon_center, CIRCLE_DIAMETER - 4)
+                        .into_styled(circle_style)
+                        .draw(target)?;
+
+                    // Draw the open select hand gesture icon in the center (white for contrast)
+                    let icon = OpenSelectHandGesture::new(Rgb565::WHITE);
+                    Image::with_center(&icon, self.icon_center).draw(target)?;
+                }
+                State::ShowingCheckmark => {
+                    // Clear the area first
+                    let top_left =
+                        self.icon_center - Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
+                    let area =
+                        Rectangle::new(top_left, Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER));
+                    target.fill_solid(&area, PALETTE.background)?;
+
+                    // Draw the checkmark at the same position as the icon was
+                    let checkmark_offset = Point::new(
+                        self.icon_center.x - 25, // 50px checkmark, so offset by half
+                        self.icon_center.y - 25,
+                    );
+                    let mut checkmark_target = target.translated(checkmark_offset);
+
+                    // Draw checkmark (already wrapped in ColorMap)
+                    self.checkmark.draw(&mut checkmark_target, current_time)?;
+                }
             }
 
-            // Always draw border when enabled
-            self.draw_border(target)?;
+            self.last_drawn_state = Some(self.state);
+            self.last_drawn_holding = self.holding;
         }
 
         Ok(())
@@ -236,43 +228,44 @@ impl<W: Widget<Color = BinaryColor>> Widget for HoldToConfirm<W> {
         &mut self,
         point: Point,
         current_time: crate::Instant,
-        lift_up: bool,
-    ) -> Option<super::KeyTouch> {
-        if !self.enabled {
-            // Forward to child if disabled
-            return self.child.handle_touch(point, current_time, lift_up);
-        }
-
-        // When enabled, intercept all touch events
-        if lift_up {
-            self.holding = false;
-            // Don't clear last_update here - we need it for decay animation
-        } else {
-            // If already completed, do nothing
-            if self.completed {
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        if self.state == State::WaitingForHold {
+            // Always handle release events, regardless of position
+            if is_release {
+                if self.holding {
+                    // Released touch
+                    self.holding = false;
+                    if self.completed {
+                        // No special action - parent should handle completion
+                        // Don't reset automatically - let parent decide
+                    } else {
+                        // Not completed, will decay gradually
+                        // Keep last_update so decay continues
+                    }
+                }
                 return None;
             }
 
-            if !self.holding {
-                // Starting a new hold - initialize timer
+            // For press events, check if within circle
+            let distance_squared =
+                (point.x - self.icon_center.x).pow(2) + (point.y - self.icon_center.y).pow(2);
+            let within_circle = distance_squared <= (CIRCLE_RADIUS as i32).pow(2);
+
+            if within_circle && !self.holding {
+                // Just started holding
                 self.holding = true;
                 self.last_update = Some(current_time);
+                // Don't reset progress - let it continue from where it was
             }
         }
 
-        // Don't forward touch events when enabled
         None
     }
 
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
-        if !self.enabled {
-            // Forward to child if disabled
-            self.child.handle_vertical_drag(prev_y, new_y);
-        }
-        // When enabled, don't forward drag events
-    }
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32) {}
 
     fn size_hint(&self) -> Option<Size> {
-        Some(self.screen_size)
+        Some(self.size)
     }
 }

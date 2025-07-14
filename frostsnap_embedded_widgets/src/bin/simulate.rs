@@ -14,7 +14,7 @@ use frostsnap_embedded_widgets::{
     checkmark::Checkmark,
     color_map::ColorMap,
     column::Column,
-    hold_to_confirm::HoldToConfirm,
+    hold_to_confirm::{HoldToConfirm, HoldToConfirmWithCheckmark},
     hold_to_confirm_button::HoldToConfirmButton,
     row::Row,
     sized_box::SizedBox,
@@ -364,8 +364,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             run_widget!(centered)
         }
+        "hold_checkmark" => {
+            // Combined hold to confirm with checkmark animation
+            let mut widget = HoldToConfirmWithCheckmark::new(Size::new(100, 100), 2000.0);
+            widget.enable();
+            
+            // Wrap with ColorMap to convert BinaryColor to Rgb565
+            let widget_rgb = ColorMap::new(widget, |color| {
+                match color {
+                    BinaryColor::On => PALETTE.primary,
+                    BinaryColor::Off => PALETTE.background,
+                }
+            });
+            
+            // Center the widget
+            let centered = Center::new(widget_rgb);
+            
+            run_widget!(centered)
+        }
         _ => {
-            eprintln!("Unknown demo: {}. Available demos: bip39_entry, bip39_t9, bip39_display, hold_confirm, hold_button, checkmark", demo);
+            eprintln!("Unknown demo: {}. Available demos: bip39_entry, bip39_t9, bip39_display, hold_confirm, hold_button, checkmark, hold_checkmark", demo);
             Ok(())
         }
     }

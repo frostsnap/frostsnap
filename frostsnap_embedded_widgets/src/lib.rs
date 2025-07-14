@@ -6,15 +6,18 @@ use embedded_graphics::prelude::*;
 
 pub mod palette;
 pub mod pixel_recorder;
+pub mod color_pixel_recorder;
 
 // Widget modules
 pub mod bip39;
+pub mod bitmap;
 pub mod center;
 pub mod checkmark;
 pub mod color_map;
 pub mod column;
 pub mod hold_to_confirm;
-pub mod hold_to_confirm_button;
+pub mod hold_to_confirm_border;
+// pub mod hold_to_confirm_button;
 pub mod icons;
 pub mod key_touch;
 pub mod legacy;
@@ -22,6 +25,7 @@ pub mod memory_debug;
 pub mod row;
 pub mod sized_box;
 pub mod text;
+pub mod welcome;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -32,11 +36,13 @@ pub use center::*;
 pub use checkmark::*;
 pub use color_map::*;
 pub use column::*;
-pub use hold_to_confirm::*;
-pub use hold_to_confirm_button::*;
+pub use hold_to_confirm::HoldToConfirm;
+pub use hold_to_confirm_border::HoldToConfirmBorder;
+// pub use hold_to_confirm_button::*;
 pub use row::*;
 pub use sized_box::*;
 pub use text::*;
+pub use welcome::*;
 
 // Font re-exports
 use u8g2_fonts::fonts;
@@ -72,6 +78,14 @@ pub trait Widget {
     /// Get the preferred size of this widget, if it has one
     fn size_hint(&self) -> Option<Size> {
         None
+    }
+    
+    /// Create a new widget that maps this widget's colors to a different color space
+    fn color_map<C: PixelColor>(self, map_fn: fn(Self::Color) -> C) -> color_map::ColorMap<Self, C>
+    where
+        Self: Sized,
+    {
+        color_map::ColorMap::new(self, map_fn)
     }
 }
 

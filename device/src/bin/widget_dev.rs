@@ -4,6 +4,7 @@
 extern crate alloc;
 use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::*;
 use esp_hal::{
     delay::Delay,
@@ -19,16 +20,14 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_backup::bip39_words::BIP39_WORDS;
-use frostsnap_device::touch_calibration::adjust_touch_point;
 use frostsnap_device::graphics::widgets::{
-    DisplaySeedWords, EnterBip39ShareScreen, EnterBip39T9Screen,
-    HoldToConfirm, SizedBox, Widget, Checkmark,
+    Checkmark, DisplaySeedWords, EnterBip39ShareScreen, EnterBip39T9Screen, HoldToConfirmBorder,
+    SizedBox, Widget,
 };
+use frostsnap_device::touch_calibration::adjust_touch_point;
 use frostsnap_embedded_widgets::{
-    palette::PALETTE,
-    widgets::{ColorMap, Column, Row, Text, HoldToConfirmButton, Center},
+    palette::PALETTE, Center, ColorMap, HoldToConfirm,
 };
-use embedded_graphics::pixelcolor::{Rgb565, BinaryColor};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 #[entry]
@@ -115,24 +114,33 @@ fn main() -> ! {
                         let lift_up = touch_event.action == 1;
                         let gesture = touch_event.gesture;
 
-                        // Handle vertical drag for widgets that support it
-                        match gesture {
-                            TouchGesture::SlideUp | TouchGesture::SlideDown => {
-                                Widget::handle_vertical_drag(
-                                    &mut widget,
-                                    last_touch.map(|(_, y)| y),
-                                    adjusted_y as u32,
-                                );
-                            }
-                            _ => {
-                                // Handle regular touches
-                                Widget::handle_touch(
-                                    &mut widget,
-                                    touch_point,
-                                    frostsnap_embedded_widgets::Instant::from_millis(current_time.duration_since_epoch().to_millis()),
-                                    lift_up,
-                                );
-                            }
+                        // Always handle lift_up events
+                        if lift_up {
+                            Widget::handle_touch(
+                                &mut widget,
+                                touch_point,
+                                frostsnap_embedded_widgets::Instant::from_millis(
+                                    current_time.duration_since_epoch().to_millis(),
+                                ),
+                                true,
+                            );
+                        } else if matches!(gesture, TouchGesture::SlideUp | TouchGesture::SlideDown) {
+                            // Handle vertical drag for widgets that support it
+                            Widget::handle_vertical_drag(
+                                &mut widget,
+                                last_touch.map(|(_, y)| y),
+                                adjusted_y as u32,
+                            );
+                        } else {
+                            // Handle regular touch down events
+                            Widget::handle_touch(
+                                &mut widget,
+                                touch_point,
+                                frostsnap_embedded_widgets::Instant::from_millis(
+                                    current_time.duration_since_epoch().to_millis(),
+                                ),
+                                false,
+                            );
                         }
 
                         // Store last touch for drag calculations
@@ -145,13 +153,19 @@ fn main() -> ! {
                 }
 
                 // Draw the widget
-                let _ = Widget::draw(&mut widget, &mut display, frostsnap_embedded_widgets::Instant::from_millis(current_time.duration_since_epoch().to_millis()));
+                let _ = Widget::draw(
+                    &mut widget,
+                    &mut display,
+                    frostsnap_embedded_widgets::Instant::from_millis(
+                        current_time.duration_since_epoch().to_millis(),
+                    ),
+                );
             }
         }};
     }
 
     // Configuration: Change this to select which widget to display
-    let show = "checkmark";
+    let show = "hold_checkmark";
 
     let screen_size = Size::new(240, 280);
 
@@ -196,9 +210,9 @@ fn main() -> ! {
         "confirm_touch" => {
             // Hold to confirm with empty widget (1.5 seconds to confirm)
             let sized_box = SizedBox::<BinaryColor>::new(screen_size);
-            let mut hold_to_confirm = HoldToConfirm::new(sized_box, 1500.0);
-            hold_to_confirm.enable();
-            
+            let mut hold_to_confirm = HoldToConfirmBorder::new(sized_box);
+            hold_to_confirm.set_progress(0.0);
+
             // Wrap with ColorMap to convert BinaryColor to Rgb565
             let hold_to_confirm_rgb = ColorMap::new(hold_to_confirm, |color| {
                 use embedded_graphics::pixelcolor::BinaryColor;
@@ -207,62 +221,78 @@ fn main() -> ! {
                     BinaryColor::Off => PALETTE.surface_variant,
                 }
             });
-            
+
             run_widget!(hold_to_confirm_rgb);
         }
         "bip39_t9" => {
             // BIP39 T9 keyboard entry
             run_widget!(EnterBip39T9Screen::new(screen_size));
         }
-        "hold_button" => {
-            // Hold to confirm button centered on screen using Row and Column
-            let button_size = Size::new(200, 60);
-            let text_widget = Text::new("continue");
-            let mut button = HoldToConfirmButton::new(button_size, text_widget, 2000.0);
-            button.enable();
+        // "hold_button" => {
+        //     // Hold to confirm button centered on screen using Row and Column
+        //     let button_size = Size::new(200, 60);
+        //     let text_widget = Text::new("continue");
+        //     let mut button = HoldToConfirmButton::new(button_size, text_widget, 2000.0);
+        //     button.enable();
 
-            // Calculate spacing to center the button
-            let horizontal_spacer_width = (screen_size.width - button_size.width) / 2;
-            let vertical_spacer_height = (screen_size.height - button_size.height) / 2;
+        //     // Calculate spacing to center the button
+        //     let horizontal_spacer_width = (screen_size.width - button_size.width) / 2;
+        //     let vertical_spacer_height = (screen_size.height - button_size.height) / 2;
 
-            // Create centered layout with all widgets in Rgb565
-            let top_spacer = SizedBox::<Rgb565>::height(vertical_spacer_height);
-            let left_spacer = SizedBox::<Rgb565>::width(horizontal_spacer_width);
-            
-            // Wrap button to use Rgb565
-            let button_rgb = ColorMap::new(button, |color| {
-                use embedded_graphics::pixelcolor::BinaryColor;
-                match color {
-                    BinaryColor::On => PALETTE.primary,
-                    BinaryColor::Off => PALETTE.surface_variant,
-                }
-            });
-            
-            let column = Column::<_, Rgb565>::new((
-                top_spacer,
-                Row::<_, Rgb565>::new((left_spacer, button_rgb)),
-            ));
+        //     // Create centered layout with all widgets in Rgb565
+        //     let top_spacer = SizedBox::<Rgb565>::height(vertical_spacer_height);
+        //     let left_spacer = SizedBox::<Rgb565>::width(horizontal_spacer_width);
 
-            run_widget!(column);
-        }
+        //     // Wrap button to use Rgb565
+        //     let button_rgb = ColorMap::new(button, |color| {
+        //         use embedded_graphics::pixelcolor::BinaryColor;
+        //         match color {
+        //             BinaryColor::On => PALETTE.primary,
+        //             BinaryColor::Off => PALETTE.surface_variant,
+        //         }
+        //     });
+
+        //     let column = Column::<_, Rgb565>::new((
+        //         top_spacer,
+        //         Row::<_, Rgb565>::new((left_spacer, button_rgb)),
+        //     ));
+
+        //     run_widget!(column);
+        // }
         "checkmark" => {
             // Animated checkmark
             let mut checkmark = Checkmark::new(Size::new(100, 100));
             checkmark.start_animation();
-            
+
             // Center the checkmark
             let centered = Center::new(checkmark);
-            
+
             // Wrap with ColorMap to convert BinaryColor to Rgb565
-            let checkmark_rgb = ColorMap::new(centered, |color| {
-                match color {
-                    BinaryColor::On => PALETTE.primary,
-                    BinaryColor::Off => PALETTE.background,
-                }
+            let checkmark_rgb = ColorMap::new(centered, |color| match color {
+                BinaryColor::On => PALETTE.primary,
+                BinaryColor::Off => PALETTE.background,
             });
-            
+
             run_widget!(checkmark_rgb);
         }
+        "hold_checkmark" => {
+            // Hold to confirm with checkmark animation
+            let widget = HoldToConfirm::new(screen_size, 2000.0);
+
+            run_widget!(widget);
+        }
+        // "gradient_circle" => {
+        //     // Test gradient circle
+        //     let dark_color = PALETTE.background;        // use background color for dark end
+        //     let light_color = Rgb565::new(8, 16, 14); // darker start with blue
+        //     let border_color = PALETTE.primary;
+        //     let border_thickness = 2;
+        //
+        //     let gradient = GradientCircle::new(light_color, dark_color, border_color, border_thickness);
+        //     let centered = Center::new(gradient);
+        //
+        //     run_widget!(centered);
+        // }
         _ => {
             // Default to BIP39 entry
             run_widget!(EnterBip39ShareScreen::new(screen_size));
