@@ -245,6 +245,16 @@ impl<'a> EfuseHmacKeys<'a> {
         fixed_entropy_key: [u8; 32],
         ds_hmac_key: [u8; 32],
     ) -> Result<Self, EfuseError> {
+        let mut share_encryption_key_id = esp_hal::hmac::KeyId::Key0;
+        let mut fixed_entropy_key_id = esp_hal::hmac::KeyId::Key1;
+
+        if Efuse::read_field_le::<u8>(hal_efuse::KEY_PURPOSE_0)
+            == KeyPurpose::SecureBootDigest0 as u8
+        {
+            share_encryption_key_id = Self::ENCRYPTION_KEYID;
+            fixed_entropy_key_id = Self::FIXED_ENTROPY_KEYID;
+        }
+
         if Self::has_been_initialized() {
             return Err(EfuseError::EfuseAlreadyBurned);
         }
@@ -252,12 +262,12 @@ impl<'a> EfuseHmacKeys<'a> {
         // All key purposes at once (single Block 0 write)
         let key_configs = [
             (
-                Self::ENCRYPTION_KEYID as u8,
+                share_encryption_key_id as u8,
                 KeyPurpose::HmacUpstream,
                 read_protect,
             ),
             (
-                Self::FIXED_ENTROPY_KEYID as u8,
+                fixed_entropy_key_id as u8,
                 KeyPurpose::HmacUpstream,
                 read_protect,
             ),
@@ -265,15 +275,15 @@ impl<'a> EfuseHmacKeys<'a> {
         ];
         // Write keys then key purposes
         unsafe {
-            efuse.set_efuse_key(Self::ENCRYPTION_KEYID as u8, share_encryption_key)?;
-            efuse.set_efuse_key(Self::FIXED_ENTROPY_KEYID as u8, fixed_entropy_key)?;
+            efuse.set_efuse_key(share_encryption_key_id as u8, share_encryption_key)?;
+            efuse.set_efuse_key(fixed_entropy_key_id as u8, fixed_entropy_key)?;
             efuse.set_efuse_key(Self::DS_KEYID as u8, ds_hmac_key)?;
 
             efuse.write_key_purposes(&key_configs)?;
         }
         Ok(EfuseHmacKeys {
-            share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
-            fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
+            share_encryption: EfuseHmacKey::new(hmac, share_encryption_key_id),
+            fixed_entropy: EfuseHmacKey::new(hmac, fixed_entropy_key_id),
         })
     }
 

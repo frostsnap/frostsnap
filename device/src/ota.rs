@@ -23,7 +23,16 @@ pub struct OtaPartitions<'a> {
 }
 
 /// CRC used by out bootloader (and incidentally python's binutils crc32 function when passed 0xFFFFFFFF as the init).
-const CRC: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+const CRC: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::Algorithm {
+    width: 32,
+    poly: 0x04c11db7,
+    init: 0x0,
+    refin: true,
+    refout: true,
+    xorout: 0xffffffff,
+    check: 0xcbf43926, // This is just for reference
+    residue: 0xdebb20e3,
+});
 
 const SECTOR_SIZE: u32 = 4096;
 const SECTORS_PER_IMAGE: u32 = FIRMWARE_IMAGE_SIZE / SECTOR_SIZE;
@@ -124,12 +133,7 @@ impl<'a> OtaPartitions<'a> {
         };
 
         let target = self.otadata_sectors()[slot];
-        // Use secure boot compatible erase when secure boot is enabled
-        if secure_boot::is_secure_boot_enabled() {
-            target.secure_erase_all().expect("failed to erase");
-        } else {
-            target.erase_all().expect("failed to erase");
-        }
+        target.erase_all().expect("failed to erase");
         let mut writer = target.bincode_writer_remember_to_flush::<64>();
         bincode::encode_into_writer(&otadata, &mut writer, OTADATA_BINCODE_CONFIG)
             .expect("failed to write otadata");
@@ -223,6 +227,7 @@ impl FirmwareUpgradeMode<'_> {
                     }
                     State::Erase { seq } => {
                         let mut finished = false;
+
                         /// So we erase multiple sectors poll (otherwise it's slow).
                         const ERASE_CHUNK_SIZE: usize = 32;
                         for _ in 0..ERASE_CHUNK_SIZE {
@@ -234,14 +239,7 @@ impl FirmwareUpgradeMode<'_> {
                                 .iter()
                                 .any(|byte| *byte != 0xff)
                             {
-                                // Use secure boot compatible erase when secure boot is enabled
-                                if secure_boot::is_secure_boot_enabled() {
-                                    partition
-                                        .secure_erase_sector(*seq)
-                                        .expect("must erase sector");
-                                } else {
-                                    partition.erase_sector(*seq).expect("must erase sector");
-                                }
+                                partition.erase_sector(*seq).expect("must erase sector");
                             }
                             *seq += 1;
                             if *seq == SECTORS_PER_IMAGE {
@@ -249,7 +247,6 @@ impl FirmwareUpgradeMode<'_> {
                                 break;
                             }
                         }
-
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
                                 progress: *seq as f32 / SECTORS_PER_IMAGE as f32,
@@ -440,6 +437,7 @@ impl FirmwareUpgradeMode<'_> {
             if secure_boot::is_secure_boot_enabled() {
                 secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
             }
+
             ota.switch_partition(*ota_slot, OtaMetadata::default());
         }
     }
