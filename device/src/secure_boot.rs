@@ -156,8 +156,8 @@ fn verify_pss_padding(decrypted: &[u8], message_hash: &[u8], sha: &mut Sha) -> b
 
     // Check that DB starts with zeros followed by 0x01
     let ps_len = masked_db_len - SALT_LEN - 1;
-    for i in 0..ps_len {
-        if db[i] != 0x00 {
+    for byte in db.iter().take(ps_len) {
+        if *byte != 0x00 {
             return false;
         }
     }
@@ -245,13 +245,9 @@ fn find_secure_boot_key() -> Option<[u8; 32]> {
         SECURE_BOOT_KEY_REVOKE2,
     ];
 
-    // println!("Scanning eFuse key blocks for secure boot digests...");
-
     // Search through all key blocks
     for (i, &purpose_field) in key_purpose_fields.iter().enumerate() {
         let purpose: u8 = Efuse::read_field_le(purpose_field);
-
-        // println!("KEY{} purpose: {}", i, purpose);
 
         // Check if this is a secure boot digest key
         if purpose == SECURE_BOOT_DIGEST0
@@ -273,26 +269,13 @@ fn find_secure_boot_key() -> Option<[u8; 32]> {
                 false
             };
 
-            // println!(
-            //     "Found SECURE_BOOT_DIGEST{} in KEY{}, revoked: {}",
-            //     digest_type, i, is_revoked
-            // );
-
             if !is_revoked {
                 // Read the key data (32 bytes)
                 let key_data: [u8; 32] = Efuse::read_field_le(key_data_fields[i]);
-                // println!("Using SECURE_BOOT_DIGEST{} from KEY{}", digest_type, i);
                 return Some(key_data);
-            } else {
-                // // println!(
-                //     "SECURE_BOOT_DIGEST{} in KEY{} is revoked, skipping",
-                //     digest_type, i
-                // );
             }
         }
     }
-
-    // println!("No valid secure boot digest found in any key block");
     None
 }
 
@@ -314,21 +297,12 @@ where
     let mut signature_found = false;
     let mut signature_sector_index = 0u32;
 
-    // println!("Searching for signature block in app partition...");
     for i in 0..app_partition.n_sectors() {
-        if i % 10 == 0 {
-            // println!("Searching sector {}/{}", i, app_partition.n_sectors());
-        }
-
         // Read the sector using FlashPartition's read_sector method
         match app_partition.read_sector(i) {
             Ok(sector_data) => {
                 // Check for signature block magic bytes: 0xE7, 0x02, 0x00, 0x00
                 if sector_data[0..4] == [0xE7, 0x02, 0x00, 0x00] {
-                    // println!(
-                    //     "Found signature block at sector {} (relative offset: 0x{:08X})",
-                    //     i, i * SECTOR_SIZE as u32
-                    // );
                     signature_found = true;
                     signature_sector_index = i;
                     signature_block.copy_from_slice(&sector_data);
@@ -336,7 +310,6 @@ where
                 }
             }
             Err(_e) => {
-                // println!("Error reading sector {}: {:?}", i, e);
                 continue;
             }
         }
@@ -348,35 +321,17 @@ where
 
     // Parse signature block structure
     let parsed_block = SignatureBlock::from_bytes(&signature_block);
-    // println!("\nParsed Signature Block:");
-    // println!("Magic: 0x{:02X}", parsed_block.magic);
-    // println!("Version: 0x{:02X}", parsed_block.version);
-    // println!(
-    //     "Image Digest: {}",
-    //     parsed_block.image_digest.encode_hex::<String>()
-    // );
-    // println!(
-    //     "RSA Public Exponent: {}",
-    //     parsed_block.rsa_public_exponent.encode_hex::<String>()
-    // );
-    // println!("CRC32: {}", parsed_block.crc32.encode_hex::<String>());
 
     // Step 1: Verify CRC32 checksum
-    // println!("\nCRC32 Verification:");
     const CRC: Crc<u32> = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
     // CRC32 is calculated over first 1196 bytes
     let calculated_crc = CRC.checksum(&signature_block[0..1196]);
     let stored_crc = u32::from_le_bytes(parsed_block.crc32);
-    // println!("Stored CRC32: 0x{:08X}", stored_crc);
-    // println!("Calculated CRC32: 0x{:08X}", calculated_crc);
     if calculated_crc != stored_crc {
         panic!("CRC32 verification failed!");
     }
-    // println!("✓ CRC32 verification PASSED");
 
     // Step 2: CRITICAL SECURITY CHECK - Verify public key digest against eFuse FIRST
-    // println!("\nPublic Key Digest Verification:");
-
     // Find the secure boot key digest from eFuse by checking KEY_PURPOSE fields
     let efuse_key_digest = match find_secure_boot_key() {
         Some(key_digest) => key_digest,
@@ -389,33 +344,14 @@ where
 
     let calculated_key_digest = compute_sha256_hardware(sha, public_key_data);
 
-    // println!(
-    //     "eFuse SECURE_BOOT_DIGEST{} digest: {}",
-    //     digest_type,
-    //     efuse_key_digest.encode_hex::<String>()
-    // );
-    // println!(
-    //     "Calculated digest: {}",
-    //     calculated_key_digest.encode_hex::<String>()
-    // );
-
     // FAIL-SECURE: If public key doesn't match eFuse, immediately panic
     if calculated_key_digest != efuse_key_digest {
         panic!("Firmware signed with untrusted key! Public key digest mismatch.");
     }
-    // println!("✓ Public key digest verification PASSED - key is trusted");
 
     // Step 3: Verify image digest (SHA-256 of application data before signature block)
-    // println!("\nImage Digest Verification:");
-
     // Calculate how many sectors contain application data (before signature block)
     let signature_sector = signature_sector_index;
-    // let app_data_size = signature_sector * SECTOR_SIZE as u32;
-
-    // println!(
-    //     "Application data size: {} bytes ({} sectors)",
-    //     app_data_size, signature_sector
-    // );
 
     // Start SHA256 digest calculation
     let mut hasher = sha.start::<Sha256>();
@@ -445,34 +381,18 @@ where
 
     let stored_digest = &parsed_block.image_digest;
 
-    // println!("Stored digest:    {}", stored_digest.encode_hex::<String>());
-    // println!(
-    //     "Calculated digest: {}",
-    //     calculated_digest.encode_hex::<String>()
-    // );
-
     if calculated_digest != *stored_digest {
         panic!("Image digest verification failed!");
     }
-    // println!("✓ Image digest verification PASSED");
 
     // Step 4: Verify RSA-PSS signature using hardware RSA peripheral
-    // println!("\nRSA-PSS Signature Verification:");
 
     match verify_rsa_pss_signature(rsa, &parsed_block, &parsed_block.image_digest, sha) {
-        // Ok(true) => println!("✓ RSA-PSS signature verification PASSED"),
         Ok(true) => {}
         Ok(false) => panic!("RSA-PSS signature verification failed! Invalid signature."),
-        Err(e) => panic!("RSA-PSS signature verification error: {:?}", e),
+        Err(_) => panic!("RSA-PSS signature verification error"),
     }
 
     // If we reach here, ALL security checks have passed
-    // println!("\n🎉 SECURE BOOT VERIFICATION SUCCESSFUL! 🎉");
-    // println!("✓ All security checks passed:");
-    // println!("  ✓ CRC32 integrity check");
-    // println!("  ✓ Public key authentication (trusted key verified)");
-    // println!("  ✓ Image digest verification (firmware integrity)");
-    // println!("  ✓ RSA-PSS signature verification (authenticity)");
-
     Ok(())
 }

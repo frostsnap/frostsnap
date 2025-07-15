@@ -204,8 +204,14 @@ impl<'a> EfuseHmacKeys<'a> {
         read_protect: bool,
         rng: &mut impl RngCore,
     ) -> Result<Self, EfuseError> {
-        let share_encryption_key_id = hmac::KeyId::Key1;
-        let fixed_entropy_key_id = hmac::KeyId::Key2;
+        // backwards compatibility for Alpha devices
+        let mut share_encryption_key_id = hmac::KeyId::Key0;
+        let mut fixed_entropy_key_id = hmac::KeyId::Key1;
+
+        if Efuse::read_field_le::<u8>(hal_efuse::KEY_PURPOSE_0) == KeyPurpose::SecureBootDigest0 as u8 {
+            share_encryption_key_id = hmac::KeyId::Key1;
+            fixed_entropy_key_id = hmac::KeyId::Key2;
+        }
 
         for key_id in [share_encryption_key_id, fixed_entropy_key_id] {
             efuse.init_key(key_id as u8, KeyPurpose::HmacUpstream, read_protect, rng)?;
