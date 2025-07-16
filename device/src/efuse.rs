@@ -246,40 +246,86 @@ impl<'a> EfuseHmacKeys<'a> {
                 return false;
             }
         }
-
         true
     }
-    pub fn load_or_init(
+
+    pub fn init_with_keys(
         efuse: &EfuseController,
         hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
         read_protect: bool,
-        rng: &mut impl RngCore,
+        share_encryption_key: [u8; 32],
+        fixed_entropy_key: [u8; 32],
     ) -> Result<Self, EfuseError> {
-        for key_id in Self::HMAC_KEYIDS {
-            if let Some(written_key) = efuse.randomly_init_key(
-                key_id as u8,
-                KeyPurpose::HmacUpstream,
-                read_protect,
-                rng,
-            )? {
-                use hmac::Mac as _;
-                let mut tmp_hmac = EfuseHmacKey::new(hmac, key_id);
-                let domain_sep = "factory-test";
-                let input = [42u8; 33];
-                let output = tmp_hmac.hash(domain_sep, input.as_slice()).unwrap();
-                type HmacSha256 = hmac::Hmac<sha2::Sha256>;
-                let mut mac = HmacSha256::new_from_slice(&written_key[..])
-                    .expect("HMAC can take key of any size");
-                mac.update(&[domain_sep.len() as u8]);
-                mac.update(domain_sep.as_bytes());
-                mac.update(input.as_slice());
-                let expected_output = mac.finalize().into_bytes();
-                assert_eq!(expected_output, output.into());
-            }
+        if Self::has_been_initialized() {
+            return Err(EfuseError::EfuseAlreadyBurned);
         }
 
-        assert!(Self::has_been_initialized());
+        efuse.set_efuse_key(
+            Self::ENCRYPTION_KEYID as u8,
+            KeyPurpose::HmacUpstream,
+            read_protect,
+            share_encryption_key,
+        )?;
+        Self::validate_key_write(hmac, Self::ENCRYPTION_KEYID, &share_encryption_key)?;
 
+        efuse.set_efuse_key(
+            Self::FIXED_ENTROPY_KEYID as u8,
+            KeyPurpose::HmacUpstream,
+            read_protect,
+            fixed_entropy_key,
+        )?;
+        Self::validate_key_write(hmac, Self::FIXED_ENTROPY_KEYID, &fixed_entropy_key)?;
+
+        Ok(EfuseHmacKeys {
+            share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
+            fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
+        })
+    }
+
+    fn validate_key_write(
+        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
+        key_id: esp_hal::hmac::KeyId,
+        expected_key: &[u8; 32],
+    ) -> Result<(), EfuseError> {
+        use hmac::Mac as _;
+
+        // Test data for validation
+        let domain_sep = "factory-test";
+        let test_input = [42u8; 33];
+
+        // output from hardware HMAC
+        let mut hw_hmac = EfuseHmacKey::new(hmac, key_id);
+        let hw_output = hw_hmac
+            .hash(domain_sep, &test_input)
+            .map_err(|_| EfuseError::ValidationFailed)?;
+
+        // expected output using software HMAC
+        type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+        let mut sw_mac =
+            HmacSha256::new_from_slice(expected_key).map_err(|_| EfuseError::ValidationFailed)?;
+        sw_mac.update(&[domain_sep.len() as u8]);
+        sw_mac.update(domain_sep.as_bytes());
+        sw_mac.update(&test_input);
+        let expected_output = sw_mac.finalize().into_bytes();
+
+        if expected_output.as_slice() != hw_output.as_slice() {
+            return Err(EfuseError::ValidationFailed);
+        }
+
+        Ok(())
+    }
+
+    /// Load existing HMAC keys from eFuse memory
+    /// Keys must have been previously initialized
+    pub fn load(
+        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
+    ) -> Result<Self, EfuseError> {
+        // Verify keys have been initialized
+        if !Self::has_been_initialized() {
+            return Err(EfuseError::EfuseReadError);
+        }
+
+        // Create and return the key handles
         Ok(EfuseHmacKeys {
             share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
             fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
@@ -325,6 +371,7 @@ pub enum EfuseError {
     EfuseWriteError(u8),
     EfuseAlreadyBurned,
     EfuseError,
+    ValidationFailed,
 }
 
 pub struct EfuseHmacKey<'a> {
