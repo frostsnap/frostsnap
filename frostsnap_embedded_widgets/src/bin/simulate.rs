@@ -154,6 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut last_touch: Option<Point> = None;
             let start_time = SystemTime::now();
             let mut touch_feedback: Vec<(Point, u8)> = Vec::new(); // Point and frames remaining
+            let mut wait_until: Option<u64> = None; // Time to wait until before processing next command
 
             // Initial draw and update to initialize the window
             let initial_time = Instant::from_millis(0);
@@ -168,10 +169,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .as_millis() as u64,
                 );
 
-                // Handle stdin commands
-                if let Ok(cmd) = rx.try_recv() {
-                    dbg!(&cmd);
-                    match cmd {
+                // Handle stdin commands (only if not waiting)
+                if wait_until.map_or(true, |until| current_time.as_millis() >= until) {
+                    wait_until = None; // Clear wait
+                    if let Ok(cmd) = rx.try_recv() {
+                        dbg!(&cmd);
+                        match cmd {
                         Command::Touch { x, y } => {
                             let point = Point::new(x, y);
                             last_touch = Some(point);
@@ -218,9 +221,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         Command::Wait { ms } => {
-                            std::thread::sleep(std::time::Duration::from_millis(ms));
+                            wait_until = Some(current_time.as_millis() + ms);
                         }
                         Command::Quit => break 'running,
+                        }
                     }
                 }
 
@@ -320,7 +324,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "checkmark" => {
             // Animated checkmark
-            let mut checkmark = Checkmark::new(Size::new(96, 96));
+            let mut checkmark = Checkmark::new(96);
             checkmark.start_animation();
             
             // Wrap with ColorMap to convert BinaryColor to Rgb565

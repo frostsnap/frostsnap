@@ -46,7 +46,7 @@ impl<W: Widget> HoldToConfirmBorder<W> {
 
     fn record_border_pixels(&mut self) {
         const CORNER_RADIUS: u32 = 42;
-        const BORDER_WIDTH: u32 = 6;
+        const BORDER_WIDTH: u32 = 10;
 
         let mut recorder = PixelRecorder::new();
 

@@ -248,7 +248,7 @@ fn main() -> ! {
         // }
         "checkmark" => {
             // Animated checkmark
-            let mut checkmark = Checkmark::new(Size::new(100, 100));
+            let mut checkmark = Checkmark::new(100);
             checkmark.start_animation();
 
             // Center the checkmark

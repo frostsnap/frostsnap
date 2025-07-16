@@ -8,7 +8,7 @@ use embedded_graphics::{
     image::Image,
     pixelcolor::{BinaryColor, Rgb565, Rgb888},
     prelude::*,
-    primitives::{Circle, PrimitiveStyleBuilder},
+    primitives::{Circle, PrimitiveStyleBuilder, Rectangle},
 };
 use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
 
@@ -49,16 +49,17 @@ impl HoldToConfirm {
             });
         let hold_to_confirm_border = Fader::new(hold_to_confirm_border_rgb, PALETTE.background);
 
-        let checkmark = Checkmark::new(Size::new(96, 96)) // Larger checkmark size
-            .color_map(|color| match color {
-                BinaryColor::On => Rgb565::WHITE,
-                BinaryColor::Off => Rgb565::RED, // Doesn't matter, won't be visible
-            });
+        // Use a checkmark that fits nicely within the circle
+        // For a circle of diameter 100, use a checkmark width of 120 for good visual balance
+        let checkmark = Checkmark::new(120).color_map(|color| match color {
+            BinaryColor::On => Rgb565::WHITE,
+            BinaryColor::Off => Rgb565::RED, // Doesn't matter, won't be visible
+        });
 
         // Position icon towards the bottom - leave some margin from the bottom edge
         let icon_center = Point::new(size.width as i32 / 2, size.height as i32 - 80);
 
-        Self {
+        let s = Self {
             hold_to_confirm_border,
             checkmark,
             state: State::WaitingForHold,
@@ -71,7 +72,8 @@ impl HoldToConfirm {
             last_update: None,
             hold_duration_ms,
             completed: false,
-        }
+        };
+        s
     }
 
     pub fn enable(&mut self) {
@@ -207,7 +209,7 @@ impl Widget for HoldToConfirm {
                         .draw(target)?;
 
                     self.hold_to_confirm_border
-                        .start_fade(8_00, 1_0, PALETTE.background);
+                        .start_fade(500, 100, PALETTE.background);
                 }
             }
 
@@ -217,13 +219,12 @@ impl Widget for HoldToConfirm {
 
         // Always draw checkmark animation when in ShowingCheckmark state
         if self.state == State::ShowingCheckmark {
-            // The checkmark is drawn from (0,0), so we need to translate it to center it
-            let translation = Point::new(
-                self.icon_center.x - 48, // Half of 96
-                self.icon_center.y - 48, // Half of 96
-            );
+            // Center the checkmark on icon_center
 
-            let mut translated = target.translated(translation);
+            let mut translated = target.cropped(&Rectangle::with_center(
+                self.icon_center,
+                Size::new_equal(CIRCLE_DIAMETER),
+            ));
             self.checkmark.draw(&mut translated, current_time)?;
         }
 
