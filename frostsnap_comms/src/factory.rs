@@ -11,9 +11,6 @@ use frostsnap_core::{
 pub const DS_KEY_SIZE_BITS: usize = 3072;
 pub const DS_KEY_SIZE_BYTES: usize = DS_KEY_SIZE_BITS / 8;
 
-pub const DEVICE_SHOW_TEST_VECTOR: bool = false;
-pub const FACTORY_SEND_TEST_KEY: bool = true;
-
 pub fn pad_message_for_rsa(message_digest: &[u8]) -> [u8; DS_KEY_SIZE_BYTES] {
     // Hard-code the ASN.1 DigestInfo prefix for SHA-256
     const SHA256_ASN1_PREFIX: &[u8] = &[
@@ -59,8 +56,9 @@ pub struct FactoryDownstream;
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum DeviceFactorySend {
     InitEntropyOk,
-    SetDs { signature: [u8; 384] },
-    SavedGenuineCertificate,
+    ReceivedDsKey,
+    SavedGenuineCertificate(Certificate),
+    SignedChallenge { signature: [u8; 384] },
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
@@ -68,16 +66,17 @@ pub enum FactorySend {
     InitEntropy([u8; 32]),
     SetEsp32DsKey(Esp32DsKey),
     SetGenuineCertificate(Certificate),
+    RequestCertificate,
+    Challenge(Vec<u8>),
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub struct Esp32DsKey {
     pub encrypted_params: Vec<u8>,
-    pub hmac_key: [u8; 32],
-    pub challenge: Vec<u8>,
+    pub ds_hmac_key: [u8; 32],
 }
 
-#[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
+#[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]
 pub struct Certificate {
     pub rsa_key: Vec<u8>,
     pub serial_number: u32,
@@ -91,8 +90,9 @@ impl Gist for DeviceFactorySend {
     fn gist(&self) -> String {
         match self {
             DeviceFactorySend::InitEntropyOk => "InitEntropyOk",
-            DeviceFactorySend::SetDs { .. } => "SetDs",
-            DeviceFactorySend::SavedGenuineCertificate => "SavedGenuineCertificate",
+            DeviceFactorySend::ReceivedDsKey { .. } => "SetDs",
+            DeviceFactorySend::SavedGenuineCertificate(_) => "SavedGenuineCertificate",
+            DeviceFactorySend::SignedChallenge { .. } => "SignedChallenge",
         }
         .into()
     }
@@ -104,6 +104,8 @@ impl Gist for FactorySend {
             FactorySend::SetEsp32DsKey { .. } => "SetEsp32DsKey",
             FactorySend::InitEntropy(_) => "InitEntropy",
             FactorySend::SetGenuineCertificate(_) => "GenuineCertificate",
+            FactorySend::RequestCertificate => "RequestCertificate",
+            FactorySend::Challenge(_) => "Challenge",
         }
         .into()
     }
