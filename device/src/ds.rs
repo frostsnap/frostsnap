@@ -4,12 +4,6 @@ use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
 use sha2::Digest;
 
-pub fn sign_like_test_vectors(ds: DS, encrypted_params: Vec<u8>, challenge: Vec<u8>) -> [u32; 96] {
-    let challenge_be: [u8; 384] = challenge.try_into().unwrap();
-    let sig = private_exponentiation(ds, encrypted_params, challenge_be);
-    sig
-}
-
 pub fn standard_rsa_sign(ds: DS, encrypted_params: Vec<u8>, message: &[u8]) -> [u32; 96] {
     // Calculate message digest and apply padding
     let message_digest = sha2::Sha256::digest(message);
