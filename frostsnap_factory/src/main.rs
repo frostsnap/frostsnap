@@ -3,7 +3,7 @@ use clap::Parser;
 use core::fmt;
 use frostsnap_comms::factory::{
     pad_message_for_rsa, Certificate, DeviceFactorySend, Esp32DsKey, FactoryDownstream,
-    FactorySend, DS_KEY_SIZE_BITS, FACTORY_SEND_TEST_KEY,
+    FactorySend, DS_KEY_SIZE_BITS,
 };
 use frostsnap_comms::{ReceiveSerial, MAGIC_BYTES_PERIOD};
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
@@ -16,9 +16,9 @@ use num_bigint_dig as num_bigint;
 use num_traits::identities::{One, Zero};
 use num_traits::ToPrimitive;
 use rand::{CryptoRng, RngCore};
-use rsa::pkcs1::EncodeRsaPublicKey;
+use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
 use rsa::traits::PublicKeyParts as _;
-use rsa::{pkcs8::DecodePrivateKey, traits::PrivateKeyParts as _, RsaPrivateKey, RsaPublicKey};
+use rsa::{traits::PrivateKeyParts as _, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::error::Error;
@@ -58,7 +58,6 @@ fn main() -> ! {
     let serial = DesktopSerial::default();
     let mut rng = rand::thread_rng();
 
-    let mut rsa_key_lookup: HashMap<[u8; 32], RsaPublicKey> = Default::default();
     let mut connection_state = HashMap::new();
     loop {
         for port_desc in serial.available_ports() {
@@ -135,16 +134,9 @@ fn main() -> ! {
                         if let Some(ReceiveSerial::Message(DeviceFactorySend::InitEntropyOk)) =
                             connection.port.try_read_message().unwrap()
                         {
-                            let (rsa_priv_key, hmac_key) = if FACTORY_SEND_TEST_KEY {
-                                esp_idf_ds_tests()
-                            } else {
-                                generate_ds_key(&mut rng)
-                            };
-
-                            let rsa_pub_key = rsa_priv_key.to_public_key();
-
+                            let (rsa_priv_key, hmac_key) = generate_ds_key(&mut rng);
                             let esp32_ds_key = esp32_ds_key_from_keys(&rsa_priv_key, hmac_key);
-                            rsa_key_lookup.insert(hmac_key, rsa_priv_key.to_public_key());
+                            let rsa_pub_key = rsa_priv_key.to_public_key();
 
                             connection
                                 .port
@@ -157,21 +149,9 @@ fn main() -> ! {
                         }
                     }
                     ConnectionState::SettingDsKey { rsa_pub_key } => {
-                        if let Some(ReceiveSerial::Message(DeviceFactorySend::SetDs {
-                            signature,
-                        })) = connection.port.try_read_message().unwrap()
+                        if let Some(ReceiveSerial::Message(DeviceFactorySend::ReceivedDsKey)) =
+                            connection.port.try_read_message().unwrap()
                         {
-                            // same challenge as before..
-                            let challenge = hex::decode(DS_CHALLENGE).unwrap();
-                            let message_digest: [u8; 32] = sha2::Sha256::digest(challenge).into();
-
-                            let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
-                            let _ = rsa_pub_key
-                                .verify(padding, &message_digest, &signature)
-                                .expect("Signature from device failed to verify!");
-
-                            println!("Device RSA signature verifcation succeeded!");
-
                             // create genuine certificate
                             let serial_number = serial_number::get_next_serial_number()
                                 .expect("serial number file should exist!");
@@ -186,26 +166,66 @@ fn main() -> ! {
                                     FactorySend::SetGenuineCertificate(genuine_certificate),
                                 ))
                                 .unwrap();
-                            connection.state = ConnectionState::SavingGenuineCertificate;
+                            connection.state = ConnectionState::SavingGenuineCertificate {
+                                rsa_pub_key: rsa_pub_key.clone(),
+                            };
                         }
                     }
-                    ConnectionState::SavingGenuineCertificate => {
+                    ConnectionState::SavingGenuineCertificate { rsa_pub_key } => {
                         if let Some(ReceiveSerial::Message(
-                            DeviceFactorySend::SavedGenuineCertificate,
+                            DeviceFactorySend::SavedGenuineCertificate(certificate),
                         )) = connection.port.try_read_message().unwrap()
                         {
-                            //
+                            // Verify certificate signature with factory key
+                            if !verify_certificate_signature(&certificate) {
+                                panic!("Certificate signature verification failed!");
+                            }
+
+                            // Verify the public key matches what we expect
+                            let cert_pub_key = RsaPublicKey::from_pkcs1_der(&certificate.rsa_key)
+                                .expect("Invalid RSA key in certificate");
+                            if cert_pub_key != *rsa_pub_key {
+                                panic!("Certificate public key mismatch!");
+                            }
+
+                            // Challenge device to prove it has the private key
+                            let challenge = hex::decode(DS_CHALLENGE).unwrap();
+                            connection
+                                .port
+                                .raw_send(ReceiveSerial::Message(FactorySend::Challenge(
+                                    challenge.clone(),
+                                )))
+                                .unwrap();
+
+                            connection.state = ConnectionState::SigningChallenge {
+                                rsa_pub_key: cert_pub_key,
+                                challenge,
+                            };
+                        }
+                    }
+                    ConnectionState::SigningChallenge {
+                        rsa_pub_key,
+                        challenge,
+                    } => {
+                        if let Some(ReceiveSerial::Message(DeviceFactorySend::SignedChallenge {
+                            signature,
+                        })) = connection.port.try_read_message().unwrap()
+                        {
+                            let message_digest: [u8; 32] = sha2::Sha256::digest(challenge).into();
+                            let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
+                            let _ = rsa_pub_key
+                                .verify(padding, &message_digest, &signature)
+                                .expect("Signature from device failed to verify!");
+
+                            println!("Device RSA signature verifcation succeeded!");
+
+                            println!("Factory process complete!");
                         }
                     }
                 }
             });
         }
     }
-}
-
-pub fn sign_like_test_vectors(priv_key: &RsaPrivateKey, challenge: &Vec<u8>) -> Vec<u8> {
-    let sig = raw_exponent_rsa_sign(challenge.clone(), priv_key);
-    sig
 }
 
 pub fn standard_rsa_sign(priv_key: &RsaPrivateKey, message: &[u8]) -> Vec<u8> {
@@ -239,63 +259,17 @@ fn esp32_ds_key_from_keys(priv_key: &RsaPrivateKey, hmac_key: [u8; 32]) -> Esp32
     let encrypted_params =
         encrypt_private_key_material(&plaintext_data, &aes_key[..], &iv[..]).unwrap();
 
-    let challenge = hex::decode(DS_CHALLENGE).unwrap();
-
     Esp32DsKey {
         encrypted_params,
-        hmac_key,
-        challenge,
+        ds_hmac_key: hmac_key,
     }
-}
-
-fn esp_idf_ds_tests() -> (RsaPrivateKey, [u8; 32]) {
-    const TESTING_RSA_KEY: &str = "308206fe020100300d06092a864886f70d0101010500048206e8308206e40201000282018100b54f19ed638645a102068fb9b9a73312bd98692fcb0bd2e197f350fb427f46d6ea4ada1f585ff250564d8aca4b4efcfec9d8996b893b09bee8427ece2af1c47c9e9b8c827503c276c63e59dfc455f9fcee8c286afae480d666b2571b6c04af586a7355f43787665495389b97071e83d21e9273f9aba533d99512043e107f7cc2e148646dc7370572252cce4477951a90b7eafc5bcfc2967c3efc675168e40abcec6f495f7b3061315604dcea89b99bd9e1f7fd90c1701311eb37769d554042a12eaf620740da90e635407440fb8a2ce15919c5080f309a6edc88a0785bd8e60cb9642af2bbc740cbcdce8b3af183f327d8cd20126fe0812d73fd90ff0b990ba81ed2c88cd53b88b08c64f04a2988768d3ed7527f10ce63edfdb9c3ee64d1d6fdcc8e703a6dbbf653d40965a975c6b350b07092246b0e8954ff3e421b78ceb866898154e23628c35abd51abc0ceea02e00d79e7ab8107c14cc113d065758c9cc1d684080282be9c630d8666cf6cf7ac387238c4e15d3e131a53aecd90712b9b0b0203010001028201800eac51fd02c1729acc570099b7707f1dcf51e982b0818aa059939ba45750da9da3af741b4ba3d4309e93699de3de06c9389cfabeed07bb4b03c6a1e18885dc1b791b3de75995f8ce73a3c727e8b3f69125886ff04726bd55dca6268e35bde3fceea72fe272fe0110eba9fda4343375829dee71f6ace6a7f2be1c365359881fc386723d37c9d810ecedc799ad33d4fc25e5cf32d0dc0308fa66d48c28abfef7442bdef91c023f10ebea64bc063a7d8178997a3594af504fd2c840f5acacf7658ce7f78a087a8624428c196e28ee2d10f7872866c609fae8d0e162c4c536243ff36ddfe105186c79365964cf964a2a374ab41f72a3fb05510a8862e6e93158668ac51654ff97b8fb5b629ace66020a54c0d985f3066e0c1940865af9bf84aa231be0f74bc28303a960cc78cb09c55fb2af6654e64581214241f743492c546dc624acbaf46df0923971b058a5f33fd76427e4926a382e17e723437784f899fcf616d848c7f62d6202a7e0b6e1e7c86601db4357344ff3b9744269c3f1af90eabc910281c100da7642ebc740bef3fff065f14f63d594a9a118d894a7a2cc80d175f7062eb94bba6e569ae88724d3a351269680bb4b788f1d3c63f122e3efff6756f015dc506c94b6704aac8fa5abceedb94ecaf9e2dbe21c20202e7ff084df71d57dd6cdff5f89f7d90586e24d7e4dd37de66a6d0387e9296fb546e4b79a555d472b3516bbc2f96973e5ad14312134cfb92d5421239008a0ea662d98ee45e29a0616473f7e73022080429592bd3aaaf97b2a174feeecc74a755c2fb9c3db56d0a9c175a1cddb0281c100d4768c9dbeac5327df307e2d39ce32d86b9c85ade8e87301b74d8ce3eea6177feeb41c6c48fa72059a6bd749a362277596badd8e1fd13f72d16c67bb02e2aec57f1199e9c787d1c91bac6fdf9e69f3c68dde618ca5499e2313e540abb9ea1420cd75c219e4259eeee76236c388005566501fdb367b07fd51c9584461135bb4796653fac83f07e88dee1c026dbeb292b71b303be273b622bb51712b68986bd41b57ca203e41b5c0a46ff6d41b92f2c63431405d7a591f5e3509181e713e3ea6910281c100d737183854e418fa21927fab598dbd9426043988ebf1b5b507d6d202d849616c142ead0d10b44a7860750ab1cc0237987e4ccbf89d4ec504e334b7f5ef634aab9d5999884735807da06e9b56df298bef1872a2c77167c2d7f3949e40c943c92822b05351598f49ce7af73619af90d3a0a9f793401fa624a65b2078833d5ab7009e5adfbd4d640dfe6b9b940eeec972d26b5db36d93d00c3436c78be598ad19724d8f1d2bfb54432d2fd075208334d0e8dc7022ebfd6c61618cc625e61b6f9a6f0281c1008fbb638593e8a098e8b4b5a782e3ac221d2ad684c07c00d1b8600e6064a2986343e935114c8da17588f24bc2d575219cbb4bcf76c6af986ce4a0a1cc32378864b38204cdd2de5f5dde0ad9e43e170f83d3960e08480975a1e563c24c6a89a0f4500aca3519d319a225869be5cbabee1a393a53e29778e036e42f8292e9b5b0723077bfc09863913ff3459f9efed36fcdcfe6e19c610b6693b2950cf8c5a4ace9928a7b25a2ee8254bc2a0f745805457129a0919ca38e44fd3c19c4fe774d8b010281c0234c8c6b35da1e4111234ec11f8485902e09ff199511eedf3c8ccfd800552811d795f8014c9ae2253534cb50f563f66de07a68fbc14eba9d82123e706623e26e50a48848c066ef7110ef43e757941701eab825033754883267a4dabb628af4069d8cd6d423ec763f54f26baac010315808e654c495d6c694a2b33936250d7407d37f835e12676b6cbffbc97fda2409f2b243348bbcaf21120d1310184731aa61609b2ee181b7379e4e920dd9e7bf7007b2ba01e89466701145268a36c80515b3";
-    const TESTING_HMAC_KEY: [u8; 32] = [
-        0x54, 0xde, 0x64, 0x8e, 0xcd, 0x6a, 0x3e, 0x0e, 0xd3, 0xc5, 0x99, 0x5b, 0xdb, 0xdf, 0xd0,
-        0xc5, 0xf7, 0x44, 0x3f, 0x24, 0xdd, 0xca, 0x01, 0x7d, 0x36, 0xef, 0x68, 0x21, 0x75, 0xd6,
-        0x4d, 0x91,
-    ];
-
-    let rsa_pcks8 = hex::decode(&TESTING_RSA_KEY).unwrap();
-    let priv_key = RsaPrivateKey::from_pkcs8_der(&rsa_pcks8).unwrap();
-    let pub_key = RsaPublicKey::from(&priv_key);
-
-    // let public_key = priv_key.to_public_key();
-    // println!("Public key sent to device: {:?}", public_key);
-
-    // SIGNING TESTS
-    let message = hex::decode(DS_CHALLENGE).unwrap();
-
-    // // Reproduce ESP32 Test Vectors
-    let sig = sign_like_test_vectors(&priv_key, &message);
-
-    // Print out in format of esp-idf
-    let sig_vec = big_number_to_words(&BigUint::from_bytes_be(&sig));
-    let sig_arr = vec_to_fixed(&sig_vec, DS_NUM_WORDS);
-    println!("Signature (esp32 test vector format):");
-    for &word in &sig_arr {
-        print!("0x{:08x}, ", word);
-    }
-
-    println!("\n\n");
-
-    // Normal RSA signing
-    let sig = standard_rsa_sign(&priv_key, &message);
-
-    // Verify
-    let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
-    let message_digest: [u8; 32] = sha2::Sha256::digest(message).into();
-    let verified = pub_key.verify(padding, &message_digest, &sig).is_ok();
-    println!("Standard signature verification: {}", verified);
-
-    (priv_key, TESTING_HMAC_KEY)
 }
 
 fn generate_ds_key(rng: &mut (impl RngCore + CryptoRng)) -> (RsaPrivateKey, [u8; 32]) {
     let priv_key = RsaPrivateKey::new(rng, DS_KEY_SIZE_BITS).unwrap();
 
-    let mut hmac_key = [0u8; 32];
-    rng.fill_bytes(&mut hmac_key);
+    let mut hmac_key = [42u8; 32];
+    // rng.fill_bytes(&mut hmac_key); // TODO: FILL!!
 
     (priv_key, hmac_key)
 }
@@ -336,6 +310,15 @@ fn generate_genuine_certificate(
     certificate
 }
 
+fn verify_certificate_signature(certificate: &Certificate) -> bool {
+    let message = Message::<Public>::plain("frostsnap-genuine-key", &certificate.rsa_key);
+    let schnorr = frostsnap_core::schnorr_fun::new_with_synthetic_nonces::<
+        sha2::Sha256,
+        rand::rngs::ThreadRng,
+    >();
+    schnorr.verify(&certificate.factory_key, message, &certificate.signature)
+}
+
 struct Connection {
     state: ConnectionState,
     port: FramedSerialPort<FactoryDownstream>,
@@ -349,7 +332,13 @@ enum ConnectionState {
     SettingDsKey {
         rsa_pub_key: RsaPublicKey,
     },
-    SavingGenuineCertificate,
+    SavingGenuineCertificate {
+        rsa_pub_key: RsaPublicKey,
+    },
+    SigningChallenge {
+        rsa_pub_key: RsaPublicKey,
+        challenge: Vec<u8>,
+    },
 }
 
 #[repr(C)]
