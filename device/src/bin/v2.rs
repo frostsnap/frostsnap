@@ -39,8 +39,8 @@ use esp_hal::{
 use frostsnap_comms::Downstream;
 use frostsnap_core::{schnorr_fun::fun::hex, SignTask};
 use frostsnap_device::{
-    efuse::{self, EfuseHmacKeys},
-    esp32_run,
+    efuse::{self},
+    esp32_run, factory,
     graphics::{
         self,
         animation::AnimationProgress,
@@ -53,7 +53,6 @@ use frostsnap_device::{
     },
     DownstreamConnectionState, Instant, UpstreamConnectionState,
 };
-use micromath::F32Ext;
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
 // # Pin Configuration
@@ -133,8 +132,7 @@ fn main() -> ! {
         })
         .unwrap();
 
-    let display = init_display!(peripherals: peripherals, delay: &mut delay);
-    let mut display = graphics::Graphics::new(display);
+    let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
 
     let i2c = I2c::new(
         peripherals.I2C0,
@@ -152,63 +150,66 @@ fn main() -> ! {
     );
     capsense.setup(&mut delay).unwrap();
 
-    display.clear();
-    display.header("Frostsnap");
-    display.flush();
+    let _ = display.clear(Rgb565::BLACK);
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
-    let detect_device_upstream = upstream_detect.is_low();
-    let upstream_serial = if detect_device_upstream {
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        SerialInterface::new_uart(
-            Uart::new_with_config(
-                peripherals.UART1,
-                serial_conf,
-                peripherals.GPIO18,
-                peripherals.GPIO19,
-            )
-            .unwrap(),
-            &timer0,
-        )
-    } else {
-        SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE), &timer0)
-    };
-    let downstream_serial: SerialInterface<_, Downstream> = {
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let uart = Uart::new_with_config(
-            peripherals.UART0,
-            serial_conf,
-            peripherals.GPIO21,
-            peripherals.GPIO20,
-        )
-        .unwrap();
-        SerialInterface::new_uart(uart, &timer0)
-    };
     let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
     let mut adc = peripherals.ADC1;
-    let mut hal_rng = Trng::new(peripherals.RNG, &mut adc);
-    // extract more entropy from the trng that we theoretically need
-    let mut first_rng = frostsnap_device::extract_entropy(&mut hal_rng, &mut sha256, 1024);
+    let hal_rng = Trng::new(peripherals.RNG, &mut adc);
 
     let efuse = efuse::EfuseController::new(peripherals.EFUSE);
-
-    let do_read_protect = cfg!(feature = "read_protect_hmac_key");
-
     let hal_hmac = core::cell::RefCell::new(Hmac::new(peripherals.HMAC));
-    let mut hmac_keys =
-        EfuseHmacKeys::load_or_init(&efuse, &hal_hmac, do_read_protect, &mut hal_rng)
-            .expect("should load efuse hmac keys");
+    let ds = peripherals.DS;
+    let mut jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
-    // Don't use the hal_rng directly -- first mix in entropy from the HMAC efuse.
-    // TODO: maybe re-key the rng based on entropy from touces etc
-    let rng = hmac_keys.fixed_entropy.mix_in_rng(&mut first_rng);
+    let (final_rng, hmac_keys) = factory::run_factory(
+        &mut display,
+        &mut capsense,
+        &efuse,
+        &hal_hmac,
+        hal_rng,
+        &mut sha256,
+        &mut jtag,
+        &timer0,
+        ds,
+    );
+
+    let jtag_iface = SerialInterface::new_jtag(&mut jtag, &timer0);
+
+    let mut display = graphics::Graphics::new(display);
+
+    display.header("Frostsnap");
+    display.flush();
+
+    let serial_conf = uart::Config {
+        baudrate: frostsnap_comms::BAUDRATE,
+        ..Default::default()
+    };
+    let detect_device_upstream = upstream_detect.is_low();
+    let mut uart_upstream = Uart::new_with_config(
+        peripherals.UART1,
+        serial_conf,
+        peripherals.GPIO18,
+        peripherals.GPIO19,
+    )
+    .unwrap();
+    let upstream_serial = if detect_device_upstream {
+        SerialInterface::new_uart(&mut uart_upstream, &timer0)
+    } else {
+        jtag_iface
+    };
+
+    let mut downstream_uart = Uart::new_with_config(
+        peripherals.UART0,
+        serial_conf,
+        peripherals.GPIO21,
+        peripherals.GPIO20,
+    )
+    .unwrap();
+
+    let downstream_serial: SerialInterface<_, Downstream> =
+        SerialInterface::new_uart(&mut downstream_uart, &timer0);
 
     let ui = FrostyUi {
         display,
@@ -227,14 +228,15 @@ fn main() -> ! {
     let run = esp32_run::Run {
         upstream_serial,
         downstream_serial,
-        rng,
+        rng: final_rng,
         ui,
         timer: &timer0,
         downstream_detect,
         sha256,
         hmac_keys,
     };
-    run.run()
+    run.run();
+    unreachable!("run will never stop!");
 }
 
 /// Dummy CS pin for our display
@@ -520,9 +522,8 @@ where
 
         let (current_touch, last_touch) = match self.capsense.read_one_touch_event(true) {
             Some(touch) => {
-                let corrected_y =
-                    touch.y + x_based_adjustment(touch.x) + y_based_adjustment(touch.y);
-                let corrected_point = Point::new(touch.x, corrected_y);
+                let corrected_point =
+                    frostsnap_device::calibrate_point(Point::new(touch.x, touch.y));
 
                 let lift_up = touch.action == 1;
                 let last_touch = self.last_touch.take();
@@ -687,28 +688,6 @@ where
         self.recovery_mode = value;
         self.changes = true;
     }
-}
-
-fn x_based_adjustment(x: i32) -> i32 {
-    let x = x as f32;
-    let corrected = 1.3189e-14 * x.powi(7) - 2.1879e-12 * x.powi(6) - 7.6483e-10 * x.powi(5)
-        + 3.2578e-8 * x.powi(4)
-        + 6.4233e-5 * x.powi(3)
-        - 1.2229e-2 * x.powi(2)
-        + 0.8356 * x
-        - 20.0;
-    (-corrected) as i32
-}
-
-fn y_based_adjustment(y: i32) -> i32 {
-    if y > 170 {
-        return 0;
-    }
-    let y = y as f32;
-    let corrected =
-        -5.5439e-07 * y.powi(4) + 1.7576e-04 * y.powi(3) - 1.5104e-02 * y.powi(2) - 2.3443e-02 * y
-            + 40.0;
-    (-corrected) as i32
 }
 
 #[panic_handler]
