@@ -13,13 +13,21 @@ use embedded_graphics::{
 use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
 
 // Circle dimensions - matching gradient_circle.rs
-const CIRCLE_RADIUS: u32 = 50;
+const CIRCLE_RADIUS: u32 = 54;  // 10% smaller than 60
 const CIRCLE_DIAMETER: u32 = CIRCLE_RADIUS * 2;
+// Top margin for child widget to avoid curved border
+const CHILD_WIDGET_TOP_MARGIN: i32 = 20;
 
 /// A widget that combines HoldToConfirmBorder with a hand gesture icon and transitions to a checkmark
-pub struct HoldToConfirm {
+pub struct HoldToConfirm<P, S> 
+where
+    P: Widget<Color = Rgb565>,
+    S: Widget<Color = Rgb565>,
+{
     hold_to_confirm_border: Fader<ColorMap<HoldToConfirmBorder<SizedBox<BinaryColor>>, Rgb565>>,
     checkmark: ColorMap<Checkmark, Rgb565>,
+    prompt_widget: Fader<P>,
+    success_widget: Fader<S>,
     state: State,
     size: Size,
     icon_center: Point,
@@ -30,6 +38,7 @@ pub struct HoldToConfirm {
     last_update: Option<crate::Instant>,
     hold_duration_ms: f32,
     completed: bool,
+    checkmark_started: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,8 +47,12 @@ enum State {
     ShowingCheckmark,
 }
 
-impl HoldToConfirm {
-    pub fn new(size: Size, hold_duration_ms: f32) -> Self {
+impl<P, S> HoldToConfirm<P, S>
+where
+    P: Widget<Color = Rgb565>,
+    S: Widget<Color = Rgb565>,
+{
+    pub fn new(size: Size, hold_duration_ms: f32, prompt_widget: P, success_widget: S) -> Self {
         let sized_box = SizedBox::<BinaryColor>::new(size);
         let hold_to_confirm_border_binary = HoldToConfirmBorder::new(sized_box);
         let hold_to_confirm_border_rgb =
@@ -50,8 +63,8 @@ impl HoldToConfirm {
         let hold_to_confirm_border = Fader::new(hold_to_confirm_border_rgb, PALETTE.background);
 
         // Use a checkmark that fits nicely within the circle
-        // For a circle of diameter 100, use a checkmark width of 120 for good visual balance
-        let checkmark = Checkmark::new(120).color_map(|color| match color {
+        // For a circle of diameter 108 (10% smaller), use a checkmark width of 130 for good visual balance
+        let checkmark = Checkmark::new(130).color_map(|color| match color {
             BinaryColor::On => Rgb565::WHITE,
             BinaryColor::Off => Rgb565::RED, // Doesn't matter, won't be visible
         });
@@ -59,9 +72,17 @@ impl HoldToConfirm {
         // Position icon towards the bottom - leave some margin from the bottom edge
         let icon_center = Point::new(size.width as i32 / 2, size.height as i32 - 80);
 
+        // Wrap prompt widget in a fader
+        let prompt_widget = Fader::new(prompt_widget, PALETTE.background);
+        
+        // Wrap success widget in a fader that starts faded out
+        let success_widget = Fader::new_faded_out(success_widget);
+
         let s = Self {
             hold_to_confirm_border,
             checkmark,
+            prompt_widget,
+            success_widget,
             state: State::WaitingForHold,
             size,
             icon_center,
@@ -72,6 +93,7 @@ impl HoldToConfirm {
             last_update: None,
             hold_duration_ms,
             completed: false,
+            checkmark_started: false,
         };
         s
     }
@@ -81,9 +103,7 @@ impl HoldToConfirm {
     }
 
     pub fn reset(&mut self) {
-        if let Some(inner) = self.hold_to_confirm_border.inner_mut() {
-            inner.inner_mut().set_progress(0.0);
-        }
+        self.hold_to_confirm_border.inner_mut().inner_mut().set_progress(0.0);
         self.checkmark.inner_mut().reset();
         self.state = State::WaitingForHold;
         self.last_drawn_state = None;
@@ -92,6 +112,7 @@ impl HoldToConfirm {
         self.progress = 0.0;
         self.last_update = None;
         self.completed = false;
+        self.checkmark_started = false;
     }
 
     pub fn is_completed(&self) -> bool {
@@ -116,23 +137,22 @@ impl HoldToConfirm {
                 // Build up progress: complete in hold_duration_ms
                 let increment = elapsed_ms / self.hold_duration_ms;
                 self.progress = (self.progress + increment).min(1.0);
-                if let Some(inner) = self.hold_to_confirm_border.inner_mut() {
-                    inner.inner_mut().set_progress(self.progress);
-                }
+                self.hold_to_confirm_border.inner_mut().inner_mut().set_progress(self.progress);
 
                 if self.progress >= 1.0 {
                     self.completed = true;
                     self.progress = 1.0;
                     self.state = State::ShowingCheckmark;
-                    self.checkmark.inner_mut().start_animation();
+                    // Stage 1: Start fading out the prompt widget and border immediately
+                    self.prompt_widget.start_fade(300, 50, PALETTE.background);
+                    self.hold_to_confirm_border.start_fade(500, 100, PALETTE.background);
+                    // Stage 2: Checkmark animation will start after border fade completes
                 }
             } else if !self.holding && self.progress > 0.0 && !self.completed {
                 // Reduce progress: decay in 1000ms
                 let decrement = elapsed_ms / 1000.0;
                 self.progress = (self.progress - decrement).max(0.0);
-                if let Some(inner) = self.hold_to_confirm_border.inner_mut() {
-                    inner.inner_mut().set_progress(self.progress);
-                }
+                self.hold_to_confirm_border.inner_mut().inner_mut().set_progress(self.progress);
 
                 // Clear last_update when we reach 0 to stop updates
                 if self.progress == 0.0 {
@@ -147,7 +167,11 @@ impl HoldToConfirm {
     }
 }
 
-impl Widget for HoldToConfirm {
+impl<P, S> Widget for HoldToConfirm<P, S>
+where
+    P: Widget<Color = Rgb565>,
+    S: Widget<Color = Rgb565>,
+{
     type Color = Rgb565;
 
     fn draw<D: DrawTarget<Color = Rgb565>>(
@@ -158,6 +182,33 @@ impl Widget for HoldToConfirm {
         // Update progress based on holding state
         if self.holding || self.progress > 0.0 {
             self.update_progress(current_time);
+        }
+
+        // Draw the child widget in the area above the circle
+        let circle_top = self.icon_center.y - CIRCLE_RADIUS as i32 - 10; // Add some margin
+        
+        let child_area = Rectangle::new(
+            Point::new(0, CHILD_WIDGET_TOP_MARGIN),
+            Size::new(
+                self.size.width,
+                (circle_top - CHILD_WIDGET_TOP_MARGIN).max(0) as u32,
+            ),
+        );
+        
+        if child_area.size.height > 0 {
+            let mut cropped = target.cropped(&child_area);
+            
+            // Always draw the prompt widget (it will fade out when needed)
+            self.prompt_widget.draw(&mut cropped, current_time)?;
+            
+            // Draw success widget only after checkmark animation is complete
+            if self.checkmark.inner().is_complete() && self.success_widget.is_faded_out() {
+                // Start fade-in of success widget when checkmark animation is complete
+                if matches!(self.state, State::ShowingCheckmark) {
+                    self.success_widget.start_fade_in(300, 50, PALETTE.background);
+                }
+            }
+            self.success_widget.draw(&mut cropped, current_time)?;
         }
 
         // Always draw hold to confirm border animation
@@ -208,8 +259,7 @@ impl Widget for HoldToConfirm {
                         .into_styled(circle_style)
                         .draw(target)?;
 
-                    self.hold_to_confirm_border
-                        .start_fade(500, 100, PALETTE.background);
+                    // Border fade already started when transitioning to this state
                 }
             }
 
@@ -217,15 +267,23 @@ impl Widget for HoldToConfirm {
             self.last_drawn_holding = self.holding;
         }
 
-        // Always draw checkmark animation when in ShowingCheckmark state
+        // Draw checkmark animation when in ShowingCheckmark state
         if self.state == State::ShowingCheckmark {
-            // Center the checkmark on icon_center
-
-            let mut translated = target.cropped(&Rectangle::with_center(
-                self.icon_center,
-                Size::new_equal(CIRCLE_DIAMETER),
-            ));
-            self.checkmark.draw(&mut translated, current_time)?;
+            // Stage 2: Start checkmark animation only after border fade is complete
+            if self.hold_to_confirm_border.is_fade_complete() && !self.checkmark_started {
+                self.checkmark.inner_mut().start_animation();
+                self.checkmark_started = true;
+            }
+            
+            // Only draw checkmark if it has been started
+            if self.checkmark_started {
+                // Center the checkmark on icon_center
+                let mut translated = target.cropped(&Rectangle::with_center(
+                    self.icon_center,
+                    Size::new_equal(CIRCLE_DIAMETER),
+                ));
+                self.checkmark.draw(&mut translated, current_time)?;
+            }
         }
 
         Ok(())

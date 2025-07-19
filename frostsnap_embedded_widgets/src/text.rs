@@ -1,19 +1,26 @@
 use super::Widget;
-use crate::{FONT_SMALL, Instant};
+use crate::Instant;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::Point,
     pixelcolor::BinaryColor,
     prelude::*,
-    text::{Alignment, Baseline, Text as EgText, TextStyleBuilder}
+};
+use embedded_text::{
+    alignment::{HorizontalAlignment, VerticalAlignment},
+    style::TextBoxStyleBuilder,
+    TextBox,
 };
 use u8g2_fonts::U8g2TextStyle;
 
-/// A simple text widget that renders text centered in the draw target
+// Re-export for legacy compatibility
+pub use embedded_graphics::text::Baseline;
+
+/// A simple text widget that renders text in a bounded area
 pub struct Text {
     text: &'static str,
-    alignment: Alignment,
-    baseline: Baseline,
+    horizontal_alignment: HorizontalAlignment,
+    vertical_alignment: VerticalAlignment,
     drawn: bool,
 }
 
@@ -21,19 +28,33 @@ impl Text {
     pub fn new(text: &'static str) -> Self {
         Self {
             text,
-            alignment: Alignment::Center,
-            baseline: Baseline::Middle,
+            horizontal_alignment: HorizontalAlignment::Center,
+            vertical_alignment: VerticalAlignment::Middle,
             drawn: false,
         }
     }
-    
-    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
-        self.alignment = alignment;
+}
+
+impl Text {
+    pub fn with_horizontal_alignment(mut self, alignment: HorizontalAlignment) -> Self {
+        self.horizontal_alignment = alignment;
         self
     }
     
-    pub fn with_baseline(mut self, baseline: Baseline) -> Self {
-        self.baseline = baseline;
+    pub fn with_vertical_alignment(mut self, alignment: VerticalAlignment) -> Self {
+        self.vertical_alignment = alignment;
+        self
+    }
+    
+    // Legacy compatibility methods
+    pub fn with_baseline(mut self, baseline: embedded_graphics::text::Baseline) -> Self {
+        use embedded_graphics::text::Baseline;
+        self.vertical_alignment = match baseline {
+            Baseline::Top => VerticalAlignment::Top,
+            Baseline::Middle => VerticalAlignment::Middle,
+            Baseline::Bottom => VerticalAlignment::Bottom,
+            _ => VerticalAlignment::Middle,
+        };
         self
     }
 }
@@ -48,16 +69,21 @@ impl Widget for Text {
     ) -> Result<(), D::Error> {
         if !self.drawn {
             let bounds = target.bounding_box();
-            let center = bounds.center();
             
-            let text_style = U8g2TextStyle::new(FONT_SMALL, BinaryColor::On);
-            let character_style = TextStyleBuilder::new()
-                .alignment(self.alignment)
-                .baseline(self.baseline)
+            // Use FONT_MED for bigger, nicer text
+            let character_style = U8g2TextStyle::new(crate::FONT_MED, BinaryColor::On);
+            let textbox_style = TextBoxStyleBuilder::new()
+                .alignment(self.horizontal_alignment)
+                .vertical_alignment(self.vertical_alignment)
                 .build();
                 
-            EgText::with_text_style(self.text, center, text_style, character_style)
-                .draw(target)?;
+            TextBox::with_textbox_style(
+                self.text,
+                bounds,
+                character_style,
+                textbox_style,
+            )
+            .draw(target)?;
             
             self.drawn = true;
         }
@@ -75,5 +101,9 @@ impl Widget for Text {
     
     fn size_hint(&self) -> Option<Size> {
         None
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.drawn = false;
     }
 }

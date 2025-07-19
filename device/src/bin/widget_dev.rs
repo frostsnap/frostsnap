@@ -208,7 +208,26 @@ fn main() -> ! {
         }
         "confirm_touch" => {
             // Hold to confirm widget with checkmark (2 seconds to confirm)
-            let hold_to_confirm = HoldToConfirm::new(screen_size, 2000.0);
+            use frostsnap_embedded_widgets::text::Text;
+            
+            let prompt_text = Text::new("Confirm\ntransaction");
+            let prompt_widget = prompt_text.color_map(|c| match c {
+                BinaryColor::On => PALETTE.on_surface,
+                BinaryColor::Off => PALETTE.background,
+            });
+            
+            let success_text = Text::new("Transaction\nsigned");
+            let success_widget = success_text.color_map(|c| match c {
+                BinaryColor::On => PALETTE.on_surface,
+                BinaryColor::Off => PALETTE.background,
+            });
+            
+            let hold_to_confirm = HoldToConfirm::new(
+                screen_size, 
+                2000.0,
+                prompt_widget,
+                success_widget
+            );
             run_widget!(hold_to_confirm);
         }
         "bip39_t9" => {
@@ -264,7 +283,26 @@ fn main() -> ! {
         }
         "hold_checkmark" => {
             // Hold to confirm with checkmark animation
-            let widget = HoldToConfirm::new(screen_size, 2000.0);
+            use frostsnap_embedded_widgets::text::Text;
+            
+            let prompt_text = Text::new("Confirm\ntransaction");
+            let prompt_widget = prompt_text.color_map(|c| match c {
+                BinaryColor::On => PALETTE.on_surface,
+                BinaryColor::Off => PALETTE.background,
+            });
+            
+            let success_text = Text::new("Transaction\nsigned");
+            let success_widget = success_text.color_map(|c| match c {
+                BinaryColor::On => PALETTE.on_surface,
+                BinaryColor::Off => PALETTE.background,
+            });
+            
+            let widget = HoldToConfirm::new(
+                screen_size,
+                2000.0,
+                prompt_widget,
+                success_widget
+            );
 
             run_widget!(widget);
         }

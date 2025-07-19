@@ -8,61 +8,100 @@ use embedded_graphics::{
     Pixel,
 };
 
+/// The current state of the fader
+#[derive(Debug)]
+enum FadeState {
+    /// Not fading, widget draws normally
+    Idle,
+    /// Currently fading out to a color
+    FadingOut {
+        start_time: crate::Instant,
+        duration_ms: u64,
+        target_color: Rgb565,
+    },
+    /// Currently fading in from a color
+    FadingIn {
+        start_time: crate::Instant,
+        duration_ms: u64,
+        from_color: Rgb565,
+    },
+    /// Faded out completely (for new_faded_out)
+    FadedOut,
+}
+
 /// A widget that can fade its child to a target color
 #[derive(Debug)]
 pub struct Fader<W> {
-    child: Option<W>,
-    fade_start_time: Option<crate::Instant>,
-    fade_duration_ms: u64,
+    child: W,
+    state: FadeState,
     redraw_interval_ms: u64,
     last_redraw_time: Option<crate::Instant>,
-    target_color: Rgb565,
-    fading: bool,
 }
 
 impl<W: Widget<Color = Rgb565>> Fader<W> {
-    pub fn new(child: W, target_color: Rgb565) -> Self {
+    pub fn new(child: W, _target_color: Rgb565) -> Self {
         Self {
-            child: Some(child),
-            fade_start_time: None,
-            fade_duration_ms: 0,
+            child,
+            state: FadeState::Idle,
             redraw_interval_ms: 0,
             last_redraw_time: None,
-            target_color,
-            fading: false,
+        }
+    }
+    
+    /// Create a new Fader that doesn't draw anything until start_fade_in is called
+    pub fn new_faded_out(child: W) -> Self {
+        Self {
+            child,
+            state: FadeState::FadedOut,
+            redraw_interval_ms: 0,
+            last_redraw_time: None,
         }
     }
 
     /// Start fading to the target color over the specified duration
     pub fn start_fade(&mut self, duration_ms: u64, redraw_interval_ms: u64, target_color: Rgb565) {
-        self.fading = true;
-        self.fade_duration_ms = duration_ms;
+        // We'll set the actual start time on first draw to avoid timing issues
+        self.state = FadeState::FadingOut {
+            start_time: crate::Instant::from_millis(0), // Placeholder, will be set on draw
+            duration_ms,
+            target_color,
+        };
         self.redraw_interval_ms = redraw_interval_ms;
-        self.target_color = target_color;
-        self.fade_start_time = None; // Will be set on next draw
+        self.last_redraw_time = None;
+    }
+    
+    /// Start fading in from the specified color
+    pub fn start_fade_in(&mut self, duration_ms: u64, redraw_interval_ms: u64, fade_from_color: Rgb565) {
+        self.state = FadeState::FadingIn {
+            start_time: crate::Instant::from_millis(0), // Placeholder, will be set on draw
+            duration_ms,
+            from_color: fade_from_color,
+        };
+        self.redraw_interval_ms = redraw_interval_ms;
         self.last_redraw_time = None;
     }
 
-    /// Stop fading and optionally clear the child widget
-    pub fn stop_fade(&mut self, clear_child: bool) {
-        self.fading = false;
-        if clear_child {
-            self.child = None;
-        }
+    /// Stop fading
+    pub fn stop_fade(&mut self) {
+        self.state = FadeState::Idle;
     }
 
     /// Check if fading is complete
     pub fn is_fade_complete(&self) -> bool {
-        if !self.fading {
-            return false;
+        match &self.state {
+            FadeState::Idle | FadeState::FadedOut => true,
+            _ => false,
         }
-
-        self.fade_start_time.is_some()
+    }
+    
+    /// Check if the widget is currently faded out
+    pub fn is_faded_out(&self) -> bool {
+        matches!(self.state, FadeState::FadedOut)
     }
 
     /// Get mutable reference to the inner widget
-    pub fn inner_mut(&mut self) -> Option<&mut W> {
-        self.child.as_mut()
+    pub fn inner_mut(&mut self) -> &mut W {
+        &mut self.child
     }
 }
 
@@ -100,7 +139,7 @@ impl<'a, D: DrawTarget<Color = Rgb565>> DrawTarget for FadingDrawTarget<'a, D> {
     {
         // Cache with invalidation based on source color
         let mut cache: Option<(Rgb565, Rgb565)> = None; // (source_color, faded_color)
-        
+
         // Intercept each pixel and interpolate its color
         let faded_pixels = pixels.into_iter().map(|Pixel(point, color)| {
             let faded_color = match cache {
@@ -110,7 +149,8 @@ impl<'a, D: DrawTarget<Color = Rgb565>> DrawTarget for FadingDrawTarget<'a, D> {
                 }
                 _ => {
                     // Cache miss or first calculation
-                    let calculated = interpolate_color(color, self.target_color, self.fade_progress);
+                    let calculated =
+                        interpolate_color(color, self.target_color, self.fade_progress);
                     cache = Some((color, calculated));
                     calculated
                 }
@@ -136,11 +176,28 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        if let Some(child) = &mut self.child {
-            if self.fading {
-                // Set fade start time if not set
-                if self.fade_start_time.is_none() {
-                    self.fade_start_time = Some(current_time);
+        match &mut self.state {
+            FadeState::FadedOut => {
+                // Don't draw anything when faded out
+                Ok(())
+            }
+            FadeState::Idle => {
+                // Normal draw without fading
+                self.child.draw(target, current_time)
+            }
+            state => {
+                // Extract common fields based on state
+                let (start_time, duration_ms, target_color, is_fade_in) = match state {
+                    FadeState::FadingOut { start_time, duration_ms, target_color } => 
+                        (start_time, *duration_ms, *target_color, false),
+                    FadeState::FadingIn { start_time, duration_ms, from_color } => 
+                        (start_time, *duration_ms, *from_color, true),
+                    _ => unreachable!(),
+                };
+                
+                // Update start time if this is the first draw
+                if start_time.as_millis() == 0 {
+                    *start_time = current_time;
                 }
 
                 // Check if we should redraw based on interval
@@ -152,44 +209,49 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
 
                 if should_redraw {
                     // Calculate fade progress
-                    let fade_progress = if let Some(start) = self.fade_start_time {
-                        let elapsed = current_time.saturating_duration_since(start) as f32;
-                        let progress = (elapsed / self.fade_duration_ms as f32).min(1.0);
-
-                        progress
-                    } else {
-                        0.0
-                    };
+                    let elapsed = current_time.saturating_duration_since(*start_time) as f32;
+                    let mut fade_progress = (elapsed / duration_ms as f32).min(1.0);
+                    
+                    // For fade-in, reverse the progress (1.0 -> 0.0)
+                    if is_fade_in {
+                        fade_progress = 1.0 - fade_progress;
+                    }
 
                     // Force redraw before drawing
-                    child.force_full_redraw();
+                    self.child.force_full_redraw();
 
                     // Create fading draw target
                     let mut fading_target = FadingDrawTarget {
                         target,
                         fade_progress,
-                        target_color: self.target_color,
+                        target_color,
                     };
 
                     // Draw child through fading target
-                    child.draw(&mut fading_target, current_time)?;
+                    self.child.draw(&mut fading_target, current_time)?;
 
                     // Update last redraw time
                     self.last_redraw_time = Some(current_time);
+
+                    // Check if fade is complete
+                    let is_complete = if is_fade_in {
+                        fade_progress <= 0.0
+                    } else {
+                        fade_progress >= 1.0
+                    };
                     
-                    // Check if fade is complete after drawing
-                    if fade_progress >= 1.0 {
-                        self.fading = false;
-                        self.child = None; // Clear child after fade completes
+                    if is_complete {
+                        self.state = if is_fade_in {
+                            FadeState::Idle
+                        } else {
+                            FadeState::FadedOut
+                        };
                     }
                 }
-            } else {
-                // Normal draw without fading
-                child.draw(target, current_time)?;
+
+                Ok(())
             }
         }
-
-        Ok(())
     }
 
     fn handle_touch(
@@ -198,30 +260,18 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
         current_time: crate::Instant,
         lift_up: bool,
     ) -> Option<crate::KeyTouch> {
-        if let Some(child) = &mut self.child {
-            child.handle_touch(point, current_time, lift_up)
-        } else {
-            None
-        }
+        self.child.handle_touch(point, current_time, lift_up)
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
-        if let Some(child) = &mut self.child {
-            child.handle_vertical_drag(prev_y, new_y);
-        }
+        self.child.handle_vertical_drag(prev_y, new_y);
     }
 
     fn size_hint(&self) -> Option<Size> {
-        if let Some(child) = &self.child {
-            child.size_hint()
-        } else {
-            None
-        }
+        self.child.size_hint()
     }
 
     fn force_full_redraw(&mut self) {
-        if let Some(child) = &mut self.child {
-            child.force_full_redraw();
-        }
+        self.child.force_full_redraw();
     }
 }

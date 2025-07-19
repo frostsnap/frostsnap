@@ -146,7 +146,7 @@ impl Checkmark {
         }
 
         // Animation duration in milliseconds
-        const CHECK_DURATION_MS: u64 = 1_500;
+        const CHECK_DURATION_MS: u64 = 800;
 
         // Initialize animation start time if not set
         if self.animation_start_time.is_none() {

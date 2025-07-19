@@ -13,11 +13,13 @@ use frostsnap_embedded_widgets::{
     center::Center,
     checkmark::Checkmark,
     color_map::ColorMap,
+    fader::Fader,
     hold_to_confirm::HoldToConfirm,
     text::Text,
     welcome::Welcome,
     Widget,
     Instant,
+    KeyTouch,
 };
 use std::time::SystemTime;
 use std::io::{self, BufRead};
@@ -31,7 +33,7 @@ const SCREEN_HEIGHT: u32 = 280;
 enum Command {
     Touch { x: i32, y: i32 },
     Release { x: i32, y: i32 },
-    Drag { x1: i32, y1: i32, x2: i32, y2: i32 },
+    Drag { _x1: i32, y1: i32, x2: i32, y2: i32 },
     Screenshot { filename: String },
     Wait { ms: u64 },
     Quit,
@@ -75,7 +77,7 @@ fn parse_command(line: &str) -> Option<Command> {
                         end_coords[0].parse(),
                         end_coords[1].parse(),
                     ) {
-                        return Some(Command::Drag { x1, y1, x2, y2 });
+                        return Some(Command::Drag { _x1: x1, y1, x2, y2 });
                     }
                 }
             }
@@ -187,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             widget.handle_touch(point, current_time, true);
                             last_touch = None;
                         }
-                        Command::Drag { x1: _, y1, x2, y2 } => {
+                        Command::Drag { _x1: _, y1, x2, y2 } => {
                             widget.handle_vertical_drag(Some(y1 as u32), y2 as u32);
                             last_touch = Some(Point::new(x2, y2));
                         }
@@ -318,7 +320,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ))
         },
         "hold_confirm" => {
-            let widget = HoldToConfirm::new(Size::new(SCREEN_WIDTH, SCREEN_HEIGHT), 2000.0);
+            // Create text widgets for prompt and success messages
+            let prompt_text = Text::new("Confirm\ntransaction");
+            let prompt_widget = prompt_text.color_map(|c| match c {
+                BinaryColor::On => PALETTE.on_surface,
+                BinaryColor::Off => PALETTE.background,
+            });
+            
+            let success_text = Text::new("Transaction\nsigned");
+            let success_widget = success_text.color_map(|c| match c {
+                BinaryColor::On => PALETTE.on_surface,
+                BinaryColor::Off => PALETTE.background,
+            });
+            
+            let widget = HoldToConfirm::new(
+                Size::new(SCREEN_WIDTH, SCREEN_HEIGHT), 
+                2000.0,
+                prompt_widget,
+                success_widget
+            );
             
             run_widget!(widget)
         }
@@ -346,8 +366,77 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             run_widget!(widget)
         }
+        "fade_in_fade_out" => {
+            // Create a widget that manages the fade in/out timing
+            struct FadeController<W> {
+                fader: Fader<W>,
+                started: bool,
+            }
+            
+            impl<W: Widget<Color = Rgb565>> Widget for FadeController<W> {
+                type Color = Rgb565;
+                
+                fn draw<D: DrawTarget<Color = Self::Color>>(
+                    &mut self,
+                    target: &mut D,
+                    current_time: Instant,
+                ) -> Result<(), D::Error> {
+                    // Start the first fade-in
+                    if !self.started {
+                        self.fader.start_fade_in(1000, 50, PALETTE.background);
+                        self.started = true;
+                    }
+                    
+                    // When fade completes, immediately start the next one
+                    if self.fader.is_fade_complete() {
+                        if self.fader.is_faded_out() {
+                            // Fade in
+                            self.fader.start_fade_in(1000, 50, PALETTE.background);
+                        } else {
+                            // Fade out
+                            self.fader.start_fade(1000, 50, PALETTE.background);
+                        }
+                    }
+                    
+                    self.fader.draw(target, current_time)
+                }
+                
+                fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
+                    self.fader.handle_touch(point, current_time, is_release)
+                }
+                
+                fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32) {
+                    self.fader.handle_vertical_drag(prev_y, new_y);
+                }
+                
+                fn size_hint(&self) -> Option<Size> {
+                    self.fader.size_hint()
+                }
+                
+                fn force_full_redraw(&mut self) {
+                    self.fader.force_full_redraw();
+                }
+            }
+            
+            // Create a text widget to fade in and out
+            let text = Text::new("Hello, Fading World!");
+            let text_colored = text.color_map(|c| match c {
+                BinaryColor::On => PALETTE.primary,
+                BinaryColor::Off => PALETTE.background,
+            });
+            
+            // Create a fader starting faded out
+            let fader = Fader::new_faded_out(text_colored);
+            
+            let controller = FadeController {
+                fader,
+                started: false,
+            };
+            
+            run_widget!(controller)
+        }
         _ => {
-            eprintln!("Unknown demo: {}. Available demos: bip39_entry, bip39_t9, bip39_display, hold_confirm, checkmark, welcome, hold_checkmark", demo);
+            eprintln!("Unknown demo: {}. Available demos: bip39_entry, bip39_t9, bip39_display, hold_confirm, checkmark, welcome, hold_checkmark, fade_in_fade_out", demo);
             Ok(())
         }
     }
