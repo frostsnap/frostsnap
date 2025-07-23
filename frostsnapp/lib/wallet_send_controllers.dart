@@ -85,7 +85,6 @@ class AddressInput extends StatelessWidget {
           autofocus: autofocus,
           style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
           decoration: (decoration ?? InputDecoration()).copyWith(
-            //border: defaultTextInputBorder,
             errorText: controller.errorText,
             suffixIcon: controller.controller.text.isEmpty
                 ? null

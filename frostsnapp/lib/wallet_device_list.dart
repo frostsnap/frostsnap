@@ -69,13 +69,13 @@ class _SliverDeviceListState extends State<SliverDeviceList> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return SliverAnimatedList(
-      key: _listKey,
-      itemBuilder: _buildItem,
-      initialItemCount: _state.devices.length,
-    );
-  }
+  Widget build(BuildContext context) => _state.devices.isEmpty
+      ? SliverToBoxAdapter(child: widget.noDeviceWidget)
+      : SliverAnimatedList(
+          key: _listKey,
+          itemBuilder: _buildItem,
+          initialItemCount: _state.devices.length,
+        );
 
   Widget _buildItem(
     BuildContext context,
