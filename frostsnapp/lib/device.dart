@@ -1,5 +1,13 @@
+import 'dart:async';
+
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
+
+import 'global.dart';
 
 class DeviceWidget extends StatelessWidget {
   final Widget child;
@@ -65,5 +73,65 @@ class ConfirmPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DevicePrompt(icon: Icon(Icons.touch_app), text: "Confirm");
+  }
+}
+
+class DeviceDetails extends StatefulWidget {
+  final ScrollController? scrollController;
+  final DeviceId deviceId;
+
+  const DeviceDetails({
+    super.key,
+    this.scrollController,
+    required this.deviceId,
+  });
+
+  @override
+  State<DeviceDetails> createState() => _DeviceDetailsState();
+}
+
+class _DeviceDetailsState extends State<DeviceDetails> {
+  late final StreamSubscription _sub;
+  bool _gotFirstData = false;
+  ConnectedDevice? _device;
+
+  onData(DeviceListUpdate update) {
+    final device = update.state.devices.firstWhereOrNull(
+      (device) => deviceIdEquals(device.id, widget.deviceId),
+    );
+    setState(() {
+      _gotFirstData = true;
+      _device = device;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = GlobalStreams.deviceListSubject.listen(onData);
+  }
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
+      controller: widget.scrollController,
+      shrinkWrap: true,
+      slivers: [
+        SliverPadding(
+          padding: EdgeInsets.all(20),
+          sliver: SliverToBoxAdapter(child: Text('${widget.deviceId.toHex()}')),
+        ),
+        SliverPadding(
+          padding: EdgeInsets.all(20),
+          sliver: SliverToBoxAdapter(child: Text('${_device?.name}')),
+        ),
+      ],
+    );
   }
 }

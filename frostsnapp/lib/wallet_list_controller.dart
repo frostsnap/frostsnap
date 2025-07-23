@@ -33,14 +33,13 @@ class WalletListController extends ChangeNotifier {
   WalletListController({required Stream<KeyState> keyStream}) {
     _sub = keyStream.listen((state) {
       _gotInitialData = true;
-      _wallets = state.keys
-          .map<WalletItem>((key) => WalletItemKey(key))
-          .followedBy(
-            state.restoring.map(
-              (restoring) => WalletItemRestoration(restoring),
-            ),
-          )
-          .toList();
+
+      final wallets = state.keys.map<WalletItem>((key) => WalletItemKey(key));
+      final restoringWallets = state.restoring.map<WalletItem>(
+        (restoringKey) => WalletItemRestoration(restoringKey),
+      );
+      _wallets = wallets.followedBy(restoringWallets).toList();
+
       if (_selectedIndex == null || _selectedIndex! >= wallets.length) {
         _selectedIndex = _wallets.isNotEmpty ? 0 : null;
       }

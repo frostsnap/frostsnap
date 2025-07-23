@@ -5,7 +5,6 @@ import 'package:flutter_svg/svg.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
-import 'package:frostsnap/device_settings.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/keygen.dart';
@@ -26,6 +25,8 @@ import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:rxdart/rxdart.dart';
+
+import 'maybe_fullscreen_dialog.dart';
 
 class Wallet {
   final SuperWallet superWallet;

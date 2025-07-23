@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/device.dart';
 import 'package:frostsnap/device_settings.dart';
 import 'package:frostsnap/device_setup.dart';
-import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_device_list.dart';
+import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
+import 'maybe_fullscreen_dialog.dart';
+import 'wallet_list_controller.dart';
 
 typedef RemovedDeviceBuilder =
     Widget Function(
@@ -340,20 +343,148 @@ Widget buildInteractiveDevice(
 }
 
 class DeviceListPage extends StatefulWidget {
+  late final Iterable<WalletItem> walletList;
+
+  DeviceListPage();
+
   @override
   State<DeviceListPage> createState() => _DeviceListPageState();
 }
 
 class _DeviceListPageState extends State<DeviceListPage> {
+  final _scrollController = ScrollController();
+  final _needsUpgrade = ValueNotifier(0);
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _needsUpgrade.dispose();
+    super.dispose();
+  }
+
+  Widget _buildDevice(BuildContext context, ConnectedDevice device) {
+    final theme = Theme.of(context);
+    final needsUpgrade = device.needsFirmwareUpgrade();
+    final walletName = coord
+        .frostKeysInvolvingDevice(deviceId: device.id)
+        .map((key) => key.keyName())
+        .firstOrNull;
+    final hasWallet = walletName != null;
+    final hasKey = device.name != null;
+
+    return Card.filled(
+      margin: EdgeInsets.symmetric(vertical: 8),
+      color: theme.colorScheme.surfaceContainerHigh,
+      clipBehavior: Clip.hardEdge,
+      child: ListTile(
+        title: Text(
+          device.name ?? 'Empty Device',
+          style: monospaceTextStyle.copyWith(
+            color: hasKey ? null : theme.disabledColor,
+          ),
+        ),
+        subtitle: Text(
+          walletName == null ? 'Not part of a known wallet' : walletName,
+          style: TextStyle(
+            color: hasKey && hasWallet ? null : theme.disabledColor,
+          ),
+        ),
+        leading: Icon(Icons.key),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 8,
+          children: [
+            if (needsUpgrade)
+              Icon(Icons.warning_rounded, color: theme.colorScheme.primary),
+            Icon(Icons.chevron_right),
+          ],
+        ),
+        contentPadding: EdgeInsets.symmetric(horizontal: 16),
+        onTap: () async => await showBottomSheetOrDialog(
+          context,
+          titleText: 'Device Details',
+          builder: (context, controller) => DeviceDetails(deviceId: device.id),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final windowSize = WindowSizeContext.of(context);
-    return CustomScrollView(
+    final topBar = TopBar(
+      titleText: 'Connected Devices',
+      scrollController: _scrollController,
+    );
+    final scrollView = CustomScrollView(
+      controller: _scrollController,
       shrinkWrap: windowSize != WindowSizeClass.compact,
       slivers: [
-        SliverAppBar(title: Text('Devices')),
-        SliverDeviceList(deviceBuilder: (context, device) => Card()),
+        SliverPinnedHeader(
+          child: AnimatedSize(
+            duration: Durations.long1,
+            curve: Curves.easeInOutCubicEmphasized,
+            child: ValueListenableBuilder(
+              valueListenable: _needsUpgrade,
+              builder: (context, needsUpgrade, _) => needsUpgrade > 0
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        title: Text(
+                          'Upgrade $needsUpgrade device${needsUpgrade > 1 ? 's' : ''}',
+                        ),
+                        leading: Icon(Icons.warning_rounded),
+                        trailing: Icon(Icons.chevron_right_rounded),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 24),
+                        textColor: theme.colorScheme.primary,
+                        iconColor: theme.colorScheme.primary,
+                        onTap: () {},
+                      ),
+                    )
+                  : SizedBox.shrink(),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 16),
+          sliver: SliverDeviceList(
+            deviceBuilder: _buildDevice,
+            onDeviceListChange: (state) => _needsUpgrade.value = state.devices
+                .where((device) => device.needsFirmwareUpgrade())
+                .length,
+            noDeviceWidget: Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Column(
+                  spacing: 12,
+                  children: [
+                    Icon(
+                      Icons.sentiment_dissatisfied,
+                      color: theme.disabledColor,
+                      size: 64,
+                    ),
+                    Text(
+                      'No devices connected',
+                      style: TextStyle(color: theme.disabledColor),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
+    );
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          topBar,
+          Flexible(child: scrollView),
+        ],
+      ),
     );
   }
 }
