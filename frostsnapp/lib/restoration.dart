@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/settings.dart';
@@ -245,7 +246,29 @@ class WalletRecoveryFlow extends StatefulWidget {
   final RestorationId? continuing;
   // We're recovering a share for a key that already exists
   final AccessStructureRef? existing;
-  const WalletRecoveryFlow({super.key, this.continuing, this.existing});
+  final String? initialStep;
+  final bool isDialog;
+
+  const WalletRecoveryFlow({
+    super.key,
+    this.continuing,
+    this.existing,
+    this.isDialog = true,
+  }) : initialStep = null;
+
+  const WalletRecoveryFlow.startWithDevice({
+    super.key,
+    this.continuing,
+    this.existing,
+    this.isDialog = true,
+  }) : initialStep = 'wait_device';
+
+  const WalletRecoveryFlow.startWithPhysicalBackup({
+    super.key,
+    this.continuing,
+    this.existing,
+    this.isDialog = true,
+  }) : initialStep = 'enter_restoration_details';
 
   @override
   State<WalletRecoveryFlow> createState() => _WalletRecoveryFlowState();
@@ -266,6 +289,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   @override
   void initState() {
     super.initState();
+
+    final initialStep = widget.initialStep;
+    if (initialStep != null) currentStep = initialStep;
+
     if (widget.continuing != null) {
       kind = MethodChoiceKind.continueRecovery;
       restorationId = widget.continuing!;
@@ -448,25 +475,34 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
     }
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minWidth: 500, // Choose a suitable fixed width
-          maxWidth: 500,
-          minHeight:
-              320, // Ensure this is large enough for your tallest content
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400),
-          child: Padding(
-            key: ValueKey(currentStep),
-            padding: const EdgeInsets.all(20.0),
-            child: child,
-          ),
-        ),
+    final switcher = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      child: Padding(
+        key: ValueKey(currentStep),
+        padding: const EdgeInsets.all(20.0),
+        child: child,
       ),
     );
+
+    if (widget.isDialog) {
+      return Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minWidth: 500, // Choose a suitable fixed width
+            maxWidth: 500,
+            minHeight:
+                320, // Ensure this is large enough for your tallest content
+          ),
+          child: switcher,
+        ),
+      );
+    } else {
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: 360),
+        child: switcher,
+      );
+    }
   }
 }
 
@@ -1312,7 +1348,7 @@ class _PhysicalBackupFailView extends StatelessWidget {
   }
 }
 
-continueWalletRecoveryFlowDialog(
+void continueWalletRecoveryFlowDialog(
   BuildContext context, {
   required RestorationId restorationId,
 }) async {
@@ -1320,16 +1356,8 @@ continueWalletRecoveryFlowDialog(
     context: context,
     builder: (context) => WalletRecoveryFlow(continuing: restorationId),
   );
-  coord.cancelProtocol();
-}
-
-Future<RestorationId?> startWalletRecoveryFlowDialog(
-  BuildContext context,
-) async {
-  final restorationId = await showDialog(
-    context: context,
-    builder: (context) => const WalletRecoveryFlow(),
-  );
-  coord.cancelProtocol();
-  return restorationId;
+  await coord.cancelProtocol();
+  final homeCtx = HomeContext.of(context);
+  if (homeCtx == null) return;
+  homeCtx.walletListController.selectRecoveringWallet(restorationId);
 }
