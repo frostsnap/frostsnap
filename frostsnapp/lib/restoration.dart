@@ -793,7 +793,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
           ),
           const SizedBox(height: 24),
           DropdownButtonFormField<int>(
-            initialValue: _threshold,
+            value: _threshold,
             decoration: const InputDecoration(
               labelText: 'Threshold',
               border: OutlineInputBorder(),
