@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/device.dart';
 import 'package:frostsnap/device_settings.dart';
 import 'package:frostsnap/device_setup.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/wallet_device_list.dart';
 import 'global.dart';
 
 typedef RemovedDeviceBuilder =
@@ -335,4 +337,23 @@ Widget buildInteractiveDevice(
     animation: animation,
     child: Column(mainAxisSize: MainAxisSize.max, children: children),
   );
+}
+
+class DeviceListPage extends StatefulWidget {
+  @override
+  State<DeviceListPage> createState() => _DeviceListPageState();
+}
+
+class _DeviceListPageState extends State<DeviceListPage> {
+  @override
+  Widget build(BuildContext context) {
+    final windowSize = WindowSizeContext.of(context);
+    return CustomScrollView(
+      shrinkWrap: windowSize != WindowSizeClass.compact,
+      slivers: [
+        SliverAppBar(title: Text('Devices')),
+        SliverDeviceList(deviceBuilder: (context, device) => Card()),
+      ],
+    );
+  }
 }
