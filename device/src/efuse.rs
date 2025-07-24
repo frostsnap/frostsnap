@@ -20,37 +20,53 @@ impl EfuseController {
         Self { efuse }
     }
 
-    pub fn randomly_init_key(
+    /// All key purposes must be written at the same time because efuse Block 0
+    /// (configuration block) can only be programmed once. Multiple writes to Block
+    /// 0 would accumulate (OR together) all the bits from each write, potentially setting
+    /// unintended configuration bits. By batching all key purpose configurations into
+    /// a single Block 0 write, we ensure only the intended bits are set.
+    unsafe fn write_key_purposes(
         &self,
-        key_id: u8,
-        key_purpose: KeyPurpose,
-        read_protect: bool,
-        rng: &mut impl RngCore,
-    ) -> Result<Option<[u8; 32]>, EfuseError> {
-        if !Self::is_key_written(key_id) {
-            let mut buf = [0x00_u8; 32];
-            rng.fill_bytes(&mut buf);
-            self.set_efuse_key(key_id, key_purpose, read_protect, buf)?;
-            return Ok(Some(buf));
+        configs: &[(u8, KeyPurpose, bool)],
+    ) -> Result<(), EfuseError> {
+        let mut buff = [0x00u8; 32];
+        let mut write_disable: u32 = 0;
+
+        for &(key_num, purpose, read_protect) in configs {
+            // Set key purpose bits
+            let kp = purpose as u8;
+            match key_num {
+                0 => buff[11] |= kp,
+                1 => buff[11] |= kp << 4,
+                2 => buff[12] |= kp,
+                3 => buff[12] |= kp << 4,
+                4 => buff[13] |= kp,
+                5 => buff[13] |= kp << 4,
+                _ => return Err(EfuseError::EfuseError),
+            }
+
+            // Set write disable bits
+            write_disable |= 0x01 << (WR_DIS_KEY_OFFSET + key_num);
+            write_disable |= 0x01 << (WR_DIS_KP_OFFSET + key_num);
+
+            // Set read protect if needed
+            if read_protect {
+                unsafe {
+                    self.set_read_protect(key_num, &mut buff);
+                }
+            }
         }
 
-        Ok(None)
+        buff[0..4].copy_from_slice(&write_disable.to_le_bytes());
+        self.write_block(&buff, 0)
     }
 
-    pub fn set_efuse_key(
-        &self,
-        key_id: u8,
-        key_purpose: KeyPurpose,
-        read_protect: bool,
-        value: [u8; 32],
-    ) -> Result<(), EfuseError> {
+    /// There should only be one series of calls to set_efuse_key accompanied by write_key_purposes
+    unsafe fn set_efuse_key(&self, key_id: u8, value: [u8; 32]) -> Result<(), EfuseError> {
         if Self::is_key_written(key_id) {
             return Err(EfuseError::EfuseAlreadyBurned);
         }
-        unsafe {
-            self.write_block(&value, key_id + KEY_BLOCKS_OFFSET)?;
-            self.write_key_purpose(key_id, key_purpose, read_protect)?;
-        }
+        self.write_block(&value, key_id + KEY_BLOCKS_OFFSET)?;
 
         Ok(())
     }
@@ -86,41 +102,6 @@ impl EfuseController {
         let bytes: [u8; 32] = Efuse::read_field_le::<[u8; 32]>(field);
 
         Ok(bytes)
-    }
-
-    /// # Safety
-    unsafe fn write_key_purpose(
-        &self,
-        key_number: u8,
-        key_purpose: KeyPurpose,
-        read_protect: bool,
-    ) -> Result<(), EfuseError> {
-        let mut buff = [0x00u8; 32];
-
-        let kp = key_purpose as u8;
-        match key_number {
-            0 => buff[11] = kp,
-            1 => buff[11] = kp << 4,
-            2 => buff[12] = kp,
-            3 => buff[12] = kp << 4,
-            4 => buff[13] = kp,
-            5 => buff[13] = kp << 4,
-            _ => return Err(EfuseError::EfuseError),
-        }
-
-        // We bundle every config in Block 0 to minimize write operations
-        // Todo: Write key purpose and rw flags for multiple keys
-        // Disable write to key block
-        let mut write_disable: u32 = 0x01 << (WR_DIS_KEY_OFFSET + key_number);
-        // Disable write to key purpose
-        write_disable += 0x01 << (WR_DIS_KP_OFFSET + key_number);
-        buff[0..4].copy_from_slice(&write_disable.to_le_bytes());
-
-        if read_protect {
-            self.set_read_protect(key_number, &mut buff);
-        }
-
-        self.write_block(&buff, 0)
     }
 
     /// # Safety
@@ -236,8 +217,13 @@ pub struct EfuseHmacKeys<'a> {
 impl<'a> EfuseHmacKeys<'a> {
     const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key0;
     const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key1;
-    const HMAC_KEYIDS: [esp_hal::hmac::KeyId; 2] =
-        [Self::ENCRYPTION_KEYID, Self::FIXED_ENTROPY_KEYID];
+    const RSA_EFUSE_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key4;
+
+    const HMAC_KEYIDS: [esp_hal::hmac::KeyId; 3] = [
+        Self::ENCRYPTION_KEYID,
+        Self::FIXED_ENTROPY_KEYID,
+        Self::RSA_EFUSE_KEYID,
+    ];
 
     pub fn has_been_initialized() -> bool {
         for key_id in Self::HMAC_KEYIDS {
@@ -254,27 +240,37 @@ impl<'a> EfuseHmacKeys<'a> {
         read_protect: bool,
         share_encryption_key: [u8; 32],
         fixed_entropy_key: [u8; 32],
+        ds_hmac_key: [u8; 32],
     ) -> Result<Self, EfuseError> {
         if Self::has_been_initialized() {
             return Err(EfuseError::EfuseAlreadyBurned);
         }
 
-        efuse.set_efuse_key(
-            Self::ENCRYPTION_KEYID as u8,
-            KeyPurpose::HmacUpstream,
-            read_protect,
-            share_encryption_key,
-        )?;
-        Self::validate_key_write(hmac, Self::ENCRYPTION_KEYID, &share_encryption_key)?;
+        // All key purposes at once (single Block 0 write)
+        let key_configs = [
+            (
+                Self::ENCRYPTION_KEYID as u8,
+                KeyPurpose::HmacUpstream,
+                read_protect,
+            ),
+            (
+                Self::FIXED_ENTROPY_KEYID as u8,
+                KeyPurpose::HmacUpstream,
+                read_protect,
+            ),
+            (Self::RSA_EFUSE_KEYID as u8, KeyPurpose::Ds, read_protect),
+        ];
+        unsafe {
+            efuse.write_key_purposes(&key_configs)?;
 
-        efuse.set_efuse_key(
-            Self::FIXED_ENTROPY_KEYID as u8,
-            KeyPurpose::HmacUpstream,
-            read_protect,
-            fixed_entropy_key,
-        )?;
-        Self::validate_key_write(hmac, Self::FIXED_ENTROPY_KEYID, &fixed_entropy_key)?;
+            efuse.set_efuse_key(Self::ENCRYPTION_KEYID as u8, share_encryption_key)?; // Remove unsafe here
+            Self::validate_key_write(hmac, Self::ENCRYPTION_KEYID, &share_encryption_key)?;
 
+            efuse.set_efuse_key(Self::FIXED_ENTROPY_KEYID as u8, fixed_entropy_key)?;
+            Self::validate_key_write(hmac, Self::FIXED_ENTROPY_KEYID, &fixed_entropy_key)?;
+
+            efuse.set_efuse_key(Self::RSA_EFUSE_KEYID as u8, ds_hmac_key)?;
+        }
         Ok(EfuseHmacKeys {
             share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
             fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
