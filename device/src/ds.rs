@@ -8,8 +8,7 @@ pub fn standard_rsa_sign(ds: DS, encrypted_params: Vec<u8>, message: &[u8]) -> [
     // Calculate message digest and apply padding
     let message_digest = sha2::Sha256::digest(message);
     let padded_message = pad_message_for_rsa(&message_digest);
-    let sig = private_exponentiation(ds, encrypted_params, padded_message);
-    sig
+    private_exponentiation(ds, encrypted_params, padded_message)
 }
 
 pub fn ds_words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
@@ -84,9 +83,9 @@ pub fn private_exponentiation(
 
     let mut sig = [0u32; 96];
     if ds.query_check().read().bits() == 0 {
-        for i in 0..(DS_KEY_SIZE_BITS / 32) {
+        for (i, sig_word) in sig.iter_mut().enumerate().take(DS_KEY_SIZE_BITS / 32) {
             let word = ds.z_mem(i).read().bits();
-            sig[i] = word;
+            *sig_word = word;
         }
     } else {
         panic!("Failed to read signature from DS!")
