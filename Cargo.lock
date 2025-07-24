@@ -1277,7 +1277,6 @@ dependencies = [
  "frostsnap_comms",
  "frostsnap_core",
  "futures",
- "futures-timer",
  "nusb",
  "rand",
  "rand_core",

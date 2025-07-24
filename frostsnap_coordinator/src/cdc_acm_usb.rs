@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use futures::executor::block_on;
 use futures::future::{select, Either};
 use futures::task::noop_waker;
-use futures_timer::Delay;
 use nusb::{
     transfer::{
         Control, ControlType, Direction, EndpointType, Recipient, RequestBuffer, TransferFuture,
@@ -31,6 +30,7 @@ pub struct CdcAcmSerial {
     // we need interior mutability because bytes_to_read doesn't take &mut self
     rx_fut: std::cell::RefCell<Option<TransferFuture<RequestBuffer>>>,
     rx_buf: std::cell::RefCell<VecDeque<u8>>,
+    rt: tokio::runtime::Runtime,
 }
 
 impl CdcAcmSerial {
@@ -94,6 +94,11 @@ impl CdcAcmSerial {
         // ---------------- mandatory CDC setup packets ---------------------
         send_cdc_setup(&if_comm, baud)?;
 
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time() // Only enable what you need
+            .build()
+            .map_err(|e| anyhow!("Failed to create tokio runtime: {}", e))?;
+
         let self_ = Self {
             dev,
             baud,
@@ -105,6 +110,7 @@ impl CdcAcmSerial {
             rx_buf: Default::default(),
             rx_fut: Default::default(),
             timeout: Duration::from_secs(1),
+            rt,
         };
 
         // start the reading from the usb device to kick things off.
@@ -248,21 +254,31 @@ impl io::Read for CdcAcmSerial {
         let rx_fut = rx_fut_opt
             .take()
             .expect("rx_fut will be Some here because we fill_buf");
-        let delay_future = Delay::new(self.timeout);
 
-        match block_on(select(rx_fut, delay_future)) {
-            Either::Left((req, _unused_delay)) => {
-                let data = req.into_result().map_err(io::Error::other)?;
-                rx_buf.extend(data);
-                Ok(copy_over(&mut rx_buf))
-            }
+        let result = self.rt.block_on(async {
+            let delay_future = tokio::time::sleep(self.timeout);
+            futures::pin_mut!(delay_future);
 
-            // ───────── 2b. Timeout fired first ─────────
-            Either::Right((_, pending_fut)) => {
-                // `pending_fut` is still the same in-flight TransferFuture
-                *rx_fut_opt = Some(pending_fut);
-                Ok(0)
+            match select(rx_fut, delay_future).await {
+                Either::Left((req, _unused_delay)) => {
+                    let data = req.into_result().map_err(io::Error::other)?;
+                    Ok((data, None))
+                }
+                Either::Right((_, pending_fut)) => Ok((Vec::new(), Some(pending_fut))),
             }
+        });
+
+        match result {
+            Ok((data, pending_fut_opt)) => {
+                if let Some(pending_fut) = pending_fut_opt {
+                    *rx_fut_opt = Some(pending_fut);
+                    Ok(0)
+                } else {
+                    rx_buf.extend(data);
+                    Ok(copy_over(&mut rx_buf))
+                }
+            }
+            Err(e) => Err(e),
         }
     }
 }

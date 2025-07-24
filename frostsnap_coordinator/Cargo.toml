@@ -25,7 +25,6 @@ bdk_coin_select = { version = "0.3" }
 
 webpki-roots = { version = "0.26" }
 
-futures-timer = "3.0.3"
 tokio = { version = "1.45", features = ["net", "rt", "time"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["tls12", "ring"] }
 tokio-util = { version = "0.7", features = ["compat"] }
