@@ -20,11 +20,9 @@ use rand_core::{RngCore, SeedableRng};
 mod screen_test;
 
 use crate::{
-    efuse::{self, EfuseHmacKeys, KeyPurpose},
+    efuse::{self, EfuseHmacKeys},
     io::SerialInterface,
 };
-
-const RSA_EFUSE_KEY_SLOT: u8 = 4;
 
 macro_rules! text_display {
     ($display:ident, $text:expr) => {
@@ -112,7 +110,6 @@ where
             encrypted_params,
             ds_hmac_key,
         } = read_message!(upstream, FactorySend::SetEsp32DsKey);
-
         // We don't immediately burn the RSA efuse, we do this after writing the blob
 
         upstream.send(DeviceFactorySend::ReceivedDsKey).unwrap();
@@ -133,22 +130,6 @@ where
         )
         .expect("we should have been able to read the factory data back out!");
 
-        // let do_read_protect = cfg!(feature = "read_protect_hmac_key");
-        let read_protect = false; // TODO: MAKE TRUE
-
-        let _ = efuse.set_efuse_key(
-            RSA_EFUSE_KEY_SLOT,
-            KeyPurpose::Ds,
-            read_protect,
-            ds_hmac_key,
-        );
-
-        // I was experiencing a hang SOMEWHERE HERE.
-        // Not sure if this actually fixes since im out of fresh devices with that keyslot..
-        let delay = Delay::new();
-        delay.delay_millis(100);
-        assert!(efuse::EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT));
-
         let mut factory_rng = rand_chacha::ChaCha20Rng::from_seed(factory_entropy);
         let mut share_encryption_key = [0u8; 32];
         factory_rng.fill_bytes(&mut share_encryption_key);
@@ -161,8 +142,14 @@ where
             read_protect,
             share_encryption_key,
             factory_entropy,
+            ds_hmac_key,
         )
         .unwrap();
+
+        // I was experiencing a hang SOMEWHERE HERE.
+        // Not sure if this actually fixes since im out of fresh devices with that keyslot..
+        let delay = Delay::new();
+        delay.delay_millis(100);
 
         text_display!(
             display,
