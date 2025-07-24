@@ -17,7 +17,7 @@ use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
 
-// mod screen_test;
+mod screen_test;
 
 use crate::{
     efuse::{self, EfuseHmacKeys, KeyPurpose},
@@ -68,7 +68,6 @@ pub fn run_factory<'a, 'b, S, I2C, PINT, RST, T>(
     efuse: &efuse::EfuseController,
     hal_hmac: &'a core::cell::RefCell<Hmac<'a>>,
     mut rng: impl rand_core::RngCore, // take ownership to stop caller from accidentally using it again
-    sha256: &mut esp_hal::sha::Sha<'_>,
     jtag: &'b mut UsbSerialJtag<'a, Blocking>,
     timer: &'a T,
     ds: DS,
@@ -80,105 +79,114 @@ where
     S: DrawTarget<Color = Rgb565> + OriginDimensions,
     T: timer::Timer,
 {
-    // if efuse::EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT) {
-    //     panic!("RSA efuse already set! Not a blank device?");
-    // }
-
     let mut upstream = SerialInterface::<T, FactoryUpstream>::new_jtag(jtag, timer);
-
-    text_display!(display, "waiting for factory magic bytes");
-
-    loop {
-        if upstream.find_and_remove_magic_bytes() {
-            upstream.write_magic_bytes().expect("can write magic bytes");
-            text_display!(display, "Got factory magic bytes");
-            break;
-        }
-    }
-
-    let factory_entropy = read_message!(upstream, FactorySend::InitEntropy);
-
-    text_display!(display, "Got entropy");
-    upstream.send(DeviceFactorySend::InitEntropyOk).unwrap();
-
-    let Esp32DsKey {
-        encrypted_params,
-        ds_hmac_key,
-    } = read_message!(upstream, FactorySend::SetEsp32DsKey);
-
-    // We don't immediately burn the RSA efuse, we do this after writing the blob
-
-    upstream.send(DeviceFactorySend::ReceivedDsKey).unwrap();
-    text_display!(display, "Received DS key");
-
-    let certificate = read_message!(upstream, FactorySend::SetGenuineCertificate);
-    let factory_data = FactoryData::new(encrypted_params.clone(), certificate.clone());
-
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
-    let _ = partitions
-        .factory_data
-        .erase_and_write_this::<{ frostsnap_embedded::WRITE_BUF_SIZE }>(&factory_data)
+
+    // if already configured we skip everything
+    let efuses_burnt = EfuseHmacKeys::has_been_initialized();
+
+    let mut hmac_keys = if efuses_burnt {
+        EfuseHmacKeys::load(hal_hmac).expect("we should have hmac keys!")
+    } else {
+        screen_test::run(display, capsense);
+
+        text_display!(
+            display,
+            "Device not configured, waiting for factory magic bytes!"
+        );
+        loop {
+            if upstream.find_and_remove_magic_bytes() {
+                upstream.write_magic_bytes().expect("can write magic bytes");
+                text_display!(display, "Got factory magic bytes");
+                break;
+            }
+        }
+
+        let factory_entropy = read_message!(upstream, FactorySend::InitEntropy);
+
+        text_display!(display, "Got entropy");
+        upstream.send(DeviceFactorySend::InitEntropyOk).unwrap();
+
+        let Esp32DsKey {
+            encrypted_params,
+            ds_hmac_key,
+        } = read_message!(upstream, FactorySend::SetEsp32DsKey);
+
+        // We don't immediately burn the RSA efuse, we do this after writing the blob
+
+        upstream.send(DeviceFactorySend::ReceivedDsKey).unwrap();
+        text_display!(display, "Received DS key");
+
+        let certificate = read_message!(upstream, FactorySend::SetGenuineCertificate);
+        let factory_data = FactoryData::new(encrypted_params.clone(), certificate.clone());
+
+        let _ = partitions
+            .factory_data
+            .erase_and_write_this::<{ frostsnap_embedded::WRITE_BUF_SIZE }>(&factory_data)
+            .unwrap();
+        drop(factory_data);
+        // double check it was written successfully
+        let read_factory_data = bincode::decode_from_reader::<FactoryData, _, _>(
+            partitions.factory_data.bincode_reader(),
+            ABWRITE_BINCODE_CONFIG,
+        )
+        .expect("we should have been able to read the factory data back out!");
+
+        // let do_read_protect = cfg!(feature = "read_protect_hmac_key");
+        let read_protect = false; // TODO: MAKE TRUE
+
+        let _ = efuse.set_efuse_key(
+            RSA_EFUSE_KEY_SLOT,
+            KeyPurpose::Ds,
+            read_protect,
+            ds_hmac_key,
+        );
+
+        // I was experiencing a hang SOMEWHERE HERE.
+        // Not sure if this actually fixes since im out of fresh devices with that keyslot..
+        let delay = Delay::new();
+        delay.delay_millis(100);
+        assert!(efuse::EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT));
+
+        let mut factory_rng = rand_chacha::ChaCha20Rng::from_seed(factory_entropy);
+        let mut share_encryption_key = [0u8; 32];
+        factory_rng.fill_bytes(&mut share_encryption_key);
+
+        // Burn EFUSES
+        let read_protect = cfg!(feature = "read_protect_hmac_key");
+        let hmac_keys = EfuseHmacKeys::init_with_keys(
+            efuse,
+            hal_hmac,
+            read_protect,
+            share_encryption_key,
+            factory_entropy,
+        )
         .unwrap();
-    drop(factory_data);
 
-    // double check it was written successfully
-    let read_factory_data = bincode::decode_from_reader::<FactoryData, _, _>(
-        partitions.factory_data.bincode_reader(),
-        ABWRITE_BINCODE_CONFIG,
-    )
-    .expect("we should have been able to read the factory data back out!");
+        text_display!(
+            display,
+            "Saved encrypted params, certificate and burnt efuse!"
+        );
 
-    // let do_read_protect = cfg!(feature = "read_protect_hmac_key");
-    let read_protect = false; // TODO: MAKE TRUE
+        upstream
+            .send(DeviceFactorySend::PresentGenuineCertificate(
+                read_factory_data.certificate(),
+            ))
+            .unwrap();
 
-    let _ = efuse.set_efuse_key(
-        RSA_EFUSE_KEY_SLOT,
-        KeyPurpose::Ds,
-        read_protect,
-        ds_hmac_key,
-    );
+        let challenge = read_message!(upstream, FactorySend::Challenge);
+        let signature = standard_rsa_sign(ds, read_factory_data.encrypted_params(), &challenge);
+        let signature = ds_words_to_bytes(&signature);
+        upstream
+            .send(DeviceFactorySend::SignedChallenge { signature })
+            .unwrap();
+        text_display!(display, "Signed challenge!");
 
-    // I was experiencing a hang SOMEWHERE HERE.
-    // Not sure if this actually fixes since im out of fresh devices with that keyslot..
-    let delay = Delay::new();
-    delay.delay_millis(100);
-    assert!(efuse::EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT));
+        hmac_keys
+    };
 
-    upstream
-        .send(DeviceFactorySend::SavedGenuineCertificate(certificate))
-        .unwrap();
-    text_display!(
-        display,
-        "Saved encrypted params, certificate and burnt efuse!"
-    );
-
-    let challenge = read_message!(upstream, FactorySend::Challenge);
-    let signature = standard_rsa_sign(ds, read_factory_data.encrypted_params(), &challenge);
-    let signature = ds_words_to_bytes(&signature);
-    upstream
-        .send(DeviceFactorySend::SignedChallenge { signature })
-        .unwrap();
-    text_display!(display, "Signed challenge!");
-
-    loop {}
-
-    let factory_rng = rand_chacha::ChaCha20Rng::from_seed(factory_entropy);
-    let mut share_encryption_key = [0u8; 32];
-    factory_rng.fill_bytes(&mut share_encryption_key);
-
-    // Burn EFUSES
-    let read_protect = cfg!(feature = "read_protect_hmac_key");
-    let hmac_keys = EfuseHmacKeys::init_with_keys(
-        efuse,
-        hal_hmac,
-        read_protect,
-        share_encryption_key,
-        factory_entropy,
-    )
-    .unwrap();
-
-    let final_rng = extract_entropy(&mut rng, sha256, 512, &factory_entropy);
+    let final_rng = hmac_keys.fixed_entropy.mix_in_rng(&mut rng);
     (final_rng, hmac_keys)
 }
 
