@@ -96,7 +96,7 @@ fn main() -> ! {
                         match connection.port.read_for_magic_bytes() {
                             Ok(supported_features) => match supported_features {
                                 Some(_) => {
-                                    connection.state = ConnectionState::Connected;
+                                    connection.state = ConnectionState::WaitingForState;
                                 }
                                 None => {
                                     if last_wrote.is_none()
@@ -121,7 +121,25 @@ fn main() -> ! {
                             }
                         }
                     }
-                    ConnectionState::Connected => {
+                    ConnectionState::WaitingForState => {
+                        // We leave it up to the device to decide if it is configured looking for
+                        // efuses and rsa key, then skip to the genuine check.
+                        if let Some(ReceiveSerial::Message(DeviceFactorySend::SendState {
+                            rsa_pub_key,
+                        })) = connection.port.try_read_message().unwrap()
+                        {
+                            if let Some(rsa_pub_key_bytes) = rsa_pub_key {
+                                println!("Device already has certificate!");
+                                let rsa_pub_key =
+                                    rsa::RsaPublicKey::from_pkcs1_der(&rsa_pub_key_bytes).unwrap();
+                                connection.state =
+                                    ConnectionState::SavingGenuineCertificate { rsa_pub_key }
+                            } else {
+                                connection.state = ConnectionState::BeginInitEntropy;
+                            }
+                        };
+                    }
+                    ConnectionState::BeginInitEntropy => {
                         let mut bytes = [0u8; 32];
                         rand::thread_rng().fill_bytes(&mut bytes);
                         connection
@@ -173,7 +191,7 @@ fn main() -> ! {
                     }
                     ConnectionState::SavingGenuineCertificate { rsa_pub_key } => {
                         if let Some(ReceiveSerial::Message(
-                            DeviceFactorySend::SavedGenuineCertificate(certificate),
+                            DeviceFactorySend::PresentGenuineCertificate(certificate),
                         )) = connection.port.try_read_message().unwrap()
                         {
                             // Verify certificate signature with factory key
@@ -327,7 +345,8 @@ enum ConnectionState {
     WaitingForMagic {
         last_wrote: Option<std::time::Instant>,
     },
-    Connected,
+    WaitingForState,
+    BeginInitEntropy,
     InitEntropy,
     SettingDsKey {
         rsa_pub_key: RsaPublicKey,

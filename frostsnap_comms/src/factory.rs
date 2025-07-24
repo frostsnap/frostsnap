@@ -55,14 +55,16 @@ pub struct FactoryDownstream;
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum DeviceFactorySend {
+    SendState { rsa_pub_key: Option<Vec<u8>> },
     InitEntropyOk,
     ReceivedDsKey,
-    SavedGenuineCertificate(Certificate),
+    PresentGenuineCertificate(Certificate),
     SignedChallenge { signature: [u8; 384] },
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum FactorySend {
+    CheckState,
     InitEntropy([u8; 32]),
     SetEsp32DsKey(Esp32DsKey),
     SetGenuineCertificate(Certificate),
@@ -89,9 +91,10 @@ pub struct Certificate {
 impl Gist for DeviceFactorySend {
     fn gist(&self) -> String {
         match self {
+            DeviceFactorySend::SendState { .. } => "SendState",
             DeviceFactorySend::InitEntropyOk => "InitEntropyOk",
             DeviceFactorySend::ReceivedDsKey { .. } => "SetDs",
-            DeviceFactorySend::SavedGenuineCertificate(_) => "SavedGenuineCertificate",
+            DeviceFactorySend::PresentGenuineCertificate(_) => "SavedGenuineCertificate",
             DeviceFactorySend::SignedChallenge { .. } => "SignedChallenge",
         }
         .into()
@@ -101,6 +104,7 @@ impl Gist for DeviceFactorySend {
 impl Gist for FactorySend {
     fn gist(&self) -> String {
         match self {
+            FactorySend::CheckState => "CheckState",
             FactorySend::SetEsp32DsKey { .. } => "SetEsp32DsKey",
             FactorySend::InitEntropy(_) => "InitEntropy",
             FactorySend::SetGenuineCertificate(_) => "GenuineCertificate",
