@@ -55,7 +55,6 @@ pub struct FactoryDownstream;
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub enum DeviceFactorySend {
-    SendState { rsa_pub_key: Option<Vec<u8>> },
     InitEntropyOk,
     ReceivedDsKey,
     PresentGenuineCertificate(Certificate),
@@ -91,7 +90,6 @@ pub struct Certificate {
 impl Gist for DeviceFactorySend {
     fn gist(&self) -> String {
         match self {
-            DeviceFactorySend::SendState { .. } => "SendState",
             DeviceFactorySend::InitEntropyOk => "InitEntropyOk",
             DeviceFactorySend::ReceivedDsKey { .. } => "SetDs",
             DeviceFactorySend::PresentGenuineCertificate(_) => "SavedGenuineCertificate",
