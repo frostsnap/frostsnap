@@ -41,7 +41,6 @@ class DeviceList extends StatefulWidget {
 }
 
 class _DeviceListState extends State<DeviceList> {
-  // with WidgetsBindingObserver
   GlobalKey<AnimatedListState> deviceListKey = GlobalKey<AnimatedListState>();
   StreamSubscription? _subscription;
   late DeviceListState currentListState;
@@ -49,7 +48,6 @@ class _DeviceListState extends State<DeviceList> {
   @override
   void initState() {
     super.initState();
-    // WidgetsBinding.instance.addObserver(this);
     currentListState = coord.deviceListState();
     _subscription = GlobalStreams.deviceListUpdateStream.listen((update) async {
       if (update.state.stateId != currentListState.stateId + 1) {
@@ -99,19 +97,9 @@ class _DeviceListState extends State<DeviceList> {
 
   @override
   void dispose() {
-    // WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
     super.dispose();
   }
-
-  // // This is meant to make sure we catch any devices plugged in while the app
-  // // wasn't in foreground but for some reason it doesn't work.
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   if (state == AppLifecycleState.resumed) {
-  //     globalHostPortHandler.scanDevices();
-  //   }
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -378,13 +366,17 @@ class _DeviceListPageState extends State<DeviceListPage> {
       clipBehavior: Clip.hardEdge,
       child: ListTile(
         title: Text(
-          device.name ?? 'Empty Device',
+          device.name ?? 'Unnamed',
           style: monospaceTextStyle.copyWith(
             color: hasKey ? null : theme.disabledColor,
           ),
         ),
         subtitle: Text(
-          walletName == null ? 'Not part of a known wallet' : walletName,
+          device.name == null
+              ? '~'
+              : walletName == null
+              ? 'Not recovered'
+              : walletName,
           style: TextStyle(
             color: hasKey && hasWallet ? null : theme.disabledColor,
           ),
@@ -413,15 +405,31 @@ class _DeviceListPageState extends State<DeviceListPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final windowSize = WindowSizeContext.of(context);
-    final topBar = TopBar(
-      titleText: 'Connected Devices',
-      scrollController: _scrollController,
-    );
+    final isFullscreen = windowSize == WindowSizeClass.compact;
+
+    const titleText = 'Connected Devices';
+    final header = isFullscreen
+        ? SliverAppBar.large(
+            title: Text(titleText),
+            leading: IconButton(
+              icon: Icon(Icons.close_rounded),
+              onPressed: () => Navigator.pop(context),
+            ),
+            pinned: true,
+          )
+        : SliverPinnedHeader(
+            child: TopBar(
+              titleText: titleText,
+              scrollController: _scrollController,
+            ),
+          );
+
     final scrollView = CustomScrollView(
       controller: _scrollController,
-      shrinkWrap: windowSize != WindowSizeClass.compact,
+      shrinkWrap: !isFullscreen,
       slivers: [
-        SliverPinnedHeader(
+        header,
+        SliverToBoxAdapter(
           child: AnimatedSize(
             duration: Durations.long1,
             curve: Curves.easeInOutCubicEmphasized,
@@ -447,7 +455,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
           ),
         ),
         SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 16),
+          padding: EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 16),
           sliver: SliverDeviceList(
             deviceBuilder: _buildDevice,
             onDeviceListChange: (state) => _needsUpgrade.value = state.devices
@@ -456,17 +464,20 @@ class _DeviceListPageState extends State<DeviceListPage> {
             noDeviceWidget: Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
               child: Center(
+                heightFactor: 2.1,
                 child: Column(
                   spacing: 12,
                   children: [
                     Icon(
                       Icons.sentiment_dissatisfied,
-                      color: theme.disabledColor,
+                      color: theme.colorScheme.onSurfaceVariant,
                       size: 64,
                     ),
                     Text(
                       'No devices connected',
-                      style: TextStyle(color: theme.disabledColor),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -481,7 +492,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          topBar,
+          // topBar,
           Flexible(child: scrollView),
         ],
       ),

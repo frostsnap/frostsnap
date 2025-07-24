@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -369,31 +370,20 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.threshold => 'Generate keys',
   };
 
-  InlineSpan get title => switch (_step) {
-    WalletCreateStep.name => TextSpan(text: 'Name wallet'),
-    WalletCreateStep.deviceCount => TextSpan(text: 'Pick devices'),
-    WalletCreateStep.deviceNames => TextSpan(text: 'Name devices'),
-    WalletCreateStep.threshold => TextSpan(text: 'Choose threshold'),
+  String get title => switch (_step) {
+    WalletCreateStep.name => 'Name wallet',
+    WalletCreateStep.deviceCount => 'Pick devices',
+    WalletCreateStep.deviceNames => 'Name devices',
+    WalletCreateStep.threshold => 'Choose threshold',
   };
 
-  TextSpan get subtitle => switch (_step) {
-    WalletCreateStep.name => TextSpan(text: 'Choose a name for this wallet'),
-    WalletCreateStep.deviceCount => TextSpan(
-      children: [
-        TextSpan(text: 'Connect devices to become keys for '),
-        TextSpan(
-          text: _form.name ?? '',
-          style: TextStyle(fontStyle: FontStyle.italic),
-        ),
-      ],
-    ),
-    WalletCreateStep.deviceNames => TextSpan(
-      text: 'Each device needs a name to idenitfy it.',
-    ),
-    WalletCreateStep.threshold => TextSpan(
-      text:
-          'Decide how many devices will be required to sign transactions or to make changes to this wallet',
-    ),
+  String get subtitle => switch (_step) {
+    WalletCreateStep.name => 'Choose a name for this wallet',
+    WalletCreateStep.deviceCount =>
+      'Connect devices to become keys for "${form.name ?? ''}"',
+    WalletCreateStep.deviceNames => 'Each device needs a name to idenitfy it',
+    WalletCreateStep.threshold =>
+      'Decide how many devices will be required to sign transactions or to make changes to this wallet',
   };
 
   void setDeviceName(DeviceId id, String name) async {
@@ -419,8 +409,8 @@ class WalletCreatePage extends StatefulWidget {
 }
 
 class _WalletCreatePageState extends State<WalletCreatePage> {
-  static const topSectionPadding = EdgeInsets.fromLTRB(20, 36, 20, 36);
-  static const sectionPadding = EdgeInsets.fromLTRB(20, 20, 20, 28);
+  static const topSectionPadding = EdgeInsets.fromLTRB(16, 0, 16, 16);
+  static const sectionPadding = EdgeInsets.fromLTRB(16, 16, 16, 24);
   late WalletCreateController _controller;
 
   @override
@@ -680,12 +670,22 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
     return Card.filled(
       margin: EdgeInsets.symmetric(vertical: 4),
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      color: Theme.of(context).colorScheme.surface,
       clipBehavior: Clip.hardEdge,
       child: ListTile(
         leading: Icon(Icons.key),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12),
         title: TextField(
-          decoration: InputDecoration(hintText: 'Enter device name'),
+          decoration: InputDecoration(
+            hintText: 'Enter device name',
+            border: OutlineInputBorder(
+              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+            ),
+            suffixIcon: Icon(Icons.edit_rounded),
+            filled: true,
+          ),
+          style: monospaceTextStyle,
           controller: textController,
           onChanged: isPart
               ? (name) => _controller.setDeviceName(device.id, name)
@@ -785,11 +785,24 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final theme = Theme.of(context);
     final mediaQuery = MediaQuery.of(context);
     final windowSize = WindowSizeContext.of(context);
+    final isFullscreen = windowSize == WindowSizeClass.compact;
 
     final network = _controller.form.network;
     final appBarTrailingText = network.isMainnet()
         ? ''
         : ' (${network.name()})';
+
+    final titleText = '${_controller.title}$appBarTrailingText';
+    final header = isFullscreen
+        ? SliverAppBar.large(
+            title: Text(titleText),
+            leading: IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: Icon(Icons.close),
+            ),
+            pinned: true,
+          )
+        : SliverPinnedHeader(child: TopBar(titleText: ''));
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -806,32 +819,25 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 physics: ClampingScrollPhysics(),
                 shrinkWrap: windowSize != WindowSizeClass.compact,
                 slivers: [
-                  SliverAppBar(
-                    title: Text(
-                      'Create Wallet$appBarTrailingText',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    leading: IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close),
-                    ),
-                    pinned: true,
-                  ),
+                  header,
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: topSectionPadding,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 12,
+                        spacing: 20,
                         children: [
-                          Text.rich(
-                            _controller.title,
-                            style: theme.textTheme.headlineLarge,
-                          ),
-                          Text.rich(
+                          if (!isFullscreen) ...[
+                            SizedBox(height: 8),
+                            Text(
+                              titleText,
+                              style: theme.textTheme.headlineMedium,
+                            ),
+                          ],
+                          Text(
                             _controller.subtitle,
-                            style: theme.textTheme.bodyLarge,
+                            style: theme.textTheme.titleMedium,
                           ),
                         ],
                       ),
@@ -850,13 +856,13 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Divider(height: 0),
             if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
                 false)
               buildAdvancedOptions(context),
-            Divider(height: 0),
             Padding(
               padding: EdgeInsets.all(
-                20,
+                16,
               ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
               child: SafeArea(
                 top: false,
@@ -904,21 +910,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   bool _isAdvancedOptionsHidden = true;
   StatefulBuilder buildAdvancedOptions(BuildContext context) {
-    const titlePadding = EdgeInsets.fromLTRB(0, 20, 0, 12);
     final theme = Theme.of(context);
     return StatefulBuilder(
       builder: (context, setState) {
         final mayHide = Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12,
           children: [
-            Padding(
-              padding: titlePadding,
-              child: Text(
-                'Network',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+            Text(
+              'Network',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             SegmentedButton<String>(
@@ -944,14 +947,24 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 );
               },
             ),
+            SizedBox(height: 8),
           ],
         );
         return Padding(
-          padding: EdgeInsets.all(20),
+          padding: EdgeInsets.symmetric(horizontal: 16).copyWith(top: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              AnimatedCrossFade(
+                firstChild: SizedBox(),
+                secondChild: mayHide,
+                crossFadeState: _isAdvancedOptionsHidden
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
+                duration: Durations.medium2,
+                sizeCurve: Curves.easeInOutCubicEmphasized,
+              ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 spacing: 8,
@@ -983,15 +996,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     ),
                   ),
                 ],
-              ),
-              AnimatedCrossFade(
-                firstChild: SizedBox(),
-                secondChild: mayHide,
-                crossFadeState: _isAdvancedOptionsHidden
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
-                duration: Durations.medium2,
-                sizeCurve: Curves.easeInOutCubicEmphasized,
               ),
             ],
           ),

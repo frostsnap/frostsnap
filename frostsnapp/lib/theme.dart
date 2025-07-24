@@ -137,7 +137,7 @@ WidgetSpan buildTag(BuildContext context, {required String text}) {
 }
 
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
-  static const headerPadding = EdgeInsets.fromLTRB(20, 20, 20, 16);
+  static const headerPadding = EdgeInsets.fromLTRB(20, 12, 20, 16);
   static const animationDuration = Durations.short3;
 
   final String? titleText;
@@ -162,21 +162,40 @@ class _TopBarState extends State<TopBar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final windowSize = WindowSizeContext.of(context);
+    final isDialog = windowSize != WindowSizeClass.compact;
+
+    final dragHandle = SizedBox(
+      height: 16,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          width: 32,
+          height: 4,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.outline,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      ),
+    );
+
     final headline = Padding(
       padding: TopBar.headerPadding,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         spacing: 20,
         children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(Icons.close),
-            iconSize: 24,
-            padding: EdgeInsets.zero,
-            style: IconButton.styleFrom(
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+          if (isDialog)
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: Icon(Icons.close),
+              iconSize: 24,
+              padding: EdgeInsets.zero,
+              style: IconButton.styleFrom(
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              ),
             ),
-          ),
           Expanded(
             child: Text(
               widget.titleText ?? '',
@@ -193,6 +212,7 @@ class _TopBarState extends State<TopBar> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          isDialog ? SizedBox(height: 8) : dragHandle,
           headline,
           if (widget.scrollController != null)
             buildDivider(context, widget.scrollController!),
