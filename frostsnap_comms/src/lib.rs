@@ -292,7 +292,7 @@ pub trait HasMagicBytes {
 }
 
 pub trait Direction: HasMagicBytes {
-    type RecvType: bincode::Encode + Gist;
+    type RecvType: bincode::Encode + bincode::Decode<()> + Gist;
     type Opposite: Direction;
 }
 

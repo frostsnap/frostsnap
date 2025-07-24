@@ -54,6 +54,7 @@ pub struct FactoryUpstream;
 pub struct FactoryDownstream;
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
+#[allow(clippy::large_enum_variant)] // only once during factory
 pub enum DeviceFactorySend {
     InitEntropyOk,
     ReceivedDsKey,
@@ -62,6 +63,7 @@ pub enum DeviceFactorySend {
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
+#[allow(clippy::large_enum_variant)] // only once during factory
 pub enum FactorySend {
     CheckState,
     InitEntropy([u8; 32]),
@@ -91,7 +93,7 @@ impl Gist for DeviceFactorySend {
     fn gist(&self) -> String {
         match self {
             DeviceFactorySend::InitEntropyOk => "InitEntropyOk",
-            DeviceFactorySend::ReceivedDsKey { .. } => "SetDs",
+            DeviceFactorySend::ReceivedDsKey => "SetDs",
             DeviceFactorySend::PresentGenuineCertificate(_) => "SavedGenuineCertificate",
             DeviceFactorySend::SignedChallenge { .. } => "SignedChallenge",
         }
