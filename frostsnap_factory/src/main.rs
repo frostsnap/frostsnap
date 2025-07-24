@@ -96,7 +96,7 @@ fn main() -> ! {
                         match connection.port.read_for_magic_bytes() {
                             Ok(supported_features) => match supported_features {
                                 Some(_) => {
-                                    connection.state = ConnectionState::WaitingForState;
+                                    connection.state = ConnectionState::BeginInitEntropy;
                                 }
                                 None => {
                                     if last_wrote.is_none()
@@ -120,24 +120,6 @@ fn main() -> ! {
                                 error!(error = e.to_string(), "failed to read magic bytes")
                             }
                         }
-                    }
-                    ConnectionState::WaitingForState => {
-                        // We leave it up to the device to decide if it is configured looking for
-                        // efuses and rsa key, then skip to the genuine check.
-                        if let Some(ReceiveSerial::Message(DeviceFactorySend::SendState {
-                            rsa_pub_key,
-                        })) = connection.port.try_read_message().unwrap()
-                        {
-                            if let Some(rsa_pub_key_bytes) = rsa_pub_key {
-                                println!("Device already has certificate!");
-                                let rsa_pub_key =
-                                    rsa::RsaPublicKey::from_pkcs1_der(&rsa_pub_key_bytes).unwrap();
-                                connection.state =
-                                    ConnectionState::SavingGenuineCertificate { rsa_pub_key }
-                            } else {
-                                connection.state = ConnectionState::BeginInitEntropy;
-                            }
-                        };
                     }
                     ConnectionState::BeginInitEntropy => {
                         let mut bytes = [0u8; 32];
@@ -236,9 +218,11 @@ fn main() -> ! {
                                 .expect("Signature from device failed to verify!");
 
                             println!("Device RSA signature verifcation succeeded!");
-
-                            println!("Factory process complete!");
+                            connection.state = ConnectionState::Done;
                         }
+                    }
+                    ConnectionState::Done => {
+                        println!("Factory process complete!");
                     }
                 }
             });
@@ -287,7 +271,7 @@ fn generate_ds_key(rng: &mut (impl RngCore + CryptoRng)) -> (RsaPrivateKey, [u8;
     let priv_key = RsaPrivateKey::new(rng, DS_KEY_SIZE_BITS).unwrap();
 
     let mut hmac_key = [42u8; 32];
-    // rng.fill_bytes(&mut hmac_key); // TODO: FILL!!
+    rng.fill_bytes(&mut hmac_key);
 
     (priv_key, hmac_key)
 }
@@ -345,7 +329,6 @@ enum ConnectionState {
     WaitingForMagic {
         last_wrote: Option<std::time::Instant>,
     },
-    WaitingForState,
     BeginInitEntropy,
     InitEntropy,
     SettingDsKey {
@@ -358,6 +341,7 @@ enum ConnectionState {
         rsa_pub_key: RsaPublicKey,
         challenge: Vec<u8>,
     },
+    Done,
 }
 
 #[repr(C)]
