@@ -17,6 +17,12 @@ impl FactoryData {
         }
     }
 
+    pub fn certificate(&self) -> Certificate {
+        match &self.inner {
+            Versioned::V0(contents) => contents.certificate.clone(),
+        }
+    }
+
     pub fn encrypted_params(&self) -> Vec<u8> {
         match &self.inner {
             Versioned::V0(contents) => contents.encrypted_params.clone(),
