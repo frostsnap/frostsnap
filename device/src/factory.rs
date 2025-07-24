@@ -17,7 +17,7 @@ use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
 
-// mod screen_test;
+mod screen_test;
 
 use crate::{
     efuse::{self, EfuseHmacKeys, KeyPurpose},
@@ -68,7 +68,6 @@ pub fn run_factory<'a, 'b, S, I2C, PINT, RST, T>(
     efuse: &efuse::EfuseController,
     hal_hmac: &'a core::cell::RefCell<Hmac<'a>>,
     mut rng: impl rand_core::RngCore, // take ownership to stop caller from accidentally using it again
-    sha256: &mut esp_hal::sha::Sha<'_>,
     jtag: &'b mut UsbSerialJtag<'a, Blocking>,
     timer: &'a T,
     ds: DS,
@@ -84,35 +83,26 @@ where
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
 
-    text_display!(display, "waiting for factory magic bytes");
+    // if already configured we skip everything
+    let efuses_burnt = EfuseHmacKeys::has_been_initialized();
 
-    loop {
-        if upstream.find_and_remove_magic_bytes() {
-            upstream.write_magic_bytes().expect("can write magic bytes");
-            text_display!(display, "Got factory magic bytes");
-            break;
+    let mut hmac_keys = if efuses_burnt {
+        EfuseHmacKeys::load(hal_hmac).expect("we should have hmac keys!")
+    } else {
+        screen_test::run(display, capsense);
+
+        text_display!(
+            display,
+            "Device not configured, waiting for factory magic bytes!"
+        );
+        loop {
+            if upstream.find_and_remove_magic_bytes() {
+                upstream.write_magic_bytes().expect("can write magic bytes");
+                text_display!(display, "Got factory magic bytes");
+                break;
+            }
         }
-    }
 
-    // if already configured, we want to go straight to the genuine check!
-    let efuses_burnt = efuse::EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT);
-    let some_rsa_key = efuses_burnt.then(|| {
-        match bincode::decode_from_reader::<FactoryData, _, _>(
-            partitions.factory_data.bincode_reader(),
-            ABWRITE_BINCODE_CONFIG,
-        ) {
-            Ok(factory_data) => factory_data.certificate().rsa_key,
-            Err(e) => panic!("This device has efuses burnt but is missing factory data! {e}"),
-        }
-    });
-
-    upstream
-        .send(DeviceFactorySend::SendState {
-            rsa_pub_key: some_rsa_key,
-        })
-        .unwrap();
-
-    let (factory_data, mut hmac_keys) = if !efuses_burnt {
         let factory_entropy = read_message!(upstream, FactorySend::InitEntropy);
 
         text_display!(display, "Got entropy");
@@ -179,38 +169,24 @@ where
             "Saved encrypted params, certificate and burnt efuse!"
         );
 
-        (read_factory_data, hmac_keys)
-    } else {
-        let factory_data = bincode::decode_from_reader::<FactoryData, _, _>(
-            partitions.factory_data.bincode_reader(),
-            ABWRITE_BINCODE_CONFIG,
-        )
-        .expect("we should have been able to read the factory data back out!");
+        upstream
+            .send(DeviceFactorySend::PresentGenuineCertificate(
+                read_factory_data.certificate(),
+            ))
+            .unwrap();
 
-        let hmac_keys = EfuseHmacKeys::load(hal_hmac).expect("we should have hmac keys!");
+        let challenge = read_message!(upstream, FactorySend::Challenge);
+        let signature = standard_rsa_sign(ds, read_factory_data.encrypted_params(), &challenge);
+        let signature = ds_words_to_bytes(&signature);
+        upstream
+            .send(DeviceFactorySend::SignedChallenge { signature })
+            .unwrap();
+        text_display!(display, "Signed challenge!");
 
-        (factory_data, hmac_keys)
+        hmac_keys
     };
 
-    // mix in entropy by from hmac efuse
     let final_rng = hmac_keys.fixed_entropy.mix_in_rng(&mut rng);
-
-    upstream
-        .send(DeviceFactorySend::PresentGenuineCertificate(
-            factory_data.certificate(),
-        ))
-        .unwrap();
-
-    let challenge = read_message!(upstream, FactorySend::Challenge);
-    let signature = standard_rsa_sign(ds, factory_data.encrypted_params(), &challenge);
-    let signature = ds_words_to_bytes(&signature);
-    upstream
-        .send(DeviceFactorySend::SignedChallenge { signature })
-        .unwrap();
-    text_display!(display, "Signed challenge!");
-
-    loop {}
-
     (final_rng, hmac_keys)
 }
 
