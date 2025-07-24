@@ -20,11 +20,9 @@ use rand_core::{RngCore, SeedableRng};
 mod screen_test;
 
 use crate::{
-    efuse::{self, EfuseHmacKeys, KeyPurpose},
+    efuse::{self, EfuseHmacKeys},
     io::SerialInterface,
 };
-
-const RSA_EFUSE_KEY_SLOT: u8 = 4;
 
 macro_rules! text_display {
     ($display:ident, $text:expr) => {
@@ -62,13 +60,14 @@ macro_rules! read_message {
     };
 }
 
-pub fn run_factory<'a, 'b, S, I2C, PINT, RST, T>(
+#[allow(clippy::too_many_arguments)]
+pub fn run_factory<'a, S, I2C, PINT, RST, T>(
     display: &mut S,
     capsense: &mut CST816S<I2C, PINT, RST>,
     efuse: &efuse::EfuseController,
     hal_hmac: &'a core::cell::RefCell<Hmac<'a>>,
     mut rng: impl rand_core::RngCore, // take ownership to stop caller from accidentally using it again
-    jtag: &'b mut UsbSerialJtag<'a, Blocking>,
+    jtag: &mut UsbSerialJtag<'a, Blocking>,
     timer: &'a T,
     ds: DS,
 ) -> (impl rand_core::RngCore, EfuseHmacKeys<'a>)
@@ -112,7 +111,6 @@ where
             encrypted_params,
             ds_hmac_key,
         } = read_message!(upstream, FactorySend::SetEsp32DsKey);
-
         // We don't immediately burn the RSA efuse, we do this after writing the blob
 
         upstream.send(DeviceFactorySend::ReceivedDsKey).unwrap();
@@ -133,22 +131,6 @@ where
         )
         .expect("we should have been able to read the factory data back out!");
 
-        // let do_read_protect = cfg!(feature = "read_protect_hmac_key");
-        let read_protect = false; // TODO: MAKE TRUE
-
-        let _ = efuse.set_efuse_key(
-            RSA_EFUSE_KEY_SLOT,
-            KeyPurpose::Ds,
-            read_protect,
-            ds_hmac_key,
-        );
-
-        // I was experiencing a hang SOMEWHERE HERE.
-        // Not sure if this actually fixes since im out of fresh devices with that keyslot..
-        let delay = Delay::new();
-        delay.delay_millis(100);
-        assert!(efuse::EfuseController::is_key_written(RSA_EFUSE_KEY_SLOT));
-
         let mut factory_rng = rand_chacha::ChaCha20Rng::from_seed(factory_entropy);
         let mut share_encryption_key = [0u8; 32];
         factory_rng.fill_bytes(&mut share_encryption_key);
@@ -161,8 +143,14 @@ where
             read_protect,
             share_encryption_key,
             factory_entropy,
+            ds_hmac_key,
         )
         .unwrap();
+
+        // I was experiencing a hang SOMEWHERE HERE.
+        // Not sure if this actually fixes since im out of fresh devices with that keyslot..
+        let delay = Delay::new();
+        delay.delay_millis(100);
 
         text_display!(
             display,
@@ -203,7 +191,7 @@ pub fn extract_entropy(
         rng.fill_bytes(&mut entropy);
         digest.update(&entropy).expect("infallible");
     }
-    digest.update(&mix_in).expect("infallible");
+    digest.update(mix_in).expect("infallible");
 
     let result = digest.finalize_fixed();
     rand_chacha::ChaCha20Rng::from_seed(result.into())
