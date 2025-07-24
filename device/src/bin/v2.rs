@@ -153,7 +153,7 @@ fn main() -> ! {
     let _ = display.clear(Rgb565::BLACK);
     channel0.start_duty_fade(0, 30, 500).unwrap();
 
-    let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
+    let sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
     let mut adc = peripherals.ADC1;
     let hal_rng = Trng::new(peripherals.RNG, &mut adc);
@@ -169,7 +169,6 @@ fn main() -> ! {
         &efuse,
         &hal_hmac,
         hal_rng,
-        &mut sha256,
         &mut jtag,
         &timer0,
         ds,
