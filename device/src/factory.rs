@@ -60,13 +60,14 @@ macro_rules! read_message {
     };
 }
 
-pub fn run_factory<'a, 'b, S, I2C, PINT, RST, T>(
+#[allow(clippy::too_many_arguments)]
+pub fn run_factory<'a, S, I2C, PINT, RST, T>(
     display: &mut S,
     capsense: &mut CST816S<I2C, PINT, RST>,
     efuse: &efuse::EfuseController,
     hal_hmac: &'a core::cell::RefCell<Hmac<'a>>,
     mut rng: impl rand_core::RngCore, // take ownership to stop caller from accidentally using it again
-    jtag: &'b mut UsbSerialJtag<'a, Blocking>,
+    jtag: &mut UsbSerialJtag<'a, Blocking>,
     timer: &'a T,
     ds: DS,
 ) -> (impl rand_core::RngCore, EfuseHmacKeys<'a>)
@@ -190,7 +191,7 @@ pub fn extract_entropy(
         rng.fill_bytes(&mut entropy);
         digest.update(&entropy).expect("infallible");
     }
-    digest.update(&mix_in).expect("infallible");
+    digest.update(mix_in).expect("infallible");
 
     let result = digest.finalize_fixed();
     rand_chacha::ChaCha20Rng::from_seed(result.into())
