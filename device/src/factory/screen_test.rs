@@ -37,7 +37,7 @@ fn update_failures<S>(display: &mut S, screen_width: i32, failures: i32)
 where
     S: DrawTarget<Color = Rgb565>,
 {
-    let text = format!("Failures: {}", failures);
+    let text = format!("Failures: {failures}");
     // Using FONT_10X20: approx. 10 pixels per character and 20 pixels tall.
     let text_width = 10 * text.len() as i32;
     let text_height = 20;
@@ -232,7 +232,7 @@ where
         .draw(display);
 
         // Draw the final failures count between the two buttons.
-        let final_text = format!("Failures: {}", failures);
+        let final_text = format!("Failures: {failures}");
         let final_text_width = 10 * final_text.len() as i32;
         let final_text_x = (screen_width - final_text_width) / 2;
         let final_text_y =
