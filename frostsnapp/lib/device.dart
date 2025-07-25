@@ -121,14 +121,17 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       title: 'Erase Device',
       body: (context) {
         final theme = Theme.of(context);
-        return ListTile(
-          leading: Icon(Icons.warning_rounded),
-          title: Text('This will remove all keys from the device.'),
-          tileColor: theme.colorScheme.errorContainer,
-          textColor: theme.colorScheme.onErrorContainer,
-          iconColor: theme.colorScheme.onErrorContainer,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          contentPadding: EdgeInsets.symmetric(horizontal: 16),
+        return Card.filled(
+          margin: EdgeInsets.zero,
+          color: theme.colorScheme.errorContainer,
+          child: ListTile(
+            leading: Icon(Icons.warning_rounded),
+            title: Text('This will wipe the key from the device.'),
+            subtitle: Text('This action cannot be reverted.'),
+            textColor: theme.colorScheme.onErrorContainer,
+            iconColor: theme.colorScheme.onErrorContainer,
+            contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          ),
         );
       },
       actionButtons: [
