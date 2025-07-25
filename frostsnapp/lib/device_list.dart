@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_settings.dart';
@@ -430,12 +431,12 @@ class _DeviceListPageState extends State<DeviceListPage> {
     _upgradeController.dispose();
     _needsUpgrade.dispose();
     _upgradeProgress.dispose();
-    _upgradeProgress.dispose();
     super.dispose();
   }
 
   Widget _buildDevice(BuildContext context, ConnectedDevice device) {
     final theme = Theme.of(context);
+    final homeCtx = HomeContext.of(context)!;
     final needsUpgrade = device.needsFirmwareUpgrade();
     final walletName = coord
         .frostKeysInvolvingDevice(deviceId: device.id)
@@ -479,9 +480,11 @@ class _DeviceListPageState extends State<DeviceListPage> {
         onTap: () async => await showBottomSheetOrDialog(
           context,
           titleText: 'Device Details',
-          builder: (context, controller) => DeviceDetails(
-            deviceId: device.id,
-            firmwareUpgrade: showUpgradeFirmwareDialog,
+          builder: (context, controller) => homeCtx.wrap(
+            DeviceDetails(
+              deviceId: device.id,
+              firmwareUpgrade: showUpgradeFirmwareDialog,
+            ),
           ),
         ),
       ),
