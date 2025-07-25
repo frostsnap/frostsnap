@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -141,13 +142,13 @@ class _DeviceDetailsState extends State<DeviceDetails> {
 
   Widget _buildColumn(BuildContext context, ConnectedDevice device) {
     final theme = Theme.of(context);
+    final homeCtx = HomeContext.of(context)!;
     final deviceName = device.name;
-    final walletName = coord
+    final wallet = coord
         .frostKeysInvolvingDevice(deviceId: device.id)
-        .map((key) => key.keyName())
         .firstOrNull;
     final isEmpty = deviceName == null;
-    final hasWallet = walletName != null;
+    final hasWallet = wallet != null;
     final needsUpgrade = device.needsFirmwareUpgrade();
     final noncesAvailable = coord.noncesAvailable(id: device.id);
 
@@ -180,17 +181,18 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Wallet'),
         subtitle: Text(
-          walletName ?? 'Wallet not recovered',
+          wallet?.keyName() ?? 'Wallet not recovered',
           style: monospaceTextStyle.copyWith(
             color: hasWallet ? null : theme.disabledColor,
           ),
         ),
         leading: Icon(Icons.wallet_rounded),
-        trailing: hasWallet
-            ? TextButton(onPressed: () {}, child: Text('Backup'))
-            : TextButton(onPressed: () {}, child: Text('Recover')),
+        trailing: hasWallet ? Icon(Icons.chevron_right_rounded) : null,
         onTap: hasWallet
-            ? () => copyAction(context, 'Wallet name', walletName)
+            ? () {
+                Navigator.popUntil(context, (r) => r.isFirst);
+                homeCtx.walletListController.selectWallet(wallet.keyId());
+              }
             : null,
       ),
     ];
