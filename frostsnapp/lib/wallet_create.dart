@@ -142,10 +142,6 @@ class WalletCreateController extends ChangeNotifier {
           },
         ),
       ],
-      // dismissButton: (context) => OutlinedButton(
-      //   onPressed: () async => await coord.cancelProtocol(),
-      //   child: Text('Cancel'),
-      // ),
     );
   }
 
