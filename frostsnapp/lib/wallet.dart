@@ -656,16 +656,12 @@ class WalletDrawer extends StatelessWidget {
               await MaybeFullscreenDialog.show(
                 context: context,
                 barrierDismissible: true,
-                child: DeviceListPage(),
+                child: homeCtx.wrap(DeviceListPage()),
               );
-              //   Navigator.push(
-              //   context,
-              //   MaterialPageRoute(builder: (context) => DeviceListPage()),
-              // );
             },
             false,
             Icons.devices,
-            'Devices',
+            'Connected Devices',
           ),
           (
             () => Navigator.push(
