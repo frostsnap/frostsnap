@@ -8,6 +8,7 @@ import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_create.dart';
 import 'package:frostsnap/wallet_device_list.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
@@ -342,25 +343,94 @@ class DeviceListPage extends StatefulWidget {
 
 class _DeviceListPageState extends State<DeviceListPage> {
   final _scrollController = ScrollController();
-  final _needsUpgrade = ValueNotifier(0);
+
   late final FullscreenActionDialogController<void> _upgradeController;
+  final _needsUpgrade = ValueNotifier(0);
+  final _upgradeProgress = ValueNotifier(FirmwareUpgradeState.empty());
 
   @override
   void initState() {
     super.initState();
     _upgradeController = FullscreenActionDialogController(
       title: 'Upgrade Firmware',
-      body: (context) {
-        return SizedBox();
-      },
+      body: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: [
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              title: Text('Firmware Digest'),
+              subtitle: Text(
+                coord.upgradeFirmwareDigest() ?? '',
+                style: monospaceTextStyle,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actionButtons: [
+        ValueListenableBuilder(
+          valueListenable: _upgradeProgress,
+          builder: (context, state, _) => switch (state.stage) {
+            FirmwareUpgradeStage.Acks => OutlinedButton(
+              child: Text('Cancel'),
+              onPressed: () async => await coord.cancelProtocol(),
+            ),
+            FirmwareUpgradeStage.Progress => SizedBox.shrink(),
+          },
+        ),
+        ValueListenableBuilder(
+          valueListenable: _upgradeProgress,
+          builder: (context, state, _) {
+            final theme = Theme.of(context);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 12,
+              children: [
+                ...switch (state.stage) {
+                  FirmwareUpgradeStage.Acks => [
+                    Text(
+                      'Confirm on device',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    LargeCircularProgressIndicator(
+                      size: 36,
+                      progress: state.acks ?? 0,
+                      total: state.neededAcks ?? 1,
+                    ),
+                  ],
+                  FirmwareUpgradeStage.Progress => [
+                    Text(
+                      'Upgrading...',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 100,
+                      child: LinearProgressIndicator(value: state.progress),
+                    ),
+                  ],
+                },
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
-    _needsUpgrade.dispose();
     _upgradeController.dispose();
+    _needsUpgrade.dispose();
+    _upgradeProgress.dispose();
+    _upgradeProgress.dispose();
     super.dispose();
   }
 
@@ -461,7 +531,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
                         contentPadding: EdgeInsets.symmetric(horizontal: 24),
                         textColor: theme.colorScheme.primary,
                         iconColor: theme.colorScheme.primary,
-                        onTap: () {},
+                        onTap: () async => showUpgradeFirmwareDialog(context),
                       ),
                     )
                   : SizedBox.shrink(),
@@ -504,10 +574,77 @@ class _DeviceListPageState extends State<DeviceListPage> {
     return SafeArea(child: scrollView);
   }
 
-  showUpgradeFirmwareDialog(BuildContext context) {
-    coord.cancelProtocol();
+  Future<bool> showUpgradeFirmwareDialog(BuildContext context) async {
+    _upgradeProgress.value = FirmwareUpgradeState.empty();
+
     final upgradeStream = coord.startFirmwareUpgrade();
-    upgradeStream.forEach((state) {});
-    final progress = coord.enterFirmwareUpgradeMode();
+
+    coord.upgradeFirmwareDigest();
+
+    await for (final state in upgradeStream) {
+      _needsUpgrade.value = state.needUpgrade.length;
+      _upgradeProgress.value = FirmwareUpgradeState.acks(
+        neededAcks: state.needUpgrade.length,
+        acks: state.confirmations.length,
+      );
+
+      for (final id in state.needUpgrade) {
+        _upgradeController.addActionNeeded(context, id);
+      }
+      if (state.abort) {
+        _upgradeController.clearAllActionsNeeded();
+        return false;
+      }
+      if (state.upgradeReadyToStart) {
+        break;
+      }
+    }
+
+    final progressStream = coord.enterFirmwareUpgradeMode();
+    var finalProgress = 0.0;
+    await for (final progress in progressStream) {
+      finalProgress = progress;
+      _upgradeProgress.value = FirmwareUpgradeState.progress(
+        progress: progress,
+      );
+    }
+
+    _upgradeController.clearAllActionsNeeded();
+    return finalProgress == 1.0;
   }
+}
+
+enum FirmwareUpgradeStage { Acks, Progress }
+
+class FirmwareUpgradeState {
+  final FirmwareUpgradeStage stage;
+  final int? neededAcks;
+  final int? acks;
+  final double? progress;
+
+  const FirmwareUpgradeState.empty()
+    : stage = FirmwareUpgradeStage.Acks,
+      neededAcks = null,
+      acks = null,
+      progress = null;
+
+  const FirmwareUpgradeState.acks({required int neededAcks, required int acks})
+    : stage = FirmwareUpgradeStage.Acks,
+      progress = null,
+      neededAcks = neededAcks,
+      acks = acks;
+
+  const FirmwareUpgradeState.progress({required double progress})
+    : stage = FirmwareUpgradeStage.Progress,
+      progress = progress,
+      neededAcks = null,
+      acks = null;
+
+  @override
+  bool operator ==(Object o) =>
+      o is FirmwareUpgradeState &&
+      o.stage == stage &&
+      o.neededAcks == neededAcks &&
+      o.acks == acks &&
+      o.progress == progress;
 }
