@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_settings.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -342,11 +343,24 @@ class DeviceListPage extends StatefulWidget {
 class _DeviceListPageState extends State<DeviceListPage> {
   final _scrollController = ScrollController();
   final _needsUpgrade = ValueNotifier(0);
+  late final FullscreenActionDialogController<void> _upgradeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _upgradeController = FullscreenActionDialogController(
+      title: 'Upgrade Firmware',
+      body: (context) {
+        return SizedBox();
+      },
+    );
+  }
 
   @override
   void dispose() {
     _scrollController.dispose();
     _needsUpgrade.dispose();
+    _upgradeController.dispose();
     super.dispose();
   }
 
@@ -487,15 +501,13 @@ class _DeviceListPageState extends State<DeviceListPage> {
         ),
       ],
     );
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // topBar,
-          Flexible(child: scrollView),
-        ],
-      ),
-    );
+    return SafeArea(child: scrollView);
+  }
+
+  showUpgradeFirmwareDialog(BuildContext context) {
+    coord.cancelProtocol();
+    final upgradeStream = coord.startFirmwareUpgrade();
+    upgradeStream.forEach((state) {});
+    final progress = coord.enterFirmwareUpgradeMode();
   }
 }
