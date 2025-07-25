@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -93,7 +92,7 @@ class WalletCreateController extends ChangeNotifier {
 
           final sessionHash = state.sessionHash;
           return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.center,
             spacing: 12,
             children: [
               const Text(
@@ -101,41 +100,52 @@ class WalletCreateController extends ChangeNotifier {
                 textAlign: TextAlign.center,
               ),
               Card.filled(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: AnimatedCrossFade(
-                      firstChild: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: CircularProgressIndicator(),
-                      ),
-                      secondChild: Text(
-                        keygenChecksum,
-                        style: theme.textTheme.headlineLarge?.copyWith(
-                          fontFamily: monospaceTextStyle.fontFamily,
-                        ),
-                      ),
-                      crossFadeState: sessionHash == null
-                          ? CrossFadeState.showFirst
-                          : CrossFadeState.showSecond,
-                      duration: Durations.medium1,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: AnimatedCrossFade(
+                    firstChild: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(),
                     ),
+                    secondChild: Text(
+                      keygenChecksum,
+                      style: theme.textTheme.headlineLarge?.copyWith(
+                        fontFamily: monospaceTextStyle.fontFamily,
+                      ),
+                    ),
+                    crossFadeState: sessionHash == null
+                        ? CrossFadeState.showFirst
+                        : CrossFadeState.showSecond,
+                    duration: Durations.medium1,
                   ),
                 ),
-              ),
-              LargeCircularProgressIndicator(
-                size: 70,
-                progress: state.sessionAcks.length,
-                total: state.devices.length,
               ),
             ],
           );
         },
       ),
-      dismissButton: (context) => OutlinedButton(
-        onPressed: () async => await coord.cancelProtocol(),
-        child: Text('Cancel'),
-      ),
+      actionButtons: [
+        OutlinedButton(
+          onPressed: () async => await coord.cancelProtocol(),
+          child: Text('Cancel'),
+        ),
+        ListenableBuilder(
+          listenable: this,
+          builder: (context, _) {
+            final state = _keygenState;
+            if (state == null) return const SizedBox();
+            return LargeCircularProgressIndicator(
+              size: 36,
+              progress: state.sessionAcks.length,
+              total: state.devices.length,
+            );
+          },
+        ),
+      ],
+      // dismissButton: (context) => OutlinedButton(
+      //   onPressed: () async => await coord.cancelProtocol(),
+      //   child: Text('Cancel'),
+      // ),
     );
   }
 
@@ -802,7 +812,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
             pinned: true,
           )
-        : SliverPinnedHeader(child: TopBar());
+        : SliverPinnedHeader(child: TopBar(title: Text(titleText)));
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -822,24 +832,12 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   header,
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: topSectionPadding,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 20,
-                        children: [
-                          if (!isFullscreen) ...[
-                            SizedBox(height: 8),
-                            Text(
-                              titleText,
-                              style: theme.textTheme.headlineMedium,
-                            ),
-                          ],
-                          Text(
-                            _controller.subtitle,
-                            style: theme.textTheme.titleMedium,
-                          ),
-                        ],
+                      padding: topSectionPadding.copyWith(
+                        top: isFullscreen ? null : 8,
+                      ),
+                      child: Text(
+                        _controller.subtitle,
+                        style: theme.textTheme.titleMedium,
                       ),
                     ),
                   ),
