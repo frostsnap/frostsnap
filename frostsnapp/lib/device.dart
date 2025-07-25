@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -101,25 +102,74 @@ class _DeviceDetailsState extends State<DeviceDetails> {
   bool _gotFirstData = false;
   ConnectedDevice? _device;
 
-  onData(DeviceListUpdate update) {
-    final device = update.state.devices.firstWhereOrNull(
-      (device) => deviceIdEquals(device.id, widget.deviceId),
-    );
-    setState(() {
-      _gotFirstData = true;
-      _device = device;
-    });
-  }
+  late final FullscreenActionDialogController<void> _eraseController;
 
   @override
   void initState() {
     super.initState();
-    _sub = GlobalStreams.deviceListSubject.listen(onData);
+    _sub = GlobalStreams.deviceListSubject.listen((DeviceListUpdate update) {
+      final device = update.state.devices.firstWhereOrNull(
+        (device) => deviceIdEquals(device.id, widget.deviceId),
+      );
+      if (device?.name == null) _eraseController.clearAllActionsNeeded();
+      setState(() {
+        _gotFirstData = true;
+        _device = device;
+      });
+    });
+    _eraseController = FullscreenActionDialogController(
+      title: 'Erase Device',
+      body: (context) {
+        final theme = Theme.of(context);
+        return ListTile(
+          leading: Icon(Icons.warning_rounded),
+          title: Text('This will remove all keys from the device.'),
+          tileColor: theme.colorScheme.errorContainer,
+          textColor: theme.colorScheme.onErrorContainer,
+          iconColor: theme.colorScheme.onErrorContainer,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: EdgeInsets.symmetric(horizontal: 16),
+        );
+      },
+      actionButtons: [
+        OutlinedButton(
+          child: Text('Cancel'),
+          onPressed: () async {
+            final id = _device?.id;
+            if (id != null) await coord.sendCancel(id: id);
+            _eraseController.clearAllActionsNeeded();
+          },
+        ),
+        Builder(
+          builder: (context) {
+            final theme = Theme.of(context);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 12,
+              children: [
+                Text(
+                  'Confirm on device',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Icon(
+                  Icons.touch_app_rounded,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
   }
 
   @override
   void dispose() {
     _sub.cancel();
+    _eraseController.dispose();
     super.dispose();
   }
 
@@ -133,10 +183,38 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       slivers: [
         if (_gotFirstData)
           SliverToBoxAdapter(
-            child: device == null ? SizedBox() : _buildColumn(context, device),
+            child: device == null
+                ? _buildDisconnectedWidget(context)
+                : _buildColumn(context, device),
           ),
         SliverSafeArea(sliver: SliverToBoxAdapter(child: SizedBox(height: 12))),
       ],
+    );
+  }
+
+  Widget _buildDisconnectedWidget(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        heightFactor: 2.1,
+        child: Column(
+          spacing: 12,
+          children: [
+            Icon(
+              Icons.sentiment_dissatisfied,
+              color: theme.colorScheme.onSurfaceVariant,
+              size: 64,
+            ),
+            Text(
+              'Device disconnected',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -223,7 +301,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         subtitle: Text('Delete all keys'),
         leading: Icon(Icons.delete_forever_rounded),
         trailing: TextButton(
-          onPressed: () {},
+          onPressed: () => showEraseDialog(context, device.id),
           child: Text('Erase'),
           style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
         ),
@@ -293,5 +371,10 @@ class _DeviceDetailsState extends State<DeviceDetails> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('$what copied to clipboard')));
+  }
+
+  void showEraseDialog(BuildContext context, DeviceId id) async {
+    _eraseController.addActionNeeded(context, id);
+    await coord.wipeDeviceData(deviceId: id);
   }
 }
