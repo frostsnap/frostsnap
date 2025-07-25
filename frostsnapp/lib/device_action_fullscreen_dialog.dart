@@ -161,10 +161,11 @@ Future<T?> showFullscreenActionDialog<T>(
     },
   );
 
-  final res2 = await MaybeFullscreenDialog.show(
+  final res = await MaybeFullscreenDialog.show(
     context: context,
     backgroundColor: Colors.transparent,
     blurCompactBackground: true,
+    animationDuration: Durations.medium4,
     child: PopScope(
       canPop: controller.onDismissed != null,
       onPopInvokedWithResult: (didPop, result) {
@@ -175,54 +176,7 @@ Future<T?> showFullscreenActionDialog<T>(
     ),
   );
 
-  // final res = await showDialog<T>(
-  //   context: context,
-  //   barrierDismissible: false,
-  //   builder: (ctx) {
-  //     final dialog = ListenableBuilder(
-  //       listenable: controller,
-  //       builder: (ctx, _) {
-  //         if (!controller.hasActionsNeeded) {
-  //           Navigator.pop(ctx);
-  //         }
-  //         final windowSize = WindowSizeContext.of(context);
-  //         final isCompact = windowSize == WindowSizeClass.compact;
-  //         return Dialog.fullscreen(
-  //           backgroundColor: Colors.transparent,
-  //           child: SafeArea(
-  //             child: Center(
-  //               child: ConstrainedBox(
-  //                 constraints: BoxConstraints(maxWidth: 580),
-  //                 child: Padding(
-  //                   padding: EdgeInsets.all(16),
-  //                   child: isCompact
-  //                       ? content
-  //                       : Card.outlined(
-  //                           child: Padding(
-  //                             padding: EdgeInsets.all(16),
-  //                             child: content,
-  //                           ),
-  //                         ),
-  //                 ),
-  //               ),
-  //             ),
-  //           ),
-  //         );
-  //       },
-  //     );
-
-  //     return PopScope(
-  //       canPop: controller.onDismissed != null,
-  //       onPopInvokedWithResult: (didPop, result) {
-  //         if (didPop) return;
-  //         showCannotDismissDialog(context);
-  //       },
-  //       child: BackdropFilter(filter: blurFilter, child: dialog),
-  //     );
-  //   },
-  // );
-
   controller.onDismissed?.call();
 
-  return res2;
+  return res;
 }

@@ -65,6 +65,7 @@ class MaybeFullscreenDialog extends StatefulWidget {
     required BuildContext context,
     bool barrierDismissible = false,
     bool blurCompactBackground = false,
+    Duration? animationDuration,
     Color? backgroundColor,
     Widget? child,
   }) {
@@ -72,6 +73,7 @@ class MaybeFullscreenDialog extends StatefulWidget {
       context: context,
       barrierDismissible: barrierDismissible,
       useSafeArea: false,
+      animationStyle: AnimationStyle(duration: animationDuration),
       builder: (context) => MaybeFullscreenDialog(
         blurCompactBackground: blurCompactBackground,
         backgroundColor:
