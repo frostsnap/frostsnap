@@ -266,12 +266,41 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   final actionDialogController = FullscreenActionDialogController(
     title: 'Confirm transaction on device',
-    body: (context) => Center(
-      child: Text(
-        'Unplug device to cancel',
-        style: Theme.of(context).textTheme.labelLarge,
+    actionButtons: [
+      Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          return Text(
+            'Unplug to cancel',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
+        },
       ),
-    ),
+      Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 12,
+            children: [
+              Text(
+                'Confirm on device',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              Icon(
+                Icons.touch_app_rounded,
+                color: theme.colorScheme.onSurfaceVariant,
+                size: 20,
+              ),
+            ],
+          );
+        },
+      ),
+    ],
   );
 
   bool? get signingDone => signingState == null
