@@ -479,7 +479,10 @@ class _DeviceListPageState extends State<DeviceListPage> {
         onTap: () async => await showBottomSheetOrDialog(
           context,
           titleText: 'Device Details',
-          builder: (context, controller) => DeviceDetails(deviceId: device.id),
+          builder: (context, controller) => DeviceDetails(
+            deviceId: device.id,
+            firmwareUpgrade: showUpgradeFirmwareDialog,
+          ),
         ),
       ),
     );
@@ -531,7 +534,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
                         contentPadding: EdgeInsets.symmetric(horizontal: 24),
                         textColor: theme.colorScheme.primary,
                         iconColor: theme.colorScheme.primary,
-                        onTap: () async => showUpgradeFirmwareDialog(context),
+                        onTap: () async => showUpgradeFirmwareDialog(),
                       ),
                     )
                   : SizedBox.shrink(),
@@ -574,7 +577,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
     return SafeArea(child: scrollView);
   }
 
-  Future<bool> showUpgradeFirmwareDialog(BuildContext context) async {
+  Future<bool> showUpgradeFirmwareDialog() async {
     _upgradeProgress.value = FirmwareUpgradeState.empty();
 
     final upgradeStream = coord.startFirmwareUpgrade();
