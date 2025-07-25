@@ -132,12 +132,25 @@ class WalletCreateController extends ChangeNotifier {
         ListenableBuilder(
           listenable: this,
           builder: (context, _) {
+            final theme = Theme.of(context);
             final state = _keygenState;
             if (state == null) return const SizedBox();
-            return LargeCircularProgressIndicator(
-              size: 36,
-              progress: state.sessionAcks.length,
-              total: state.devices.length,
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 12,
+              children: [
+                Text(
+                  'Confirm on device',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                LargeCircularProgressIndicator(
+                  size: 36,
+                  progress: state.sessionAcks.length,
+                  total: state.devices.length,
+                ),
+              ],
             );
           },
         ),
