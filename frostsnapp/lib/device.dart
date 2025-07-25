@@ -81,11 +81,13 @@ class ConfirmPrompt extends StatelessWidget {
 class DeviceDetails extends StatefulWidget {
   final ScrollController? scrollController;
   final DeviceId deviceId;
+  final Future<bool> Function()? firmwareUpgrade;
 
   const DeviceDetails({
     super.key,
     this.scrollController,
     required this.deviceId,
+    this.firmwareUpgrade,
   });
 
   @override
@@ -194,7 +196,6 @@ class _DeviceDetailsState extends State<DeviceDetails> {
     ];
 
     final advancedHidden = [
-      Divider(),
       ListTile(
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Device ID'),
@@ -232,9 +233,8 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Advanced'),
         trailing: Icon(
-          _showAdvanced ? Icons.expand_more_rounded : Icons.expand_less_rounded,
+          _showAdvanced ? Icons.expand_less_rounded : Icons.expand_more_rounded,
         ),
-        dense: true,
         onTap: () => setState(() => _showAdvanced = !_showAdvanced),
       ),
       AnimatedCrossFade(
@@ -265,7 +265,10 @@ class _DeviceDetailsState extends State<DeviceDetails> {
             overflow: TextOverflow.ellipsis,
           ),
           trailing: needsUpgrade
-              ? TextButton.icon(onPressed: () {}, label: Text('Upgrade'))
+              ? TextButton.icon(
+                  onPressed: widget.firmwareUpgrade,
+                  label: Text('Upgrade'),
+                )
               : Card.outlined(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
