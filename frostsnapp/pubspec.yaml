@@ -58,7 +58,7 @@ dependencies:
 
   rust_lib_frostsnapp:
     path: rust_builder
-  flutter_rust_bridge: 2.10.0
+  flutter_rust_bridge: 2.11.1
 
 dev_dependencies:
   flutter_test:
