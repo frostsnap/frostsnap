@@ -53,11 +53,18 @@ class WindowSizeContext extends InheritedWidget {
 class MaybeFullscreenDialog extends StatefulWidget {
   final Widget? child;
   final Color? backgroundColor;
-  const MaybeFullscreenDialog({super.key, this.child, this.backgroundColor});
+  final bool blurCompactBackground;
+  const MaybeFullscreenDialog({
+    super.key,
+    this.child,
+    this.backgroundColor,
+    this.blurCompactBackground = false,
+  });
 
   static Future<T?> show<T>({
     required BuildContext context,
     bool barrierDismissible = false,
+    bool blurCompactBackground = false,
     Color? backgroundColor,
     Widget? child,
   }) {
@@ -66,6 +73,7 @@ class MaybeFullscreenDialog extends StatefulWidget {
       barrierDismissible: barrierDismissible,
       useSafeArea: false,
       builder: (context) => MaybeFullscreenDialog(
+        blurCompactBackground: blurCompactBackground,
         backgroundColor:
             backgroundColor ?? Theme.of(context).colorScheme.surface,
         child: child,
@@ -122,10 +130,15 @@ class _MaybeFullscreenDialogState extends State<MaybeFullscreenDialog>
       builder: (context, sizeClass, child) => WindowSizeContext(
         windowSizeClass: _sizeClass.value,
         child: BackdropFilter(
-          filter: switch (sizeClass) {
-            WindowSizeClass.compact => ImageFilter.blur(),
-            _ => blurFilter,
-          },
+          filter:
+              (sizeClass == WindowSizeClass.compact &&
+                  !widget.blurCompactBackground)
+              ? ImageFilter.blur()
+              : blurFilter,
+          // filter: switch (sizeClass) {
+          //   WindowSizeClass.compact => ImageFilter.blur(),
+          //   _ => blurFilter,
+          // },
           child: switch (_sizeClass.value) {
             WindowSizeClass.compact => Dialog.fullscreen(
               backgroundColor: widget.backgroundColor,

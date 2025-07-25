@@ -2,21 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/device.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/theme.dart';
 
 class FullscreenActionDialogController<T> extends ChangeNotifier {
   String? title;
   Function(BuildContext)? body;
+  List<Widget>? actionButtons;
   final Set<DeviceId> _actionNeeded = deviceIdSet([]);
-  Function(BuildContext)? dismissButton;
   Function()? onDismissed;
   Future<T?>? _fut;
 
   FullscreenActionDialogController({
     this.title,
     this.body,
-    this.dismissButton,
+    this.actionButtons,
     this.onDismissed,
   });
 
@@ -85,112 +86,143 @@ Future<T?> showFullscreenActionDialog<T>(
   BuildContext context, {
   required FullscreenActionDialogController<T> controller,
 }) async {
-  // Use
-  final res = await showGeneralDialog<T>(
-    context: context,
-    barrierDismissible: false,
-    barrierColor: Colors.black54, // same as default
-    barrierLabel: '', // for accessibility
-    transitionDuration: const Duration(milliseconds: 500),
-    pageBuilder: (ctx, animation, secondary) {
-      // build your exact same dialog tree here
-      final dialog = ListenableBuilder(
-        listenable: controller,
-        builder: (ctx, _) {
-          if (!controller.hasActionsNeeded) {
-            Navigator.pop(ctx);
-          }
-          final theme = Theme.of(ctx);
-          return Dialog.fullscreen(
-            backgroundColor: theme.colorScheme.surface.withAlpha(200),
-            child: Scaffold(
-              backgroundColor: Colors.transparent,
-              appBar: AppBar(
-                elevation: 0,
-                forceMaterialTransparency: true,
-                automaticallyImplyLeading: false,
-                leading: controller.onDismissed != null
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.close,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                        onPressed: () => Navigator.pop(ctx),
-                      )
-                    : null,
-              ),
-              body: Padding(
-                padding: EdgeInsets.all(20),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: 580),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Spacer(flex: 9),
-                        SvgPicture.string(
-                          DeviceWidget.deviceSvg,
-                          width: 162,
-                          height: 134,
-                          colorFilter: ColorFilter.mode(
-                            theme.colorScheme.onSurface,
-                            BlendMode.srcATop,
-                          ),
-                        ),
-                        SizedBox(height: 32),
-                        if (controller.title != null)
-                          Text(
-                            controller.title!,
-                            style: theme.textTheme.headlineSmall,
-                            textAlign: TextAlign.center,
-                          ),
-                        SizedBox(height: 20),
-                        if (controller.body != null)
-                          DefaultTextStyle(
-                            style: theme.textTheme.bodyLarge!,
-                            child: controller.body!.call(ctx),
-                          ),
-                        Spacer(flex: 3),
-                        if (controller.dismissButton == null) ...[
-                          Spacer(flex: 3),
-                          Text(
-                            'complete the action on the device or unplug it',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                        if (controller.dismissButton != null) ...[
-                          Center(child: controller.dismissButton!(context)),
-                          Spacer(flex: 3),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      );
+  final theme = Theme.of(context);
 
-      return PopScope(
-        canPop: controller.onDismissed != null,
-        onPopInvokedWithResult: (didPop, result) {
-          if (didPop) return;
-          showCannotDismissDialog(context);
-        },
-        child: BackdropFilter(filter: blurFilter, child: dialog),
+  final title = controller.title;
+  final body = controller.body;
+  final actionButtons = controller.actionButtons;
+
+  final content = Padding(
+    padding: const EdgeInsets.all(20).copyWith(top: 32),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SvgPicture.string(
+          DeviceWidget.deviceSvg,
+          width: 162,
+          height: 134,
+          colorFilter: ColorFilter.mode(
+            theme.colorScheme.onSurface,
+            BlendMode.srcATop,
+          ),
+        ),
+        if (title != null) ...[
+          SizedBox(height: 32),
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+        ],
+        if (body != null) ...[
+          SizedBox(height: 24),
+          DefaultTextStyle(
+            style: theme.textTheme.bodyLarge!,
+            child: body(context),
+          ),
+        ],
+        if (actionButtons != null) ...[
+          SizedBox(height: 32),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisSize: MainAxisSize.max,
+            spacing: 8,
+            children: actionButtons,
+          ),
+        ],
+      ],
+    ),
+  );
+
+  final listenableBuilder = ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      if (!controller.hasActionsNeeded) {
+        Navigator.pop(context);
+      }
+      final windowSize = WindowSizeContext.of(context);
+      final isCompact = windowSize == WindowSizeClass.compact;
+
+      return SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 580),
+            child: isCompact
+                ? content
+                : Card.outlined(
+                    color: Colors.black26,
+                    margin: EdgeInsets.zero,
+                    child: content,
+                  ),
+          ),
+        ),
       );
-    },
-    transitionBuilder: (ctx, animation, secondary, child) {
-      // fade in from 0→1 over 1 second
-      return FadeTransition(opacity: animation, child: child);
     },
   );
 
+  final res2 = await MaybeFullscreenDialog.show(
+    context: context,
+    backgroundColor: Colors.transparent,
+    blurCompactBackground: true,
+    child: PopScope(
+      canPop: controller.onDismissed != null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        showCannotDismissDialog(context);
+      },
+      child: BackdropFilter(filter: blurFilter, child: listenableBuilder),
+    ),
+  );
+
+  // final res = await showDialog<T>(
+  //   context: context,
+  //   barrierDismissible: false,
+  //   builder: (ctx) {
+  //     final dialog = ListenableBuilder(
+  //       listenable: controller,
+  //       builder: (ctx, _) {
+  //         if (!controller.hasActionsNeeded) {
+  //           Navigator.pop(ctx);
+  //         }
+  //         final windowSize = WindowSizeContext.of(context);
+  //         final isCompact = windowSize == WindowSizeClass.compact;
+  //         return Dialog.fullscreen(
+  //           backgroundColor: Colors.transparent,
+  //           child: SafeArea(
+  //             child: Center(
+  //               child: ConstrainedBox(
+  //                 constraints: BoxConstraints(maxWidth: 580),
+  //                 child: Padding(
+  //                   padding: EdgeInsets.all(16),
+  //                   child: isCompact
+  //                       ? content
+  //                       : Card.outlined(
+  //                           child: Padding(
+  //                             padding: EdgeInsets.all(16),
+  //                             child: content,
+  //                           ),
+  //                         ),
+  //                 ),
+  //               ),
+  //             ),
+  //           ),
+  //         );
+  //       },
+  //     );
+
+  //     return PopScope(
+  //       canPop: controller.onDismissed != null,
+  //       onPopInvokedWithResult: (didPop, result) {
+  //         if (didPop) return;
+  //         showCannotDismissDialog(context);
+  //       },
+  //       child: BackdropFilter(filter: blurFilter, child: dialog),
+  //     );
+  //   },
+  // );
+
   controller.onDismissed?.call();
 
-  return res;
+  return res2;
 }
