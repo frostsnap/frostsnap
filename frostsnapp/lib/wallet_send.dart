@@ -521,7 +521,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
     nextPageOrPop(null);
     await showBottomSheetOrDialog(
       context,
-      titleText: 'Transaction Details',
+      title: Text('Transaction Details'),
       builder: (context, scrollController) => walletCtx.wrap(
         TxDetailsPage.startSigning(
           txStates: walletCtx.txStream,

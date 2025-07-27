@@ -476,7 +476,7 @@ showWalletCreatedDialog(
                 Navigator.of(context).pop();
                 showBottomSheetOrDialog(
                   context,
-                  titleText: 'Backup Checklist',
+                  title: Text('Backup Checklist'),
                   builder: (context, scrollController) =>
                       SuperWalletContext.of(context)!.tryWrapInWalletContext(
                         keyId: accessStructureRef.keyId,
