@@ -3,25 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device.dart';
-import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/device_settings.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:frostsnap/wallet_create.dart';
 import 'package:frostsnap/wallet_device_list.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
 import 'maybe_fullscreen_dialog.dart';
 import 'wallet_list_controller.dart';
-
-typedef RemovedDeviceBuilder =
-    Widget Function(
-      BuildContext context,
-      ConnectedDevice device,
-      Animation<double> animation,
-    );
 
 typedef DeviceBuilder =
     Widget Function(
@@ -344,93 +336,17 @@ class DeviceListPage extends StatefulWidget {
 
 class _DeviceListPageState extends State<DeviceListPage> {
   final _scrollController = ScrollController();
-
-  late final FullscreenActionDialogController<void> _upgradeController;
-  final _needsUpgrade = ValueNotifier(0);
-  final _upgradeProgress = ValueNotifier(FirmwareUpgradeState.empty());
+  final _upgradeController = DeviceActionUpgradeController();
 
   @override
   void initState() {
     super.initState();
-    _upgradeController = FullscreenActionDialogController(
-      title: 'Upgrade Firmware',
-      body: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 12,
-        children: [
-          Card(
-            margin: EdgeInsets.zero,
-            child: ListTile(
-              title: Text('Firmware Digest'),
-              subtitle: Text(
-                coord.upgradeFirmwareDigest() ?? '',
-                style: monospaceTextStyle,
-              ),
-            ),
-          ),
-        ],
-      ),
-      actionButtons: [
-        ValueListenableBuilder(
-          valueListenable: _upgradeProgress,
-          builder: (context, state, _) => switch (state.stage) {
-            FirmwareUpgradeStage.Acks => OutlinedButton(
-              child: Text('Cancel'),
-              onPressed: () async => await coord.cancelProtocol(),
-            ),
-            FirmwareUpgradeStage.Progress => SizedBox.shrink(),
-          },
-        ),
-        ValueListenableBuilder(
-          valueListenable: _upgradeProgress,
-          builder: (context, state, _) {
-            final theme = Theme.of(context);
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 12,
-              children: [
-                ...switch (state.stage) {
-                  FirmwareUpgradeStage.Acks => [
-                    Text(
-                      'Confirm on device',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    LargeCircularProgressIndicator(
-                      size: 36,
-                      progress: state.acks ?? 0,
-                      total: state.neededAcks ?? 1,
-                    ),
-                  ],
-                  FirmwareUpgradeStage.Progress => [
-                    Text(
-                      'Upgrading...',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    SizedBox(
-                      width: 100,
-                      child: LinearProgressIndicator(value: state.progress),
-                    ),
-                  ],
-                },
-              ],
-            );
-          },
-        ),
-      ],
-    );
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     _upgradeController.dispose();
-    _needsUpgrade.dispose();
-    _upgradeProgress.dispose();
     super.dispose();
   }
 
@@ -483,7 +399,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
           builder: (context, controller) => homeCtx.wrap(
             DeviceDetails(
               deviceId: device.id,
-              firmwareUpgrade: showUpgradeFirmwareDialog,
+              firmwareUpgrade: _upgradeController.run,
             ),
           ),
         ),
@@ -523,24 +439,28 @@ class _DeviceListPageState extends State<DeviceListPage> {
           child: AnimatedSize(
             duration: Durations.long1,
             curve: Curves.easeInOutCubicEmphasized,
-            child: ValueListenableBuilder(
-              valueListenable: _needsUpgrade,
-              builder: (context, needsUpgrade, _) => needsUpgrade > 0
-                  ? Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        title: Text(
-                          'Upgrade $needsUpgrade device${needsUpgrade > 1 ? 's' : ''}',
+            child: ListenableBuilder(
+              listenable: _upgradeController,
+              builder: (context, _) {
+                final count = _upgradeController.count;
+                return count > 0
+                    ? Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(
+                            'Upgrade $count device${count > 1 ? 's' : ''}',
+                          ),
+                          leading: Icon(Icons.warning_rounded),
+                          trailing: Icon(Icons.chevron_right_rounded),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 24),
+                          textColor: theme.colorScheme.primary,
+                          iconColor: theme.colorScheme.primary,
+                          onTap: () async =>
+                              await _upgradeController.run(context),
                         ),
-                        leading: Icon(Icons.warning_rounded),
-                        trailing: Icon(Icons.chevron_right_rounded),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 24),
-                        textColor: theme.colorScheme.primary,
-                        iconColor: theme.colorScheme.primary,
-                        onTap: () async => showUpgradeFirmwareDialog(),
-                      ),
-                    )
-                  : SizedBox.shrink(),
+                      )
+                    : SizedBox.shrink();
+              },
             ),
           ),
         ),
@@ -548,9 +468,6 @@ class _DeviceListPageState extends State<DeviceListPage> {
           padding: EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 16),
           sliver: SliverDeviceList(
             deviceBuilder: _buildDevice,
-            onDeviceListChange: (state) => _needsUpgrade.value = state.devices
-                .where((device) => device.needsFirmwareUpgrade())
-                .length,
             noDeviceWidget: Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
               child: Center(
@@ -578,45 +495,6 @@ class _DeviceListPageState extends State<DeviceListPage> {
       ],
     );
     return SafeArea(child: scrollView);
-  }
-
-  Future<bool> showUpgradeFirmwareDialog() async {
-    _upgradeProgress.value = FirmwareUpgradeState.empty();
-
-    final upgradeStream = coord.startFirmwareUpgrade();
-
-    coord.upgradeFirmwareDigest();
-
-    await for (final state in upgradeStream) {
-      _needsUpgrade.value = state.needUpgrade.length;
-      _upgradeProgress.value = FirmwareUpgradeState.acks(
-        neededAcks: state.needUpgrade.length,
-        acks: state.confirmations.length,
-      );
-
-      for (final id in state.needUpgrade) {
-        _upgradeController.addActionNeeded(context, id);
-      }
-      if (state.abort) {
-        _upgradeController.clearAllActionsNeeded();
-        return false;
-      }
-      if (state.upgradeReadyToStart) {
-        break;
-      }
-    }
-
-    final progressStream = coord.enterFirmwareUpgradeMode();
-    var finalProgress = 0.0;
-    await for (final progress in progressStream) {
-      finalProgress = progress;
-      _upgradeProgress.value = FirmwareUpgradeState.progress(
-        progress: progress,
-      );
-    }
-
-    _upgradeController.clearAllActionsNeeded();
-    return finalProgress == 1.0;
   }
 }
 

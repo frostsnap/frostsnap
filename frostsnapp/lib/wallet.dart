@@ -612,7 +612,6 @@ class WalletDrawer extends StatelessWidget {
             ),
             NavigationDrawerDestination(
               icon: SizedBox.shrink(),
-              //label: SizedBox.shrink(),
               label: SizedBox(width: 224, child: Divider()),
               enabled: false,
             ),
@@ -635,7 +634,7 @@ class WalletDrawer extends StatelessWidget {
               }
             },
             true,
-            Icons.add_circle,
+            Icons.add_circle_rounded,
             'Create Wallet',
           ),
           (
@@ -648,7 +647,7 @@ class WalletDrawer extends StatelessWidget {
               }
             },
             false,
-            Icons.update,
+            Icons.update_rounded,
             'Restore Wallet',
           ),
           (

@@ -312,13 +312,13 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     if (tx != null && mounted) setState(() => txDetails.update(tx));
   }
 
-  onSigningSessionData(SigningState data) {
+  onSigningSessionData(SigningState data) async {
     for (final deviceId in data.connectedButNeedRequest) {
       coord.requestDeviceSign(deviceId: deviceId, sessionId: data.sessionId);
       actionDialogController.addActionNeeded(context, deviceId);
     }
     for (final deviceId in data.gotShares) {
-      actionDialogController.removeActionNeeded(deviceId);
+      await actionDialogController.removeActionNeeded(deviceId);
     }
     if (mounted) {
       setState(() {
@@ -340,7 +340,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           .toList()
           .whereNot((deviceId) => connectedDevices.contains(deviceId))
           .forEach(
-            (deviceId) => actionDialogController.removeActionNeeded(deviceId),
+            (deviceId) async =>
+                await actionDialogController.removeActionNeeded(deviceId),
           );
     }
   }

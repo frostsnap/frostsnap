@@ -17,18 +17,6 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/firmware_upgrade.dart';
 import 'package:frostsnap/theme.dart';
 
-class DeviceSettingsPage extends StatelessWidget {
-  const DeviceSettingsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: FsAppBar(title: const Text('Device Settings')),
-      body: DeviceList(),
-    );
-  }
-}
-
 class DeviceSettings extends StatefulWidget {
   final DeviceId id;
   const DeviceSettings({super.key, required this.id});
