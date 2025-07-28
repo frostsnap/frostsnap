@@ -34,7 +34,7 @@ class _SliverDeviceListState extends State<SliverDeviceList> {
     _state = coord.deviceListState();
     final onDeviceListChange = widget.onDeviceListChange;
     if (onDeviceListChange != null) onDeviceListChange(_state);
-    _stateSub = GlobalStreams.deviceListUpdateStream.listen(_deviceListOnData);
+    _stateSub = GlobalStreams.deviceListSubject.listen(_deviceListOnData);
   }
 
   @override

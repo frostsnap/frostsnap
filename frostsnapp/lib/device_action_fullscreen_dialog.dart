@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/device.dart';
@@ -12,7 +14,7 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
   List<Widget>? actionButtons;
   final Set<DeviceId> _actionNeeded = deviceIdSet([]);
   Function()? onDismissed;
-  Future<T?>? _fut;
+  Future<T?> _fut = Future.value(null);
 
   FullscreenActionDialogController({
     this.title,
@@ -21,29 +23,34 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     this.onDismissed,
   });
 
-  void addActionNeeded(BuildContext context, DeviceId deviceId) {
+  addActionNeeded(BuildContext context, DeviceId deviceId) {
     final hadActionsNeeded = _actionNeeded.isNotEmpty;
     _actionNeeded.add(deviceId);
-    if (!hadActionsNeeded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _fut = showFullscreenActionDialog(context, controller: this);
-      });
-    }
+    if (hadActionsNeeded) return null;
+    final completer = Completer<T?>();
+    _fut = completer.future;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      completer.complete(showFullscreenActionDialog(context, controller: this));
+    });
   }
 
   Future<T?> removeActionNeeded(DeviceId deviceId) async {
-    if (_actionNeeded.remove(deviceId)) _safeNotify();
-    final fut = _fut;
-    if (_actionNeeded.isEmpty && fut != null) {
-      return await fut;
+    final hadActionsNeeded = _actionNeeded.isNotEmpty;
+    if (hadActionsNeeded) {
+      if (_actionNeeded.remove(deviceId)) _safeNotify();
+      if (_actionNeeded.isEmpty) return await _fut;
     }
     return null;
   }
 
-  void clearAllActionsNeeded() {
-    if (_actionNeeded.isEmpty) return;
-    _actionNeeded.clear();
-    _safeNotify();
+  Future<T?> clearAllActionsNeeded() async {
+    final hadActionsNeeded = _actionNeeded.isNotEmpty;
+    if (hadActionsNeeded) {
+      _actionNeeded.clear();
+      _safeNotify();
+      return await _fut;
+    }
+    return null;
   }
 
   bool get hasActionsNeeded => _actionNeeded.isNotEmpty;

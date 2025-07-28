@@ -7,9 +7,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/keygen.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_create.dart';
 
 import 'global.dart';
 
@@ -83,13 +86,13 @@ class ConfirmPrompt extends StatelessWidget {
 class DeviceDetails extends StatefulWidget {
   final ScrollController? scrollController;
   final DeviceId deviceId;
-  final Future<bool> Function()? firmwareUpgrade;
+  final Future<bool> Function(BuildContext context) firmwareUpgrade;
 
   const DeviceDetails({
     super.key,
     this.scrollController,
     required this.deviceId,
-    this.firmwareUpgrade,
+    required this.firmwareUpgrade,
   });
 
   @override
@@ -107,11 +110,13 @@ class _DeviceDetailsState extends State<DeviceDetails> {
   @override
   void initState() {
     super.initState();
-    _sub = GlobalStreams.deviceListSubject.listen((DeviceListUpdate update) {
+    _sub = GlobalStreams.deviceListSubject.listen((
+      DeviceListUpdate update,
+    ) async {
       final device = update.state.devices.firstWhereOrNull(
         (device) => deviceIdEquals(device.id, widget.deviceId),
       );
-      if (device?.name == null) _eraseController.clearAllActionsNeeded();
+      if (device?.name == null) await _eraseController.clearAllActionsNeeded();
       setState(() {
         _gotFirstData = true;
         _device = device;
@@ -140,7 +145,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
           onPressed: () async {
             final id = _device?.id;
             if (id != null) await coord.sendCancel(id: id);
-            _eraseController.clearAllActionsNeeded();
+            await _eraseController.clearAllActionsNeeded();
           },
         ),
         Builder(
@@ -239,7 +244,22 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         title: Text('Empty Device'),
         subtitle: Text('Create a wallet to get started'),
         leading: Icon(Icons.warning_rounded),
-        trailing: TextButton(onPressed: () {}, child: Text('Create Wallet')),
+        trailing: FilledButton.icon(
+          onPressed: () async {
+            Navigator.popUntil(context, (r) => r.isFirst);
+            final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
+              context: context,
+              barrierDismissible: false,
+              child: WalletCreatePage(),
+            );
+            if (context.mounted && asRef != null) {
+              homeCtx.openNewlyCreatedWallet(asRef.keyId);
+              showWalletCreatedDialog(context, asRef);
+            }
+          },
+          icon: Icon(Icons.add_circle_rounded),
+          label: Text('Create Wallet'),
+        ),
       ),
     ];
 
@@ -349,7 +369,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
           ),
           trailing: needsUpgrade
               ? TextButton.icon(
-                  onPressed: widget.firmwareUpgrade,
+                  onPressed: () async => await widget.firmwareUpgrade(context),
                   label: Text('Upgrade'),
                 )
               : Card.outlined(

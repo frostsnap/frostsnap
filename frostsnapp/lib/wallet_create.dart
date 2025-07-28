@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
-import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/settings.dart';
@@ -185,7 +185,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   Future<void> resetKeygenState(Iterable<ConnectedDevice> devices) async {
-    _keygenController.clearAllActionsNeeded();
+    await _keygenController.clearAllActionsNeeded();
     _keygenState = null;
     await resetDeviceNames(_deviceList.devices);
     notifyListeners();
@@ -273,7 +273,6 @@ class WalletCreateController extends ChangeNotifier {
 
           for (final id in state.sessionAcks) {
             await _keygenController.removeActionNeeded(id);
-            if (!context.mounted) return false;
           }
 
           if (state.aborted != null) {
@@ -334,11 +333,13 @@ class WalletCreateController extends ChangeNotifier {
                   },
                 ) ??
                 false;
-            if (keygenCodeMatches && context.mounted) {
+            if (!keygenCodeMatches) return false;
+            try {
               _asRef = await coord.finalizeKeygen(keygenId: state.keygenId);
-              return true;
+            } catch (Exception) {
+              return false;
             }
-            break;
+            return true;
           }
         }
         throw StateError('Unreachable: keygen completions handled');
@@ -431,6 +432,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   static const topSectionPadding = EdgeInsets.fromLTRB(16, 0, 16, 16);
   static const sectionPadding = EdgeInsets.fromLTRB(16, 16, 16, 24);
   late WalletCreateController _controller;
+  final _upgradeController = DeviceActionUpgradeController();
 
   @override
   void initState() {
@@ -445,6 +447,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     for (final c in _nameControllers.values) {
       c.dispose();
     }
+    _upgradeController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -552,7 +555,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     ),
                     FilledButton.tonalIcon(
                       onPressed: () async =>
-                          await FirmwareUpgradeDialog.show(context),
+                          await _upgradeController.run(context),
                       label: Text('Start upgrade'),
                       icon: Icon(Icons.system_update_alt_rounded),
                     ),
