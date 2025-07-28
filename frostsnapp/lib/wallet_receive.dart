@@ -497,7 +497,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                             (deviceId) => displayingDevices.contains(deviceId),
                           )
                           .forEach(
-                            (deviceId) => fullscreenDialogController
+                            (deviceId) async => await fullscreenDialogController
                                 .removeActionNeeded(deviceId),
                           );
 
