@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/device.dart';
@@ -23,7 +24,7 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     this.onDismissed,
   });
 
-  addActionNeeded(BuildContext context, DeviceId deviceId) {
+  void addActionNeeded(BuildContext context, DeviceId deviceId) {
     final hadActionsNeeded = _actionNeeded.isNotEmpty;
     _actionNeeded.add(deviceId);
     if (hadActionsNeeded) return null;
@@ -35,18 +36,55 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
   }
 
   Future<T?> removeActionNeeded(DeviceId deviceId) async {
-    final hadActionsNeeded = _actionNeeded.isNotEmpty;
-    if (hadActionsNeeded) {
+    final wasActive = _actionNeeded.isNotEmpty;
+    if (wasActive) {
       if (_actionNeeded.remove(deviceId)) _safeNotify();
       if (_actionNeeded.isEmpty) return await _fut;
     }
     return null;
   }
 
+  void batchAddActionNeeded(
+    BuildContext context,
+    Iterable<DeviceId> deviceIds,
+  ) {
+    final wasActive = _actionNeeded.isNotEmpty;
+    bool didAdd = false;
+    for (final id in deviceIds) didAdd |= _actionNeeded.add(id);
+    if (wasActive || !didAdd) return;
+
+    final completer = Completer<T?>();
+    _fut = completer.future;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      completer.complete(showFullscreenActionDialog(context, controller: this));
+    });
+  }
+
+  Future<T?> batchRemoveActionNeeded(Iterable<DeviceId> deviceIds) async {
+    bool didRemove = false;
+    for (final id in deviceIds) didRemove |= _actionNeeded.remove(id);
+    if (didRemove && _actionNeeded.isEmpty) {
+      _safeNotify();
+      return await _fut;
+    }
+    return null;
+  }
+
   Future<T?> clearAllActionsNeeded() async {
-    final hadActionsNeeded = _actionNeeded.isNotEmpty;
-    if (hadActionsNeeded) {
+    final wasActive = _actionNeeded.isNotEmpty;
+    if (wasActive) {
       _actionNeeded.clear();
+      _safeNotify();
+      return await _fut;
+    }
+    return null;
+  }
+
+  Future<T?> clearAllExcept(Iterable<DeviceId> deviceIds) async {
+    final wasActive = _actionNeeded.isNotEmpty;
+    final exceptMap = deviceIdSet(deviceIds);
+    _actionNeeded.retainWhere((id) => exceptMap.contains(id));
+    if (wasActive && _actionNeeded.isEmpty) {
       _safeNotify();
       return await _fut;
     }

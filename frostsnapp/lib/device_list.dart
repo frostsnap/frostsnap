@@ -497,38 +497,3 @@ class _DeviceListPageState extends State<DeviceListPage> {
     return SafeArea(child: scrollView);
   }
 }
-
-enum FirmwareUpgradeStage { Acks, Progress }
-
-class FirmwareUpgradeState {
-  final FirmwareUpgradeStage stage;
-  final int? neededAcks;
-  final int? acks;
-  final double? progress;
-
-  const FirmwareUpgradeState.empty()
-    : stage = FirmwareUpgradeStage.Acks,
-      neededAcks = null,
-      acks = null,
-      progress = null;
-
-  const FirmwareUpgradeState.acks({required int neededAcks, required int acks})
-    : stage = FirmwareUpgradeStage.Acks,
-      progress = null,
-      neededAcks = neededAcks,
-      acks = acks;
-
-  const FirmwareUpgradeState.progress({required double progress})
-    : stage = FirmwareUpgradeStage.Progress,
-      progress = progress,
-      neededAcks = null,
-      acks = null;
-
-  @override
-  bool operator ==(Object o) =>
-      o is FirmwareUpgradeState &&
-      o.stage == stage &&
-      o.neededAcks == neededAcks &&
-      o.acks == acks &&
-      o.progress == progress;
-}
