@@ -7,9 +7,16 @@ use embedded_graphics::{
     primitives::Rectangle,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrossAxisAlignment {
+    Start,
+    Center,
+}
+
 /// A column widget that arranges its children vertically
 pub struct Column<T, C = Rgb565> {
     pub children: T,
+    pub cross_axis_alignment: CrossAxisAlignment,
     _phantom: core::marker::PhantomData<C>,
 }
 
@@ -17,8 +24,14 @@ impl<T, C> Column<T, C> {
     pub fn new(children: T) -> Self {
         Self { 
             children,
+            cross_axis_alignment: CrossAxisAlignment::Center,
             _phantom: core::marker::PhantomData,
         }
+    }
+    
+    pub fn with_cross_axis_alignment(mut self, alignment: CrossAxisAlignment) -> Self {
+        self.cross_axis_alignment = alignment;
+        self
     }
 }
 
@@ -38,7 +51,14 @@ macro_rules! impl_column_for_tuple {
                 
                 let size = self.children.0.size_hint()
                     .expect("Column requires all children to have size_hint");
-                let area = Rectangle::new(Point::new(0, y_offset), size);
+                let x_offset = match self.cross_axis_alignment {
+                    CrossAxisAlignment::Start => 0,
+                    CrossAxisAlignment::Center => {
+                        let target_width = target.bounding_box().size.width as i32;
+                        (target_width - size.width as i32) / 2
+                    }
+                };
+                let area = Rectangle::new(Point::new(x_offset, y_offset), size);
                 let mut cropped = target.cropped(&area);
                 self.children.0.draw(&mut cropped, current_time)?;
                 
@@ -55,10 +75,17 @@ macro_rules! impl_column_for_tuple {
                 
                 let size = self.children.0.size_hint()
                     .expect("Column requires all children to have size_hint");
-                let area = Rectangle::new(Point::new(0, y_offset), size);
+                let x_offset = match self.cross_axis_alignment {
+                    CrossAxisAlignment::Start => 0,
+                    CrossAxisAlignment::Center => {
+                        let target_width = 240; // Screen width - we should get this from somewhere
+                        (target_width - size.width as i32) / 2
+                    }
+                };
+                let area = Rectangle::new(Point::new(x_offset, y_offset), size);
                 
                 if area.contains(point) {
-                    let relative_point = Point::new(point.x, point.y - y_offset);
+                    let relative_point = Point::new(point.x - x_offset, point.y - y_offset);
                     return self.children.0.handle_touch(relative_point, current_time, is_release);
                 }
                 
@@ -98,7 +125,14 @@ macro_rules! impl_column_for_tuple {
                 {
                     let size = $t1.size_hint()
                         .expect("Column requires all children to have size_hint");
-                    let area = Rectangle::new(Point::new(0, y_offset), size);
+                    let x_offset = match self.cross_axis_alignment {
+                        CrossAxisAlignment::Start => 0,
+                        CrossAxisAlignment::Center => {
+                            let target_width = target.bounding_box().size.width as i32;
+                            (target_width - size.width as i32) / 2
+                        }
+                    };
+                    let area = Rectangle::new(Point::new(x_offset, y_offset), size);
                     let mut cropped = target.cropped(&area);
                     $t1.draw(&mut cropped, current_time)?;
                     y_offset += size.height as i32;
@@ -109,7 +143,14 @@ macro_rules! impl_column_for_tuple {
                     {
                         let size = $tn.size_hint()
                             .expect("Column requires all children to have size_hint");
-                        let area = Rectangle::new(Point::new(0, y_offset), size);
+                        let x_offset = match self.cross_axis_alignment {
+                            CrossAxisAlignment::Start => 0,
+                            CrossAxisAlignment::Center => {
+                                let target_width = target.bounding_box().size.width as i32;
+                                (target_width - size.width as i32) / 2
+                            }
+                        };
+                        let area = Rectangle::new(Point::new(x_offset, y_offset), size);
                         let mut cropped = target.cropped(&area);
                         $tn.draw(&mut cropped, current_time)?;
                         y_offset += size.height as i32;
@@ -136,10 +177,17 @@ macro_rules! impl_column_for_tuple {
                 {
                     let size = $t1.size_hint()
                         .expect("Column requires all children to have size_hint");
-                    let area = Rectangle::new(Point::new(0, y_offset), size);
+                    let x_offset = match self.cross_axis_alignment {
+                        CrossAxisAlignment::Start => 0,
+                        CrossAxisAlignment::Center => {
+                            let target_width = 240; // Screen width - we should get this from somewhere
+                            (target_width - size.width as i32) / 2
+                        }
+                    };
+                    let area = Rectangle::new(Point::new(x_offset, y_offset), size);
                     
                     if area.contains(point) {
-                        let relative_point = Point::new(point.x, point.y - y_offset);
+                        let relative_point = Point::new(point.x - x_offset, point.y - y_offset);
                         return $t1.handle_touch(relative_point, current_time, is_release);
                     }
                     y_offset += size.height as i32;
@@ -150,10 +198,17 @@ macro_rules! impl_column_for_tuple {
                     {
                         let size = $tn.size_hint()
                             .expect("Column requires all children to have size_hint");
-                        let area = Rectangle::new(Point::new(0, y_offset), size);
+                        let x_offset = match self.cross_axis_alignment {
+                            CrossAxisAlignment::Start => 0,
+                            CrossAxisAlignment::Center => {
+                                let target_width = 240; // Screen width - we should get this from somewhere
+                                (target_width - size.width as i32) / 2
+                            }
+                        };
+                        let area = Rectangle::new(Point::new(x_offset, y_offset), size);
                         
                         if area.contains(point) {
-                            let relative_point = Point::new(point.x, point.y - y_offset);
+                            let relative_point = Point::new(point.x - x_offset, point.y - y_offset);
                             return $tn.handle_touch(relative_point, current_time, is_release);
                         }
                         y_offset += size.height as i32;

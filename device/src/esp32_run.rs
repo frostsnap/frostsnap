@@ -111,9 +111,6 @@ where
         let active_firmware_digest = active_partition.sha256_digest(&mut sha256);
 
         let device_id = signer.device_id();
-        if let Some(name) = &name {
-            ui.set_device_name(name.into());
-        }
 
         let mut soft_reset = true;
         let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
@@ -151,7 +148,11 @@ where
                 upstream_connection.set_state(UpstreamConnectionState::PowerOn, &mut ui);
                 next_write_magic_bytes_downstream = Instant::from_ticks(0);
                 upgrade = None;
-                ui.set_device_name(name.clone());
+                if let Some(name) = &name {
+                    ui.set_workflow(ui::Workflow::NamingDevice {
+                        new_name: name.clone(),
+                    });
+                }
                 outbox.clear();
                 ui.cancel();
             }
@@ -391,7 +392,11 @@ where
                             ui.cancel();
                             // This either resets to the previous name, or clears it (if prev name does
                             // not exist).
-                            ui.set_device_name(name.clone());
+                            if let Some(name) = &name {
+                                ui.set_workflow(ui::Workflow::NamingDevice {
+                                    new_name: name.clone(),
+                                });
+                            }
                             upgrade = None;
                         }
                         CoordinatorSendBody::AnnounceAck => {
@@ -402,7 +407,9 @@ where
                         }
                         CoordinatorSendBody::Naming(naming) => match naming {
                             frostsnap_comms::NameCommand::Preview(preview_name) => {
-                                ui.set_device_name(Some(preview_name));
+                                ui.set_workflow(ui::Workflow::NamingDevice {
+                                    new_name: preview_name.to_string(),
+                                });
                             }
                             frostsnap_comms::NameCommand::Prompt(new_name) => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::NewName {
@@ -476,8 +483,8 @@ where
                         DeviceSend::ToUser(boxed) => {
                             match *boxed {
                                 DeviceToUserMessage::FinalizeKeyGen => {
-                                    let new_name = ui
-                                        .get_device_name()
+                                    let new_name = name
+                                        .as_ref()
                                         .expect("must have set name before starting keygen")
                                         .to_string();
                                     // Save the device's name now that it's finished
@@ -532,9 +539,7 @@ where
                                             });
                                         }
                                         EnterBackup { phase } => {
-                                            ui.set_workflow(ui::Workflow::EnteringBackup(
-                                                ui::EnteringBackupStage::Init { phase },
-                                            ));
+                                            ui.set_workflow(ui::Workflow::EnteringBackup(phase));
                                         }
                                         BackupSaved { .. } => {
                                             ui.set_recovery_mode(true);
@@ -586,11 +591,13 @@ where
                             );
                         }
                         UiEvent::NameConfirm(ref new_name) => {
-                            name = Some(new_name.into());
                             mutation_log
                                 .push(Mutation::Name(new_name.to_string()))
                                 .expect("flash write fail");
-                            ui.set_device_name(new_name.into());
+                            name = Some(new_name.to_string());
+                            ui.set_workflow(ui::Workflow::NamingDevice {
+                                new_name: new_name.to_string(),
+                            });
                             upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
                                 name: new_name.into(),
                             }]);

@@ -4,7 +4,6 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::string::String;
 use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
@@ -41,12 +40,12 @@ use frostsnap_device::{
     io::SerialInterface,
     touch_calibration::{x_based_adjustment, y_based_adjustment},
     ui::{
-        BusyTask, UiEvent, UserInteraction, Workflow,
+        BusyTask, UiEvent, UserInteraction, Workflow, Prompt,
     },
     widget_tree::WidgetTree,
     DownstreamConnectionState, Instant, UpstreamConnectionState,
 };
-use frostsnap_embedded_widgets::{Widget, Welcome};
+use frostsnap_embedded_widgets::{Widget, Welcome, device_name::DeviceName};
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
 // # Pin Configuration
@@ -206,7 +205,6 @@ fn main() -> ! {
         capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,
         upstream_connection_state: None,
-        device_name: Default::default(),
         last_touch: None,
         timer: &timer1,
         busy_task: Default::default(),
@@ -250,7 +248,6 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     last_touch: Option<(Point, Instant)>,
     downstream_connection_state: DownstreamConnectionState,
     upstream_connection_state: Option<UpstreamConnectionState>,
-    device_name: Option<String>,
     timer: &'t Timer<T, Blocking>,
     busy_task: Option<BusyTask>,
     recovery_mode: bool,
@@ -281,17 +278,7 @@ where
         }
     }
 
-    fn set_device_name(&mut self, name: Option<impl Into<String>>) {
-        let name: Option<String> = name.map(Into::into);
-        if name != self.device_name {
-            self.device_name = name;
-            self.page.force_redraw();
-        }
-    }
 
-    fn get_device_name(&self) -> Option<&str> {
-        self.device_name.as_deref()
-    }
 
     fn take_workflow(&mut self) -> Workflow {
         // TODO: reconstruct workflow from widget tree if needed
@@ -300,8 +287,65 @@ where
 
     fn set_workflow(&mut self, workflow: Workflow) {
         // Convert workflow to widget tree
-        // TODO: Implement proper widgets for each workflow state
-        self.page = WidgetTree::Welcome(Welcome::new());
+        self.page = match workflow {
+            Workflow::None => WidgetTree::Welcome(Welcome::new()),
+            
+            Workflow::WaitingFor(_) => {
+                // TODO: Create proper waiting screens
+                WidgetTree::Welcome(Welcome::new())
+            }
+            
+            Workflow::UserPrompt(prompt) => {
+                // Create hold-to-confirm widget based on prompt type
+                let _hold_duration = match prompt {
+                    Prompt::WipeDevice => 6000.0, // 6 seconds for dangerous operations
+                    _ => 600.0, // 600ms for normal operations
+                };
+                
+                // TODO: Create proper prompt text and success text based on prompt type
+                // For now, just show welcome
+                WidgetTree::Welcome(Welcome::new())
+                
+                // When Text widget is available:
+                // let prompt_text = create_prompt_text(&prompt);
+                // let success_text = create_success_text(&prompt);
+                // WidgetTree::Prompt {
+                //     widget: HoldToConfirm::new(Size::new(240, 280), hold_duration, prompt_text, success_text),
+                //     data: prompt,
+                // }
+            }
+            
+            Workflow::Debug(_text) => {
+                // TODO: Create text widget to display debug text
+                WidgetTree::Welcome(Welcome::new())
+            }
+            
+            Workflow::NamingDevice { new_name } => {
+                let mut device_name_widget = DeviceName::new(new_name);
+                device_name_widget.set_edit_mode(true);
+                WidgetTree::DeviceNaming(device_name_widget)
+            }
+            
+            Workflow::DisplayBackup { .. } => {
+                // TODO: Create backup display screen
+                WidgetTree::Welcome(Welcome::new())
+            }
+            
+            Workflow::EnteringBackup(_) => {
+                // TODO: Create backup entry screens
+                WidgetTree::Welcome(Welcome::new())
+            }
+            
+            Workflow::DisplayAddress { .. } => {
+                // TODO: Create address display screen
+                WidgetTree::Welcome(Welcome::new())
+            }
+            
+            Workflow::FirmwareUpgrade(_status) => {
+                // TODO: Create firmware upgrade progress screen
+                WidgetTree::Welcome(Welcome::new())
+            }
+        };
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
