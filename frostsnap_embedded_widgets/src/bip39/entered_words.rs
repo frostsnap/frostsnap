@@ -121,9 +121,9 @@ impl EnteredWords {
         let max_scroll = (content_height as i32).saturating_sub(scrollable_height).max(0);
         self.scroll_position = desired_scroll.clamp(0, max_scroll);
         let fraction = if max_scroll > 0 {
-            crate::Fraction::from_ratio(self.scroll_position as u32, max_scroll as u32)
+            crate::Rat::from_ratio(self.scroll_position as u32, max_scroll as u32)
         } else {
-            crate::Fraction::ZERO
+            crate::Rat::ZERO
         };
         self.scroll_bar.set_scroll_position(fraction);
         self.needs_redraw = true;
@@ -336,9 +336,9 @@ impl EnteredWords {
         if new_scroll_position != self.scroll_position {
             self.scroll_position = new_scroll_position;
             let fraction = if max_scroll > 0 {
-                crate::Fraction::from_ratio(self.scroll_position as u32, max_scroll as u32)
+                crate::Rat::from_ratio(self.scroll_position as u32, max_scroll as u32)
             } else {
-                crate::Fraction::ZERO
+                crate::Rat::ZERO
             };
             self.scroll_bar.set_scroll_position(fraction);
             self.needs_redraw = true;

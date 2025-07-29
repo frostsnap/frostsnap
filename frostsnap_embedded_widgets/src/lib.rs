@@ -18,9 +18,10 @@ pub mod color_map;
 pub mod column;
 pub mod cursor;
 pub mod fader;
-pub mod fraction;
+pub mod rat;
 pub mod hold_to_confirm;
 pub mod hold_to_confirm_border;
+pub mod icon;
 pub mod icons;
 pub mod key_touch;
 pub mod legacy;
@@ -36,6 +37,7 @@ pub mod sized_box;
 pub mod container;
 pub mod swipe_up_chevron;
 pub mod text;
+pub mod translate;
 pub mod welcome;
 pub mod device_name;
 
@@ -54,7 +56,7 @@ pub use container::*;
 pub use column::*;
 pub use cursor::*;
 pub use fader::*;
-pub use fraction::Fraction;
+pub use rat::Rat;
 pub use hold_to_confirm::HoldToConfirm;
 pub use hold_to_confirm_border::HoldToConfirmBorder;
 // pub use hold_to_confirm_button::*;
@@ -302,8 +304,28 @@ macro_rules! select_widget {
                 
                 $run_macro!(device_name);
             }
+            "bobbing_icon" => {
+                use $crate::{container::Container, sized_box::SizedBox, center::Center, translate::Translate, palette::PALETTE, Widget};
+                use embedded_graphics::{prelude::*, primitives::PrimitiveStyle};
+                
+                // Simple sized box as child
+                let sized_box = SizedBox::new(Size::new(50, 50));
+                
+                // Put it in a container with a border
+                let container = Container::new(sized_box)
+                    .with_border(PrimitiveStyle::with_stroke(PALETTE.on_background, 10));
+                
+
+                // Wrap in Translate with repeat mode
+                let mut translate = Translate::new(container, PALETTE.background);
+                translate.set_repeat(true);
+                // Bob right and left 30 pixels over 10 seconds each way
+                translate.translate(Point::new(100, 0), 1000);
+                
+                $run_macro!(translate);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon", $demo);
             }
         }
     };

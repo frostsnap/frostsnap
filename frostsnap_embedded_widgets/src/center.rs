@@ -56,6 +56,10 @@ impl<W: Widget> Widget for Center<W> {
     fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, _is_release: bool) {
         self.child.handle_vertical_drag(start_y, current_y, _is_release);
     }
+
+    fn force_full_redraw(&mut self) {
+        self.child.force_full_redraw()
+    }
     
     fn size_hint(&self) -> Option<Size> {
         None

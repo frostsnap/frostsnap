@@ -1,4 +1,4 @@
-use crate::{palette::PALETTE, Fraction, Widget};
+use crate::{palette::PALETTE, Rat, Widget};
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
@@ -11,10 +11,10 @@ const MIN_INDICATOR_HEIGHT: u32 = 20;
 #[derive(Debug)]
 pub struct ScrollBar {
     track_rect: Rectangle,
-    last_scroll_position: Option<Fraction>,
+    last_scroll_position: Option<Rat>,
     content_height: u32,
     viewport_height: u32,
-    scroll_position: Fraction,
+    scroll_position: Rat,
 }
 
 impl ScrollBar {
@@ -29,11 +29,11 @@ impl ScrollBar {
             last_scroll_position: None,
             content_height,
             viewport_height,
-            scroll_position: Fraction::ZERO,
+            scroll_position: Rat::ZERO,
         }
     }
     
-    pub fn set_scroll_position(&mut self, position: Fraction) {
+    pub fn set_scroll_position(&mut self, position: Rat) {
         self.scroll_position = position;
     }
     
@@ -50,7 +50,7 @@ impl ScrollBar {
             return;
         }
         
-        let visible_ratio = Fraction::from_ratio(self.viewport_height, self.content_height);
+        let visible_ratio = Rat::from_ratio(self.viewport_height, self.content_height);
         let indicator_height = (visible_ratio * self.track_rect.size.height).max(MIN_INDICATOR_HEIGHT);
         
         let available_track_height = self.track_rect.size.height - indicator_height;

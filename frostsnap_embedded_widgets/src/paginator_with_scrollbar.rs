@@ -1,4 +1,4 @@
-use crate::{palette::PALETTE, Fader, Fraction, PageByPage, ScrollBar, SwipeDirection, SwipeUpChevron, Widget, SCROLLBAR_WIDTH};
+use crate::{palette::PALETTE, Fader, Rat, PageByPage, ScrollBar, SwipeDirection, SwipeUpChevron, Widget, SCROLLBAR_WIDTH};
 use embedded_graphics::{
     draw_target::DrawTarget,
     pixelcolor::Rgb565,
@@ -62,7 +62,7 @@ impl<W: PageByPage<Color=Rgb565>, F: Widget<Color = Rgb565>> PaginatorWithScroll
 
     fn set_scroll_position(&mut self) {
         let current_page = self.child.child.current_page() as u32 + self.showing_virtual_page as u32;
-        let position = Fraction::from_ratio(current_page, self.child.child.total_pages() as u32);
+        let position = Rat::from_ratio(current_page, self.child.child.total_pages() as u32);
         self.scrollbar.child.set_scroll_position(position);
     }
 }

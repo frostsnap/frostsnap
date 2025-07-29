@@ -1,3 +1,4 @@
+use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
     pixelcolor::Rgb565,
@@ -67,8 +68,16 @@ impl Default for WidgetTree {
 
 impl WidgetTree {
     /// Handle touch input and return any resulting UI event
-    pub fn handle_touch(&mut self, _point: Point, _current_time: frostsnap_embedded_widgets::Instant, _is_release: bool) -> Option<UiEvent> {
+    pub fn handle_touch(&mut self, _point: Point, _current_time: frostsnap_embedded_widgets::Instant, is_release: bool) -> Option<UiEvent> {
         match self {
+            WidgetTree::DeviceNaming(device_name) => {
+                // Simple approach: confirm name on any touch release
+                if is_release {
+                    Some(UiEvent::NameConfirm(String::from(device_name.name())))
+                } else {
+                    None
+                }
+            }
             // WidgetTree::Prompt { widget, data } => {
             //     widget.handle_touch(point, current_time, is_release);
             //     if widget.is_completed() {

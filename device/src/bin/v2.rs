@@ -125,7 +125,10 @@ fn main() -> ! {
         })
         .unwrap();
 
-    let display = init_display!(peripherals: peripherals, delay: &mut delay);
+    let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
+    
+    // Clear the screen to black at startup
+    display.clear(Rgb565::BLACK).unwrap();
 
     let i2c = I2c::new(
         peripherals.I2C0,
