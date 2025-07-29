@@ -312,37 +312,33 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     if (tx != null && mounted) setState(() => txDetails.update(tx));
   }
 
-  onSigningSessionData(SigningState data) async {
-    for (final deviceId in data.connectedButNeedRequest) {
-      coord.requestDeviceSign(deviceId: deviceId, sessionId: data.sessionId);
-      actionDialogController.addActionNeeded(context, deviceId);
-    }
-    for (final deviceId in data.gotShares) {
-      await actionDialogController.removeActionNeeded(deviceId);
-    }
-    if (mounted) {
-      setState(() {
-        signingState = data;
-        ssid = data.sessionId;
-      });
-    }
+  Future<void> onSigningSessionData(SigningState data) async {
+    if (!mounted) return;
+    setState(() {
+      signingState = data;
+      ssid = data.sessionId;
+    });
+
+    actionDialogController.batchAddActionNeeded(
+      context,
+      data.connectedButNeedRequest,
+    );
+    data.connectedButNeedRequest.forEach(
+      (id) => coord.requestDeviceSign(deviceId: id, sessionId: data.sessionId),
+    );
+    await actionDialogController.batchRemoveActionNeeded(data.gotShares);
   }
 
   onDeviceListData(DeviceListUpdate data) {
+    final connectedIds = data.state.devices.map((dev) => dev.id);
     if (mounted) {
       setState(() {
         connectedDevices.clear();
-        connectedDevices.addAll(data.state.devices.map((device) => device.id));
+        connectedDevices.addAll(connectedIds);
       });
+
       // Remove dialogs of devices that are no longer connected.
-      actionDialogController.actionsNeeded
-          // Collect first to avoid reading/writing at the same time.
-          .toList()
-          .whereNot((deviceId) => connectedDevices.contains(deviceId))
-          .forEach(
-            (deviceId) async =>
-                await actionDialogController.removeActionNeeded(deviceId),
-          );
+      actionDialogController.clearAllExcept(connectedIds);
     }
   }
 
@@ -363,13 +359,19 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
             .listen(onSigningSessionData);
       } else if (widget.isStartSigning) {
-        signingSub = coord
+        late final StreamSubscription<SigningState> sub;
+        sub = coord
             .startSigningTx(
               accessStructureRef: widget.accessStructureRef!,
               unsignedTx: widget.unsignedTx!,
               devices: widget.devices!,
             )
-            .listen(onSigningSessionData);
+            .listen((state) {
+              // Ensure `onSigningSessionData` is called sequentially.
+              sub.pause();
+              onSigningSessionData(state).whenComplete(sub.resume);
+            });
+        signingSub = sub;
       }
     }
   }
