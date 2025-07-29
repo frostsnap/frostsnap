@@ -28,7 +28,7 @@ const SCREEN_HEIGHT: u32 = 280;
 const SCREEN_OFFSET_Y: u16 = 20;  // ST7789 Y offset for 240x280 panel
 
 // Widget demo selection
-const DEMO: &str = "bip39_entry";
+const DEMO: &str = "welcome";
 
 #[entry]
 fn main() -> ! {

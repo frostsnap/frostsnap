@@ -22,6 +22,8 @@ pub mod panic;
 pub mod partitions;
 pub mod touch_calibration;
 pub mod ui;
+pub mod widget_tree;
+pub mod display_utils;
 
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
