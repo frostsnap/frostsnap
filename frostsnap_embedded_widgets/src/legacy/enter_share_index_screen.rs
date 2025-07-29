@@ -1,5 +1,6 @@
-use super::{KeyTouch, NumericKey, NumericKeyboard, ShareIndexInputDisplay};
-use alloc::vec::Vec;
+use crate::{Key, KeyTouch};
+use super::{NumericKey, NumericKeyboard, ShareIndexInputDisplay};
+use alloc::{vec::Vec, vec};
 use embedded_graphics::{
     geometry::AnchorPoint, pixelcolor::Rgb565, prelude::*, primitives::Rectangle,
 };
@@ -72,17 +73,19 @@ impl EnterShareIndexScreen {
     ) -> Option<u16> {
         if lift_up {
             if let Some(active_touch) = self.touches.last_mut() {
-                if let Some(c) = active_touch.let_go(current_time) {
-                    let numeric_key = NumericKey::from_char(c).expect("from numeric keyboard");
-                    match numeric_key {
-                        NumericKey::Digit(digit) => self.share_index_input_display.add_digit(digit),
-                        NumericKey::Backspace => self.share_index_input_display.backspace(),
-                        NumericKey::Confirm => {
-                            let index = self
-                                .share_index_input_display
-                                .index
-                                .expect("confirm can't be pressed if there's nothing");
-                            return Some(index);
+                if let Some(key) = active_touch.let_go(current_time) {
+                    if let Key::Keyboard(c) = key {
+                        let numeric_key = NumericKey::from_char(c).expect("from numeric keyboard");
+                            match numeric_key {
+                            NumericKey::Digit(digit) => self.share_index_input_display.add_digit(digit),
+                            NumericKey::Backspace => self.share_index_input_display.backspace(),
+                            NumericKey::Confirm => {
+                                let index = self
+                                    .share_index_input_display
+                                    .index
+                                    .expect("confirm can't be pressed if there's nothing");
+                                return Some(index);
+                            }
                         }
                     }
 

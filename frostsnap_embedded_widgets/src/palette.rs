@@ -1,6 +1,6 @@
 use embedded_graphics::{
     pixelcolor::Rgb565,
-    prelude::{RgbColor, WebColors},
+    prelude::{RgbColor, WebColors}
 };
 
 #[allow(unused)]
