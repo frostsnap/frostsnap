@@ -45,6 +45,14 @@ impl<W: Widget> Container<W> {
         self.border_style = Some(border_style);
         self
     }
+
+    fn border_width(&self) -> u32 {
+        match &self.border_style {
+            Some(style) => style.stroke_width,
+            None => 0,
+        }
+    }
+
     
     /// Set the corner radius for rounded borders
     pub fn with_corner_radius(mut self, corner_radius: Size) -> Self {
@@ -67,17 +75,18 @@ impl<W: Widget> Widget for Container<W> {
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         if let Some(size) = self.effective_size() {
+            let rect = Rectangle::new(Point::new_equal(self.border_width() as i32), size);
             if self.border_needs_redraw {
                 if let Some(style) = self.border_style {
                     if let Some(corner_radius) = self.corner_radius {
                         RoundedRectangle::with_equal_corners(
-                            Rectangle::new(Point::zero(), size),
+                            rect,
                             corner_radius,
                         )
                         .into_styled(style)
                         .draw(target)?;
                     } else {
-                        Rectangle::new(Point::zero(), size)
+                        rect
                             .into_styled(style)
                             .draw(target)?;
                     }
@@ -85,8 +94,7 @@ impl<W: Widget> Widget for Container<W> {
                 self.border_needs_redraw = false;
             }
             
-            let bounds = Rectangle::new(Point::zero(), size);
-            let mut cropped = target.cropped(&bounds);
+            let mut cropped = target.cropped(&rect);
             self.child.draw(&mut cropped, current_time)?;
         } else {
             self.child.draw(target, current_time)?;
@@ -116,9 +124,15 @@ impl<W: Widget> Widget for Container<W> {
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
         self.child.handle_vertical_drag(prev_y, new_y, is_release);
     }
-    
+
+
     fn size_hint(&self) -> Option<Size> {
-        self.effective_size()
+        let base_size = self.effective_size()?;
+        let border_width = self.border_width();
+        Some(Size::new(
+            base_size.width + 2 * border_width,
+            base_size.height + 2 * border_width,
+        ))
     }
     
     fn force_full_redraw(&mut self) {

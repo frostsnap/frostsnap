@@ -320,7 +320,7 @@ macro_rules! select_widget {
                 let mut translate = Translate::new(container, PALETTE.background);
                 translate.set_repeat(true);
                 // Bob right and left 30 pixels over 10 seconds each way
-                translate.translate(Point::new(100, 0), 1000);
+                translate.translate(Point::new(100, 100), 1000);
                 
                 $run_macro!(translate);
             }

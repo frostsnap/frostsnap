@@ -1,34 +1,10 @@
 use crate::{Widget, Instant, Rat};
 use embedded_graphics::{
     draw_target::{DrawTarget, DrawTargetExt},
-    geometry::{Point, Size, Dimensions},
-    pixelcolor::PixelColor,
+    geometry::{Point, Size},
     primitives::Rectangle,
-    Pixel,
 };
-use alloc::vec::Vec;
 
-/// A compressed point that uses less memory
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct CompressedPoint {
-    x: i16,
-    y: i16,
-}
-
-impl From<Point> for CompressedPoint {
-    fn from(p: Point) -> Self {
-        Self {
-            x: p.x as i16,
-            y: p.y as i16,
-        }
-    }
-}
-
-impl From<CompressedPoint> for Point {
-    fn from(p: CompressedPoint) -> Self {
-        Point::new(p.x as i32, p.y as i32)
-    }
-}
 
 /// A widget that animates its child by translating it across the screen
 pub struct Translate<W: Widget> {
@@ -45,8 +21,6 @@ pub struct Translate<W: Widget> {
     repeat: bool,
     /// Background color for erasing
     background_color: W::Color,
-    /// Previously drawn pixel positions
-    previous_pixels: Vec<CompressedPoint>,
 }
 
 impl<W: Widget> Translate<W> 
@@ -62,7 +36,6 @@ where
             start_time: None,
             repeat: false,
             background_color,
-            previous_pixels: Vec::new(),
         }
     }
     
@@ -142,29 +115,21 @@ where
             Point::zero()
         };
         
-        // If offset changed, clear old pixels
+        // If offset changed, clear the old position with a filled rectangle
         if offset != self.current_offset {
             self.child.force_full_redraw();
-        } else if !self.previous_pixels.is_empty() {
-            self.child.draw(&mut target.translated(offset), current_time)?;
-            return Ok(());
+            
+            // Get the child's size hint
+            if let Some(size) = self.child.size_hint() {
+                // Clear the old position by filling a rectangle
+                let clear_rect = Rectangle::new(self.current_offset, size);
+                target.fill_solid(&clear_rect, self.background_color)?;
+            }
         }
-
-        let mut clear_target = target.translated(self.current_offset);
-            let bg_pixels = self.previous_pixels.iter()
-                .map(|&p| Pixel(p.into(), self.background_color));
-            clear_target.draw_iter(bg_pixels)?;
-
-        // Clear the recording buffer
-        self.previous_pixels.clear();
         
-        // Draw the child at the calculated offset, recording pixels
+        // Draw the child at the new offset
         let mut translated_target = target.translated(offset);
-        let mut recording_target = RecordingTarget {
-            inner: &mut translated_target,
-            positions: &mut self.previous_pixels,
-        };
-        self.child.draw(&mut recording_target, current_time)?;
+        self.child.draw(&mut translated_target, current_time)?;
         
         // Update state for next frame
         self.current_offset = offset;
@@ -193,95 +158,6 @@ where
     }
 }
 
-/// A DrawTarget that maps all colors to a single color
-struct SingleColorTarget<'a, D, C> {
-    inner: &'a mut D,
-    color: C,
-}
-
-impl<'a, D, C> DrawTarget for SingleColorTarget<'a, D, C>
-where
-    D: DrawTarget<Color = C>,
-    C: PixelColor,
-{
-    type Color = C;
-    type Error = D::Error;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        self.inner.draw_iter(
-            pixels
-                .into_iter()
-                .map(|Pixel(point, _)| Pixel(point, self.color)),
-        )
-    }
-
-    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Self::Color>,
-    {
-        let count = colors.into_iter().count();
-        let single_color = core::iter::repeat(self.color).take(count);
-        self.inner.fill_contiguous(area, single_color)
-    }
-
-    fn fill_solid(&mut self, area: &Rectangle, _color: Self::Color) -> Result<(), Self::Error> {
-        self.inner.fill_solid(area, self.color)
-    }
-
-    fn clear(&mut self, _color: Self::Color) -> Result<(), Self::Error> {
-        self.inner.clear(self.color)
-    }
-}
-
-impl<'a, D, C> Dimensions for SingleColorTarget<'a, D, C>
-where
-    D: DrawTarget,
-{
-    fn bounding_box(&self) -> Rectangle {
-        self.inner.bounding_box()
-    }
-}
-
-/// A DrawTarget that records all pixel positions while drawing
-struct RecordingTarget<'a, D> {
-    inner: &'a mut D,
-    positions: &'a mut Vec<CompressedPoint>,
-}
-
-impl<'a, D> DrawTarget for RecordingTarget<'a, D>
-where
-    D: DrawTarget,
-{
-    type Color = D::Color;
-    type Error = D::Error;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        let pixels: Vec<_> = pixels.into_iter().collect();
-        
-        // Record positions
-        for Pixel(point, _) in &pixels {
-            self.positions.push((*point).into());
-        }
-        
-        // Draw to inner target
-        self.inner.draw_iter(pixels)
-    }
-}
-
-impl<'a, D> Dimensions for RecordingTarget<'a, D>
-where
-    D: DrawTarget,
-{
-    fn bounding_box(&self) -> Rectangle {
-        self.inner.bounding_box()
-    }
-}
 
 #[cfg(test)]
 mod tests {
