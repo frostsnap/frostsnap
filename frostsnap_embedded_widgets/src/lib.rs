@@ -37,6 +37,7 @@ pub mod container;
 pub mod swipe_up_chevron;
 pub mod text;
 pub mod welcome;
+pub mod device_name;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -65,6 +66,7 @@ pub use sized_box::*;
 pub use swipe_up_chevron::*;
 pub use text::*;
 pub use welcome::*;
+pub use device_name::*;
 
 // Font re-exports
 use u8g2_fonts::fonts;
@@ -163,13 +165,13 @@ macro_rules! select_widget {
                 use $crate::{text::Text, HoldToConfirm, palette::PALETTE};
                 use embedded_graphics::pixelcolor::BinaryColor;
                 
-                let prompt_text = Text::new("Confirm\ntransaction");
+                let prompt_text = Text::new("Confirm\ntransaction", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, BinaryColor::On));
                 let prompt_widget = prompt_text.color_map(|c| match c {
                     BinaryColor::On => PALETTE.on_surface,
                     BinaryColor::Off => PALETTE.background,
                 });
                 
-                let success_text = Text::new("Transaction\nsigned");
+                let success_text = Text::new("Transaction\nsigned", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, BinaryColor::On));
                 let success_widget = success_text.color_map(|c| match c {
                     BinaryColor::On => PALETTE.on_surface,
                     BinaryColor::Off => PALETTE.background,
@@ -255,13 +257,13 @@ macro_rules! select_widget {
                 use $crate::{HoldToConfirm, text::Text};
                 use embedded_graphics::pixelcolor::BinaryColor;
                 
-                let confirm_prompt = Text::new("I have written down:\n\n- the key index\n- all 25 words");
+                let confirm_prompt = Text::new("I have written down:\n\n- the key index\n- all 25 words", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, BinaryColor::On));
                 let confirm_prompt_rgb = confirm_prompt.color_map(|c| match c {
                     BinaryColor::On => PALETTE.on_surface,
                     BinaryColor::Off => PALETTE.background,
                 });
                 
-                let mut success_text = Text::new("Keep it secret\nKeep it safe").with_horizontal_alignment(HorizontalAlignment::Center);
+                let success_text = Text::new("Keep it secret\nKeep it safe", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, BinaryColor::On)).with_alignment(embedded_graphics::text::Alignment::Center);
                 let success_text_rgb = success_text.color_map(|c| match c {
                     BinaryColor::On => PALETTE.on_surface,
                     BinaryColor::Off => PALETTE.background,
@@ -278,7 +280,7 @@ macro_rules! select_widget {
                 use embedded_graphics::pixelcolor::BinaryColor;
                 
                 // Simple text widget that will fade in/out
-                let text = Text::new("Fade Demo");
+                let text = Text::new("Fade Demo", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, BinaryColor::On));
                 let text_colored = text.color_map(|c| match c {
                     BinaryColor::On => PALETTE.on_background,
                     BinaryColor::Off => PALETTE.background,
@@ -291,8 +293,17 @@ macro_rules! select_widget {
                 
                 $run_macro!(fader);
             }
+            "device_name" => {
+                use $crate::DeviceName;
+                
+                // Create device name widget with "Georg" and enable edit mode
+                let mut device_name = DeviceName::new("Georg");
+                device_name.set_edit_mode(true);
+                
+                $run_macro!(device_name);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name", $demo);
             }
         }
     };

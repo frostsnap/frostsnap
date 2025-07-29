@@ -1,25 +1,70 @@
-use super::Widget;
-use crate::{bitmap::Bitmap, palette::PALETTE, Instant};
+use super::{Widget, Text, Column, SizedBox};
+use crate::{bitmap::{Bitmap, BitmapWidget}, color_map::ColorMap, palette::PALETTE, Instant};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::Rgb565,
-    prelude::*,
-    Pixel,
+    pixelcolor::{BinaryColor, Rgb565},
 };
+use u8g2_fonts::U8g2TextStyle;
 
-const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-64x64.bin");
+const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 
 /// A welcome screen widget showing the Frostsnap logo and getting started text
 pub struct Welcome {
-    drawn: bool,
+    column: Column<(
+        SizedBox<Rgb565>,
+        ColorMap<BitmapWidget, Rgb565>,
+        SizedBox<Rgb565>,
+        ColorMap<Text<U8g2TextStyle<BinaryColor>>, Rgb565>,
+        ColorMap<Text<U8g2TextStyle<BinaryColor>>, Rgb565>,
+        SizedBox<Rgb565>,
+        ColorMap<Text<U8g2TextStyle<BinaryColor>>, Rgb565>,
+    ), Rgb565>,
 }
 
 impl Welcome {
     pub fn new() -> Self {
-        Self {
-            drawn: false,
-        }
+        let text_style = U8g2TextStyle::new(crate::FONT_MED, BinaryColor::On);
+        
+        // Create text widgets
+        let text1 = Text::new("Get started with", text_style.clone());
+        let text1_colored = text1.color_map(|c| match c {
+            BinaryColor::On => PALETTE.on_background,
+            BinaryColor::Off => PALETTE.background,
+        });
+        
+        let text2 = Text::new("your Frostsnap at", text_style.clone());
+        let text2_colored = text2.color_map(|c| match c {
+            BinaryColor::On => PALETTE.on_background,
+            BinaryColor::Off => PALETTE.background,
+        });
+        
+        let url_text = Text::new("frostsnap.com/start", text_style);
+        let url_colored = url_text.color_map(|c| match c {
+            BinaryColor::On => PALETTE.primary_container,
+            BinaryColor::Off => PALETTE.background,
+        });
+        
+        // Load logo
+        let bitmap = Bitmap::from_bytes(LOGO_DATA).expect("Failed to load logo");
+        let bitmap_widget = BitmapWidget::new(bitmap);
+        let logo = bitmap_widget.color_map(|color| match color {
+            BinaryColor::On => PALETTE.primary,
+            BinaryColor::Off => PALETTE.background,
+        });
+        
+        // Create column with spacing
+        let column = Column::new((
+            SizedBox::new(Size::new(0, 40)),
+            logo,
+            SizedBox::new(Size::new(0, 20)),
+            text1_colored,
+            text2_colored,
+            SizedBox::new(Size::new(0, 10)),
+            url_colored,
+        ));
+        
+        Self { column }
     }
 }
 
@@ -35,112 +80,29 @@ impl Widget for Welcome {
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
         target: &mut D,
-        _current_time: Instant,
+        current_time: Instant,
     ) -> Result<(), D::Error> {
-        if self.drawn {
-            return Ok(());
-        }
-
-        let bounds = target.bounding_box();
-        let center_x = bounds.size.width / 2;
-        
-        // Clear background
-        target.clear(PALETTE.background)?;
-        
-        // Load and draw logo
-        if let Ok(bitmap) = Bitmap::from_bytes(LOGO_DATA) {
-            // Create a temporary binary target for the bitmap
-            let logo_width = bitmap.width();
-            let logo_height = bitmap.height();
-            
-            // Center the logo horizontally, place it in upper portion
-            let logo_x = (center_x as i32) - (logo_width as i32 / 2);
-            let logo_y = 40; // Position logo with some top margin
-            
-            // Draw bitmap pixel by pixel, converting BinaryColor to Rgb565
-            // We'll draw it row by row
-            for y in 0..logo_height {
-                for x in 0..logo_width {
-                    let byte_index = ((y * logo_width + x) / 8) as usize;
-                    let bit_index = ((y * logo_width + x) % 8) as usize;
-                    
-                    if byte_index < bitmap.bytes.len() {
-                        let byte = bitmap.bytes[byte_index];
-                        let bit = (byte >> (7 - bit_index)) & 1;
-                        
-                        if bit == 1 {
-                            // Draw primary color pixel for the logo
-                            let pixel = Pixel(
-                                Point::new(logo_x + x as i32, logo_y + y as i32),
-                                PALETTE.primary, // Use primary color for the logo
-                            );
-                            target.draw_iter(core::iter::once(pixel))?;
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Draw welcome text using embedded_graphics directly for Rgb565
-        let text_y = 140; // Below the logo
-        
-        use embedded_graphics::text::{Alignment, Baseline, Text as EgText, TextStyleBuilder};
-        use u8g2_fonts::U8g2TextStyle;
-        use crate::FONT_SMALL;
-        
-        let character_style = TextStyleBuilder::new()
-            .alignment(Alignment::Center)
-            .baseline(Baseline::Top)
-            .build();
-            
-        // First line of text - use secondary/gray color
-        let text_style = U8g2TextStyle::new(FONT_SMALL, PALETTE.on_surface_variant);
-        EgText::with_text_style(
-            "Get started with your",
-            Point::new(center_x as i32, text_y),
-            text_style.clone(),
-            character_style,
-        )
-        .draw(target)?;
-        
-        // Second line
-        EgText::with_text_style(
-            "Frostsnap at",
-            Point::new(center_x as i32, text_y + 20),
-            text_style,
-            character_style,
-        )
-        .draw(target)?;
-        
-        // URL line with deeper blue link color
-        let url_style = U8g2TextStyle::new(FONT_SMALL, PALETTE.primary_container);
-        EgText::with_text_style(
-            "frostsnap.com/start",
-            Point::new(center_x as i32, text_y + 40),
-            url_style,
-            character_style,
-        )
-        .draw(target)?;
-        
-        self.drawn = true;
-        Ok(())
+        self.column.draw(target, current_time)
     }
 
     fn handle_touch(
         &mut self,
-        _point: Point,
-        _current_time: Instant,
-        _lift_up: bool,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        None
+        self.column.handle_touch(point, current_time, is_release)
     }
 
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
-        // Welcome screen doesn't respond to drags
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.column.handle_vertical_drag(prev_y, new_y, is_release)
     }
 
     fn size_hint(&self) -> Option<Size> {
-        // Take full screen
-        None
+        self.column.size_hint()
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.column.force_full_redraw();
     }
 }

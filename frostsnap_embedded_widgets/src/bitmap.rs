@@ -36,14 +36,64 @@ impl Bitmap {
         let total_pixels = self.bytes.len() * 8;
         total_pixels as u32 / self.width
     }
+}
+
+/// A widget wrapper for Bitmap that implements the Widget trait
+pub struct BitmapWidget {
+    bitmap: Bitmap,
+    needs_redraw: bool,
+}
+
+impl BitmapWidget {
+    pub fn new(bitmap: Bitmap) -> Self {
+        Self {
+            bitmap,
+            needs_redraw: true,
+        }
+    }
     
-    /// Draw the bitmap at a specific position
-    pub fn draw<D>(&self, target: &mut D, position: Point) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = BinaryColor>,
-    {
-        let raw_image = ImageRaw::<BinaryColor>::new(&self.bytes, self.width);
-        let image = Image::new(&raw_image, position);
-        image.draw(target)
+    pub fn width(&self) -> u32 {
+        self.bitmap.width()
+    }
+    
+    pub fn height(&self) -> u32 {
+        self.bitmap.height()
+    }
+}
+
+impl crate::Widget for BitmapWidget {
+    type Color = BinaryColor;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        if self.needs_redraw {
+            let raw_image = ImageRaw::<BinaryColor>::new(&self.bitmap.bytes, self.bitmap.width);
+            let image = Image::new(&raw_image, Point::zero());
+            image.draw(target)?;
+            self.needs_redraw = false;
+        }
+        Ok(())
+    }
+    
+    fn handle_touch(
+        &mut self,
+        _point: Point,
+        _current_time: crate::Instant,
+        _lift_up: bool,
+    ) -> Option<crate::KeyTouch> {
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(self.bitmap.width(), self.bitmap.height()))
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
     }
 }

@@ -1,65 +1,62 @@
 use super::Widget;
 use crate::Instant;
+use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
-    geometry::Point,
+    geometry::{Point, Size},
     pixelcolor::BinaryColor,
     prelude::*,
+    text::{Text as EgText, TextStyle, TextStyleBuilder, Alignment, Baseline, renderer::{CharacterStyle, TextRenderer}},
+    Drawable,
 };
-use embedded_text::{
-    alignment::{HorizontalAlignment, VerticalAlignment},
-    style::TextBoxStyleBuilder,
-    TextBox,
-};
-use u8g2_fonts::U8g2TextStyle;
 
-// Re-export for legacy compatibility
-pub use embedded_graphics::text::Baseline;
-
-/// A simple text widget that renders text in a bounded area
-pub struct Text {
-    text: &'static str,
-    horizontal_alignment: HorizontalAlignment,
-    vertical_alignment: VerticalAlignment,
+/// A simple text widget that renders text at a specific position
+pub struct Text<S> {
+    text: String,
+    character_style: S,
+    text_style: TextStyle,
     drawn: bool,
 }
 
-impl Text {
-    pub fn new(text: &'static str) -> Self {
+impl<S> Text<S> {
+    pub fn new<T: Into<String>>(text: T, character_style: S) -> Self {
+        let text_style = TextStyleBuilder::new()
+            .alignment(Alignment::Center)
+            .baseline(Baseline::Middle)
+            .build();
+            
         Self {
-            text,
-            horizontal_alignment: HorizontalAlignment::Left,
-            vertical_alignment: VerticalAlignment::Middle,
+            text: text.into(),
+            character_style,
+            text_style,
             drawn: false,
         }
     }
-}
-
-impl Text {
-    pub fn with_horizontal_alignment(mut self, alignment: HorizontalAlignment) -> Self {
-        self.horizontal_alignment = alignment;
+    
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+    
+    
+    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
+        self.text_style = TextStyleBuilder::from(&self.text_style)
+            .alignment(alignment)
+            .build();
         self
     }
     
-    pub fn with_vertical_alignment(mut self, alignment: VerticalAlignment) -> Self {
-        self.vertical_alignment = alignment;
-        self
-    }
-    
-    // Legacy compatibility methods
-    pub fn with_baseline(mut self, baseline: embedded_graphics::text::Baseline) -> Self {
-        use embedded_graphics::text::Baseline;
-        self.vertical_alignment = match baseline {
-            Baseline::Top => VerticalAlignment::Top,
-            Baseline::Middle => VerticalAlignment::Middle,
-            Baseline::Bottom => VerticalAlignment::Bottom,
-            _ => VerticalAlignment::Middle,
-        };
+    pub fn with_baseline(mut self, baseline: Baseline) -> Self {
+        self.text_style = TextStyleBuilder::from(&self.text_style)
+            .baseline(baseline)
+            .build();
         self
     }
 }
 
-impl Widget for Text {
+impl<S> Widget for Text<S>
+where
+    S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
+{
     type Color = BinaryColor;
     
     fn draw<D: DrawTarget<Color = Self::Color>>(
@@ -69,19 +66,13 @@ impl Widget for Text {
     ) -> Result<(), D::Error> {
         if !self.drawn {
             let bounds = target.bounding_box();
+            let center = bounds.center();
             
-            // Use FONT_MED for bigger, nicer text
-            let character_style = U8g2TextStyle::new(crate::FONT_MED, BinaryColor::On);
-            let textbox_style = TextBoxStyleBuilder::new()
-                .alignment(self.horizontal_alignment)
-                .vertical_alignment(self.vertical_alignment)
-                .build();
-                
-            TextBox::with_textbox_style(
-                self.text,
-                bounds,
-                character_style,
-                textbox_style,
+            EgText::with_text_style(
+                &self.text,
+                center,
+                self.character_style.clone(),
+                self.text_style,
             )
             .draw(target)?;
             
@@ -95,12 +86,22 @@ impl Widget for Text {
         None
     }
     
-    fn handle_vertical_drag(&mut self, _start_y: Option<u32>, _current_y: u32, _is_release: bool) {
-        // Text doesn't respond to drags
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No drag handling needed
     }
     
     fn size_hint(&self) -> Option<Size> {
-        None
+        // Use Dimensions trait to get the actual text dimensions
+        let text = EgText::with_text_style(
+            &self.text,
+            Point::zero(),
+            self.character_style.clone(),
+            self.text_style,
+        );
+        
+        // Get the bounding box dimensions
+        let bbox = text.bounding_box();
+        Some(bbox.size)
     }
     
     fn force_full_redraw(&mut self) {
