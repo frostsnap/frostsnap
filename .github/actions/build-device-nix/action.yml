@@ -12,19 +12,19 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Build firmware
-      id: build
+    - name: Build and debug with Nix environment
       shell: bash
-      working-directory: ./device
       run: |
-        nix develop --command just build-device ${{ inputs.board }} --locked
-        
-        # Output hash for cross-machine comparison
-        hash=$(sha256sum target/riscv32imc-unknown-none-elf/release/${{ inputs.board }} | cut -d' ' -f1)
-        echo "firmware-hash=$hash" >> $GITHUB_OUTPUT
-        echo "✅ Firmware built with hash: $hash"
-        
-    - name: Save firmware image
-      shell: bash
-      working-directory: ./device
-      run: nix develop --command just save-image ${{ inputs.board }}
+        nix develop --command bash -c "
+          echo '🔍 Nix Environment Check:'
+          echo 'SOURCE_DATE_EPOCH: \${SOURCE_DATE_EPOCH:-NOT SET}'
+          echo 'CARGO_BUILD_INCREMENTAL: \${CARGO_BUILD_INCREMENTAL:-NOT SET}'
+          
+          echo '🔨 Building with Nix environment...'
+          cd device && just build-device ${{ inputs.board }} --locked
+
+          just save-image ${{ inputs.board }}
+
+          echo '🔍 Running debug analysis...'
+          ./debug-build-differences.sh
+        "
