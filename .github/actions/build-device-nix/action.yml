@@ -1,0 +1,30 @@
+name: "Build Device Firmware with Nix"
+description: "Builds ESP32-C3 firmware using deterministic Nix environment"
+inputs:
+  board:
+    description: "Board variant to build"
+    required: true
+    default: "v2"
+outputs:
+  firmware-hash:
+    description: "SHA256 hash of the built firmware"
+    value: ${{ steps.build.outputs.firmware-hash }}
+runs:
+  using: "composite"
+  steps:
+    - name: Build firmware
+      id: build
+      shell: bash
+      working-directory: ./device
+      run: |
+        nix develop --command just build-device ${{ inputs.board }} --locked
+        
+        # Output hash for cross-machine comparison
+        hash=$(sha256sum target/riscv32imc-unknown-none-elf/release/${{ inputs.board }} | cut -d' ' -f1)
+        echo "firmware-hash=$hash" >> $GITHUB_OUTPUT
+        echo "✅ Firmware built with hash: $hash"
+        
+    - name: Save firmware image
+      shell: bash
+      working-directory: ./device
+      run: nix develop --command just save-image ${{ inputs.board }}
