@@ -1,0 +1,9 @@
+name: "Setup Nix with Flakes"
+description: "Installs and configures Nix"
+runs:
+  using: "composite"
+  steps:
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@main
+    - name: Setup Magic Nix Cache
+      uses: DeterminateSystems/magic-nix-cache-action@main

@@ -14,6 +14,9 @@ erase-device +ARGS="nvs":
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
 
+build-deterministic:
+    cd device && ./deterministic-build.sh
+
 build +ARGS="":
    (cd frostsnapp; just build {{ARGS}})
 
