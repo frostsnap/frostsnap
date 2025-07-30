@@ -1,4 +1,4 @@
-use crate::{Widget, Instant, Rat};
+use crate::{Widget, Instant, Frac};
 use embedded_graphics::{
     draw_target::{DrawTarget, DrawTargetExt},
     geometry::{Point, Size},
@@ -92,24 +92,24 @@ where
                 // For repeat mode, determine which cycle we're in
                 let cycle = elapsed_ms / self.duration as u32;
                 let cycle_ms = elapsed_ms % self.duration as u32;
-                let rat = Rat::from_ratio(cycle_ms, self.duration as u32);
+                let frac = Frac::from_ratio(cycle_ms, self.duration as u32);
                 
                 // If odd cycle, reverse the animation
                 if cycle % 2 == 1 {
-                    self.movement * (Rat::ONE - rat)
+                    self.movement * (Frac::ONE - frac)
                 } else {
-                    self.movement * rat
+                    self.movement * frac
                 }
             } else {
                 // Single animation
-                let rat = Rat::from_ratio(elapsed_ms, self.duration as u32).min(Rat::ONE);
+                let frac = Frac::from_ratio(elapsed_ms, self.duration as u32);
                 
                 // Check if animation is complete
-                if rat == Rat::ONE {
+                if frac == Frac::ONE {
                     self.start_time = None;
                 }
                 
-                self.movement * rat
+                self.movement * frac
             }
         } else {
             Point::zero()

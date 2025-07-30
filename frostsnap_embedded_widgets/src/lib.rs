@@ -56,7 +56,7 @@ pub use container::*;
 pub use column::*;
 pub use cursor::*;
 pub use fader::*;
-pub use rat::Rat;
+pub use rat::{Rat, Frac};
 pub use hold_to_confirm::HoldToConfirm;
 pub use hold_to_confirm_border::HoldToConfirmBorder;
 // pub use hold_to_confirm_button::*;

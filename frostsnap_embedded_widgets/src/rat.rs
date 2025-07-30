@@ -19,6 +19,13 @@ impl Rat {
         Self(1000u32.saturating_sub(self.0))
     }
     
+    /// Clamps the value to a maximum of 1.0
+    pub fn clamp_to_one(&mut self) {
+        if self.0 > 1000 {
+            self.0 = 1000;
+        }
+    }
+    
     /// Minimum value (0)
     pub const ZERO: Self = Self(0);
     
@@ -104,5 +111,79 @@ impl Mul<Rat> for embedded_graphics::geometry::Point {
     
     fn mul(self, rhs: Rat) -> Self::Output {
         rhs * self
+    }
+}
+
+/// A fraction between 0 and 1, automatically clamped
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Frac(Rat);
+
+impl Frac {
+    /// Create a new Frac from a Rat, clamping to [0, 1]
+    pub fn new(mut rat: Rat) -> Self {
+        rat.clamp_to_one();
+        Self(rat)
+    }
+    
+    /// Create from a numerator and denominator, clamping to [0, 1]
+    pub fn from_ratio(numerator: u32, denominator: u32) -> Self {
+        let rat = Rat::from_ratio(numerator, denominator);
+        Self::new(rat)
+    }
+    
+    /// Get the inner Rat value
+    pub fn as_rat(&self) -> Rat {
+        self.0
+    }
+    
+    /// Returns 1.0 - self
+    pub fn one_minus(&self) -> Self {
+        Self(self.0.one_minus())
+    }
+    
+    /// Zero fraction
+    pub const ZERO: Self = Self(Rat::ZERO);
+    
+    /// One fraction
+    pub const ONE: Self = Self(Rat::ONE);
+}
+
+impl Mul<u32> for Frac {
+    type Output = u32;
+    
+    fn mul(self, rhs: u32) -> Self::Output {
+        self.0 * rhs
+    }
+}
+
+impl Mul<Frac> for u32 {
+    type Output = u32;
+    
+    fn mul(self, rhs: Frac) -> Self::Output {
+        self * rhs.0
+    }
+}
+
+impl Mul<embedded_graphics::geometry::Point> for Frac {
+    type Output = embedded_graphics::geometry::Point;
+    
+    fn mul(self, rhs: embedded_graphics::geometry::Point) -> Self::Output {
+        self.0 * rhs
+    }
+}
+
+impl Mul<Frac> for embedded_graphics::geometry::Point {
+    type Output = embedded_graphics::geometry::Point;
+    
+    fn mul(self, rhs: Frac) -> Self::Output {
+        self * rhs.0
+    }
+}
+
+impl Sub for Frac {
+    type Output = Rat;
+    
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.0 - rhs.0
     }
 }

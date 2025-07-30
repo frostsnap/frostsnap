@@ -1,4 +1,4 @@
-use super::{Widget, Rat};
+use super::{Widget, Frac};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Dimensions, Point, Size},
@@ -114,7 +114,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
 
 }
 
-fn interpolate_color(from: Rgb565, to: Rgb565, t: Rat) -> Rgb565 {
+fn interpolate_color(from: Rgb565, to: Rgb565, t: Frac) -> Rgb565 {
     // t represents progress from 0 to 1
     let t_inv = t.one_minus(); // 1.0 - t
     
@@ -137,7 +137,7 @@ fn interpolate_color(from: Rgb565, to: Rgb565, t: Rat) -> Rgb565 {
 /// A custom DrawTarget that intercepts pixel drawing and applies fade
 struct FadingDrawTarget<'a, D> {
     target: &'a mut D,
-    fade_progress: Rat,
+    fade_progress: Frac,
     target_color: Rgb565,
 }
 
@@ -217,9 +217,9 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
                 };
 
                 if should_redraw {
-                    // Calculate fade progress using Rat
+                    // Calculate fade progress using Frac (automatically clamped to [0, 1])
                     let elapsed = current_time.saturating_duration_since(*start_time) as u32;
-                    let mut fade_progress = Rat::from_ratio(elapsed, duration_ms as u32);
+                    let mut fade_progress = Frac::from_ratio(elapsed, duration_ms as u32);
                     
                     // For fade-in, reverse the progress (1.0 -> 0.0)
                     if is_fade_in {
@@ -240,9 +240,9 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
 
                     // Check if fade is complete
                     let is_complete = if is_fade_in {
-                        fade_progress == Rat::ZERO
+                        fade_progress == Frac::ZERO
                     } else {
-                        fade_progress == Rat::ONE
+                        fade_progress == Frac::ONE
                     };
                     
                     if is_complete {
