@@ -1,0 +1,19 @@
+name: "Setup Nix with Flakes"
+description: "Installs and configures Nix with flakes support and caching"
+runs:
+  using: "composite"
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v23
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+
+    # Temporarily disable cache due to permission issues
+    # - name: Cache Nix store
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: /nix/store
+    #     key: ${{ runner.os }}-nix-store-${{ hashFiles('flake.lock') }}
+    #     restore-keys: |
+    #       ${{ runner.os }}-nix-store-
