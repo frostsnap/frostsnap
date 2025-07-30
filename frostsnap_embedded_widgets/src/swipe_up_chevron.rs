@@ -1,117 +1,54 @@
-use crate::{Widget, FONT_SMALL};
+use crate::{Widget, FONT_SMALL, bobbing_carat::BobbingCarat, column::Column, text::Text};
 use embedded_graphics::{
-    pixelcolor::PixelColor,
+    pixelcolor::{PixelColor, RgbColor},
     prelude::*,
-    text::{Alignment, Baseline, Text, TextStyleBuilder},
-    image::Image,
 };
 use u8g2_fonts::U8g2TextStyle;
-use embedded_iconoir::{size24px::navigation::{NavArrowUp, NavArrowDown}, prelude::IconoirNewIcon};
-
-#[derive(PartialEq)]
-pub enum SwipeDirection {
-    Up,
-    Down,
-}
 
 pub struct SwipeUpChevron<C: PixelColor> {
-    size: Size,
-    color: C,
-    direction: Option<SwipeDirection>,
-    needs_redraw: bool,
+    column: Column<(BobbingCarat<C>, Text<U8g2TextStyle<C>>), C>,
 }
 
-impl<C: PixelColor> SwipeUpChevron<C> {
-    pub fn new(size: Size, color: C) -> Self {
-        Self { 
-            size, 
-            color,
-            direction: Some(SwipeDirection::Up),
-            needs_redraw: true,
-        }
-    }
-    
-    pub fn set_direction(&mut self, direction: Option<SwipeDirection>) {
-        if self.direction != direction {
-            self.direction = direction;
-            self.needs_redraw = true;
-        }
+impl<C: PixelColor + RgbColor> SwipeUpChevron<C> 
+where
+    C: Copy + Default,
+{
+    pub fn new(color: C, background_color: C) -> Self {
+        // Create bobbing carat
+        let bobbing_carat = BobbingCarat::new(color, background_color);
+        
+        // Create text
+        let text = Text::new(
+            "Swipe up",
+            U8g2TextStyle::new(FONT_SMALL, color),
+        );
+        
+        // Create column with both widgets
+        let column = Column::new((bobbing_carat, text));
+        
+        Self { column }
     }
 }
 
-impl<C: PixelColor + Default> Widget for SwipeUpChevron<C> {
+impl<C: PixelColor + RgbColor + Default> Widget for SwipeUpChevron<C> 
+where
+    C: Copy,
+{
     type Color = C;
 
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
         target: &mut D,
-        _current_time: crate::Instant,
+        current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        if !self.needs_redraw {
-            return Ok(());
-        }
-        
-        if let Some(direction) = &self.direction {
-            let center_x = (self.size.width / 2) as i32;
-            let text_y = self.size.height as i32 - 10;
-            
-            match direction {
-                SwipeDirection::Up => {
-                    // Draw text at very bottom
-                    Text::with_text_style(
-                        "Swipe up",
-                        Point::new(center_x, text_y),
-                        U8g2TextStyle::new(FONT_SMALL, self.color),
-                        TextStyleBuilder::new()
-                            .alignment(Alignment::Center)
-                            .baseline(Baseline::Middle)
-                            .build(),
-                    )
-                    .draw(target)?;
-                    
-                    // Draw chevron above text
-                    let chevron_up = NavArrowUp::new(self.color);
-                    let chevron_size = chevron_up.size();
-                    let chevron_point = Point::new(
-                        center_x - chevron_size.width as i32 / 2,
-                        text_y - 15 - chevron_size.height as i32 / 2,  // Reduced from 25 to 15
-                    );
-                    Image::new(&chevron_up, chevron_point).draw(target)?;
-                }
-                SwipeDirection::Down => {
-                    // Draw text at very bottom
-                    Text::with_text_style(
-                        "Swipe down",
-                        Point::new(center_x, text_y),
-                        U8g2TextStyle::new(FONT_SMALL, self.color),
-                        TextStyleBuilder::new()
-                            .alignment(Alignment::Center)
-                            .baseline(Baseline::Middle)
-                            .build(),
-                    )
-                    .draw(target)?;
-                    
-                    // Draw chevron above text
-                    let chevron_down = NavArrowDown::new(self.color);
-                    let chevron_size = chevron_down.size();
-                    let chevron_point = Point::new(
-                        center_x - chevron_size.width as i32 / 2,
-                        text_y - 15 - chevron_size.height as i32 / 2,  // Reduced from 25 to 15
-                    );
-                    Image::new(&chevron_down, chevron_point).draw(target)?;
-                }
-            }
-        }
-        
-        self.needs_redraw = false;
-        Ok(())
+        self.column.draw(target, current_time)
     }
 
     fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
+        self.column.size_hint()
     }
     
     fn force_full_redraw(&mut self) {
-        self.needs_redraw = true;
+        self.column.force_full_redraw();
     }
 }

@@ -4,7 +4,7 @@ use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::BinaryColor,
+    pixelcolor::PixelColor,
     prelude::*,
     text::{Text as EgText, TextStyle, TextStyleBuilder, Alignment, Baseline, renderer::{CharacterStyle, TextRenderer}},
     Drawable,
@@ -53,11 +53,12 @@ impl<S> Text<S> {
     }
 }
 
-impl<S> Widget for Text<S>
+impl<S, C> Widget for Text<S>
 where
-    S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
+    C: PixelColor,
+    S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {
-    type Color = BinaryColor;
+    type Color = C;
     
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,

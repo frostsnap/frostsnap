@@ -86,6 +86,10 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
         self.state = FadeState::Idle;
     }
 
+    pub fn instant_fade(&mut self, background_color: Rgb565) {
+        self.start_fade(0, 0, background_color);
+    }
+
     /// Check if fading is complete
     pub fn is_fade_complete(&self) -> bool {
         match &self.state {

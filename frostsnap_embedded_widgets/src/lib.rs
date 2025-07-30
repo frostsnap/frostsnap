@@ -21,7 +21,7 @@ pub mod fader;
 pub mod rat;
 pub mod hold_to_confirm;
 pub mod hold_to_confirm_border;
-pub mod icon;
+pub mod image;
 pub mod icons;
 pub mod key_touch;
 pub mod legacy;
@@ -40,6 +40,7 @@ pub mod text;
 pub mod translate;
 pub mod welcome;
 pub mod device_name;
+pub mod bobbing_carat;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -324,8 +325,19 @@ macro_rules! select_widget {
                 
                 $run_macro!(translate);
             }
+            "swipe_up_chevron" => {
+                use $crate::{SwipeUpChevron, palette::PALETTE, center::Center};
+                
+                // Create swipe up chevron with bobbing animation
+                let swipe_hint = SwipeUpChevron::new(PALETTE.on_surface, PALETTE.background);
+                
+                // Center it on screen
+                let centered = Center::new(swipe_hint);
+                
+                $run_macro!(centered);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron", $demo);
             }
         }
     };

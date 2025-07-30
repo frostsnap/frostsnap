@@ -101,6 +101,10 @@ macro_rules! impl_column_for_tuple {
                 let size = self.children.0.size_hint()?;
                 Some(Size::new(size.width, size.height))
             }
+            
+            fn force_full_redraw(&mut self) {
+                self.children.0.force_full_redraw();
+            }
         }
     };
     
@@ -250,6 +254,16 @@ macro_rules! impl_column_for_tuple {
                 )+
                 
                 Some(Size::new(max_width, total_height))
+            }
+            
+            fn force_full_redraw(&mut self) {
+                #[allow(non_snake_case)]
+                let (ref mut $t1, $(ref mut $tn,)+) = self.children;
+                
+                $t1.force_full_redraw();
+                $(
+                    $tn.force_full_redraw();
+                )+
             }
         }
     };

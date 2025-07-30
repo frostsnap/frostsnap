@@ -1,8 +1,10 @@
-use crate::{Widget, Instant, Frac};
+use crate::{Widget, Instant, Frac, bitmap::Bitmap};
 use embedded_graphics::{
     draw_target::{DrawTarget, DrawTargetExt},
-    geometry::{Point, Size},
+    geometry::{Point, Size, Dimensions},
     primitives::Rectangle,
+    pixelcolor::BinaryColor,
+    Pixel,
 };
 
 
@@ -21,6 +23,10 @@ pub struct Translate<W: Widget> {
     repeat: bool,
     /// Background color for erasing
     background_color: W::Color,
+    /// Bitmap tracking previous frame's pixels
+    previous_bitmap: Bitmap,
+    /// Bitmap tracking current frame's pixels
+    current_bitmap: Bitmap,
 }
 
 impl<W: Widget> Translate<W> 
@@ -28,7 +34,10 @@ where
     W::Color: Copy,
 {
     pub fn new(child: W, background_color: W::Color) -> Self {
+        let size = child.size_hint().expect("translated widgets must have size");
         Self {
+            previous_bitmap: Bitmap::new(size, BinaryColor::Off),
+            current_bitmap: Bitmap::new(size, BinaryColor::Off),
             child,
             current_offset: Point::zero(),
             movement: Point::zero(),
@@ -115,24 +124,43 @@ where
             Point::zero()
         };
         
-        // If offset changed, clear the old position with a filled rectangle
+        // Handle offset change and bitmap tracking
         if offset != self.current_offset {
             self.child.force_full_redraw();
             
-            // Get the child's size hint
-            if let Some(size) = self.child.size_hint() {
-                // Clear the old position by filling a rectangle
-                let clear_rect = Rectangle::new(self.current_offset, size);
-                target.fill_solid(&clear_rect, self.background_color)?;
-            }
+            // Clear current bitmap for reuse
+            self.current_bitmap.clear();
+            
+            // Calculate offset difference
+            let diff_offset = offset - self.current_offset;
+            
+            // Draw the child using the TranslatorDrawTarget
+            let mut translated_target = target.translated(offset);
+            let mut translator_target = TranslatorDrawTarget {
+                inner: &mut translated_target,
+                current_bitmap: &mut self.current_bitmap,
+                previous_bitmap: &mut self.previous_bitmap,
+                diff_offset,
+            };
+            self.child.draw(&mut translator_target, current_time)?;
+            
+            // Clear any remaining pixels from the previous bitmap
+            let clear_pixels = self.previous_bitmap.on_pixels()
+                                          .map(|point| {
+                                              // Translate bitmap coordinates to screen coordinates
+                                              let screen_point = point + self.current_offset;
+                                              Pixel(screen_point, self.background_color)
+                                          });
+            target.draw_iter(clear_pixels)?;
+
+            // Swap bitmaps
+            core::mem::swap(&mut self.previous_bitmap, &mut self.current_bitmap);
+            self.current_offset = offset;
+        } else {
+            // No movement - just draw normally
+            let mut translated_target = target.translated(offset);
+            self.child.draw(&mut translated_target, current_time)?;
         }
-        
-        // Draw the child at the new offset
-        let mut translated_target = target.translated(offset);
-        self.child.draw(&mut translated_target, current_time)?;
-        
-        // Update state for next frame
-        self.current_offset = offset;
         
 
         Ok(())
@@ -155,6 +183,55 @@ where
     
     fn force_full_redraw(&mut self) {
         self.child.force_full_redraw();
+    }
+}
+
+/// A DrawTarget wrapper that tracks pixels for the translate animation
+struct TranslatorDrawTarget<'a, D> {
+    inner: &'a mut D,
+    current_bitmap: &'a mut Bitmap,
+    previous_bitmap: &'a mut Bitmap,
+    diff_offset: Point,
+}
+
+impl<'a, D> DrawTarget for TranslatorDrawTarget<'a, D>
+where
+    D: DrawTarget,
+{
+    type Color = D::Color;
+    type Error = D::Error;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        let current_bitmap = &mut self.current_bitmap;
+        let previous_bitmap = &mut self.previous_bitmap;
+        let diff_offset = self.diff_offset;
+        
+        self.inner.draw_iter(pixels.into_iter().inspect(|Pixel(point, _color)| {
+            // Mark this pixel as drawn in the current bitmap
+            current_bitmap.set_pixel(point.x as u32, point.y as u32, BinaryColor::On);
+            
+            // Clear this pixel from the previous bitmap (offset by diff_offset)
+            let prev_point = *point + diff_offset;
+            if prev_point.x >= 0 && prev_point.y >= 0 {
+                previous_bitmap.set_pixel(
+                    prev_point.x as u32,
+                    prev_point.y as u32,
+                    BinaryColor::Off
+                );
+            }
+        }))
+    }
+}
+
+impl<'a, D> Dimensions for TranslatorDrawTarget<'a, D>
+where
+    D: DrawTarget,
+{
+    fn bounding_box(&self) -> Rectangle {
+        self.inner.bounding_box()
     }
 }
 

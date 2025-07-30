@@ -1,0 +1,55 @@
+use crate::Widget;
+use embedded_graphics::{
+    draw_target::DrawTarget,
+    geometry::{Point, Size},
+    image::ImageDrawable,
+    pixelcolor::PixelColor,
+    prelude::*,
+};
+
+/// A widget that wraps any ImageDrawable as a widget
+pub struct Image<I> {
+    image: I,
+    needs_redraw: bool,
+}
+
+impl<I> Image<I> {
+    pub fn new(image: I) -> Self {
+        Self {
+            image,
+            needs_redraw: true,
+        }
+    }
+}
+
+impl<I> Widget for Image<I>
+where
+    I: ImageDrawable,
+    I::Color: PixelColor,
+{
+    type Color = I::Color;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        if !self.needs_redraw {
+            return Ok(());
+        }
+        
+        // Draw image at origin (0, 0)
+        embedded_graphics::image::Image::new(&self.image, Point::zero()).draw(target)?;
+        
+        self.needs_redraw = false;
+        Ok(())
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        self.image.bounding_box().size.into()
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
+    }
+}

@@ -1,5 +1,5 @@
 use super::{Widget, Text, Column, SizedBox};
-use crate::{bitmap::{Bitmap, BitmapWidget}, color_map::ColorMap, palette::PALETTE, Instant};
+use crate::{bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap, palette::PALETTE, Instant};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -46,8 +46,8 @@ impl Welcome {
         });
         
         // Load logo
-        let bitmap = Bitmap::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let bitmap_widget = BitmapWidget::new(bitmap);
+        let image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
+        let bitmap_widget = BitmapWidget::new(image.into());
         let logo = bitmap_widget.color_map(|color| match color {
             BinaryColor::On => PALETTE.primary,
             BinaryColor::Off => PALETTE.background,

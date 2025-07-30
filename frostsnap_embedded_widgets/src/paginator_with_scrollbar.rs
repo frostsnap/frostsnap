@@ -1,4 +1,4 @@
-use crate::{palette::PALETTE, Fader, Rat, PageByPage, ScrollBar, SwipeDirection, SwipeUpChevron, Widget, SCROLLBAR_WIDTH};
+use crate::{palette::PALETTE, Fader, PageByPage, Rat, ScrollBar, SwipeUpChevron, Widget, SCROLLBAR_WIDTH};
 use embedded_graphics::{
     draw_target::DrawTarget,
     pixelcolor::Rgb565,
@@ -19,7 +19,7 @@ pub struct PaginatorWithScrollBar<W, F> {
     size: Size,
     scrollbar: Fader<ScrollBar>,
     swipe_hint: Option<Fader<SwipeUpChevron<Rgb565>>>,
-    child_is_transitioning: bool,
+    child_was_ready: bool,
     drag_start: Option<u32>,
     showing_virtual_page: bool,
 }
@@ -38,9 +38,7 @@ impl<W: PageByPage<Color=Rgb565>, F: Widget<Color = Rgb565>> PaginatorWithScroll
         
         // Create swipe hint if on first page with navigation
         let swipe_hint = if  child.has_next_page() {
-            let mut hint = Fader::new(SwipeUpChevron::new(Size::new(size.width, 50), crate::palette::PALETTE.on_surface_variant));
-            hint.child.set_direction(Some(SwipeDirection::Up));
-            Some(hint)
+            Some(Fader::new_faded_out(SwipeUpChevron::new(PALETTE.on_surface_variant, PALETTE.background)))
         } else {
             None
         };
@@ -51,7 +49,7 @@ impl<W: PageByPage<Color=Rgb565>, F: Widget<Color = Rgb565>> PaginatorWithScroll
             size, 
             scrollbar: Fader::new_faded_out(scrollbar), 
             swipe_hint, 
-            child_is_transitioning: false,
+            child_was_ready: false,
             drag_start: None,
             showing_virtual_page: false,
         };
@@ -100,12 +98,12 @@ where
         self.final_page.draw(target, current_time)?;
         self.scrollbar.draw(target, current_time)?;
 
-        let child_is_trasitioning = self.child.is_transitioning() || self.child.is_fading_in();
+        let child_is_ready = !self.child.is_transitioning() && self.child.is_showing();
 
         if let Some(swipe_hint) = &mut self.swipe_hint {
-            if child_is_trasitioning {
-                swipe_hint.stop_fade();
-            } else if self.child_is_transitioning {
+            if !child_is_ready && self.child_was_ready {
+                swipe_hint.instant_fade(PALETTE.background);
+            } else if child_is_ready && !self.child_was_ready {
                 swipe_hint.start_fade_in(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
             }
 
@@ -118,7 +116,7 @@ where
         }
 
 
-        self.child_is_transitioning = child_is_trasitioning;
+        self.child_was_ready = child_is_ready;
         
         Ok(())
     }

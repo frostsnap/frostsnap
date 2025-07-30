@@ -8,7 +8,8 @@ impl Rat {
     /// Create from a numerator and denominator
     pub fn from_ratio(numerator: u32, denominator: u32) -> Self {
         if denominator == 0 {
-            return Self(0);
+            // everything over 0 should be large!
+            return Self(u32::MAX);
         }
         let value = ((numerator as u64 * 1000) / denominator as u64) as u32;
         Self(value)
