@@ -217,6 +217,7 @@ class WalletRecoveryPage extends StatelessWidget {
                                     .finishRestoring(
                                       restorationId: restoringKey.restorationId,
                                     );
+
                                 onWalletRecovered(accessStructureRef);
                               } catch (e) {
                                 if (context.mounted) {
