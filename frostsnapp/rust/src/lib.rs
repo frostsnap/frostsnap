@@ -1,7 +1,6 @@
 pub mod api;
 mod coordinator;
 mod device_list;
-pub mod ffi_serial_port;
 #[allow(clippy::all)]
 mod frb_generated;
 pub mod logger;

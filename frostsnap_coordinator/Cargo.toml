@@ -16,6 +16,8 @@ rand_core.workspace = true
 rusqlite.workspace = true
 futures.workspace = true
 rand.workspace = true
+nusb = "0.1"
+
 
 bdk_chain = { version = "0.23", features = ["rusqlite"] }
 bdk_electrum_streaming = { version = "0.5.2" }

@@ -11,6 +11,7 @@ pub mod verify_address;
 pub mod wait_for_recovery_share;
 mod wait_for_to_user_message;
 pub use wait_for_to_user_message::*;
+pub mod cdc_acm_usb;
 
 pub use frostsnap_comms;
 pub use frostsnap_core;
