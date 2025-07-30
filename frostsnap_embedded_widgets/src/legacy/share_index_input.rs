@@ -40,33 +40,6 @@ impl ShareIndexInputDisplay {
         self.index >= Some(100)
     }
 
-    pub fn draw(&mut self, display: &mut impl DrawTarget<Color = Rgb565>) {
-        if !self.changed {
-            return;
-        }
-        self.changed = false;
-        let display_size = display.bounding_box().size;
-        let _ = display.clear(Rgb565::BLACK);
-
-        let text = format!(
-            "FROST[{}]",
-            match self.index {
-                Some(index) => index.to_string(),
-                None => " ".to_string(),
-            }
-        );
-        let _ = Text::with_text_style(
-            &text,
-            Point::new((display_size.width / 2) as i32, 15),
-            U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
-            TextStyleBuilder::new()
-                .alignment(Alignment::Center)
-                .baseline(Baseline::Top)
-                .build(),
-        )
-        .draw(display);
-    }
-
     pub fn add_digit(&mut self, digit: u8) {
         if self.is_full() {
             return;
@@ -94,5 +67,45 @@ impl ShareIndexInputDisplay {
             }
         }
         self.changed = true;
+    }
+}
+
+impl crate::Widget for ShareIndexInputDisplay {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+            &mut self,
+            target: &mut D,
+            _current_time: crate::Instant,
+        ) -> Result<(), D::Error> {
+            if !self.changed {
+                return Ok(());
+            }
+            self.changed = false;
+            let display_size = target.bounding_box().size;
+            target.clear(Rgb565::BLACK)?;
+
+            let text = format!(
+                "FROST[{}]",
+                match self.index {
+                    Some(index) => index.to_string(),
+                    None => " ".to_string(),
+                }
+            );
+            Text::with_text_style(
+                &text,
+                Point::new((display_size.width / 2) as i32, 15),
+                U8g2TextStyle::new(FONT_LARGE, Rgb565::WHITE),
+                TextStyleBuilder::new()
+                    .alignment(Alignment::Center)
+                    .baseline(Baseline::Top)
+                    .build(),
+            )
+                .draw(target)?;
+            Ok(())
+        }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(240, self.min_height()))
     }
 }

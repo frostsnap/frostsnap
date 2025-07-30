@@ -1,4 +1,4 @@
-use crate::{Key, KeyTouch};
+use crate::{Key, KeyTouch, Widget};
 use super::{NumericKey, NumericKeyboard, ShareIndexInputDisplay};
 use alloc::{vec::Vec, vec};
 use embedded_graphics::{
@@ -43,59 +43,66 @@ impl EnterShareIndexScreen {
         }
     }
 
-    pub fn draw(
-        &mut self,
-        target: &mut impl DrawTarget<Color = Rgb565>,
-        current_time: crate::Instant,
-    ) {
-        let keyboard_size = self.numeric_keyboard.size();
-        let mut input_size = target.bounding_box().size;
-        input_size.height -= keyboard_size.height;
-        self.numeric_keyboard
-            .draw(&mut target.cropped(&self.keyboard_rect));
-        self.share_index_input_display
-            .draw(&mut target.clipped(&self.input_display_rect));
+}
 
-        // self.keyboard_rect
-        //     .into_styled(PrimitiveStyle::with_stroke(Rgb565::BLUE, 1))
-        //     .draw(target);
+impl Widget for EnterShareIndexScreen {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        let mut keyboard_target = target.cropped(&self.keyboard_rect);
+        self.numeric_keyboard.draw(&mut keyboard_target, current_time)?;
+
+        let mut input_display_target = target.cropped(&self.input_display_rect);
+        self.share_index_input_display.draw(&mut input_display_target, current_time)?;
+
         self.touches.retain_mut(|touch| {
             touch.draw(target, current_time);
             !touch.is_finished()
         });
+
+        Ok(())
     }
 
-    pub fn handle_touch(
+    fn handle_touch(
         &mut self,
         point: Point,
         current_time: crate::Instant,
-        lift_up: bool,
-    ) -> Option<u16> {
-        if lift_up {
+        is_release: bool,
+    ) -> Option<KeyTouch> {
+        if is_release {
             if let Some(active_touch) = self.touches.last_mut() {
                 if let Some(key) = active_touch.let_go(current_time) {
                     if let Key::Keyboard(c) = key {
                         let numeric_key = NumericKey::from_char(c).expect("from numeric keyboard");
-                            match numeric_key {
-                            NumericKey::Digit(digit) => self.share_index_input_display.add_digit(digit),
+                        match numeric_key {
+                            NumericKey::Digit(digit) => {
+                                self.share_index_input_display.add_digit(digit)
+                            }
                             NumericKey::Backspace => self.share_index_input_display.backspace(),
                             NumericKey::Confirm => {
-                                let index = self
+                                let _index = self
                                     .share_index_input_display
                                     .index
                                     .expect("confirm can't be pressed if there's nothing");
-                                return Some(index);
+                                // TODO: How to send this up?
                             }
                         }
                     }
 
-                    self.numeric_keyboard
-                        .disable_empty_input_keys(self.share_index_input_display.is_empty());
+                    // TODO: Update numeric keyboard state based on input
+                    // self.numeric_keyboard.disable_empty_input_keys(self.share_index_input_display.is_empty());
                 }
             }
         } else if self.keyboard_rect.contains(point) {
             let translated_point = point - self.keyboard_rect.top_left;
-            if let Some(mut key_touch) = self.numeric_keyboard.handle_touch(translated_point) {
+            if let Some(mut key_touch) = self
+                .numeric_keyboard
+                .handle_touch(translated_point, current_time, is_release)
+            {
                 key_touch.translate(self.keyboard_rect.top_left);
                 if let Some(last) = self.touches.last_mut() {
                     if last.key == key_touch.key {

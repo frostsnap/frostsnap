@@ -119,12 +119,12 @@ impl Bech32Keyboard {
                         .baseline(Baseline::Middle)
                         .build(),
                 )
-                .draw(&mut keyspace);
+                    .draw(&mut keyspace);
             }
         }
 
         let bar_style = PrimitiveStyleBuilder::new()
-            //NOTE: Disable bar for now
+        //NOTE: Disable bar for now
             .fill_color(BinaryColor::Off)
             .build();
         let bar_size = Size::new(FRAMEBUFFER_WIDTH, BAR_HEIGHT);
@@ -136,80 +136,102 @@ impl Bech32Keyboard {
             Point::new(0, FRAMEBUFFER_HEIGHT as i32 - BAR_HEIGHT as i32),
             bar_size,
         )
-        .into_styled(bar_style)
-        .draw(self.framebuffer.as_mut());
+            .into_styled(bar_style)
+            .draw(self.framebuffer.as_mut());
     }
 
-    // Draw the currently visible portion of the keyboard
-    pub fn draw(&mut self, target: &mut impl DrawTarget<Color = Rgb565>) {
-        // Only draw if a redraw is needed
-        if self.needs_redraw {
-            // Get the height of the visible area from the DrawTarget's bounding box
-            let visible_height = target.bounding_box().size.height as usize;
+}
 
-            // Calculate the number of pixels to skip for the current scroll position
-            let skip_pixels = self.scroll_position as usize * FRAMEBUFFER_WIDTH as usize;
+impl crate::Widget for Bech32Keyboard {
+    type Color = Rgb565;
 
-            // Clip and draw the portion of the framebuffer based on scroll_position
-            let _ = target.fill_contiguous(
-                &Rectangle::new(Point::new(0, 0), target.bounding_box().size),
-                RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
-                    .into_iter()
-                    .skip(skip_pixels)
-                    .take(FRAMEBUFFER_WIDTH as usize * visible_height)
-                    .map(|r| match BinaryColor::from(r) {
-                        BinaryColor::Off => PALETTE.background,
-                        BinaryColor::On => KEYBOARD_COLOR,
-                    }),
-            );
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+            &mut self,
+            target: &mut D,
+            _current_time: crate::Instant,
+        ) -> Result<(), D::Error> {
+            // Only draw if a redraw is needed
+            if self.needs_redraw {
+                // Get the height of the visible area from the DrawTarget's bounding box
+                let visible_height = target.bounding_box().size.height as usize;
 
-            // Reset the redraw flag
-            self.needs_redraw = false;
-        }
+                // Calculate the number of pixels to skip for the current scroll position
+                let skip_pixels = self.scroll_position as usize * FRAMEBUFFER_WIDTH as usize;
+
+                // Clip and draw the portion of the framebuffer based on scroll_position
+                target.fill_contiguous(
+                    &Rectangle::new(Point::new(0, 0), target.bounding_box().size),
+                    RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
+                        .into_iter()
+                        .skip(skip_pixels)
+                        .take(FRAMEBUFFER_WIDTH as usize * visible_height)
+                        .map(|r| match BinaryColor::from(r) {
+                            BinaryColor::Off => PALETTE.background,
+                            BinaryColor::On => KEYBOARD_COLOR,
+                        }),
+                )?;
+
+                // Reset the redraw flag
+                self.needs_redraw = false;
+            }
+            Ok(())
     }
 
-    // Handle a touch event and return an Option<KeyTouch>
-    pub fn handle_touch(&self, mut point: Point) -> Option<KeyTouch> {
-        // Use scroll_position directly as it represents the pixel offset
-        let scroll_offset = self.scroll_position;
-        if self.keyspace.contains(point) {
-            point -= self.keyspace.top_left;
-        } else {
-            return None;
-        }
+    fn handle_touch(
+            &mut self,
+            mut point: Point,
+            _current_time: crate::Instant,
+            _is_release: bool,
+        ) -> Option<KeyTouch> {
+            // Use scroll_position directly as it represents the pixel offset
+            let scroll_offset = self.scroll_position;
+            if self.keyspace.contains(point) {
+                point -= self.keyspace.top_left;
+            } else {
+                return None;
+            }
 
-        // Adjust the y-coordinate of the touch based on the current scroll position
-        let adjusted_y = point.y + scroll_offset;
+            // Adjust the y-coordinate of the touch based on the current scroll position
+            let adjusted_y = point.y + scroll_offset;
 
-        // Calculate the row and column index based on touch coordinates
-        let col_index = point.x / KEY_WIDTH as i32;
-        let row_index = adjusted_y / KEY_HEIGHT as i32;
+            // Calculate the row and column index based on touch coordinates
+            let col_index = point.x / KEY_WIDTH as i32;
+            let row_index = adjusted_y / KEY_HEIGHT as i32;
 
-        // Ensure indices are within the valid range
-        if (0..4).contains(&col_index) && (0..8).contains(&row_index) {
-            // Find the key character from the KEYBOARD_KEYS array
-            let key = KEYBOARD_KEYS[row_index as usize][col_index as usize];
+            // Ensure indices are within the valid range
+            if (0..4).contains(&col_index) && (0..8).contains(&row_index) {
+                // Find the key character from the KEYBOARD_KEYS array
+                let key = KEYBOARD_KEYS[row_index as usize][col_index as usize];
 
-            // Calculate the top-left corner of the key's rectangle
-            let x = col_index * KEY_WIDTH as i32;
-            let y = row_index * KEY_HEIGHT as i32 - scroll_offset + self.keyspace.top_left.y;
+                // Calculate the top-left corner of the key's rectangle
+                let x = col_index * KEY_WIDTH as i32;
+                let y = row_index * KEY_HEIGHT as i32 - scroll_offset + self.keyspace.top_left.y;
 
-            // Create the rectangle for the key clamped so the y-value is no less than 0 so the
-            // rectange doesn't overflow into the space above.
-            let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT))
-                .resized_height((KEY_HEIGHT as i32 + y.min(0)) as u32, AnchorY::Bottom);
+                // Create the rectangle for the key clamped so the y-value is no less than 0 so the
+                // rectange doesn't overflow into the space above.
+                let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT))
+                    .resized_height((KEY_HEIGHT as i32 + y.min(0)) as u32, AnchorY::Bottom);
 
-            return Some(KeyTouch::new(Key::Keyboard(key), rect));
-        }
+                return Some(KeyTouch::new(Key::Keyboard(key), rect));
+            }
 
-        None
+            None
     }
 
-    pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        let scroll_amount = match prev_y {
-            Some(prev_y) => new_y as i32 - prev_y as i32,
-            None => 0,
-        };
-        self.scroll(scroll_amount);
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
+            let scroll_amount = match prev_y {
+                Some(prev_y) => new_y as i32 - prev_y as i32,
+                None => 0,
+            };
+            let new_position = (self.scroll_position - scroll_amount).clamp(0, self.max_scroll);
+            // Only update if the scroll position changes
+            if new_position != self.scroll_position {
+                self.scroll_position = new_position;
+                self.needs_redraw = true; // Mark for redraw
+            }
+        }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT))
     }
 }

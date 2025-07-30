@@ -72,3 +72,116 @@ pub fn derive_kind(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+#[proc_macro_derive(Widget)]
+pub fn derive_widget(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+    let generics = &input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    // Only allow enums
+    let data_enum = match &input.data {
+        Data::Enum(data_enum) => data_enum,
+        _ => {
+            return syn::Error::new_spanned(name, "Widget can only be derived for enums")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    // Generate match arms for each method
+    let draw_arms = generate_match_arms(&data_enum.variants, quote!(draw(target, current_time)));
+    let handle_touch_arms = generate_match_arms(&data_enum.variants, quote!(handle_touch(point, current_time, is_release)));
+    let handle_vertical_drag_arms = generate_match_arms(&data_enum.variants, quote!(handle_vertical_drag(prev_y, new_y, is_release)));
+    let size_hint_arms = generate_match_arms(&data_enum.variants, quote!(size_hint()));
+    let force_full_redraw_arms = generate_match_arms(&data_enum.variants, quote!(force_full_redraw()));
+
+    // Generate the Widget trait implementation
+    let expanded = quote! {
+        impl #impl_generics frostsnap_embedded_widgets::Widget for #name #ty_generics #where_clause {
+            type Color = embedded_graphics::pixelcolor::Rgb565;
+
+            fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
+                &mut self,
+                target: &mut D,
+                current_time: frostsnap_embedded_widgets::Instant,
+            ) -> Result<(), D::Error> {
+                match self {
+                    #(#draw_arms)*
+                }
+            }
+
+            fn handle_touch(
+                &mut self,
+                point: embedded_graphics::geometry::Point,
+                current_time: frostsnap_embedded_widgets::Instant,
+                is_release: bool,
+            ) -> Option<frostsnap_embedded_widgets::KeyTouch> {
+                match self {
+                    #(#handle_touch_arms)*
+                }
+            }
+
+            fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+                match self {
+                    #(#handle_vertical_drag_arms)*
+                }
+            }
+
+            fn size_hint(&self) -> Option<embedded_graphics::geometry::Size> {
+                match self {
+                    #(#size_hint_arms)*
+                }
+            }
+
+            fn force_full_redraw(&mut self) {
+                match self {
+                    #(#force_full_redraw_arms)*
+                }
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+fn generate_match_arms(
+    variants: &syn::punctuated::Punctuated<syn::Variant, syn::token::Comma>,
+    method_call: proc_macro2::TokenStream,
+) -> Vec<proc_macro2::TokenStream> {
+    variants
+        .iter()
+        .map(|variant| {
+            let variant_ident = &variant.ident;
+            match &variant.fields {
+                Fields::Unit => {
+                    // For unit variants, we can't delegate, so panic or return default
+                    quote! {
+                        Self::#variant_ident => panic!("Unit variant {} cannot delegate Widget methods", stringify!(#variant_ident)),
+                    }
+                }
+                Fields::Unnamed(fields) => {
+                    if fields.unnamed.len() == 1 {
+                        // Single field tuple variant - delegate to inner widget
+                        quote! {
+                            Self::#variant_ident(widget) => widget.#method_call,
+                        }
+                    } else {
+                        // Multiple fields - panic
+                        quote! {
+                            Self::#variant_ident(..) => panic!("Multi-field variant {} cannot delegate Widget methods", stringify!(#variant_ident)),
+                        }
+                    }
+                }
+                Fields::Named(_) => {
+                    // For named fields, check if there's a field named 'widget'
+                    quote! {
+                        Self::#variant_ident { widget, .. } => widget.#method_call,
+                    }
+                }
+            }
+        })
+        .collect()
+}

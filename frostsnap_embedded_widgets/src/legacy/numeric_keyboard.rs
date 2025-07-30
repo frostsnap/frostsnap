@@ -48,52 +48,24 @@ impl NumericKeyboard {
         }
     }
 
-    // Handle a touch event and return an Option<KeyTouch>
-    pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
-        // Determine the starting position (bottom-center alignment)
-        for (row_index, row) in KEYBOARD_KEYS_NUMBERS.iter().enumerate() {
-            for (col_index, &key) in row.iter().enumerate() {
-                let x = col_index as i32 * self.key_size.width as i32;
-                let y = row_index as i32 * self.key_size.height as i32;
-
-                let rect = Rectangle::new(
-                    Point::new(x, y),
-                    Size::new(self.key_size.width, self.key_size.height),
-                );
-
-                // Check if the touch is within this key
-                if point.x >= x
-                    && point.x < x + self.key_size.width as i32
-                    && point.y >= y
-                    && point.y < y + self.key_size.width as i32
-                {
-                    let is_disabled = match key {
-                        '0' | '✓' | '⌫' => self.disable_empty_input_keys,
-                        _ => false,
-                    };
-
-                    if !is_disabled {
-                        return Some(KeyTouch::new(Key::Keyboard(key), rect));
-                    } else {
-                        return None;
-                    }
-                }
-            }
+    pub fn disable_empty_input_keys(&mut self, disable: bool) {
+        if self.disable_empty_input_keys != disable {
+            self.disable_empty_input_keys = disable;
+            self.redraw_disabled_keys = true;
         }
-
-        None
     }
+}
 
-    pub fn disable_empty_input_keys(&mut self, is_input_empty: bool) {
-        let changed = is_input_empty != self.disable_empty_input_keys;
-        self.disable_empty_input_keys = is_input_empty;
-        self.redraw_disabled_keys = changed;
-    }
+impl crate::Widget for NumericKeyboard {
+    type Color = Rgb565;
 
-    // Draw the static keyboard (only called once)
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D) {
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
         if !self.redraw && !self.redraw_disabled_keys {
-            return;
+            return Ok(());
         }
 
         for (row_index, row) in KEYBOARD_KEYS_NUMBERS.iter().enumerate() {
@@ -107,13 +79,12 @@ impl NumericKeyboard {
 
                 if self.redraw {
                     // Clear the key
-                    let _ = rect
-                        .into_styled(
-                            PrimitiveStyleBuilder::new()
-                                .fill_color(PALETTE.background)
-                                .build(),
-                        )
-                        .draw(target);
+                    rect.into_styled(
+                        PrimitiveStyleBuilder::new()
+                            .fill_color(PALETTE.background)
+                            .build(),
+                    )
+                    .draw(target)?;
                 }
 
                 let position = Point::new(
@@ -125,18 +96,18 @@ impl NumericKeyboard {
                         '1'..='9' => PALETTE.primary,
                         '0' | '⌫' | '✓' => PALETTE.surface_variant,
                         _ => unreachable!(),
-                    }
+                    },
                     false => match key {
                         '0'..='9' => PALETTE.primary,
                         '⌫' => Rgb565::RED,
                         '✓' => Rgb565::GREEN,
                         _ => unreachable!(),
-                    }
+                    },
                 };
                 match key {
                     '0'..='9' => {
                         if self.redraw || (key == '0' && self.redraw_disabled_keys) {
-                            let _ = Text::with_text_style(
+                            Text::with_text_style(
                                 &ToString::to_string(&key),
                                 position,
                                 MonoTextStyle::new(&FONT_10X20, color),
@@ -145,7 +116,7 @@ impl NumericKeyboard {
                                     .baseline(Baseline::Middle)
                                     .build(),
                             )
-                            .draw(target);
+                            .draw(target)?;
                         }
                     }
                     '⌫' => {
@@ -171,6 +142,47 @@ impl NumericKeyboard {
 
         self.redraw = false;
         self.redraw_disabled_keys = false;
+        Ok(())
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: crate::Instant,
+        _is_release: bool,
+    ) -> Option<KeyTouch> {
+        // Determine the starting position (bottom-center alignment)
+        for (row_index, row) in KEYBOARD_KEYS_NUMBERS.iter().enumerate() {
+            for (col_index, &key) in row.iter().enumerate() {
+                let x = col_index as i32 * self.key_size.width as i32;
+                let y = row_index as i32 * self.key_size.height as i32;
+
+                let rect = Rectangle::new(
+                    Point::new(x, y),
+                    Size::new(self.key_size.width, self.key_size.height),
+                );
+
+                // Check if the touch is within this key
+                if rect.contains(point) {
+                    let is_disabled = match key {
+                        '0' | '✓' | '⌫' => self.disable_empty_input_keys,
+                        _ => false,
+                    };
+
+                    if !is_disabled {
+                        return Some(KeyTouch::new(Key::Keyboard(key), rect));
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size())
     }
 }
 

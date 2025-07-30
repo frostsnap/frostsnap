@@ -270,14 +270,14 @@ where
     ) {
         if state != self.downstream_connection_state {
             self.downstream_connection_state = state;
-            self.page.force_redraw();
+            self.page.force_full_redraw();
         }
     }
 
     fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
         if Some(state) != self.upstream_connection_state {
             self.upstream_connection_state = Some(state);
-            self.page.force_redraw();
+            self.page.force_full_redraw();
         }
     }
 
@@ -359,7 +359,7 @@ where
         );
         
         // Handle touch input
-        let event = match self.capsense.read_one_touch_event(true) {
+        match self.capsense.read_one_touch_event(true) {
             Some(touch) => {
                 let corrected_y = touch.y + x_based_adjustment(touch.x) + y_based_adjustment(touch.y);
                 let corrected_point = Point::new(touch.x, corrected_y);
@@ -383,31 +383,32 @@ where
                 }
                 
                 // Handle touch
-                self.page.handle_touch(corrected_point, current_time, is_release)
+                let _ = self.page.handle_touch(corrected_point, current_time, is_release);
             }
-            None => None,
+            None => {},
         };
         
         // Draw the widget tree
         let _ = self.page.draw(&mut self.display, current_time);
         
-        event
+        // TODO: Generate UiEvents based on widget state changes
+        None
     }
     
     fn set_busy_task(&mut self, task: BusyTask) {
         self.busy_task = Some(task);
         // TODO: Update widget tree based on busy task
-        self.page.force_redraw();
+        self.page.force_full_redraw();
     }
     
     fn clear_busy_task(&mut self) {
         self.busy_task = None;
-        self.page.force_redraw();
+        self.page.force_full_redraw();
     }
     
     fn set_recovery_mode(&mut self, value: bool) {
         self.recovery_mode = value;
-        self.page.force_redraw();
+        self.page.force_full_redraw();
     }
 }
 

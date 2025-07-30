@@ -1,9 +1,8 @@
 use crate::palette::PALETTE;
-use crate::{Key, KeyTouch};
+use crate::{Key, KeyTouch, Widget};
 use super::{Bech32InputPreview, Bech32Keyboard};
-use alloc::{string::String, vec::Vec, vec, format};
+use alloc::{vec::Vec, vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
-use frostsnap_core::schnorr_fun::frost::SecretShare;
 
 #[derive(Debug)]
 pub struct EnterShareScreen {
@@ -38,24 +37,41 @@ impl EnterShareScreen {
         }
     }
 
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn is_share_valid(&self) -> bool {
+        // TODO: Implement actual share validation
+        true
+    }
+}
+
+impl Widget for EnterShareScreen {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
         target: &mut D,
         current_time: crate::Instant,
-    ) {
-        self.bech32_keyboard
-            .draw(&mut target.cropped(&self.keyboard_rect));
-        self.backup_input_preview
-            .draw(&mut target.cropped(&self.input_display_rect), current_time);
+    ) -> Result<(), D::Error> {
+        let mut keyboard_target = target.cropped(&self.keyboard_rect);
+        self.bech32_keyboard.draw(&mut keyboard_target, current_time)?;
+
+        let mut input_display_target = target.cropped(&self.input_display_rect);
+        <Bech32InputPreview as Widget>::draw(&mut self.backup_input_preview, &mut input_display_target, current_time)?;
 
         self.touches.retain_mut(|touch| {
             touch.draw(target, current_time);
             !touch.is_finished()
         });
+
+        Ok(())
     }
 
-    pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
-        if lift_up {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
+    ) -> Option<KeyTouch> {
+        if is_release {
             if let Some(active_touch) = self.touches.last_mut() {
                 if let Some(key) = active_touch.let_go(current_time) {
                     if let Key::Keyboard(c) = key {
@@ -86,11 +102,7 @@ impl EnterShareScreen {
             let key_touch = if self.keyboard_rect.contains(point) {
                 let translated_point = point - self.keyboard_rect.top_left;
                 self.bech32_keyboard
-                    .handle_touch(translated_point)
-                    .map(|mut key_touch| {
-                        key_touch.translate(self.keyboard_rect.top_left);
-                        key_touch
-                    })
+                    .handle_touch(translated_point, current_time, is_release)
             } else {
                 self.backup_input_preview.handle_touch(point)
             };
@@ -106,34 +118,16 @@ impl EnterShareScreen {
                 self.touches.push(key_touch);
             }
         }
+        None
     }
 
-    pub fn is_finished(&self) -> bool {
-        self.backup_input_preview.is_finished()
-    }
-
-    pub fn try_create_share(&self) -> Result<SecretShare, String> {
-        assert!(self.is_finished(), "must be finished to take share");
-        let characters = self.backup_input_preview.get_input();
-        let backup_string = format!("frost[{}]1{}", self.share_index, characters.to_lowercase());
-
-        SecretShare::from_bech32_backup(&backup_string).map_err(|_e| backup_string)
-    }
-
-    pub fn is_share_valid(&self) -> bool {
-        if !self.is_finished() {
-            return false;
-        }
-
-        self.try_create_share().is_ok()
-    }
-
-    pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
         // scrolling cancels the touch
         if let Some(active_touch) = self.touches.last_mut() {
             active_touch.cancel()
         }
-        self.bech32_keyboard.handle_vertical_drag(prev_y, new_y, _is_release);
+        self.bech32_keyboard
+            .handle_vertical_drag(prev_y, new_y, is_release);
     }
 }
 
