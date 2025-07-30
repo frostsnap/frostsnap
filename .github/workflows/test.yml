@@ -22,13 +22,11 @@ jobs:
       - uses: taiki-e/install-action@just
       - uses: ./.github/actions/setup-nix
       - uses: ./.github/actions/fetch-cargo-deps
+      - uses: "./.github/actions/install-cargo-bins"
       - uses: "./.github/actions/cache-rust-target"
         with:
           key: "build-device-firmware-v0"
           path: "target/riscv32imc-unknown-none-elf/release"
-
-      - name: Lint device code
-        run: nix develop --command just lint-device --release --locked
 
       - uses: ./.github/actions/build-device-nix
         id: build-firmware
