@@ -41,6 +41,11 @@ pub mod translate;
 pub mod welcome;
 pub mod device_name;
 pub mod bobbing_carat;
+pub mod keygen_check;
+pub mod padding;
+pub mod either;
+pub mod circle_button;
+pub mod fade_switcher;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -70,12 +75,18 @@ pub use swipe_up_chevron::*;
 pub use text::*;
 pub use welcome::*;
 pub use device_name::*;
+pub use keygen_check::*;
+pub use padding::*;
+pub use either::Either;
+pub use circle_button::*;
+pub use fade_switcher::FadeSwitcher;
 
 // Font re-exports
 use u8g2_fonts::fonts;
 pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
 pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
 pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+pub const CODE_FONT: fonts::u8g2_font_profont29_mr = fonts::u8g2_font_profont29_mr;
 
 /// A trait for drawable widgets that can handle user interactions
 pub trait Widget {
@@ -336,8 +347,16 @@ macro_rules! select_widget {
                 
                 $run_macro!(centered);
             }
+            "keygen_check" => {
+                use $crate::keygen_check::KeygenCheck;
+                
+                // Create keygen check widget with the specified bytes and t_of_n
+                let widget = KeygenCheck::new([0x40, 0x86, 0xc8, 0xbd], (2, 3));
+                
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check", $demo);
             }
         }
     };

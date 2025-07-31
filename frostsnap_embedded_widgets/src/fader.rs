@@ -269,10 +269,18 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
         current_time: crate::Instant,
         lift_up: bool,
     ) -> Option<crate::KeyTouch> {
+        if !self.is_showing() {
+            return None;
+        }
+
         self.child.handle_touch(point, current_time, lift_up)
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
+        if !self.is_showing() {
+            return;
+        }
+
         self.child.handle_vertical_drag(prev_y, new_y, _is_release);
     }
 

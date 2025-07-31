@@ -1,21 +1,18 @@
 use crate::{
-    checkmark::Checkmark, color_map::ColorMap, fader::Fader, hold_to_confirm_border::HoldToConfirmBorder, palette::PALETTE, sized_box::SizedBox, Center, Widget
+    circle_button::{CircleButton, CircleButtonState},
+    column::{Column, MainAxisAlignment},
+    fade_switcher::FadeSwitcher,
+    fader::Fader,
+    hold_to_confirm_border::HoldToConfirmBorder,
+    padding::Padding,
+    palette::PALETTE,
+    Widget,
 };
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    image::Image,
-    pixelcolor::{BinaryColor, Rgb565, Rgb888},
-    prelude::*,
-    primitives::{Circle, PrimitiveStyleBuilder, Rectangle},
+    pixelcolor::Rgb565,
 };
-use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
-
-// Circle dimensions - matching gradient_circle.rs
-const CIRCLE_RADIUS: u32 = 50;
-const CIRCLE_DIAMETER: u32 = CIRCLE_RADIUS * 2;
-// Top margin for child widget to avoid curved border
-const CHILD_WIDGET_TOP_MARGIN: i32 = 20;
 
 /// A widget that combines HoldToConfirmBorder with a hand gesture icon and transitions to a checkmark
 pub struct HoldToConfirm<P, S> 
@@ -23,27 +20,12 @@ where
     P: Widget<Color = Rgb565>,
     S: Widget<Color = Rgb565>,
 {
-    hold_to_confirm_border: Fader<ColorMap<HoldToConfirmBorder<SizedBox<BinaryColor>>, Rgb565>>,
-    checkmark: ColorMap<Center<Checkmark>, Rgb565>,
-    prompt_widget: Fader<P>,
-    success_widget: Fader<S>,
-    state: State,
+    content: Padding<Column<(FadeSwitcher<P, S>, CircleButton), Rgb565>>,
+    border: Fader<HoldToConfirmBorder<crate::SizedBox<Rgb565>, Rgb565>>,
     size: Size,
-    icon_center: Point,
-    last_drawn_state: Option<State>,
-    holding: bool,
-    last_drawn_holding: bool,
-    progress: f32,
     last_update: Option<crate::Instant>,
     hold_duration_ms: f32,
     completed: bool,
-    checkmark_started: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum State {
-    WaitingForHold,
-    ShowingCheckmark,
 }
 
 impl<P, S> HoldToConfirm<P, S>
@@ -53,73 +35,74 @@ where
 {
     pub fn new(size: Size, hold_duration_ms: f32, prompt_widget: P, success_widget: S) -> Self {
         const BORDER_WIDTH: u32 = 10;
-        let sized_box = SizedBox::<BinaryColor>::new(size);
-        let hold_to_confirm_border_binary = HoldToConfirmBorder::new(sized_box, BORDER_WIDTH);
-        let hold_to_confirm_border_rgb =
-            hold_to_confirm_border_binary.color_map(|color| match color {
-                BinaryColor::On => Rgb565::new(2, 46, 16), // Dark green border
-                BinaryColor::Off => PALETTE.background,
-            });
-        let hold_to_confirm_border = Fader::new(hold_to_confirm_border_rgb);
-
-        // Use a checkmark that fits nicely within the circle
-        // For a circle of diameter 108 (10% smaller), use a checkmark width of 130 for good visual balance
-        let checkmark = Center::new(Checkmark::new(50)).color_map(|color| match color {
-            BinaryColor::On => Rgb565::WHITE,
-            BinaryColor::Off => Rgb565::RED, // Doesn't matter, won't be visible
-        });
-
-        // Position icon towards the bottom - leave some margin from the bottom edge
-        let icon_center = Point::new(size.width as i32 / 2, size.height as i32 - CIRCLE_RADIUS as i32 - 8);
-
-        // Wrap prompt widget in a fader
-        let prompt_widget = Fader::new(prompt_widget);
         
-        // Wrap success widget in a fader that starts faded out
-        let success_widget = Fader::new_faded_out(success_widget);
-
-        let s = Self {
-            hold_to_confirm_border,
-            checkmark,
+        // Create the FadeSwitcher widget starting with prompt
+        let fade_switcher = FadeSwitcher::new(
             prompt_widget,
             success_widget,
-            state: State::WaitingForHold,
+            300, // 300ms fade duration
+            PALETTE.background
+        );
+        
+        // Create the circle button
+        let button = CircleButton::new();
+        
+        // Create column with the FadeSwitcher and button
+        let column = Column::new((fade_switcher, button))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
+        
+        // Add padding around the column
+        let content = Padding::all(BORDER_WIDTH + 5, column);
+        
+        // Create the border separately with a SizedBox
+        let sized_box = crate::SizedBox::new(size);
+        let border_color = Rgb565::new(2, 46, 16); // Dark green border
+        let border_holder = HoldToConfirmBorder::new(sized_box, BORDER_WIDTH, border_color, PALETTE.background);
+        let border = Fader::new(border_holder);
+
+        Self {
+            content,
+            border,
             size,
-            icon_center,
-            last_drawn_state: None,
-            holding: false,
-            last_drawn_holding: false,
-            progress: 0.0,
             last_update: None,
             hold_duration_ms,
             completed: false,
-            checkmark_started: false,
-        };
-        s
+        }
     }
 
     pub fn enable(&mut self) {
     }
 
     pub fn reset(&mut self) {
-        self.hold_to_confirm_border.child.child.set_progress(0.0);
-        self.checkmark.child.child.reset();
-        self.state = State::WaitingForHold;
-        self.last_drawn_state = None;
-        self.holding = false;
-        self.last_drawn_holding = false;
-        self.progress = 0.0;
+        // Reset border progress
+        self.border.child.set_progress(0.0);
+        
+        // Reset the FadeSwitcher to show prompt
+        self.content.child.children.0.switch_to_left();
+        
+        // Reset the button (second element in tuple)
+        self.content.child.children.1.reset();
+        
+        // Reset state
         self.last_update = None;
         self.completed = false;
-        self.checkmark_started = false;
     }
 
     pub fn is_completed(&self) -> bool {
-        self.checkmark.child.child.is_complete()
+        self.content.child.children.1.is_checkmark_complete()
+    }
+    
+    fn is_holding(&self) -> bool {
+        self.content.child.children.1.state() == CircleButtonState::Pressed
     }
 
     fn update_progress(&mut self, current_time: crate::Instant) {
-        if !self.holding && self.progress == 0.0 {
+        let holding = self.is_holding();
+        let current_progress = self.border.child.get_progress();
+        
+        // Early exit if not holding and no progress
+        if !holding && current_progress == 0.0 {
+            self.last_update = None;  // Clear last_update when fully released
             return;
         }
 
@@ -130,31 +113,38 @@ where
                 return;
             }
 
-            if self.holding && !self.completed {
+            if holding && !self.completed {
                 let increment = elapsed_ms / self.hold_duration_ms;
-                self.progress = (self.progress + increment).min(1.0);
-                self.hold_to_confirm_border.child.child.set_progress(self.progress);
+                let new_progress = (current_progress + increment).min(1.0);
+                self.border.child.set_progress(new_progress);
 
-                if self.progress >= 1.0 {
+                if new_progress >= 1.0 {
                     self.completed = true;
-                    self.progress = 1.0;
-                    self.state = State::ShowingCheckmark;
-                    // Stage 1: Start fading out the prompt widget and border immediately
-                    self.prompt_widget.start_fade(300, 50, PALETTE.background);
-                    self.hold_to_confirm_border.start_fade(500, 100, PALETTE.background);
-                    // Stage 2: Checkmark animation will start after border fade completes
+                    
+                    // Switch FadeSwitcher to show success widget
+                    self.content.child.children.0.switch_to_right();
+                    
+                    // Update circle button state
+                    self.content.child.children.1.set_state(CircleButtonState::ShowingCheckmark);
+                    
+                    // Start fading out the border
+                    self.border.start_fade(500, 100, PALETTE.background);
                 }
-            } else if !self.holding && self.progress > 0.0 && !self.completed {
+            } else if !holding && current_progress > 0.0 && !self.completed {
                 let decrement = elapsed_ms / 1000.0;
-                self.progress = (self.progress - decrement).max(0.0);
-                self.hold_to_confirm_border.child.child.set_progress(self.progress);
-
-                if self.progress == 0.0 {
+                let new_progress = (current_progress - decrement).max(0.0);
+                self.border.child.set_progress(new_progress);
+                
+                // If we've fully released, clear last_update
+                if new_progress == 0.0 {
                     self.last_update = None;
                     return;
                 }
             }
-
+            
+            self.last_update = Some(current_time);
+        } else if holding {
+            // First frame of holding - just set the time, don't update progress yet
             self.last_update = Some(current_time);
         }
     }
@@ -172,116 +162,15 @@ where
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        if self.holding || self.progress > 0.0 {
+        if self.is_holding() || self.border.child.get_progress() > 0.0 {
             self.update_progress(current_time);
         }
-
-        // Account for border width to prevent overlap
-        const BORDER_WIDTH: u32 = 10;
-        const MARGIN: u32 = 5; // Extra margin for visual separation
-        let inset = BORDER_WIDTH + MARGIN;
         
-        let circle_top = self.icon_center.y - CIRCLE_RADIUS as i32 - 10; // Add some margin
+        // Draw the border first
+        self.border.draw(target, current_time)?;
         
-        let child_area = Rectangle::new(
-            Point::new(inset as i32, CHILD_WIDGET_TOP_MARGIN + inset as i32),
-            Size::new(
-                self.size.width.saturating_sub(2 * inset),
-                ((circle_top - CHILD_WIDGET_TOP_MARGIN as i32).max(0) as u32).saturating_sub(inset),
-            ),
-        );
-        
-        if child_area.size.height > 0 {
-            let mut cropped = target.cropped(&child_area);
-            
-            // Always draw the prompt widget (it will fade out when needed)
-            self.prompt_widget.draw(&mut cropped, current_time)?;
-            
-            // Draw success widget only after checkmark animation is complete
-            if self.checkmark.child.child.is_complete() && self.success_widget.is_faded_out() {
-                // Start fade-in of success widget when checkmark animation is complete
-                if matches!(self.state, State::ShowingCheckmark) {
-                    self.success_widget.start_fade_in(300, 50, PALETTE.background);
-                }
-            }
-            self.success_widget.draw(&mut cropped, current_time)?;
-        }
-
-        // Always draw hold to confirm border animation
-        self.hold_to_confirm_border.draw(target, current_time)?;
-
-        // Only redraw the center content if state changed or holding state changed
-        let should_redraw =
-            self.last_drawn_state != Some(self.state) || self.holding != self.last_drawn_holding;
-
-        if should_redraw {
-            match self.state {
-                State::WaitingForHold => {
-                    // Draw circle with appropriate colors based on holding state
-                    let (fill_color, border_color) = if self.holding {
-                        // Green colors when holding
-                        let green_fill: Rgb565 = Rgb888::new(22, 163, 74).into(); // green-600
-                        (green_fill, Rgb565::new(2, 46, 16))
-                    } else {
-                        // Regular colors when not holding
-                        (Rgb565::new(6, 16, 10), Rgb565::new(2, 46, 16))
-                    };
-
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(fill_color)
-                        .stroke_color(border_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(self.icon_center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
-
-                    let icon = OpenSelectHandGesture::new(Rgb565::WHITE);
-                    Image::with_center(&icon, self.icon_center).draw(target)?;
-                }
-                State::ShowingCheckmark => {
-                    // Draw solid green circle (both fill and border are green)
-                    // Using the same green as when holding
-                    let green_fill: Rgb565 = Rgb888::new(22, 163, 74).into(); // green-600
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(green_fill)
-                        .stroke_color(green_fill)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(self.icon_center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
-
-                    // Border fade already started when transitioning to this state
-                }
-            }
-
-            self.last_drawn_state = Some(self.state);
-            self.last_drawn_holding = self.holding;
-        }
-
-        // Draw checkmark animation when in ShowingCheckmark state
-        if self.state == State::ShowingCheckmark {
-            // Stage 2: Start checkmark animation only after border fade is complete
-            if self.hold_to_confirm_border.is_fade_complete() && !self.checkmark_started {
-                self.checkmark.child.child.start_animation();
-                self.checkmark_started = true;
-            }
-            
-            // Only draw checkmark if it has been started
-            if self.checkmark_started {
-                // Center the checkmark on icon_center
-                let mut translated = target.cropped(&Rectangle::with_center(
-                    self.icon_center,
-                    Size::new_equal(CIRCLE_DIAMETER),
-                ));
-                self.checkmark.draw(&mut translated, current_time)?;
-            }
-        }
-
-        Ok(())
+        // Then draw the content on top
+        self.content.draw(target, current_time)
     }
 
     fn handle_touch(
@@ -290,37 +179,8 @@ where
         current_time: crate::Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        if self.state == State::WaitingForHold {
-            // Always handle release events, regardless of position
-            if is_release {
-                if self.holding {
-                    // Released touch
-                    self.holding = false;
-                    if self.completed {
-                        // No special action - parent should handle completion
-                        // Don't reset automatically - let parent decide
-                    } else {
-                        // Not completed, will decay gradually
-                        // Keep last_update so decay continues
-                    }
-                }
-                return None;
-            }
-
-            // For press events, check if within circle
-            let distance_squared =
-                (point.x - self.icon_center.x).pow(2) + (point.y - self.icon_center.y).pow(2);
-            let within_circle = distance_squared <= (CIRCLE_RADIUS as i32).pow(2);
-
-            if within_circle && !self.holding {
-                // Just started holding
-                self.holding = true;
-                self.last_update = Some(current_time);
-                // Don't reset progress - let it continue from where it was
-            }
-        }
-
-        None
+        // Handle touch on the content
+        self.content.handle_touch(point, current_time, is_release)
     }
 
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
@@ -330,9 +190,7 @@ where
     }
 
     fn force_full_redraw(&mut self) {
-        self.last_drawn_state = None;
-        self.prompt_widget.force_full_redraw();
-        self.success_widget.force_full_redraw();
-        self.hold_to_confirm_border.force_full_redraw();
+        self.border.force_full_redraw();
+        self.content.force_full_redraw();
     }
 }

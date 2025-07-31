@@ -11,7 +11,7 @@ pub struct EnterShareScreen {
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
     input_display_rect: Rectangle,
-    share_index: u16,
+    _share_index: u16,
 }
 
 impl EnterShareScreen {
@@ -33,7 +33,7 @@ impl EnterShareScreen {
             touches: vec![],
             keyboard_rect,
             input_display_rect,
-            share_index,
+            _share_index: share_index,
         }
     }
 

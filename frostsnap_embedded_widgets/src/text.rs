@@ -11,6 +11,7 @@ use embedded_graphics::{
 };
 
 /// A simple text widget that renders text at a specific position
+#[derive(Clone)]
 pub struct Text<S> {
     text: String,
     character_style: S,

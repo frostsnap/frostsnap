@@ -15,6 +15,7 @@ where
     border_style: Option<PrimitiveStyle<W::Color>>,
     corner_radius: Option<Size>,
     border_needs_redraw: bool,
+    expanded: bool,
 }
 
 impl<W: Widget> Container<W> {
@@ -26,6 +27,7 @@ impl<W: Widget> Container<W> {
             border_style: None,
             corner_radius: None,
             border_needs_redraw: true,
+            expanded: false,
         }
     }
     
@@ -37,6 +39,7 @@ impl<W: Widget> Container<W> {
             border_style: None,
             corner_radius: None,
             border_needs_redraw: true,
+            expanded: false,
         }
     }
     
@@ -60,6 +63,13 @@ impl<W: Widget> Container<W> {
         self
     }
     
+    /// Set the container to expanded mode - it will fill the available space from DrawTarget
+    pub fn with_expanded(mut self) -> Self {
+        self.expanded = true;
+        self.size = None; // Clear any explicit size
+        self
+    }
+    
     /// Get the effective size of the container
     fn effective_size(&self) -> Option<Size> {
         self.size.or_else(|| self.child.size_hint())
@@ -74,7 +84,19 @@ impl<W: Widget> Widget for Container<W> {
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        if let Some(size) = self.effective_size() {
+        // Determine the size to use
+        let size = if self.expanded {
+            // Use the full target bounding box
+            Some(target.bounding_box().size)
+        } else if let Some(size) = self.effective_size() {
+            // Use effective size (explicit or child's)
+            Some(size)
+        } else {
+            // No size available - default to expanded behavior
+            Some(target.bounding_box().size)
+        };
+        
+        if let Some(size) = size {
             let rect = Rectangle::new(Point::new_equal(self.border_width() as i32), size);
             if self.border_needs_redraw {
                 if let Some(style) = self.border_style {
@@ -127,12 +149,17 @@ impl<W: Widget> Widget for Container<W> {
 
 
     fn size_hint(&self) -> Option<Size> {
-        let base_size = self.effective_size()?;
-        let border_width = self.border_width();
-        Some(Size::new(
-            base_size.width + 2 * border_width,
-            base_size.height + 2 * border_width,
-        ))
+        if self.expanded {
+            // Expanded containers have no size hint
+            None
+        } else {
+            let base_size = self.effective_size()?;
+            let border_width = self.border_width();
+            Some(Size::new(
+                base_size.width + 2 * border_width,
+                base_size.height + 2 * border_width,
+            ))
+        }
     }
     
     fn force_full_redraw(&mut self) {
