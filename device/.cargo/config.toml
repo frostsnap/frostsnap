@@ -1,29 +1,20 @@
 [build]
 target = "riscv32imc-unknown-none-elf"
 rustflags = [
-  "-C", "link-arg=-Tlinkall.x",
-  "-C", "debuginfo=0",
-  "-C", "strip=symbols",
-  # Working path remapping - remove the problematic ${CARGO_MANIFEST_DIR}
-  "--remap-path-prefix", "/nix/store=NIXSTORE",
-  "--remap-path-prefix", "/rustc=RUSTC",
-  # These should work for the home directories
-  "--remap-path-prefix", "/home/nick=HOME",
-  "--remap-path-prefix", "/home/runner=HOME",
+  "-C", "link-arg=-Tlinkall.x",  # Keep this - it's ESP32-specific
 ]
 
 [target.riscv32imc-unknown-none-elf]
 runner = "espflash flash --baud 921600 --partition-table partitions.csv"
 
 [env]
-# Force deterministic builds
 CARGO_BUILD_INCREMENTAL = "false"
 SOURCE_DATE_EPOCH = "1704067200"
 
 [profile.release]
-debug = 0        # No debug info
-strip = "symbols"  # Strip all symbols
-panic = "abort"   # Smaller panic handling
+debug = 0
+strip = "symbols"
+panic = "abort"
 
 [unstable]
 build-std = ["alloc", "core"]

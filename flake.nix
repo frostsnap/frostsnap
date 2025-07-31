@@ -34,6 +34,9 @@
           CARGO_TARGET_DIR = "./target";
           RUST_BACKTRACE = "1";
           
+          # SINGLE UNIFIED RUSTFLAGS - remove the duplicate CARGO_BUILD_RUSTFLAGS
+          CARGO_BUILD_RUSTFLAGS = "--remap-path-prefix /nix/store=NIXSTORE --remap-path-prefix /rustc=RUSTC --remap-path-prefix /home/nick=HOME --remap-path-prefix /home/runner=HOME -C debuginfo=0 -C strip=symbols -C codegen-units=1";                  
+          
           # Timezone consistency
           TZ = "UTC";
           LANG = "C.UTF-8";
@@ -48,9 +51,6 @@
           
           # Deterministic build settings
           SOURCE_DATE_EPOCH = "1704067200"; # 2024-01-01
-
-          # Ensure consistent hash algorithms and disable randomization
-          CARGO_BUILD_RUSTFLAGS = "-C codegen-units=1 -C debuginfo=0 -C strip=symbols";
           
           # Disable build script caching that might vary
           CARGO_BUILD_TARGET_APPLY_TO_HOST = "false";
@@ -64,7 +64,6 @@
           
           # Consistent umask
           UMASK = "022";
-
         };
       in 
       {
@@ -95,6 +94,7 @@
             CARGO_BUILD_INCREMENTAL 
             CARGO_BUILD_JOBS 
             CARGO_TARGET_DIR 
+            CARGO_BUILD_RUSTFLAGS
             RUST_BACKTRACE 
             TZ 
             LANG 
