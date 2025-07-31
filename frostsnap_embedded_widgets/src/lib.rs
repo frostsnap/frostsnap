@@ -46,6 +46,7 @@ pub mod padding;
 pub mod either;
 pub mod circle_button;
 pub mod fade_switcher;
+pub mod widget_tuple;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};

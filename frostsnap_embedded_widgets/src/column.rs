@@ -1,5 +1,5 @@
-use crate::{Widget, Instant};
-use alloc::{vec, vec::Vec};
+use crate::{Widget, Instant, widget_tuple::WidgetTuple};
+use alloc::vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -13,13 +13,6 @@ macro_rules! count_args {
     () => (0usize);
     ($head:ident) => (1usize);
     ($head:ident, $($tail:ident),*) => (1usize + count_args!($($tail),*));
-}
-
-// Trait to get tuple length at compile time and handle initialization
-pub trait WidgetTuple {
-    const TUPLE_LEN: usize;
-    
-    fn extract_sizes(&self) -> Vec<Size>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,22 +99,6 @@ impl<T: WidgetTuple, C> Column<T, C> {
 // Macro to implement Widget for Column with tuples of different sizes
 macro_rules! impl_column_for_tuple {
     ($len:literal, $($t:ident),+) => {
-        // Implement WidgetTuple for this tuple type
-        impl<$($t: Widget),+> WidgetTuple for ($($t,)+) {
-            const TUPLE_LEN: usize = $len;
-            
-            fn extract_sizes(&self) -> Vec<Size> {
-                #[allow(non_snake_case)]
-                let ($(ref $t,)+) = self;
-                
-                let mut sizes = Vec::with_capacity($len);
-                $(
-                    sizes.push($t.size_hint().unwrap_or_default());
-                )+
-                sizes
-            }
-        }
-        
         impl<$($t: Widget<Color = C>),+, C: PixelColor> Widget for Column<($($t,)+), C> {
             type Color = C;
             

@@ -4,13 +4,14 @@ use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::BinaryColor,
+    pixelcolor::{BinaryColor, PixelColor},
     prelude::*,
     primitives::{Circle, Line, PrimitiveStyle},
 };
 
-pub struct Checkmark {
+pub struct Checkmark<C> {
     width: u32,
+    color: C,
     check_pixels: Vec<CompressedPoint>,
     progress: f32, // 0.0 to 1.0
     last_drawn_check_progress: f32,
@@ -28,10 +29,11 @@ enum AnimationState {
     Complete,
 }
 
-impl Checkmark {
-    pub fn new(width: u32) -> Self {
+impl<C: PixelColor> Checkmark<C> {
+    pub fn new(width: u32, color: C) -> Self {
         let mut checkmark = Self {
             width,
+            color,
             check_pixels: Vec::new(),
             progress: 0.0,
             last_drawn_check_progress: -1.0,
@@ -185,7 +187,7 @@ impl Checkmark {
         }
     }
 
-    fn draw_animation<D: DrawTarget<Color = BinaryColor>>(
+    fn draw_animation<D: DrawTarget<Color = C>>(
         &mut self,
         target: &mut D,
     ) -> Result<(), D::Error> {
@@ -202,7 +204,7 @@ impl Checkmark {
                     target.draw_iter(
                         self.check_pixels[last_pixels..current_pixels]
                             .iter()
-                            .map(|cp| Pixel(cp.to_point(), BinaryColor::On)),
+                            .map(|cp| Pixel(cp.to_point(), self.color)),
                     )?;
                 }
 
@@ -214,8 +216,8 @@ impl Checkmark {
     }
 }
 
-impl Widget for Checkmark {
-    type Color = BinaryColor;
+impl<C: PixelColor> Widget for Checkmark<C> {
+    type Color = C;
 
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,

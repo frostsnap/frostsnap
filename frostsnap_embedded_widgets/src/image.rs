@@ -8,6 +8,7 @@ use embedded_graphics::{
 };
 
 /// A widget that wraps any ImageDrawable as a widget
+#[derive(Clone)]
 pub struct Image<I> {
     image: I,
     needs_redraw: bool,

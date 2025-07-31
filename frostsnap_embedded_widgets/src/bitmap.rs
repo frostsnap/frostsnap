@@ -39,6 +39,7 @@ impl EncodedImage {
 }
 
 /// A pure bitmap for tracking binary pixels
+#[derive(Clone)]
 pub struct Bitmap {
     pub width: u32,
     pub bytes: Vec<u8>,

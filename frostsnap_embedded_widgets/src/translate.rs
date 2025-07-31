@@ -9,6 +9,7 @@ use embedded_graphics::{
 
 
 /// A widget that animates its child by translating it across the screen
+#[derive(Clone)]
 pub struct Translate<W: Widget> {
     child: W,
     /// Current offset from original position

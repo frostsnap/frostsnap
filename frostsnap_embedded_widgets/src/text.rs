@@ -7,19 +7,21 @@ use embedded_graphics::{
     pixelcolor::PixelColor,
     prelude::*,
     text::{Text as EgText, TextStyle, TextStyleBuilder, Alignment, Baseline, renderer::{CharacterStyle, TextRenderer}},
+    primitives::{Line, PrimitiveStyle},
     Drawable,
 };
 
 /// A simple text widget that renders text at a specific position
 #[derive(Clone)]
-pub struct Text<S> {
+pub struct Text<S: CharacterStyle> {
     text: String,
     character_style: S,
     text_style: TextStyle,
+    underline_color: Option<<S as CharacterStyle>::Color>,
     drawn: bool,
 }
 
-impl<S> Text<S> {
+impl<S: CharacterStyle> Text<S> {
     pub fn new<T: Into<String>>(text: T, character_style: S) -> Self {
         let text_style = TextStyleBuilder::new()
             .alignment(Alignment::Center)
@@ -30,6 +32,7 @@ impl<S> Text<S> {
             text: text.into(),
             character_style,
             text_style,
+            underline_color: None,
             drawn: false,
         }
     }
@@ -52,6 +55,11 @@ impl<S> Text<S> {
             .build();
         self
     }
+    
+    pub fn with_underline(mut self, color: <S as CharacterStyle>::Color) -> Self {
+        self.underline_color = Some(color);
+        self
+    }
 }
 
 impl<S, C> Widget for Text<S>
@@ -70,13 +78,27 @@ where
             let bounds = target.bounding_box();
             let center = bounds.center();
             
-            EgText::with_text_style(
+            let text_obj = EgText::with_text_style(
                 &self.text,
                 center,
                 self.character_style.clone(),
                 self.text_style,
-            )
-            .draw(target)?;
+            );
+            
+            text_obj.draw(target)?;
+            
+            // Draw underline if enabled
+            if let Some(underline_color) = self.underline_color {
+                let text_bbox = text_obj.bounding_box();
+                let underline_y = text_bbox.bottom_right().unwrap().y + 2; // 2 pixels below text
+                
+                Line::new(
+                    Point::new(text_bbox.top_left.x, underline_y),
+                    Point::new(text_bbox.bottom_right().unwrap().x, underline_y)
+                )
+                .into_styled(PrimitiveStyle::with_stroke(underline_color, 1))
+                .draw(target)?;
+            }
             
             self.drawn = true;
         }

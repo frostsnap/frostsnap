@@ -1,9 +1,9 @@
-use crate::{Widget, Instant, checkmark::Checkmark, Center, ColorMap};
+use crate::{checkmark::Checkmark, palette::PALETTE, Center, Instant, Widget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     image::Image,
-    pixelcolor::{BinaryColor, Rgb565, Rgb888},
+    pixelcolor::{Rgb565, Rgb888},
     prelude::*,
     primitives::{Circle, PrimitiveStyleBuilder},
 };
@@ -23,7 +23,7 @@ pub enum CircleButtonState {
 /// A circular button that shows a hand icon when idle/pressed and transitions to a checkmark
 pub struct CircleButton {
     state: CircleButtonState,
-    checkmark: ColorMap<Center<Checkmark>, Rgb565>,
+    checkmark: Center<Checkmark<Rgb565>>,
     last_drawn_state: Option<CircleButtonState>,
     checkmark_started: bool,
 }
@@ -31,10 +31,7 @@ pub struct CircleButton {
 impl CircleButton {
     pub fn new() -> Self {
         // Use a checkmark that fits nicely within the circle
-        let checkmark = Center::new(Checkmark::new(50)).color_map(|color| match color {
-            BinaryColor::On => Rgb565::WHITE,
-            BinaryColor::Off => Rgb565::RED, // Doesn't matter, won't be visible
-        });
+        let checkmark = Center::new(Checkmark::new(50, PALETTE.on_tertiary_container));
         
         Self {
             state: CircleButtonState::Idle,
@@ -49,7 +46,7 @@ impl CircleButton {
         if self.state != state {
             self.state = state;
             if state == CircleButtonState::ShowingCheckmark && !self.checkmark_started {
-                self.checkmark.child.child.start_animation();
+                self.checkmark.child.start_animation();
                 self.checkmark_started = true;
             }
         }
@@ -62,13 +59,13 @@ impl CircleButton {
     
     /// Check if the checkmark animation is complete
     pub fn is_checkmark_complete(&self) -> bool {
-        self.checkmark.child.child.is_complete()
+        self.checkmark.child.is_complete()
     }
     
     /// Reset the button to idle state
     pub fn reset(&mut self) {
         self.state = CircleButtonState::Idle;
-        self.checkmark.child.child.reset();
+        self.checkmark.child.reset();
         self.last_drawn_state = None;
         self.checkmark_started = false;
     }
@@ -97,13 +94,10 @@ impl Widget for CircleButton {
         if should_redraw {
             match self.state {
                 CircleButtonState::Idle => {
-                    // Regular colors when not holding
-                    let fill_color = Rgb565::new(6, 16, 10);
-                    let border_color = Rgb565::new(2, 46, 16);
-                    
+
                     let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(fill_color)
-                        .stroke_color(border_color)
+                        .fill_color(PALETTE.secondary_container)
+                        .stroke_color(PALETTE.outline)
                         .stroke_width(2)
                         .build();
                     
@@ -111,17 +105,13 @@ impl Widget for CircleButton {
                         .into_styled(circle_style)
                         .draw(target)?;
                     
-                    let icon = OpenSelectHandGesture::new(Rgb565::WHITE);
+                    let icon = OpenSelectHandGesture::new(PALETTE.on_secondary_container);
                     Image::with_center(&icon, center).draw(target)?;
                 }
                 CircleButtonState::Pressed => {
-                    // Green colors when holding
-                    let green_fill: Rgb565 = Rgb888::new(22, 163, 74).into(); // green-600
-                    let border_color = Rgb565::new(2, 46, 16);
-                    
                     let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(green_fill)
-                        .stroke_color(border_color)
+                        .fill_color(PALETTE.tertiary_container)
+                        .stroke_color(PALETTE.tertiary)
                         .stroke_width(2)
                         .build();
                     
@@ -134,7 +124,7 @@ impl Widget for CircleButton {
                 }
                 CircleButtonState::ShowingCheckmark => {
                     // Draw solid green circle (both fill and border are green)
-                    let green_fill: Rgb565 = Rgb888::new(22, 163, 74).into(); // green-600
+                    let green_fill: Rgb565 = PALETTE.tertiary_container;
                     let circle_style = PrimitiveStyleBuilder::new()
                         .fill_color(green_fill)
                         .stroke_color(green_fill)

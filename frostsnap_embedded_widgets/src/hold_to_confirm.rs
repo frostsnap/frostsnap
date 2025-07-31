@@ -56,8 +56,7 @@ where
         
         // Create the border separately with a SizedBox
         let sized_box = crate::SizedBox::new(size);
-        let border_color = Rgb565::new(2, 46, 16); // Dark green border
-        let border_holder = HoldToConfirmBorder::new(sized_box, BORDER_WIDTH, border_color, PALETTE.background);
+        let border_holder = HoldToConfirmBorder::new(sized_box, BORDER_WIDTH, PALETTE.primary, PALETTE.background);
         let border = Fader::new(border_holder);
 
         Self {
