@@ -11,8 +11,6 @@ jobs:
   build-device-firmware:
     name: Build Device Firmware
     runs-on: ubuntu-latest
-    env:
-      RISCV_VERSION: "2024.09.03-nightly"
     strategy:
       matrix:
         board: ["v2"]
@@ -22,26 +20,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@just
+      - uses: ./.github/actions/setup-nix
       - uses: ./.github/actions/fetch-cargo-deps
       - uses: "./.github/actions/install-cargo-bins"
-      - name: Setup | RISCV GCC
-        run: just fetch-riscv ${{env.RISCV_VERSION}}
-      - name: Add RISC-V GCC to PATH
-        run: echo "PATH=$PATH:${GITHUB_WORKSPACE}/riscv/bin" >> $GITHUB_ENV
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: riscv32imc-unknown-none-elf
-          components: rustfmt, clippy
-
       - uses: "./.github/actions/cache-rust-target"
         with:
           key: "build-device-firmware-v0"
           path: "target/riscv32imc-unknown-none-elf/release"
 
-      - run: just lint-device --release --locked
-      - run: just build-device ${{ matrix.board }} --locked
-      - run: just save-image ${{ matrix.board }}
+      - run: nix develop --command just lint-device --release --locked
+      - run: nix develop --command just build-device ${{ matrix.board }} --locked
+      - run: nix develop --command just save-image ${{ matrix.board }}
+
+      - name: Log firmware hash
+        run: echo "Firmware hash - ${{ steps.build-firmware.outputs.firmware-hash }}"
+
       - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-${{ github.sha }}.bin
