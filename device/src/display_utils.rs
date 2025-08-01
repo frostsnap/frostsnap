@@ -14,7 +14,7 @@ use embedded_text::{
 use mipidsi::error::Error;
 
 // Re-export the palette
-pub use crate::graphics::palette::{COLORS, Palette};
+pub use frostsnap_embedded_widgets::palette::PALETTE;
 
 const TEXTBOX_STYLE: TextBoxStyle = TextBoxStyleBuilder::new().build();
 
@@ -28,12 +28,12 @@ where
     let _ = header_area
         .into_styled(
             PrimitiveStyleBuilder::new()
-                .fill_color(COLORS.error)
+                .fill_color(PALETTE.error)
                 .build(),
         )
         .draw(display);
 
-    let header_charstyle = MonoTextStyle::new(&ascii::FONT_7X14, COLORS.primary);
+    let header_charstyle = MonoTextStyle::new(&ascii::FONT_7X14, PALETTE.primary);
     let textbox_style = TextBoxStyleBuilder::new()
         .alignment(HorizontalAlignment::Center)
         .build();
@@ -59,12 +59,12 @@ where
     )
     .into_styled(
         PrimitiveStyleBuilder::new()
-            .fill_color(COLORS.background)
+            .fill_color(PALETTE.background)
             .build(),
     )
     .draw(display);
 
-    let character_style = MonoTextStyle::new(&ascii::FONT_7X14, COLORS.primary);
+    let character_style = MonoTextStyle::new(&ascii::FONT_7X14, PALETTE.primary);
 
     let _ = TextBox::with_textbox_style(
         error.as_ref(),
