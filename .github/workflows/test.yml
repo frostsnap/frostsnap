@@ -28,10 +28,9 @@ jobs:
           key: "build-device-firmware-v0"
           path: "target/riscv32imc-unknown-none-elf/release"
 
-      - uses: ./.github/actions/build-device-nix
-        id: build-firmware
-        with:
-          board: ${{ matrix.board }}
+      - run: nix develop --command just lint-device --release --locked
+      - run: nix develop --command just build-device ${{ matrix.board }} --locked
+      - run: nix develop --command just save-image ${{ matrix.board }}
 
       - name: Log firmware hash
         run: echo "Firmware hash - ${{ steps.build-firmware.outputs.firmware-hash }}"
