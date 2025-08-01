@@ -6,6 +6,7 @@ use crate::{
     hold_to_confirm_border::HoldToConfirmBorder,
     padding::Padding,
     palette::PALETTE,
+    rat::Frac,
     Widget,
 };
 use embedded_graphics::{
@@ -24,7 +25,7 @@ where
     border: Fader<HoldToConfirmBorder<crate::SizedBox<Rgb565>, Rgb565>>,
     size: Size,
     last_update: Option<crate::Instant>,
-    hold_duration_ms: f32,
+    hold_duration_ms: u32,
     completed: bool,
 }
 
@@ -33,7 +34,7 @@ where
     P: Widget<Color = Rgb565>,
     S: Widget<Color = Rgb565>,
 {
-    pub fn new(size: Size, hold_duration_ms: f32, prompt_widget: P, success_widget: S) -> Self {
+    pub fn new(size: Size, hold_duration_ms: u32, prompt_widget: P, success_widget: S) -> Self {
         const BORDER_WIDTH: u32 = 10;
         
         // Create the FadeSwitcher widget starting with prompt
@@ -56,7 +57,7 @@ where
         
         // Create the border separately with a SizedBox
         let sized_box = crate::SizedBox::new(size);
-        let border_holder = HoldToConfirmBorder::new(sized_box, BORDER_WIDTH, PALETTE.primary, PALETTE.background);
+        let border_holder = HoldToConfirmBorder::new(sized_box, BORDER_WIDTH, PALETTE.confirm_progress, PALETTE.background);
         let border = Fader::new(border_holder);
 
         Self {
@@ -69,12 +70,10 @@ where
         }
     }
 
-    pub fn enable(&mut self) {
-    }
 
     pub fn reset(&mut self) {
         // Reset border progress
-        self.border.child.set_progress(0.0);
+        self.border.child.set_progress(Frac::ZERO);
         
         // Reset the FadeSwitcher to show prompt
         self.content.child.children.0.switch_to_left();
@@ -87,12 +86,20 @@ where
         self.completed = false;
     }
 
+    pub fn button_mut(&mut self) -> &mut CircleButton {
+        &mut self.content.child.children.1
+    }
+
+    pub fn button(&self) -> &CircleButton {
+        &self.content.child.children.1
+    }
+
     pub fn is_completed(&self) -> bool {
-        self.content.child.children.1.is_checkmark_complete()
+        self.button().checkmark().is_complete()
     }
     
     fn is_holding(&self) -> bool {
-        self.content.child.children.1.state() == CircleButtonState::Pressed
+        self.button().state() == CircleButtonState::Pressed
     }
 
     fn update_progress(&mut self, current_time: crate::Instant) {
@@ -100,42 +107,40 @@ where
         let current_progress = self.border.child.get_progress();
         
         // Early exit if not holding and no progress
-        if !holding && current_progress == 0.0 {
+        if !holding && current_progress == Frac::ZERO {
             self.last_update = None;  // Clear last_update when fully released
             return;
         }
 
         if let Some(last_time) = self.last_update {
-            let elapsed_ms = current_time.saturating_duration_since(last_time) as f32;
+            let elapsed_ms = current_time.saturating_duration_since(last_time) as u32;
 
-            if elapsed_ms == 0.0 {
+            if elapsed_ms == 0 {
                 return;
             }
 
             if holding && !self.completed {
-                let increment = elapsed_ms / self.hold_duration_ms;
-                let new_progress = (current_progress + increment).min(1.0);
+                let increment = Frac::from_ratio(elapsed_ms, self.hold_duration_ms);
+                let new_progress = current_progress + increment;
                 self.border.child.set_progress(new_progress);
 
-                if new_progress >= 1.0 {
+                if new_progress >= Frac::ONE {
                     self.completed = true;
                     
                     // Switch FadeSwitcher to show success widget
-                    self.content.child.children.0.switch_to_right();
-                    
-                    // Update circle button state
-                    self.content.child.children.1.set_state(CircleButtonState::ShowingCheckmark);
-                    
+                    // self.content.child.children.0.switch_to_right();
+
                     // Start fading out the border
-                    self.border.start_fade(500, 100, PALETTE.background);
+                    self.border.start_fade(500, 50, PALETTE.background);
+                    self.button_mut().set_state(CircleButtonState::ShowingCheckmark);
                 }
-            } else if !holding && current_progress > 0.0 && !self.completed {
-                let decrement = elapsed_ms / 1000.0;
-                let new_progress = (current_progress - decrement).max(0.0);
+            } else if !holding && current_progress > Frac::ZERO && !self.completed {
+                let decrement = Frac::from_ratio(elapsed_ms, 1000);
+                let new_progress = current_progress - decrement;
                 self.border.child.set_progress(new_progress);
                 
                 // If we've fully released, clear last_update
-                if new_progress == 0.0 {
+                if new_progress == Frac::ZERO {
                     self.last_update = None;
                     return;
                 }
@@ -161,12 +166,16 @@ where
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        if self.is_holding() || self.border.child.get_progress() > 0.0 {
+        if self.is_holding() || self.border.child.get_progress() > Frac::ZERO {
             self.update_progress(current_time);
         }
         
         // Draw the border first
         self.border.draw(target, current_time)?;
+
+        if self.border.is_faded_out() && !self.button().checkmark().drawing_started() {
+            self.button_mut().checkmark_mut().start_drawing()
+        }
         
         // Then draw the content on top
         self.content.draw(target, current_time)

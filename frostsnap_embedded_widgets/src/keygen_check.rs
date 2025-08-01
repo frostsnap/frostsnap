@@ -40,11 +40,11 @@ impl KeygenCheck {
         );
         
         // Create the t of n text widget
-        let t_of_n_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_primary_container);
+        let t_of_n_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_surface);
         let t_of_n_widget = Text::new(t_of_n_text.clone(), t_of_n_style.clone());
         
         // Create the hex code text widget using CODE_FONT
-        let code_style = U8g2TextStyle::new(crate::CODE_FONT, PALETTE.on_primary_container);
+        let code_style = U8g2TextStyle::new(crate::CODE_FONT, PALETTE.on_surface);
         let code_widget = Text::new(hex_code.clone(), code_style);
         
         // Create internal column with t_of_n and code
@@ -53,8 +53,8 @@ impl KeygenCheck {
         // Put the column in a container with a border
         let border_style = PrimitiveStyleBuilder::new()
             .stroke_color(PALETTE.outline)
-            .stroke_width(1)
-            .fill_color(PALETTE.primary_container)
+            .stroke_width(2)
+            .fill_color(PALETTE.surface)
             .stroke_alignment(StrokeAlignment::Inside)
             .build();
         
@@ -115,7 +115,7 @@ impl KeygenCheck {
         // Create the hold-to-confirm widget
         let hold_to_confirm = HoldToConfirm::new(
             Size::new(240, 280),
-            2000.0, // 2 second hold duration
+            2000, // 2 second hold duration
             prompt_column,
             success_column,
         );

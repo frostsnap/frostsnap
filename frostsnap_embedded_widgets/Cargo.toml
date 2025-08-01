@@ -3,6 +3,10 @@ name = "frostsnap_embedded_widgets"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["std"]
+std = []
+
 [dependencies]
 embedded-graphics = "0.8.1"
 u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }

@@ -40,7 +40,7 @@ fugit = "0.3.7"
 crc = "3"
 micromath = "*"
 reed-solomon = "0.2.1"
-frostsnap_embedded_widgets = { path = "../frostsnap_embedded_widgets" }
+frostsnap_embedded_widgets = { path = "../frostsnap_embedded_widgets", default-features = false }
 frostsnap_macros = { path = "../macros" }
 
 [[bin]]

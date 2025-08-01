@@ -48,7 +48,7 @@ impl<C: PixelColor> Checkmark<C> {
         checkmark
     }
 
-    pub fn start_animation(&mut self) {
+    pub fn start_drawing(&mut self) {
         self.enabled = true;
         self.progress = 0.0;
         self.last_drawn_check_progress = -1.0;
@@ -65,6 +65,10 @@ impl<C: PixelColor> Checkmark<C> {
 
     pub fn is_complete(&self) -> bool {
         self.animation_state == AnimationState::Complete
+    }
+
+    pub fn drawing_started(&self) -> bool {
+        matches!(self.animation_state, AnimationState::Complete| AnimationState::Drawing)
     }
 
     fn record_pixels(&mut self) {

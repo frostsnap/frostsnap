@@ -1,5 +1,10 @@
 #![no_std]
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate std;
 
+#[allow(unused)]
+#[macro_use]
 extern crate alloc;
 
 use embedded_graphics::prelude::*;
@@ -192,7 +197,7 @@ macro_rules! select_widget {
                     BinaryColor::Off => PALETTE.background,
                 });
                 
-                let widget = HoldToConfirm::new($screen_size, 2000.0, prompt_widget, success_widget);
+                let widget = HoldToConfirm::new($screen_size, 2000, prompt_widget, success_widget);
                 $run_macro!(widget);
             }
             "welcome" => {
@@ -284,7 +289,7 @@ macro_rules! select_widget {
                     BinaryColor::Off => PALETTE.background,
                 });
                 
-                let hold_to_confirm = HoldToConfirm::new($screen_size, 2000.0, confirm_prompt_rgb, success_text_rgb);
+                let hold_to_confirm = HoldToConfirm::new($screen_size, 2000, confirm_prompt_rgb, success_text_rgb);
                 
                 let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_to_confirm, $screen_size);
                 

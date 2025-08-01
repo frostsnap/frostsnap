@@ -1,4 +1,4 @@
-use super::{pixel_recorder::PixelRecorder, compressed_point::CompressedPoint, Widget};
+use super::{pixel_recorder::PixelRecorder, compressed_point::CompressedPoint, rat::Frac, Widget};
 use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -15,8 +15,8 @@ where
     C: PixelColor,
 {
     pub child: W,
-    progress: f32, // 0.0 to 1.0 (percentage of border completed)
-    last_drawn_progress: f32,
+    progress: Frac, // 0 to 1 (percentage of border completed)
+    last_drawn_progress: Frac,
     screen_size: Size,
     border_pixels: Vec<CompressedPoint>, // Recorded border pixels (compressed)
     border_width: u32,
@@ -37,8 +37,8 @@ where
 
         let mut self_ = Self {
             child,
-            progress: 0.0,
-            last_drawn_progress: 0.0,
+            progress: Frac::ZERO,
+            last_drawn_progress: Frac::ZERO,
             screen_size,
             border_pixels: Vec::new(),
             border_width,
@@ -51,11 +51,11 @@ where
         self_
     }
 
-    pub fn set_progress(&mut self, progress: f32) {
-        self.progress = progress.clamp(0.0, 1.0);
+    pub fn set_progress(&mut self, progress: Frac) {
+        self.progress = progress;
     }
 
-    pub fn get_progress(&self) -> f32 {
+    pub fn get_progress(&self) -> Frac {
         self.progress
     }
     
@@ -110,9 +110,8 @@ where
     ) -> Result<(), D::Error> {
         // Handle progress changes
         let total_pixels = self.border_pixels.len();
-        let current_progress_pixels = (self.progress * total_pixels as f32) as usize;
-        let last_progress_pixels =
-            (self.last_drawn_progress.max(0.0) * total_pixels as f32) as usize;
+        let current_progress_pixels = (self.progress * total_pixels as u32) as usize;
+        let last_progress_pixels = (self.last_drawn_progress * total_pixels as u32) as usize;
 
         if current_progress_pixels > last_progress_pixels {
             target.draw_iter(
@@ -174,7 +173,7 @@ where
     }
 
     fn force_full_redraw(&mut self) {
-        self.last_drawn_progress = 0.0;
+        self.last_drawn_progress = Frac::ZERO;
         // Also propagate to child
         self.child.force_full_redraw();
     }
