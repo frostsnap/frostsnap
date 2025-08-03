@@ -1,21 +1,29 @@
-use super::{Widget, Text}; // , Cursor};
-use crate::{Instant, palette::PALETTE};
+use super::{Widget, Column, Container, MutText}; // , Cursor};
+use crate::{Instant, palette::PALETTE, bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap};
 use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::Rgb565,
+    pixelcolor::{BinaryColor, Rgb565},
+    primitives::{PrimitiveStyle, StrokeAlignment},
 };
 use u8g2_fonts::U8g2TextStyle;
 
+// Constants for MutText buffer
+const MAX_NAME_CHARS: usize = 20;
+const NAME_WIDTH: usize = 200;
+const NAME_HEIGHT: usize = 30;
+// Calculate buffer size: BinaryColor uses 1 bit per pixel, so W*H/8 bytes
+const NAME_BUFFER_SIZE: usize = (NAME_WIDTH * NAME_HEIGHT + 7) / 8;
+
+type MutTextWidget = MutText<U8g2TextStyle<BinaryColor>, MAX_NAME_CHARS, NAME_WIDTH, NAME_HEIGHT, NAME_BUFFER_SIZE>;
+
 /// A widget for displaying device name with optional edit mode cursor
 pub struct DeviceName {
-    /// The device name text widget
-    text_widget: Text<U8g2TextStyle<Rgb565>>,
+    /// The device name text widget (mutable text with color mapping)
+    text_widget: ColorMap<MutTextWidget, Rgb565>,
     /// The cursor widget (used in edit mode)
     // cursor: Option<Cursor>,
-    /// The raw name string
-    name: String,
     /// Whether we're in edit mode
     edit_mode: bool,
     /// Whether the widget needs redrawing
@@ -26,14 +34,17 @@ impl DeviceName {
     /// Create a new device name widget
     pub fn new<S: Into<String>>(name: S) -> Self {
         let name_string = name.into();
-        let char_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background);
+        let char_style = U8g2TextStyle::new(crate::FONT_MED, BinaryColor::On);
         
-        let text_widget = Text::new(name_string.clone(), char_style);
+        let mut_text = MutText::new(name_string, char_style);
+        let text_widget = mut_text.color_map(|c| match c {
+            BinaryColor::On => PALETTE.on_background,
+            BinaryColor::Off => PALETTE.background,
+        });
         
         Self {
             text_widget,
             // cursor: None,
-            name: name_string,
             edit_mode: false,
             needs_redraw: true,
         }
@@ -60,29 +71,16 @@ impl DeviceName {
         }
     }
     
-    /// Update the name
-    pub fn set_name<S: Into<String>>(&mut self, name: S) {
-        self.name = name.into();
-        let char_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background);
-        self.text_widget = Text::new(self.name.clone(), char_style);
-        
-        // if self.edit_mode {
-        //     // Update cursor position based on new text size
-        //     if let Some(text_size) = self.text_widget.size_hint() {
-        //         let text_start_x = 120 - (text_size.width as i32 / 2);
-        //         let cursor_x = text_start_x + text_size.width as i32;
-        //         let cursor_y = 140 - (text_size.height as i32 / 2);
-        //         if let Some(cursor) = &mut self.cursor {
-        //             cursor.set_position(Point::new(cursor_x, cursor_y));
-        //         }
-        //     }
-        // }
-        self.needs_redraw = true;
-    }
     
     /// Get the current name
     pub fn name(&self) -> &str {
-        &self.name
+        self.text_widget.child.text()
+    }
+    
+    /// Set a new device name
+    pub fn set_name<S: Into<String>>(&mut self, name: S) {
+        self.text_widget.child.set_text(name);
+        self.needs_redraw = true;
     }
 }
 
@@ -131,5 +129,98 @@ impl Widget for DeviceName {
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;
         self.text_widget.force_full_redraw();
+    }
+}
+
+const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
+
+/// A screen showing the Frostsnap logo and the DeviceName widget
+pub struct DeviceNameScreen {
+    column: Column<(
+        Container<ColorMap<BitmapWidget, Rgb565>>,
+        Container<DeviceName>,
+    ), Rgb565>,
+}
+
+impl DeviceNameScreen {
+    /// Get a reference to the inner DeviceName widget
+    fn device_name_widget(&self) -> &DeviceName {
+        &self.column.children.1.child
+    }
+    
+    /// Get a mutable reference to the inner DeviceName widget
+    fn device_name_widget_mut(&mut self) -> &mut DeviceName {
+        &mut self.column.children.1.child
+    }
+    
+    pub fn new(device_name: String) -> Self {
+        // Load logo
+        let image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
+        let bitmap_widget = BitmapWidget::new(image.into());
+        let logo_colored = bitmap_widget.color_map(|c| match c {
+            BinaryColor::On => PALETTE.primary,
+            BinaryColor::Off => PALETTE.background,
+        });
+        
+        // Create DeviceName widget
+        let device_name_widget = DeviceName::new(device_name);
+        
+        // Create containers with borders for visualization
+        let mut border_style = PrimitiveStyle::with_stroke(PALETTE.error, 1);
+        border_style.stroke_alignment = StrokeAlignment::Outside;
+        
+        // Create the column with main axis alignment for spacing
+        let column = Column::new((
+            Container::new(logo_colored)
+                .with_border(border_style),
+            Container::new(device_name_widget)
+                .with_border(border_style),
+        ))
+        .with_main_axis_alignment(crate::column::MainAxisAlignment::SpaceEvenly);
+        
+        Self { column }
+    }
+    
+    /// Set edit mode for the device name widget
+    pub fn set_edit_mode(&mut self, edit_mode: bool) {
+        self.device_name_widget_mut().set_edit_mode(edit_mode);
+    }
+    
+    /// Get the current device name
+    pub fn name(&self) -> &str {
+        self.device_name_widget().name()
+    }
+    
+    /// Set a new device name
+    pub fn set_name<S: Into<String>>(&mut self, name: S) {
+        self.device_name_widget_mut().set_name(name);
+    }
+}
+
+impl Widget for DeviceNameScreen {
+    type Color = Rgb565;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: Instant,
+    ) -> Result<(), D::Error> {
+        self.column.draw(target, current_time)
+    }
+    
+    fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
+        self.column.handle_touch(point, current_time, is_release)
+    }
+    
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.column.handle_vertical_drag(prev_y, new_y, is_release)
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        self.column.size_hint()
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.column.force_full_redraw()
     }
 }

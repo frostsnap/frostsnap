@@ -110,8 +110,8 @@ where
     ) -> Result<(), D::Error> {
         // Handle progress changes
         let total_pixels = self.border_pixels.len();
-        let current_progress_pixels = (self.progress * total_pixels as u32) as usize;
-        let last_progress_pixels = (self.last_drawn_progress * total_pixels as u32) as usize;
+        let current_progress_pixels = (self.progress * total_pixels as u32).floor() as usize;
+        let last_progress_pixels = (self.last_drawn_progress * total_pixels as u32).floor() as usize;
 
         if current_progress_pixels > last_progress_pixels {
             target.draw_iter(

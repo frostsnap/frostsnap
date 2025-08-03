@@ -5,6 +5,8 @@ use embedded_graphics::{
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Text}
 };
+use crate::palette::PALETTE;
+
 use super::Widget;
 
 #[derive(Debug)]
@@ -125,7 +127,7 @@ impl Widget for MemoryDebugWidget {
         self.background_rect
             .into_styled(
                 PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::BLACK)
+                    .fill_color(PALETTE.background)
                     .build(),
             )
             .draw(target)?;

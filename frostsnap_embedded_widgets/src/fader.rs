@@ -120,16 +120,16 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
 
 fn interpolate_color(from: Rgb565, to: Rgb565, t: Frac) -> Rgb565 {
     // t represents progress from 0 to 1
-    let t_inv = t.one_minus(); // 1.0 - t
+    let t_inv = Frac::ONE - t;
     
     // For each color component, calculate: from * (1-t) + to * t
-    let from_r = t_inv * from.r() as u32;
-    let from_g = t_inv * from.g() as u32;
-    let from_b = t_inv * from.b() as u32;
+    let from_r = (t_inv * from.r() as u32).round();
+    let from_g = (t_inv * from.g() as u32).round();
+    let from_b = (t_inv * from.b() as u32).round();
 
-    let to_r = t * to.r() as u32;
-    let to_g = t * to.g() as u32;
-    let to_b = t * to.b() as u32;
+    let to_r = (t * to.r() as u32).round();
+    let to_g = (t * to.g() as u32).round();
+    let to_b = (t * to.b() as u32).round();
 
     Rgb565::new(
         (from_r + to_r) as u8,
@@ -227,7 +227,7 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
                     
                     // For fade-in, reverse the progress (1.0 -> 0.0)
                     if is_fade_in {
-                        fade_progress = fade_progress.one_minus();
+                        fade_progress = Frac::ONE - fade_progress;
                     }
 
                     self.child.force_full_redraw();

@@ -1,6 +1,6 @@
 use frostsnap_embedded_widgets::{
     Welcome,
-    device_name::DeviceName,
+    DeviceNameScreen,
     keygen_check::KeygenCheck,
 };
 // TODO: Re-enable when implementing backup entry
@@ -35,7 +35,7 @@ pub enum WidgetTree {
     // },
     
     /// Device naming screen
-    DeviceNaming(DeviceName),
+    DeviceNaming(DeviceNameScreen),
     
     /// Keygen confirmation screen
     KeygenCheck(KeygenCheck),

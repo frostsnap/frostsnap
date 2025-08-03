@@ -35,17 +35,11 @@ use esp_hal::{
 };
 use frostsnap_comms::Downstream;
 use frostsnap_device::{
-    efuse::{self, EfuseHmacKeys},
-    esp32_run,
-    io::SerialInterface,
-    touch_calibration::{x_based_adjustment, y_based_adjustment},
-    ui::{
-        BusyTask, UiEvent, UserInteraction, Workflow, Prompt,
-    },
-    widget_tree::WidgetTree,
-    DownstreamConnectionState, Instant, UpstreamConnectionState,
+    display_utils::PALETTE, efuse::{self, EfuseHmacKeys}, esp32_run, io::SerialInterface, touch_calibration::{x_based_adjustment, y_based_adjustment}, ui::{
+        BusyTask, Prompt, UiEvent, UserInteraction, Workflow
+    }, widget_tree::WidgetTree, DownstreamConnectionState, Instant, UpstreamConnectionState
 };
-use frostsnap_embedded_widgets::{Widget, Welcome, device_name::DeviceName};
+use frostsnap_embedded_widgets::{Widget, Welcome, DeviceNameScreen, keygen_check::KeygenCheck, FadeSwitcher};
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
 // # Pin Configuration
@@ -128,7 +122,7 @@ fn main() -> ! {
     let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
     
     // Clear the screen to black at startup
-    display.clear(Rgb565::BLACK).unwrap();
+    display.clear(PALETTE.background).unwrap();
 
     let i2c = I2c::new(
         peripherals.I2C0,
@@ -204,7 +198,11 @@ fn main() -> ! {
 
     let ui = FrostyUi {
         display,
-        page: WidgetTree::default(),
+        page_switcher: FadeSwitcher::new(
+            WidgetTree::default(),
+            500, // 500ms fade duration
+            PALETTE.background,
+        ),
         capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,
         upstream_connection_state: None,
@@ -212,6 +210,7 @@ fn main() -> ! {
         timer: &timer1,
         busy_task: Default::default(),
         recovery_mode: false,
+        current_workflow: Workflow::None,
     };
 
     let run = esp32_run::Run {
@@ -246,7 +245,7 @@ impl embedded_hal::digital::ErrorType for NoCs {
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     display: DT,
-    page: WidgetTree,
+    page_switcher: FadeSwitcher<WidgetTree>,
     capsense: CST816S<I2C, PINT, RST>,
     last_touch: Option<(Point, Instant)>,
     downstream_connection_state: DownstreamConnectionState,
@@ -254,6 +253,7 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     timer: &'t Timer<T, Blocking>,
     busy_task: Option<BusyTask>,
     recovery_mode: bool,
+    current_workflow: Workflow,
 }
 
 impl<T, DT, I2C, PINT, RST, CommE, PinE> UserInteraction for FrostyUi<'_, T, DT, I2C, PINT, RST>
@@ -270,27 +270,54 @@ where
     ) {
         if state != self.downstream_connection_state {
             self.downstream_connection_state = state;
-            self.page.force_full_redraw();
+            self.page_switcher.force_full_redraw();
         }
     }
 
     fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
         if Some(state) != self.upstream_connection_state {
             self.upstream_connection_state = Some(state);
-            self.page.force_full_redraw();
+            self.page_switcher.force_full_redraw();
         }
     }
 
 
 
     fn take_workflow(&mut self) -> Workflow {
-        // TODO: reconstruct workflow from widget tree if needed
-        Workflow::None
+        core::mem::replace(&mut self.current_workflow, Workflow::None)
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
-        // Convert workflow to widget tree
-        self.page = match workflow {
+        // Store workflow immediately to avoid move issues
+        let old_workflow = core::mem::replace(&mut self.current_workflow, workflow);
+        
+        // Check if we can update the current widget instead of switching
+        let current_widget = self.page_switcher.current_mut();
+        
+        match (current_widget, &self.current_workflow) {
+            // If we're already showing a Welcome screen and need a Welcome screen, just leave it
+            (WidgetTree::Welcome(_), Workflow::None | Workflow::WaitingFor(_) | Workflow::Debug(_) | 
+             Workflow::DisplayBackup { .. } | Workflow::EnteringBackup(_) | 
+             Workflow::DisplayAddress { .. } | Workflow::FirmwareUpgrade(_)) => {
+                // Already showing Welcome, no need to change
+                return;
+            }
+            
+            // If we're already showing DeviceNaming and get another NamingDevice workflow, just update the text
+            (WidgetTree::DeviceNaming(device_name_screen), Workflow::NamingDevice { new_name }) => {
+                device_name_screen.set_name(new_name);
+                return;
+            }
+            
+            // If we're showing KeygenCheck and get another KeyGen prompt, we need a new one
+            // because the security code would be different
+            
+            _ => {} // Different widget types, need to switch
+        };
+        
+        // Convert workflow to widget tree - take the workflow back out to consume it
+        let workflow = core::mem::replace(&mut self.current_workflow, old_workflow);
+        let new_page = match workflow {
             Workflow::None => WidgetTree::Welcome(Welcome::new()),
             
             Workflow::WaitingFor(_) => {
@@ -299,23 +326,27 @@ where
             }
             
             Workflow::UserPrompt(prompt) => {
-                // Create hold-to-confirm widget based on prompt type
-                let _hold_duration = match prompt {
-                    Prompt::WipeDevice => 6000.0, // 6 seconds for dangerous operations
-                    _ => 600.0, // 600ms for normal operations
-                };
-                
-                // TODO: Create proper prompt text and success text based on prompt type
-                // For now, just show welcome
-                WidgetTree::Welcome(Welcome::new())
-                
-                // When Text widget is available:
-                // let prompt_text = create_prompt_text(&prompt);
-                // let success_text = create_success_text(&prompt);
-                // WidgetTree::Prompt {
-                //     widget: HoldToConfirm::new(Size::new(240, 280), hold_duration, prompt_text, success_text),
-                //     data: prompt,
-                // }
+                match prompt {
+                    Prompt::KeyGen { phase } => {
+                        // Extract the security check code from the session hash
+                        let session_hash = phase.session_hash();
+                        let security_check_code: [u8; 4] = [
+                            session_hash.0[0],
+                            session_hash.0[1],
+                            session_hash.0[2],
+                            session_hash.0[3],
+                        ];
+                        let t_of_n = phase.t_of_n();
+                        
+                        // Create the KeygenCheck widget
+                        WidgetTree::KeygenCheck(KeygenCheck::new(security_check_code, t_of_n))
+                    }
+                    _ => {
+                        // TODO: Handle other prompt types
+                        // For now, just show welcome
+                        WidgetTree::Welcome(Welcome::new())
+                    }
+                }
             }
             
             Workflow::Debug(_text) => {
@@ -324,9 +355,9 @@ where
             }
             
             Workflow::NamingDevice { new_name } => {
-                let mut device_name_widget = DeviceName::new(new_name);
-                device_name_widget.set_edit_mode(true);
-                WidgetTree::DeviceNaming(device_name_widget)
+                let mut device_name_screen = DeviceNameScreen::new(new_name);
+                device_name_screen.set_edit_mode(true);
+                WidgetTree::DeviceNaming(device_name_screen)
             }
             
             Workflow::DisplayBackup { .. } => {
@@ -349,6 +380,9 @@ where
                 WidgetTree::Welcome(Welcome::new())
             }
         };
+        
+        // Switch to the new page with fade transition
+        self.page_switcher.switch_to(new_page);
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
@@ -368,7 +402,7 @@ where
                 // Handle vertical drag
                 if let (Some((last_point, _)), TouchGesture::SlideUp | TouchGesture::SlideDown) = 
                     (self.last_touch, touch.gesture) {
-                    self.page.handle_vertical_drag(
+                    self.page_switcher.handle_vertical_drag(
                         Some(last_point.y as u32),
                         corrected_y as u32,
                         is_release
@@ -383,32 +417,47 @@ where
                 }
                 
                 // Handle touch
-                let _ = self.page.handle_touch(corrected_point, current_time, is_release);
+                let _ = self.page_switcher.handle_touch(corrected_point, current_time, is_release);
             }
             None => {},
         };
         
         // Draw the widget tree
-        let _ = self.page.draw(&mut self.display, current_time);
+        let _ = self.page_switcher.draw(&mut self.display, current_time);
         
-        // TODO: Generate UiEvents based on widget state changes
+        // Check widget states and generate UI events
+        match self.page_switcher.current() {
+            WidgetTree::KeygenCheck(keygen_check) => {
+                if keygen_check.is_confirmed() {
+                    // User has confirmed the keygen security check
+                    // Extract the phase from the current workflow
+                    if let Workflow::UserPrompt(Prompt::KeyGen { phase }) = &self.current_workflow {
+                        return Some(UiEvent::KeyGenConfirm {
+                            phase: phase.clone(),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+        
         None
     }
     
     fn set_busy_task(&mut self, task: BusyTask) {
         self.busy_task = Some(task);
         // TODO: Update widget tree based on busy task
-        self.page.force_full_redraw();
+        self.page_switcher.force_full_redraw();
     }
     
     fn clear_busy_task(&mut self) {
         self.busy_task = None;
-        self.page.force_full_redraw();
+        self.page_switcher.force_full_redraw();
     }
     
     fn set_recovery_mode(&mut self, value: bool) {
         self.recovery_mode = value;
-        self.page.force_full_redraw();
+        self.page_switcher.force_full_redraw();
     }
 }
 

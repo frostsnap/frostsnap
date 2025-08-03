@@ -11,6 +11,9 @@ use embedded_graphics::{
     Drawable,
 };
 
+/// Distance in pixels between the bottom of the text and the underline
+const UNDERLINE_DISTANCE: i32 = 2;
+
 /// A simple text widget that renders text at a specific position
 #[derive(Clone)]
 pub struct Text<S: CharacterStyle> {
@@ -23,10 +26,7 @@ pub struct Text<S: CharacterStyle> {
 
 impl<S: CharacterStyle> Text<S> {
     pub fn new<T: Into<String>>(text: T, character_style: S) -> Self {
-        let text_style = TextStyleBuilder::new()
-            .alignment(Alignment::Center)
-            .baseline(Baseline::Middle)
-            .build();
+        let text_style = TextStyleBuilder::new().baseline(Baseline::Top).build();
             
         Self {
             text: text.into(),
@@ -41,6 +41,15 @@ impl<S: CharacterStyle> Text<S> {
         &self.text
     }
     
+    /// Create the EgText object at the given position
+    fn create_eg_text(&self) -> EgText<'_, S> {
+        EgText::with_text_style(
+            &self.text,
+            Point::zero(),
+            self.character_style.clone(),
+            self.text_style,
+        )
+    }
     
     pub fn with_alignment(mut self, alignment: Alignment) -> Self {
         self.text_style = TextStyleBuilder::from(&self.text_style)
@@ -75,22 +84,13 @@ where
         _current_time: Instant,
     ) -> Result<(), D::Error> {
         if !self.drawn {
-            let bounds = target.bounding_box();
-            let center = bounds.center();
-            
-            let text_obj = EgText::with_text_style(
-                &self.text,
-                center,
-                self.character_style.clone(),
-                self.text_style,
-            );
-            
+            let text_obj = self.create_eg_text();
             text_obj.draw(target)?;
             
             // Draw underline if enabled
             if let Some(underline_color) = self.underline_color {
                 let text_bbox = text_obj.bounding_box();
-                let underline_y = text_bbox.bottom_right().unwrap().y + 2; // 2 pixels below text
+                let underline_y = text_bbox.bottom_right().unwrap().y + UNDERLINE_DISTANCE;
                 
                 Line::new(
                     Point::new(text_bbox.top_left.x, underline_y),
@@ -115,17 +115,16 @@ where
     }
     
     fn size_hint(&self) -> Option<Size> {
-        // Use Dimensions trait to get the actual text dimensions
-        let text = EgText::with_text_style(
-            &self.text,
-            Point::zero(),
-            self.character_style.clone(),
-            self.text_style,
-        );
+        // Create text at origin to get its bounding box
+        let text_obj = self.create_eg_text();
+        let bbox = text_obj.bounding_box();
+        let mut size = bbox.size;
+        // If underline is enabled, add space for it
+        if self.underline_color.is_some() {
+            size.height += UNDERLINE_DISTANCE as u32 + 1; // +1 for the underline stroke itself
+        }
         
-        // Get the bounding box dimensions
-        let bbox = text.bounding_box();
-        Some(bbox.size)
+        Some(size)
     }
     
     fn force_full_redraw(&mut self) {

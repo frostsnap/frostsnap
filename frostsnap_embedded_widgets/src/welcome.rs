@@ -1,4 +1,4 @@
-use super::{Widget, Text, Column, SizedBox};
+use super::{Widget, Text, Column};
 use crate::{bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap, palette::PALETTE, Instant};
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -12,38 +12,21 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 /// A welcome screen widget showing the Frostsnap logo and getting started text
 pub struct Welcome {
     column: Column<(
-        SizedBox<Rgb565>,
         ColorMap<BitmapWidget, Rgb565>,
-        SizedBox<Rgb565>,
-        ColorMap<Text<U8g2TextStyle<BinaryColor>>, Rgb565>,
-        ColorMap<Text<U8g2TextStyle<BinaryColor>>, Rgb565>,
-        SizedBox<Rgb565>,
-        ColorMap<Text<U8g2TextStyle<BinaryColor>>, Rgb565>,
+        Text<U8g2TextStyle<Rgb565>>,
+        Text<U8g2TextStyle<Rgb565>>,
     ), Rgb565>,
 }
 
 impl Welcome {
     pub fn new() -> Self {
-        let text_style = U8g2TextStyle::new(crate::FONT_MED, BinaryColor::On);
+        // Create text styles with colors directly
+        let text_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background);
+        let url_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.primary);
         
-        // Create text widgets
-        let text1 = Text::new("Get started with", text_style.clone());
-        let text1_colored = text1.color_map(|c| match c {
-            BinaryColor::On => PALETTE.on_background,
-            BinaryColor::Off => PALETTE.background,
-        });
-        
-        let text2 = Text::new("your Frostsnap at", text_style.clone());
-        let text2_colored = text2.color_map(|c| match c {
-            BinaryColor::On => PALETTE.on_background,
-            BinaryColor::Off => PALETTE.background,
-        });
-        
-        let url_text = Text::new("frostsnap.com/start", text_style);
-        let url_colored = url_text.color_map(|c| match c {
-            BinaryColor::On => PALETTE.primary_container,
-            BinaryColor::Off => PALETTE.background,
-        });
+        // Create text widgets with colored styles
+        let text1 = Text::new("Get started with\nFrostsnap at", text_style.clone());
+        let url_text = Text::new("frostsnap.com/start", url_style).with_underline(PALETTE.primary);
         
         // Load logo
         let image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
@@ -55,14 +38,10 @@ impl Welcome {
         
         // Create column with spacing
         let column = Column::new((
-            SizedBox::new(Size::new(0, 40)),
             logo,
-            SizedBox::new(Size::new(0, 20)),
-            text1_colored,
-            text2_colored,
-            SizedBox::new(Size::new(0, 10)),
-            url_colored,
-        ));
+            text1,
+            url_text,
+        )).with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
         
         Self { column }
     }

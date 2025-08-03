@@ -1,5 +1,5 @@
 use alloc::{string::ToString, format};
-use crate::FONT_LARGE;
+use crate::{palette::PALETTE, FONT_LARGE};
 use embedded_graphics::{
     draw_target::DrawTarget,
     pixelcolor::Rgb565,
@@ -83,7 +83,7 @@ impl crate::Widget for ShareIndexInputDisplay {
             }
             self.changed = false;
             let display_size = target.bounding_box().size;
-            target.clear(Rgb565::BLACK)?;
+            target.clear(PALETTE.background)?;
 
             let text = format!(
                 "FROST[{}]",

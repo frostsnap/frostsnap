@@ -1,7 +1,6 @@
 use crate::{
     circle_button::{CircleButton, CircleButtonState},
     column::{Column, MainAxisAlignment},
-    fade_switcher::FadeSwitcher,
     fader::Fader,
     hold_to_confirm_border::HoldToConfirmBorder,
     padding::Padding,
@@ -16,12 +15,11 @@ use embedded_graphics::{
 };
 
 /// A widget that combines HoldToConfirmBorder with a hand gesture icon and transitions to a checkmark
-pub struct HoldToConfirm<P, S> 
+pub struct HoldToConfirm<W> 
 where
-    P: Widget<Color = Rgb565>,
-    S: Widget<Color = Rgb565>,
+    W: Widget<Color = Rgb565>,
 {
-    content: Padding<Column<(FadeSwitcher<P, S>, CircleButton), Rgb565>>,
+    content: Padding<Column<(W, CircleButton), Rgb565>>,
     border: Fader<HoldToConfirmBorder<crate::SizedBox<Rgb565>, Rgb565>>,
     size: Size,
     last_update: Option<crate::Instant>,
@@ -29,27 +27,18 @@ where
     completed: bool,
 }
 
-impl<P, S> HoldToConfirm<P, S>
+impl<W> HoldToConfirm<W>
 where
-    P: Widget<Color = Rgb565>,
-    S: Widget<Color = Rgb565>,
+    W: Widget<Color = Rgb565>,
 {
-    pub fn new(size: Size, hold_duration_ms: u32, prompt_widget: P, success_widget: S) -> Self {
+    pub fn new(size: Size, hold_duration_ms: u32, widget: W) -> Self {
         const BORDER_WIDTH: u32 = 10;
-        
-        // Create the FadeSwitcher widget starting with prompt
-        let fade_switcher = FadeSwitcher::new(
-            prompt_widget,
-            success_widget,
-            300, // 300ms fade duration
-            PALETTE.background
-        );
         
         // Create the circle button
         let button = CircleButton::new();
         
-        // Create column with the FadeSwitcher and button
-        let column = Column::new((fade_switcher, button))
+        // Create column with the widget and button
+        let column = Column::new((widget, button))
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
         
         // Add padding around the column
@@ -70,13 +59,9 @@ where
         }
     }
 
-
     pub fn reset(&mut self) {
         // Reset border progress
         self.border.child.set_progress(Frac::ZERO);
-        
-        // Reset the FadeSwitcher to show prompt
-        self.content.child.children.0.switch_to_left();
         
         // Reset the button (second element in tuple)
         self.content.child.children.1.reset();
@@ -92,6 +77,16 @@ where
 
     pub fn button(&self) -> &CircleButton {
         &self.content.child.children.1
+    }
+    
+    /// Get mutable access to the inner widget
+    pub fn widget_mut(&mut self) -> &mut W {
+        &mut self.content.child.children.0
+    }
+    
+    /// Get access to the inner widget
+    pub fn widget(&self) -> &W {
+        &self.content.child.children.0
     }
 
     pub fn is_completed(&self) -> bool {
@@ -127,9 +122,6 @@ where
                 if new_progress >= Frac::ONE {
                     self.completed = true;
                     
-                    // Switch FadeSwitcher to show success widget
-                    // self.content.child.children.0.switch_to_right();
-
                     // Start fading out the border
                     self.border.start_fade(500, 50, PALETTE.background);
                     self.button_mut().set_state(CircleButtonState::ShowingCheckmark);
@@ -154,10 +146,9 @@ where
     }
 }
 
-impl<P, S> Widget for HoldToConfirm<P, S>
+impl<W> Widget for HoldToConfirm<W>
 where
-    P: Widget<Color = Rgb565>,
-    S: Widget<Color = Rgb565>,
+    W: Widget<Color = Rgb565>,
 {
     type Color = Rgb565;
 

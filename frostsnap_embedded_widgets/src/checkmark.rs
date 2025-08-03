@@ -1,5 +1,5 @@
 use super::{pixel_recorder::PixelRecorder, Widget};
-use crate::compressed_point::CompressedPoint;
+use crate::{compressed_point::CompressedPoint, Frac, Rat};
 use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -13,8 +13,8 @@ pub struct Checkmark<C> {
     width: u32,
     color: C,
     check_pixels: Vec<CompressedPoint>,
-    progress: f32, // 0.0 to 1.0
-    last_drawn_check_progress: f32,
+    progress: Frac,
+    last_drawn_check_progress: Option<Frac>,
     animation_state: AnimationState,
     enabled: bool,
     animation_start_time: Option<crate::Instant>,
@@ -35,8 +35,8 @@ impl<C: PixelColor> Checkmark<C> {
             width,
             color,
             check_pixels: Vec::new(),
-            progress: 0.0,
-            last_drawn_check_progress: -1.0,
+            progress: Frac::ZERO,
+            last_drawn_check_progress: None,
             animation_state: AnimationState::Idle,
             enabled: false,
             animation_start_time: None,
@@ -50,16 +50,16 @@ impl<C: PixelColor> Checkmark<C> {
 
     pub fn start_drawing(&mut self) {
         self.enabled = true;
-        self.progress = 0.0;
-        self.last_drawn_check_progress = -1.0;
+        self.progress = Frac::ZERO;
+        self.last_drawn_check_progress = None;
         self.animation_state = AnimationState::Drawing;
         self.animation_start_time = None; // Will be set on first draw
     }
 
     pub fn reset(&mut self) {
         self.enabled = false;
-        self.progress = 0.0;
-        self.last_drawn_check_progress = -1.0;
+        self.progress = Frac::ZERO;
+        self.last_drawn_check_progress = None;
         self.animation_state = AnimationState::Idle;
     }
 
@@ -76,33 +76,40 @@ impl<C: PixelColor> Checkmark<C> {
 
         // Define checkmark points for perfect right angle
         // Second segment is 2.2x the length of the first segment
-        let width = self.width as f32;
+        let width = self.width;
 
         // Calculate segment lengths to use full width
         // The checkmark total width = first_x + second_x
         // We want: (first_x + second_x) + margins = width
         // With stroke width 8, we need margin of 4 on each side
-        let margin = 5; // Radius of cap circle + 1
-        let available_width = width - (2.0 * margin as f32);
+        let margin = 5i32; // Radius of cap circle + 1
+        let available_width = width - (2 * margin as u32);
         
         // For 45-degree angles, x and y components are length / sqrt(2)
-        let sqrt_2 = 1.414213562373095_f32;
+        // sqrt(2) ≈ 1.414213562373095
+        // To avoid division, we multiply by inverse: 1/sqrt(2) ≈ 0.7071067811865476
+        // As a fraction: 7071/10000
+        let inv_sqrt_2 = Rat::from_ratio(7071, 10000);
         
         // With ratio of 2.2:1 for second:first segment
-        // first_x + second_x = available_width
-        // (first_length / sqrt_2) + (2.2 * first_length / sqrt_2) = available_width
-        // first_length * (1 + 2.2) / sqrt_2 = available_width
-        // first_length = available_width * sqrt_2 / 3.2
-        let first_segment_length = available_width * sqrt_2 / 3.2;
-        let second_segment_length = first_segment_length * 2.2;
+        // Total horizontal span = first_x + second_x = available_width
+        // first_x = first_length * inv_sqrt_2
+        // second_x = second_length * inv_sqrt_2 = 2.2 * first_length * inv_sqrt_2
+        // So: first_length * inv_sqrt_2 * (1 + 2.2) = available_width
+        // first_length * inv_sqrt_2 * 3.2 = available_width
+        // first_length = available_width / (inv_sqrt_2 * 3.2)
+        // Since inv_sqrt_2 ≈ 0.7071, inv_sqrt_2 * 3.2 ≈ 2.263
+        // So first_length ≈ available_width / 2.263 ≈ available_width * 0.442
+        let first_segment_length = (Rat::from_ratio(4420, 10000) * available_width).round();
+        let second_segment_length = (Rat::from_ratio(22, 10) * first_segment_length).round();
 
         // First segment: 45 degrees down-right
-        let first_x_offset = (first_segment_length / sqrt_2) as i32;
-        let first_y_offset = (first_segment_length / sqrt_2) as i32;
+        let first_x_offset = (inv_sqrt_2 * first_segment_length).round() as i32;
+        let first_y_offset = (inv_sqrt_2 * first_segment_length).round() as i32;
 
         // Second segment: 45 degrees up-right (perpendicular to first)
-        let second_x_offset = (second_segment_length / sqrt_2) as i32;
-        let second_y_offset = (second_segment_length / sqrt_2) as i32;
+        let second_x_offset = (inv_sqrt_2 * second_segment_length).round() as i32;
+        let second_y_offset = (inv_sqrt_2 * second_segment_length).round() as i32;
 
         // Position the middle point with margin
         let middle = Point::new(first_x_offset + margin, second_y_offset + margin);
@@ -159,7 +166,8 @@ impl<C: PixelColor> Checkmark<C> {
         } else {
             // Fallback to calculated values
             self.check_width = self.width;
-            self.check_height = (middle.y + margin) as u32;
+            // Approximate height based on width
+            self.check_height = (self.width * 2) / 3;
         }
     }
 
@@ -179,11 +187,11 @@ impl<C: PixelColor> Checkmark<C> {
             AnimationState::Idle => {}
             AnimationState::Drawing => {
                 let start = self.animation_start_time.unwrap();
-                let elapsed = current_time.saturating_duration_since(start);
-                self.progress = (elapsed as f32 / CHECK_DURATION_MS as f32).min(1.0);
+                let elapsed = current_time.saturating_duration_since(start) as u32;
+                self.progress = Frac::from_ratio(elapsed, CHECK_DURATION_MS as u32);
 
-                if self.progress >= 1.0 {
-                    self.progress = 1.0;
+                if self.progress >= Frac::ONE {
+                    self.progress = Frac::ONE;
                     self.animation_state = AnimationState::Complete;
                 }
             }
@@ -198,11 +206,13 @@ impl<C: PixelColor> Checkmark<C> {
         match self.animation_state {
             AnimationState::Idle => {}
             AnimationState::Drawing | AnimationState::Complete => {
-                let check_progress = self.progress.min(1.0); // Clamp to 1.0
-                let current_pixels = (self.check_pixels.len() as f32 * check_progress) as usize;
-                let last_pixels = (self.check_pixels.len() as f32
-                    * self.last_drawn_check_progress.min(1.0))
-                    as usize;
+                let check_progress = self.progress;
+                let current_pixels = (check_progress * self.check_pixels.len() as u32).round() as usize;
+                let last_pixels = if let Some(last_progress) = self.last_drawn_check_progress {
+                    (last_progress * self.check_pixels.len() as u32).round() as usize
+                } else {
+                    0
+                };
 
                 if current_pixels > last_pixels && current_pixels <= self.check_pixels.len() {
                     target.draw_iter(
@@ -212,7 +222,7 @@ impl<C: PixelColor> Checkmark<C> {
                     )?;
                 }
 
-                self.last_drawn_check_progress = check_progress;
+                self.last_drawn_check_progress = Some(check_progress);
             }
         }
 

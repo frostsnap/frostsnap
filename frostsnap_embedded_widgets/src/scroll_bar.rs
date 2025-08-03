@@ -51,14 +51,14 @@ impl ScrollBar {
         }
         
         let visible_ratio = Rat::from_ratio(self.viewport_height, self.content_height);
-        let indicator_height = (visible_ratio * self.track_rect.size.height).max(MIN_INDICATOR_HEIGHT);
+        let indicator_height = (visible_ratio * self.track_rect.size.height).max(Rat::from_int(MIN_INDICATOR_HEIGHT as _));
         
         let available_track_height = self.track_rect.size.height - indicator_height;
-        let indicator_y = self.track_rect.top_left.y + (self.scroll_position * available_track_height) as i32;
+        let indicator_y = self.track_rect.top_left.y + (self.scroll_position * available_track_height).round() as i32;
         
         let indicator_rect = Rectangle::new(
             Point::new(self.track_rect.top_left.x, indicator_y),
-            Size::new(SCROLLBAR_WIDTH, indicator_height)
+            Size::new(SCROLLBAR_WIDTH, indicator_height.round())
         );
         
         if self.last_scroll_position.is_none() {

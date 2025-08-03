@@ -93,17 +93,6 @@ fn test_rat_div() {
 }
 
 #[test]
-fn test_rat_one_minus() {
-    let quarter = Rat::from_ratio(1, 4);
-    let three_quarters = quarter.one_minus();
-    assert_eq!(three_quarters, Rat::from_ratio(3, 4));
-    
-    let one = Rat::ONE;
-    let zero = one.one_minus();
-    assert_eq!(zero, Rat::ZERO);
-}
-
-#[test]
 fn test_rat_display() {
     assert_eq!(Rat::from_ratio(1, 2).to_string(), "0.5");
     assert_eq!(Rat::from_ratio(1, 4).to_string(), "0.25");
@@ -182,4 +171,12 @@ fn test_frac_display() {
 fn test_frac_debug() {
     assert_eq!(format!("{:?}", Frac::from_ratio(1, 2)), "Frac(5000/10000)");
     assert_eq!(format!("{:?}", Frac::ONE), "Frac(10000/10000)");
+}
+
+#[test]
+fn test_small_frac() {
+    let nn = Frac::from_ratio(99, 100);
+    let one = Frac::from_ratio(1, 100);
+
+    assert_eq!((nn * 5u32) + (one * 5u32), 5 * Frac::ONE);
 }

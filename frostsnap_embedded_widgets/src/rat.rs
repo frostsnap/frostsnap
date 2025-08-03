@@ -9,26 +9,18 @@ const DENOMINATOR: u32 = 10_000;
 pub struct Rat(pub(crate) u32);
 
 impl Rat {
+    pub const fn from_int(int: u32) -> Self {
+        Self(int as u32 * DENOMINATOR)
+    }
+
     /// Create from a numerator and denominator
-    pub fn from_ratio(numerator: u32, denominator: u32) -> Self {
+    pub const fn from_ratio(numerator: u32, denominator: u32) -> Self {
         if denominator == 0 {
             // everything over 0 should be large!
             return Self(u32::MAX);
         }
         let value = ((numerator as u64 * DENOMINATOR as u64) / denominator as u64) as u32;
         Self(value)
-    }
-    
-    /// Returns 1.0 - self (only valid if self <= 1.0)
-    pub const fn one_minus(&self) -> Self {
-        Self(DENOMINATOR.saturating_sub(self.0))
-    }
-    
-    /// Clamps the value to a maximum of 1.0
-    pub fn clamp_to_one(&mut self) {
-        if self.0 > DENOMINATOR {
-            self.0 = DENOMINATOR;
-        }
     }
     
     /// Minimum value (0)
@@ -40,21 +32,48 @@ impl Rat {
     
     /// Maximum value
     pub const MAX: Self = Self(u32::MAX);
+    
+    /// Round to the nearest whole number
+    pub fn round(&self) -> u32 {
+        let whole = self.0 / DENOMINATOR;
+        let frac = self.0 % DENOMINATOR;
+        if frac >= DENOMINATOR / 2 {
+            whole + 1
+        } else {
+            whole
+        }
+    }
+    
+    /// Round down to the nearest whole number (floor)
+    pub fn floor(&self) -> u32 {
+        self.0 / DENOMINATOR
+    }
+    
+    /// Round up to the nearest whole number (ceil)
+    pub fn ceil(&self) -> u32 {
+        let whole = self.0 / DENOMINATOR;
+        let frac = self.0 % DENOMINATOR;
+        if frac > 0 {
+            whole + 1
+        } else {
+            whole
+        }
+    }
 }
 
 impl Mul<u32> for Rat {
-    type Output = u32;
+    type Output = Rat;
     
     fn mul(self, rhs: u32) -> Self::Output {
-        ((rhs as u64 * self.0 as u64) / DENOMINATOR as u64) as u32
+        Rat(self.0 * rhs)
     }
 }
 
 impl Mul<Rat> for u32 {
-    type Output = u32;
+    type Output = Rat;
     
     fn mul(self, rhs: Rat) -> Self::Output {
-        ((self as u64 * rhs.0 as u64) / DENOMINATOR as u64) as u32
+        Rat(self * rhs.0)
     }
 }
 
@@ -113,6 +132,22 @@ impl Sub for Rat {
     }
 }
 
+impl Sub<u32> for Rat {
+    type Output = Rat;
+    
+    fn sub(self, rhs: u32) -> Self::Output {
+        self - Rat::from_int(rhs)
+    }
+}
+
+impl Sub<Rat> for u32 {
+    type Output = Rat;
+    
+    fn sub(self, rhs: Rat) -> Self::Output {
+        Rat::from_int(self) - rhs
+    }
+}
+
 impl Mul<embedded_graphics::geometry::Point> for Rat {
     type Output = embedded_graphics::geometry::Point;
     
@@ -164,9 +199,8 @@ pub struct Frac(Rat);
 
 impl Frac {
     /// Create a new Frac from a Rat, clamping to [0, 1]
-    pub fn new(mut rat: Rat) -> Self {
-        rat.clamp_to_one();
-        Self(rat)
+    pub fn new(rat: Rat) -> Self {
+        Self(rat.min(Rat::ONE))
     }
     
     /// Create from a numerator and denominator, clamping to [0, 1]
@@ -180,11 +214,6 @@ impl Frac {
         self.0
     }
     
-    /// Returns 1.0 - self
-    pub fn one_minus(&self) -> Self {
-        Self(self.0.one_minus())
-    }
-
     /// Zero fraction
     pub const ZERO: Self = Self(Rat::ZERO);
     pub const MIN: Self = Self::ZERO;
@@ -195,18 +224,18 @@ impl Frac {
 }
 
 impl Mul<u32> for Frac {
-    type Output = u32;
+    type Output = Rat;
     
     fn mul(self, rhs: u32) -> Self::Output {
-        self.0 * rhs
+        Rat(self.0.0 * rhs)
     }
 }
 
 impl Mul<Frac> for u32 {
-    type Output = u32;
+    type Output = Rat;
     
     fn mul(self, rhs: Frac) -> Self::Output {
-        self * rhs.0
+        Rat(self * rhs.0.0)
     }
 }
 

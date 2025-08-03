@@ -30,12 +30,11 @@ pub struct MaterialDarkPalette565 {
     pub confirm_progress: Rgb565,
 }
 
-/// `const` instance – drop it in any module and `use PALETTE.<role>`.
 pub const PALETTE: MaterialDarkPalette565 = MaterialDarkPalette565 {
-    primary: Rgb565::new(21, 55, 29),
-    on_primary: Rgb565::new(1, 19, 11),
-    primary_container: Rgb565::new(2, 29, 17),
-    on_primary_container: Rgb565::new(26, 59, 29),
+    primary: Rgb565::new(2, 37, 22),
+    on_primary: Rgb565::new(31, 63, 31),
+    primary_container: Rgb565::new(1, 26, 16),
+    on_primary_container: Rgb565::new(28, 60, 28),
 
     secondary: Rgb565::new(22, 43, 29),
     on_secondary: Rgb565::new(4, 3, 14),
@@ -47,7 +46,7 @@ pub const PALETTE: MaterialDarkPalette565 = MaterialDarkPalette565 {
     tertiary_container: Rgb565::new(2, 34, 9),
     on_tertiary_container: Rgb565::new(27, 59, 28),
 
-    background: Rgb565::new(0, 0, 0),
+    background: Rgb565::new(1, 2, 2),
     on_background: Rgb565::new(28, 57, 28),
     surface: Rgb565::new(2, 4, 2),
     on_surface: Rgb565::new(28, 57, 28),
@@ -58,5 +57,7 @@ pub const PALETTE: MaterialDarkPalette565 = MaterialDarkPalette565 {
     error: Rgb565::new(29, 45, 22),
     on_error: Rgb565::new(12, 5, 2),
 
-    confirm_progress: Rgb565::new(2, 46, 16),
+    confirm_progress: Rgb565::new(3, 46, 16),
 };
+
+

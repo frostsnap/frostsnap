@@ -17,12 +17,11 @@ type CodeContainer = Container<PaddedCodeColumn>;
 type ConfirmText = Text<U8g2TextStyle<Rgb565>>;
 type OnAllDevicesRow = Row<(ConfirmText, ConfirmText), Rgb565>;
 type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow), Rgb565>;
-type SuccessColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow), Rgb565>;
 
 /// Widget for checking and confirming key generation
 pub struct KeygenCheck {
     /// The hold-to-confirm widget
-    hold_to_confirm: HoldToConfirm<PromptColumn, SuccessColumn>,
+    hold_to_confirm: HoldToConfirm<PromptColumn>,
 }
 
 impl KeygenCheck {
@@ -72,44 +71,10 @@ impl KeygenCheck {
         let all_devices_text = Text::new("all devices", confirm_style)
             .with_underline(PALETTE.on_background);
         
-        // Clone widgets for success state before moving them
-        let success_confirm_identical = confirm_identical_widget.clone();
-        let success_on_text = on_text.clone();
-        let success_all_devices_text = all_devices_text.clone();
-        
         let on_all_devices_row = Row::new((on_text, all_devices_text));
         
         // Create the prompt column with SpaceEvenly alignment
         let prompt_column = Column::new((confirm_identical_widget, code_container, on_all_devices_row))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
-        
-        // Create success widget - clone the prompt structure with tertiary colors
-        let success_on_all_devices_row = Row::new((success_on_text, success_all_devices_text));
-        
-        // Create success code container with tertiary colors
-        let success_t_of_n_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_tertiary_container);
-        let success_t_of_n_widget = Text::new(t_of_n_text, success_t_of_n_style);
-        
-        let success_code_style = U8g2TextStyle::new(crate::CODE_FONT, PALETTE.on_tertiary_container);
-        let success_code_widget = Text::new(hex_code, success_code_style);
-        
-        let success_code_column = Column::new((success_t_of_n_widget, success_code_widget));
-        let success_padded_code_column = Padding::all(10, success_code_column);
-        
-        // Create border style with tertiary container colors
-        let success_border_style = PrimitiveStyleBuilder::new()
-            .stroke_color(PALETTE.outline)
-            .stroke_width(1)
-            .fill_color(PALETTE.tertiary_container)
-            .stroke_alignment(StrokeAlignment::Inside)
-            .build();
-        
-        let success_code_container = Container::new(success_padded_code_column)
-            .with_border(success_border_style)
-            .with_corner_radius(Size::new(8, 8));
-        
-        // Create success column with same structure as prompt
-        let success_column = Column::new((success_confirm_identical, success_code_container, success_on_all_devices_row))
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
         
         // Create the hold-to-confirm widget
@@ -117,7 +82,6 @@ impl KeygenCheck {
             Size::new(240, 280),
             2000, // 2 second hold duration
             prompt_column,
-            success_column,
         );
         
         Self {
