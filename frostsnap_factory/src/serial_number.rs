@@ -12,7 +12,7 @@ fn read_serial() -> io::Result<u32> {
 }
 
 fn write_serial(value: u32) -> io::Result<()> {
-    let temp_file = format!("{}.tmp", COUNTER_FILE);
+    let temp_file = format!("{COUNTER_FILE}.tmp");
 
     fs::write(&temp_file, value.to_string())?;
 
