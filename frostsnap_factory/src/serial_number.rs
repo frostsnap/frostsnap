@@ -1,29 +1,18 @@
-use std::fs;
-use std::io::{self};
+use crate::db::Database;
+use std::io;
 
-const COUNTER_FILE: &str = "SERIAL_NUMBER_COUNTER";
+/// Get the next serial number from the database
+pub fn get_next() -> io::Result<u32> {
+    let db = Database::new().map_err(|e| io::Error::other(format!("Database error: {e}")))?;
 
-fn read_serial() -> io::Result<u32> {
-    let content = fs::read_to_string(COUNTER_FILE)?;
-    content
-        .trim()
-        .parse::<u32>()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    db.get_next_serial()
+        .map_err(|e| io::Error::other(format!("Failed to get next serial: {e}")))
 }
 
-fn write_serial(value: u32) -> io::Result<()> {
-    let temp_file = format!("{COUNTER_FILE}.tmp");
+/// Get current serial number without incrementing (for status/debugging)
+pub fn get_current() -> io::Result<u32> {
+    let db = Database::new().map_err(|e| io::Error::other(format!("Database error: {e}")))?;
 
-    fs::write(&temp_file, value.to_string())?;
-
-    fs::rename(&temp_file, COUNTER_FILE)?;
-
-    Ok(())
-}
-
-pub fn get_next_serial_number() -> io::Result<u32> {
-    let current = read_serial()?;
-    let next = current + 1;
-    write_serial(next)?;
-    Ok(next)
+    db.get_current_serial()
+        .map_err(|e| io::Error::other(format!("Failed to get current serial: {e}")))
 }
