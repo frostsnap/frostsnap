@@ -6,9 +6,11 @@ use rand_chacha::rand_core::RngCore;
 use rand_core::SeedableRng;
 use reed_solomon;
 
+// See table Table 4.3-1 and Table 4.3-2 from esp32c3 technical reference
 const KEY_BLOCKS_OFFSET: u8 = 4;
 const WR_DIS_KEY_OFFSET: u8 = 23;
 const WR_DIS_KP_OFFSET: u8 = 8;
+
 const READ_COMMAND: u16 = 0x5AA5;
 const WRITE_COMMAND: u16 = 0x5A5A;
 
@@ -30,6 +32,10 @@ impl EfuseController {
         &self,
         configs: &[(u8, KeyPurpose, bool)],
     ) -> Result<(), EfuseError> {
+        // buff[0..4]   -> EFUSE_PGM_DATA0_REG (write disable)
+        // buff[4..8]   -> EFUSE_PGM_DATA1_REG -> EFUSE_RD_REPEAT_DATA0_REG
+        // buff[8..12]  -> EFUSE_PGM_DATA2_REG -> EFUSE_RD_REPEAT_DATA1_REG (KEY_PURPOSE_0,1)
+        // buff[12..16] -> EFUSE_PGM_DATA3_REG -> EFUSE_RD_REPEAT_DATA2_REG (KEY_PURPOSE_2,3,4,5)
         let mut buff = [0x00u8; 32];
         let mut write_disable: u32 = 0;
 
@@ -52,9 +58,8 @@ impl EfuseController {
 
             // Set read protect if needed
             if read_protect {
-                unsafe {
-                    self.set_read_protect(key_num, &mut buff);
-                }
+                let read_disable = 0x01u8 << key_num;
+                buff[4] |= read_disable;
             }
         }
 
@@ -103,13 +108,6 @@ impl EfuseController {
         let bytes: [u8; 32] = Efuse::read_field_le::<[u8; 32]>(field);
 
         Ok(bytes)
-    }
-
-    /// # Safety
-    unsafe fn set_read_protect(&self, key_number: u8, buff: &mut [u8; 32]) {
-        // Disable read key
-        let read_disable = 0x01_u8 << key_number;
-        buff[4] = read_disable;
     }
 
     /// # Safety
@@ -261,16 +259,17 @@ impl<'a> EfuseHmacKeys<'a> {
             ),
             (Self::RSA_EFUSE_KEYID as u8, KeyPurpose::Ds, read_protect),
         ];
+        // Write keys then key purposes
         unsafe {
-            efuse.write_key_purposes(&key_configs)?;
-
-            efuse.set_efuse_key(Self::ENCRYPTION_KEYID as u8, share_encryption_key)?; // Remove unsafe here
+            efuse.set_efuse_key(Self::ENCRYPTION_KEYID as u8, share_encryption_key)?;
             Self::validate_key_write(hmac, Self::ENCRYPTION_KEYID, &share_encryption_key)?;
 
             efuse.set_efuse_key(Self::FIXED_ENTROPY_KEYID as u8, fixed_entropy_key)?;
             Self::validate_key_write(hmac, Self::FIXED_ENTROPY_KEYID, &fixed_entropy_key)?;
 
             efuse.set_efuse_key(Self::RSA_EFUSE_KEYID as u8, ds_hmac_key)?;
+
+            efuse.write_key_purposes(&key_configs)?;
         }
         Ok(EfuseHmacKeys {
             share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
