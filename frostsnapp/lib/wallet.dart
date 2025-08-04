@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/keygen.dart';
@@ -25,6 +25,8 @@ import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:rxdart/rxdart.dart';
+
+import 'maybe_fullscreen_dialog.dart';
 
 class Wallet {
   final SuperWallet superWallet;
@@ -401,13 +403,13 @@ class _TxListState extends State<TxList> {
             appBarMenu,
           ],
         ),
-        if (frostKey != null) BackupWarningBanner(frostKey: frostKey),
         PinnedHeaderSliver(
           child: UpdatingBalance(
             txStream: walletCtx.txStream,
             atTopNotifier: atTopNotifier,
             scrolledUnderElevation: scrolledUnderElevation,
             expandedHeight: 144.0,
+            frostKey: frostKey,
           ),
         ),
         StreamBuilder(
@@ -610,7 +612,6 @@ class WalletDrawer extends StatelessWidget {
             ),
             NavigationDrawerDestination(
               icon: SizedBox.shrink(),
-              //label: SizedBox.shrink(),
               label: SizedBox(width: 224, child: Divider()),
               enabled: false,
             ),
@@ -633,7 +634,7 @@ class WalletDrawer extends StatelessWidget {
               }
             },
             true,
-            Icons.add_circle,
+            Icons.add_circle_rounded,
             'Create Wallet',
           ),
           (
@@ -646,17 +647,20 @@ class WalletDrawer extends StatelessWidget {
               }
             },
             false,
-            Icons.update,
+            Icons.update_rounded,
             'Restore Wallet',
           ),
           (
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
-            ),
+            () async {
+              await MaybeFullscreenDialog.show(
+                context: context,
+                barrierDismissible: true,
+                child: homeCtx.wrap(DeviceListPage()),
+              );
+            },
             false,
             Icons.devices,
-            'Devices',
+            'Connected Devices',
           ),
           (
             () => Navigator.push(
@@ -783,13 +787,15 @@ class WalletBottomBar extends StatelessWidget {
 class UpdatingBalance extends StatefulWidget {
   final ValueNotifier<bool> atTopNotifier;
   final Stream<TxState> txStream;
+  final FrostKey? frostKey;
   final double? scrolledUnderElevation;
   final double expandedHeight;
 
   const UpdatingBalance({
     super.key,
-    required this.txStream,
     required this.atTopNotifier,
+    required this.txStream,
+    this.frostKey,
     this.scrolledUnderElevation,
     this.expandedHeight = 180.0,
   });
@@ -834,6 +840,8 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
 
   @override
   Widget build(BuildContext context) {
+    final frostKey = widget.frostKey;
+
     final theme = Theme.of(context);
     final balanceTextStyle = theme.textTheme.headlineLarge;
     final pendingBalanceTextStyle = theme.textTheme.bodyLarge?.copyWith(
@@ -907,6 +915,11 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
               ),
             ),
           ),
+          if (frostKey != null)
+            Align(
+              alignment: Alignment.topLeft,
+              child: BackupWarningBanner(frostKey: frostKey, shrink: !atTop),
+            ),
         ],
       ),
     );
@@ -1028,8 +1041,13 @@ Uri getBlockExplorer(BitcoinNetwork network) {
 
 class BackupWarningBanner extends StatelessWidget {
   final FrostKey frostKey;
+  final bool shrink;
 
-  const BackupWarningBanner({required this.frostKey, super.key});
+  const BackupWarningBanner({
+    super.key,
+    required this.frostKey,
+    required this.shrink,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1037,34 +1055,49 @@ class BackupWarningBanner extends StatelessWidget {
     final backupStream = walletCtx.backupStream;
     final theme = Theme.of(context);
 
+    final button = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: IconButton(
+        onPressed: () => onTap(context, walletCtx),
+        icon: Icon(Icons.warning_rounded),
+        style: IconButton.styleFrom(foregroundColor: theme.colorScheme.error),
+        tooltip: 'This wallet has unfinished backups!',
+      ),
+    );
+
     final banner = ListTile(
       dense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 16),
       onTap: () => onTap(context, walletCtx),
-      tileColor: theme.colorScheme.errorContainer,
-      iconColor: theme.colorScheme.onErrorContainer,
-      textColor: theme.colorScheme.onErrorContainer,
+      iconColor: theme.colorScheme.error,
+      textColor: theme.colorScheme.error,
       leading: Icon(Icons.warning_rounded),
       trailing: Icon(Icons.chevron_right),
       title: Text('This wallet has unfinished backups!'),
     );
+
+    final widget = shrink ? button : banner;
+
     final streamedBanner = StreamBuilder<BackupRun>(
       stream: backupStream,
       builder: (context, snapshot) {
         final backupRun = snapshot.data;
         final hideBanner = backupRun == null || isBackupDone(backupRun);
-        return hideBanner ? SizedBox.shrink() : banner;
+        return hideBanner ? SizedBox.shrink() : widget;
       },
     );
 
-    return SliverToBoxAdapter(child: streamedBanner);
+    return streamedBanner;
   }
 
   onTap(BuildContext context, WalletContext walletContext) {
+    final backupManager = FrostsnapContext.of(context)!.backupManager;
     showBottomSheetOrDialog(
       context,
       titleText: 'Backup Checklist',
       builder: (context, scrollController) => walletContext.wrap(
         BackupChecklist(
+          backupManager: backupManager,
           scrollController: scrollController,
           accessStructure: frostKey.accessStructures()[0],
           showAppBar: false,

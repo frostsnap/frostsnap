@@ -85,7 +85,6 @@ class AddressInput extends StatelessWidget {
           autofocus: autofocus,
           style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
           decoration: (decoration ?? InputDecoration()).copyWith(
-            //border: defaultTextInputBorder,
             errorText: controller.errorText,
             suffixIcon: controller.controller.text.isEmpty
                 ? null
@@ -716,11 +715,11 @@ class SigningSessionController with ChangeNotifier {
     );
   }
 
-  void maybeRequestDeviceSign() async {
+  void maybeRequestDeviceSign() {
     if (_state != null) {
       for (final neededFrom in _state!.connectedButNeedRequest) {
         if (_connectedDevices.contains(neededFrom)) {
-          await coord.requestDeviceSign(
+          coord.requestDeviceSign(
             deviceId: neededFrom,
             sessionId: _state!.sessionId,
           );
