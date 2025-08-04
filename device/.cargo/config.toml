@@ -1,15 +1,9 @@
 [build]
 target = "riscv32imc-unknown-none-elf"
-rustflags = [
-  "-C", "link-arg=-Tlinkall.x",  # Keep this - it's ESP32-specific
-]
+rustflags = ["-C", "link-arg=-Tlinkall.x"]
 
 [target.riscv32imc-unknown-none-elf]
 runner = "espflash flash --baud 921600 --partition-table partitions.csv"
-
-[env]
-CARGO_BUILD_INCREMENTAL = "false"
-SOURCE_DATE_EPOCH = "1704067200"
 
 [profile.release]
 debug = 0
