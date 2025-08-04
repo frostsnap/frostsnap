@@ -92,15 +92,22 @@ showWalletCreatedDialog(
                 showBottomSheetOrDialog(
                   context,
                   titleText: 'Backup Checklist',
-                  builder: (context, scrollController) =>
-                      SuperWalletContext.of(context)!.tryWrapInWalletContext(
-                        keyId: accessStructureRef.keyId,
-                        child: BackupChecklist(
-                          accessStructure: accessStructure,
-                          scrollController: scrollController,
-                          showAppBar: true,
-                        ),
+                  builder: (context, scrollController) {
+                    final backupManager = FrostsnapContext.of(
+                      context,
+                    )!.backupManager;
+                    return SuperWalletContext.of(
+                      context,
+                    )!.tryWrapInWalletContext(
+                      keyId: accessStructureRef.keyId,
+                      child: BackupChecklist(
+                        backupManager: backupManager,
+                        accessStructure: accessStructure,
+                        scrollController: scrollController,
+                        showAppBar: true,
                       ),
+                    );
+                  },
                 );
               },
               child: const Text('Secure Wallet'),

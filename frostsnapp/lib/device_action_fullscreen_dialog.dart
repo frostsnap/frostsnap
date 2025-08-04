@@ -1,6 +1,4 @@
 import 'dart:async';
-
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/device.dart';
@@ -24,15 +22,11 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     this.onDismissed,
   });
 
-  void addActionNeeded(BuildContext context, DeviceId deviceId) {
+  Future<T?>? addActionNeeded(BuildContext context, DeviceId deviceId) {
     final hadActionsNeeded = _actionNeeded.isNotEmpty;
     _actionNeeded.add(deviceId);
     if (hadActionsNeeded) return null;
-    final completer = Completer<T?>();
-    _fut = completer.future;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      completer.complete(showFullscreenActionDialog(context, controller: this));
-    });
+    return _safeShow(context);
   }
 
   Future<T?> removeActionNeeded(DeviceId deviceId) async {
@@ -44,20 +38,15 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     return null;
   }
 
-  void batchAddActionNeeded(
+  Future<T?>? batchAddActionNeeded(
     BuildContext context,
     Iterable<DeviceId> deviceIds,
   ) {
     final wasActive = _actionNeeded.isNotEmpty;
     bool didAdd = false;
     for (final id in deviceIds) didAdd |= _actionNeeded.add(id);
-    if (wasActive || !didAdd) return;
-
-    final completer = Completer<T?>();
-    _fut = completer.future;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      completer.complete(showFullscreenActionDialog(context, controller: this));
-    });
+    if (wasActive || !didAdd) return null;
+    return _safeShow(context);
   }
 
   Future<T?> batchRemoveActionNeeded(Iterable<DeviceId> deviceIds) async {
@@ -103,9 +92,25 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
 
   /// This is so that we can avoid triggering a rebuild of
   void _safeNotify() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (hasListeners) notifyListeners();
-    });
+    void notify() => hasListeners ? notifyListeners() : null;
+    final instance = WidgetsBinding.instance;
+    instance.hasScheduledFrame
+        ? instance.addPostFrameCallback((_) => notify())
+        : notify();
+  }
+
+  Future<T?>? _safeShow(BuildContext context) {
+    final completer = Completer<T?>();
+    _fut = completer.future;
+    void complete() => completer.complete(
+      showFullscreenActionDialog(context, controller: this),
+    );
+    final instance = WidgetsBinding.instance;
+    instance.hasScheduledFrame
+        ? instance.addPostFrameCallback((_) => complete())
+        : complete();
+
+    return _fut;
   }
 }
 
@@ -183,9 +188,7 @@ Future<T?> showFullscreenActionDialog<T>(
   final listenableBuilder = ListenableBuilder(
     listenable: controller,
     builder: (context, _) {
-      if (!controller.hasActionsNeeded) {
-        Navigator.pop(context);
-      }
+      if (!controller.hasActionsNeeded) Navigator.pop(context);
       final windowSize = WindowSizeContext.of(context);
       final isCompact = windowSize == WindowSizeClass.compact;
 
@@ -195,7 +198,8 @@ Future<T?> showFullscreenActionDialog<T>(
             constraints: BoxConstraints(maxWidth: 580),
             child: isCompact
                 ? content
-                : Card.outlined(
+                : Card(
+                    elevation: 10,
                     color: Colors.black26,
                     margin: EdgeInsets.zero,
                     child: content,
@@ -224,4 +228,66 @@ Future<T?> showFullscreenActionDialog<T>(
   controller.onDismissed?.call();
 
   return res;
+}
+
+class DeviceActionHint extends StatelessWidget {
+  final String label;
+  final IconData icon;
+
+  const DeviceActionHint({
+    this.label = 'Confirm on device',
+    this.icon = Icons.touch_app_rounded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 12,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 20),
+      ],
+    );
+  }
+}
+
+class InfoRow {
+  String label;
+  String body;
+
+  InfoRow(this.label, this.body);
+
+  Widget toWidget(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      spacing: 12,
+      children: [
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            textAlign: TextAlign.end,
+            style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+        Expanded(flex: 3, child: Text(body, style: monospaceTextStyle)),
+      ],
+    );
+  }
+
+  static Widget toColumn(BuildContext context, Iterable<InfoRow> rows) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 12,
+      children: rows.map((r) => r.toWidget(context)).toList(),
+    );
+  }
 }

@@ -268,38 +268,12 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     title: 'Confirm transaction on device',
     actionButtons: [
       Builder(
-        builder: (context) {
-          final theme = Theme.of(context);
-          return Text(
-            'Unplug to cancel',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          );
-        },
+        builder: (context) => OutlinedButton(
+          child: Text('Cancel'),
+          onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
+        ),
       ),
-      Builder(
-        builder: (context) {
-          final theme = Theme.of(context);
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 12,
-            children: [
-              Text(
-                'Confirm on device',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              Icon(
-                Icons.touch_app_rounded,
-                color: theme.colorScheme.onSurfaceVariant,
-                size: 20,
-              ),
-            ],
-          );
-        },
-      ),
+      DeviceActionHint(),
     ],
   );
 
@@ -451,7 +425,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       ListTile(
-        //dense: true,
         title: Text('Signatures Needed'),
         subtitle: Text('Connect a device to sign'),
         trailing: Stack(
@@ -489,7 +462,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           );
         }
         return ListTile(
-          //dense: true,
           enabled: isConnected,
           title: Text(deviceName),
           trailing: trailing,
