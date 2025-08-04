@@ -1427,6 +1427,7 @@ dependencies = [
  "frostsnap_backup",
  "frostsnap_core",
  "micromath 0.2.2",
+ "proptest",
  "rand",
  "u8g2-fonts",
 ]

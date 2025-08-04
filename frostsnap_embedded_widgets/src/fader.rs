@@ -15,13 +15,13 @@ enum FadeState {
     Idle,
     /// Currently fading out to a color
     FadingOut {
-        start_time: crate::Instant,
+        start_time: Option<crate::Instant>,
         duration_ms: u64,
         target_color: Rgb565,
     },
     /// Currently fading in from a color
     FadingIn {
-        start_time: crate::Instant,
+        start_time: Option<crate::Instant>,
         duration_ms: u64,
         from_color: Rgb565,
     },
@@ -62,7 +62,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     pub fn start_fade(&mut self, duration_ms: u64, redraw_interval_ms: u64, target_color: Rgb565) {
         // We'll set the actual start time on first draw to avoid timing issues
         self.state = FadeState::FadingOut {
-            start_time: crate::Instant::from_millis(0), // Placeholder, will be set on draw
+            start_time: None, // Will be set on first draw
             duration_ms,
             target_color,
         };
@@ -73,7 +73,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     /// Start fading in from the specified color
     pub fn start_fade_in(&mut self, duration_ms: u64, redraw_interval_ms: u64, fade_from_color: Rgb565) {
         self.state = FadeState::FadingIn {
-            start_time: crate::Instant::from_millis(0), // Placeholder, will be set on draw
+            start_time: None, // Will be set on first draw
             duration_ms,
             from_color: fade_from_color,
         };
@@ -208,10 +208,11 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
                     _ => unreachable!(),
                 };
                 
-                // Update start time if this is the first draw
-                if start_time.as_millis() == 0 {
-                    *start_time = current_time;
+                // Set start time on first draw
+                if start_time.is_none() {
+                    *start_time = Some(current_time);
                 }
+                let actual_start_time = start_time.unwrap();
 
                 // Check if we should redraw based on interval
                 let should_redraw = if let Some(last_redraw) = self.last_redraw_time {
@@ -222,7 +223,7 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
 
                 if should_redraw {
                     // Calculate fade progress using Frac (automatically clamped to [0, 1])
-                    let elapsed = current_time.saturating_duration_since(*start_time) as u32;
+                    let elapsed = current_time.saturating_duration_since(actual_start_time) as u32;
                     let mut fade_progress = Frac::from_ratio(elapsed, duration_ms as u32);
                     
                     // For fade-in, reverse the progress (1.0 -> 0.0)
