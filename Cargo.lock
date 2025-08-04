@@ -1530,6 +1530,7 @@ dependencies = [
  "num-traits",
  "rand",
  "rsa",
+ "rusqlite",
  "sha2",
  "tracing",
  "tracing-subscriber",
