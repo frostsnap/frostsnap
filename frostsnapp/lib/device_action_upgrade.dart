@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
-import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_create.dart';
 
@@ -47,7 +46,8 @@ class DeviceActionUpgradeController with ChangeNotifier {
   late final StreamSubscription<DeviceListUpdate> _sub;
   late final FullscreenActionDialogController<void> _dialogController;
   int _needsUpgradeCount = 0;
-  final _progressController = StreamController<FirmwareUpgradeState>();
+  final _progressController =
+      StreamController<FirmwareUpgradeState>.broadcast();
 
   DeviceActionUpgradeController() {
     _sub = GlobalStreams.deviceListSubject.listen((update) {
@@ -60,30 +60,21 @@ class DeviceActionUpgradeController with ChangeNotifier {
       }
     });
 
-    final progressStream = _progressController.stream.toBehaviorSubject();
-
     _dialogController = FullscreenActionDialogController(
       title: 'Upgrade Firmware',
-      body: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 12,
-        children: [
-          Card(
-            margin: EdgeInsets.zero,
-            child: ListTile(
-              title: Text('Firmware Digest'),
-              subtitle: Text(
-                coord.upgradeFirmwareDigest() ?? '',
-                style: monospaceTextStyle,
-              ),
-            ),
+      body: (context) => Card(
+        margin: EdgeInsets.zero,
+        child: ListTile(
+          title: Text('Firmware Digest'),
+          subtitle: Text(
+            coord.upgradeFirmwareDigest() ?? '',
+            style: monospaceTextStyle,
           ),
-        ],
+        ),
       ),
       actionButtons: [
         StreamBuilder(
-          stream: progressStream,
+          stream: _progressController.stream,
           initialData: FirmwareUpgradeState.empty(),
           builder: (context, snapshot) => switch (snapshot.requireData.stage) {
             FirmwareUpgradeStage.Acks => OutlinedButton(
@@ -94,7 +85,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
           },
         ),
         StreamBuilder(
-          stream: progressStream,
+          stream: _progressController.stream,
           initialData: FirmwareUpgradeState.empty(),
           builder: (context, snapshot) {
             final state = snapshot.requireData;

@@ -1,39 +1,98 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_action_backup.dart';
+import 'package:frostsnap/device_action_backup_check.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/show_backup.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 
-class BackupChecklist extends StatelessWidget {
-  final ScrollController? scrollController;
+class BackupChecklist extends StatefulWidget {
+  final BackupManager backupManager;
   final AccessStructure accessStructure;
+  final ScrollController? scrollController;
   final bool showAppBar;
+
   const BackupChecklist({
     super.key,
-    this.scrollController,
+    required this.backupManager,
     required this.accessStructure,
+    this.scrollController,
     this.showAppBar = false,
   });
 
-  Future<void> _handleBackupDevice(
-    BuildContext context,
-    DeviceId deviceId,
-  ) async {
-    final manager = FrostsnapContext.of(context)!.backupManager;
-    final keyId = accessStructure.accessStructureRef().keyId;
-    final completed = await backupDeviceDialog(
-      context,
-      deviceId: deviceId,
-      accessStructure: accessStructure,
+  @override
+  State<BackupChecklist> createState() => _BackupChecklistState();
+}
+
+class _BackupChecklistState extends State<BackupChecklist> {
+  late final DeviceActionBackupController _backupDialogController;
+  late final DeviceActionBackupCheckController _checkDialogController;
+
+  @override
+  void initState() {
+    super.initState();
+    _backupDialogController = DeviceActionBackupController(
+      accessStructure: widget.accessStructure,
+      backupManager: widget.backupManager,
     );
-    if (completed) {
-      await manager.markBackupComplete(deviceId: deviceId, keyId: keyId);
-    }
+    _checkDialogController = DeviceActionBackupCheckController(
+      accessStructure: widget.accessStructure,
+    );
+  }
+
+  @override
+  void dispose() {
+    _backupDialogController.dispose();
+    _checkDialogController.dispose();
+    super.dispose();
+  }
+
+  Future<bool> showBackupInvalidDialog(BuildContext context) async {
+    final tryAgain = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text('Backup check failed'),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 480),
+          child: Text(
+            'This can happen if the device gets disconnected, or your backup is invalid/inputted incorrectly.',
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Exit'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Try again'),
+          ),
+        ],
+      ),
+    );
+    return tryAgain ?? false;
+  }
+
+  Future<void> showBackupOkayDialog(BuildContext context) async {
+    return await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text('Backup is valid'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Done'),
+          ),
+        ],
+      ),
+    );
   }
 
   showThatWasQuickDialog(BuildContext context, DeviceId deviceId) async {
@@ -51,19 +110,20 @@ class BackupChecklist extends StatelessWidget {
           title: Text('That was quick!'),
           content: const Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
             children: [
               Text('A backup of a device was performed recently.'),
-              SizedBox(height: 12),
               Text('Make sure your devices are secured in separate locations!'),
             ],
           ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
               child: Text('Back'),
             ),
-            FilledButton(
+            TextButton(
               onPressed: () => Navigator.of(context).pop(true),
               child: Text('Show Backup'),
             ),
@@ -71,10 +131,10 @@ class BackupChecklist extends StatelessWidget {
         ),
       );
       if (context.mounted && result == true) {
-        await _handleBackupDevice(context, deviceId);
+        await _backupDialogController.show(context, deviceId);
       }
     } else {
-      await _handleBackupDevice(context, deviceId);
+      await _backupDialogController.show(context, deviceId);
     }
   }
 
@@ -226,11 +286,20 @@ class BackupChecklist extends StatelessWidget {
                             foregroundColor: theme.colorScheme.onSurfaceVariant,
                           ),
                           onPressed: () async {
-                            await verifyBackup(
-                              context,
-                              deviceId,
-                              accessStructure.accessStructureRef(),
-                            );
+                            while (true) {
+                              final isBackupValid = await _checkDialogController
+                                  .show(context, deviceId);
+                              if (isBackupValid == null) /* cancelled */ return;
+                              if (isBackupValid) {
+                                await showBackupOkayDialog(context);
+                                return;
+                              }
+
+                              final tryAgain = await showBackupInvalidDialog(
+                                context,
+                              );
+                              if (!tryAgain) return;
+                            }
                           },
                           child: const Text('Check'),
                         ),
@@ -287,10 +356,10 @@ class BackupChecklist extends StatelessWidget {
     );
 
     return CustomScrollView(
-      controller: scrollController,
+      controller: widget.scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
-      slivers: [if (showAppBar) appBar, infoColumn, devicesColumn],
+      slivers: [if (widget.showAppBar) appBar, infoColumn, devicesColumn],
     );
   }
 }

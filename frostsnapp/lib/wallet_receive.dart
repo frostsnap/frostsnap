@@ -483,23 +483,16 @@ class _ReceiverPageState extends State<ReceivePage> {
                       final displayingDevices = targetDevices.intersection(
                         connectedDevices,
                       );
-                      for (var deviceId in displayingDevices) {
-                        fullscreenDialogController.addActionNeeded(
-                          context,
-                          deviceId,
-                        );
-                      }
+
+                      fullscreenDialogController.batchAddActionNeeded(
+                        context,
+                        displayingDevices,
+                      );
 
                       // collect the list first because we're going to mutate it
-                      fullscreenDialogController.actionsNeeded
-                          .toList()
-                          .whereNot(
-                            (deviceId) => displayingDevices.contains(deviceId),
-                          )
-                          .forEach(
-                            (deviceId) async => await fullscreenDialogController
-                                .removeActionNeeded(deviceId),
-                          );
+                      fullscreenDialogController.clearAllExcept(
+                        displayingDevices,
+                      );
 
                       return Column(
                         mainAxisSize: MainAxisSize.min,
