@@ -7,7 +7,7 @@ use crate::{
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{collections::VecDeque, string::{String, ToString}, vec::Vec};
 use core::cell::RefCell;
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
@@ -134,6 +134,7 @@ where
         let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
         let mut ui_event_queue = VecDeque::default();
         let mut conch_is_downstream = false;
+        let mut pending_device_name: Option<String> = None;
 
         ui.clear_busy_task();
         loop {
@@ -148,11 +149,7 @@ where
                 upstream_connection.set_state(UpstreamConnectionState::PowerOn, &mut ui);
                 next_write_magic_bytes_downstream = Instant::from_ticks(0);
                 upgrade = None;
-                if let Some(name) = &name {
-                    ui.set_workflow(ui::Workflow::NamingDevice {
-                        new_name: name.clone(),
-                    });
-                }
+                pending_device_name = None;
                 outbox.clear();
                 ui.cancel();
             }
@@ -392,11 +389,7 @@ where
                             ui.cancel();
                             // This either resets to the previous name, or clears it (if prev name does
                             // not exist).
-                            if let Some(name) = &name {
-                                ui.set_workflow(ui::Workflow::NamingDevice {
-                                    new_name: name.clone(),
-                                });
-                            }
+                            pending_device_name = None;
                             upgrade = None;
                         }
                         CoordinatorSendBody::AnnounceAck => {
@@ -407,6 +400,7 @@ where
                         }
                         CoordinatorSendBody::Naming(naming) => match naming {
                             frostsnap_comms::NameCommand::Preview(preview_name) => {
+                                pending_device_name = Some(preview_name.to_string());
                                 ui.set_workflow(ui::Workflow::NamingDevice {
                                     new_name: preview_name.to_string(),
                                 });
@@ -483,10 +477,9 @@ where
                         DeviceSend::ToUser(boxed) => {
                             match *boxed {
                                 DeviceToUserMessage::FinalizeKeyGen => {
-                                    let new_name = name
-                                        .as_ref()
-                                        .expect("must have set name before starting keygen")
-                                        .to_string();
+                                    let new_name = pending_device_name
+                                        .clone()
+                                        .expect("must have set pending_device_name before starting keygen");
                                     // Save the device's name now that it's finished
                                     name = Some(new_name.clone());
                                     mutation_log
@@ -562,25 +555,13 @@ where
                 }
 
                 for ui_event in ui_event_queue.drain(..) {
-                    let mut switch_workflow = Some(ui::Workflow::WaitingFor(
-                        ui::WaitingFor::CoordinatorInstruction {
-                            completed_task: Some(ui_event.clone()),
-                        },
-                    )); // this is just the default
-
                     match ui_event {
                         UiEvent::KeyGenConfirm { phase } => {
-                            let waiting_for = ui::WaitingFor::WaitingForKeyGenFinalize {
-                                key_name: phase.key_name().to_string(),
-                                t_of_n: phase.t_of_n(),
-                                session_hash: phase.session_hash(),
-                            };
                             outbox.extend(
                                 signer
                                     .keygen_ack(*phase, &mut hmac_keys.share_encryption, &mut rng)
                                     .expect("state changed while confirming keygen"),
                             );
-                            switch_workflow = Some(ui::Workflow::WaitingFor(waiting_for));
                         }
                         UiEvent::SigningConfirm { phase } => {
                             ui.set_busy_task(ui::BusyTask::Signing);
@@ -595,6 +576,7 @@ where
                                 .push(Mutation::Name(new_name.to_string()))
                                 .expect("flash write fail");
                             name = Some(new_name.to_string());
+                            pending_device_name = Some(new_name.to_string());
                             ui.set_workflow(ui::Workflow::NamingDevice {
                                 new_name: new_name.to_string(),
                             });
@@ -616,8 +598,6 @@ where
                             if let Some(upgrade) = upgrade.as_mut() {
                                 upgrade.upgrade_confirm();
                             }
-                            // special case because upgrade will handle things from now on
-                            switch_workflow = None;
                         }
                         UiEvent::EnteredShareBackup {
                             phase,
@@ -632,10 +612,6 @@ where
                             partitions.nvs.erase_all().expect("failed to erase nvs");
                             reset(&mut upstream_serial);
                         }
-                    }
-
-                    if let Some(switch_workflow) = switch_workflow {
-                        ui.set_workflow(switch_workflow);
                     }
                 }
             }

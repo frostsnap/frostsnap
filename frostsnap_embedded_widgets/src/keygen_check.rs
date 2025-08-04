@@ -1,6 +1,7 @@
 use super::{Widget, Text, HoldToConfirm, Container, Column, Padding, Row};
 use crate::{Instant, palette::PALETTE, column::MainAxisAlignment};
-use alloc::format;
+use alloc::{format, boxed::Box};
+use frostsnap_core::device::KeyGenPhase2;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -22,11 +23,22 @@ type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow), Rgb565
 pub struct KeygenCheck {
     /// The hold-to-confirm widget
     hold_to_confirm: HoldToConfirm<PromptColumn>,
+    /// The phase data (taken when confirmed)
+    phase: Option<Box<KeyGenPhase2>>,
 }
 
 impl KeygenCheck {
     /// Create a new keygen check widget
-    pub fn new(security_check_code: [u8; 4], t_of_n: (u16, u16)) -> Self {
+    pub fn new(phase: Box<KeyGenPhase2>) -> Self {
+        // Extract the security check code from the session hash
+        let session_hash = phase.session_hash();
+        let security_check_code: [u8; 4] = [
+            session_hash.0[0],
+            session_hash.0[1],
+            session_hash.0[2],
+            session_hash.0[3],
+        ];
+        let t_of_n = phase.t_of_n();
         // Format the t of n string
         let t_of_n_text = format!("{} of {}", t_of_n.0, t_of_n.1);
         
@@ -86,12 +98,23 @@ impl KeygenCheck {
         
         Self {
             hold_to_confirm,
+            phase: Some(phase),
         }
     }
     
     /// Check if the user has confirmed
     pub fn is_confirmed(&self) -> bool {
         self.hold_to_confirm.is_completed()
+    }
+    
+    /// Take the phase if confirmed
+    /// This ensures we only return the phase once
+    pub fn take_phase_if_confirmed(&mut self) -> Option<Box<KeyGenPhase2>> {
+        if self.hold_to_confirm.is_completed() {
+            self.phase.take()
+        } else {
+            None
+        }
     }
     
     /// Reset the confirmation state

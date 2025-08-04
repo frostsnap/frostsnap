@@ -1,11 +1,10 @@
-use super::{Widget, Column, Container, MutText}; // , Cursor};
+use super::{Widget, Column, MutText}; // , Cursor};
 use crate::{Instant, palette::PALETTE, bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap};
 use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::{BinaryColor, Rgb565},
-    primitives::{PrimitiveStyle, StrokeAlignment},
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -101,9 +100,6 @@ impl Widget for DeviceName {
             return Ok(());
         }
         
-        // Clear the screen
-        target.clear(PALETTE.background)?;
-        
         // Draw the text widget
         self.text_widget.draw(target, current_time)?;
         
@@ -137,20 +133,20 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 /// A screen showing the Frostsnap logo and the DeviceName widget
 pub struct DeviceNameScreen {
     column: Column<(
-        Container<ColorMap<BitmapWidget, Rgb565>>,
-        Container<DeviceName>,
+        ColorMap<BitmapWidget, Rgb565>,
+        DeviceName,
     ), Rgb565>,
 }
 
 impl DeviceNameScreen {
     /// Get a reference to the inner DeviceName widget
     fn device_name_widget(&self) -> &DeviceName {
-        &self.column.children.1.child
+        &self.column.children.1
     }
     
     /// Get a mutable reference to the inner DeviceName widget
     fn device_name_widget_mut(&mut self) -> &mut DeviceName {
-        &mut self.column.children.1.child
+        &mut self.column.children.1
     }
     
     pub fn new(device_name: String) -> Self {
@@ -165,16 +161,10 @@ impl DeviceNameScreen {
         // Create DeviceName widget
         let device_name_widget = DeviceName::new(device_name);
         
-        // Create containers with borders for visualization
-        let mut border_style = PrimitiveStyle::with_stroke(PALETTE.error, 1);
-        border_style.stroke_alignment = StrokeAlignment::Outside;
-        
         // Create the column with main axis alignment for spacing
         let column = Column::new((
-            Container::new(logo_colored)
-                .with_border(border_style),
-            Container::new(device_name_widget)
-                .with_border(border_style),
+            logo_colored,
+            device_name_widget,
         ))
         .with_main_axis_alignment(crate::column::MainAxisAlignment::SpaceEvenly);
         

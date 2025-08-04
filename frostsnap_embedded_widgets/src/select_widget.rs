@@ -172,12 +172,9 @@ macro_rules! select_widget {
                 $run_macro!(centered);
             }
             "keygen_check" => {
-                use $crate::keygen_check::KeygenCheck;
-                
-                // Create keygen check widget with the specified bytes and t_of_n
-                let widget = KeygenCheck::new([0x40, 0x86, 0xc8, 0xbd], (2, 3));
-                
-                $run_macro!(widget);
+                // KeygenCheck requires a real KeyGenPhase2 which involves complex crypto setup
+                // For now, just show a message that this demo is not available in the simulator
+                panic!("keygen_check demo requires a real KeyGenPhase2 from the keygen protocol and is not available in the simulator");
             }
             _ => {
                 panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check", $demo);

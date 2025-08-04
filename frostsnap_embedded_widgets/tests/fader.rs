@@ -4,7 +4,6 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
     primitives::{Primitive, PrimitiveStyle, Rectangle},
     Drawable,
-    prelude::{RgbColor, IntoStorage},
 };
 use frostsnap_embedded_widgets::{Fader, Frac, Instant, Widget};
 use proptest::prelude::*;

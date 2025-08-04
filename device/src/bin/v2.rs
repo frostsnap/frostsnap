@@ -210,7 +210,6 @@ fn main() -> ! {
         timer: &timer1,
         busy_task: Default::default(),
         recovery_mode: false,
-        current_workflow: Workflow::None,
     };
 
     let run = esp32_run::Run {
@@ -253,7 +252,6 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     timer: &'t Timer<T, Blocking>,
     busy_task: Option<BusyTask>,
     recovery_mode: bool,
-    current_workflow: Workflow,
 }
 
 impl<T, DT, I2C, PINT, RST, CommE, PinE> UserInteraction for FrostyUi<'_, T, DT, I2C, PINT, RST>
@@ -284,17 +282,15 @@ where
 
 
     fn take_workflow(&mut self) -> Workflow {
-        core::mem::replace(&mut self.current_workflow, Workflow::None)
+        // Since we're not storing workflow anymore, return None
+        Workflow::None
     }
 
     fn set_workflow(&mut self, workflow: Workflow) {
-        // Store workflow immediately to avoid move issues
-        let old_workflow = core::mem::replace(&mut self.current_workflow, workflow);
-        
         // Check if we can update the current widget instead of switching
         let current_widget = self.page_switcher.current_mut();
         
-        match (current_widget, &self.current_workflow) {
+        match (current_widget, &workflow) {
             // If we're already showing a Welcome screen and need a Welcome screen, just leave it
             (WidgetTree::Welcome(_), Workflow::None | Workflow::WaitingFor(_) | Workflow::Debug(_) | 
              Workflow::DisplayBackup { .. } | Workflow::EnteringBackup(_) | 
@@ -304,8 +300,8 @@ where
             }
             
             // If we're already showing DeviceNaming and get another NamingDevice workflow, just update the text
-            (WidgetTree::DeviceNaming(device_name_screen), Workflow::NamingDevice { new_name }) => {
-                device_name_screen.set_name(new_name);
+            (WidgetTree::DeviceNaming(device_name_screen), Workflow::NamingDevice { ref new_name }) => {
+                device_name_screen.set_name(new_name.clone());
                 return;
             }
             
@@ -315,8 +311,7 @@ where
             _ => {} // Different widget types, need to switch
         };
         
-        // Convert workflow to widget tree - take the workflow back out to consume it
-        let workflow = core::mem::replace(&mut self.current_workflow, old_workflow);
+        // Convert workflow to widget tree
         let new_page = match workflow {
             Workflow::None => WidgetTree::Welcome(Welcome::new()),
             
@@ -328,18 +323,8 @@ where
             Workflow::UserPrompt(prompt) => {
                 match prompt {
                     Prompt::KeyGen { phase } => {
-                        // Extract the security check code from the session hash
-                        let session_hash = phase.session_hash();
-                        let security_check_code: [u8; 4] = [
-                            session_hash.0[0],
-                            session_hash.0[1],
-                            session_hash.0[2],
-                            session_hash.0[3],
-                        ];
-                        let t_of_n = phase.t_of_n();
-                        
-                        // Create the KeygenCheck widget
-                        WidgetTree::KeygenCheck(KeygenCheck::new(security_check_code, t_of_n))
+                        // Create the KeygenCheck widget with the phase
+                        WidgetTree::KeygenCheck(KeygenCheck::new(phase))
                     }
                     _ => {
                         // TODO: Handle other prompt types
@@ -426,16 +411,11 @@ where
         let _ = self.page_switcher.draw(&mut self.display, current_time);
         
         // Check widget states and generate UI events
-        match self.page_switcher.current() {
+        match self.page_switcher.current_mut() {
             WidgetTree::KeygenCheck(keygen_check) => {
-                if keygen_check.is_confirmed() {
-                    // User has confirmed the keygen security check
-                    // Extract the phase from the current workflow
-                    if let Workflow::UserPrompt(Prompt::KeyGen { phase }) = &self.current_workflow {
-                        return Some(UiEvent::KeyGenConfirm {
-                            phase: phase.clone(),
-                        });
-                    }
+                // Try to take the phase if confirmed (returns None if already taken)
+                if let Some(phase) = keygen_check.take_phase_if_confirmed() {
+                    return Some(UiEvent::KeyGenConfirm { phase });
                 }
             }
             _ => {}
