@@ -113,18 +113,22 @@ impl EfuseController {
     /// # Safety
     unsafe fn write_block(&self, data: &[u8; 32], block_number: u8) -> Result<(), EfuseError> {
         let efuse = &self.efuse;
-
         let mut to_burn: [u32; 11] = [0; 11];
 
-        // Generate and write Reed-Solomon ECC
-        // Efuse controller ignores RS code for blocks 0 and 1
-        let rs_enc = reed_solomon::Encoder::new(12);
-        let ecc = rs_enc.encode(data);
-
-        // Flip efuse words to little endian
-        for (i, word) in ecc.chunks(4).enumerate() {
-            let n = u32::from_le_bytes(word.try_into().unwrap());
-            to_burn[i] = n;
+        if block_number == 0 {
+            // Block 0: Use raw data - hardware uses 4x backup scheme
+            for (i, word) in data.chunks(4).enumerate() {
+                let n = u32::from_le_bytes(word.try_into().unwrap());
+                to_burn[i] = n;
+            }
+        } else {
+            // Blocks 2-10: Apply Reed-Solomon encoding
+            let rs_enc = reed_solomon::Encoder::new(12);
+            let ecc = rs_enc.encode(data);
+            for (i, word) in ecc.chunks(4).enumerate() {
+                let n = u32::from_le_bytes(word.try_into().unwrap());
+                to_burn[i] = n;
+            }
         }
 
         // Write to efuse controller register
