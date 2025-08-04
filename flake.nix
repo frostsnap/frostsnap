@@ -55,7 +55,7 @@
             # Simple path remapping - now cargo paths will be identical
             export CARGO_BUILD_RUSTFLAGS="--remap-path-prefix=/tmp/deterministic-cargo=CARGO_HOME --remap-path-prefix=/nix/store=NIXSTORE --remap-path-prefix=/tmp=TMP --remap-path-prefix=/home=HOME -Ccodegen-units=1 -Cdebuginfo=0 -Cstrip=symbols -Cllvm-args=-disable-symbolication -Clink-arg=--sort-section=name -Clink-arg=--build-id=none -Clink-arg=--hash-style=gnu"
             
-            echo "🔧 Deterministic build environment active"
+            echo "🔧 Rust build environment:"
             echo "CARGO_HOME: $CARGO_HOME"
             echo "RUSTFLAGS: $CARGO_BUILD_RUSTFLAGS"
           '';

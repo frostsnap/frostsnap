@@ -24,30 +24,15 @@ jobs:
         with:
           key: "build-device-firmware-deterministic-v2"
           path: "/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release"
-      - name: Run environment diagnostics
-        run: |
-          chmod +x ./diagnostic.sh
-          ./diagnostic.sh
-      - name: Build firmware deterministically
+      - name: Build and verify firmware
         run: |
           chmod +x ./build-deterministic.sh
           ./build-deterministic.sh
-      - name: Copy firmware back to expected location
-        run: |
-          mkdir -p device/target/riscv32imc-unknown-none-elf/release/
-          cp /tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin device/target/riscv32imc-unknown-none-elf/release/
-      - name: Verify firmware build
-        run: |
-          echo "=== Build Verification ==="
-          ls -la device/target/riscv32imc-unknown-none-elf/release/firmware.bin
-          echo "Firmware size: $(stat -c%s device/target/riscv32imc-unknown-none-elf/release/firmware.bin) bytes"
-          echo "Firmware hash: $(sha256sum device/target/riscv32imc-unknown-none-elf/release/firmware.bin)"
-          echo "Embedded paths check:"
-          strings device/target/riscv32imc-unknown-none-elf/release/firmware.bin | grep -E '(/home|/nix|NIXSTORE)' | head -3 || echo "No problematic paths found"
+          echo "Firmware hash: $(sha256sum /tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin)"
       - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-${{ github.sha }}.bin
-          path: device/target/riscv32imc-unknown-none-elf/release/firmware.bin
+          path: /tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin
 
   test-ordinary-libs:
     name: Test ordinary libraries
