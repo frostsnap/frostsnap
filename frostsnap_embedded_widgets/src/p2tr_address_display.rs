@@ -1,11 +1,13 @@
 use crate::{
-    column::Column, row::Row, sized_box::SizedBox, text::Text, CrossAxisAlignment, DynWidget, Instant, MainAxisAlignment, Widget
+    column::Column, row::Row, sized_box::SizedBox, text::Text, container::Container, 
+    CrossAxisAlignment, DynWidget, Instant, MainAxisAlignment, Widget
 };
 use alloc::string::ToString;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Gray4,
+    primitives::PrimitiveStyle,
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -15,7 +17,7 @@ use u8g2_fonts::U8g2TextStyle;
 /// - Total: 62 characters displayed as 16 chunks
 pub struct P2trAddressDisplay {
     column: Column<(
-        Row<(Text<U8g2TextStyle<Gray4>>,), Gray4>,
+        Row<(Container<Text<U8g2TextStyle<Gray4>>>,), Gray4>,
         SizedBox<Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
@@ -41,9 +43,12 @@ impl P2trAddressDisplay {
         // Helper to create a spacer
         let make_spacer = || SizedBox::<Gray4>::new(Size::new(spacer_width, 1));
         
-        // First chunk on its own row (grayed out)
+        // First chunk on its own row (grayed out) with border
+        let type_text = Text::new(chunks.next().unwrap(), grayed_style);
+        let bordered_type = Container::new(type_text)
+            .with_border(PrimitiveStyle::with_stroke(Gray4::new(6), 1));
         let type_indicator = Row::new((
-            Text::new(chunks.next().unwrap(), grayed_style),
+            bordered_type,
         )).with_main_axis_alignment(MainAxisAlignment::Center);
         
         // Vertical spacer between type indicator and address content
