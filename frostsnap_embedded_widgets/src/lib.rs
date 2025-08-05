@@ -56,6 +56,7 @@ pub mod select_widget;
 pub mod bitcoin_amount_display;
 pub mod sign_prompt;
 pub mod p2tr_address_display;
+pub mod any_of;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};

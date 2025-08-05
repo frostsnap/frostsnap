@@ -6,9 +6,10 @@ use crate::{
     bitcoin_amount_display::BitcoinAmountDisplay,
     sized_box::SizedBox,
     color_map::ColorMap,
+    any_of::AnyOf,
 };
 use embedded_graphics::draw_target::DrawTargetExt;
-use alloc::{format, string::{String, ToString}, vec::Vec, boxed::Box};
+use alloc::{format, string::{String, ToString}, vec::Vec};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -17,24 +18,7 @@ use embedded_graphics::{
 use u8g2_fonts::U8g2TextStyle;
 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
 
-/// Macro to try downcasting to each widget type and call a method
-macro_rules! try_downcast {
-    ($widget:expr, $method:ident($($args:expr),*)) => {{
-        use core::any::Any;
-        let any_widget = $widget.as_mut() as &mut dyn Any;
-        if let Some(page) = any_widget.downcast_mut::<AmountPage>() {
-            page.$method($($args),*)
-        } else if let Some(page) = any_widget.downcast_mut::<AddressPage>() {
-            page.$method($($args),*)
-        } else if let Some(page) = any_widget.downcast_mut::<FeePage>() {
-            page.$method($($args),*)
-        } else if let Some(page) = any_widget.downcast_mut::<WarningPage>() {
-            page.$method($($args),*)
-        } else {
-            unreachable!("Widget type not recognized")
-        }
-    }};
-}
+
 
 /// A widget that displays transaction details for signing
 pub struct SignPromptDisplay {
@@ -42,8 +26,8 @@ pub struct SignPromptDisplay {
     current_page: usize,
     size: Size,
     
-    // Current widget stored dynamically
-    current_widget: Box<dyn crate::AnyDynWidget>,
+    // Current widget stored as AnyOf  
+    current_widget: SignPromptPage,
 }
 
 /// Page widget for displaying amount to send
@@ -111,11 +95,14 @@ impl Widget for AmountPage {
     
 }
 
+/// Type alias for possible address display widgets
+type AddressDisplayWidget = AnyOf<(crate::p2tr_address_display::P2trAddressDisplay, Text<U8g2TextStyle<Gray4>>)>;
+
 /// Page widget for displaying recipient address
 struct AddressPage {
     title: Text<U8g2TextStyle<Gray4>>,
     spacer: SizedBox<Gray4>,
-    address_display: Box<dyn crate::AnyDynWidget>,
+    address_display: AddressDisplayWidget,
 }
 
 impl AddressPage {
@@ -128,9 +115,9 @@ impl AddressPage {
         let spacer = SizedBox::<Gray4>::new(Size::new(1, 20));
         
         // Determine address type and create appropriate display widget
-        let address_display: Box<dyn crate::AnyDynWidget> = if address.starts_with("bc1p") {
+        let address_display = if address.starts_with("bc1p") {
             // P2TR address (Taproot)
-            Box::new(crate::p2tr_address_display::P2trAddressDisplay::new(address))
+            AddressDisplayWidget::new(crate::p2tr_address_display::P2trAddressDisplay::new(address))
         } else {
             // For now, fall back to simple text display for other address types
             // In the future, we can add P2wpkhAddressDisplay, P2pkhAddressDisplay, etc.
@@ -151,7 +138,7 @@ impl AddressPage {
                 U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(14))
             );
             
-            Box::new(address_text)
+            AddressDisplayWidget::new(address_text)
         };
         
         Self {
@@ -189,8 +176,6 @@ impl Widget for AddressPage {
     type Color = Gray4;
     
     fn draw<D: DrawTarget<Color = Self::Color>>(&mut self, target: &mut D, current_time: Instant) -> Result<(), D::Error> {
-        use core::any::Any;
-        
         // Create a column-like layout manually
         let bounds = target.bounding_box();
         
@@ -212,13 +197,8 @@ impl Widget for AddressPage {
             Size::new(bounds.size.width, bounds.size.height.saturating_sub(title_height + spacer_height))
         );
         
-        // Downcast and draw the appropriate address display widget
-        let any_widget = self.address_display.as_mut() as &mut dyn Any;
-        if let Some(p2tr_display) = any_widget.downcast_mut::<crate::p2tr_address_display::P2trAddressDisplay>() {
-            p2tr_display.draw(&mut target.cropped(&content_area), current_time)?;
-        } else if let Some(text_display) = any_widget.downcast_mut::<Text<U8g2TextStyle<Gray4>>>() {
-            text_display.draw(&mut target.cropped(&content_area), current_time)?;
-        }
+        // The AnyOf widget handles the dynamic dispatch internally
+        self.address_display.draw(&mut target.cropped(&content_area), current_time)?;
         
         Ok(())
     }
@@ -363,6 +343,9 @@ impl Widget for WarningPage {
     }
 }
 
+/// Type alias for the different pages that can be displayed
+type SignPromptPage = AnyOf<(AmountPage, AddressPage, FeePage, WarningPage)>;
+
 impl SignPromptDisplay {
     pub fn new(size: Size, prompt: PromptSignBitcoinTx) -> Self {
         // Create first widget
@@ -377,7 +360,7 @@ impl SignPromptDisplay {
     }
     
     /// Determine what type of page this is and create the appropriate widget
-    fn create_widget_for_page(page_num: usize, prompt: &PromptSignBitcoinTx, size: Size) -> Box<dyn crate::AnyDynWidget> {
+    fn create_widget_for_page(page_num: usize, prompt: &PromptSignBitcoinTx, size: Size) -> SignPromptPage {
         let num_recipients = prompt.foreign_recipients.len();
         let recipient_pages = num_recipients * 2;
         
@@ -389,22 +372,22 @@ impl SignPromptDisplay {
             if is_amount {
                 // Amount page
                 let (_, amount) = &prompt.foreign_recipients[recipient_idx];
-                Box::new(AmountPage::new(size, recipient_idx, amount.to_sat()))
+                SignPromptPage::new(AmountPage::new(size, recipient_idx, amount.to_sat()))
             } else {
                 // Address page
                 let (address, _) = &prompt.foreign_recipients[recipient_idx];
-                Box::new(AddressPage::new(recipient_idx, &address.to_string(), size))
+                SignPromptPage::new(AddressPage::new(recipient_idx, &address.to_string(), size))
             }
         } else if page_num == recipient_pages {
             // Fee page
-            Box::new(FeePage::new(size, prompt.fee.to_sat()))
+            SignPromptPage::new(FeePage::new(size, prompt.fee.to_sat()))
         } else {
             // Warning page
             let total_sent: u64 = prompt.foreign_recipients
                 .iter()
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
-            Box::new(WarningPage::new(size, prompt.fee.to_sat(), total_sent))
+            SignPromptPage::new(WarningPage::new(size, prompt.fee.to_sat(), total_sent))
         }
     }
     
@@ -457,11 +440,8 @@ impl Widget for SignPromptDisplay {
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
-        // Clear background
-        target.clear(Gray4::new(0))?;
-        
-        // Draw the current widget - still need to downcast for this
-        try_downcast!(self.current_widget, draw(target, current_time))
+        // Draw the current widget - AnyOf handles the dispatch
+        self.current_widget.draw(target, current_time)
     }
 }
 
