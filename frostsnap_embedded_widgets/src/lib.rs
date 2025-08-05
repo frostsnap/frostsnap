@@ -5,7 +5,7 @@ extern crate std;
 
 #[allow(unused)]
 #[macro_use]
-extern crate alloc;
+pub extern crate alloc;
 
 use embedded_graphics::prelude::*;
 
@@ -54,11 +54,14 @@ pub mod circle_button;
 pub mod fade_switcher;
 pub mod widget_tuple;
 pub mod select_widget;
+pub mod bitcoin_amount_display;
+pub mod sign_prompt;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
 pub use page_by_page::PageByPage;
 pub use page_demo::PageDemo;
+pub use sign_prompt::SignPrompt;
 
 // Re-export all widget items
 pub use animation::*;

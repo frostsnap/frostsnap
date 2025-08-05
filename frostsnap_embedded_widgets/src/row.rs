@@ -245,7 +245,7 @@ macro_rules! impl_row_for_tuple {
     };
 }
 
-// Generate implementations for tuples up to 9 elements
+// Generate implementations for tuples up to 12 elements
 impl_row_for_tuple!(1, T1);
 impl_row_for_tuple!(2, T1, T2);
 impl_row_for_tuple!(3, T1, T2, T3);
@@ -255,3 +255,6 @@ impl_row_for_tuple!(6, T1, T2, T3, T4, T5, T6);
 impl_row_for_tuple!(7, T1, T2, T3, T4, T5, T6, T7);
 impl_row_for_tuple!(8, T1, T2, T3, T4, T5, T6, T7, T8);
 impl_row_for_tuple!(9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+impl_row_for_tuple!(10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+impl_row_for_tuple!(11, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+impl_row_for_tuple!(12, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);

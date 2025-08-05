@@ -3,7 +3,7 @@ use crate::{bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap, palette::
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::{BinaryColor, Rgb565},
+    pixelcolor::{BinaryColor, Rgb565}, text::Alignment,
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -25,14 +25,14 @@ impl Welcome {
         let url_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.primary);
         
         // Create text widgets with colored styles
-        let text1 = Text::new("Get started with\nFrostsnap at", text_style.clone());
+        let text1 = Text::new("Get started with\nFrostsnap at", text_style.clone()).with_alignment(Alignment::Center);
         let url_text = Text::new("frostsnap.com/start", url_style).with_underline(PALETTE.primary);
         
         // Load logo
         let image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
         let bitmap_widget = BitmapWidget::new(image.into());
         let logo = bitmap_widget.color_map(|color| match color {
-            BinaryColor::On => PALETTE.primary,
+            BinaryColor::On => PALETTE.logo,
             BinaryColor::Off => PALETTE.background,
         });
         

@@ -9,11 +9,12 @@ use embedded_graphics::{
 use u8g2_fonts::U8g2TextStyle;
 
 // Constants for MutText buffer
-const MAX_NAME_CHARS: usize = 20;
-const NAME_WIDTH: usize = 200;
-const NAME_HEIGHT: usize = 30;
+const MAX_NAME_CHARS: usize = 16;  // Capped at 16 characters
+const NAME_WIDTH: usize = 220;  // Reasonable width for 16 chars with larger font
+const NAME_HEIGHT: usize = 40;  // Increased for larger font
 // Calculate buffer size: BinaryColor uses 1 bit per pixel, so W*H/8 bytes
-const NAME_BUFFER_SIZE: usize = (NAME_WIDTH * NAME_HEIGHT + 7) / 8;
+// Add some extra bytes for alignment
+const NAME_BUFFER_SIZE: usize = ((NAME_WIDTH * NAME_HEIGHT + 7) / 8) + 100;
 
 type MutTextWidget = MutText<U8g2TextStyle<BinaryColor>, MAX_NAME_CHARS, NAME_WIDTH, NAME_HEIGHT, NAME_BUFFER_SIZE>;
 
@@ -33,11 +34,11 @@ impl DeviceName {
     /// Create a new device name widget
     pub fn new<S: Into<String>>(name: S) -> Self {
         let name_string = name.into();
-        let char_style = U8g2TextStyle::new(crate::FONT_MED, BinaryColor::On);
+        let char_style = U8g2TextStyle::new(crate::FONT_LARGE, BinaryColor::On);
         
         let mut_text = MutText::new(name_string, char_style);
         let text_widget = mut_text.color_map(|c| match c {
-            BinaryColor::On => PALETTE.on_background,
+            BinaryColor::On => PALETTE.primary,
             BinaryColor::Off => PALETTE.background,
         });
         
@@ -154,7 +155,7 @@ impl DeviceNameScreen {
         let image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
         let bitmap_widget = BitmapWidget::new(image.into());
         let logo_colored = bitmap_widget.color_map(|c| match c {
-            BinaryColor::On => PALETTE.primary,
+            BinaryColor::On => PALETTE.logo,
             BinaryColor::Off => PALETTE.background,
         });
         

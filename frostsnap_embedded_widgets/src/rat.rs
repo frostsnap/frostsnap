@@ -286,3 +286,225 @@ impl fmt::Display for Frac {
     }
 }
 
+/// The base denominator for FatRat rational number representation (1 trillion)
+const FAT_DENOMINATOR: u64 = 1_000_000_000_000;
+
+/// A rational number with higher precision, represented as (numerator * FAT_DENOMINATOR) / denominator
+/// Uses u64 for larger range than Rat
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FatRat(pub(crate) u64);
+
+impl FatRat {
+    pub const fn from_int(int: u64) -> Self {
+        Self(int * FAT_DENOMINATOR)
+    }
+
+    /// Create from a numerator and denominator
+    pub const fn from_ratio(numerator: u64, denominator: u64) -> Self {
+        if denominator == 0 {
+            // everything over 0 should be large!
+            return Self(u64::MAX);
+        }
+        // Use u128 to avoid overflow
+        let value = ((numerator as u128 * FAT_DENOMINATOR as u128) / denominator as u128) as u64;
+        Self(value)
+    }
+    
+    /// Minimum value (0)
+    pub const ZERO: Self = Self(0);
+    pub const MIN: Self = Self::ZERO;
+    
+    /// Value representing 1.0
+    pub const ONE: Self = Self(FAT_DENOMINATOR);
+    
+    /// Maximum value
+    pub const MAX: Self = Self(u64::MAX);
+    
+    /// Round to the nearest whole number
+    pub fn round(&self) -> u64 {
+        let whole = self.0 / FAT_DENOMINATOR;
+        let frac = self.0 % FAT_DENOMINATOR;
+        if frac >= FAT_DENOMINATOR / 2 {
+            whole + 1
+        } else {
+            whole
+        }
+    }
+    
+    /// Round down to the nearest whole number (floor)
+    pub fn floor(&self) -> u64 {
+        self.0 / FAT_DENOMINATOR
+    }
+    
+    /// Round up to the nearest whole number (ceil)
+    pub fn ceil(&self) -> u64 {
+        let whole = self.0 / FAT_DENOMINATOR;
+        let frac = self.0 % FAT_DENOMINATOR;
+        if frac > 0 {
+            whole + 1
+        } else {
+            whole
+        }
+    }
+    
+    /// Get the whole part (same as floor)
+    pub const fn whole_part(&self) -> u64 {
+        self.0 / FAT_DENOMINATOR
+    }
+    
+    /// Get the fractional part (internal use)
+    const fn fractional_part(&self) -> u64 {
+        self.0 % FAT_DENOMINATOR
+    }
+    
+    /// Returns an iterator over all decimal digits after the decimal point (up to 12 digits)
+    pub fn decimal_digits(self) -> impl Iterator<Item = u8> {
+        let mut remaining = self.fractional_part();
+        // Start with 10^11 to get first decimal digit
+        let mut window = 10_u64.pow(11);
+        
+        core::iter::from_fn(move || {
+            if window == 0 {
+                return None;
+            }
+            
+            let digit = (remaining / window) as u8;
+            remaining -= digit as u64 * window;
+            window /= 10;
+            
+            Some(digit)
+        })
+    }
+    
+    /// Format as a decimal string with up to 12 decimal places
+    /// Returns a tuple of (whole_part, decimal_part) as strings
+    pub fn format_parts(&self, decimal_places: usize) -> (alloc::string::String, alloc::string::String) {
+        assert!(decimal_places <= 12, "Cannot have more than 12 decimal places");
+        
+        let whole = self.whole_part();
+        let frac = self.fractional_part();
+        
+        // Scale down the fractional part if we want fewer decimal places
+        let divisor = 10_u64.pow((12 - decimal_places) as u32);
+        let scaled_frac = frac / divisor;
+        
+        // Format fractional part with leading zeros
+        let decimal = alloc::format!("{:0width$}", scaled_frac, width = decimal_places);
+        
+        (alloc::format!("{}", whole), decimal)
+    }
+    
+    /// Format as "X.YYYYYY" string with specified decimal places
+    pub fn format_decimal(&self, decimal_places: usize) -> alloc::string::String {
+        let (whole, decimal) = self.format_parts(decimal_places);
+        if decimal.is_empty() {
+            whole
+        } else {
+            alloc::format!("{}.{}", whole, decimal)
+        }
+    }
+}
+
+impl Mul<u64> for FatRat {
+    type Output = FatRat;
+    
+    fn mul(self, rhs: u64) -> Self::Output {
+        FatRat(self.0.saturating_mul(rhs))
+    }
+}
+
+impl Mul<FatRat> for u64 {
+    type Output = FatRat;
+    
+    fn mul(self, rhs: FatRat) -> Self::Output {
+        FatRat(self.saturating_mul(rhs.0))
+    }
+}
+
+impl Mul<i64> for FatRat {
+    type Output = i64;
+    
+    fn mul(self, rhs: i64) -> Self::Output {
+        ((rhs as i128 * self.0 as i128) / FAT_DENOMINATOR as i128) as i64
+    }
+}
+
+impl Mul<FatRat> for i64 {
+    type Output = i64;
+    
+    fn mul(self, rhs: FatRat) -> Self::Output {
+        ((self as i128 * rhs.0 as i128) / FAT_DENOMINATOR as i128) as i64
+    }
+}
+
+impl Mul<FatRat> for FatRat {
+    type Output = FatRat;
+    
+    fn mul(self, rhs: FatRat) -> Self::Output {
+        let value = ((self.0 as u128 * rhs.0 as u128) / FAT_DENOMINATOR as u128) as u64;
+        FatRat(value)
+    }
+}
+
+impl Div<u64> for FatRat {
+    type Output = FatRat;
+    
+    fn div(self, rhs: u64) -> Self::Output {
+        if rhs == 0 {
+            FatRat(u64::MAX)
+        } else {
+            FatRat(self.0 / rhs)
+        }
+    }
+}
+
+impl Div<FatRat> for FatRat {
+    type Output = FatRat;
+    
+    fn div(self, rhs: FatRat) -> Self::Output {
+        if rhs.0 == 0 {
+            FatRat(u64::MAX)
+        } else {
+            let value = ((self.0 as u128 * FAT_DENOMINATOR as u128) / rhs.0 as u128) as u64;
+            FatRat(value)
+        }
+    }
+}
+
+impl Add<FatRat> for FatRat {
+    type Output = FatRat;
+    
+    fn add(self, rhs: FatRat) -> Self::Output {
+        FatRat(self.0.saturating_add(rhs.0))
+    }
+}
+
+impl Sub<FatRat> for FatRat {
+    type Output = FatRat;
+    
+    fn sub(self, rhs: FatRat) -> Self::Output {
+        FatRat(self.0.saturating_sub(rhs.0))
+    }
+}
+
+impl fmt::Debug for FatRat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FatRat({}/{})", self.0, FAT_DENOMINATOR)
+    }
+}
+
+impl fmt::Display for FatRat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let whole = self.0 / FAT_DENOMINATOR;
+        let frac = self.0 % FAT_DENOMINATOR;
+        if frac == 0 {
+            write!(f, "{}", whole)
+        } else {
+            // Show up to 6 decimal places by default
+            let divisor = 10_u64.pow(6);
+            let scaled_frac = frac / divisor;
+            write!(f, "{}.{:06}", whole, scaled_frac)
+        }
+    }
+}
+

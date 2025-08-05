@@ -28,6 +28,15 @@ pub struct MaterialDarkPalette565 {
     pub on_error: Rgb565,
 
     pub confirm_progress: Rgb565,
+    pub logo: Rgb565,
+    
+    /// Secondary text color - darker gray for labels and supporting text
+    /// Following Material Design ~60% opacity guideline (medium emphasis)
+    pub text_secondary: Rgb565,
+    
+    /// Disabled text color - very dark gray for de-emphasized content
+    /// Following Material Design ~38% opacity guideline (disabled state)
+    pub text_disabled: Rgb565,
 }
 
 pub const PALETTE: MaterialDarkPalette565 = MaterialDarkPalette565 {
@@ -58,6 +67,16 @@ pub const PALETTE: MaterialDarkPalette565 = MaterialDarkPalette565 {
     on_error: Rgb565::new(12, 5, 2),
 
     confirm_progress: Rgb565::new(3, 46, 16),
+    logo: Rgb565::new(0, 55, 30),
+    
+    // Medium gray for secondary text (~60% of white - Material Design medium emphasis)
+    // RGB565: 5 bits red, 6 bits green, 5 bits blue
+    // ~60% would be: R=19/31, G=38/63, B=19/31
+    text_secondary: Rgb565::new(19, 38, 19),
+    
+    // Dark gray for disabled text (~38% of white - Material Design disabled state)
+    // ~38% would be: R=12/31, G=24/63, B=12/31
+    text_disabled: Rgb565::new(12, 24, 12),
 };
 
 

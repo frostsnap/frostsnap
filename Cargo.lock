@@ -1420,6 +1420,7 @@ name = "frostsnap_embedded_widgets"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bitcoin",
  "embedded-graphics",
  "embedded-graphics-simulator",
  "embedded-iconoir",

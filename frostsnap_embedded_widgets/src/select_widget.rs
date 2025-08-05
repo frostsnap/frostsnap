@@ -176,8 +176,61 @@ macro_rules! select_widget {
                 // For now, just show a message that this demo is not available in the simulator
                 panic!("keygen_check demo requires a real KeyGenPhase2 from the keygen protocol and is not available in the simulator");
             }
+            "sign_prompt" => {
+                use $crate::sign_prompt::SignPrompt;
+                use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
+                use core::str::FromStr;
+                
+                // Create dummy transaction data with different address types
+                // Segwit v0 address (starts with bc1q)
+                let segwit_address = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+                    .unwrap()
+                    .assume_checked();
+                
+                // Taproot address (starts with bc1p)
+                let taproot_address = bitcoin::Address::from_str("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297")
+                    .unwrap()
+                    .assume_checked();
+                
+                // Legacy P2PKH address (starts with 1)
+                let legacy_address = bitcoin::Address::from_str("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+                    .unwrap()
+                    .assume_checked();
+                
+                let prompt = PromptSignBitcoinTx {
+                    foreign_recipients: $crate::alloc::vec![
+                        (taproot_address, bitcoin::Amount::from_sat(21_00_500_001)), // 21.005 BTC
+                        (segwit_address, bitcoin::Amount::from_sat(150_000)), // 0.0015 BTC
+                        (legacy_address, bitcoin::Amount::from_sat(50_000)), // 0.0005 BTC
+                    ],
+                    fee: bitcoin::Amount::from_sat(125_000), // 0.00125 BTC (high fee for demo)
+                };
+                
+                // Create the sign prompt widget
+                let widget = SignPrompt::new($screen_size, prompt);
+                
+                $run_macro!(widget);
+            }
+            "bitcoin_amount" => {
+                use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, column::{Column, MainAxisAlignment}, palette::PALETTE};
+                
+                // Create a simple BitcoinAmountDisplay with 21 BTC
+                let amount_display = BitcoinAmountDisplay::new(21_00_000_000); // 21 BTC
+                
+                // Map binary colors to Gray4 for display
+                let amount_mapped = amount_display.color_map(|c| match c {
+                    embedded_graphics::pixelcolor::BinaryColor::Off => PALETTE.text_disabled,
+                    embedded_graphics::pixelcolor::BinaryColor::On => PALETTE.primary,
+                });
+                
+                // Put it in a Column with MainAxisAlignment::Center like in sign_prompt
+                let widget = Column::new((amount_mapped,))
+                    .with_main_axis_alignment(MainAxisAlignment::Center);
+                
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount", $demo);
             }
         }
     };

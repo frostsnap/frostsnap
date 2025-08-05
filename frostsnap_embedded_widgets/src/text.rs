@@ -58,13 +58,6 @@ impl<S: CharacterStyle> Text<S> {
         self
     }
     
-    pub fn with_baseline(mut self, baseline: Baseline) -> Self {
-        self.text_style = TextStyleBuilder::from(&self.text_style)
-            .baseline(baseline)
-            .build();
-        self
-    }
-    
     pub fn with_underline(mut self, color: <S as CharacterStyle>::Color) -> Self {
         self.underline_color = Some(color);
         self
@@ -84,7 +77,10 @@ where
         _current_time: Instant,
     ) -> Result<(), D::Error> {
         if !self.drawn {
-            let text_obj = self.create_eg_text();
+            let mut text_obj = self.create_eg_text();
+            if text_obj.bounding_box().top_left.x < 0 {
+                text_obj.position.x +=  text_obj.bounding_box().top_left.x.abs();
+            }
             text_obj.draw(target)?;
             
             // Draw underline if enabled

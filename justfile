@@ -75,3 +75,6 @@ lint: lint-ordinary lint-device lint-app
 
 install-cargo-bins:
     just frostsnapp/install-cargo-bins
+
+simulate +ARGS="":
+    (cd frostsnap_embedded_widgets && cargo run --release --bin simulate -- {{ARGS}})
