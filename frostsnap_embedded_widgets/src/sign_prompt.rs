@@ -35,7 +35,7 @@ struct AmountPage {
 }
 
 impl AmountPage {
-    fn new(_size: Size, index: usize, amount_sats: u64) -> Self {
+    fn new(index: usize, amount_sats: u64) -> Self {
         let title = Text::new(
             format!("Send Amount #{}", index + 1),
             U8g2TextStyle::new(crate::FONT_MED, Gray4::new(8)) // Medium gray for secondary text
@@ -189,7 +189,7 @@ struct FeePage {
 }
 
 impl FeePage {
-    fn new(_size: Size, fee_sats: u64) -> Self {
+    fn new(fee_sats: u64) -> Self {
         let title = Text::new(
             "Network Fee".to_string(),
             U8g2TextStyle::new(crate::FONT_MED, Gray4::new(7))
@@ -254,7 +254,7 @@ struct WarningPage {
 }
 
 impl WarningPage {
-    fn new(_size: Size, fee_sats: u64, _total_sent: u64) -> Self {
+    fn new(fee_sats: u64, _total_sent: u64) -> Self {
         let spacer = SizedBox::<Gray4>::new(Size::new(1, 40));
         
         // TODO: Replace with warning icon bitmap
@@ -324,7 +324,7 @@ type SignPromptPage = AnyOf<(AmountPage, AddressPage, FeePage, WarningPage)>;
 impl SignPromptDisplay {
     pub fn new(size: Size, prompt: PromptSignBitcoinTx) -> Self {
         // Create first widget
-        let current_widget = Self::create_widget_for_page(0, &prompt, size);
+        let current_widget = Self::create_widget_for_page(0, &prompt);
 
         Self {
             prompt,
@@ -335,7 +335,7 @@ impl SignPromptDisplay {
     }
     
     /// Determine what type of page this is and create the appropriate widget
-    fn create_widget_for_page(page_num: usize, prompt: &PromptSignBitcoinTx, size: Size) -> SignPromptPage {
+    fn create_widget_for_page(page_num: usize, prompt: &PromptSignBitcoinTx) -> SignPromptPage {
         let num_recipients = prompt.foreign_recipients.len();
         let recipient_pages = num_recipients * 2;
         
@@ -347,7 +347,7 @@ impl SignPromptDisplay {
             if is_amount {
                 // Amount page
                 let (_, amount) = &prompt.foreign_recipients[recipient_idx];
-                SignPromptPage::new(AmountPage::new(size, recipient_idx, amount.to_sat()))
+                SignPromptPage::new(AmountPage::new(recipient_idx, amount.to_sat()))
             } else {
                 // Address page
                 let (address, _) = &prompt.foreign_recipients[recipient_idx];
@@ -355,14 +355,14 @@ impl SignPromptDisplay {
             }
         } else if page_num == recipient_pages {
             // Fee page
-            SignPromptPage::new(FeePage::new(size, prompt.fee.to_sat()))
+            SignPromptPage::new(FeePage::new(prompt.fee.to_sat()))
         } else {
             // Warning page
             let total_sent: u64 = prompt.foreign_recipients
                 .iter()
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
-            SignPromptPage::new(WarningPage::new(size, prompt.fee.to_sat(), total_sent))
+            SignPromptPage::new(WarningPage::new(prompt.fee.to_sat(), total_sent))
         }
     }
     
@@ -447,8 +447,7 @@ impl PageByPage for SignPromptDisplay {
             // Create new widget for the new page
             self.current_widget = Self::create_widget_for_page(
                 self.current_page,
-                &self.prompt,
-                self.size
+                &self.prompt
             );
         }
     }
@@ -459,8 +458,7 @@ impl PageByPage for SignPromptDisplay {
             // Create new widget for the new page
             self.current_widget = Self::create_widget_for_page(
                 self.current_page,
-                &self.prompt,
-                self.size
+                &self.prompt
             );
         }
     }
