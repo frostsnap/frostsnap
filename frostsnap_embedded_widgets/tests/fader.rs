@@ -5,7 +5,7 @@ use embedded_graphics::{
     primitives::{Primitive, PrimitiveStyle, Rectangle},
     Drawable,
 };
-use frostsnap_embedded_widgets::{Fader, Frac, Instant, Widget};
+use frostsnap_embedded_widgets::{Fader, Frac, Instant, Widget, DynWidget};
 use proptest::prelude::*;
 
 /// A simple widget that draws a single pixel of a specific color
@@ -18,6 +18,20 @@ impl SinglePixelWidget {
     fn new(color: Rgb565) -> Self {
         Self { color }
     }
+}
+
+impl DynWidget for SinglePixelWidget {
+    fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<frostsnap_embedded_widgets::KeyTouch> {
+        None
+    }
+
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(1, 1))
+    }
+
+    fn force_full_redraw(&mut self) {}
 }
 
 impl Widget for SinglePixelWidget {
@@ -33,18 +47,6 @@ impl Widget for SinglePixelWidget {
             .into_styled(PrimitiveStyle::with_fill(self.color))
             .draw(target)
     }
-
-    fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<frostsnap_embedded_widgets::KeyTouch> {
-        None
-    }
-
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
-
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(1, 1))
-    }
-
-    fn force_full_redraw(&mut self) {}
 }
 
 /// A custom DrawTarget that captures the color of the pixel at (0, 0)
