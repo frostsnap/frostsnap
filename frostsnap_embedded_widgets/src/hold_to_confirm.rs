@@ -19,7 +19,7 @@ pub struct HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
 {
-    content: Padding<Column<(W, CircleButton), Rgb565>>,
+    content: Padding<Column<(W, CircleButton)>>,
     border: Fader<HoldToConfirmBorder<crate::SizedBox<Rgb565>, Rgb565>>,
     size: Size,
     last_update: Option<crate::Instant>,

@@ -15,7 +15,7 @@ pub struct Welcome {
         ColorMap<BitmapWidget, Rgb565>,
         Text<U8g2TextStyle<Rgb565>>,
         Text<U8g2TextStyle<Rgb565>>,
-    ), Rgb565>,
+    )>,
 }
 
 impl Welcome {

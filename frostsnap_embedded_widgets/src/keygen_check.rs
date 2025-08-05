@@ -12,12 +12,12 @@ use u8g2_fonts::U8g2TextStyle;
 
 type CodeText = Text<U8g2TextStyle<Rgb565>>;
 type TofNText = Text<U8g2TextStyle<Rgb565>>;
-type CodeColumn = Column<(TofNText, CodeText), Rgb565>;
+type CodeColumn = Column<(TofNText, CodeText)>;
 type PaddedCodeColumn = Padding<CodeColumn>;
 type CodeContainer = Container<PaddedCodeColumn>;
 type ConfirmText = Text<U8g2TextStyle<Rgb565>>;
-type OnAllDevicesRow = Row<(ConfirmText, ConfirmText), Rgb565>;
-type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow), Rgb565>;
+type OnAllDevicesRow = Row<(ConfirmText, ConfirmText)>;
+type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow)>;
 
 /// Widget for checking and confirming key generation
 pub struct KeygenCheck {

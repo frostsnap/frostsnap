@@ -138,7 +138,7 @@ pub struct DeviceNameScreen {
     column: Column<(
         ColorMap<BitmapWidget, Rgb565>,
         DeviceName,
-    ), Rgb565>,
+    )>,
 }
 
 impl DeviceNameScreen {

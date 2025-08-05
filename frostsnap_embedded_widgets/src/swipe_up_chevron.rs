@@ -6,7 +6,7 @@ use embedded_graphics::{
 use u8g2_fonts::U8g2TextStyle;
 
 pub struct SwipeUpChevron<C: PixelColor> {
-    column: Column<(BobbingCarat<C>, Text<U8g2TextStyle<C>>), C>,
+    column: Column<(BobbingCarat<C>, Text<U8g2TextStyle<C>>)>,
 }
 
 impl<C: PixelColor + RgbColor> SwipeUpChevron<C> 

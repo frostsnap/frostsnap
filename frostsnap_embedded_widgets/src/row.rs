@@ -3,7 +3,7 @@ use alloc::vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::{PixelColor, Rgb565},
+    pixelcolor::PixelColor,
     prelude::*,
     primitives::Rectangle,
 };
@@ -19,22 +19,20 @@ macro_rules! count_args {
 pub use crate::column::{MainAxisAlignment, CrossAxisAlignment};
 
 /// A row widget that arranges its children horizontally
-pub struct Row<T, C = Rgb565> {
+pub struct Row<T> {
     pub children: T,
     pub cross_axis_alignment: crate::column::CrossAxisAlignment,
     pub main_axis_alignment: crate::column::MainAxisAlignment,
     child_rects: alloc::vec::Vec<Rectangle>,
-    _phantom: core::marker::PhantomData<C>,
 }
 
-impl<T: WidgetTuple, C> Row<T, C> {
+impl<T: WidgetTuple> Row<T> {
     pub fn new(children: T) -> Self {
         let mut row = Self {
             children,
             cross_axis_alignment: crate::column::CrossAxisAlignment::Center,
             main_axis_alignment: crate::column::MainAxisAlignment::Start,
             child_rects: vec![Rectangle::zero(); T::TUPLE_LEN],
-            _phantom: core::marker::PhantomData,
         };
         
         // Extract and cache sizes
@@ -63,7 +61,7 @@ impl<T: WidgetTuple, C> Row<T, C> {
 // Macro to implement Widget for Row with tuples of different sizes
 macro_rules! impl_row_for_tuple {
     ($len:literal, $($t:ident),+) => {
-        impl<$($t: Widget<Color = C>),+, C: PixelColor> crate::DynWidget for Row<($($t,)+), C> {
+        impl<$($t: Widget<Color = C>),+, C: PixelColor> crate::DynWidget for Row<($($t,)+)> {
             #[allow(unused_assignments)]
             fn handle_touch(
                 &mut self,
@@ -143,7 +141,7 @@ macro_rules! impl_row_for_tuple {
             }
         }
         
-        impl<$($t: Widget<Color = C>),+, C: PixelColor> Widget for Row<($($t,)+), C> {
+        impl<$($t: Widget<Color = C>),+, C: PixelColor> Widget for Row<($($t,)+)> {
             type Color = C;
             
             #[allow(unused_assignments)]

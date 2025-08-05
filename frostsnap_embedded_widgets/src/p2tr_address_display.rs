@@ -1,6 +1,6 @@
 use crate::{
     column::Column, row::Row, sized_box::SizedBox, text::Text, 
-    CrossAxisAlignment, DynWidget, Instant, MainAxisAlignment, Widget
+    CrossAxisAlignment, DynWidget, Instant, Widget
 };
 use alloc::string::ToString;
 use embedded_graphics::{
@@ -16,13 +16,13 @@ use u8g2_fonts::U8g2TextStyle;
 /// - Total: 62 characters displayed as 16 chunks
 pub struct P2trAddressDisplay {
     column: Column<(
-        Row<(Text<U8g2TextStyle<Gray4>>,), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-    ), Gray4>,
+        Row<(Text<U8g2TextStyle<Gray4>>,)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
+    )>,
 }
 
 impl P2trAddressDisplay {

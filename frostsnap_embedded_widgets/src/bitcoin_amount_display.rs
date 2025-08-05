@@ -23,7 +23,7 @@ pub struct BitcoinAmountDisplay {
         Text<U8g2TextStyle<BinaryColor>>,  // Sixth decimal digit
         Text<U8g2TextStyle<BinaryColor>>,  // Seventh decimal digit
         Text<U8g2TextStyle<BinaryColor>>,  // Eighth decimal digit
-    ), BinaryColor>,
+    )>,
     /// Amount in satoshis (for reference)
     satoshis: u64,
 }
@@ -49,7 +49,7 @@ impl BitcoinAmountDisplay {
         // Half-width spacers (approximately half the width of a digit)
         let spacer1 = SizedBox::<BinaryColor>::new(Size::new(4, 1));
         let spacer2 = SizedBox::<BinaryColor>::new(Size::new(4, 1));
-
+        
         // Create row with all elements
         let row = Row::new((
             whole_text,
@@ -84,11 +84,11 @@ impl crate::DynWidget for BitcoinAmountDisplay {
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
         self.row.handle_vertical_drag(prev_y, new_y, is_release)
     }
-
+    
     fn size_hint(&self) -> Option<Size> {
         self.row.size_hint()
     }
-
+    
     fn force_full_redraw(&mut self) {
         self.row.force_full_redraw()
     }

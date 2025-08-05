@@ -31,7 +31,7 @@ pub struct SignPromptDisplay {
 
 /// Page widget for displaying amount to send
 struct AmountPage {
-    column: Column<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, ColorMap<BitcoinAmountDisplay, Gray4>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
+    column: Column<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, ColorMap<BitcoinAmountDisplay, Gray4>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
 }
 
 impl AmountPage {
@@ -103,7 +103,7 @@ struct AddressPage {
         Text<U8g2TextStyle<Gray4>>,
         SizedBox<Gray4>,
         AddressDisplayWidget,
-    ), Gray4>,
+    )>,
 }
 
 impl AddressPage {
@@ -185,7 +185,7 @@ struct FeePage {
         Text<U8g2TextStyle<Gray4>>,
         ColorMap<BitcoinAmountDisplay, Gray4>,
         Text<U8g2TextStyle<Gray4>>,
-    ), Gray4>,
+    )>,
 }
 
 impl FeePage {
@@ -250,7 +250,7 @@ struct WarningPage {
         Text<U8g2TextStyle<Gray4>>,
         Text<U8g2TextStyle<Gray4>>,
         Text<U8g2TextStyle<Gray4>>,
-    ), Gray4>,
+    )>,
 }
 
 impl WarningPage {
