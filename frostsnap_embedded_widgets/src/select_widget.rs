@@ -183,9 +183,9 @@ macro_rules! select_widget {
                 
                 // Create dummy transaction data with different address types
                 // Segwit v0 address (starts with bc1q)
-                let segwit_address = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
-                    .unwrap()
-                    .assume_checked();
+                // let segwit_address = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+                //     .unwrap()
+                //     .assume_checked();
                 
                 // Taproot address (starts with bc1p)
                 let taproot_address = bitcoin::Address::from_str("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297")
@@ -193,15 +193,15 @@ macro_rules! select_widget {
                     .assume_checked();
                 
                 // Legacy P2PKH address (starts with 1)
-                let legacy_address = bitcoin::Address::from_str("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
-                    .unwrap()
-                    .assume_checked();
+                // let legacy_address = bitcoin::Address::from_str("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+                //     .unwrap()
+                //     .assume_checked();
                 
                 let prompt = PromptSignBitcoinTx {
                     foreign_recipients: $crate::alloc::vec![
                         (taproot_address, bitcoin::Amount::from_sat(21_00_500_001)), // 21.005 BTC
-                        (segwit_address, bitcoin::Amount::from_sat(150_000)), // 0.0015 BTC
-                        (legacy_address, bitcoin::Amount::from_sat(50_000)), // 0.0005 BTC
+                        // (segwit_address, bitcoin::Amount::from_sat(150_000)), // 0.0015 BTC
+                        // (legacy_address, bitcoin::Amount::from_sat(50_000)), // 0.0005 BTC
                     ],
                     fee: bitcoin::Amount::from_sat(125_000), // 0.00125 BTC (high fee for demo)
                 };
