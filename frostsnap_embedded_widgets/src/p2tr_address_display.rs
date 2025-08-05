@@ -1,5 +1,5 @@
 use crate::{
-    column::Column, row::Row, sized_box::SizedBox, text::Text, container::Container, 
+    column::Column, row::Row, sized_box::SizedBox, text::Text, 
     CrossAxisAlignment, DynWidget, Instant, MainAxisAlignment, Widget
 };
 use alloc::string::ToString;
@@ -7,7 +7,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Gray4,
-    primitives::PrimitiveStyle,
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -17,7 +16,7 @@ use u8g2_fonts::U8g2TextStyle;
 /// - Total: 62 characters displayed as 16 chunks
 pub struct P2trAddressDisplay {
     column: Column<(
-        Row<(Container<Text<U8g2TextStyle<Gray4>>>,), Gray4>,
+        Row<(Text<U8g2TextStyle<Gray4>>,), Gray4>,
         SizedBox<Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
@@ -43,12 +42,9 @@ impl P2trAddressDisplay {
         // Helper to create a spacer
         let make_spacer = || SizedBox::<Gray4>::new(Size::new(spacer_width, 1));
         
-        // First chunk on its own row (grayed out) with border
-        let type_text = Text::new(chunks.next().unwrap(), grayed_style);
-        let bordered_type = Container::new(type_text)
-            .with_border(PrimitiveStyle::with_stroke(Gray4::new(6), 1));
+        // First chunk on its own row (grayed out)
         let type_indicator = Row::new((
-            bordered_type,
+            Text::new(chunks.next().unwrap(), grayed_style),
         )).with_main_axis_alignment(MainAxisAlignment::Center);
         
         // Vertical spacer between type indicator and address content
@@ -100,7 +96,7 @@ impl P2trAddressDisplay {
         ));
         
         // Create column with all rows
-        let column = Column::new((type_indicator, vertical_spacer, row0, row1, row2, row3, row4)).with_cross_axis_alignment(CrossAxisAlignment::Start);
+        let column = Column::new((type_indicator, vertical_spacer, row0, row1, row2, row3, row4)).with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { column }
     }
