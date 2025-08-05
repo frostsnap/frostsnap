@@ -1,5 +1,5 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, EnteredWords, WordSelector};
-use crate::{Key, KeyTouch, Widget};
+use crate::{DynWidget, Key, KeyTouch, Widget};
 use alloc::{string::String, vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_backup::bip39_words::{self, FROSTSNAP_BACKUP_WORDS};
@@ -445,7 +445,9 @@ impl Widget for EnterBip39ShareScreen {
         
         Ok(())
     }
+}
 
+impl crate::DynWidget for EnterBip39ShareScreen {
     fn handle_touch(
         &mut self,
         point: Point,
@@ -599,7 +601,7 @@ impl Widget for EnterBip39ShareScreen {
             }
         }
     }
-
+    
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
         // scrolling cancels the touch
         if let Some(active_touch) = self.touches.last_mut() {
@@ -614,4 +616,22 @@ impl Widget for EnterBip39ShareScreen {
             self.alphabetic_keyboard.handle_vertical_drag(prev_y, new_y, _is_release);
         }
     }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size)
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
+        self.bip39_input.force_redraw();
+        self.alphabetic_keyboard.force_full_redraw();
+        // TODO: Implement DynWidget for WordSelector and EnteredWords
+        // if let Some(ref mut word_selector) = self.word_selector {
+        //     word_selector.force_full_redraw();
+        // }
+        // if let Some(ref mut entered_words) = self.entered_words {
+        //     entered_words.force_full_redraw();
+        // }
+    }
 }
+

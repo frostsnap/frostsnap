@@ -35,6 +35,8 @@ impl Cursor {
 
 }
 
+impl crate::DynWidget for Cursor {}
+
 impl Widget for Cursor {
     type Color = Rgb565;
     

@@ -97,8 +97,86 @@ impl<T: WidgetTuple, C> Column<T, C> {
 }
 
 // Macro to implement Widget for Column with tuples of different sizes
+// Macro to implement Widget for Column with tuples of different sizes
 macro_rules! impl_column_for_tuple {
     ($len:literal, $($t:ident),+) => {
+        impl<$($t: Widget<Color = C>),+, C: PixelColor> crate::DynWidget for Column<($($t,)+), C> {
+            #[allow(unused_assignments)]
+            fn handle_touch(
+                &mut self,
+                point: Point,
+                current_time: Instant,
+                is_release: bool,
+            ) -> Option<crate::KeyTouch> {
+                // Use cached rectangles
+                if !self.child_rects.is_empty() {
+                    #[allow(non_snake_case)]
+                    let ($(ref mut $t,)+) = self.children;
+                    
+                    let mut child_index = 0;
+                    $(
+                        {
+                            let area = self.child_rects[child_index];
+                            if area.contains(point) {
+                                let relative_point = Point::new(
+                                    point.x - area.top_left.x,
+                                    point.y - area.top_left.y
+                                );
+                                return $t.handle_touch(relative_point, current_time, is_release);
+                            }
+                            child_index += 1;
+                        }
+                    )+
+                }
+                
+                None
+            }
+            
+            fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, _is_release: bool) {
+                // For now, pass drag to all children - could be improved to only send to relevant child
+                #[allow(non_snake_case)]
+                let ($(ref mut $t,)+) = self.children;
+                
+                $(
+                    $t.handle_vertical_drag(start_y, current_y, _is_release);
+                )+
+            }
+            
+            fn size_hint(&self) -> Option<Size> {
+                // Only Start alignment can provide a size hint
+                // Other alignments depend on the parent's height for spacing calculations
+                match self.main_axis_alignment {
+                    MainAxisAlignment::Start => {
+                        #[allow(non_snake_case)]
+                        let ($(ref $t,)+) = self.children;
+                        
+                        // Calculate total height and maximum width
+                        let mut total_height = 0;
+                        let mut max_width = 0;
+                        
+                        // All children
+                        $(
+                            let size = $t.size_hint()?;
+                            total_height += size.height;
+                            max_width = max_width.max(size.width);
+                        )+
+                        
+                        Some(Size::new(max_width, total_height))
+                    }
+                    _ => None, // Other alignments need parent height to calculate layout
+                }
+            }
+            
+            fn force_full_redraw(&mut self) {
+                #[allow(non_snake_case)]
+                let ($(ref mut $t,)+) = self.children;
+                
+                $(
+                    $t.force_full_redraw();
+                )+
+            }
+        }
+        
         impl<$($t: Widget<Color = C>),+, C: PixelColor> Widget for Column<($($t,)+), C> {
             type Color = C;
             
@@ -202,81 +280,6 @@ macro_rules! impl_column_for_tuple {
                 )+
                 
                 Ok(())
-            }
-            
-            #[allow(unused_assignments)]
-            fn handle_touch(
-                &mut self,
-                point: Point,
-                current_time: Instant,
-                is_release: bool,
-            ) -> Option<crate::KeyTouch> {
-                // Use cached rectangles
-                if !self.child_rects.is_empty() {
-                    #[allow(non_snake_case)]
-                    let ($(ref mut $t,)+) = self.children;
-                    
-                    let mut child_index = 0;
-                    $(
-                        {
-                            let area = self.child_rects[child_index];
-                            if area.contains(point) {
-                                let relative_point = Point::new(
-                                    point.x - area.top_left.x,
-                                    point.y - area.top_left.y
-                                );
-                                return $t.handle_touch(relative_point, current_time, is_release);
-                            }
-                            child_index += 1;
-                        }
-                    )+
-                }
-                
-                None
-            }
-            
-            fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, _is_release: bool) {
-                // For now, pass drag to all children - could be improved to only send to relevant child
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-                
-                $(
-                    $t.handle_vertical_drag(start_y, current_y, _is_release);
-                )+
-            }
-            
-            fn size_hint(&self) -> Option<Size> {
-                // Only Start alignment can provide a size hint
-                // Other alignments depend on the parent's height for spacing calculations
-                match self.main_axis_alignment {
-                    MainAxisAlignment::Start => {
-                        #[allow(non_snake_case)]
-                        let ($(ref $t,)+) = self.children;
-                        
-                        // Calculate total height and maximum width
-                        let mut total_height = 0;
-                        let mut max_width = 0;
-                        
-                        // All children
-                        $(
-                            let size = $t.size_hint()?;
-                            total_height += size.height;
-                            max_width = max_width.max(size.width);
-                        )+
-                        
-                        Some(Size::new(max_width, total_height))
-                    }
-                    _ => None, // Other alignments need parent height to calculate layout
-                }
-            }
-            
-            fn force_full_redraw(&mut self) {
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-                
-                $(
-                    $t.force_full_redraw();
-                )+
             }
         }
     };

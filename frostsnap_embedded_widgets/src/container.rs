@@ -76,6 +76,50 @@ impl<W: Widget> Container<W> {
     }
 }
 
+impl<W: Widget> crate::DynWidget for Container<W>
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        if let Some(size) = self.effective_size() {
+            let bounds = Rectangle::new(Point::zero(), size);
+            if bounds.contains(point) {
+                self.child.handle_touch(point, current_time, is_release)
+            } else {
+                None
+            }
+        } else {
+            self.child.handle_touch(point, current_time, is_release)
+        }
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.child.handle_vertical_drag(prev_y, new_y, is_release);
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        if self.expanded {
+            // Expanded containers have no size hint
+            None
+        } else {
+            let base_size = self.effective_size()?;
+            let border_width = self.border_width();
+            Some(Size::new(
+                base_size.width + 2 * border_width,
+                base_size.height + 2 * border_width,
+            ))
+        }
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.border_needs_redraw = true;
+        self.child.force_full_redraw();
+    }
+}
+
 impl<W: Widget> Widget for Container<W> {
     type Color = W::Color;
     
@@ -125,47 +169,6 @@ impl<W: Widget> Widget for Container<W> {
         Ok(())
     }
     
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        if let Some(size) = self.effective_size() {
-            let bounds = Rectangle::new(Point::zero(), size);
-            if bounds.contains(point) {
-                self.child.handle_touch(point, current_time, is_release)
-            } else {
-                None
-            }
-        } else {
-            self.child.handle_touch(point, current_time, is_release)
-        }
-    }
-    
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        self.child.handle_vertical_drag(prev_y, new_y, is_release);
-    }
-
-
-    fn size_hint(&self) -> Option<Size> {
-        if self.expanded {
-            // Expanded containers have no size hint
-            None
-        } else {
-            let base_size = self.effective_size()?;
-            let border_width = self.border_width();
-            Some(Size::new(
-                base_size.width + 2 * border_width,
-                base_size.height + 2 * border_width,
-            ))
-        }
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.border_needs_redraw = true;
-        self.child.force_full_redraw();
-    }
 }
 
 impl<W: Widget> core::fmt::Debug for Container<W> 

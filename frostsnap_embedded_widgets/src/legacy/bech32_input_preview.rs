@@ -351,6 +351,12 @@ impl Bech32Framebuf {
     }
 }
 
+impl crate::DynWidget for Bech32InputPreview {
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(self.preview_rect.size.width, self.preview_rect.size.height + self.backspace_rect.size.height))
+    }
+}
+
 impl crate::Widget for Bech32InputPreview {
     type Color = Rgb565;
     
@@ -363,9 +369,6 @@ impl crate::Widget for Bech32InputPreview {
         Ok(())
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(self.preview_rect.size.width, self.preview_rect.size.height + self.backspace_rect.size.height))
-    }
 }
 
 #[derive(Debug)]

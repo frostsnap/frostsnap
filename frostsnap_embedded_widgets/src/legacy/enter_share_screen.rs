@@ -43,28 +43,7 @@ impl EnterShareScreen {
     }
 }
 
-impl Widget for EnterShareScreen {
-    type Color = Rgb565;
-
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        let mut keyboard_target = target.cropped(&self.keyboard_rect);
-        self.bech32_keyboard.draw(&mut keyboard_target, current_time)?;
-
-        let mut input_display_target = target.cropped(&self.input_display_rect);
-        <Bech32InputPreview as Widget>::draw(&mut self.backup_input_preview, &mut input_display_target, current_time)?;
-
-        self.touches.retain_mut(|touch| {
-            touch.draw(target, current_time);
-            !touch.is_finished()
-        });
-
-        Ok(())
-    }
-
+impl crate::DynWidget for EnterShareScreen {
     fn handle_touch(
         &mut self,
         point: Point,
@@ -128,6 +107,38 @@ impl Widget for EnterShareScreen {
         }
         self.bech32_keyboard
             .handle_vertical_drag(prev_y, new_y, is_release);
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(240, 320)) // Standard screen size
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.backup_input_preview.force_full_redraw();
+        self.bech32_keyboard.force_full_redraw();
+    }
+}
+
+impl Widget for EnterShareScreen {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        let mut keyboard_target = target.cropped(&self.keyboard_rect);
+        self.bech32_keyboard.draw(&mut keyboard_target, current_time)?;
+
+        let mut input_display_target = target.cropped(&self.input_display_rect);
+        <Bech32InputPreview as Widget>::draw(&mut self.backup_input_preview, &mut input_display_target, current_time)?;
+
+        self.touches.retain_mut(|touch| {
+            touch.draw(target, current_time);
+            !touch.is_finished()
+        });
+
+        Ok(())
     }
 }
 

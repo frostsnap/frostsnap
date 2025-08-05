@@ -103,6 +103,67 @@ impl<W: Widget> PaddingBuilder<W> {
     }
 }
 
+impl<W: Widget> crate::DynWidget for Padding<W> 
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        if let Some(child_size) = self.child.size_hint() {
+            // Child has size hint - check if touch is within child bounds
+            let child_area = Rectangle::new(
+                Point::new(self.left as i32, self.top as i32),
+                child_size
+            );
+            
+            if child_area.contains(point) {
+                // Adjust the touch point relative to child's origin
+                let adjusted_point = Point::new(
+                    point.x - self.left as i32,
+                    point.y - self.top as i32,
+                );
+                return self.child.handle_touch(adjusted_point, current_time, is_release);
+            }
+        } else {
+            // Child has no size hint - check if touch is within padded area
+            if point.x >= self.left as i32 && point.y >= self.top as i32 {
+                // Adjust the touch point by padding offsets
+                let adjusted_point = Point::new(
+                    point.x - self.left as i32,
+                    point.y - self.top as i32,
+                );
+                return self.child.handle_touch(adjusted_point, current_time, is_release);
+            }
+        }
+        
+        None
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        // Pass vertical drag to child with adjusted y values
+        let adjusted_prev_y = prev_y.map(|y| y.saturating_sub(self.top));
+        let adjusted_new_y = new_y.saturating_sub(self.top);
+        
+        self.child.handle_vertical_drag(adjusted_prev_y, adjusted_new_y, is_release);
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        // Return the child's size plus padding
+        self.child.size_hint().map(|child_size| {
+            Size::new(
+                child_size.width + self.left + self.right,
+                child_size.height + self.top + self.bottom,
+            )
+        })
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.child.force_full_redraw();
+    }
+}
+
 impl<W: Widget> Widget for Padding<W> {
     type Color = W::Color;
     
@@ -144,63 +205,6 @@ impl<W: Widget> Widget for Padding<W> {
         Ok(())
     }
     
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        if let Some(child_size) = self.child.size_hint() {
-            // Child has size hint - check if touch is within child bounds
-            let child_area = Rectangle::new(
-                Point::new(self.left as i32, self.top as i32),
-                child_size
-            );
-            
-            if child_area.contains(point) {
-                // Adjust the touch point relative to child's origin
-                let adjusted_point = Point::new(
-                    point.x - self.left as i32,
-                    point.y - self.top as i32,
-                );
-                return self.child.handle_touch(adjusted_point, current_time, is_release);
-            }
-        } else {
-            // Child has no size hint - check if touch is within padded area
-            if point.x >= self.left as i32 && point.y >= self.top as i32 {
-                // Adjust the touch point by padding offsets
-                let adjusted_point = Point::new(
-                    point.x - self.left as i32,
-                    point.y - self.top as i32,
-                );
-                return self.child.handle_touch(adjusted_point, current_time, is_release);
-            }
-        }
-        
-        None
-    }
-    
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        // Pass vertical drag to child with adjusted y values
-        let adjusted_prev_y = prev_y.map(|y| y.saturating_sub(self.top));
-        let adjusted_new_y = new_y.saturating_sub(self.top);
-        
-        self.child.handle_vertical_drag(adjusted_prev_y, adjusted_new_y, is_release);
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        // Return the child's size plus padding
-        self.child.size_hint().map(|child_size| {
-            Size::new(
-                child_size.width + self.left + self.right,
-                child_size.height + self.top + self.bottom,
-            )
-        })
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.child.force_full_redraw();
-    }
 }
 
 impl<W: Widget> Deref for Padding<W> {

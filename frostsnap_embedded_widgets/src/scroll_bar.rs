@@ -103,6 +103,16 @@ impl ScrollBar {
     }
 }
 
+impl crate::DynWidget for ScrollBar {
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.track_rect.size)
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.last_scroll_position = None;
+    }
+}
+
 impl Widget for ScrollBar {
     type Color = Rgb565;
     
@@ -113,13 +123,5 @@ impl Widget for ScrollBar {
     ) -> Result<(), D::Error> {
         self.draw(target);
         Ok(())
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.track_rect.size)
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.last_scroll_position = None;
     }
 }

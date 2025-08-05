@@ -84,6 +84,23 @@ impl DeviceName {
     }
 }
 
+impl crate::DynWidget for DeviceName {
+    fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
+    
+    fn size_hint(&self) -> Option<Size> {
+        self.text_widget.size_hint()
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
+        self.text_widget.force_full_redraw();
+    }
+}
+
 impl Widget for DeviceName {
     type Color = Rgb565;
     
@@ -111,21 +128,6 @@ impl Widget for DeviceName {
         
         self.needs_redraw = false;
         Ok(())
-    }
-    
-    fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
-        None
-    }
-    
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
-    
-    fn size_hint(&self) -> Option<Size> {
-        self.text_widget.size_hint()
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.needs_redraw = true;
-        self.text_widget.force_full_redraw();
     }
 }
 
@@ -188,17 +190,7 @@ impl DeviceNameScreen {
     }
 }
 
-impl Widget for DeviceNameScreen {
-    type Color = Rgb565;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
-        self.column.draw(target, current_time)
-    }
-    
+impl crate::DynWidget for DeviceNameScreen {
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
         self.column.handle_touch(point, current_time, is_release)
     }
@@ -213,5 +205,17 @@ impl Widget for DeviceNameScreen {
     
     fn force_full_redraw(&mut self) {
         self.column.force_full_redraw()
+    }
+}
+
+impl Widget for DeviceNameScreen {
+    type Color = Rgb565;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: Instant,
+    ) -> Result<(), D::Error> {
+        self.column.draw(target, current_time)
     }
 }

@@ -28,6 +28,26 @@ where
     }
 }
 
+impl<C: PixelColor> crate::DynWidget for BobbingCarat<C>
+where
+    C: Copy,
+
+{
+    fn size_hint(&self) -> Option<Size> {
+        // Get the base icon size from translate widget
+        if let Some(base_size) = self.translate.size_hint() {
+            // Account for animation height - icon moves up by 5 pixels
+            Some(Size::new(base_size.width, base_size.height + 5))
+        } else {
+            None
+        }
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.translate.force_full_redraw();
+    }
+}
+
 impl<C: PixelColor> Widget for BobbingCarat<C>
 where
     C: Copy,
@@ -42,17 +62,4 @@ where
         self.translate.draw(target, current_time)
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        // Get the base icon size from translate widget
-        if let Some(base_size) = self.translate.size_hint() {
-            // Account for animation height - icon moves up by 5 pixels
-            Some(Size::new(base_size.width, base_size.height + 5))
-        } else {
-            None
-        }
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.translate.force_full_redraw();
-    }
 }

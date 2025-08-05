@@ -28,6 +28,36 @@ impl<W: Widget, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usiz
     }
 }
 
+impl<W: Widget, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> crate::DynWidget for Buffered<W, WIDTH, HEIGHT, BUFFER_SIZE>
+where W: Widget,
+      W::Color: PixelColor + Default + From<<W::Color as PixelColor>::Raw>,
+      <W::Color as PixelColor>::Raw: Into<W::Color>,
+      Framebuffer<W::Color, <W::Color as PixelColor>::Raw, LittleEndian, WIDTH, HEIGHT, BUFFER_SIZE>: DrawTarget<Color=W::Color>,
+      for<'a> RawDataSlice<'a, <W::Color as PixelColor>::Raw, LittleEndian>: IntoIterator<Item=<W::Color as PixelColor>::Raw>,
+
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        lift_up: bool,
+    ) -> Option<crate::KeyTouch> {
+        self.child.handle_touch(point, current_time, lift_up)
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
+        self.child.handle_vertical_drag(prev_y, new_y, _is_release);
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        self.child.size_hint()
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
+    }
+}
+
 impl<W: Widget, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> Widget for Buffered<W, WIDTH, HEIGHT, BUFFER_SIZE>
 where W: Widget,
       W::Color: PixelColor + Default + From<<W::Color as PixelColor>::Raw>,
@@ -55,24 +85,4 @@ where W: Widget,
         Ok(())
     }
 
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        lift_up: bool,
-    ) -> Option<crate::KeyTouch> {
-        self.child.handle_touch(point, current_time, lift_up)
-    }
-
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        self.child.handle_vertical_drag(prev_y, new_y, _is_release);
-    }
-
-    fn size_hint(&self) -> Option<Size> {
-        self.child.size_hint()
-    }
-
-    fn force_full_redraw(&mut self) {
-        self.needs_redraw = true;
-    }
 }

@@ -25,6 +25,29 @@ impl PageDemo {
     }
 }
 
+impl crate::DynWidget for PageDemo {
+    fn handle_touch(
+        &mut self,
+        _point: Point,
+        _current_time: crate::Instant,
+        _is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No dragging behavior for this widget
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size)
+    }
+    
+    fn force_full_redraw(&mut self) {
+        // No state to reset for redraw
+    }
+}
+
 impl Widget for PageDemo {
     type Color = Gray2;
     
@@ -89,19 +112,6 @@ impl Widget for PageDemo {
         .draw(target);
         
         Ok(())
-    }
-    
-    fn handle_touch(
-        &mut self,
-        _point: Point,
-        _current_time: crate::Instant,
-        _is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        None
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
     }
 }
 

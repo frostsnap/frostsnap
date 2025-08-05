@@ -106,6 +106,8 @@ impl MemoryDebugWidget {
     
 }
 
+impl crate::DynWidget for MemoryDebugWidget {}
+
 impl Widget for MemoryDebugWidget {
     type Color = Rgb565;
     

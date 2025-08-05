@@ -65,6 +65,68 @@ impl<W: PageByPage<Color=Rgb565>, F: Widget<Color = Rgb565>> PaginatorWithScroll
     }
 }
 
+impl<W, F> crate::DynWidget for PaginatorWithScrollBar<W, F>
+where
+    W: PageByPage<Color = Rgb565>,
+    F: Widget<Color = Rgb565>,
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        if self.showing_virtual_page {
+            self.final_page.handle_touch(point, current_time, is_release)
+        } else {
+            self.child.handle_touch(point, current_time, is_release)
+        }
+    }
+
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        if is_release {
+            if let Some(drag_start) = self.drag_start.take() {
+                // Determine swipe direction based on drag distance
+                if new_y > drag_start {
+                    // Swiping down
+                    if self.showing_virtual_page {
+                        // Go back to last child page
+                        self.showing_virtual_page = false;
+                        self.final_page.start_fade(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
+                    } else if self.child.has_prev_page() {
+                        self.child.prev_page();
+                    }
+                } else if drag_start > new_y {
+                    if self.child.has_next_page() {
+                        self.child.next_page();
+                    } else if !self.showing_virtual_page {
+                        // Navigate to virtual page
+                        self.showing_virtual_page = true;
+                        self.child.start_fade(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
+                        self.scrollbar.start_fade(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
+                    }
+                }
+            }
+            self.set_scroll_position();
+        } else {
+            // Start of drag
+            if self.drag_start.is_none() {
+                self.drag_start = Some(new_y);
+            }
+        }
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size)
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.child.force_full_redraw();
+        self.final_page.force_full_redraw();
+        self.scrollbar.force_full_redraw();
+    }
+}
+
 impl<W, F> Widget for PaginatorWithScrollBar<W, F>
 where
     W: PageByPage<Color = Rgb565>,
@@ -115,66 +177,10 @@ where
             swipe_hint.draw(&mut target.cropped(&hint_area), current_time)?;
         }
 
-
         self.child_was_ready = child_is_ready;
         
         Ok(())
     }
     
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        if self.showing_virtual_page {
-            self.final_page.handle_touch(point, current_time, is_release)
-        } else {
-            self.child.handle_touch(point, current_time, is_release)
-        }
-    }
-    
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        if is_release {
-            if let Some(drag_start) = self.drag_start.take() {
-                // Determine swipe direction based on drag distance
-                if new_y > drag_start {
-                    // Swiping down
-                    if self.showing_virtual_page {
-                        // Go back to last child page
-                        self.showing_virtual_page = false;
-                        self.final_page.start_fade(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
-                    } else if self.child.has_prev_page() {
-                        self.child.prev_page();
-                    }
-                } else if drag_start > new_y {
-                    if self.child.has_next_page() {
-                        self.child.next_page();
-                    } else if !self.showing_virtual_page {
-                        // Navigate to virtual page
-                        self.showing_virtual_page = true;
-                        self.child.start_fade(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
-                        self.scrollbar.start_fade(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
-                    }
-                }
-            }
-            self.set_scroll_position();
-        } else {
-            // Start of drag
-            if self.drag_start.is_none() {
-                self.drag_start = Some(new_y);
-            }
-        }
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.child.force_full_redraw();
-        self.final_page.force_full_redraw();
-        self.scrollbar.force_full_redraw();
-    }
 }
 

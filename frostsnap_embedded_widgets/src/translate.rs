@@ -78,6 +78,31 @@ where
     }
 }
 
+impl<W: Widget> crate::DynWidget for Translate<W>
+where
+    W::Color: Copy,
+
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        // Adjust touch point for current offset
+        let adjusted_point = point - self.current_offset;
+        self.child.handle_touch(adjusted_point, current_time, is_release)
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        self.child.size_hint()
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.child.force_full_redraw();
+    }
+}
+
 impl<W: Widget> Widget for Translate<W> 
 where
     W::Color: Copy,
@@ -163,28 +188,9 @@ where
             self.child.draw(&mut translated_target, current_time)?;
         }
         
-
         Ok(())
     }
     
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        // Adjust touch point for current offset
-        let adjusted_point = point - self.current_offset;
-        self.child.handle_touch(adjusted_point, current_time, is_release)
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        self.child.size_hint()
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.child.force_full_redraw();
-    }
 }
 
 /// A DrawTarget wrapper that tracks pixels for the translate animation

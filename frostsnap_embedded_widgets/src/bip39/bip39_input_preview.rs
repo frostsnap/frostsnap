@@ -343,6 +343,24 @@ impl Bip39InputPreview {
     }
 }
 
+impl crate::DynWidget for Bip39InputPreview {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: crate::Instant,
+        _lift_up: bool,
+    ) -> Option<KeyTouch> {
+        if self.backspace_rect.contains(point) {
+            Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
+        } else if self.area.contains(point) {
+            // Tap on the input preview area triggers the entered words view
+            Some(KeyTouch::new(Key::EditWord(0), self.area))
+        } else {
+            None
+        }
+    }
+}
+
 impl Widget for Bip39InputPreview {
     type Color = Rgb565;
     
@@ -387,22 +405,6 @@ impl Widget for Bip39InputPreview {
         self.progress.draw(&mut target.cropped(&self.progress_rect))?;
         
         Ok(())
-    }
-
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        _current_time: crate::Instant,
-        _lift_up: bool,
-    ) -> Option<KeyTouch> {
-        if self.backspace_rect.contains(point) {
-            Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
-        } else if self.area.contains(point) {
-            // Tap on the input preview area triggers the entered words view
-            Some(KeyTouch::new(Key::EditWord(0), self.area))
-        } else {
-            None
-        }
     }
 }
 
@@ -679,6 +681,8 @@ impl Bip39Framebuf {
         self.animation_start_time = None;
     }
 }
+
+impl crate::DynWidget for Bip39Framebuf {}
 
 impl Widget for Bip39Framebuf {
     type Color = Rgb565;

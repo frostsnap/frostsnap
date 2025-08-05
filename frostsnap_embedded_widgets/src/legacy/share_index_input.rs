@@ -70,6 +70,12 @@ impl ShareIndexInputDisplay {
     }
 }
 
+impl crate::DynWidget for ShareIndexInputDisplay {
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(240, self.min_height()))
+    }
+}
+
 impl crate::Widget for ShareIndexInputDisplay {
     type Color = Rgb565;
 
@@ -105,7 +111,4 @@ impl crate::Widget for ShareIndexInputDisplay {
             Ok(())
         }
 
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(240, self.min_height()))
-    }
 }

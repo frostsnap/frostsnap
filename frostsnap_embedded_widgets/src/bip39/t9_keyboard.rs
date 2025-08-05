@@ -242,6 +242,35 @@ impl T9Keyboard {
     }
 }
 
+impl crate::DynWidget for T9Keyboard {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        lift_up: bool,
+    ) -> Option<KeyTouch> {
+        if !lift_up {
+            // Only handle key press on touch down
+            if let Some((key, rect)) = self.handle_key_press(point, current_time) {
+                return Some(KeyTouch::new(key, rect));
+            }
+        }
+        None
+    }
+
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No drag behavior for keyboard
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.bounds.size)
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
+    }
+}
+
 impl Widget for T9Keyboard {
     type Color = Rgb565;
     
@@ -311,24 +340,5 @@ impl Widget for T9Keyboard {
 
         self.needs_redraw = false;
         Ok(())
-    }
-
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        lift_up: bool,
-    ) -> Option<KeyTouch> {
-        if !lift_up {
-            // Only handle key press on touch down
-            if let Some((key, rect)) = self.handle_key_press(point, current_time) {
-                return Some(KeyTouch::new(key, rect));
-            }
-        }
-        None
-    }
-
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.bounds.size)
     }
 }

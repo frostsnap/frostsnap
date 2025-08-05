@@ -64,6 +64,37 @@ impl<S: CharacterStyle> Text<S> {
     }
 }
 
+impl<S, C> crate::DynWidget for Text<S>
+where
+    C: PixelColor,
+    S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
+{
+    fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No drag handling needed
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        // Create text at origin to get its bounding box
+        let text_obj = self.create_eg_text();
+        let bbox = text_obj.bounding_box();
+        let mut size = bbox.size;
+        // If underline is enabled, add space for it
+        if self.underline_color.is_some() {
+            size.height += UNDERLINE_DISTANCE as u32 + 1; // +1 for the underline stroke itself
+        }
+        
+        Some(size)
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.drawn = false;
+    }
+}
+
 impl<S, C> Widget for Text<S>
 where
     C: PixelColor,
@@ -100,30 +131,5 @@ where
         }
         
         Ok(())
-    }
-    
-    fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
-        None
-    }
-    
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
-        // No drag handling needed
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        // Create text at origin to get its bounding box
-        let text_obj = self.create_eg_text();
-        let bbox = text_obj.bounding_box();
-        let mut size = bbox.size;
-        // If underline is enabled, add space for it
-        if self.underline_color.is_some() {
-            size.height += UNDERLINE_DISTANCE as u32 + 1; // +1 for the underline stroke itself
-        }
-        
-        Some(size)
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.drawn = false;
     }
 }

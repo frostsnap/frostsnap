@@ -53,6 +53,38 @@ where
     }
 }
 
+impl<T> crate::DynWidget for FadeSwitcher<T>
+where
+    T: Widget<Color = Rgb565>,
+
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        // Only handle touch for the current widget
+        self.current.handle_touch(point, current_time, is_release)
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        // Only handle drag for the current widget
+        self.current.handle_vertical_drag(prev_y, new_y, is_release)
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        self.current.size_hint()
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.current.force_full_redraw();
+        if let Some(prev) = &mut self.prev {
+            prev.force_full_redraw();
+        }
+    }
+}
+
 impl<T> Widget for FadeSwitcher<T>
 where
     T: Widget<Color = Rgb565>,
@@ -77,33 +109,7 @@ where
             self.current.draw(target, current_time)?;
         }
         
-
         Ok(())
     }
     
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        // Only handle touch for the current widget
-        self.current.handle_touch(point, current_time, is_release)
-    }
-    
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        // Only handle drag for the current widget
-        self.current.handle_vertical_drag(prev_y, new_y, is_release)
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        self.current.size_hint()
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.current.force_full_redraw();
-        if let Some(prev) = &mut self.prev {
-            prev.force_full_redraw();
-        }
-    }
 }

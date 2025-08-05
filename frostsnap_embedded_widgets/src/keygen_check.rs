@@ -123,17 +123,7 @@ impl KeygenCheck {
     }
 }
 
-impl Widget for KeygenCheck {
-    type Color = Rgb565;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
-        self.hold_to_confirm.draw(target, current_time)
-    }
-    
+impl crate::DynWidget for KeygenCheck {
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
         self.hold_to_confirm.handle_touch(point, current_time, is_release)
     }
@@ -148,6 +138,18 @@ impl Widget for KeygenCheck {
     
     fn force_full_redraw(&mut self) {
         self.hold_to_confirm.force_full_redraw()
+    }
+}
+
+impl Widget for KeygenCheck {
+    type Color = Rgb565;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: Instant,
+    ) -> Result<(), D::Error> {
+        self.hold_to_confirm.draw(target, current_time)
     }
 }
 

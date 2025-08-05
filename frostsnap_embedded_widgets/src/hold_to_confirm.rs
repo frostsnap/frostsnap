@@ -146,6 +146,32 @@ where
     }
 }
 
+impl<W> crate::DynWidget for HoldToConfirm<W>
+where
+    W: Widget<Color = Rgb565>,
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        // Handle touch on the content
+        self.content.handle_touch(point, current_time, is_release)
+    }
+
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size)
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.border.force_full_redraw();
+        self.content.force_full_redraw();
+    }
+}
+
 impl<W> Widget for HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
@@ -172,24 +198,4 @@ where
         self.content.draw(target, current_time)
     }
 
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        // Handle touch on the content
-        self.content.handle_touch(point, current_time, is_release)
-    }
-
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
-
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
-    }
-
-    fn force_full_redraw(&mut self) {
-        self.border.force_full_redraw();
-        self.content.force_full_redraw();
-    }
 }

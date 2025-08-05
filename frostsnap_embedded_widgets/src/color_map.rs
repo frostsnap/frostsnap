@@ -82,23 +82,7 @@ where
     }
 }
 
-impl<W: Widget, C: PixelColor> Widget for ColorMap<W, C> {
-    type Color = C;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
-        let mut mapped = MappedDrawTarget {
-            inner: target,
-            map_fn: &self.map_fn,
-            _phantom: core::marker::PhantomData,
-        };
-        self.child.draw(&mut mapped, current_time)?;
-        Ok(())
-    }
-
+impl<W: Widget, C: PixelColor> crate::DynWidget for ColorMap<W, C> {
     fn handle_touch(
         &mut self,
         point: Point,
@@ -118,6 +102,24 @@ impl<W: Widget, C: PixelColor> Widget for ColorMap<W, C> {
     
     fn force_full_redraw(&mut self) {
         self.child.force_full_redraw()
+    }
+}
+
+impl<W: Widget, C: PixelColor> Widget for ColorMap<W, C> {
+    type Color = C;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: Instant,
+    ) -> Result<(), D::Error> {
+        let mut mapped = MappedDrawTarget {
+            inner: target,
+            map_fn: &self.map_fn,
+            _phantom: core::marker::PhantomData,
+        };
+        self.child.draw(&mut mapped, current_time)?;
+        Ok(())
     }
 }
 

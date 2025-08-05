@@ -148,6 +148,24 @@ impl Bip39BackupDisplay {
     }
 }
 
+impl crate::DynWidget for Bip39BackupDisplay {
+    fn handle_touch(&mut self, _point: Point, _current_time: crate::Instant, _is_release: bool) -> Option<crate::KeyTouch> {
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No drag behavior
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size)
+    }
+    
+    fn force_full_redraw(&mut self) {
+        // No state to reset
+    }
+}
+
 impl Widget for Bip39BackupDisplay {
     type Color = Gray2;
 
@@ -167,10 +185,6 @@ impl Widget for Bip39BackupDisplay {
         }
 
         Ok(())
-    }
-
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
     }
 }
 

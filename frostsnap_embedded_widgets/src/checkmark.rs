@@ -230,21 +230,7 @@ impl<C: PixelColor> Checkmark<C> {
     }
 }
 
-impl<C: PixelColor> Widget for Checkmark<C> {
-    type Color = C;
-
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        if self.enabled {
-            self.update_animation(current_time);
-            self.draw_animation(target)?;
-        }
-        Ok(())
-    }
-
+impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
     fn handle_touch(
         &mut self,
         _point: Point,
@@ -259,5 +245,25 @@ impl<C: PixelColor> Widget for Checkmark<C> {
     fn size_hint(&self) -> Option<Size> {
         // Return the actual size of the checkmark
         Some(Size::new(self.check_width, self.check_height))
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.last_drawn_check_progress = None;
+    }
+}
+
+impl<C: PixelColor> Widget for Checkmark<C> {
+    type Color = C;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        if self.enabled {
+            self.update_animation(current_time);
+            self.draw_animation(target)?;
+        }
+        Ok(())
     }
 }

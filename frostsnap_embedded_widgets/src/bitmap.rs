@@ -166,23 +166,7 @@ impl BitmapWidget {
     }
 }
 
-impl crate::Widget for BitmapWidget {
-    type Color = BinaryColor;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        _current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        if self.needs_redraw {
-            let raw_image = ImageRaw::<BinaryColor>::new(&self.bitmap.bytes, self.bitmap.width);
-            let image = Image::new(&raw_image, Point::zero());
-            image.draw(target)?;
-            self.needs_redraw = false;
-        }
-        Ok(())
-    }
-    
+impl crate::DynWidget for BitmapWidget {
     fn handle_touch(
         &mut self,
         _point: Point,
@@ -200,5 +184,23 @@ impl crate::Widget for BitmapWidget {
     
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;
+    }
+}
+
+impl crate::Widget for BitmapWidget {
+    type Color = BinaryColor;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        if self.needs_redraw {
+            let raw_image = ImageRaw::<BinaryColor>::new(&self.bitmap.bytes, self.bitmap.width);
+            let image = Image::new(&raw_image, Point::zero());
+            image.draw(target)?;
+            self.needs_redraw = false;
+        }
+        Ok(())
     }
 }

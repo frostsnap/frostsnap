@@ -183,6 +183,37 @@ impl<'a, D: DrawTarget<Color = Rgb565>> Dimensions for FadingDrawTarget<'a, D> {
     }
 }
 
+impl<W: Widget<Color = Rgb565>> crate::DynWidget for Fader<W> {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        lift_up: bool,
+    ) -> Option<crate::KeyTouch> {
+        if !self.is_showing() {
+            return None;
+        }
+
+        self.child.handle_touch(point, current_time, lift_up)
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
+        if !self.is_showing() {
+            return;
+        }
+
+        self.child.handle_vertical_drag(prev_y, new_y, _is_release);
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        self.child.size_hint()
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.child.force_full_redraw();
+    }
+}
+
 impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
     type Color = Rgb565;
 
@@ -264,34 +295,6 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
         }
     }
 
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        lift_up: bool,
-    ) -> Option<crate::KeyTouch> {
-        if !self.is_showing() {
-            return None;
-        }
-
-        self.child.handle_touch(point, current_time, lift_up)
-    }
-
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        if !self.is_showing() {
-            return;
-        }
-
-        self.child.handle_vertical_drag(prev_y, new_y, _is_release);
-    }
-
-    fn size_hint(&self) -> Option<Size> {
-        self.child.size_hint()
-    }
-
-    fn force_full_redraw(&mut self) {
-        self.child.force_full_redraw();
-    }
 }
 
 impl<W> crate::PageByPage for Fader<W>

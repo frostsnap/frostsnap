@@ -111,6 +111,33 @@ where
     }
 }
 
+impl<S, const N: usize, const W: usize, const H: usize, const BUFFER_SIZE: usize> crate::DynWidget for MutText<S, N, W, H, BUFFER_SIZE>
+where
+    S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
+
+{
+    fn handle_touch(
+        &mut self,
+        _point: Point,
+        _current_time: crate::Instant,
+        _is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        None
+    }
+
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No drag handling needed
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(W as u32, H as u32))
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.dirty = true;
+    }
+}
+
 impl<S, const N: usize, const W: usize, const H: usize, const BUFFER_SIZE: usize> Widget for MutText<S, N, W, H, BUFFER_SIZE>
 where
     S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
@@ -131,26 +158,6 @@ where
         Ok(())
     }
     
-    fn handle_touch(
-        &mut self,
-        _point: Point,
-        _current_time: crate::Instant,
-        _is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        None
-    }
-    
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
-        // No drag handling needed
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(W as u32, H as u32))
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.dirty = true;
-    }
 }
 
 /// Helper to calculate buffer size at compile time

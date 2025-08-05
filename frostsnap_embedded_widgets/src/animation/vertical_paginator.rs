@@ -97,6 +97,64 @@ impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> Verti
 
 }
 
+impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> crate::DynWidget for VerticalPaginator<W, WIDTH, HEIGHT, BUFFER_SIZE>
+    where W: PageByPage
+{
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        // Pass through to child widget
+        self.child.handle_touch(point, current_time, is_release)
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        if is_release {
+            if let Some(drag_start) = self.drag_start.take() {
+                if new_y > drag_start {
+                    // We can't call start_transition here because it requires the full bounds
+                    // Instead, we'll just store the direction and handle it in draw
+                    if self.animation.is_none() && self.child.has_prev_page() {
+                        self.child.prev_page();
+                        self.animation = Some(Animation {
+                            start_time: None,
+                            direction: Direction::Down,
+                        });
+                        // Mark that we need to draw the next page
+                        self.force_redraw = true;
+                    }
+                } else if drag_start > new_y {
+                    if self.animation.is_none() && self.child.has_next_page() {
+                        self.child.next_page();
+                        self.animation = Some(Animation {
+                            start_time: None,
+                            direction: Direction::Up,
+                        });
+                        // Mark that we need to draw the next page
+                        self.force_redraw = true;
+                    }
+                }
+            }
+
+        } else {
+            if self.drag_start.is_none() {
+                self.drag_start = Some(new_y);
+            }
+        }
+
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size { width: WIDTH as u32, height: HEIGHT as u32 })
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.force_redraw = true;
+    }
+}
+
 impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> Widget for VerticalPaginator<W, WIDTH, HEIGHT, BUFFER_SIZE>
     where W: PageByPage,
           W::Color: PixelColor + Default,
@@ -111,6 +169,11 @@ impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> Widge
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
+        // If we need to draw the next page (from handle_vertical_drag), do it now
+        if self.animation.is_some() && self.force_redraw {
+            self.draw_next_page();
+        }
+        
         // Initialize animation start time if needed
         if let Some(ref mut anim) = self.animation {
             if anim.start_time.is_none() {
@@ -169,42 +232,6 @@ impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> Widge
         self.force_redraw = false;
 
         Ok(())
-    }
-    
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: crate::Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        // Pass through to child widget
-        self.child.handle_touch(point, current_time, is_release)
-    }
-    
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        if is_release {
-            if let Some(drag_start) = self.drag_start.take() {
-                if new_y > drag_start {
-                    self.start_transition(Direction::Down);
-                } else if drag_start > new_y {
-                    self.start_transition(Direction::Up);
-                }
-            }
-
-        } else {
-            if self.drag_start.is_none() {
-                self.drag_start = Some(new_y);
-            }
-        }
-
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        Some(Self::area().size)
-    }
-
-    fn force_full_redraw(&mut self) {
-        self.force_redraw = true;
     }
 }
 

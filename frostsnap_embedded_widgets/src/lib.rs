@@ -49,7 +49,6 @@ pub mod device_name;
 pub mod bobbing_carat;
 pub mod keygen_check;
 pub mod padding;
-pub mod either;
 pub mod circle_button;
 pub mod fade_switcher;
 pub mod widget_tuple;
@@ -89,7 +88,6 @@ pub use welcome::*;
 pub use device_name::*;
 pub use keygen_check::*;
 pub use padding::*;
-pub use either::Either;
 pub use circle_button::*;
 pub use fade_switcher::FadeSwitcher;
 
@@ -100,18 +98,9 @@ pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_m
 pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 pub const CODE_FONT: fonts::u8g2_font_profont29_mr = fonts::u8g2_font_profont29_mr;
 
-/// A trait for drawable widgets that can handle user interactions
-pub trait Widget {
-    /// The color type this widget natively draws in
-    type Color: PixelColor;
-    
-    /// Draw the widget to the target
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error>;
-
+/// A trait for widgets that can be used as trait objects
+/// This contains all the non-generic methods from Widget
+pub trait DynWidget {
     /// Handle touch events. Returns true if the touch was handled.
     fn handle_touch(
         &mut self,
@@ -130,14 +119,6 @@ pub trait Widget {
         None
     }
     
-    /// Create a new widget that maps this widget's colors to a different color space
-    fn color_map<C: PixelColor>(self, map_fn: fn(Self::Color) -> C) -> color_map::ColorMap<Self, C>
-    where
-        Self: Sized,
-    {
-        color_map::ColorMap::new(self, map_fn)
-    }
-    
     /// Force a full redraw of the widget
     /// This is typically used when the widget needs to be redrawn completely,
     /// such as when fading or other visual effects require a complete refresh
@@ -146,6 +127,34 @@ pub trait Widget {
         // Widgets that need this functionality should override
     }
 }
+
+/// A trait that combines DynWidget with Any for downcasting
+pub trait AnyDynWidget: core::any::Any + DynWidget {}
+
+/// Blanket implementation for any type that implements both Any and DynWidget
+impl<T: core::any::Any + DynWidget> AnyDynWidget for T {}
+
+/// A trait for drawable widgets that can handle user interactions
+pub trait Widget: DynWidget {
+    /// The color type this widget natively draws in
+    type Color: PixelColor;
+    
+    /// Draw the widget to the target
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>;
+    
+    /// Create a new widget that maps this widget's colors to a different color space
+    fn color_map<C: PixelColor>(self, map_fn: fn(Self::Color) -> C) -> color_map::ColorMap<Self, C>
+    where
+        Self: Sized,
+    {
+        color_map::ColorMap::new(self, map_fn)
+    }
+}
+
 
 /// Milliseconds since device start
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

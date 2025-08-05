@@ -132,27 +132,11 @@ where
     }
 }
 
-impl<W, C> Widget for HoldToConfirmBorder<W, C>
+impl<W, C> crate::DynWidget for HoldToConfirmBorder<W, C>
 where
     W: Widget<Color = C>,
     C: PixelColor,
 {
-    type Color = C;
-
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        // Always draw the child widget first
-        self.child.draw(target, current_time)?;
-
-        // Draw the border based on current progress
-        self.draw_border(target)?;
-
-        Ok(())
-    }
-
     fn handle_touch(
         &mut self,
         point: Point,
@@ -177,4 +161,27 @@ where
         // Also propagate to child
         self.child.force_full_redraw();
     }
+}
+
+impl<W, C> Widget for HoldToConfirmBorder<W, C>
+where
+    W: Widget<Color = C>,
+    C: PixelColor,
+{
+    type Color = C;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        // Always draw the child widget first
+        self.child.draw(target, current_time)?;
+
+        // Draw the border based on current progress
+        self.draw_border(target)?;
+
+        Ok(())
+    }
+
 }

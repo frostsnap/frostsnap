@@ -37,18 +37,8 @@ impl<C> SizedBox<C> {
     }
 }
 
-impl<C: PixelColor> Widget for SizedBox<C> {
-    type Color = C;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        _target: &mut D,
-        _current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        // Don't draw anything - this is just a placeholder widget
-        Ok(())
-    }
-
+impl<C: PixelColor> crate::DynWidget for SizedBox<C>
+{
     fn handle_touch(
         &mut self,
         _point: Point,
@@ -65,4 +55,18 @@ impl<C: PixelColor> Widget for SizedBox<C> {
     fn size_hint(&self) -> Option<Size> {
         Some(self.size)
     }
+}
+
+impl<C: PixelColor> Widget for SizedBox<C> {
+    type Color = C;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        _target: &mut D,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        // Don't draw anything - this is just a placeholder widget
+        Ok(())
+    }
+
 }

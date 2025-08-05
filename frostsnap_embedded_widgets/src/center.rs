@@ -22,6 +22,45 @@ impl<W> Center<W> {
     }
 }
 
+impl<W: Widget> crate::DynWidget for Center<W> {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        if let Some(child_rect) = self.last_child_rect {
+            // Check if the touch is within the child's bounds
+            if child_rect.contains(point) {
+                // Translate the touch point to the child's coordinate system
+                let translated_point = Point::new(
+                    point.x - child_rect.top_left.x,
+                    point.y - child_rect.top_left.y,
+                );
+                self.child.handle_touch(translated_point, current_time, is_release)
+            } else {
+                None
+            }
+        } else {
+            // No centering was applied, pass through as-is
+            self.child.handle_touch(point, current_time, is_release)
+        }
+    }
+    
+    fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, _is_release: bool) {
+        self.child.handle_vertical_drag(start_y, current_y, _is_release);
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.last_child_rect = None;
+        self.child.force_full_redraw()
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        None
+    }
+}
+
 impl<W: Widget> Widget for Center<W> {
     type Color = W::Color;
     
@@ -64,42 +103,5 @@ impl<W: Widget> Widget for Center<W> {
         }
         
         Ok(())
-    }
-    
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        if let Some(child_rect) = self.last_child_rect {
-            // Check if the touch is within the child's bounds
-            if child_rect.contains(point) {
-                // Translate the touch point to the child's coordinate system
-                let translated_point = Point::new(
-                    point.x - child_rect.top_left.x,
-                    point.y - child_rect.top_left.y,
-                );
-                self.child.handle_touch(translated_point, current_time, is_release)
-            } else {
-                None
-            }
-        } else {
-            // No centering was applied, pass through as-is
-            self.child.handle_touch(point, current_time, is_release)
-        }
-    }
-    
-    fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, _is_release: bool) {
-        self.child.handle_vertical_drag(start_y, current_y, _is_release);
-    }
-
-    fn force_full_redraw(&mut self) {
-        self.last_child_rect = None;
-        self.child.force_full_redraw()
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        None
     }
 }

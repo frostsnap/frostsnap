@@ -23,6 +23,26 @@ impl<I> Image<I> {
     }
 }
 
+impl<I> crate::DynWidget for Image<I>
+where
+    I: ImageDrawable,
+    I::Color: PixelColor,
+{
+    fn handle_touch(&mut self, _point: Point, _current_time: crate::Instant, _is_release: bool) -> Option<crate::KeyTouch> {
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
+    
+    fn size_hint(&self) -> Option<Size> {
+        self.image.bounding_box().size.into()
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
+    }
+}
+
 impl<I> Widget for Image<I>
 where
     I: ImageDrawable,
@@ -44,13 +64,5 @@ where
         
         self.needs_redraw = false;
         Ok(())
-    }
-    
-    fn size_hint(&self) -> Option<Size> {
-        self.image.bounding_box().size.into()
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.needs_redraw = true;
     }
 }

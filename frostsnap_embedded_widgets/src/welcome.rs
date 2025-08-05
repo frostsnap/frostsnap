@@ -53,17 +53,7 @@ impl Default for Welcome {
     }
 }
 
-impl Widget for Welcome {
-    type Color = Rgb565;
-
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
-        self.column.draw(target, current_time)
-    }
-
+impl crate::DynWidget for Welcome {
     fn handle_touch(
         &mut self,
         point: Point,
@@ -83,5 +73,17 @@ impl Widget for Welcome {
     
     fn force_full_redraw(&mut self) {
         self.column.force_full_redraw();
+    }
+}
+
+impl Widget for Welcome {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: Instant,
+    ) -> Result<(), D::Error> {
+        self.column.draw(target, current_time)
     }
 }

@@ -72,6 +72,42 @@ impl CircleButton {
     }
 }
 
+impl crate::DynWidget for CircleButton {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        if self.state == CircleButtonState::ShowingCheckmark {
+            // Don't handle touches when showing checkmark
+            return None;
+        }
+        
+        if is_release {
+            // Release - go back to idle
+            if self.state == CircleButtonState::Pressed {
+                self.state = CircleButtonState::Idle;
+            }
+        } else if self.contains_point(point) {
+            // Press within button - set to pressed
+            self.state = CircleButtonState::Pressed;
+        }
+        
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER))
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.last_drawn_state = None;
+    }
+}
+
 impl Widget for CircleButton {
     type Color = Rgb565;
     
@@ -139,39 +175,5 @@ impl Widget for CircleButton {
         }
         
         Ok(())
-    }
-    
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        _current_time: Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        if self.state == CircleButtonState::ShowingCheckmark {
-            // Don't handle touches when showing checkmark
-            return None;
-        }
-        
-        if is_release {
-            // Release - go back to idle
-            if self.state == CircleButtonState::Pressed {
-                self.state = CircleButtonState::Idle;
-            }
-        } else if self.contains_point(point) {
-            // Press within button - set to pressed
-            self.state = CircleButtonState::Pressed;
-        }
-        
-        None
-    }
-    
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
-    
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER))
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.last_drawn_state = None;
     }
 }

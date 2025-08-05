@@ -4,7 +4,7 @@ use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_graphics_simulator::{
     OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
-use frostsnap_embedded_widgets::{palette::PALETTE, Widget, Instant};
+use frostsnap_embedded_widgets::{palette::PALETTE, Widget, DynWidget, Instant};
 use std::time::SystemTime;
 use std::io::{self, BufRead};
 use std::sync::mpsc;

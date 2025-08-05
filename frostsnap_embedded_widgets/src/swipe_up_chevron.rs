@@ -30,6 +30,20 @@ where
     }
 }
 
+impl<C: PixelColor + RgbColor + Default> crate::DynWidget for SwipeUpChevron<C> 
+where
+    C: Copy,
+
+{
+    fn size_hint(&self) -> Option<Size> {
+        self.column.size_hint()
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.column.force_full_redraw();
+    }
+}
+
 impl<C: PixelColor + RgbColor + Default> Widget for SwipeUpChevron<C> 
 where
     C: Copy,
@@ -44,11 +58,4 @@ where
         self.column.draw(target, current_time)
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        self.column.size_hint()
-    }
-    
-    fn force_full_redraw(&mut self) {
-        self.column.force_full_redraw();
-    }
 }

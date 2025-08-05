@@ -142,41 +142,7 @@ impl Bech32Keyboard {
 
 }
 
-impl crate::Widget for Bech32Keyboard {
-    type Color = Rgb565;
-
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-            &mut self,
-            target: &mut D,
-            _current_time: crate::Instant,
-        ) -> Result<(), D::Error> {
-            // Only draw if a redraw is needed
-            if self.needs_redraw {
-                // Get the height of the visible area from the DrawTarget's bounding box
-                let visible_height = target.bounding_box().size.height as usize;
-
-                // Calculate the number of pixels to skip for the current scroll position
-                let skip_pixels = self.scroll_position as usize * FRAMEBUFFER_WIDTH as usize;
-
-                // Clip and draw the portion of the framebuffer based on scroll_position
-                target.fill_contiguous(
-                    &Rectangle::new(Point::new(0, 0), target.bounding_box().size),
-                    RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
-                        .into_iter()
-                        .skip(skip_pixels)
-                        .take(FRAMEBUFFER_WIDTH as usize * visible_height)
-                        .map(|r| match BinaryColor::from(r) {
-                            BinaryColor::Off => PALETTE.background,
-                            BinaryColor::On => KEYBOARD_COLOR,
-                        }),
-                )?;
-
-                // Reset the redraw flag
-                self.needs_redraw = false;
-            }
-            Ok(())
-    }
-
+impl crate::DynWidget for Bech32Keyboard {
     fn handle_touch(
             &mut self,
             mut point: Point,
@@ -230,8 +196,45 @@ impl crate::Widget for Bech32Keyboard {
                 self.needs_redraw = true; // Mark for redraw
             }
         }
-    
+
     fn size_hint(&self) -> Option<Size> {
         Some(Size::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT))
     }
+}
+
+impl crate::Widget for Bech32Keyboard {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+            &mut self,
+            target: &mut D,
+            _current_time: crate::Instant,
+        ) -> Result<(), D::Error> {
+            // Only draw if a redraw is needed
+            if self.needs_redraw {
+                // Get the height of the visible area from the DrawTarget's bounding box
+                let visible_height = target.bounding_box().size.height as usize;
+
+                // Calculate the number of pixels to skip for the current scroll position
+                let skip_pixels = self.scroll_position as usize * FRAMEBUFFER_WIDTH as usize;
+
+                // Clip and draw the portion of the framebuffer based on scroll_position
+                target.fill_contiguous(
+                    &Rectangle::new(Point::new(0, 0), target.bounding_box().size),
+                    RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
+                        .into_iter()
+                        .skip(skip_pixels)
+                        .take(FRAMEBUFFER_WIDTH as usize * visible_height)
+                        .map(|r| match BinaryColor::from(r) {
+                            BinaryColor::Off => PALETTE.background,
+                            BinaryColor::On => KEYBOARD_COLOR,
+                        }),
+                )?;
+
+                // Reset the redraw flag
+                self.needs_redraw = false;
+            }
+            Ok(())
+    }
+
 }

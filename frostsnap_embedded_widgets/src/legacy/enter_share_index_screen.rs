@@ -45,28 +45,7 @@ impl EnterShareIndexScreen {
 
 }
 
-impl Widget for EnterShareIndexScreen {
-    type Color = Rgb565;
-
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        let mut keyboard_target = target.cropped(&self.keyboard_rect);
-        self.numeric_keyboard.draw(&mut keyboard_target, current_time)?;
-
-        let mut input_display_target = target.cropped(&self.input_display_rect);
-        self.share_index_input_display.draw(&mut input_display_target, current_time)?;
-
-        self.touches.retain_mut(|touch| {
-            touch.draw(target, current_time);
-            !touch.is_finished()
-        });
-
-        Ok(())
-    }
-
+impl crate::DynWidget for EnterShareIndexScreen {
     fn handle_touch(
         &mut self,
         point: Point,
@@ -116,5 +95,41 @@ impl Widget for EnterShareIndexScreen {
         }
 
         None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No drag behavior for this screen
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        Some(Size::new(240, 320)) // Standard screen size
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.numeric_keyboard.force_full_redraw();
+        self.share_index_input_display.force_full_redraw();
+    }
+}
+
+impl Widget for EnterShareIndexScreen {
+    type Color = Rgb565;
+
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        let mut keyboard_target = target.cropped(&self.keyboard_rect);
+        self.numeric_keyboard.draw(&mut keyboard_target, current_time)?;
+
+        let mut input_display_target = target.cropped(&self.input_display_rect);
+        self.share_index_input_display.draw(&mut input_display_target, current_time)?;
+
+        self.touches.retain_mut(|touch| {
+            touch.draw(target, current_time);
+            !touch.is_finished()
+        });
+
+        Ok(())
     }
 }

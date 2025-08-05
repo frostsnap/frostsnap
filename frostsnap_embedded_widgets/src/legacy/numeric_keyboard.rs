@@ -56,6 +56,48 @@ impl NumericKeyboard {
     }
 }
 
+impl crate::DynWidget for NumericKeyboard {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: crate::Instant,
+        _is_release: bool,
+    ) -> Option<KeyTouch> {
+        // Determine the starting position (bottom-center alignment)
+        for (row_index, row) in KEYBOARD_KEYS_NUMBERS.iter().enumerate() {
+            for (col_index, &key) in row.iter().enumerate() {
+                let x = col_index as i32 * self.key_size.width as i32;
+                let y = row_index as i32 * self.key_size.height as i32;
+
+                let rect = Rectangle::new(
+                    Point::new(x, y),
+                    Size::new(self.key_size.width, self.key_size.height),
+                );
+
+                // Check if the touch is within this key
+                if rect.contains(point) {
+                    let is_disabled = match key {
+                        '0' | '✓' | '⌫' => self.disable_empty_input_keys,
+                        _ => false,
+                    };
+
+                    if !is_disabled {
+                        return Some(KeyTouch::new(Key::Keyboard(key), rect));
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn size_hint(&self) -> Option<Size> {
+        Some(self.size())
+    }
+}
+
 impl crate::Widget for NumericKeyboard {
     type Color = Rgb565;
 
@@ -145,45 +187,6 @@ impl crate::Widget for NumericKeyboard {
         Ok(())
     }
 
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        _current_time: crate::Instant,
-        _is_release: bool,
-    ) -> Option<KeyTouch> {
-        // Determine the starting position (bottom-center alignment)
-        for (row_index, row) in KEYBOARD_KEYS_NUMBERS.iter().enumerate() {
-            for (col_index, &key) in row.iter().enumerate() {
-                let x = col_index as i32 * self.key_size.width as i32;
-                let y = row_index as i32 * self.key_size.height as i32;
-
-                let rect = Rectangle::new(
-                    Point::new(x, y),
-                    Size::new(self.key_size.width, self.key_size.height),
-                );
-
-                // Check if the touch is within this key
-                if rect.contains(point) {
-                    let is_disabled = match key {
-                        '0' | '✓' | '⌫' => self.disable_empty_input_keys,
-                        _ => false,
-                    };
-
-                    if !is_disabled {
-                        return Some(KeyTouch::new(Key::Keyboard(key), rect));
-                    } else {
-                        return None;
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

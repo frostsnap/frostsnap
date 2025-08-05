@@ -140,6 +140,63 @@ impl AlphabeticKeyboard {
     }
 }
 
+impl crate::DynWidget for AlphabeticKeyboard {
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: crate::Instant,
+        _lift_up: bool,
+    ) -> Option<crate::KeyTouch> {
+        use crate::{Key, KeyTouch};
+        
+        if self.enabled_keys.count_enabled() == 0 {
+            // Handle navigation button touches
+            let screen_width = FRAMEBUFFER_WIDTH;
+            let screen_height = self.visible_height;
+            
+            // Check back button area (left side) - only if we can go back
+            if point.x < (screen_width / 2) as i32 && self.current_word_index > 0 {
+                let rect = Rectangle::new(
+                    Point::new(0, 0),
+                    Size::new(screen_width / 2, screen_height)
+                );
+                return Some(KeyTouch::new(Key::NavBack, rect));
+            }
+            // Check forward button area (right side) - only if we can go forward
+            else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 { // 0-24 for 25 words
+                let rect = Rectangle::new(
+                    Point::new((screen_width / 2) as i32, 0),
+                    Size::new(screen_width / 2, screen_height)
+                );
+                return Some(KeyTouch::new(Key::NavForward, rect));
+            }
+        }
+
+        // In compact layout, keys are positioned differently
+        let col = (point.x / KEY_WIDTH as i32) as usize;
+        let row = ((point.y + self.scroll_position) / KEY_HEIGHT as i32) as usize;
+
+        if col < TOTAL_COLS {
+            let idx = row * TOTAL_COLS + col;
+            // Use nth_enabled to get the key at this index
+            if let Some(key) = self.enabled_keys.nth_enabled(idx) {
+                // Calculate the screen position of the key in compact layout
+                let x = col as i32 * KEY_WIDTH as i32;
+                let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
+                let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
+
+                return Some(KeyTouch::new(Key::Keyboard(key), rect));
+            }
+        }
+        None
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
+        let delta = prev_y.map_or(0, |p| new_y as i32 - p as i32);
+        self.scroll(delta);
+    }
+}
+
 impl Widget for AlphabeticKeyboard {
     type Color = Rgb565;
     
@@ -223,60 +280,5 @@ impl Widget for AlphabeticKeyboard {
 
         self.needs_redraw = false;
         Ok(())
-    }
-
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        _current_time: crate::Instant,
-        _lift_up: bool,
-    ) -> Option<crate::KeyTouch> {
-        use crate::{Key, KeyTouch};
-        
-        if self.enabled_keys.count_enabled() == 0 {
-            // Handle navigation button touches
-            let screen_width = FRAMEBUFFER_WIDTH;
-            let screen_height = self.visible_height;
-            
-            // Check back button area (left side) - only if we can go back
-            if point.x < (screen_width / 2) as i32 && self.current_word_index > 0 {
-                let rect = Rectangle::new(
-                    Point::new(0, 0),
-                    Size::new(screen_width / 2, screen_height)
-                );
-                return Some(KeyTouch::new(Key::NavBack, rect));
-            }
-            // Check forward button area (right side) - only if we can go forward
-            else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 { // 0-24 for 25 words
-                let rect = Rectangle::new(
-                    Point::new((screen_width / 2) as i32, 0),
-                    Size::new(screen_width / 2, screen_height)
-                );
-                return Some(KeyTouch::new(Key::NavForward, rect));
-            }
-        }
-
-        // In compact layout, keys are positioned differently
-        let col = (point.x / KEY_WIDTH as i32) as usize;
-        let row = ((point.y + self.scroll_position) / KEY_HEIGHT as i32) as usize;
-
-        if col < TOTAL_COLS {
-            let idx = row * TOTAL_COLS + col;
-            // Use nth_enabled to get the key at this index
-            if let Some(key) = self.enabled_keys.nth_enabled(idx) {
-                // Calculate the screen position of the key in compact layout
-                let x = col as i32 * KEY_WIDTH as i32;
-                let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
-                let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
-
-                return Some(KeyTouch::new(Key::Keyboard(key), rect));
-            }
-        }
-        None
-    }
-
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        let delta = prev_y.map_or(0, |p| new_y as i32 - p as i32);
-        self.scroll(delta);
     }
 }
