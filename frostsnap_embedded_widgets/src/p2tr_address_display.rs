@@ -17,7 +17,6 @@ use u8g2_fonts::U8g2TextStyle;
 pub struct P2trAddressDisplay {
     column: Column<(
         Row<(Text<U8g2TextStyle<Gray4>>,), Gray4>,
-        SizedBox<Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
@@ -45,11 +44,9 @@ impl P2trAddressDisplay {
         // First chunk on its own row (grayed out)
         let type_indicator = Row::new((
             Text::new(chunks.next().unwrap(), grayed_style),
-        )).with_main_axis_alignment(MainAxisAlignment::Center);
+        ));
         
-        // Vertical spacer between type indicator and address content
-        let vertical_spacer = SizedBox::<Gray4>::new(Size::new(1, 10));
-        
+
         // Row 0: chunks 1, 2, 3 (now that chunk 0 is the type indicator)
         let row0 = Row::new((
             Text::new(chunks.next().unwrap(), text_style.clone()),
@@ -92,11 +89,11 @@ impl P2trAddressDisplay {
             make_spacer(),
             Text::new(chunks.next().unwrap(), text_style.clone()),
             make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
+            Text::new(format!("{}  ", chunks.next().unwrap()), text_style.clone()),
         ));
         
         // Create column with all rows
-        let column = Column::new((type_indicator, vertical_spacer, row0, row1, row2, row3, row4)).with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let column = Column::new((type_indicator, row0, row1, row2, row3, row4)).with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { column }
     }
