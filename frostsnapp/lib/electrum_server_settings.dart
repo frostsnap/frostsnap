@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/progress_indicator.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
+import 'package:frostsnap/tofu_certificate_dialog.dart';
 import 'package:rxdart/rxdart.dart';
 
 class ElectrumServerSettingsPage extends StatelessWidget {
@@ -111,39 +113,152 @@ class _ElectrumServerSettingWidgetState
     setState(() {
       _isTestingConnection = true;
     });
-    String? error;
 
     try {
       final settingsCtx = SettingsContext.of(context)!;
-      await settingsCtx.settings.checkAndSetElectrumServer(
+      final result = await settingsCtx.settings.checkAndSetElectrumServer(
         network: widget.network,
         url: _controller.text,
         isBackup: widget.isBackup,
       );
-    } catch (e) {
-      error = e.toString();
-    }
 
-    setState(() {
-      _isTestingConnection = false;
-      if (error == null) {
-        _originalUrl = _controller.text;
+      // Handle the connection result
+      await _handleConnectionResult(result, settingsCtx);
+    } catch (e) {
+      setState(() {
+        _isTestingConnection = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Theme.of(context).colorScheme.error,
+          content: Text(
+            'Failed to connect. Please check the server URL. ERROR: $e',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleConnectionResult(
+    ConnectionResult result,
+    SettingsContext settingsCtx,
+  ) async {
+    switch (result) {
+      case ConnectionResult_Success():
+        setState(() {
+          _isTestingConnection = false;
+          _originalUrl = _controller.text;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Connection successful! Electrum server saved.'),
           ),
         );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        break;
+
+      case ConnectionResult_CertificatePromptNeeded(:final field0):
+        setState(() {
+          _isTestingConnection = false;
+        });
+        
+        // Show TOFU dialog
+        final accepted = await showTofuCertificateDialog(
+          context: context,
+          certificateInfo: field0,
+          serverUrl: _controller.text,
+        );
+
+        if (accepted == true) {
+          // User accepted the certificate, retry with it
+          setState(() {
+            _isTestingConnection = true;
+          });
+
+          try {
+            final retryResult = await settingsCtx.settings.acceptCertificateAndRetry(
+              network: widget.network,
+              serverUrl: _controller.text,
+              certificate: field0.certificateDer,
+              isBackup: widget.isBackup,
+            );
+
+            // Recursively handle the retry result
+            await _handleConnectionResult(retryResult, settingsCtx);
+          } catch (e) {
+            setState(() {
+              _isTestingConnection = false;
+            });
+            final messenger = ScaffoldMessenger.of(context);
+            messenger.clearSnackBars();
+            messenger.showSnackBar(
+              SnackBar(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                duration: const Duration(seconds: 10),
+                content: Text('Failed to accept certificate: $e'),
+                action: SnackBarAction(
+                  label: 'Copy',
+                  textColor: Theme.of(context).colorScheme.onError,
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: e.toString()));
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Error copied to clipboard'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          }
+        }
+        break;
+
+      case ConnectionResult_Failed(:final field0):
+        setState(() {
+          _isTestingConnection = false;
+        });
+        
+        // Show a persistent snackbar with copy action
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.clearSnackBars(); // Clear any existing snackbars
+        messenger.showSnackBar(
           SnackBar(
             backgroundColor: Theme.of(context).colorScheme.error,
-            content: Text(
-              'Failed to connect. Please check the server URL. ERROR: $error',
+            duration: const Duration(seconds: 10), // Show for 10 seconds
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Failed to connect'),
+                const SizedBox(height: 4),
+                Text(
+                  field0,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onError,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            action: SnackBarAction(
+              label: 'Copy Error',
+              textColor: Theme.of(context).colorScheme.onError,
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: field0));
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Error copied to clipboard'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
             ),
           ),
         );
-      }
-    });
+        break;
+    }
   }
 
   void _resetToOriginal() {

@@ -772,7 +772,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   ) async {
     await showBottomSheetOrDialog(
       context,
-      titleText: "Name device",
+      title: const Text("Name device"),
       builder: (context, _) {
         final mediaQuery = MediaQuery.of(context);
         return SafeArea(
