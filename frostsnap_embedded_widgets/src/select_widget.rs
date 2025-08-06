@@ -11,17 +11,13 @@ macro_rules! select_widget {
                 let widget = $crate::bip39::EnterBip39T9Screen::new($screen_size);
                 $run_macro!(widget);
             }
-            "confirm_touch" | "hold_confirm" | "hold_checkmark" => {
+            "confirm_touch" | "hold_confirm" | "hold_checkmark" | "hold_to_confirm" => {
                 use $crate::{text::Text, HoldToConfirm, palette::PALETTE};
+                use embedded_graphics::text::Alignment;
                 use embedded_graphics::pixelcolor::BinaryColor;
                 
-                let prompt_text = Text::new("Confirm\ntransaction", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, BinaryColor::On));
-                let prompt_widget = prompt_text.color_map(|c| match c {
-                    BinaryColor::On => PALETTE.on_surface,
-                    BinaryColor::Off => PALETTE.background,
-                });
-                
-                let widget = HoldToConfirm::new($screen_size, 2000, prompt_widget);
+                let prompt_text = Text::new("Confirm\ntransaction", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background)).with_alignment(Alignment::Center);
+                let widget = HoldToConfirm::new($screen_size, 2000, prompt_text);
                 $run_macro!(widget);
             }
             "welcome" => {
@@ -172,9 +168,14 @@ macro_rules! select_widget {
                 $run_macro!(centered);
             }
             "keygen_check" => {
-                // KeygenCheck requires a real KeyGenPhase2 which involves complex crypto setup
-                // For now, just show a message that this demo is not available in the simulator
-                panic!("keygen_check demo requires a real KeyGenPhase2 from the keygen protocol and is not available in the simulator");
+                use $crate::keygen_check::KeygenCheck;
+                
+                // Create mock data for demo purposes
+                let t_of_n = (2, 3); // 2 of 3 threshold
+                let security_check_code: [u8; 4] = [0xAB, 0xCD, 0xEF, 0x12];
+                
+                let widget = KeygenCheck::new(t_of_n, security_check_code);
+                $run_macro!(widget);
             }
             "sign_prompt" => {
                 use $crate::sign_prompt::SignPrompt;
@@ -199,7 +200,7 @@ macro_rules! select_widget {
                 
                 let prompt = PromptSignBitcoinTx {
                     foreign_recipients: $crate::alloc::vec![
-                        (taproot_address, bitcoin::Amount::from_sat(21_00_500_001)), // 21.005 BTC
+                        (taproot_address, bitcoin::Amount::from_sat(500_001)), // 21.005 BTC
                         // (segwit_address, bitcoin::Amount::from_sat(150_000)), // 0.0015 BTC
                         // (legacy_address, bitcoin::Amount::from_sat(50_000)), // 0.0005 BTC
                     ],

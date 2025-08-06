@@ -171,9 +171,9 @@ fn generate_match_arms(
                             Self::#variant_ident(widget) => widget.#method_call,
                         }
                     } else {
-                        // Multiple fields - panic
+                        // Multiple fields - assume first field is the widget
                         quote! {
-                            Self::#variant_ident(..) => panic!("Multi-field variant {} cannot delegate Widget methods", stringify!(#variant_ident)),
+                            Self::#variant_ident(widget, ..) => widget.#method_call,
                         }
                     }
                 }

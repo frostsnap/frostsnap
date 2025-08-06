@@ -39,7 +39,7 @@ use frostsnap_device::{
         BusyTask, Prompt, UiEvent, UserInteraction, Workflow
     }, widget_tree::WidgetTree, DownstreamConnectionState, Instant, UpstreamConnectionState
 };
-use frostsnap_embedded_widgets::{Widget, Welcome, DeviceNameScreen, keygen_check::KeygenCheck, FadeSwitcher};
+use frostsnap_embedded_widgets::{Widget, DynWidget, Welcome, DeviceNameScreen, keygen_check::KeygenCheck, FadeSwitcher};
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
 // # Pin Configuration
@@ -323,8 +323,16 @@ where
             Workflow::UserPrompt(prompt) => {
                 match prompt {
                     Prompt::KeyGen { phase } => {
-                        // Create the KeygenCheck widget with the phase
-                        WidgetTree::KeygenCheck(KeygenCheck::new(phase))
+                        // Extract t_of_n and session_hash from phase
+                        let t_of_n = phase.t_of_n();
+                        let session_hash = phase.session_hash();
+                        // Extract the first 4 bytes as security check code
+                        let mut security_check_code = [0u8; 4];
+                        security_check_code.copy_from_slice(&session_hash.0[..4]);
+                        // Create the KeygenCheck widget with just the display data
+                        let widget = KeygenCheck::new(t_of_n, security_check_code);
+                        // Store both widget and phase in the WidgetTree
+                        WidgetTree::KeygenCheck { widget, phase: Some(phase) }
                     }
                     _ => {
                         // TODO: Handle other prompt types
@@ -412,10 +420,13 @@ where
         
         // Check widget states and generate UI events
         match self.page_switcher.current_mut() {
-            WidgetTree::KeygenCheck(keygen_check) => {
-                // Try to take the phase if confirmed (returns None if already taken)
-                if let Some(phase) = keygen_check.take_phase_if_confirmed() {
-                    return Some(UiEvent::KeyGenConfirm { phase });
+            WidgetTree::KeygenCheck { widget: keygen_check, phase } => {
+                // Check if confirmed and we still have the phase
+                if keygen_check.is_confirmed() && phase.is_some() {
+                    // Take the phase (move it out of the Option)
+                    if let Some(phase_data) = phase.take() {
+                        return Some(UiEvent::KeyGenConfirm { phase: phase_data });
+                    }
                 }
             }
             _ => {}

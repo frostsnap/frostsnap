@@ -3,6 +3,8 @@ use frostsnap_embedded_widgets::{
     DeviceNameScreen,
     keygen_check::KeygenCheck,
 };
+use frostsnap_core::device::KeyGenPhase2;
+use alloc::boxed::Box;
 // TODO: Re-enable when implementing backup entry
 // use frostsnap_core::device::restoration::EnterBackupPhase;
 // use frostsnap_embedded_widgets::legacy::{EnterShareIndexScreen, EnterShareScreen};
@@ -38,7 +40,10 @@ pub enum WidgetTree {
     DeviceNaming(DeviceNameScreen),
     
     /// Keygen confirmation screen
-    KeygenCheck(KeygenCheck),
+    KeygenCheck {
+       widget: KeygenCheck,
+       phase: Option<Box<KeyGenPhase2>>,
+    },
     
     // TODO: Re-enable when EnterShareIndexScreen and EnterShareScreen implement Widget trait
     // /// Complex interactive screens for entering backup
