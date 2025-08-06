@@ -2,7 +2,6 @@ use crate::{palette::PALETTE, DynWidget, Fader, PageByPage, Rat, ScrollBar, Swip
 use embedded_graphics::{
     draw_target::DrawTarget, geometry::AnchorX, pixelcolor::Rgb565, prelude::*, primitives::Rectangle
 };
-use embedded_iconoir::size32px::docs::Archive;
 
 const SCROLLBAR_PADDING: u32 = 2;
 const SCROLLBAR_TOP_OFFSET: u32 = 35;  // Account for rounded top edge

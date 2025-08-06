@@ -1,6 +1,6 @@
 use crate::{
     column::Column, row::Row, sized_box::SizedBox, text::Text, 
-    CrossAxisAlignment, DynWidget, Instant, Widget
+    DynWidget, Instant, Widget
 };
 use alloc::string::ToString;
 use embedded_graphics::{

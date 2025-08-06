@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut wait_until: Option<u64> = None; // Time to wait until before processing next command
 
             // Initial draw and update to initialize the window
-            let initial_time = Instant::from_millis(0);
+            let _initial_time = Instant::from_millis(0);
             window.update(&display);
 
             'running: loop {
