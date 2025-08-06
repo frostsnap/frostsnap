@@ -1,9 +1,5 @@
 use crate::{
-    DynWidget, Widget, Instant,
-    row::Row,
-    column::Column,
-    text::Text,
-    sized_box::SizedBox,
+    column::Column, row::Row, sized_box::SizedBox, text::Text, CrossAxisAlignment, DynWidget, Instant, MainAxisAlignment, Widget
 };
 use alloc::string::ToString;
 use embedded_graphics::{
@@ -14,17 +10,18 @@ use embedded_graphics::{
 use u8g2_fonts::U8g2TextStyle;
 
 /// A widget for displaying P2TR (Taproot) addresses in a specific format:
+/// - 1 row with the first chunk (grayed out)
 /// - 5 rows with 3 chunks each (4 chars per chunk)
-/// - 1 row with 1 chunk (2 chars)
 /// - Total: 62 characters displayed as 16 chunks
 pub struct P2trAddressDisplay {
     column: Column<(
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
         Row<(Text<U8g2TextStyle<Gray4>>,), Gray4>,
+        SizedBox<Gray4>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
+        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>), Gray4>,
     ), Gray4>,
 }
 
@@ -38,13 +35,21 @@ impl P2trAddressDisplay {
         });
         
         let text_style = U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(14));
+        let grayed_style = U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(8)); // Grayed out for type indicator
         let spacer_width = 8; // Space between chunks
         
         // Helper to create a spacer
         let make_spacer = || SizedBox::<Gray4>::new(Size::new(spacer_width, 1));
         
-        // P2TR addresses have exactly 16 chunks (15 full + 1 partial)
-        // Row 0: chunks 0, 1, 2
+        // First chunk on its own row (grayed out)
+        let type_indicator = Row::new((
+            Text::new(chunks.next().unwrap(), grayed_style),
+        )).with_main_axis_alignment(MainAxisAlignment::Center);
+        
+        // Vertical spacer between type indicator and address content
+        let vertical_spacer = SizedBox::<Gray4>::new(Size::new(1, 10));
+        
+        // Row 0: chunks 1, 2, 3 (now that chunk 0 is the type indicator)
         let row0 = Row::new((
             Text::new(chunks.next().unwrap(), text_style.clone()),
             make_spacer(),
@@ -53,7 +58,7 @@ impl P2trAddressDisplay {
             Text::new(chunks.next().unwrap(), text_style.clone()),
         ));
         
-        // Row 1: chunks 3, 4, 5
+        // Row 1: chunks 4, 5, 6
         let row1 = Row::new((
             Text::new(chunks.next().unwrap(), text_style.clone()),
             make_spacer(),
@@ -62,7 +67,7 @@ impl P2trAddressDisplay {
             Text::new(chunks.next().unwrap(), text_style.clone()),
         ));
         
-        // Row 2: chunks 6, 7, 8
+        // Row 2: chunks 7, 8, 9
         let row2 = Row::new((
             Text::new(chunks.next().unwrap(), text_style.clone()),
             make_spacer(),
@@ -71,7 +76,7 @@ impl P2trAddressDisplay {
             Text::new(chunks.next().unwrap(), text_style.clone()),
         ));
         
-        // Row 3: chunks 9, 10, 11
+        // Row 3: chunks 10, 11, 12
         let row3 = Row::new((
             Text::new(chunks.next().unwrap(), text_style.clone()),
             make_spacer(),
@@ -80,7 +85,7 @@ impl P2trAddressDisplay {
             Text::new(chunks.next().unwrap(), text_style.clone()),
         ));
         
-        // Row 4: chunks 12, 13, 14
+        // Row 4: chunks 13, 14, 15 (last chunk is only 2 chars)
         let row4 = Row::new((
             Text::new(chunks.next().unwrap(), text_style.clone()),
             make_spacer(),
@@ -89,13 +94,8 @@ impl P2trAddressDisplay {
             Text::new(chunks.next().unwrap(), text_style.clone()),
         ));
         
-        // Row 5: chunk 15 (only 2 chars)
-        let row5 = Row::new((
-            Text::new(chunks.next().unwrap(), text_style),
-        ));
-        
         // Create column with all rows
-        let column = Column::new((row0, row1, row2, row3, row4, row5));
+        let column = Column::new((type_indicator, vertical_spacer, row0, row1, row2, row3, row4)).with_cross_axis_alignment(CrossAxisAlignment::Start);
 
         Self { column }
     }

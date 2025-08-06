@@ -143,27 +143,25 @@ macro_rules! impl_column_for_tuple {
             }
             
             fn size_hint(&self) -> Option<Size> {
-                // Only Start alignment can provide a size hint
-                // Other alignments depend on the parent's height for spacing calculations
+                #[allow(non_snake_case)]
+                let ($(ref $t,)+) = self.children;
+
+                // Calculate total height and maximum width
+                let mut total_height = 0;
+                let mut max_width = 0;
+
+                // All children
+                $(
+                    let size = $t.size_hint()?;
+                    total_height += size.height;
+                    max_width = max_width.max(size.width);
+                )+
                 match self.main_axis_alignment {
                     MainAxisAlignment::Start => {
-                        #[allow(non_snake_case)]
-                        let ($(ref $t,)+) = self.children;
-                        
-                        // Calculate total height and maximum width
-                        let mut total_height = 0;
-                        let mut max_width = 0;
-                        
-                        // All children
-                        $(
-                            let size = $t.size_hint()?;
-                            total_height += size.height;
-                            max_width = max_width.max(size.width);
-                        )+
-                        
+
                         Some(Size::new(max_width, total_height))
                     }
-                    _ => None, // Other alignments need parent height to calculate layout
+                    _ => Some(Size::new(max_width, 0)),
                 }
             }
             
@@ -196,12 +194,12 @@ macro_rules! impl_column_for_tuple {
                 
                 let target_bounds = target.bounding_box();
                 let target_height = target_bounds.size.height;
-                
+
                 // Find first unsized child and calculate total height of sized children
                 let mut first_unsized_index = None;
                 let mut total_sized_height = 0u32;
                 for (i, rect) in self.child_rects.iter().enumerate() {
-                    if rect.size == Size::zero() && first_unsized_index.is_none() {
+                    if rect.size.height == 0 && first_unsized_index.is_none() {
                         first_unsized_index = Some(i);
                     } else {
                         total_sized_height += rect.size.height;
@@ -218,7 +216,6 @@ macro_rules! impl_column_for_tuple {
                 // If we have an unsized child, assign it the available space
                 if let Some(unsized_idx) = first_unsized_index {
                     self.child_rects[unsized_idx].size.height = available_space_for_unsized;
-                    self.child_rects[unsized_idx].size.width = target_bounds.size.width; // Full width
                 }
                 
                 // Recalculate total height now that unsized child has a size

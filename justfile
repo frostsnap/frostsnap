@@ -77,4 +77,4 @@ install-cargo-bins:
     just frostsnapp/install-cargo-bins
 
 simulate +ARGS="":
-    (cd frostsnap_embedded_widgets && cargo run --release --bin simulate -- {{ARGS}})
+    (cd frostsnap_embedded_widgets && cargo run --bin simulate -- {{ARGS}})

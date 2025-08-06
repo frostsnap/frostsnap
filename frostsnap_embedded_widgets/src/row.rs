@@ -106,27 +106,30 @@ macro_rules! impl_row_for_tuple {
             }
             
             fn size_hint(&self) -> Option<Size> {
-                // Only Start alignment can provide a size hint
-                // Other alignments depend on the parent's width for spacing calculations
+                #[allow(non_snake_case)]
+                let ($(ref $t,)+) = self.children;
+                
+                // Calculate maximum height (always knowable) and total width
+                let mut total_width = 0;
+                let mut max_height = 0;
+                
+                // All children
+                $(
+                    let size = $t.size_hint()?;
+                    total_width += size.width;
+                    max_height = max_height.max(size.height);
+                )+
+                
                 match self.main_axis_alignment {
                     crate::column::MainAxisAlignment::Start => {
-                        #[allow(non_snake_case)]
-                        let ($(ref $t,)+) = self.children;
-                        
-                        // Calculate total width and maximum height
-                        let mut total_width = 0;
-                        let mut max_height = 0;
-                        
-                        // All children
-                        $(
-                            let size = $t.size_hint()?;
-                            total_width += size.width;
-                            max_height = max_height.max(size.height);
-                        )+
-                        
+                        // For Start alignment, we know both dimensions
                         Some(Size::new(total_width, max_height))
                     }
-                    _ => None, // Other alignments need parent width to calculate layout
+                    _ => {
+                        // For other alignments, we know the height but not the final width
+                        // since spacing depends on container width
+                        Some(Size::new(0, max_height))
+                    }
                 }
             }
             

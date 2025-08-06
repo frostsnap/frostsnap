@@ -8,7 +8,6 @@ use crate::{
     color_map::ColorMap,
     any_of::AnyOf,
 };
-use embedded_graphics::draw_target::DrawTargetExt;
 use alloc::{format, string::{String, ToString}, vec::Vec};
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -100,13 +99,15 @@ type AddressDisplayWidget = AnyOf<(crate::p2tr_address_display::P2trAddressDispl
 
 /// Page widget for displaying recipient address
 struct AddressPage {
-    title: Text<U8g2TextStyle<Gray4>>,
-    spacer: SizedBox<Gray4>,
-    address_display: AddressDisplayWidget,
+    column: Column<(
+        Text<U8g2TextStyle<Gray4>>,
+        SizedBox<Gray4>,
+        AddressDisplayWidget,
+    ), Gray4>,
 }
 
 impl AddressPage {
-    fn new(index: usize, address: &str, _size: Size) -> Self {
+    fn new(index: usize, address: &bitcoin::Address) -> Self {
         let title = Text::new(
             format!("Address #{}", index + 1),
             U8g2TextStyle::new(crate::FONT_MED, Gray4::new(8))
@@ -115,60 +116,58 @@ impl AddressPage {
         let spacer = SizedBox::<Gray4>::new(Size::new(1, 20));
         
         // Determine address type and create appropriate display widget
-        let address_display = if address.starts_with("bc1p") {
-            // P2TR address (Taproot)
-            AddressDisplayWidget::new(crate::p2tr_address_display::P2trAddressDisplay::new(address))
-        } else {
-            // For now, fall back to simple text display for other address types
-            // In the future, we can add P2wpkhAddressDisplay, P2pkhAddressDisplay, etc.
-            let chunks: Vec<String> = address.chars()
-                .collect::<Vec<_>>()
-                .chunks(4)
-                .map(|chunk| chunk.iter().collect::<String>())
-                .collect();
-            
-            let mut formatted_lines = Vec::new();
-            for row_chunks in chunks.chunks(3) {
-                let line = row_chunks.join("  ");
-                formatted_lines.push(line);
+        let address_display = match address.address_type() {
+            Some(bitcoin::AddressType::P2tr) => {
+                // P2TR address (Taproot)
+                AddressDisplayWidget::new(crate::p2tr_address_display::P2trAddressDisplay::new(&address.to_string()))
             }
-            
-            let address_text = Text::new(
-                formatted_lines.join("\n"),
-                U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(14))
-            );
-            
-            AddressDisplayWidget::new(address_text)
+            _ => {
+                // For now, fall back to simple text display for other address types
+                // In the future, we can add P2wpkhAddressDisplay, P2pkhAddressDisplay, etc.
+                let address_str = address.to_string();
+                let chunks: Vec<String> = address_str.chars()
+                    .collect::<Vec<_>>()
+                    .chunks(4)
+                    .map(|chunk| chunk.iter().collect::<String>())
+                    .collect();
+                
+                let mut formatted_lines = Vec::new();
+                for row_chunks in chunks.chunks(3) {
+                    let line = row_chunks.join("  ");
+                    formatted_lines.push(line);
+                }
+                
+                let address_text = Text::new(
+                    formatted_lines.join("\n"),
+                    U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(14))
+                );
+                
+                AddressDisplayWidget::new(address_text)
+            }
         };
         
-        Self {
-            title,
-            spacer,
-            address_display,
-        }
+        let column = Column::new((title, spacer, address_display));
+        
+        Self { column }
     }
     
 }
 
 impl DynWidget for AddressPage {
-    fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
-        // For now, address display is not interactive
-        None
+    fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
+        self.column.handle_touch(point, current_time, is_release)
     }
     
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
-        // No vertical drag handling needed
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.column.handle_vertical_drag(prev_y, new_y, is_release)
     }
     
     fn size_hint(&self) -> Option<Size> {
-        // Return None to use full available space
-        None
+        self.column.size_hint()
     }
     
     fn force_full_redraw(&mut self) {
-        self.title.force_full_redraw();
-        self.spacer.force_full_redraw();
-        self.address_display.force_full_redraw();
+        self.column.force_full_redraw()
     }
 }
 
@@ -176,31 +175,7 @@ impl Widget for AddressPage {
     type Color = Gray4;
     
     fn draw<D: DrawTarget<Color = Self::Color>>(&mut self, target: &mut D, current_time: Instant) -> Result<(), D::Error> {
-        // Create a column-like layout manually
-        let bounds = target.bounding_box();
-        
-        // Draw title
-        let title_height = self.title.size_hint().map(|s| s.height).unwrap_or(20);
-        let title_area = embedded_graphics::primitives::Rectangle::new(
-            bounds.top_left,
-            Size::new(bounds.size.width, title_height)
-        );
-        self.title.draw(&mut target.cropped(&title_area), current_time)?;
-        
-        // Draw spacer (just advance position)
-        let spacer_height = self.spacer.size_hint().map(|s| s.height).unwrap_or(20);
-        let content_start_y = bounds.top_left.y + title_height as i32 + spacer_height as i32;
-        
-        // Draw address display
-        let content_area = embedded_graphics::primitives::Rectangle::new(
-            Point::new(bounds.top_left.x, content_start_y),
-            Size::new(bounds.size.width, bounds.size.height.saturating_sub(title_height + spacer_height))
-        );
-        
-        // The AnyOf widget handles the dynamic dispatch internally
-        self.address_display.draw(&mut target.cropped(&content_area), current_time)?;
-        
-        Ok(())
+        self.column.draw(target, current_time)
     }
 }
 
@@ -376,7 +351,7 @@ impl SignPromptDisplay {
             } else {
                 // Address page
                 let (address, _) = &prompt.foreign_recipients[recipient_idx];
-                SignPromptPage::new(AddressPage::new(recipient_idx, &address.to_string(), size))
+                SignPromptPage::new(AddressPage::new(recipient_idx, address))
             }
         } else if page_num == recipient_pages {
             // Fee page

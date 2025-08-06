@@ -147,7 +147,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Initial draw and update to initialize the window
             let initial_time = Instant::from_millis(0);
-            let _ = widget.draw(&mut display, initial_time);
             window.update(&display);
 
             'running: loop {
@@ -267,7 +266,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                // Draw widget
                 let _ = widget.draw(&mut display, current_time);
 
                 // Draw touch feedback circles

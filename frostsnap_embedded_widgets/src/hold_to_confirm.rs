@@ -193,7 +193,7 @@ where
         if self.border.is_faded_out() && !self.button().checkmark().drawing_started() {
             self.button_mut().checkmark_mut().start_drawing()
         }
-        
+
         // Then draw the content on top
         self.content.draw(target, current_time)
     }

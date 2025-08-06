@@ -172,36 +172,23 @@ impl<W: Widget> Widget for Padding<W> {
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
-        if let Some(child_size) = self.child.size_hint() {
-            // Child has a size hint - position it with padding offsets
-            let child_position = Point::new(self.left as i32, self.top as i32);
-            let child_area = Rectangle::new(child_position, child_size);
-            
-            // Crop the target to the child's area
-            let mut cropped = target.cropped(&child_area);
-            
-            // Draw the child
-            self.child.draw(&mut cropped, current_time)?;
-        } else {
-            // Child has no size hint - reduce the available drawing area by padding amounts
-            let target_bounds = target.bounding_box();
-            let padded_origin = Point::new(
-                target_bounds.top_left.x + self.left as i32,
-                target_bounds.top_left.y + self.top as i32,
-            );
-            let padded_size = Size::new(
-                target_bounds.size.width.saturating_sub(self.left + self.right),
-                target_bounds.size.height.saturating_sub(self.top + self.bottom),
-            );
-            let padded_area = Rectangle::new(padded_origin, padded_size);
-            
-            // Create a cropped target with reduced area
-            let mut cropped = target.cropped(&padded_area);
-            
-            // Draw the child in the reduced area
-            self.child.draw(&mut cropped, current_time)?;
-        }
-        
+        let target_bounds = target.bounding_box();
+        let padded_origin = Point::new(
+            target_bounds.top_left.x + self.left as i32,
+            target_bounds.top_left.y + self.top as i32,
+        );
+        let padded_size = Size::new(
+            target_bounds.size.width.saturating_sub(self.left + self.right),
+            target_bounds.size.height.saturating_sub(self.top + self.bottom),
+        );
+        let padded_area = Rectangle::new(padded_origin, padded_size);
+
+        // Create a cropped target with reduced area
+        let mut cropped = target.cropped(&padded_area);
+
+        // Draw the child in the reduced area
+        self.child.draw(&mut cropped, current_time)?;
+
         Ok(())
     }
     
