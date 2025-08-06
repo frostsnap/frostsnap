@@ -60,6 +60,7 @@ pub struct Column<T> {
     pub cross_axis_alignment: CrossAxisAlignment,
     pub main_axis_alignment: MainAxisAlignment,
     child_rects: alloc::vec::Vec<Rectangle>,
+    debug_borders: bool,
 }
 
 impl<T: WidgetTuple> Column<T> {
@@ -69,6 +70,7 @@ impl<T: WidgetTuple> Column<T> {
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_alignment: MainAxisAlignment::Start,
             child_rects: vec![Rectangle::zero(); T::TUPLE_LEN],
+            debug_borders: false,
         };
         
         // Extract and cache sizes
@@ -90,6 +92,11 @@ impl<T: WidgetTuple> Column<T> {
     
     pub fn with_main_axis_alignment(mut self, alignment: MainAxisAlignment) -> Self {
         self.main_axis_alignment = alignment;
+        self
+    }
+    
+    pub fn with_debug_borders(mut self, enabled: bool) -> Self {
+        self.debug_borders = enabled;
         self
     }
 }
@@ -269,6 +276,42 @@ macro_rules! impl_column_for_tuple {
                         self.child_rects[child_index].top_left = Point::new(x_offset, y_offset);
                         let mut cropped = target.cropped(&self.child_rects[child_index]);
                         $t.draw(&mut cropped, current_time)?;
+                        
+                        // Draw debug border if enabled
+                        if self.debug_borders {
+                            use embedded_graphics::primitives::PrimitiveStyle;
+                            use embedded_graphics::pixelcolor::{Rgb565, Gray4, Gray2};
+                            use embedded_graphics::pixelcolor::raw::RawData;
+                            
+                            // We support debug borders for common pixel formats based on bits per pixel
+                            let rect = self.child_rects[child_index];
+                            
+                            if let Some(debug_color) = match C::Raw::BITS_PER_PIXEL {
+                                16 => {
+                                    // Assume Rgb565 for 16-bit
+                                    Some(unsafe {
+                                        *(&Rgb565::WHITE as *const Rgb565 as *const C)
+                                    })
+                                },
+                                4 => {
+                                    // Assume Gray4 for 4-bit
+                                    Some(unsafe {
+                                        *(&Gray4::WHITE as *const Gray4 as *const C)
+                                    })
+                                },
+                                2 => {
+                                    // Assume Gray2 for 2-bit
+                                    Some(unsafe {
+                                        *(&Gray2::WHITE as *const Gray2 as *const C)
+                                    })
+                                },
+                                _ => None,
+                            } {
+                                rect.into_styled(PrimitiveStyle::with_stroke(debug_color, 1))
+                                    .draw(target)?;
+                            }
+                        }
+                        
                         y_offset += size.height as i32 + spacing;
                         child_index += 1;
                     }

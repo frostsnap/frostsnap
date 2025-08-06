@@ -98,21 +98,9 @@ pub fn derive_widget(input: TokenStream) -> TokenStream {
     let size_hint_arms = generate_match_arms(&data_enum.variants, quote!(size_hint()));
     let force_full_redraw_arms = generate_match_arms(&data_enum.variants, quote!(force_full_redraw()));
 
-    // Generate the Widget trait implementation
+    // Generate both DynWidget and Widget trait implementations
     let expanded = quote! {
-        impl #impl_generics frostsnap_embedded_widgets::Widget for #name #ty_generics #where_clause {
-            type Color = embedded_graphics::pixelcolor::Rgb565;
-
-            fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
-                &mut self,
-                target: &mut D,
-                current_time: frostsnap_embedded_widgets::Instant,
-            ) -> Result<(), D::Error> {
-                match self {
-                    #(#draw_arms)*
-                }
-            }
-
+        impl #impl_generics frostsnap_embedded_widgets::DynWidget for #name #ty_generics #where_clause {
             fn handle_touch(
                 &mut self,
                 point: embedded_graphics::geometry::Point,
@@ -139,6 +127,20 @@ pub fn derive_widget(input: TokenStream) -> TokenStream {
             fn force_full_redraw(&mut self) {
                 match self {
                     #(#force_full_redraw_arms)*
+                }
+            }
+        }
+
+        impl #impl_generics frostsnap_embedded_widgets::Widget for #name #ty_generics #where_clause {
+            type Color = embedded_graphics::pixelcolor::Rgb565;
+
+            fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
+                &mut self,
+                target: &mut D,
+                current_time: frostsnap_embedded_widgets::Instant,
+            ) -> Result<(), D::Error> {
+                match self {
+                    #(#draw_arms)*
                 }
             }
         }

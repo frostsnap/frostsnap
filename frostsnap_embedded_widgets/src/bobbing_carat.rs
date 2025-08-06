@@ -22,7 +22,7 @@ where
         
         // Set up bobbing animation - move up and down by 5 pixels over 1 second
         translate.set_repeat(true);
-        translate.translate(Point::new(0, -5), 500); // 500ms up, 500ms down
+        translate.translate(Point::new(0, 5), 500); // 500ms up, 500ms down
         
         Self { translate }
     }
@@ -34,13 +34,7 @@ where
 
 {
     fn size_hint(&self) -> Option<Size> {
-        // Get the base icon size from translate widget
-        if let Some(base_size) = self.translate.size_hint() {
-            // Account for animation height - icon moves up by 5 pixels
-            Some(Size::new(base_size.width, base_size.height + 5))
-        } else {
-            None
-        }
+        self.translate.size_hint()
     }
 
     fn force_full_redraw(&mut self) {

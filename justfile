@@ -78,3 +78,6 @@ install-cargo-bins:
 
 simulate +ARGS="":
     (cd frostsnap_embedded_widgets && cargo run --bin simulate -- {{ARGS}})
+
+widget_dev +ARGS="":
+    (cd device && cargo run --bin widget_dev --release {{ARGS}})

@@ -1,12 +1,5 @@
 use crate::{
-    page_by_page::PageByPage, 
-    Widget, DynWidget, Instant,
-    column::{Column, MainAxisAlignment, CrossAxisAlignment},
-    text::Text,
-    bitcoin_amount_display::BitcoinAmountDisplay,
-    sized_box::SizedBox,
-    color_map::ColorMap,
-    any_of::AnyOf,
+    any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay, color_map::ColorMap, column::{Column, CrossAxisAlignment, MainAxisAlignment}, page_by_page::PageByPage, sized_box::SizedBox, text::Text, DynWidget, Instant, Padding, Widget
 };
 use alloc::{format, string::{String, ToString}, vec::Vec};
 use embedded_graphics::{
@@ -99,11 +92,10 @@ type AddressDisplayWidget = AnyOf<(crate::p2tr_address_display::P2trAddressDispl
 
 /// Page widget for displaying recipient address
 struct AddressPage {
-    column: Column<(
+    content: Padding<Column<(
         Text<U8g2TextStyle<Gray4>>,
-        SizedBox<Gray4>,
         AddressDisplayWidget,
-    )>,
+    )>>,
 }
 
 impl AddressPage {
@@ -112,8 +104,6 @@ impl AddressPage {
             format!("Address #{}", index + 1),
             U8g2TextStyle::new(crate::FONT_MED, Gray4::new(8))
         );
-        
-        let spacer = SizedBox::<Gray4>::new(Size::new(1, 20));
         
         // Determine address type and create appropriate display widget
         let address_display = match address.address_type() {
@@ -146,28 +136,28 @@ impl AddressPage {
             }
         };
         
-        let column = Column::new((title, spacer, address_display));
-        
-        Self { column }
+        let column = Column::new((title, address_display)).with_main_axis_alignment(MainAxisAlignment::SpaceAround);
+
+        Self { content: Padding::only(column).bottom(40).build() }
     }
     
 }
 
 impl DynWidget for AddressPage {
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
-        self.column.handle_touch(point, current_time, is_release)
+        self.content.handle_touch(point, current_time, is_release)
     }
     
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        self.column.handle_vertical_drag(prev_y, new_y, is_release)
+        self.content.handle_vertical_drag(prev_y, new_y, is_release)
     }
     
     fn size_hint(&self) -> Option<Size> {
-        self.column.size_hint()
+        self.content.size_hint()
     }
     
     fn force_full_redraw(&mut self) {
-        self.column.force_full_redraw()
+        self.content.force_full_redraw()
     }
 }
 
@@ -175,7 +165,7 @@ impl Widget for AddressPage {
     type Color = Gray4;
     
     fn draw<D: DrawTarget<Color = Self::Color>>(&mut self, target: &mut D, current_time: Instant) -> Result<(), D::Error> {
-        self.column.draw(target, current_time)
+        self.content.draw(target, current_time)
     }
 }
 
@@ -464,12 +454,16 @@ impl PageByPage for SignPromptDisplay {
     }
 }
 
+const SCREEN_WIDTH: usize = 240;
+const SCREEN_HEIGHT: usize = 280;
+
+
 /// High-level widget that manages the complete sign prompt flow
 /// Handles paginator, scroll bar, hold to confirm, and color mapping
 pub struct SignPrompt {
     widget: crate::PaginatorWithScrollBar<
         crate::color_map::ColorMap<
-            crate::animation::VerticalPaginator<SignPromptDisplay, 240, 280, { embedded_graphics::framebuffer::buffer_size::<Gray4>(240, 280) }>,
+            crate::animation::VerticalPaginator<SignPromptDisplay, SCREEN_WIDTH, SCREEN_HEIGHT, { embedded_graphics::framebuffer::buffer_size::<Gray4>(SCREEN_WIDTH, SCREEN_HEIGHT) }>,
             embedded_graphics::pixelcolor::Rgb565
         >,
         crate::HoldToConfirm<crate::color_map::ColorMap<Text<U8g2TextStyle<embedded_graphics::pixelcolor::BinaryColor>>, embedded_graphics::pixelcolor::Rgb565>>
@@ -485,8 +479,6 @@ impl SignPrompt {
         let sign_display = SignPromptDisplay::new(screen_size, prompt);
         
         // Wrap in vertical paginator
-        const SCREEN_WIDTH: usize = 240;
-        const SCREEN_HEIGHT: usize = 280;
         const BUFFER_SIZE: usize = embedded_graphics::framebuffer::buffer_size::<Gray4>(SCREEN_WIDTH, SCREEN_HEIGHT);
         let paginator = VerticalPaginator::<_, SCREEN_WIDTH, SCREEN_HEIGHT, BUFFER_SIZE>::new(sign_display);
         
@@ -511,7 +503,7 @@ impl SignPrompt {
         let hold_confirm = HoldToConfirm::new(screen_size, 5000, confirm_widget);
         
         // Wrap in PaginatorWithScrollBar
-        let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_confirm, screen_size);
+        let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_confirm);
         
         Self { widget }
     }

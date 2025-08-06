@@ -109,7 +109,7 @@ macro_rules! select_widget {
                 
                 let hold_to_confirm = HoldToConfirm::new($screen_size, 2000, confirm_prompt_rgb);
                 
-                let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_to_confirm, $screen_size);
+                let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_to_confirm);
                 
                 $run_macro!(widget);
             }

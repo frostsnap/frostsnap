@@ -61,31 +61,9 @@ impl EnteredWords {
         let button_state = words.borrow().get_submit_button_state();
         let submit_button = SubmitBackupButton::new(button_rect, button_state);
 
-        // Calculate scrollbar dimensions
-        const SCROLLBAR_MARGIN: u32 = 0;  // No margin from right edge
-        const SCROLLBAR_TOP_MARGIN: u32 = 30;  // Increased top margin
-        const SCROLLBAR_BOTTOM_MARGIN: u32 = 2;  // Bottom margin
-
-        let scrollbar_x = visible_size.width as i32 - (SCROLLBAR_WIDTH + SCROLLBAR_MARGIN) as i32;
-        let scrollbar_y = SCROLLBAR_TOP_MARGIN as i32;
-        let scrollbar_height = (visible_size.height - SUBMIT_BUTTON_HEIGHT)
-            - SCROLLBAR_TOP_MARGIN
-            - SCROLLBAR_BOTTOM_MARGIN;
-
-        // Calculate viewport height
-        let viewport_height = visible_size.height - SUBMIT_BUTTON_HEIGHT;
-        
-        // Calculate initial content height based on n_completed
-        let n_completed = words.borrow().n_completed();
-        let visible_words = (n_completed + 1).min(TOTAL_WORDS);
-        let content_height = TOP_PADDING + (visible_words as u32 * (FONT_SIZE.height + VERTICAL_PAD));
-
-        let scroll_bar = ScrollBar::new(
-            Point::new(scrollbar_x, scrollbar_y),
-            scrollbar_height,
-            content_height,
-            viewport_height,
-        );
+        // Use a fixed thumb size for now
+        let thumb_size = crate::Frac::from_ratio(1, 4); // 25% of scrollbar height
+        let scroll_bar = ScrollBar::new(thumb_size);
 
         Self {
             framebuffer: framebuffer.clone(),
@@ -156,9 +134,8 @@ impl EnteredWords {
         let mut cropped_target = target.cropped(&cropped_rect);
         let cropped_bounds = cropped_target.bounding_box();
 
-        // Get dynamic content height and update scrollbar
+        // Get dynamic content height
         let content_height = self.calculate_content_height();
-        self.scroll_bar.set_content_height(content_height);
         
         // Draw words framebuffer in scrollable area only
         if self.scroll_position < content_height as i32 {
@@ -208,7 +185,21 @@ impl EnteredWords {
         }
 
         // Draw scroll bar
-        self.scroll_bar.draw(target);
+        const SCROLLBAR_MARGIN: u32 = 0;  // No margin from right edge
+        const SCROLLBAR_TOP_MARGIN: u32 = 30;  // Increased top margin
+        const SCROLLBAR_BOTTOM_MARGIN: u32 = 2;  // Bottom margin
+        
+        let scrollbar_x = bounds.size.width as i32 - (SCROLLBAR_WIDTH + SCROLLBAR_MARGIN) as i32;
+        let scrollbar_y = SCROLLBAR_TOP_MARGIN as i32;
+        let scrollbar_height = (bounds.size.height - SUBMIT_BUTTON_HEIGHT)
+            - SCROLLBAR_TOP_MARGIN
+            - SCROLLBAR_BOTTOM_MARGIN;
+            
+        let scrollbar_area = Rectangle::new(
+            Point::new(scrollbar_x, scrollbar_y),
+            Size::new(SCROLLBAR_WIDTH, scrollbar_height)
+        );
+        self.scroll_bar.draw(&mut target.cropped(&scrollbar_area));
 
         // Draw "tap to edit" hint text in the middle of the scrollable area
         if self.first_draw || self.needs_redraw {

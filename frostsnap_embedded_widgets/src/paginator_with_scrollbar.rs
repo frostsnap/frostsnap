@@ -1,10 +1,8 @@
-use crate::{palette::PALETTE, Fader, PageByPage, Rat, ScrollBar, SwipeUpChevron, Widget, SCROLLBAR_WIDTH};
+use crate::{palette::PALETTE, DynWidget, Fader, PageByPage, Rat, ScrollBar, SwipeUpChevron, Widget, SCROLLBAR_WIDTH};
 use embedded_graphics::{
-    draw_target::DrawTarget,
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::Rectangle,
+    draw_target::DrawTarget, geometry::AnchorX, pixelcolor::Rgb565, prelude::*, primitives::Rectangle
 };
+use embedded_iconoir::size32px::docs::Archive;
 
 const SCROLLBAR_PADDING: u32 = 2;
 const SCROLLBAR_TOP_OFFSET: u32 = 35;  // Account for rounded top edge
@@ -16,7 +14,6 @@ const FADE_REDRAW_INTERVAL_MS: u64 = 40;
 pub struct PaginatorWithScrollBar<W, F> {
     pub child: Fader<W>,
     pub final_page: Fader<F>,
-    size: Size,
     scrollbar: Fader<ScrollBar>,
     swipe_hint: Option<Fader<SwipeUpChevron<Rgb565>>>,
     child_was_ready: bool,
@@ -25,16 +22,11 @@ pub struct PaginatorWithScrollBar<W, F> {
 }
 
 impl<W: PageByPage<Color=Rgb565>, F: Widget<Color = Rgb565>> PaginatorWithScrollBar<W, F> {
-    pub fn new(child: W, final_page: F, size: Size) -> Self {
-        let scrollbar_x = (size.width - SCROLLBAR_WIDTH) as i32;
-        let scrollbar_height = size.height - SCROLLBAR_TOP_OFFSET - SCROLLBAR_BOTTOM_OFFSET;
+    pub fn new(child: W, final_page: F) -> Self {
         let total_pages_with_virtual = child.total_pages() + 1; // +1 for virtual page
-        let scrollbar = ScrollBar::new(
-            Point::new(scrollbar_x, SCROLLBAR_TOP_OFFSET as i32),
-            scrollbar_height,
-            total_pages_with_virtual as u32 * 100, // Approximate content height
-            100, // Viewport height
-        );
+        // Calculate thumb size based on pages
+        let thumb_size = crate::Frac::from_ratio(1, total_pages_with_virtual as u32);
+        let scrollbar = ScrollBar::new(thumb_size);
         
         // Create swipe hint if on first page with navigation
         let swipe_hint = if  child.has_next_page() {
@@ -46,7 +38,6 @@ impl<W: PageByPage<Color=Rgb565>, F: Widget<Color = Rgb565>> PaginatorWithScroll
         let mut self_ = Self {
             child: Fader::new_faded_out(child),
             final_page: Fader::new_faded_out(final_page),
-            size, 
             scrollbar: Fader::new_faded_out(scrollbar), 
             swipe_hint, 
             child_was_ready: false,
@@ -117,7 +108,17 @@ where
     }
 
     fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
+        // Get child's size hint
+        let child_size = self.child.size_hint()?;
+        
+        // Add swipe hint height if present
+        let swipe_hint_height = if let Some(swipe_hint) = &self.swipe_hint {
+            swipe_hint.size_hint().unwrap().height
+        } else {
+            0
+        };
+        
+        Some(Size::new(child_size.width, child_size.height + swipe_hint_height))
     }
 
     fn force_full_redraw(&mut self) {
@@ -139,12 +140,18 @@ where
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        // Calculate content area (excluding scrollbar)
-        let content_width = self.size.width - SCROLLBAR_WIDTH - SCROLLBAR_PADDING;
-        let content_area = Rectangle::new(
-            Point::zero(),
-            Size::new(content_width, self.size.height)
-        );
+        let bounds = target.bounding_box();
+        
+        // Get swipe hint height if present
+        let swipe_hint_height = if let Some(swipe_hint) = &self.swipe_hint {
+            swipe_hint.size_hint().unwrap().height
+        } else {
+            0
+        };
+        
+        // Calculate content area within child area (excluding scrollbar)
+        let content_width = bounds.size.width - SCROLLBAR_WIDTH - SCROLLBAR_PADDING;
+        let content_area = bounds.resized_width(content_width, AnchorX::Left);
 
         // Handle initial state or transitions
         if self.child.is_faded_out() && self.final_page.is_faded_out() {
@@ -156,9 +163,20 @@ where
             }
         }
 
-        self.child.draw(&mut target.clipped(&content_area), current_time)?;
+        // Draw child/final page in content area (cropped to child_area)
+        let mut child_target = target.cropped(&content_area);
+        let mut child_target = child_target.clipped(&content_area); // to make sure we don't draw over scrollbar
+        self.child.draw(&mut child_target, current_time)?;
         self.final_page.draw(target, current_time)?;
-        self.scrollbar.draw(target, current_time)?;
+        
+        // Draw scrollbar in its area (full height of widget, not affected by swipe hint)
+        let scrollbar_x = bounds.top_left.x + (bounds.size.width - SCROLLBAR_WIDTH) as i32;
+        let scrollbar_height = bounds.size.height - SCROLLBAR_TOP_OFFSET - SCROLLBAR_BOTTOM_OFFSET;
+        let scrollbar_area = Rectangle::new(
+            Point::new(scrollbar_x, bounds.top_left.y + SCROLLBAR_TOP_OFFSET as i32),
+            Size::new(SCROLLBAR_WIDTH, scrollbar_height)
+        );
+        self.scrollbar.draw(&mut target.cropped(&scrollbar_area), current_time)?;
 
         let child_is_ready = !self.child.is_transitioning() && self.child.is_showing();
 
@@ -169,10 +187,10 @@ where
                 swipe_hint.start_fade_in(FADE_DURATION_MS, FADE_REDRAW_INTERVAL_MS, PALETTE.background);
             }
 
-            // Draw swipe hint if present
+            // Draw swipe hint at the bottom
             let hint_area = Rectangle::new(
-                Point::new(0, self.size.height as i32 - 50),
-                Size::new(self.size.width, 50)
+                Point::new(0, (bounds.size.height - swipe_hint_height) as i32),
+                Size::new(bounds.size.width, swipe_hint_height)
             );
             swipe_hint.draw(&mut target.cropped(&hint_area), current_time)?;
         }

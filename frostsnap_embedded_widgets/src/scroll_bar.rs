@@ -1,4 +1,4 @@
-use crate::{palette::PALETTE, Rat, Widget};
+use crate::{palette::PALETTE, Rat, Frac, Widget};
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
@@ -10,25 +10,16 @@ const MIN_INDICATOR_HEIGHT: u32 = 20;
 
 #[derive(Debug)]
 pub struct ScrollBar {
-    track_rect: Rectangle,
     last_scroll_position: Option<Rat>,
-    content_height: u32,
-    viewport_height: u32,
+    thumb_size: Frac,
     scroll_position: Rat,
 }
 
 impl ScrollBar {
-    pub fn new(position: Point, height: u32, content_height: u32, viewport_height: u32) -> Self {
-        let track_rect = Rectangle::new(
-            position,
-            Size::new(SCROLLBAR_WIDTH, height)
-        );
-        
+    pub fn new(thumb_size: Frac) -> Self {
         Self {
-            track_rect,
             last_scroll_position: None,
-            content_height,
-            viewport_height,
+            thumb_size,
             scroll_position: Rat::ZERO,
         }
     }
@@ -37,12 +28,9 @@ impl ScrollBar {
         self.scroll_position = position;
     }
     
-    pub fn set_content_height(&mut self, content_height: u32) {
-        self.content_height = content_height;
-    }
-    
     pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D) {
-        if self.content_height <= self.viewport_height {
+        if self.thumb_size >= Frac::ONE {
+            // Everything is visible, no need for scrollbar
             return;
         }
         
@@ -50,48 +38,41 @@ impl ScrollBar {
             return;
         }
         
-        let visible_ratio = Rat::from_ratio(self.viewport_height, self.content_height);
-        let indicator_height = (visible_ratio * self.track_rect.size.height).max(Rat::from_int(MIN_INDICATOR_HEIGHT as _));
-        
-        let available_track_height = self.track_rect.size.height - indicator_height;
-        let indicator_y = self.track_rect.top_left.y + (self.scroll_position * available_track_height).round() as i32;
-        
-        let indicator_rect = Rectangle::new(
-            Point::new(self.track_rect.top_left.x, indicator_y),
-            Size::new(SCROLLBAR_WIDTH, indicator_height.round())
+        let bounds = target.bounding_box();
+        let track_rect = Rectangle::new(
+            bounds.top_left,
+            bounds.size
         );
         
-        if self.last_scroll_position.is_none() {
-            let track = RoundedRectangle::with_equal_corners(
-                self.track_rect,
-                Size::new(2, 2)
-            );
-            let _ = track
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .fill_color(PALETTE.surface_variant)
-                        .build(),
-                )
-                .draw(target);
-        } else {
-            let track = RoundedRectangle::with_equal_corners(
-                self.track_rect,
-                Size::new(2, 2)
-            );
-            let _ = track
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .fill_color(PALETTE.surface_variant)
-                        .build(),
-                )
-                .draw(target);
-        }
+        let thumb_height = (self.thumb_size * track_rect.size.height).max(Rat::from_int(MIN_INDICATOR_HEIGHT as _));
         
-        let indicator = RoundedRectangle::with_equal_corners(
-            indicator_rect,
+        let available_track_height = track_rect.size.height - thumb_height;
+        let thumb_y = track_rect.top_left.y + (self.scroll_position * available_track_height).round() as i32;
+        
+        let thumb_rect = Rectangle::new(
+            Point::new(track_rect.top_left.x, thumb_y),
+            Size::new(track_rect.size.width, thumb_height.round())
+        );
+        
+        // Always draw the track background
+        let track = RoundedRectangle::with_equal_corners(
+            track_rect,
             Size::new(2, 2)
         );
-        let _ = indicator
+        let _ = track
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(PALETTE.surface_variant)
+                    .build(),
+            )
+            .draw(target);
+        
+        // Draw the thumb
+        let thumb = RoundedRectangle::with_equal_corners(
+            thumb_rect,
+            Size::new(2, 2)
+        );
+        let _ = thumb
             .into_styled(
                 PrimitiveStyleBuilder::new()
                     .fill_color(PALETTE.on_surface_variant)
@@ -105,7 +86,8 @@ impl ScrollBar {
 
 impl crate::DynWidget for ScrollBar {
     fn size_hint(&self) -> Option<Size> {
-        Some(self.track_rect.size)
+        // No fixed size - fills the draw target
+        None
     }
     
     fn force_full_redraw(&mut self) {

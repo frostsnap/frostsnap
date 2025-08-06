@@ -16,12 +16,12 @@ micromath = "0.2"
 frostsnap_backup = { workspace = true }
 frostsnap_core = { workspace = true }
 bincode = { workspace = true }
+bitcoin = { workspace = true }
 
 # For the simulator binary
 [target.'cfg(not(target_arch = "riscv32"))'.dependencies]
 embedded-graphics-simulator = "0.6.0"
 rand = "0.8"
-bitcoin = { workspace = true }
 
 [dev-dependencies]
 proptest = "=1.6.0"

@@ -35,7 +35,7 @@ impl P2trAddressDisplay {
         });
         
         let text_style = U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(14));
-        let grayed_style = U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(8)); // Grayed out for type indicator
+        let grayed_style = U8g2TextStyle::new(crate::FONT_MED, Gray4::new(8)); // Grayed out for type indicator
         let spacer_width = 8; // Space between chunks
         
         // Helper to create a spacer
@@ -93,7 +93,7 @@ impl P2trAddressDisplay {
         ));
         
         // Create column with all rows
-        let column = Column::new((type_indicator, row0, row1, row2, row3, row4)).with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let column = Column::new((type_indicator, row0, row1, row2, row3, row4));
 
         Self { column }
     }

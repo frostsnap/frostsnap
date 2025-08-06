@@ -19,7 +19,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
-use frostsnap_embedded_widgets::{Widget, palette::PALETTE};
+use frostsnap_embedded_widgets::{Widget, palette::PALETTE, DynWidget};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 // Screen constants
@@ -28,7 +28,7 @@ const SCREEN_HEIGHT: u32 = 280;
 const SCREEN_OFFSET_Y: u16 = 20;  // ST7789 Y offset for 240x280 panel
 
 // Widget demo selection
-const DEMO: &str = "device_name";
+const DEMO: &str = "sign_prompt";
 
 #[entry]
 fn main() -> ! {
