@@ -1,6 +1,7 @@
 pub mod chain_sync;
 pub mod wallet;
 mod wallet_persist;
+pub mod tofu;
 
 use bdk_chain::{
     bitcoin::{
