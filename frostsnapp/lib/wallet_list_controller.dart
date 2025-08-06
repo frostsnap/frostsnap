@@ -76,7 +76,7 @@ class WalletListController extends ChangeNotifier {
     return _wallets[index];
   }
 
-  selectWallet(KeyId? id) {
+  void selectWallet(KeyId? id) {
     if (id == null) {
       selectedIndex = null;
       return;
@@ -91,7 +91,7 @@ class WalletListController extends ChangeNotifier {
     selectedIndex = walletIndex;
   }
 
-  selectRecoveringWallet(RestorationId id) {
+  void selectRecoveringWallet(RestorationId id) {
     final walletIndex = wallets.indexWhere(
       (w) => switch (w) {
         WalletItemRestoration item => restorationIdEquals(

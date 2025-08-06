@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/keygen.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/sign_message.dart';
@@ -18,7 +16,7 @@ import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:frostsnap/wallet_create.dart';
+import 'package:frostsnap/wallet_add.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
 import 'package:frostsnap/wallet_receive.dart';
 import 'package:frostsnap/wallet_send.dart';
@@ -63,73 +61,43 @@ class Wallet {
 }
 
 class WalletHome extends StatelessWidget {
+  static const noWalletBodyCenterKey = Key('noWalletCenter');
+
   const WalletHome({super.key});
 
   Widget buildNoWalletBody(BuildContext context) {
     final theme = Theme.of(context);
-    final homeCtx = HomeContext.of(context)!;
+    final column = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: 460),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 36,
+        children: [
+          Image(
+            color: theme.colorScheme.outline,
+            height: 32 * 3,
+            alignment: Alignment.center,
+            image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
+          ),
+          WalletAddColumn(),
+        ],
+      ),
+    );
     return CustomScrollView(
       slivers: [
-        SliverAppBar(pinned: true),
+        SliverAppBar(pinned: true, forceMaterialTransparency: true),
         SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 20.0,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10.0),
-                  child: SvgPicture.asset(
-                    'assets/frostsnap-logo.svg',
-                    fit: BoxFit.fitWidth,
-                    height: 100,
-                    colorFilter: ColorFilter.mode(
-                      theme.colorScheme.primary,
-                      BlendMode.srcATop,
-                    ),
-                  ),
+          hasScrollBody: true,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Center(child: column),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(10.0),
-                  child: Text(
-                    'Let\'s Get Started',
-                    style: theme.textTheme.headlineLarge,
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final asRef =
-                        await MaybeFullscreenDialog.show<AccessStructureRef>(
-                          context: context,
-                          barrierDismissible: false,
-                          child: WalletCreatePage(),
-                        );
-                    if (context.mounted && asRef != null) {
-                      homeCtx.openNewlyCreatedWallet(asRef.keyId);
-                      showWalletCreatedDialog(context, asRef);
-                    }
-                  },
-                  icon: Icon(Icons.add_circle),
-                  label: Text('Create Wallet'),
-                ),
-                TextButton.icon(
-                  onPressed: () async {
-                    final restorationId = await startWalletRecoveryFlowDialog(
-                      context,
-                    );
-                    if (restorationId != null) {
-                      homeCtx.walletListController.selectRecoveringWallet(
-                        restorationId,
-                      );
-                    }
-                  },
-                  icon: Icon(Icons.history),
-                  label: Text('Restore Wallet'),
-                ),
-                SizedBox(height: 100.0),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ],
@@ -557,7 +525,7 @@ class WalletDrawer extends StatelessWidget {
 
   Widget buildWalletDestination(BuildContext context, WalletItem item) {
     return NavigationDrawerDestination(
-      icon: item.icon ?? SizedBox.shrink(),
+      icon: item.icon ?? Icon(Icons.wallet_rounded),
       label: Text.rich(
         TextSpan(
           text: item.name,
@@ -571,6 +539,32 @@ class WalletDrawer extends StatelessWidget {
     );
   }
 
+  static const outerRadius = Radius.circular(16.0);
+  static const innerRadius = Radius.circular(2.0);
+  static const topShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.only(
+      topLeft: outerRadius,
+      topRight: outerRadius,
+      bottomLeft: innerRadius,
+      bottomRight: innerRadius,
+    ),
+  );
+  static const bottomShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.only(
+      topLeft: innerRadius,
+      topRight: innerRadius,
+      bottomLeft: outerRadius,
+      bottomRight: outerRadius,
+    ),
+  );
+  static const midShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(innerRadius),
+  );
+  static const allShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(outerRadius),
+  );
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 0);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -580,136 +574,120 @@ class WalletDrawer extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         List<Widget> children = [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10.0,
-              vertical: 5.0,
-            ),
-            child: SvgPicture.asset(
-              'assets/frostsnap-logo.svg',
-              // width: logoWidth,
-              fit: BoxFit.fitWidth,
-              height: 100,
-              colorFilter: ColorFilter.mode(
-                theme.colorScheme.primary,
-                BlendMode.srcATop,
+          SizedBox(
+            height: 64,
+            width: 360,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                spacing: 12,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Image(
+                      color: theme.colorScheme.primary,
+                      image: AssetImage('assets/frostsnap-logo-trimmed.png'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ];
-        if (controller.wallets.isEmpty) {
-          children.add(
-            NavigationDrawerDestination(
-              enabled: false,
-              icon: SizedBox(),
-              label: Text('Let\'s Get Started'),
-            ),
-          );
-        } else {
-          children.addAll([
-            ...controller.wallets.map(
-              (item) => buildWalletDestination(context, item),
-            ),
-            NavigationDrawerDestination(
-              icon: SizedBox.shrink(),
-              label: SizedBox(width: 224, child: Divider()),
-              enabled: false,
-            ),
-          ]);
-        }
-
-        final List<(void Function(), bool, IconData, String)>
-        actionableDestinations = [
-          (
-            () async {
-              final asRef =
-                  await MaybeFullscreenDialog.show<AccessStructureRef>(
-                    context: context,
-                    barrierDismissible: false,
-                    child: WalletCreatePage(),
-                  );
-              if (context.mounted && asRef != null) {
-                homeCtx.openNewlyCreatedWallet(asRef.keyId);
-                showWalletCreatedDialog(context, asRef);
-              }
-            },
-            true,
-            Icons.add_circle_rounded,
-            'Create Wallet',
-          ),
-          (
-            () async {
-              final restorationId = await startWalletRecoveryFlowDialog(
-                context,
-              );
-              if (restorationId != null) {
-                controller.selectRecoveringWallet(restorationId);
-              }
-            },
-            false,
-            Icons.update_rounded,
-            'Restore Wallet',
-          ),
-          (
-            () async {
-              await MaybeFullscreenDialog.show(
-                context: context,
-                barrierDismissible: true,
-                child: homeCtx.wrap(DeviceListPage()),
-              );
-            },
-            false,
-            Icons.devices,
-            'Connected Devices',
-          ),
-          (
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => SettingsPage()),
-            ),
-            false,
-            Icons.settings,
-            'Settings',
-          ),
-        ];
         children.addAll([
-          ...actionableDestinations.map((elem) {
-            final (onPressed, isFilled, iconData, textData) = elem;
-            final label = Text(textData);
-            final icon = Icon(iconData);
-            return NavigationDrawerDestination(
-              enabled: false,
-              icon: SizedBox.shrink(),
-              label: isFilled
-                  ? FilledButton.icon(
-                      onPressed: onPressed,
-                      icon: icon,
-                      label: label,
-                    )
-                  : TextButton.icon(
-                      onPressed: onPressed,
-                      icon: icon,
-                      label: label,
+          ...controller.wallets.map(
+            (item) => buildWalletDestination(context, item),
+          ),
+          NavigationDrawerDestination(
+            icon: Icon(
+              Icons.add_rounded,
+              color: controller.selected == null
+                  ? null
+                  : theme.colorScheme.primary,
+            ),
+            label: Text(
+              'Create or Restore Wallet',
+              style: controller.selected == null
+                  ? null
+                  : TextStyle(color: theme.colorScheme.primary),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 28, vertical: 4),
+            child: Divider(),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 2,
+              children: [
+                Card.filled(
+                  color: theme.colorScheme.surface,
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.hardEdge,
+                  shape: topShape,
+                  child: ListTile(
+                    onTap: () async => await MaybeFullscreenDialog.show(
+                      context: context,
+                      barrierDismissible: true,
+                      child: homeCtx.wrap(DeviceListPage()),
                     ),
-            );
-          }),
+                    dense: true,
+                    contentPadding: tilePadding,
+                    leading: Icon(Icons.devices_rounded),
+                    title: Text('Connected Devices'),
+                    textColor: theme.colorScheme.secondary,
+                    iconColor: theme.colorScheme.secondary,
+                  ),
+                ),
+                Card.filled(
+                  color: theme.colorScheme.surface,
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.hardEdge,
+                  shape: bottomShape,
+                  child: ListTile(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => SettingsPage()),
+                    ),
+                    dense: true,
+                    contentPadding: tilePadding,
+                    leading: Icon(Icons.settings_rounded),
+                    title: Text('Settings'),
+                    textColor: theme.colorScheme.secondary,
+                    iconColor: theme.colorScheme.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ]);
 
         final drawer = NavigationDrawer(
+          tilePadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           onDestinationSelected: (index) {
-            controller.selectedIndex = index;
+            if (index < controller.wallets.length) {
+              controller.selectedIndex = index;
+            } else {
+              controller.selectedIndex = null;
+            }
             scaffoldKey.currentState?.closeDrawer();
           },
-          selectedIndex: controller.selectedIndex,
+          selectedIndex: controller.selectedIndex ?? controller.wallets.length,
           children: children,
         );
 
-        return isRounded
+        final maybeContainedDrawer = isRounded
             ? drawer
             : Container(
                 color: theme.colorScheme.surfaceContainerLow,
                 child: drawer,
               );
+
+        return maybeContainedDrawer;
       },
     );
   }
@@ -727,7 +705,6 @@ class WalletBottomBar extends StatelessWidget {
     final theme = Theme.of(context);
     const elevation = 3.0;
     return BottomAppBar(
-      color: Colors.transparent,
       child: Align(
         alignment: AlignmentDirectional.center,
         child: ConstrainedBox(

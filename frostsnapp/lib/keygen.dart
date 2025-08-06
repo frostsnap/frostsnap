@@ -5,7 +5,7 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/theme.dart';
 
-showWalletCreatedDialog(
+void showWalletCreatedDialog(
   BuildContext context,
   AccessStructureRef accessStructureRef,
 ) async {

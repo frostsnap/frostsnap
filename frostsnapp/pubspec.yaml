@@ -85,6 +85,7 @@ flutter:
     - assets/icons/
     - assets/google_fonts/
     - assets/frostsnap-logo.svg
+    - assets/frostsnap-logo-trimmed.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
