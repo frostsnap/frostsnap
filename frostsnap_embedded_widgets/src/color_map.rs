@@ -11,6 +11,7 @@ use embedded_graphics::{
 /// A widget that maps colors from one color space to another.
 /// This allows widgets that draw in one color space (e.g., Rgb565) to be rendered
 /// to targets that expect a different color space (e.g., Gray2).
+#[derive(PartialEq)]
 pub struct ColorMap<W: Widget, C> {
     pub child: W,
     map_fn: fn(W::Color) -> C,

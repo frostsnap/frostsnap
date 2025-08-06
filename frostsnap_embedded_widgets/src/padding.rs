@@ -8,6 +8,7 @@ use embedded_graphics::{
 use core::ops::{Deref, DerefMut};
 
 /// A widget that adds padding around its child
+#[derive(PartialEq)]
 pub struct Padding<W: Widget> {
     pub child: W,
     pub top: u32,
@@ -111,33 +112,16 @@ impl<W: Widget> crate::DynWidget for Padding<W>
         current_time: Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        if let Some(child_size) = self.child.size_hint() {
-            // Child has size hint - check if touch is within child bounds
-            let child_area = Rectangle::new(
-                Point::new(self.left as i32, self.top as i32),
-                child_size
+        // Child has no size hint - check if touch is within padded area
+        if point.x >= self.left as i32 && point.y >= self.top as i32 {
+            // Adjust the touch point by padding offsets
+            let adjusted_point = Point::new(
+                point.x - self.left as i32,
+                point.y - self.top as i32,
             );
-            
-            if child_area.contains(point) {
-                // Adjust the touch point relative to child's origin
-                let adjusted_point = Point::new(
-                    point.x - self.left as i32,
-                    point.y - self.top as i32,
-                );
-                return self.child.handle_touch(adjusted_point, current_time, is_release);
-            }
-        } else {
-            // Child has no size hint - check if touch is within padded area
-            if point.x >= self.left as i32 && point.y >= self.top as i32 {
-                // Adjust the touch point by padding offsets
-                let adjusted_point = Point::new(
-                    point.x - self.left as i32,
-                    point.y - self.top as i32,
-                );
-                return self.child.handle_touch(adjusted_point, current_time, is_release);
-            }
+            return self.child.handle_touch(adjusted_point, current_time, is_release);
         }
-        
+
         None
     }
 

@@ -98,8 +98,34 @@ pub fn derive_widget(input: TokenStream) -> TokenStream {
     let size_hint_arms = generate_match_arms(&data_enum.variants, quote!(size_hint()));
     let force_full_redraw_arms = generate_match_arms(&data_enum.variants, quote!(force_full_redraw()));
 
+    // Generate match arms for widget_name
+    let widget_name_arms = data_enum.variants.iter().map(|variant| {
+        let variant_ident = &variant.ident;
+        let variant_name = variant_ident.to_string();
+        match &variant.fields {
+            Fields::Unit => quote! {
+                Self::#variant_ident => #variant_name,
+            },
+            Fields::Unnamed(_) => quote! {
+                Self::#variant_ident(..) => #variant_name,
+            },
+            Fields::Named(_) => quote! {
+                Self::#variant_ident { .. } => #variant_name,
+            },
+        }
+    });
+
     // Generate both DynWidget and Widget trait implementations
     let expanded = quote! {
+        impl #impl_generics #name #ty_generics #where_clause {
+            /// Returns the name of the current widget variant
+            pub fn widget_name(&self) -> &'static str {
+                match self {
+                    #(#widget_name_arms)*
+                }
+            }
+        }
+
         impl #impl_generics frostsnap_embedded_widgets::DynWidget for #name #ty_generics #where_clause {
             fn handle_touch(
                 &mut self,

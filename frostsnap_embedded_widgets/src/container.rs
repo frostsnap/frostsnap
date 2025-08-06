@@ -6,6 +6,7 @@ use embedded_graphics::{
 };
 
 /// A container that can optionally draw a border around its child
+#[derive(PartialEq)]
 pub struct Container<W> 
 where
     W: Widget,

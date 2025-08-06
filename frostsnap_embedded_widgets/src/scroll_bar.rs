@@ -8,7 +8,7 @@ use embedded_graphics::{
 pub const SCROLLBAR_WIDTH: u32 = 4;
 const MIN_INDICATOR_HEIGHT: u32 = 20;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ScrollBar {
     last_scroll_position: Option<Rat>,
     thumb_size: Frac,

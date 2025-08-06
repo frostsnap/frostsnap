@@ -11,7 +11,7 @@ pub enum Direction {
     Down,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Animation {
     start_time: Option<crate::Instant>,
     direction: Direction,

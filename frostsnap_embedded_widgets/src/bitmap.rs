@@ -39,7 +39,7 @@ impl EncodedImage {
 }
 
 /// A pure bitmap for tracking binary pixels
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Bitmap {
     pub width: u32,
     pub bytes: Vec<u8>,
@@ -144,6 +144,7 @@ impl From<EncodedImage> for Bitmap {
 }
 
 /// A widget wrapper for Bitmap that implements the Widget trait
+#[derive(PartialEq)]
 pub struct BitmapWidget {
     bitmap: Bitmap,
     needs_redraw: bool,

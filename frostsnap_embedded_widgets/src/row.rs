@@ -19,6 +19,7 @@ macro_rules! count_args {
 pub use crate::column::{MainAxisAlignment, CrossAxisAlignment};
 
 /// A row widget that arranges its children horizontally
+#[derive(PartialEq)]
 pub struct Row<T> {
     pub children: T,
     pub cross_axis_alignment: crate::column::CrossAxisAlignment,

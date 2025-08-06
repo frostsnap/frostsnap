@@ -316,7 +316,7 @@ impl TransactionTemplate {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PromptSignBitcoinTx {
     pub foreign_recipients: Vec<(bitcoin::Address, bitcoin::Amount)>,
     pub fee: bitcoin::Amount,

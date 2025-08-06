@@ -14,6 +14,7 @@ pub struct AnyOf<T> {
     _phantom: core::marker::PhantomData<T>,
 }
 
+
 impl<T> AnyOf<T> {
     /// Create a new AnyOf from a widget that must be one of the types in T
     pub fn new<W: AnyDynWidget + 'static>(widget: W) -> Self {
@@ -27,6 +28,34 @@ impl<T> AnyOf<T> {
 // Helper macro to implement DynWidget for AnyOf
 macro_rules! impl_any_of {
     ($($t:ident),+) => {
+        impl<$($t: AnyDynWidget + PartialEq + 'static),+> PartialEq for AnyOf<($($t,)+)> {
+            fn eq(&self, other: &Self) -> bool {
+                let self_type_id = self.inner.as_ref().type_id();
+                let other_type_id = other.inner.as_ref().type_id();
+                
+                // First check if they're the same type
+                if self_type_id != other_type_id {
+                    return false;
+                }
+                
+                // Try to downcast to each possible type and compare
+                $(
+                    if self_type_id == TypeId::of::<$t>() {
+                        let self_widget = self.inner.as_ref() as &dyn Any;
+                        let other_widget = other.inner.as_ref() as &dyn Any;
+                        
+                        let self_widget = self_widget.downcast_ref::<$t>().unwrap();
+                        let other_widget = other_widget.downcast_ref::<$t>().unwrap();
+                        
+                        return self_widget == other_widget;
+                    }
+                )+
+                
+                // This should never happen if AnyOf is constructed properly
+                false
+            }
+        }
+        
         impl<$($t: AnyDynWidget + 'static),+> DynWidget for AnyOf<($($t,)+)> 
         {
             fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {

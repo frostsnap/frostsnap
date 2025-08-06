@@ -55,6 +55,7 @@ pub enum MainAxisAlignment {
 ///     .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
 ///     .with_cross_axis_alignment(CrossAxisAlignment::Center);
 /// ```
+#[derive(PartialEq)]
 pub struct Column<T> {
     pub children: T,
     pub cross_axis_alignment: CrossAxisAlignment,

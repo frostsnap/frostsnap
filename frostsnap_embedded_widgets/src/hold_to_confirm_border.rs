@@ -8,7 +8,7 @@ use embedded_graphics::{
 };
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct HoldToConfirmBorder<W, C> 
 where
     W: Widget<Color = C>,

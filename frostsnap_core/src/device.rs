@@ -142,7 +142,7 @@ pub struct KeyGenPhase1 {
     pub key_purpose: KeyPurpose,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenPhase2 {
     pub keygen_id: KeygenId,
     secret_share: PairedSecretShare,

@@ -2,8 +2,9 @@ use frostsnap_embedded_widgets::{
     Welcome,
     DeviceNameScreen,
     keygen_check::KeygenCheck,
+    sign_prompt::SignPrompt,
 };
-use frostsnap_core::device::KeyGenPhase2;
+use frostsnap_core::device::{KeyGenPhase2, SignPhase1};
 use alloc::boxed::Box;
 // TODO: Re-enable when implementing backup entry
 // use frostsnap_core::device::restoration::EnterBackupPhase;
@@ -43,6 +44,12 @@ pub enum WidgetTree {
     KeygenCheck {
        widget: KeygenCheck,
        phase: Option<Box<KeyGenPhase2>>,
+    },
+    
+    /// Sign transaction prompt screen
+    SignPrompt {
+        widget: SignPrompt,
+        phase: Option<Box<SignPhase1>>,
     },
     
     // TODO: Re-enable when EnterShareIndexScreen and EnterShareScreen implement Widget trait

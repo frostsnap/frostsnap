@@ -36,8 +36,9 @@ pub trait UserInteraction {
 
     fn poll(&mut self) -> Option<UiEvent>;
 
-    fn debug<S: ToString>(&mut self, debug: S) {
-        self.set_workflow(Workflow::Debug(debug.to_string()));
+    fn debug<S: ToString>(&mut self, _debug: S) {
+        // Debug functionality is now handled by RootWidget's debug_text field
+        // This is a no-op for now, but implementations can use this to set debug text
     }
 
     fn cancel(&mut self) {
@@ -55,7 +56,7 @@ pub trait UserInteraction {
             | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
                 completed_task: None,
             }),
-            Workflow::None | Workflow::Debug(_) => workflow,
+            Workflow::None => workflow,
         };
         self.set_workflow(new_workflow);
     }
@@ -95,7 +96,6 @@ pub enum Workflow {
     None,
     WaitingFor(WaitingFor),
     UserPrompt(Prompt),
-    Debug(String),
     NamingDevice {
         new_name: String,
     },

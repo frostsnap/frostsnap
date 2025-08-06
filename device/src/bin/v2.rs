@@ -37,9 +37,9 @@ use frostsnap_comms::Downstream;
 use frostsnap_device::{
     display_utils::PALETTE, efuse::{self, EfuseHmacKeys}, esp32_run, io::SerialInterface, touch_calibration::{x_based_adjustment, y_based_adjustment}, ui::{
         BusyTask, Prompt, UiEvent, UserInteraction, Workflow
-    }, widget_tree::WidgetTree, DownstreamConnectionState, Instant, UpstreamConnectionState
+    }, widget_tree::WidgetTree, root_widget::RootWidget, DownstreamConnectionState, Instant, UpstreamConnectionState
 };
-use frostsnap_embedded_widgets::{Widget, DynWidget, Welcome, DeviceNameScreen, keygen_check::KeygenCheck, FadeSwitcher};
+use frostsnap_embedded_widgets::{Widget, DynWidget, Welcome, DeviceNameScreen, keygen_check::KeygenCheck, sign_prompt::SignPrompt};
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
 // # Pin Configuration
@@ -198,7 +198,7 @@ fn main() -> ! {
 
     let ui = FrostyUi {
         display,
-        page_switcher: FadeSwitcher::new(
+        root_widget: RootWidget::new(
             WidgetTree::default(),
             500, // 500ms fade duration
             PALETTE.background,
@@ -244,7 +244,7 @@ impl embedded_hal::digital::ErrorType for NoCs {
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     display: DT,
-    page_switcher: FadeSwitcher<WidgetTree>,
+    root_widget: RootWidget,
     capsense: CST816S<I2C, PINT, RST>,
     last_touch: Option<(Point, Instant)>,
     downstream_connection_state: DownstreamConnectionState,
@@ -268,14 +268,14 @@ where
     ) {
         if state != self.downstream_connection_state {
             self.downstream_connection_state = state;
-            self.page_switcher.force_full_redraw();
+            self.root_widget.force_full_redraw();
         }
     }
 
     fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
         if Some(state) != self.upstream_connection_state {
             self.upstream_connection_state = Some(state);
-            self.page_switcher.force_full_redraw();
+            self.root_widget.force_full_redraw();
         }
     }
 
@@ -288,11 +288,11 @@ where
 
     fn set_workflow(&mut self, workflow: Workflow) {
         // Check if we can update the current widget instead of switching
-        let current_widget = self.page_switcher.current_mut();
+        let current_widget = self.root_widget.current_mut();
         
         match (current_widget, &workflow) {
             // If we're already showing a Welcome screen and need a Welcome screen, just leave it
-            (WidgetTree::Welcome(_), Workflow::None | Workflow::WaitingFor(_) | Workflow::Debug(_) | 
+            (WidgetTree::Welcome(_), Workflow::None | Workflow::WaitingFor(_) | 
              Workflow::DisplayBackup { .. } | Workflow::EnteringBackup(_) | 
              Workflow::DisplayAddress { .. } | Workflow::FirmwareUpgrade(_)) => {
                 // Already showing Welcome, no need to change
@@ -334,17 +334,36 @@ where
                         // Store both widget and phase in the WidgetTree
                         WidgetTree::KeygenCheck { widget, phase: Some(phase) }
                     }
+                    Prompt::Signing { phase } => {
+                        // Get the sign task from the phase
+                        let sign_task = phase.sign_task();
+                        
+                        // Check what type of signing task this is
+                        match &sign_task.inner {
+                            frostsnap_core::SignTask::BitcoinTransaction { tx_template, network } => {
+                                // Get the user prompt from the transaction template
+                                let prompt = tx_template.user_prompt(*network);
+                                
+                                // Create the SignPrompt widget
+                                let screen_size = embedded_graphics::geometry::Size::new(240, 280);
+                                let widget = SignPrompt::new(screen_size, prompt);
+                                
+                                // Store both widget and phase in the WidgetTree
+                                WidgetTree::SignPrompt { widget, phase: Some(phase) }
+                            }
+                            _ => {
+                                // TODO: Handle other sign task types (Test, Nostr)
+                                // For now, just show welcome
+                                WidgetTree::Welcome(Welcome::new())
+                            }
+                        }
+                    }
                     _ => {
                         // TODO: Handle other prompt types
                         // For now, just show welcome
                         WidgetTree::Welcome(Welcome::new())
                     }
                 }
-            }
-            
-            Workflow::Debug(_text) => {
-                // TODO: Create text widget to display debug text
-                WidgetTree::Welcome(Welcome::new())
             }
             
             Workflow::NamingDevice { new_name } => {
@@ -375,7 +394,7 @@ where
         };
         
         // Switch to the new page with fade transition
-        self.page_switcher.switch_to(new_page);
+        self.root_widget.switch_to(new_page);
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
@@ -395,7 +414,7 @@ where
                 // Handle vertical drag
                 if let (Some((last_point, _)), TouchGesture::SlideUp | TouchGesture::SlideDown) = 
                     (self.last_touch, touch.gesture) {
-                    self.page_switcher.handle_vertical_drag(
+                    self.root_widget.handle_vertical_drag(
                         Some(last_point.y as u32),
                         corrected_y as u32,
                         is_release
@@ -410,22 +429,31 @@ where
                 }
                 
                 // Handle touch
-                let _ = self.page_switcher.handle_touch(corrected_point, current_time, is_release);
+                let _ = self.root_widget.handle_touch(corrected_point, current_time, is_release);
             }
             None => {},
         };
         
         // Draw the widget tree
-        let _ = self.page_switcher.draw(&mut self.display, current_time);
+        let _ = self.root_widget.draw(&mut self.display, current_time);
         
         // Check widget states and generate UI events
-        match self.page_switcher.current_mut() {
+        match self.root_widget.current_mut() {
             WidgetTree::KeygenCheck { widget: keygen_check, phase } => {
                 // Check if confirmed and we still have the phase
                 if keygen_check.is_confirmed() && phase.is_some() {
                     // Take the phase (move it out of the Option)
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::KeyGenConfirm { phase: phase_data });
+                    }
+                }
+            }
+            WidgetTree::SignPrompt { widget: sign_prompt, phase } => {
+                // Check if confirmed and we still have the phase
+                if sign_prompt.is_confirmed() && phase.is_some() {
+                    // Take the phase (move it out of the Option)
+                    if let Some(phase_data) = phase.take() {
+                        return Some(UiEvent::SigningConfirm { phase: phase_data });
                     }
                 }
             }
@@ -438,17 +466,17 @@ where
     fn set_busy_task(&mut self, task: BusyTask) {
         self.busy_task = Some(task);
         // TODO: Update widget tree based on busy task
-        self.page_switcher.force_full_redraw();
+        self.root_widget.force_full_redraw();
     }
     
     fn clear_busy_task(&mut self) {
         self.busy_task = None;
-        self.page_switcher.force_full_redraw();
+        self.root_widget.force_full_redraw();
     }
     
     fn set_recovery_mode(&mut self, value: bool) {
         self.recovery_mode = value;
-        self.page_switcher.force_full_redraw();
+        self.root_widget.force_full_redraw();
     }
 }
 

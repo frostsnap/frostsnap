@@ -8,6 +8,7 @@ use embedded_graphics::{
 };
 
 /// A widget that centers its child both horizontally and vertically
+#[derive(PartialEq)]
 pub struct Center<W> {
     pub child: W,
     last_child_rect: Option<Rectangle>,

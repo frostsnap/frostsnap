@@ -522,6 +522,12 @@ impl SignPrompt {
         
         Self { widget }
     }
+    
+    /// Check if the transaction has been confirmed
+    pub fn is_confirmed(&self) -> bool {
+        // Check if the HoldToConfirm on the final page is completed
+        self.widget.final_page.child.is_completed()
+    }
 }
 
 impl crate::DynWidget for SignPrompt {

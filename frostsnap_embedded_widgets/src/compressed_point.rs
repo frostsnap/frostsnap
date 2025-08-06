@@ -1,7 +1,7 @@
 use embedded_graphics::prelude::*;
 
 /// Compressed point representation using 3 bytes instead of 8
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompressedPoint {
     pub x: u8,
     pub y: u16,

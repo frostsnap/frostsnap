@@ -9,7 +9,7 @@ use embedded_graphics::{
 };
 
 /// The current state of the fader
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum FadeState {
     /// Not fading, widget draws normally
     Idle,
@@ -30,7 +30,7 @@ enum FadeState {
 }
 
 /// A widget that can fade its child to a target color
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Fader<W> {
     pub child: W,
     state: FadeState,

@@ -9,6 +9,7 @@ use embedded_graphics::{
     primitives::{Circle, Line, PrimitiveStyle},
 };
 
+#[derive(PartialEq)]
 pub struct Checkmark<C> {
     width: u32,
     color: C,

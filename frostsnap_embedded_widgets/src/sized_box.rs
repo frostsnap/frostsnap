@@ -6,7 +6,7 @@ use embedded_graphics::{
 };
 
 /// A simple widget that has a fixed size but no content
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SizedBox<C = Rgb565> {
     size: Size,
     _phantom: core::marker::PhantomData<C>,
