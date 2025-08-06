@@ -322,6 +322,16 @@ pub struct PromptSignBitcoinTx {
     pub fee: bitcoin::Amount,
 }
 
+impl PromptSignBitcoinTx {
+    /// Calculate the total amount being sent to foreign recipients
+    pub fn total_sent(&self) -> bitcoin::Amount {
+        self.foreign_recipients
+            .iter()
+            .map(|(_, amount)| *amount)
+            .sum()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum RootOwner {
     Local(MasterAppkey),

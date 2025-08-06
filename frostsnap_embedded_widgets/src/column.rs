@@ -122,12 +122,12 @@ macro_rules! impl_column_for_tuple {
                     $(
                         {
                             let area = self.child_rects[child_index];
-                            if area.contains(point) {
+                            if area.contains(point) || is_release {
                                 let relative_point = Point::new(
                                     point.x - area.top_left.x,
                                     point.y - area.top_left.y
                                 );
-                                return $t.handle_touch(relative_point, current_time, is_release);
+                                $t.handle_touch(relative_point, current_time, is_release);
                             }
                             child_index += 1;
                         }

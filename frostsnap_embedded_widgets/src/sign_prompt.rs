@@ -466,14 +466,22 @@ pub struct SignPrompt {
             crate::animation::VerticalPaginator<SignPromptDisplay, SCREEN_WIDTH, SCREEN_HEIGHT, { embedded_graphics::framebuffer::buffer_size::<Gray4>(SCREEN_WIDTH, SCREEN_HEIGHT) }>,
             embedded_graphics::pixelcolor::Rgb565
         >,
-        crate::HoldToConfirm<crate::color_map::ColorMap<Text<U8g2TextStyle<embedded_graphics::pixelcolor::BinaryColor>>, embedded_graphics::pixelcolor::Rgb565>>
+        crate::HoldToConfirm<crate::column::Column<(
+            Text<U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>,
+            Text<U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>,
+            crate::color_map::ColorMap<crate::bitcoin_amount_display::BitcoinAmountDisplay, embedded_graphics::pixelcolor::Rgb565>,
+            Text<U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>
+        )>>
     >,
 }
 
 impl SignPrompt {
     pub fn new(screen_size: Size, prompt: PromptSignBitcoinTx) -> Self {
-        use crate::{palette::PALETTE, animation::VerticalPaginator, HoldToConfirm, PaginatorWithScrollBar};
+        use crate::{palette::PALETTE, animation::VerticalPaginator, HoldToConfirm, PaginatorWithScrollBar, column::{Column, MainAxisAlignment}, bitcoin_amount_display::BitcoinAmountDisplay};
         use embedded_graphics::{pixelcolor::BinaryColor, prelude::GrayColor};
+        
+        // Calculate total amount being sent
+        let total_sats = prompt.total_sent().to_sat();
         
         // Create the sign prompt display widget
         let sign_display = SignPromptDisplay::new(screen_size, prompt);
@@ -494,13 +502,20 @@ impl SignPrompt {
             _ => PALETTE.background,
         });
         
-        // Create hold to confirm widget
-        let confirm_text = Text::new("Hold to Sign", U8g2TextStyle::new(crate::FONT_MED, BinaryColor::On));
-        let confirm_widget = confirm_text.color_map(|c| match c {
-            BinaryColor::On => PALETTE.on_surface,
-            BinaryColor::Off => PALETTE.background,
+        // Create hold to confirm widget with a column containing "Sign transaction?" text and total amount
+        let sign_text = Text::new("Sign transaction?", U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background));
+        let sending_text = Text::new("sending", U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary));
+        let amount_display = BitcoinAmountDisplay::new(total_sats).color_map(|c| match c {
+            BinaryColor::On => PALETTE.primary,  // Use primary color for significant digits
+            BinaryColor::Off => PALETTE.text_disabled,  // Use disabled color for non-significant digits
         });
-        let hold_confirm = HoldToConfirm::new(screen_size, 5000, confirm_widget);
+        let btc_text = Text::new("BTC", U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary));
+        
+        // Create column with all text elements
+        let confirm_content = Column::new((sign_text, sending_text, amount_display, btc_text))
+            .with_main_axis_alignment(MainAxisAlignment::Center);
+        
+        let hold_confirm = HoldToConfirm::new(screen_size, 1500, confirm_content);
         
         // Wrap in PaginatorWithScrollBar
         let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_confirm);
