@@ -14,6 +14,7 @@ read_protect_hmac_key = []
 frostsnap_core = { workspace = true }
 frostsnap_comms = { workspace = true }
 frostsnap_embedded = { workspace = true }
+frostsnap_backup = { workspace = true }
 bitcoin.workspace = true
 esp-hal = { package = "esp-hal", version = "0.22.0", features = ["esp32c3", "digest"] }
 rand_core.workspace = true
@@ -39,6 +40,8 @@ fugit = "0.3.7"
 crc = "3"
 micromath = "*"
 reed-solomon = "0.2.1"
+frostsnap_embedded_widgets = { path = "../frostsnap_embedded_widgets", default-features = false }
+frostsnap_macros = { path = "../macros" }
 
 [[bin]]
 name = "v2"

@@ -1,6 +1,4 @@
 // For use with 1.69 inch 240x280 ST7789+CST816S
-
-pub mod palette;
 use crate::alloc::string::ToString;
 use crate::{DownstreamConnectionState, UpstreamConnectionState};
 use alloc::boxed::Box;
@@ -25,8 +23,8 @@ use embedded_text::{
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
+use frostsnap_embedded_widgets::palette::PALETTE;
 use mipidsi::error::Error;
-use palette::COLORS;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 pub mod animation;
 pub mod widgets;
@@ -74,7 +72,7 @@ where
         Rectangle::new(Point::new(0, 0), self.display.size())
             .into_styled(
                 PrimitiveStyleBuilder::new()
-                    .fill_color(COLORS.background)
+                    .fill_color(PALETTE.background)
                     .build(),
             )
             .draw(&mut *self.framebuf)
@@ -95,7 +93,7 @@ where
         let _overflow = TextBox::with_textbox_style(
             str.as_ref(),
             body.bounding_box(),
-            U8g2TextStyle::new(FONT_MED, COLORS.primary),
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
             TEXTBOX_STYLE,
         )
         .draw(&mut body)
@@ -114,7 +112,7 @@ where
                 Point::new(10, 7),
                 Size::new(self.display.size().width - 20, header_height),
             ),
-            U8g2TextStyle::new(FONT_SMALL, COLORS.secondary),
+            U8g2TextStyle::new(FONT_SMALL, PALETTE.secondary),
             textbox_style,
         )
         .draw(&mut *self.framebuf)
@@ -126,7 +124,10 @@ where
         let y = 27;
 
         Line::new(Point::new(0, y), Point::new((240_f32 * percent) as i32, y))
-            .into_styled(PrimitiveStyle::with_stroke(COLORS.success, stroke))
+            .into_styled(PrimitiveStyle::with_stroke(
+                PALETTE.confirm_progress,
+                stroke,
+            ))
             .draw(&mut self.display)
             .unwrap();
     }
@@ -169,7 +170,7 @@ where
                 (body.size().width / 2) as i32,
                 (bar_y as u32 + bar_height + 10) as i32,
             ),
-            U8g2TextStyle::new(FONT_MED, COLORS.primary),
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -177,7 +178,15 @@ where
     }
 
     pub fn button(&mut self) {
-        self.button_with_image(&OpenSelectHandGesture::new(COLORS.primary));
+        // rect.into_styled(
+        //     PrimitiveStyleBuilder::new()
+        //         .stroke_width(1)
+        //         .stroke_color(Rgb565::CSS_DARK_GRAY)
+        //         .build(),
+        // )
+        // .draw(&mut self.framebuf)
+        // .unwrap();
+        self.button_with_image(&OpenSelectHandGesture::new(PALETTE.primary));
     }
 
     pub fn button_with_image<IMG: ImageDrawable<Color = Rgb565>>(&mut self, img: &IMG) {
@@ -193,9 +202,9 @@ where
 
     pub fn upstream_state(&mut self, connection_state: UpstreamConnectionState) {
         let color = match connection_state {
-            UpstreamConnectionState::PowerOn => COLORS.secondary,
+            UpstreamConnectionState::PowerOn => PALETTE.secondary,
             UpstreamConnectionState::Established
-            | UpstreamConnectionState::EstablishedAndCoordAck => COLORS.success,
+            | UpstreamConnectionState::EstablishedAndCoordAck => PALETTE.confirm_progress,
         };
         let arrow = Triangle::new(Point::new(20, 20), Point::new(30, 20), Point::new(25, 7));
         arrow
@@ -205,9 +214,9 @@ where
 
         let circle = Circle::with_center(Point::new(50, 13), 10);
         let color = match connection_state {
-            UpstreamConnectionState::PowerOn => COLORS.secondary,
-            UpstreamConnectionState::Established => COLORS.warning,
-            UpstreamConnectionState::EstablishedAndCoordAck => COLORS.success,
+            UpstreamConnectionState::PowerOn => PALETTE.secondary,
+            UpstreamConnectionState::Established => PALETTE.tertiary,
+            UpstreamConnectionState::EstablishedAndCoordAck => PALETTE.confirm_progress,
         };
         circle
             .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
@@ -217,9 +226,9 @@ where
 
     pub fn downstream_state(&mut self, connection_state: DownstreamConnectionState) {
         let color = match connection_state {
-            DownstreamConnectionState::Disconnected => COLORS.secondary,
-            DownstreamConnectionState::Connected => COLORS.warning,
-            DownstreamConnectionState::Established => COLORS.success,
+            DownstreamConnectionState::Disconnected => PALETTE.secondary,
+            DownstreamConnectionState::Connected => PALETTE.tertiary,
+            DownstreamConnectionState::Established => PALETTE.confirm_progress,
         };
         Triangle::new(Point::new(32, 7), Point::new(42, 7), Point::new(37, 20))
             .into_styled(PrimitiveStyleBuilder::new().fill_color(color).build())
@@ -235,7 +244,7 @@ where
         Rectangle::new(point, size)
             .into_styled(
                 PrimitiveStyleBuilder::new()
-                    .fill_color(COLORS.background)
+                    .fill_color(PALETTE.background)
                     .build(),
             )
             .draw(&mut *self.framebuf)
@@ -244,7 +253,7 @@ where
         TextBox::with_textbox_style(
             &format!("{used}/{free}"),
             Rectangle::new(point, size),
-            MonoTextStyle::new(&ascii::FONT_7X14, COLORS.success),
+            MonoTextStyle::new(&ascii::FONT_7X14, PALETTE.confirm_progress),
             TextBoxStyleBuilder::new()
                 .alignment(HorizontalAlignment::Left)
                 .build(),
@@ -266,7 +275,7 @@ where
             Text::with_alignment(
                 "Share backup:",
                 Point::new((body.size().width / 2) as i32, y_offset),
-                U8g2TextStyle::new(FONT_MED, COLORS.info),
+                U8g2TextStyle::new(FONT_MED, PALETTE.primary),
                 Alignment::Center,
             )
             .draw(&mut body)
@@ -279,7 +288,7 @@ where
         Text::with_alignment(
             hrp,
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+            U8g2TextStyle::new(FONT_LARGE, PALETTE.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -294,7 +303,7 @@ where
                 Text::new(
                     chunk,
                     Point::new(x_offset, y_offset),
-                    U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+                    U8g2TextStyle::new(FONT_LARGE, PALETTE.primary),
                 )
                 .draw(&mut body)
                 .unwrap();
@@ -311,7 +320,7 @@ where
         Text::with_alignment(
             name,
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_MED, COLORS.info),
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -323,7 +332,7 @@ where
             "This must show on all other devices:",
             body.bounding_box()
                 .resized_height(body.size().height - y_offset as u32, AnchorY::Bottom),
-            U8g2TextStyle::new(FONT_MED, COLORS.primary),
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
             TEXTBOX_STYLE,
         )
         .draw(&mut body)
@@ -334,7 +343,7 @@ where
         Text::with_alignment(
             check,
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+            U8g2TextStyle::new(FONT_LARGE, PALETTE.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -345,7 +354,7 @@ where
         Text::with_alignment(
             &format!("{}-of-{}", t_of_n.0, t_of_n.1),
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_MED, COLORS.primary),
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -354,7 +363,7 @@ where
 
     pub fn show_keygen_pending_finalize(&mut self, name: &str, t_of_n: (u16, u16), check: &str) {
         self.show_keygen_check(name, t_of_n, check);
-        let img = embedded_iconoir::icons::size32px::actions::CheckCircle::new(COLORS.info);
+        let img = embedded_iconoir::icons::size32px::actions::CheckCircle::new(PALETTE.primary);
         self.button_with_image(&img);
     }
 
@@ -403,7 +412,7 @@ where
 
         // Draw instruction text above the button
         let instruction_text = "Press in the app";
-        let instruction_text_style = U8g2TextStyle::new(FONT_MED, COLORS.primary);
+        let instruction_text_style = U8g2TextStyle::new(FONT_MED, PALETTE.primary);
         let instruction_position = Point::new(body.bounding_box().center().x, text_pos.y - 90);
         Text::with_alignment(
             instruction_text,
@@ -445,7 +454,7 @@ where
                     (body.size().width / 2) as i32,
                     (body.size().height / 3) as i32,
                 ),
-                U8g2TextStyle::new(FONT_MED, COLORS.warning),
+                U8g2TextStyle::new(FONT_MED, PALETTE.tertiary),
                 Alignment::Center,
             )
             .draw(&mut body)
@@ -458,7 +467,7 @@ where
                 (body.size().width / 2) as i32,
                 (body.size().height / 2) as i32,
             ),
-            U8g2TextStyle::new(FONT_LARGE, COLORS.primary),
+            U8g2TextStyle::new(FONT_LARGE, PALETTE.primary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -488,9 +497,9 @@ where
         for row_chunks in chunked_address.chunks(3) {
             for item in row_chunks {
                 let text_color = if i == highlight_index1 || i == highlight_index2 {
-                    COLORS.info
+                    PALETTE.primary
                 } else {
-                    COLORS.primary
+                    PALETTE.primary
                 };
 
                 // centre align last one
@@ -525,7 +534,7 @@ where
         Text::with_alignment(
             derivation_path,
             Point::new((body.size().width / 2) as i32, y_offset),
-            U8g2TextStyle::new(FONT_SMALL, COLORS.secondary),
+            U8g2TextStyle::new(FONT_SMALL, PALETTE.secondary),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -537,7 +546,7 @@ where
         Text::with_alignment(
             "WARNING",
             Point::new((body.size().width / 2) as i32, 10),
-            U8g2TextStyle::new(FONT_LARGE, COLORS.error),
+            U8g2TextStyle::new(FONT_LARGE, PALETTE.error),
             Alignment::Center,
         )
         .draw(&mut body)
@@ -549,7 +558,7 @@ where
                 Point { x: 0, y: 30 },
                 Size::new(body.size().width, body.size().height),
             ),
-            U8g2TextStyle::new(FONT_MED, COLORS.primary),
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
             TEXTBOX_STYLE,
         )
         .draw(&mut body)
@@ -566,12 +575,12 @@ where
     let _ = header_area
         .into_styled(
             PrimitiveStyleBuilder::new()
-                .fill_color(COLORS.error)
+                .fill_color(PALETTE.error)
                 .build(),
         )
         .draw(display);
 
-    let header_charstyle = MonoTextStyle::new(&ascii::FONT_7X14, COLORS.primary);
+    let header_charstyle = MonoTextStyle::new(&ascii::FONT_7X14, PALETTE.primary);
     let textbox_style = TextBoxStyleBuilder::new()
         .alignment(HorizontalAlignment::Center)
         .build();
@@ -597,12 +606,12 @@ where
     )
     .into_styled(
         PrimitiveStyleBuilder::new()
-            .fill_color(COLORS.background)
+            .fill_color(PALETTE.background)
             .build(),
     )
     .draw(display);
 
-    let character_style = MonoTextStyle::new(&ascii::FONT_7X14, COLORS.primary);
+    let character_style = MonoTextStyle::new(&ascii::FONT_7X14, PALETTE.primary);
 
     let _ = TextBox::with_textbox_style(
         error.as_ref(),

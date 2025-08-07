@@ -1,0 +1,27 @@
+{
+  "files": {
+    "excludeDirs": [
+      "frostsnapp/build",
+      "frostsnapp/android",
+      "frostsnapp/ios",
+      "frostsnapp/linux",
+      "frostsnapp/macos",
+      "frostsnapp/windows",
+      "frostsnapp/web",
+      "frostsnapp/assets",
+      "frostsnapp/appimage",
+      "frostsnapp/lib",
+      "frostsnapp/test_driver",
+      "frostsnapp/snap",
+      ".pub-cache",
+      "target"
+    ],
+    "watcher": "client"
+  },
+  "cargo": {
+    "target": null
+  },
+  "linkedProjects": [
+    "./Cargo.toml"
+  ]
+}
