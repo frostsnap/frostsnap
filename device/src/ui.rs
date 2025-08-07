@@ -10,13 +10,11 @@ use frostsnap_core::{
         KeyGenPhase2, SignPhase1,
     },
     schnorr_fun::frost::SecretShare,
-    SessionHash,
 };
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
     fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
-
 
     fn set_workflow(&mut self, workflow: Workflow);
 
@@ -27,9 +25,6 @@ pub trait UserInteraction {
     fn clear_busy_task(&mut self);
 
     fn clear_workflow(&mut self) {
-        self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
-            completed_task: None,
-        }));
     }
 
     fn take_workflow(&mut self) -> Workflow;
@@ -42,23 +37,7 @@ pub trait UserInteraction {
     }
 
     fn cancel(&mut self) {
-        let workflow = self.take_workflow();
-        let new_workflow = match workflow {
-            Workflow::UserPrompt(Prompt::NewName { new_name, .. }) => {
-                Workflow::NamingDevice { new_name }
-            }
-            Workflow::NamingDevice { .. }
-            | Workflow::DisplayBackup { .. }
-            | Workflow::UserPrompt(_)
-            | Workflow::DisplayAddress { .. }
-            | Workflow::EnteringBackup(_)
-            | Workflow::FirmwareUpgrade(_)
-            | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
-                completed_task: None,
-            }),
-            Workflow::None => workflow,
-        };
-        self.set_workflow(new_workflow);
+
     }
 }
 
@@ -68,33 +47,13 @@ const HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(600);
 #[allow(dead_code)]
 const LONG_HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(6000);
 
-#[derive(Clone, Debug)]
-pub enum WaitingFor {
-    /// Waiting for the coord to say "Hey, finalize!"
-    WaitingForKeyGenFinalize {
-        key_name: String,
-        t_of_n: (u16, u16),
-        session_hash: SessionHash,
-    },
-    /// Looking for upstream device
-    LookingForUpstream { jtag: bool },
-    /// Waiting for the announce ack
-    CoordinatorAnnounceAck,
-    /// Waiting to be told to do something
-    CoordinatorInstruction { completed_task: Option<UiEvent> },
-    /// Waiting for the coordinator to respond to a message its sent
-    CoordinatorResponse(WaitingResponse),
-}
-
-#[derive(Clone, Debug)]
-pub enum WaitingResponse {
-    KeyGen,
-}
-
 #[derive(Debug)]
 pub enum Workflow {
     None,
-    WaitingFor(WaitingFor),
+    Standby {
+        name: String,
+        key_name: String,
+    },
     UserPrompt(Prompt),
     NamingDevice {
         new_name: String,

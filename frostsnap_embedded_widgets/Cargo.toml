@@ -15,6 +15,7 @@ embedded-text = "0.7.0"
 micromath = "0.2"
 frostsnap_backup = { workspace = true }
 frostsnap_core = { workspace = true }
+frostsnap_macros = { path = "../macros" }
 bincode = { workspace = true }
 bitcoin = { workspace = true }
 

@@ -19,13 +19,13 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
-use frostsnap_embedded_widgets::{Widget, palette::PALETTE, DynWidget};
+use frostsnap_embedded_widgets::{palette::PALETTE, DynWidget, Widget};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 // Screen constants
 const SCREEN_WIDTH: u32 = 240;
 const SCREEN_HEIGHT: u32 = 280;
-const SCREEN_OFFSET_Y: u16 = 20;  // ST7789 Y offset for 240x280 panel
+const SCREEN_OFFSET_Y: u16 = 20; // ST7789 Y offset for 240x280 panel
 
 // Widget demo selection
 const DEMO: &str = "sign_prompt";
@@ -115,10 +115,11 @@ fn main() -> ! {
                         let lift_up = touch_event.action == 1;
                         let gesture = touch_event.gesture;
 
-                        let is_vertical_drag = matches!(gesture, TouchGesture::SlideUp | TouchGesture::SlideDown);
+                        let is_vertical_drag =
+                            matches!(gesture, TouchGesture::SlideUp | TouchGesture::SlideDown);
 
                         // Handle vertical drag for widgets that support it
-                        if is_vertical_drag  {
+                        if is_vertical_drag {
                             widget.handle_vertical_drag(
                                 last_touch.map(|(_, y)| y),
                                 adjusted_y as u32,

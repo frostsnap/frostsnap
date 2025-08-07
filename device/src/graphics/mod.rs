@@ -23,8 +23,8 @@ use embedded_text::{
     style::{TextBoxStyle, TextBoxStyleBuilder},
     TextBox,
 };
-use mipidsi::error::Error;
 use frostsnap_embedded_widgets::palette::PALETTE;
+use mipidsi::error::Error;
 use u8g2_fonts::{fonts, U8g2TextStyle};
 pub mod animation;
 pub mod widgets;
@@ -124,7 +124,10 @@ where
         let y = 27;
 
         Line::new(Point::new(0, y), Point::new((240_f32 * percent) as i32, y))
-            .into_styled(PrimitiveStyle::with_stroke(PALETTE.confirm_progress, stroke))
+            .into_styled(PrimitiveStyle::with_stroke(
+                PALETTE.confirm_progress,
+                stroke,
+            ))
             .draw(&mut self.display)
             .unwrap();
     }

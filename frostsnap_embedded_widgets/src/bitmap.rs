@@ -15,7 +15,7 @@ enum ImageColor {
 pub struct EncodedImage {
     color: ImageColor,
     width: u32,
-    pub bytes: Vec<u8>,
+    pub bytes: Vec<u8>, // TODO: use Cow<'static, [u8]>
 }
 
 impl EncodedImage {

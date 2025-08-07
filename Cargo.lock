@@ -1427,6 +1427,7 @@ dependencies = [
  "embedded-text",
  "frostsnap_backup",
  "frostsnap_core",
+ "frostsnap_macros",
  "micromath 0.2.2",
  "proptest",
  "rand",
