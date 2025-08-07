@@ -239,6 +239,16 @@ impl Mul<Frac> for u32 {
     }
 }
 
+impl Mul<Frac> for Frac {
+    type Output = Frac;
+    
+    fn mul(self, rhs: Frac) -> Self::Output {
+        // When multiplying two Fracs (both ≤ 1), result is guaranteed to be in [0,1]
+        // We can directly use Rat * Rat which handles the fixed-point arithmetic
+        Frac(self.0 * rhs.0)
+    }
+}
+
 impl Mul<embedded_graphics::geometry::Point> for Frac {
     type Output = embedded_graphics::geometry::Point;
     

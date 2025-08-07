@@ -137,11 +137,11 @@ macro_rules! select_widget {
                 $run_macro!(device_name_screen);
             }
             "bobbing_icon" => {
-                use $crate::{container::Container, sized_box::SizedBox, center::Center, translate::Translate, palette::PALETTE, Widget};
+                use $crate::{container::Container, sized_box::SizedBox, center::Center, translate::Translate, palette::PALETTE, Widget, Text};
                 use embedded_graphics::{prelude::*, primitives::PrimitiveStyle};
                 
                 // Simple sized box as child
-                let sized_box = SizedBox::new(Size::new(50, 50));
+                let sized_box = Text::new("Fade Demo", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.primary));
                 
                 // Put it in a container with a border
                 let container = Container::new(sized_box)
@@ -216,7 +216,7 @@ macro_rules! select_widget {
                 use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, column::{Column, MainAxisAlignment}, palette::PALETTE};
                 
                 // Create a simple BitcoinAmountDisplay with 21 BTC
-                let amount_display = BitcoinAmountDisplay::new(21_00_000_000); // 21 BTC
+                let amount_display = BitcoinAmountDisplay::new(21_000_000); // 21 BTC
                 
                 // Map binary colors to Gray4 for display
                 let amount_mapped = amount_display.color_map(|c| match c {
@@ -230,8 +230,87 @@ macro_rules! select_widget {
                 
                 $run_macro!(widget);
             }
+            "slide_in" => {
+                use $crate::{slide_in_transition::SlideInTransition, text::Text, palette::PALETTE, Instant, Widget, container::Container, center::Center};
+                use embedded_graphics::prelude::*;
+                use embedded_graphics::primitives::PrimitiveStyle;
+                use $crate::alloc::format;
+                
+                // Create initial text widget centered in a container with border
+                let text = Text::new("Page 1\nLorem ipus\nderp herp!", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let container = Container::new(text)
+                    .with_border(PrimitiveStyle::with_stroke(PALETTE.primary, 2));
+
+                // Create slide-in transition widget
+                let mut transition = SlideInTransition::new(
+                    container,
+                    1000, // 500ms transition
+                    Point::new(0, 150), // Slide up from bottom
+                    PALETTE.background
+                );
+                
+                // Create a wrapper that advances pages on touch release
+                struct SlideInDemo {
+                    transition: SlideInTransition<$crate::container::Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>>,
+                    page_num: usize,
+                }
+                
+                impl SlideInDemo {
+                    fn new(transition: SlideInTransition<$crate::container::Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>>) -> Self {
+                        Self {
+                            transition,
+                            page_num: 1,
+                        }
+                    }
+                }
+                
+                impl $crate::DynWidget for SlideInDemo {
+                    fn handle_touch(&mut self, _point: Point, _current_time: Instant, is_release: bool) -> Option<$crate::KeyTouch> {
+                        // Advance to next page on touch release
+                        if is_release {
+                            self.page_num += 1;
+                            let text = Text::new(
+                                format!("Page {}\nLorem ipus\nderp herp!", self.page_num),
+                                u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                            );
+                            let container = Container::new(text)
+                                .with_border(PrimitiveStyle::with_stroke(PALETTE.primary, 2));
+                            
+                            self.transition.switch_to(container);
+                        }
+                        None
+                    }
+                    
+                    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+                        self.transition.handle_vertical_drag(prev_y, new_y, is_release)
+                    }
+                    
+                    fn size_hint(&self) -> Option<Size> {
+                        self.transition.size_hint()
+                    }
+                    
+                    fn force_full_redraw(&mut self) {
+                        self.transition.force_full_redraw()
+                    }
+                }
+                
+                impl Widget for SlideInDemo {
+                    type Color = embedded_graphics::pixelcolor::Rgb565;
+                    
+                    fn draw<D: DrawTarget<Color = Self::Color>>(
+                        &mut self,
+                        target: &mut D,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error> {
+                        self.transition.draw(target, current_time)
+                    }
+                }
+                
+                let demo = SlideInDemo::new(transition);
+                $run_macro!(Center::new(demo));
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in", $demo);
             }
         }
     };

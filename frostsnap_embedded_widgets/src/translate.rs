@@ -1,27 +1,40 @@
-use crate::{Widget, Instant, Frac, bitmap::Bitmap};
+use crate::{Widget, Instant, Frac, bitmap::Bitmap, animation_speed::AnimationSpeed};
 use embedded_graphics::{
-    draw_target::{DrawTarget, DrawTargetExt},
-    geometry::{Point, Size, Dimensions},
-    primitives::Rectangle,
-    pixelcolor::BinaryColor,
-    Pixel,
+    draw_target::DrawTarget, geometry::{Dimensions, Point, Size}, pixelcolor::BinaryColor, primitives::Rectangle, Pixel, prelude::*,
 };
 
+/// Translation direction for the translate widget
+#[derive(Clone, PartialEq, Debug)]
+enum TranslationDirection {
+    /// Animating between rest and offset
+    Animating {
+        /// The offset point (either from or to depending on from_offset)
+        offset: Point,
+        /// Duration of the animation
+        duration: u64,
+        /// When the animation started
+        start_time: Option<Instant>,
+        /// If true, animating from offset to rest. If false, from rest to offset.
+        from_offset: bool,
+    },
+    /// No animation - idle at a specific offset
+    Idle {
+        offset: Point,
+    },
+}
 
 /// A widget that animates its child by translating it across the screen
 #[derive(Clone, PartialEq)]
 pub struct Translate<W: Widget> {
-    child: W,
+    pub child: W,
     /// Current offset from original position
     current_offset: Point,
-    /// Total movement vector for current animation
-    movement: Point,
-    /// Duration of the animation in ms
-    duration: u64,
-    /// Start time of current animation (None if idle)
-    start_time: Option<Instant>,
+    /// Current translation direction
+    translation_direction: TranslationDirection,
     /// Whether to repeat the animation (reversing direction each time)
     repeat: bool,
+    /// Animation speed curve
+    animation_speed: AnimationSpeed,
     /// Background color for erasing
     background_color: W::Color,
     /// Bitmap tracking previous frame's pixels
@@ -41,20 +54,42 @@ where
             current_bitmap: Bitmap::new(size, BinaryColor::Off),
             child,
             current_offset: Point::zero(),
-            movement: Point::zero(),
-            duration: 0,
-            start_time: None,
+            translation_direction: TranslationDirection::Idle { offset: Point::zero() },
             repeat: false,
+            animation_speed: AnimationSpeed::Linear,
             background_color,
         }
     }
     
-    /// Start a translation animation
+    /// Set the animation speed curve
+    pub fn set_animation_speed(&mut self, speed: AnimationSpeed) {
+        self.animation_speed = speed;
+    }
+    
+    /// Animate from an offset to the rest position (entrance animation)
+    pub fn animate_from(&mut self, from: Point, duration: u64) {
+        self.translation_direction = TranslationDirection::Animating { 
+            offset: from, 
+            duration, 
+            start_time: None,
+            from_offset: true,
+        };
+    }
+    
+    /// Animate from rest position to an offset (exit animation)
+    pub fn animate_to(&mut self, to: Point, duration: u64) {
+        self.translation_direction = TranslationDirection::Animating { 
+            offset: to, 
+            duration, 
+            start_time: None,
+            from_offset: false,
+        };
+    }
+    
+    /// Legacy method for backwards compatibility
     pub fn translate(&mut self, movement: Point, duration: u64) {
-        // Store where we're starting from - animation will go from current_offset to current_offset + movement
-        self.movement = movement;
-        self.duration = duration;
-        self.start_time = None; // Will be set on next draw
+        // Treat this as animating from current position by movement amount
+        self.animate_to(movement, duration);
     }
     
     /// Enable or disable repeat mode (animation reverses direction each cycle)
@@ -62,19 +97,66 @@ where
         self.repeat = repeat;
     }
     
-    /// Reverse the current movement direction
-    pub fn translate_reverse(&mut self) {
-        self.translate(-self.movement, self.duration);
-    }
-    
     /// Check if animation is complete
     pub fn is_idle(&self) -> bool {
-        self.start_time.is_none() && !self.repeat
+        matches!(self.translation_direction, TranslationDirection::Idle { .. })
     }
     
-    /// Get the current movement vector
-    pub fn current_movement(&self) -> Point {
-        self.movement
+    /// Calculate the current offset based on translation direction
+    fn calculate_offset(&mut self, current_time: Instant) -> Point {
+        match self.translation_direction.clone() {
+            TranslationDirection::Animating { offset, duration, start_time, from_offset } => {
+                // Initialize start time if needed
+                let start = start_time.unwrap_or(current_time);
+                if start_time.is_none() {
+                    self.translation_direction = TranslationDirection::Animating {
+                        offset,
+                        duration,
+                        start_time: Some(current_time),
+                        from_offset,
+                    };
+                }
+                
+                let elapsed_ms = current_time.saturating_duration_since(start) as u32;
+                
+                if elapsed_ms >= duration as u32 {
+                    // Animation complete
+                    let final_position = if from_offset {
+                        Point::zero() // Ended at rest
+                    } else {
+                        offset // Ended at offset
+                    };
+                    
+                    if self.repeat {
+                        // Flip direction
+                        self.translation_direction = TranslationDirection::Animating {
+                            offset,
+                            duration,
+                            start_time: Some(current_time),
+                            from_offset: !from_offset, // Flip the direction
+                        };
+                        final_position
+                    } else {
+                        // Stop at final position
+                        self.translation_direction = TranslationDirection::Idle { offset: final_position };
+                        final_position
+                    }
+                } else {
+                    // Animation in progress
+                    let linear_progress = Frac::from_ratio(elapsed_ms, duration as u32);
+                    let progress = self.animation_speed.apply(linear_progress);
+                    
+                    if from_offset {
+                        // Animating from offset to rest
+                        offset * (Frac::ONE - progress)
+                    } else {
+                        // Animating from rest to offset
+                        offset * progress
+                    }
+                }
+            }
+            TranslationDirection::Idle { offset } => offset,
+        }
     }
 }
 
@@ -114,42 +196,9 @@ where
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
-        // Initialize start time if needed
-        if self.start_time.is_none() && self.movement != Point::zero() {
-            self.start_time = Some(current_time);
-        }
-        
-        // Calculate the current offset inline
-        let offset = if let Some(start) = self.start_time {
-            let elapsed_ms = current_time.duration_since(start).unwrap_or(0) as u32;
-            
-            if self.repeat {
-                // For repeat mode, determine which cycle we're in
-                let cycle = elapsed_ms / self.duration as u32;
-                let cycle_ms = elapsed_ms % self.duration as u32;
-                let frac = Frac::from_ratio(cycle_ms, self.duration as u32);
-                
-                // If odd cycle, reverse the animation
-                if cycle % 2 == 1 {
-                    self.movement * (Frac::ONE - frac)
-                } else {
-                    self.movement * frac
-                }
-            } else {
-                // Single animation
-                let frac = Frac::from_ratio(elapsed_ms, self.duration as u32);
-                
-                // Check if animation is complete
-                if frac == Frac::ONE {
-                    self.start_time = None;
-                }
-                
-                self.movement * frac
-            }
-        } else {
-            Point::zero()
-        };
-        
+        // Calculate the current offset (will initialize start time if needed)
+        let offset = self.calculate_offset(current_time);
+
         // Handle offset change and bitmap tracking
         if offset != self.current_offset {
             self.child.force_full_redraw();
@@ -160,10 +209,10 @@ where
             // Calculate offset difference
             let diff_offset = offset - self.current_offset;
             
-            // Draw the child using the TranslatorDrawTarget
-            let mut translated_target = target.translated(offset);
+            // Draw the child using the TranslatorDrawTarget with custom bounding box
+            let mut translated = target.translated(offset);
             let mut translator_target = TranslatorDrawTarget {
-                inner: &mut translated_target,
+                inner: &mut translated,
                 current_bitmap: &mut self.current_bitmap,
                 previous_bitmap: &mut self.previous_bitmap,
                 diff_offset,
@@ -184,14 +233,14 @@ where
             self.current_offset = offset;
         } else {
             // No movement - just draw normally
-            let mut translated_target = target.translated(offset);
-            self.child.draw(&mut translated_target, current_time)?;
+            self.child.draw(&mut target.translated(offset), current_time)?;
         }
         
         Ok(())
     }
     
 }
+
 
 /// A DrawTarget wrapper that tracks pixels for the translate animation
 struct TranslatorDrawTarget<'a, D> {
@@ -257,25 +306,24 @@ mod tests {
         // Should be idle initially
         assert!(translate.is_idle());
         
-        // Start animation
-        translate.translate(Point::new(10, 0), 1000);
+        // Start animation from offset
+        translate.animate_from(Point::new(10, 0), 1000);
         
-        // After calling translate, still idle until draw is called
-        assert!(translate.is_idle());
+        // After calling animate_from, no longer idle
+        assert!(!translate.is_idle());
     }
     
     #[test]
-    fn test_translate_reverse() {
+    fn test_animate_from_and_to() {
         let widget = SizedBox::<Rgb565>::new(Size::new(10, 10));
         let mut translate = Translate::new(widget, Rgb565::BLACK);
         
-        translate.translate(Point::new(10, 5), 1000);
-        let original_movement = translate.current_movement();
+        // Test animate_from
+        translate.animate_from(Point::new(0, 100), 1000);
+        assert!(!translate.is_idle());
         
-        translate.translate_reverse();
-        let reversed_movement = translate.current_movement();
-        
-        assert_eq!(reversed_movement, -original_movement);
-        assert_eq!(translate.duration, 1000);
+        // Test animate_to
+        translate.animate_to(Point::new(0, -100), 1000);
+        assert!(!translate.is_idle());
     }
 }

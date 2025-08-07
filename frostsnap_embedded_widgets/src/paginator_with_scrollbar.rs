@@ -177,7 +177,7 @@ where
         );
         self.scrollbar.draw(&mut target.cropped(&scrollbar_area), current_time)?;
 
-        let child_is_ready = !self.child.is_transitioning() && self.child.is_showing();
+        let child_is_ready = !self.child.is_transitioning() && self.child.is_not_faded();
 
         if let Some(swipe_hint) = &mut self.swipe_hint {
             if !child_is_ready && self.child_was_ready {

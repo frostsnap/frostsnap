@@ -3,7 +3,7 @@ use crate::Instant;
 use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
-    geometry::{Point, Size},
+    geometry::{Point, Size, Dimensions},
     pixelcolor::PixelColor,
     prelude::*,
     text::{Text as EgText, TextStyle, TextStyleBuilder, Alignment, Baseline, renderer::{CharacterStyle, TextRenderer}},
@@ -22,18 +22,35 @@ pub struct Text<S: CharacterStyle> {
     text_style: TextStyle,
     underline_color: Option<<S as CharacterStyle>::Color>,
     drawn: bool,
+    cached_size: Size,
 }
 
-impl<S: CharacterStyle> Text<S> {
+impl<S, C> Text<S> 
+where
+    C: PixelColor,
+    S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
+{
     pub fn new<T: Into<String>>(text: T, character_style: S) -> Self {
         let text_style = TextStyleBuilder::new().baseline(Baseline::Top).build();
+        let text_string = text.into();
+        
+        // Calculate size once during creation
+        let text_obj = EgText::with_text_style(
+            &text_string,
+            Point::zero(),
+            character_style.clone(),
+            text_style,
+        );
+        let bbox = text_obj.bounding_box();
+        let cached_size = bbox.size;
             
         Self {
-            text: text.into(),
+            text: text_string,
             character_style,
             text_style,
             underline_color: None,
             drawn: false,
+            cached_size,
         }
     }
     
@@ -55,11 +72,17 @@ impl<S: CharacterStyle> Text<S> {
         self.text_style = TextStyleBuilder::from(&self.text_style)
             .alignment(alignment)
             .build();
+        // Recalculate size with new alignment
+        let text_obj = self.create_eg_text();
+        let bbox = text_obj.bounding_box();
+        self.cached_size = bbox.size;
         self
     }
     
     pub fn with_underline(mut self, color: <S as CharacterStyle>::Color) -> Self {
         self.underline_color = Some(color);
+        // Add space for underline to cached size
+        self.cached_size.height += UNDERLINE_DISTANCE as u32 + 1;
         self
     }
 }
@@ -78,16 +101,8 @@ where
     }
     
     fn size_hint(&self) -> Option<Size> {
-        // Create text at origin to get its bounding box
-        let text_obj = self.create_eg_text();
-        let bbox = text_obj.bounding_box();
-        let mut size = bbox.size;
-        // If underline is enabled, add space for it
-        if self.underline_color.is_some() {
-            size.height += UNDERLINE_DISTANCE as u32 + 1; // +1 for the underline stroke itself
-        }
-        
-        Some(size)
+        // Simply return the cached size
+        Some(self.cached_size)
     }
     
     fn force_full_redraw(&mut self) {

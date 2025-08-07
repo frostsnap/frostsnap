@@ -22,7 +22,7 @@ where
         
         // Set up bobbing animation - move up and down by 5 pixels over 1 second
         translate.set_repeat(true);
-        translate.translate(Point::new(0, 5), 500); // 500ms up, 500ms down
+        translate.animate_to(Point::new(0, 5), 500); // 500ms down, 500ms back up
         
         Self { translate }
     }

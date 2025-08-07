@@ -1,9 +1,8 @@
 use super::Widget;
-use crate::Instant;
+use crate::{Instant, FreeCrop};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    prelude::*,
     primitives::Rectangle,
 };
 
@@ -70,39 +69,18 @@ impl<W: Widget> Widget for Center<W> {
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
-        if let Some(child_size) = self.child.size_hint() {
-            let target_bounds = target.bounding_box();
-            let target_size = target_bounds.size;
-            
-            // Only recalculate if we don't have a cached rect or if the bounds changed
-            let child_rect = if let Some(cached_rect) = self.last_child_rect {
-                if cached_rect.size == child_size && target_size == target_bounds.size {
-                    // Reuse the cached rectangle
-                    cached_rect
-                } else {
-                    // Recalculate
-                    let x_offset = ((target_size.width as i32 - child_size.width as i32) / 2).max(0);
-                    let y_offset = ((target_size.height as i32 - child_size.height as i32) / 2).max(0);
-                    Rectangle::new(Point::new(x_offset, y_offset), child_size)
-                }
-            } else {
-                // Calculate for the first time
-                let x_offset = ((target_size.width as i32 - child_size.width as i32) / 2).max(0);
-                let y_offset = ((target_size.height as i32 - child_size.height as i32) / 2).max(0);
-                Rectangle::new(Point::new(x_offset, y_offset), child_size)
-            };
-            
-            // Store the rectangle for touch handling
-            self.last_child_rect = Some(child_rect);
-            
-            let mut cropped = target.cropped(&child_rect);
-            self.child.draw(&mut cropped, current_time)?;
-        } else {
-            // No size hint, can't center
-            self.last_child_rect = None;
-            self.child.draw(target, current_time)?;
-        }
-        
+
+        let rect = self.last_child_rect.get_or_insert_with(|| {
+            let target_size = target.bounding_box().size;
+            let child_size = self.child.size_hint().expect("Center's child must be sized");
+            // Calculate centered position
+            let x_offset = ((target_size.width as i32 - child_size.width as i32) / 2).max(0);
+            let y_offset = ((target_size.height as i32 - child_size.height as i32) / 2).max(0);
+            Rectangle::new(Point::new(x_offset, y_offset), child_size)
+        });
+
+        self.child.draw(&mut target.free_cropped(&rect), current_time)?;
+
         Ok(())
     }
 }

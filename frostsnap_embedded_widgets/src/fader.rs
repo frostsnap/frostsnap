@@ -1,4 +1,5 @@
 use super::{Widget, Frac};
+use crate::animation_speed::AnimationSpeed;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Dimensions, Point, Size},
@@ -36,6 +37,7 @@ pub struct Fader<W> {
     state: FadeState,
     redraw_interval_ms: u64,
     last_redraw_time: Option<crate::Instant>,
+    animation_speed: AnimationSpeed,
 }
 
 impl<W: Widget<Color = Rgb565>> Fader<W> {
@@ -45,6 +47,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             state: FadeState::Idle,
             redraw_interval_ms: 0,
             last_redraw_time: None,
+            animation_speed: AnimationSpeed::Linear,
         }
     }
     
@@ -55,7 +58,13 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             state: FadeState::FadedOut,
             redraw_interval_ms: 0,
             last_redraw_time: None,
+            animation_speed: AnimationSpeed::Linear,
         }
+    }
+    
+    /// Set the animation speed curve
+    pub fn set_animation_speed(&mut self, speed: AnimationSpeed) {
+        self.animation_speed = speed;
     }
 
     /// Start fading to the target color over the specified duration
@@ -104,8 +113,12 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     }
     
     /// Check if the widget is showing (not faded out and not fading out)
-    pub fn is_showing(&self) -> bool {
+    pub fn is_not_faded(&self) -> bool {
         matches!(self.state, FadeState::Idle)
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.is_not_faded() || (self.is_fading_in() && self.last_redraw_time.is_some())
     }
 
     pub fn is_fading(&self) -> bool {
@@ -190,7 +203,7 @@ impl<W: Widget<Color = Rgb565>> crate::DynWidget for Fader<W> {
         current_time: crate::Instant,
         lift_up: bool,
     ) -> Option<crate::KeyTouch> {
-        if !self.is_showing() {
+        if !self.is_not_faded() {
             return None;
         }
 
@@ -198,7 +211,7 @@ impl<W: Widget<Color = Rgb565>> crate::DynWidget for Fader<W> {
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        if !self.is_showing() {
+        if !self.is_not_faded() {
             return;
         }
 
@@ -255,12 +268,15 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
                 if should_redraw {
                     // Calculate fade progress using Frac (automatically clamped to [0, 1])
                     let elapsed = current_time.saturating_duration_since(actual_start_time) as u32;
-                    let mut fade_progress = Frac::from_ratio(elapsed, duration_ms as u32);
+                    let linear_progress = Frac::from_ratio(elapsed, duration_ms as u32);
+                    let eased_progress = self.animation_speed.apply(linear_progress);
                     
                     // For fade-in, reverse the progress (1.0 -> 0.0)
-                    if is_fade_in {
-                        fade_progress = Frac::ONE - fade_progress;
-                    }
+                    let fade_progress = if is_fade_in {
+                        Frac::ONE - eased_progress
+                    } else {
+                        eased_progress
+                    };
 
                     self.child.force_full_redraw();
 

@@ -15,6 +15,7 @@ pub mod compressed_point;
 
 // Widget modules
 pub mod animation;
+pub mod animation_speed;
 pub mod bip39;
 pub mod bitmap;
 pub mod center;
@@ -44,6 +45,9 @@ pub mod swipe_up_chevron;
 pub mod text;
 pub mod mut_text;
 pub mod translate;
+pub mod simple_translate;
+pub mod slide_in_transition;
+pub mod free_cropped;
 pub mod welcome;
 pub mod standby;
 pub mod device_name;
@@ -52,6 +56,7 @@ pub mod keygen_check;
 pub mod padding;
 pub mod circle_button;
 pub mod fade_switcher;
+pub mod fps;
 pub mod widget_tuple;
 pub mod select_widget;
 pub mod bitcoin_amount_display;
@@ -64,6 +69,7 @@ pub use key_touch::{Key, KeyTouch};
 pub use page_by_page::PageByPage;
 pub use page_demo::PageDemo;
 pub use sign_prompt::SignPrompt;
+pub use free_cropped::*;
 
 // Re-export all widget items
 pub use animation::*;
@@ -87,6 +93,8 @@ pub use sized_box::*;
 pub use swipe_up_chevron::*;
 pub use text::*;
 pub use mut_text::*;
+pub use translate::*;
+pub use slide_in_transition::*;
 pub use welcome::*;
 pub use standby::*;
 pub use device_name::*;
@@ -94,6 +102,7 @@ pub use keygen_check::*;
 pub use padding::*;
 pub use circle_button::*;
 pub use fade_switcher::FadeSwitcher;
+pub use fps::Fps;
 
 // Font re-exports
 use u8g2_fonts::fonts;

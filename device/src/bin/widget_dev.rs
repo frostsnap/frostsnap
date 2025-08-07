@@ -19,7 +19,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
-use frostsnap_embedded_widgets::{palette::PALETTE, DynWidget, Widget};
+use frostsnap_embedded_widgets::{palette::PALETTE, DynWidget, Widget, Fps};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 // Screen constants
@@ -28,7 +28,7 @@ const SCREEN_HEIGHT: u32 = 280;
 const SCREEN_OFFSET_Y: u16 = 20; // ST7789 Y offset for 240x280 panel
 
 // Widget demo selection
-const DEMO: &str = "sign_prompt";
+const DEMO: &str = "slide_in";
 
 #[entry]
 fn main() -> ! {
@@ -95,6 +95,12 @@ fn main() -> ! {
         ($widget:expr) => {{
             let mut widget = $widget;
             let mut last_touch: Option<(Point, u32)> = None;
+            
+            // Create FPS counter widget
+            let mut fps_counter = Fps::new();
+            
+            // Track last redraw time
+            let mut last_redraw_time = timer.now();
 
             // Clear the screen with background color
             let _ = display.clear(PALETTE.background);
@@ -147,13 +153,29 @@ fn main() -> ! {
                     }
                 }
 
-                // Draw the widget
-                let _ = widget.draw(
-                    &mut display,
-                    frostsnap_embedded_widgets::Instant::from_millis(
-                        current_time.duration_since_epoch().to_millis(),
-                    ),
-                );
+                // Only redraw if at least 10ms has passed since last redraw
+                let elapsed_ms = (current_time - last_redraw_time).to_millis();
+                if elapsed_ms >= 10 {
+                    // Draw the main widget
+                    let _ = widget.draw(
+                        &mut display,
+                        frostsnap_embedded_widgets::Instant::from_millis(
+                            current_time.duration_since_epoch().to_millis(),
+                        ),
+                    );
+                    
+                    // Draw FPS counter on top at position (5, 15)
+                    let mut translated = display.translated(Point::new(5, 15));
+                    let _ = fps_counter.draw(
+                        &mut translated,
+                        frostsnap_embedded_widgets::Instant::from_millis(
+                            current_time.duration_since_epoch().to_millis(),
+                        ),
+                    );
+                    
+                    // Update last redraw time
+                    last_redraw_time = current_time;
+                }
             }
         }};
     }

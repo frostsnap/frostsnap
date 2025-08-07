@@ -1,4 +1,5 @@
 use super::Widget;
+use crate::free_cropped::FreeCrop;
 use embedded_graphics::{
     draw_target::DrawTarget,
     prelude::*,
@@ -142,7 +143,7 @@ impl<W: Widget> Widget for Container<W> {
         };
         
         if let Some(size) = size {
-            let rect = Rectangle::new(Point::new_equal(self.border_width() as i32), size);
+            let rect = Rectangle::new( Point::new_equal(self.border_width() as i32), size);
             if self.border_needs_redraw {
                 if let Some(style) = self.border_style {
                     if let Some(corner_radius) = self.corner_radius {
@@ -160,9 +161,9 @@ impl<W: Widget> Widget for Container<W> {
                 }
                 self.border_needs_redraw = false;
             }
-            
-            let mut cropped = target.cropped(&rect);
-            self.child.draw(&mut cropped, current_time)?;
+
+            let mut free_cropped = target.free_cropped(&rect);
+            self.child.draw(&mut free_cropped, current_time)?;
         } else {
             self.child.draw(target, current_time)?;
         }
@@ -171,6 +172,7 @@ impl<W: Widget> Widget for Container<W> {
     }
     
 }
+
 
 impl<W: Widget> core::fmt::Debug for Container<W> 
 where

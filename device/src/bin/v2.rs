@@ -305,6 +305,7 @@ where
             (WidgetTree::Standby(_), Workflow::Standby { .. }) => {
                 // TODO: Could check if name/key_name changed and only update if different
                 // For now, always switch to show updated names
+                return;
             }
 
             // If we're already showing DeviceNaming and get another NamingDevice workflow, just update the text
