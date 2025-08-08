@@ -48,6 +48,7 @@ pub mod swipe_up_chevron;
 pub mod switcher;
 pub mod text;
 pub mod mut_text;
+pub mod string_buffer;
 pub mod translate;
 pub mod simple_translate;
 pub mod slide_in_transition;

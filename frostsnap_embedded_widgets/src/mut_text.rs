@@ -1,5 +1,4 @@
 use crate::Widget;
-use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
     framebuffer::{Framebuffer, buffer_size},
@@ -10,7 +9,7 @@ use embedded_graphics::{
 };
 
 /// A mutable text widget with a fixed-size framebuffer
-/// N = max number of characters
+/// N = max number of bytes for the text string
 /// W = width in pixels
 /// H = height in pixels
 /// BUFFER_SIZE = buffer size in bytes (must be calculated externally)
@@ -18,7 +17,8 @@ pub struct MutText<S, const N: usize, const W: usize, const H: usize, const BUFF
 where
     S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
 {
-    text: String,
+    text: [u8; N],
+    text_len: usize,
     character_style: S,
     text_style: TextStyle,
     buffer: Framebuffer<BinaryColor, RawU1, LittleEndian, W, H, BUFFER_SIZE>,
@@ -29,14 +29,11 @@ impl<S, const N: usize, const W: usize, const H: usize, const BUFFER_SIZE: usize
 where
     S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
 {
-    pub fn new<T: Into<String>>(text: T, character_style: S) -> Self {
-        let text_string = text.into();
-        // Truncate to max length
-        let text_string = if text_string.len() > N {
-            text_string.chars().take(N).collect()
-        } else {
-            text_string
-        };
+    pub fn new(text: &str, character_style: S) -> Self {
+        let mut text_buf = [0u8; N];
+        let text_bytes = text.as_bytes();
+        let text_len = text_bytes.len().min(N);
+        text_buf[..text_len].copy_from_slice(&text_bytes[..text_len]);
         
         let text_style = TextStyleBuilder::new()
             .baseline(Baseline::Top)
@@ -44,7 +41,8 @@ where
             .build();
         
         let mut widget = Self {
-            text: text_string,
+            text: text_buf,
+            text_len,
             character_style,
             text_style,
             buffer: Framebuffer::new(),
@@ -57,17 +55,16 @@ where
     }
     
     /// Set new text and mark as dirty
-    pub fn set_text<T: Into<String>>(&mut self, text: T) {
-        let new_text = text.into();
-        // Truncate to max length
-        let new_text = if new_text.len() > N {
-            new_text.chars().take(N).collect()
-        } else {
-            new_text
-        };
+    pub fn set_text(&mut self, text: &str) {
+        let text_bytes = text.as_bytes();
+        let new_len = text_bytes.len().min(N);
         
-        if new_text != self.text {
-            self.text = new_text;
+        // Check if text has changed
+        if new_len != self.text_len || &self.text[..new_len] != &text_bytes[..new_len] {
+            self.text[..new_len].copy_from_slice(&text_bytes[..new_len]);
+            // Clear the rest of the buffer
+            self.text[new_len..].fill(0);
+            self.text_len = new_len;
             self.render_to_buffer();
             self.dirty = true;
         }
@@ -75,7 +72,7 @@ where
     
     /// Get the current text
     pub fn text(&self) -> &str {
-        &self.text
+        core::str::from_utf8(&self.text[..self.text_len]).unwrap_or("")
     }
     
     /// Render text to the internal buffer
@@ -84,8 +81,10 @@ where
         self.buffer.clear(BinaryColor::Off).ok();
         
         // Draw the text
+        // We need to get the string without borrowing self
+        let text_str = core::str::from_utf8(&self.text[..self.text_len]).unwrap_or("");
         let text_obj = EgText::with_text_style(
-            &self.text,
+            text_str,
             Point::new(W as i32 / 2, 0),
             self.character_style.clone(),
             self.text_style,

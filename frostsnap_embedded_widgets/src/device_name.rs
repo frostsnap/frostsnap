@@ -36,7 +36,7 @@ impl DeviceName {
         let name_string = name.into();
         let char_style = U8g2TextStyle::new(crate::FONT_LARGE, BinaryColor::On);
         
-        let mut_text = MutText::new(name_string, char_style);
+        let mut_text = MutText::new(&name_string, char_style);
         let text_widget = mut_text.color_map(|c| match c {
             BinaryColor::On => PALETTE.primary,
             BinaryColor::Off => PALETTE.background,
@@ -79,7 +79,8 @@ impl DeviceName {
     
     /// Set a new device name
     pub fn set_name<S: Into<String>>(&mut self, name: S) {
-        self.text_widget.child.set_text(name);
+        let name_string = name.into();
+        self.text_widget.child.set_text(&name_string);
         self.needs_redraw = true;
     }
 }

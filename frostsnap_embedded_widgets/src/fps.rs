@@ -1,15 +1,24 @@
-use crate::{Widget, DynWidget, Instant, text::Text, fade_switcher::FadeSwitcher, palette::PALETTE};
+use crate::{Widget, DynWidget, Instant, mut_text::{MutText, mut_text_buffer_size}, palette::PALETTE, color_map::ColorMap, string_buffer::StringBuffer};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::{Rgb565, RgbColor},
+    pixelcolor::{Rgb565, RgbColor, BinaryColor},
+    text::Alignment,
 };
-use alloc::{format, collections::VecDeque};
+use alloc::collections::VecDeque;
+use core::fmt::Write;
+
+// Constants for MutText dimensions - "FPS: 999" is max 8 chars
+const FPS_MAX_CHARS: usize = 10;
+const FPS_WIDTH: usize = 80;
+const FPS_HEIGHT: usize = 20;
+const FPS_BUFFER_SIZE: usize = mut_text_buffer_size::<FPS_WIDTH, FPS_HEIGHT>();
+
+type FpsMutText = MutText<u8g2_fonts::U8g2TextStyle<BinaryColor>, FPS_MAX_CHARS, FPS_WIDTH, FPS_HEIGHT, FPS_BUFFER_SIZE>;
 
 /// A widget that displays frames per second using a 2-second moving average
 pub struct Fps {
-    display: FadeSwitcher<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>,
-    text_style: u8g2_fonts::U8g2TextStyle<Rgb565>,
+    display: ColorMap<FpsMutText, Rgb565>,
     frame_timestamps: VecDeque<Instant>,
     last_display_update: Option<Instant>,
     current_fps: u32,
@@ -20,18 +29,20 @@ impl Fps {
     pub fn new() -> Self {
         let text_style = u8g2_fonts::U8g2TextStyle::new(
             crate::FONT_SMALL,
-            Rgb565::GREEN,
+            BinaryColor::On,
         );
-        let initial_text = Text::new(
-            format!("FPS: 00000"),
-            text_style.clone(),
-        );
-        // Use FadeSwitcher with 0ms fade for instant switching
-        let display = FadeSwitcher::new(initial_text, 0, 0, PALETTE.background);
+        let mut_text = MutText::new(
+            "FPS: 0",
+            text_style,
+        ).with_alignment(Alignment::Left);
+        
+        let display = mut_text.color_map(|c| match c {
+            BinaryColor::On => Rgb565::GREEN,
+            BinaryColor::Off => PALETTE.background,
+        });
         
         Self {
             display,
-            text_style,
             frame_timestamps: VecDeque::new(),
             last_display_update: None,
             current_fps: 0,
@@ -106,11 +117,10 @@ impl Widget for Fps {
             // Only update display if FPS changed
             if fps != self.current_fps as u64 {
                 self.current_fps = fps as u32;
-                let new_text = Text::new(
-                    format!("FPS: {}", self.current_fps),
-                    self.text_style.clone(),
-                );
-                self.display.switch_to(new_text);
+                // Use a small buffer to format the string without allocation
+                let mut buf = StringBuffer::<FPS_MAX_CHARS>::new();
+                write!(&mut buf, "FPS: {}", self.current_fps).ok();
+                self.display.child.set_text(buf.as_str());
             }
             
             self.last_display_update = Some(current_time);

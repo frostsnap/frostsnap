@@ -8,15 +8,19 @@ use frostsnap_embedded_widgets::SizedBox;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::geometry::Size;
 #[cfg(feature = "debug_mem")]
-use frostsnap_embedded_widgets::{DynWidget, Instant, Text, FONT_SMALL, Switcher};
+use frostsnap_embedded_widgets::{
+    DynWidget, Instant, FONT_SMALL, 
+    mut_text::{MutText, mut_text_buffer_size},
+    palette::PALETTE,
+    color_map::ColorMap,
+    string_buffer::StringBuffer,
+};
 #[cfg(feature = "debug_mem")]
 use embedded_graphics::{
     draw_target::DrawTarget,
-    pixelcolor::RgbColor,
+    pixelcolor::{RgbColor, BinaryColor},
     text::Alignment,
 };
-#[cfg(feature = "debug_mem")]
-use alloc::format;
 #[cfg(feature = "debug_mem")]
 use u8g2_fonts::U8g2TextStyle;
 
@@ -47,11 +51,23 @@ pub fn create_status() -> impl Widget<Color = Rgb565> {
     }
 }
 
+// Constants for MutText dimensions - "99% 256k" is max 8 chars
+#[cfg(feature = "debug_mem")]
+const MEM_MAX_CHARS: usize = 10;
+#[cfg(feature = "debug_mem")]
+const MEM_WIDTH: usize = 80;
+#[cfg(feature = "debug_mem")]
+const MEM_HEIGHT: usize = 20;
+#[cfg(feature = "debug_mem")]
+const MEM_BUFFER_SIZE: usize = mut_text_buffer_size::<MEM_WIDTH, MEM_HEIGHT>();
+
+#[cfg(feature = "debug_mem")]
+type MemMutText = MutText<U8g2TextStyle<BinaryColor>, MEM_MAX_CHARS, MEM_WIDTH, MEM_HEIGHT, MEM_BUFFER_SIZE>;
+
 /// Memory usage indicator component that polls esp_alloc directly
 #[cfg(feature = "debug_mem")]
 pub struct MemoryIndicator {
-    display: Switcher<Text<U8g2TextStyle<Rgb565>>>,
-    text_style: U8g2TextStyle<Rgb565>,
+    display: ColorMap<MemMutText, Rgb565>,
     last_percentage: usize,
     last_draw_time: Option<Instant>,
 }
@@ -59,14 +75,16 @@ pub struct MemoryIndicator {
 #[cfg(feature = "debug_mem")]
 impl MemoryIndicator {
     fn new() -> Self {
-        let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
-        let initial_text = Text::new("Mem: 0%", text_style.clone()).with_alignment(Alignment::Right);
-        // Use Switcher for instant switching
-        let display = Switcher::new(initial_text);
+        let text_style = U8g2TextStyle::new(FONT_SMALL, BinaryColor::On);
+        let mut_text = MutText::new("0% 0k", text_style).with_alignment(Alignment::Right);
+        
+        let display = mut_text.color_map(|c| match c {
+            BinaryColor::On => Rgb565::CYAN,
+            BinaryColor::Off => PALETTE.background,
+        });
         
         Self {
             display,
-            text_style,
             last_percentage: 0,
             last_draw_time: None,
         }
@@ -116,13 +134,10 @@ impl Widget for MemoryIndicator {
                 self.last_percentage = percentage;
                 let used_kb = used / 1024;
                 
-                let new_text = Text::new(
-                    format!("{}% {}k", percentage, used_kb),
-                    self.text_style.clone()
-                ).with_alignment(Alignment::Right);
-                
-                // Use switch_to to update the display with the new text
-                self.display.switch_to(new_text);
+                use core::fmt::Write;
+                let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
+                write!(&mut buf, "{}% {}k", percentage, used_kb).ok();
+                self.display.child.set_text(buf.as_str());
             }
             
             self.last_draw_time = Some(current_time);
