@@ -323,6 +323,12 @@ where
                 return;
             }
 
+            // If we're already showing SignPrompt, don't create a new one
+            (WidgetTree::SignPrompt { .. }, Workflow::UserPrompt(Prompt::Signing { .. })) => {
+                // Already showing SignPrompt, no need to create a new one
+                return;
+            }
+
             // If we're already showing FirmwareUpgradeProgress, just update it
             (
                 WidgetTree::FirmwareUpgradeProgress { widget, ref mut status },

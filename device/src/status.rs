@@ -122,15 +122,13 @@ impl Widget for MemoryIndicator {
             // Get memory info from esp_alloc
             let used = esp_alloc::HEAP.used();
             
-            // Update text if bytes changed (even by a few bytes)
-            if used != self.last_used {
-                self.last_used = used;
-                
-                use core::fmt::Write;
-                let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
-                write!(&mut buf, "Mem: {}", used).ok();
-                self.display.child.set_text(buf.as_str());
-            }
+            // Always update the text to force a redraw
+            self.last_used = used;
+            
+            use core::fmt::Write;
+            let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
+            write!(&mut buf, "Mem: {}", used).ok();
+            self.display.child.set_text(buf.as_str());
             
             self.last_draw_time = Some(current_time);
         }
