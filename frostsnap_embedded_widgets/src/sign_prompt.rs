@@ -24,12 +24,12 @@ pub struct SignPromptDisplay {
 
 /// Page widget for displaying amount to send
 #[derive(frostsnap_macros::Widget)]
-struct AmountPage {
+pub struct AmountPage {
     column: Column<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, ColorMap<BitcoinAmountDisplay, Gray4>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
 }
 
 impl AmountPage {
-    fn new(index: usize, amount_sats: u64) -> Self {
+    pub fn new(index: usize, amount_sats: u64) -> Self {
         let title = Text::new(
             format!("Send Amount #{}", index + 1),
             U8g2TextStyle::new(crate::FONT_MED, Gray4::new(8)) // Medium gray for secondary text

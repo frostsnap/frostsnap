@@ -34,7 +34,9 @@ pub mod legacy;
 pub mod memory_debug;
 pub mod page_by_page;
 pub mod page_demo;
+pub mod page_slider;
 pub mod paginator_with_scrollbar;
+pub mod widget_list;
 pub mod progress_bars;
 pub mod row;
 pub mod buffered;
@@ -68,7 +70,9 @@ pub mod any_of;
 pub use key_touch::{Key, KeyTouch};
 pub use page_by_page::PageByPage;
 pub use page_demo::PageDemo;
+pub use page_slider::PageSlider;
 pub use sign_prompt::SignPrompt;
+pub use widget_list::WidgetList;
 pub use free_cropped::*;
 
 // Re-export all widget items
@@ -98,6 +102,7 @@ pub use slide_in_transition::*;
 pub use welcome::*;
 pub use standby::*;
 pub use device_name::*;
+pub use bobbing_carat::BobbingCarat;
 pub use keygen_check::*;
 pub use padding::*;
 pub use circle_button::*;

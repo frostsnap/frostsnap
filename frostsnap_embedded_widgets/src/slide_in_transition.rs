@@ -40,6 +40,11 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
         self_
     }
     
+    /// Set the slide-from position for the next transition
+    pub fn set_slide_from(&mut self, position: Point) {
+        self.slide_from_position = position;
+    }
+    
     /// Switch to a new widget with slide-in transition
     pub fn switch_to(&mut self, widget: T) {
         // Create translate widget and start the slide animation from the offset
@@ -50,7 +55,6 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
         // Create new fader with fade starting
         let mut new_fader = Fader::new_faded_out(new_translate);
         new_fader.set_animation_speed(AnimationSpeed::EaseOut);
-        new_fader.start_fade_in(self.transition_duration_ms, 10, self.bg_color);
 
         // Use mem::replace to swap in the new widget and get the old one
         if let Some(old) = self.current.as_mut() {
@@ -106,11 +110,17 @@ impl<T: Widget<Color = Rgb565>> Widget for SlideInTransition<T> {
             old.draw(target, current_time)?;
             if old.is_faded_out() {
                 self.old = None;
+            } else {
+                // this should never happen but just in case
+                return Ok(());
             }
         }
 
-        // Draw current widget (Translate handles clearing and animation)
-        if let Some(ref mut current) = self.current {
+        if let Some(ref mut current) = self.current  {
+            if current.is_faded_out() {
+                current.start_fade_in(self.transition_duration_ms, 10, self.bg_color);
+            }
+
             current.draw(target, current_time)?;
         }
 

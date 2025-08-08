@@ -70,7 +70,7 @@ impl Bitmap {
     
     /// Set a pixel at the given position
     pub fn set_pixel(&mut self, x: u32, y: u32, color: BinaryColor) {
-        if x >= self.width {
+        if x >= self.width || y >= self.height() {
             return;
         }
         

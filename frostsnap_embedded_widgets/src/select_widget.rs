@@ -26,28 +26,12 @@ macro_rules! select_widget {
                 $run_macro!(widget);
             }
             "vertical_slide" => {
-                use $crate::{PageDemo, VerticalPaginator, palette::PALETTE};
-                use embedded_graphics::{prelude::*, framebuffer::buffer_size};
-                
-                let page_demo = PageDemo::new($screen_size);
-                const SCREEN_WIDTH: usize = 240;
-                const SCREEN_HEIGHT: usize = 280;
-                const BUFFER_SIZE: usize = buffer_size::<<PageDemo as Widget>::Color>(SCREEN_WIDTH, SCREEN_HEIGHT);
-                let paginator = VerticalPaginator::<_, SCREEN_WIDTH, SCREEN_HEIGHT, BUFFER_SIZE>::new(page_demo);
-                
-                let widget = paginator.color_map(|c| match c.luma() {
-                    0b00 => PALETTE.background,
-                    0b01 => PALETTE.outline,
-                    0b10 => PALETTE.primary,
-                    0b11|_ => PALETTE.on_background
-                });
-                
-                $run_macro!(widget);
+                // Commented out until VerticalPaginator is refactored
+                panic!("vertical_slide demo is temporarily disabled while refactoring");
             }
             "bip39_backup" => {
-                use $crate::{bip39::Bip39BackupDisplay, VerticalPaginator, PaginatorWithScrollBar, palette::PALETTE};
-                use embedded_graphics::{prelude::*, framebuffer::buffer_size};
-                use embedded_text::alignment::HorizontalAlignment;
+                use $crate::{bip39::Bip39BackupDisplay, PaginatorWithScrollBar, palette::PALETTE, text::Text, center::Center};
+                use embedded_graphics::prelude::*;
                 
                 // Generate test word indices - same words as original display
                 const TEST_WORD_INDICES: [u16; 25] = [
@@ -79,33 +63,26 @@ macro_rules! select_widget {
                 ];
                 let share_index = 42;
                 
+                // Create the backup display with PageByPage trait
                 let backup_display = Bip39BackupDisplay::new($screen_size, TEST_WORD_INDICES, share_index);
-                const SCREEN_WIDTH: usize = 240;
-                const SCREEN_HEIGHT: usize = 280; // Full screen height
-                const BUFFER_SIZE: usize = buffer_size::<<Bip39BackupDisplay as Widget>::Color>(SCREEN_WIDTH, SCREEN_HEIGHT);
-                let paginator = VerticalPaginator::<_, SCREEN_WIDTH, SCREEN_HEIGHT, BUFFER_SIZE>::new(backup_display);
                 
-                let paginator_mapped = paginator.color_map(|c| match c.luma() {
-                    0b00 => PALETTE.background,           // Black background
-                    0b01 => PALETTE.on_surface_variant,   // Gray for secondary text
-                    0b10 => PALETTE.outline,              // Not used currently
-                    0b11 => PALETTE.primary,              // Cyan/blue for primary text
+                // Map Gray2 to Rgb565 colors
+                let mapped_display = backup_display.color_map(|c| match c.luma() {
+                    0 => PALETTE.background,           // Black background
+                    1 => PALETTE.on_surface_variant,   // Gray for secondary text
+                    2 => PALETTE.outline,              // Medium gray
+                    3 => PALETTE.primary,              // Primary text
                     _ => PALETTE.on_background
                 });
                 
-                // Create HoldToConfirm widget for final page
-                use $crate::{HoldToConfirm, text::Text};
-                use embedded_graphics::pixelcolor::BinaryColor;
+                // Create a simple final page widget
+                let final_page = Center::new(Text::new(
+                    "All done!",
+                    u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.primary)
+                ));
                 
-                let confirm_prompt = Text::new("I have written down:\n\n- the key index\n- all 25 words", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, BinaryColor::On));
-                let confirm_prompt_rgb = confirm_prompt.color_map(|c| match c {
-                    BinaryColor::On => PALETTE.on_surface,
-                    BinaryColor::Off => PALETTE.background,
-                });
-                
-                let hold_to_confirm = HoldToConfirm::new($screen_size, 2000, confirm_prompt_rgb);
-                
-                let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_to_confirm);
+                // Wrap with PaginatorWithScrollBar for vertical pagination
+                let widget = PaginatorWithScrollBar::new(mapped_display, final_page);
                 
                 $run_macro!(widget);
             }
@@ -137,24 +114,15 @@ macro_rules! select_widget {
                 $run_macro!(device_name_screen);
             }
             "bobbing_icon" => {
-                use $crate::{container::Container, sized_box::SizedBox, center::Center, translate::Translate, palette::PALETTE, Widget, Text};
-                use embedded_graphics::{prelude::*, primitives::PrimitiveStyle};
+                use $crate::{bobbing_carat::BobbingCarat, center::Center, palette::PALETTE};
                 
-                // Simple sized box as child
-                let sized_box = Text::new("Fade Demo", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.primary));
+                // Create the bobbing carat widget with colors
+                let bobbing_carat = BobbingCarat::new(PALETTE.on_background, PALETTE.background);
                 
-                // Put it in a container with a border
-                let container = Container::new(sized_box)
-                    .with_border(PrimitiveStyle::with_stroke(PALETTE.on_background, 10));
+                // Center it on screen
+                let centered = Center::new(bobbing_carat);
                 
-
-                // Wrap in Translate with repeat mode
-                let mut translate = Translate::new(container, PALETTE.background);
-                translate.set_repeat(true);
-                // Bob right and left 30 pixels over 10 seconds each way
-                translate.translate(Point::new(100, 100), 1000);
-                
-                $run_macro!(translate);
+                $run_macro!(centered);
             }
             "swipe_up_chevron" => {
                 use $crate::{SwipeUpChevron, palette::PALETTE, center::Center};
@@ -231,6 +199,37 @@ macro_rules! select_widget {
                 $run_macro!(widget);
             }
             "slide_in" => {
+                use $crate::{PageSlider, WidgetList, Widget, center::Center, text::Text, container::Container, palette::PALETTE};
+                use embedded_graphics::prelude::*;
+                use embedded_graphics::primitives::PrimitiveStyle;
+                
+                // Create a WidgetList that generates text widgets on the fly
+                struct InfiniteTextPages;
+                
+                impl WidgetList<Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>> for InfiniteTextPages {
+                    fn len(&self) -> usize {
+                        usize::MAX // Infinite pages!
+                    }
+                    
+                    fn get(&self, index: usize) -> Option<Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>> {
+                        let text = Text::new(
+                            $crate::alloc::format!("Page {}\nLorem ipsum\nderp herp!", index + 1),
+                            u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                        );
+                        let container = Container::new(text)
+                            .with_border(PrimitiveStyle::with_stroke(PALETTE.primary, 2));
+                        Some(container)
+                    }
+                }
+                
+                // Create the PageSlider with infinite text pages
+                let page_slider = PageSlider::new(InfiniteTextPages, $screen_size.height);
+                let widget = Center::new(page_slider);
+                
+                $run_macro!(widget);
+            }
+            "slide_in_old" => {
+                // Keep the old demo for reference
                 use $crate::{slide_in_transition::SlideInTransition, text::Text, palette::PALETTE, Instant, Widget, container::Container, center::Center};
                 use embedded_graphics::prelude::*;
                 use embedded_graphics::primitives::PrimitiveStyle;
@@ -310,7 +309,7 @@ macro_rules! select_widget {
                 $run_macro!(Center::new(demo));
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old", $demo);
             }
         }
     };

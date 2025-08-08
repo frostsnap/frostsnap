@@ -174,9 +174,6 @@ impl Widget for Bip39BackupDisplay {
         target: &mut D,
         _current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        // Clear the background
-        target.clear(Gray2::new(0))?;
-
         // Draw the current page
         if self.current_page == 0 {
             self.draw_share_index_page(target)?;
