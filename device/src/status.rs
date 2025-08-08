@@ -55,9 +55,10 @@ pub fn create_status() -> impl Widget<Color = Rgb565> {
 #[cfg(feature = "debug_mem")]
 const MEM_MAX_CHARS: usize = 10;
 #[cfg(feature = "debug_mem")]
-const MEM_WIDTH: usize = 80;
+// ProFont17 is ~10px wide per character, add some padding
+const MEM_WIDTH: usize = MEM_MAX_CHARS * 10 + 10;  // 110px for 10 chars + padding
 #[cfg(feature = "debug_mem")]
-const MEM_HEIGHT: usize = 20;
+const MEM_HEIGHT: usize = 17;  // ProFont17 is exactly 17px tall
 #[cfg(feature = "debug_mem")]
 const MEM_BUFFER_SIZE: usize = mut_text_buffer_size::<MEM_WIDTH, MEM_HEIGHT>();
 

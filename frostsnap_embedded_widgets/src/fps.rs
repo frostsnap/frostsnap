@@ -9,8 +9,9 @@ use core::fmt::Write;
 
 // Constants for MutText dimensions - "FPS: 999" is max 8 chars
 const FPS_MAX_CHARS: usize = 10;
-const FPS_WIDTH: usize = 80;
-const FPS_HEIGHT: usize = 20;
+// ProFont17 is ~10px wide per character, add some padding
+const FPS_WIDTH: usize = FPS_MAX_CHARS * 10 + 10;  // 110px for 10 chars + padding
+const FPS_HEIGHT: usize = 17;  // ProFont17 is exactly 17px tall
 const FPS_BUFFER_SIZE: usize = mut_text_buffer_size::<FPS_WIDTH, FPS_HEIGHT>();
 
 type FpsMutText = MutText<u8g2_fonts::U8g2TextStyle<BinaryColor>, FPS_MAX_CHARS, FPS_WIDTH, FPS_HEIGHT, FPS_BUFFER_SIZE>;
