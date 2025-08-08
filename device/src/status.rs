@@ -51,12 +51,12 @@ pub fn create_status() -> impl Widget<Color = Rgb565> {
     }
 }
 
-// Constants for MutText dimensions - "99% 256k" is max 8 chars
+// Constants for MutText dimensions - "Mem: 262144" needs more space
 #[cfg(feature = "debug_mem")]
-const MEM_MAX_CHARS: usize = 10;
+const MEM_MAX_CHARS: usize = 15;  // Increased for full byte count
 #[cfg(feature = "debug_mem")]
 // ProFont17 is ~10px wide per character, add some padding
-const MEM_WIDTH: usize = MEM_MAX_CHARS * 10 + 10;  // 110px for 10 chars + padding
+const MEM_WIDTH: usize = MEM_MAX_CHARS * 10 + 10;  // 160px for 15 chars + padding
 #[cfg(feature = "debug_mem")]
 const MEM_HEIGHT: usize = 17;  // ProFont17 is exactly 17px tall
 #[cfg(feature = "debug_mem")]
@@ -69,7 +69,7 @@ type MemMutText = MutText<U8g2TextStyle<BinaryColor>, MEM_MAX_CHARS, MEM_WIDTH, 
 #[cfg(feature = "debug_mem")]
 pub struct MemoryIndicator {
     display: ColorMap<MemMutText, Rgb565>,
-    last_percentage: usize,
+    last_used: usize,
     last_draw_time: Option<Instant>,
 }
 
@@ -77,7 +77,7 @@ pub struct MemoryIndicator {
 impl MemoryIndicator {
     fn new() -> Self {
         let text_style = U8g2TextStyle::new(FONT_SMALL, BinaryColor::On);
-        let mut_text = MutText::new("0% 0k", text_style).with_alignment(Alignment::Right);
+        let mut_text = MutText::new("Mem: 0", text_style).with_alignment(Alignment::Left);
         
         let display = mut_text.color_map(|c| match c {
             BinaryColor::On => Rgb565::CYAN,
@@ -86,7 +86,7 @@ impl MemoryIndicator {
         
         Self {
             display,
-            last_percentage: 0,
+            last_used: 0,
             last_draw_time: None,
         }
     }
@@ -121,23 +121,14 @@ impl Widget for MemoryIndicator {
         if should_update {
             // Get memory info from esp_alloc
             let used = esp_alloc::HEAP.used();
-            let free = esp_alloc::HEAP.free();
-            let total = used + free;
             
-            let percentage = if total > 0 {
-                (used * 100) / total
-            } else {
-                0
-            };
-            
-            // Update text if percentage changed
-            if percentage != self.last_percentage {
-                self.last_percentage = percentage;
-                let used_kb = used / 1024;
+            // Update text if bytes changed (even by a few bytes)
+            if used != self.last_used {
+                self.last_used = used;
                 
                 use core::fmt::Write;
                 let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
-                write!(&mut buf, "{}% {}k", percentage, used_kb).ok();
+                write!(&mut buf, "Mem: {}", used).ok();
                 self.display.child.set_text(buf.as_str());
             }
             
