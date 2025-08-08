@@ -51,13 +51,13 @@ pub enum WidgetTree {
 
     /// Sign transaction prompt screen
     SignPrompt {
-        widget: SignPrompt,
+        widget: Box<SignPrompt>,
         phase: Option<Box<SignPhase1>>,
     },
 
     /// Firmware upgrade confirmation screen
     FirmwareUpgradeConfirm {
-        widget: FirmwareUpgradeConfirm,
+        widget: Box<FirmwareUpgradeConfirm>,
         firmware_hash: [u8; 32],
         firmware_size: u32,
         confirmed: bool,
@@ -65,7 +65,7 @@ pub enum WidgetTree {
 
     /// Firmware upgrade progress screen
     FirmwareUpgradeProgress {
-        widget: FirmwareUpgradeProgress,
+        widget: Box<FirmwareUpgradeProgress>,
         status: FirmwareUpgradeStatus,
     },
 

@@ -4,7 +4,7 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::string::ToString;
+use alloc::{boxed::Box, string::ToString};
 use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
@@ -388,7 +388,7 @@ where
 
                                 // Create the SignPrompt widget
                                 let screen_size = embedded_graphics::geometry::Size::new(240, 280);
-                                let widget = SignPrompt::new(screen_size, prompt);
+                                let widget = Box::new(SignPrompt::new(screen_size, prompt));
 
                                 // Store both widget and phase in the WidgetTree
                                 WidgetTree::SignPrompt {
@@ -409,7 +409,7 @@ where
                     } => {
                         // Create the FirmwareUpgradeConfirm widget
                         let screen_size = embedded_graphics::geometry::Size::new(240, 280);
-                        let widget = FirmwareUpgradeConfirm::new(screen_size, firmware_digest.0, size);
+                        let widget = Box::new(FirmwareUpgradeConfirm::new(screen_size, firmware_digest.0, size));
                         
                         // Store the widget and metadata in the WidgetTree
                         WidgetTree::FirmwareUpgradeConfirm {
@@ -449,7 +449,7 @@ where
             Workflow::FirmwareUpgrade(status) => {
                 use frostsnap_device::ui::FirmwareUpgradeStatus;
                 
-                let widget = match status {
+                let widget = Box::new(match status {
                     FirmwareUpgradeStatus::Erase { progress } => {
                         FirmwareUpgradeProgress::erasing(progress)
                     }
@@ -459,7 +459,7 @@ where
                     FirmwareUpgradeStatus::Passive => {
                         FirmwareUpgradeProgress::passive()
                     }
-                };
+                });
                 
                 WidgetTree::FirmwareUpgradeProgress { widget, status }
             }

@@ -180,6 +180,38 @@ pub trait Widget: DynWidget {
     }
 }
 
+// Implement Widget for Box<T> where T: Widget
+impl<T: Widget + ?Sized> Widget for alloc::boxed::Box<T> {
+    type Color = T::Color;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        (**self).draw(target, current_time)
+    }
+}
+
+// Implement DynWidget for Box<T> where T: DynWidget
+impl<T: DynWidget + ?Sized> DynWidget for alloc::boxed::Box<T> {
+    fn handle_touch(&mut self, point: Point, current_time: crate::Instant, is_release: bool) -> Option<KeyTouch> {
+        (**self).handle_touch(point, current_time, is_release)
+    }
+    
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        (**self).handle_vertical_drag(prev_y, new_y, is_release)
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        (**self).size_hint()
+    }
+    
+    fn force_full_redraw(&mut self) {
+        (**self).force_full_redraw()
+    }
+}
+
 
 /// Milliseconds since device start
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
