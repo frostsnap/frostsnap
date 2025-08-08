@@ -41,8 +41,9 @@ use frostsnap_device::{
     esp32_run,
     io::SerialInterface,
     root_widget::RootWidget,
+    status::create_status,
     touch_calibration::{x_based_adjustment, y_based_adjustment},
-    ui::{BusyTask, Prompt, UiEvent, UserInteraction, Workflow},
+    ui::{BusyTask, FirmwareUpgradeStatus, Prompt, UiEvent, UserInteraction, Workflow},
     widget_tree::WidgetTree,
     DownstreamConnectionState, Instant, UpstreamConnectionState,
 };
@@ -209,10 +210,12 @@ fn main() -> ! {
     let ui = FrostyUi {
         display,
         root_widget: RootWidget::new(WidgetTree::default(), 300, PALETTE.background),
+        status_widget: create_status(),
         capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,
         upstream_connection_state: None,
         last_touch: None,
+        last_redraw_time: Instant::from_ticks(0),
         timer: &timer1,
         busy_task: Default::default(),
         recovery_mode: false,
@@ -248,11 +251,13 @@ impl embedded_hal::digital::ErrorType for NoCs {
     type Error = core::convert::Infallible;
 }
 
-pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
+pub struct FrostyUi<'t, T, DT, I2C, PINT, RST, SW> {
     display: DT,
     root_widget: RootWidget,
+    status_widget: SW,
     capsense: CST816S<I2C, PINT, RST>,
     last_touch: Option<(Point, Instant)>,
+    last_redraw_time: Instant,
     downstream_connection_state: DownstreamConnectionState,
     upstream_connection_state: Option<UpstreamConnectionState>,
     timer: &'t Timer<T, Blocking>,
@@ -260,8 +265,9 @@ pub struct FrostyUi<'t, T, DT, I2C, PINT, RST> {
     recovery_mode: bool,
 }
 
-impl<T, DT, I2C, PINT, RST, CommE, PinE> UserInteraction for FrostyUi<'_, T, DT, I2C, PINT, RST>
+impl<T, DT, I2C, PINT, RST, SW, CommE, PinE> UserInteraction for FrostyUi<'_, T, DT, I2C, PINT, RST, SW>
 where
+    SW: Widget<Color = Rgb565>,
     I2C: hal::i2c::I2c<Error = CommE>,
     PINT: hal::digital::InputPin,
     RST: hal::digital::StatefulOutputPin<Error = PinE>,
@@ -319,24 +325,18 @@ where
 
             // If we're already showing FirmwareUpgradeProgress, just update it
             (
-                WidgetTree::FirmwareUpgradeProgress { widget },
-                Workflow::FirmwareUpgrade(ref status),
+                WidgetTree::FirmwareUpgradeProgress { widget, ref mut status },
+                Workflow::FirmwareUpgrade(ref status_current),
             ) => {
-                use frostsnap_device::ui::FirmwareUpgradeStatus;
-                
-                // Update the existing widget based on status
-                *widget = match status {
-                    FirmwareUpgradeStatus::Erase { progress } => {
-                        FirmwareUpgradeProgress::erasing(*progress)
-                    }
-                    FirmwareUpgradeStatus::Download { progress } => {
-                        FirmwareUpgradeProgress::downloading(*progress)
-                    }
-                    FirmwareUpgradeStatus::Passive => {
-                        FirmwareUpgradeProgress::passive()
-                    }
-                };
-                return;
+
+                match (*status, status_current) {
+                    (FirmwareUpgradeStatus::Erase { .. }, FirmwareUpgradeStatus::Erase { progress }) | (FirmwareUpgradeStatus::Download { .. }, FirmwareUpgradeStatus::Download { progress }) => {
+                        *status = *status_current;
+                        widget.update_progress(*progress);
+                        return;
+                    },
+                    _ => { /* we need a new widget */ }
+                }
             }
 
             // If we're showing KeygenCheck and get another KeyGen prompt, we need a new one
@@ -410,6 +410,7 @@ where
                             widget,
                             firmware_hash: firmware_digest.0,
                             firmware_size: size,
+                            confirmed: false,
                         }
                     }
                     _ => {
@@ -454,7 +455,7 @@ where
                     }
                 };
                 
-                WidgetTree::FirmwareUpgradeProgress { widget }
+                WidgetTree::FirmwareUpgradeProgress { widget, status }
             }
         };
 
@@ -503,8 +504,19 @@ where
             None => {}
         };
 
-        // Draw the widget tree
-        let _ = self.root_widget.draw(&mut self.display, current_time);
+        // Only redraw if at least 10ms has passed since last redraw
+        let elapsed_ms = (now - self.last_redraw_time).to_millis();
+        if elapsed_ms >= 10 {
+            // Draw the widget tree
+            let _ = self.root_widget.draw(&mut self.display, current_time);
+            
+            // Draw the status widget on top at position (5, 15)
+            let mut translated = self.display.translated(Point::new(5, 15));
+            let _ = self.status_widget.draw(&mut translated, current_time);
+            
+            // Update last redraw time
+            self.last_redraw_time = now;
+        }
 
         // Check widget states and generate UI events
         match self.root_widget.current_mut() {
@@ -532,9 +544,10 @@ where
                     }
                 }
             }
-            WidgetTree::FirmwareUpgradeConfirm { widget, .. } => {
-                // Check if the firmware upgrade was confirmed
-                if widget.is_confirmed() {
+            WidgetTree::FirmwareUpgradeConfirm { widget, confirmed, .. } => {
+                // Check if the firmware upgrade was confirmed and we haven't sent the event yet
+                if widget.is_confirmed() && !*confirmed {
+                    *confirmed = true; // Mark as confirmed to prevent duplicate events
                     return Some(UiEvent::UpgradeConfirm);
                 }
             }

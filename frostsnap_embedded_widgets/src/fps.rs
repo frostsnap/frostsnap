@@ -23,7 +23,7 @@ impl Fps {
             Rgb565::GREEN,
         );
         let initial_text = Text::new(
-            format!("FPS: 0"),
+            format!("FPS: 00000"),
             text_style.clone(),
         );
         // Use FadeSwitcher with 0ms fade for instant switching

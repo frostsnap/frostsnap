@@ -19,7 +19,8 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
-use frostsnap_embedded_widgets::{palette::PALETTE, DynWidget, Widget, Fps};
+use frostsnap_device::status::create_status;
+use frostsnap_embedded_widgets::{palette::PALETTE, DynWidget, Widget};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 // Screen constants
@@ -28,7 +29,7 @@ const SCREEN_HEIGHT: u32 = 280;
 const SCREEN_OFFSET_Y: u16 = 20; // ST7789 Y offset for 240x280 panel
 
 // Widget demo selection
-const DEMO: &str = "progress";
+const DEMO: &str = "sign_prompt";
 
 #[entry]
 fn main() -> ! {
@@ -96,8 +97,8 @@ fn main() -> ! {
             let mut widget = $widget;
             let mut last_touch: Option<(Point, u32)> = None;
             
-            // Create FPS counter widget
-            let mut fps_counter = Fps::new();
+            // Create status widget (FPS and memory)
+            let mut status = create_status();
             
             // Track last redraw time
             let mut last_redraw_time = timer.now();
@@ -164,9 +165,9 @@ fn main() -> ! {
                         ),
                     );
                     
-                    // Draw FPS counter on top at position (5, 15)
+                    // Draw status widget on top at position (5, 15)
                     let mut translated = display.translated(Point::new(5, 15));
-                    let _ = fps_counter.draw(
+                    let _ = status.draw(
                         &mut translated,
                         frostsnap_embedded_widgets::Instant::from_millis(
                             current_time.duration_since_epoch().to_millis(),
@@ -242,7 +243,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
         .init(&mut delay)
         .unwrap();
-    frostsnap_device::graphics::error_print(&mut display, panic_buf.as_str());
+    frostsnap_device::panic::error_print(&mut display, panic_buf.as_str());
     bl.set_high();
 
     loop {}

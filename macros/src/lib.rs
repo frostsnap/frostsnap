@@ -360,10 +360,27 @@ fn generate_match_arms(
                         }
                     }
                 }
-                Fields::Named(_) => {
-                    // For named fields, check if there's a field named 'widget'
-                    quote! {
-                        Self::#variant_ident { widget, .. } => widget.#method_call,
+                Fields::Named(fields) => {
+                    // Check if any field has #[widget_delegate] attribute
+                    let delegate_field = fields.named.iter().find_map(|field| {
+                        for attr in &field.attrs {
+                            if attr.path.is_ident("widget_delegate") {
+                                return field.ident.as_ref();
+                            }
+                        }
+                        None
+                    });
+                    
+                    if let Some(field_name) = delegate_field {
+                        // Use the field marked with #[widget_delegate]
+                        quote! {
+                            Self::#variant_ident { #field_name, .. } => #field_name.#method_call,
+                        }
+                    } else {
+                        // Fall back to looking for a field named 'widget'
+                        quote! {
+                            Self::#variant_ident { widget, .. } => widget.#method_call,
+                        }
                     }
                 }
             }

@@ -15,13 +15,12 @@ pub mod display_utils;
 pub mod efuse;
 pub mod esp32_run;
 pub mod flash;
-#[cfg(feature = "v2")]
-pub mod graphics;
 pub mod io;
 pub mod ota;
 pub mod panic;
 pub mod partitions;
 pub mod root_widget;
+pub mod status;
 pub mod touch_calibration;
 pub mod ui;
 pub mod widget_tree;

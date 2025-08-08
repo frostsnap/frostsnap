@@ -308,6 +308,27 @@ macro_rules! demo_widget {
                 let demo = SlideInDemo::new(transition);
                 $run_macro!(Center::new(demo));
             }
+            "firmware_upgrade_progress" | "firmware_upgrade_download" => {
+                use $crate::firmware_upgrade::FirmwareUpgradeProgress;
+                
+                // Show downloading state at 65% progress
+                let widget = FirmwareUpgradeProgress::downloading(0.65);
+                $run_macro!(widget);
+            }
+            "firmware_upgrade_erase" => {
+                use $crate::firmware_upgrade::FirmwareUpgradeProgress;
+                
+                // Show erasing state at 35% progress
+                let widget = FirmwareUpgradeProgress::erasing(0.35);
+                $run_macro!(widget);
+            }
+            "firmware_upgrade_passive" => {
+                use $crate::firmware_upgrade::FirmwareUpgradeProgress;
+                
+                // Show passive state
+                let widget = FirmwareUpgradeProgress::passive();
+                $run_macro!(widget);
+            }
             "progress" => {
                 use $crate::{ProgressIndicator, Widget, Instant};
                 use embedded_graphics::prelude::*;
@@ -385,7 +406,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade", $demo);
             }
         }
     };

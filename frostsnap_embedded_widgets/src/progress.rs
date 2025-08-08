@@ -7,7 +7,6 @@ use embedded_graphics::{
     text::Alignment,
     Drawable,
 };
-use crate::column::MainAxisAlignment;
 use u8g2_fonts::U8g2TextStyle;
 use alloc::format;
 
@@ -145,10 +144,8 @@ impl ProgressIndicator {
         ).with_alignment(Alignment::Center);
         let text_switcher = Switcher::new(initial_text);
         
-        let column = Column::new((progress_bar, spacer, text_switcher))
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(crate::column::CrossAxisAlignment::Center);
-        
+        let column = Column::new((progress_bar, spacer, text_switcher));
+
         Self {
             column,
             last_percentage: 0,

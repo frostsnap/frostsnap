@@ -61,7 +61,6 @@ pub mod padding;
 pub mod circle_button;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
-pub mod firmware_upgrade_progress;
 pub mod fps;
 pub mod widget_tuple;
 pub mod demo_widget;
@@ -113,8 +112,7 @@ pub use keygen_check::*;
 pub use padding::*;
 pub use circle_button::*;
 pub use fade_switcher::FadeSwitcher;
-pub use firmware_upgrade::FirmwareUpgradeConfirm;
-pub use firmware_upgrade_progress::FirmwareUpgradeProgress;
+pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};
 pub use fps::Fps;
 
 // Font re-exports

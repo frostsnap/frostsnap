@@ -1,12 +1,12 @@
-use crate::{HoldToConfirm, Widget, Text, Column, SizedBox, Container, Padding, palette::PALETTE, FONT_SMALL, FONT_MED};
+use crate::{HoldToConfirm, Text, Column, SizedBox, Container, Padding, palette::PALETTE, FONT_SMALL, FONT_MED, ProgressIndicator, Center};
 use embedded_graphics::{
-    draw_target::DrawTarget,
     geometry::Size,
     pixelcolor::Rgb565,
     text::Alignment,
     primitives::PrimitiveStyleBuilder,
 };
 use u8g2_fonts::{U8g2TextStyle, fonts};
+use crate::column::MainAxisAlignment;
 use alloc::format;
 
 // Use small font (17px) for the hash
@@ -14,7 +14,9 @@ const HASH_FONT: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 
 /// Hold to confirm widget for firmware upgrades
 /// Displays the firmware hash and size
+#[derive(frostsnap_macros::Widget)]
 pub struct FirmwareUpgradeConfirm {
+    #[widget_delegate]
     hold_to_confirm: HoldToConfirm<Column<(
         Text<U8g2TextStyle<Rgb565>>,
         SizedBox<Rgb565>,
@@ -104,7 +106,7 @@ impl FirmwareUpgradeConfirm {
         let content = Column::new((title, spacer1, hash_container, spacer2, size));
         
         // Create hold to confirm with 3 second hold time
-        let hold_to_confirm = HoldToConfirm::new(screen_size, 3000, content);
+        let hold_to_confirm = HoldToConfirm::new(screen_size, 1000, content);
         
         Self {
             hold_to_confirm,
@@ -117,37 +119,71 @@ impl FirmwareUpgradeConfirm {
     }
 }
 
-impl crate::DynWidget for FirmwareUpgradeConfirm {
-    fn handle_touch(
-        &mut self,
-        point: embedded_graphics::geometry::Point,
-        current_time: crate::Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        self.hold_to_confirm.handle_touch(point, current_time, is_release)
+
+/// Widget for showing firmware upgrade progress
+#[derive(frostsnap_macros::Widget)]
+pub enum FirmwareUpgradeProgress {
+    /// Actively erasing or downloading with progress
+    Active {
+        widget: Column<(Text<U8g2TextStyle<Rgb565>>, ProgressIndicator)>,
+    },
+    /// Passive state - just show text
+    Passive {
+        widget: Center<Text<U8g2TextStyle<Rgb565>>>,
+    },
+}
+
+impl FirmwareUpgradeProgress {
+    /// Create a new firmware upgrade progress widget in erasing state
+    pub fn erasing(progress: f32) -> Self {
+        let title = Text::new(
+            "Preparing for\nupgrade...",
+            U8g2TextStyle::new(FONT_MED, PALETTE.on_background)
+        ).with_alignment(Alignment::Center);
+        
+        let mut progress_indicator = ProgressIndicator::new();
+        progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
+        
+        let widget = Column::new((title, progress_indicator))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+
+        Self::Active { widget }
     }
     
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        self.hold_to_confirm.handle_vertical_drag(prev_y, new_y, is_release)
+    /// Create a new firmware upgrade progress widget in downloading state
+    pub fn downloading(progress: f32) -> Self {
+        let title = Text::new(
+            "Downloading\nupgrade...",
+            U8g2TextStyle::new(FONT_MED, PALETTE.on_background)
+        ).with_alignment(Alignment::Center);
+        
+        let mut progress_indicator = ProgressIndicator::new();
+        progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
+        
+        let widget = Column::new((title, progress_indicator))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+
+        Self::Active { widget }
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        self.hold_to_confirm.size_hint()
+    /// Create a new firmware upgrade progress widget in passive state
+    pub fn passive() -> Self {
+        // Show "Firmware Upgrade" text in passive state
+        let text = Text::new(
+            "Firmware\nUpgrade",
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary)
+        ).with_alignment(Alignment::Center);
+        let widget = Center::new(text);
+        
+        Self::Passive { widget }
     }
     
-    fn force_full_redraw(&mut self) {
-        self.hold_to_confirm.force_full_redraw()
+    /// Update the progress for active states
+    pub fn update_progress(&mut self, progress: f32) {
+        if let Self::Active { widget } = self {
+            // Update the progress indicator
+            widget.children.1.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
+        }
     }
 }
 
-impl Widget for FirmwareUpgradeConfirm {
-    type Color = Rgb565;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(
-        &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        self.hold_to_confirm.draw(target, current_time)
-    }
-}

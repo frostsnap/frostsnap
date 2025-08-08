@@ -4,6 +4,8 @@ use frostsnap_embedded_widgets::{
     keygen_check::KeygenCheck, sign_prompt::SignPrompt, DeviceNameScreen, Standby, Welcome,
     FirmwareUpgradeConfirm, FirmwareUpgradeProgress,
 };
+
+use crate::ui::FirmwareUpgradeStatus;
 // TODO: Re-enable when implementing backup entry
 // use frostsnap_core::device::restoration::EnterBackupPhase;
 // use frostsnap_embedded_widgets::legacy::{EnterShareIndexScreen, EnterShareScreen};
@@ -58,11 +60,13 @@ pub enum WidgetTree {
         widget: FirmwareUpgradeConfirm,
         firmware_hash: [u8; 32],
         firmware_size: u32,
+        confirmed: bool,
     },
 
     /// Firmware upgrade progress screen
     FirmwareUpgradeProgress {
         widget: FirmwareUpgradeProgress,
+        status: FirmwareUpgradeStatus,
     },
 
     // TODO: Re-enable when EnterShareIndexScreen and EnterShareScreen implement Widget trait
