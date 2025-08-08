@@ -1,6 +1,6 @@
 /// Macro for selecting and running demo widgets
 #[macro_export]
-macro_rules! select_widget {
+macro_rules! demo_widget {
     ($demo:expr, $screen_size:expr, $run_macro:ident) => {
         match $demo.as_ref() {
             "bip39_entry" => {
@@ -308,8 +308,84 @@ macro_rules! select_widget {
                 let demo = SlideInDemo::new(transition);
                 $run_macro!(Center::new(demo));
             }
+            "progress" => {
+                use $crate::{ProgressIndicator, Widget, Instant};
+                use embedded_graphics::prelude::*;
+                
+                // Create a progress indicator that animates from 0 to 100%
+                struct AnimatedProgress {
+                    indicator: ProgressIndicator,
+                    start_time: Option<Instant>,
+                    duration_ms: u64,
+                }
+                
+                impl AnimatedProgress {
+                    fn new() -> Self {
+                        Self {
+                            indicator: ProgressIndicator::new(),
+                            start_time: None,
+                            duration_ms: 5000, // 5 seconds to complete
+                        }
+                    }
+                }
+                
+                impl $crate::DynWidget for AnimatedProgress {
+                    fn size_hint(&self) -> Option<Size> {
+                        self.indicator.size_hint()
+                    }
+                    
+                    fn force_full_redraw(&mut self) {
+                        self.indicator.force_full_redraw()
+                    }
+                }
+                
+                impl Widget for AnimatedProgress {
+                    type Color = embedded_graphics::pixelcolor::Rgb565;
+                    
+                    fn draw<D: DrawTarget<Color = Self::Color>>(
+                        &mut self,
+                        target: &mut D,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error> {
+                        // Initialize start time on first draw
+                        if self.start_time.is_none() {
+                            self.start_time = Some(current_time);
+                        }
+                        
+                        // Calculate progress based on elapsed time
+                        let elapsed = current_time.saturating_duration_since(self.start_time.unwrap());
+                        let progress = $crate::Frac::from_ratio(elapsed as u32, self.duration_ms as u32);
+                        
+                        // Update the indicator's progress
+                        self.indicator.set_progress(progress);
+                        
+                        // Draw the indicator
+                        self.indicator.draw(target, current_time)
+                    }
+                }
+                
+                let widget = AnimatedProgress::new();
+                
+                $run_macro!(widget);
+            }
+            "firmware_upgrade" => {
+                use $crate::FirmwareUpgradeConfirm;
+                
+                // Create a test firmware digest (SHA256 hash)
+                let firmware_digest: [u8; 32] = [
+                    0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
+                    0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x11, 0x22,
+                    0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00,
+                    0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
+                ];
+                let size_bytes = 1_234_567; // ~1.2 MB
+                
+                let widget = FirmwareUpgradeConfirm::new($screen_size, firmware_digest, size_bytes);
+                
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade", $demo);
             }
         }
     };

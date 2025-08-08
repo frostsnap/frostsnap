@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use frostsnap_core::device::{KeyGenPhase2, SignPhase1};
 use frostsnap_embedded_widgets::{
     keygen_check::KeygenCheck, sign_prompt::SignPrompt, DeviceNameScreen, Standby, Welcome,
+    FirmwareUpgradeConfirm, FirmwareUpgradeProgress,
 };
 // TODO: Re-enable when implementing backup entry
 // use frostsnap_core::device::restoration::EnterBackupPhase;
@@ -51,16 +52,25 @@ pub enum WidgetTree {
         widget: SignPrompt,
         phase: Option<Box<SignPhase1>>,
     },
+
+    /// Firmware upgrade confirmation screen
+    FirmwareUpgradeConfirm {
+        widget: FirmwareUpgradeConfirm,
+        firmware_hash: [u8; 32],
+        firmware_size: u32,
+    },
+
+    /// Firmware upgrade progress screen
+    FirmwareUpgradeProgress {
+        widget: FirmwareUpgradeProgress,
+    },
+
     // TODO: Re-enable when EnterShareIndexScreen and EnterShareScreen implement Widget trait
     // /// Complex interactive screens for entering backup
     // EnterBackup {
     //     stage: EnteringBackupStage,
     //     phase: EnterBackupPhase, // The context needed to process the result
     // },
-
-    // TODO: Implement ProgressBar widget or wrap ProgressBars
-    // /// Progress indicators
-    // FirmwareUpgrade(ProgressBars),
 
     // TODO: Implement these widgets
     // Ready(ReadyScreen),

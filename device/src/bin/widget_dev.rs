@@ -28,7 +28,7 @@ const SCREEN_HEIGHT: u32 = 280;
 const SCREEN_OFFSET_Y: u16 = 20; // ST7789 Y offset for 240x280 panel
 
 // Widget demo selection
-const DEMO: &str = "slide_in";
+const DEMO: &str = "progress";
 
 #[entry]
 fn main() -> ! {
@@ -180,8 +180,8 @@ fn main() -> ! {
         }};
     }
 
-    // Use the select_widget! macro from frostsnap_embedded_widgets
-    frostsnap_embedded_widgets::select_widget!(DEMO, screen_size, run_widget);
+    // Use the demo_widget! macro from frostsnap_embedded_widgets
+    frostsnap_embedded_widgets::demo_widget!(DEMO, screen_size, run_widget);
 }
 
 /// Dummy CS pin for the display

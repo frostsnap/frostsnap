@@ -304,8 +304,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let demo = std::env::args().nth(1).unwrap_or("help".to_string());
     let screen_size = Size::new(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // Use the select_widget! macro for all demos (including help)
-    frostsnap_embedded_widgets::select_widget!(demo, screen_size, run_widget);
+    // Use the demo_widget! macro for all demos (including help)
+    frostsnap_embedded_widgets::demo_widget!(demo, screen_size, run_widget);
     Ok(())
 }
 

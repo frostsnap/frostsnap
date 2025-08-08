@@ -107,10 +107,14 @@ where
                 self.current.start_fade_in(self.fade_duration_ms as u64, self.fade_redraw_interval_ms, self.bg_color);
                 self.prev = None;
             }
-        } else {
-            self.current.draw(target, current_time)?;
         }
-        
+
+        if self.prev.is_some() {
+            return Ok(());
+        }
+
+        self.current.draw(target, current_time)?;
+
         Ok(())
     }
     

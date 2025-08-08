@@ -47,8 +47,8 @@ use frostsnap_device::{
     DownstreamConnectionState, Instant, UpstreamConnectionState,
 };
 use frostsnap_embedded_widgets::{
-    keygen_check::KeygenCheck, sign_prompt::SignPrompt, DeviceNameScreen, DynWidget, Standby,
-    Welcome, Widget,
+    keygen_check::KeygenCheck, sign_prompt::SignPrompt, DeviceNameScreen, DynWidget, 
+    FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Welcome, Widget,
 };
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
@@ -317,6 +317,28 @@ where
                 return;
             }
 
+            // If we're already showing FirmwareUpgradeProgress, just update it
+            (
+                WidgetTree::FirmwareUpgradeProgress { widget },
+                Workflow::FirmwareUpgrade(ref status),
+            ) => {
+                use frostsnap_device::ui::FirmwareUpgradeStatus;
+                
+                // Update the existing widget based on status
+                *widget = match status {
+                    FirmwareUpgradeStatus::Erase { progress } => {
+                        FirmwareUpgradeProgress::erasing(*progress)
+                    }
+                    FirmwareUpgradeStatus::Download { progress } => {
+                        FirmwareUpgradeProgress::downloading(*progress)
+                    }
+                    FirmwareUpgradeStatus::Passive => {
+                        FirmwareUpgradeProgress::passive()
+                    }
+                };
+                return;
+            }
+
             // If we're showing KeygenCheck and get another KeyGen prompt, we need a new one
             // because the security code would be different
             _ => {} // Different widget types, need to switch
@@ -375,6 +397,21 @@ where
                             }
                         }
                     }
+                    Prompt::ConfirmFirmwareUpgrade {
+                        firmware_digest,
+                        size,
+                    } => {
+                        // Create the FirmwareUpgradeConfirm widget
+                        let screen_size = embedded_graphics::geometry::Size::new(240, 280);
+                        let widget = FirmwareUpgradeConfirm::new(screen_size, firmware_digest.0, size);
+                        
+                        // Store the widget and metadata in the WidgetTree
+                        WidgetTree::FirmwareUpgradeConfirm {
+                            widget,
+                            firmware_hash: firmware_digest.0,
+                            firmware_size: size,
+                        }
+                    }
                     _ => {
                         unimplemented!()
                     }
@@ -402,9 +439,22 @@ where
                 unimplemented!()
             }
 
-            Workflow::FirmwareUpgrade(_status) => {
-                // TODO: Create firmware upgrade progress screen
-                unimplemented!()
+            Workflow::FirmwareUpgrade(status) => {
+                use frostsnap_device::ui::FirmwareUpgradeStatus;
+                
+                let widget = match status {
+                    FirmwareUpgradeStatus::Erase { progress } => {
+                        FirmwareUpgradeProgress::erasing(progress)
+                    }
+                    FirmwareUpgradeStatus::Download { progress } => {
+                        FirmwareUpgradeProgress::downloading(progress)
+                    }
+                    FirmwareUpgradeStatus::Passive => {
+                        FirmwareUpgradeProgress::passive()
+                    }
+                };
+                
+                WidgetTree::FirmwareUpgradeProgress { widget }
             }
         };
 
@@ -480,6 +530,12 @@ where
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });
                     }
+                }
+            }
+            WidgetTree::FirmwareUpgradeConfirm { widget, .. } => {
+                // Check if the firmware upgrade was confirmed
+                if widget.is_confirmed() {
+                    return Some(UiEvent::UpgradeConfirm);
                 }
             }
             _ => {}
