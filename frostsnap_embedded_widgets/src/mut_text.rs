@@ -1,4 +1,4 @@
-use crate::Widget;
+use crate::{Widget, string_buffer::StringBuffer};
 use embedded_graphics::{
     draw_target::DrawTarget,
     framebuffer::{Framebuffer, buffer_size},
@@ -17,8 +17,7 @@ pub struct MutText<S, const N: usize, const W: usize, const H: usize, const BUFF
 where
     S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
 {
-    text: [u8; N],
-    text_len: usize,
+    text: StringBuffer<N>,
     character_style: S,
     text_style: TextStyle,
     buffer: Framebuffer<BinaryColor, RawU1, LittleEndian, W, H, BUFFER_SIZE>,
@@ -30,10 +29,9 @@ where
     S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
 {
     pub fn new(text: &str, character_style: S) -> Self {
-        let mut text_buf = [0u8; N];
-        let text_bytes = text.as_bytes();
-        let text_len = text_bytes.len().min(N);
-        text_buf[..text_len].copy_from_slice(&text_bytes[..text_len]);
+        let mut text_buf = StringBuffer::new();
+        use core::fmt::Write;
+        write!(&mut text_buf, "{}", text).ok();
         
         let text_style = TextStyleBuilder::new()
             .baseline(Baseline::Top)
@@ -42,7 +40,6 @@ where
         
         let mut widget = Self {
             text: text_buf,
-            text_len,
             character_style,
             text_style,
             buffer: Framebuffer::new(),
@@ -56,15 +53,13 @@ where
     
     /// Set new text and mark as dirty
     pub fn set_text(&mut self, text: &str) {
-        let text_bytes = text.as_bytes();
-        let new_len = text_bytes.len().min(N);
+        let old_text = self.text.as_str();
         
         // Check if text has changed
-        if new_len != self.text_len || &self.text[..new_len] != &text_bytes[..new_len] {
-            self.text[..new_len].copy_from_slice(&text_bytes[..new_len]);
-            // Clear the rest of the buffer
-            self.text[new_len..].fill(0);
-            self.text_len = new_len;
+        if old_text != text {
+            self.text.clear();
+            use core::fmt::Write;
+            write!(&mut self.text, "{}", text).ok();
             self.render_to_buffer();
             self.dirty = true;
         }
@@ -72,7 +67,7 @@ where
     
     /// Get the current text
     pub fn text(&self) -> &str {
-        core::str::from_utf8(&self.text[..self.text_len]).unwrap_or("")
+        self.text.as_str()
     }
     
     /// Render text to the internal buffer
@@ -81,10 +76,8 @@ where
         self.buffer.clear(BinaryColor::Off).ok();
         
         // Draw the text
-        // We need to get the string without borrowing self
-        let text_str = core::str::from_utf8(&self.text[..self.text_len]).unwrap_or("");
         let text_obj = EgText::with_text_style(
-            text_str,
+            self.text.as_str(),
             Point::new(W as i32 / 2, 0),
             self.character_style.clone(),
             self.text_style,
