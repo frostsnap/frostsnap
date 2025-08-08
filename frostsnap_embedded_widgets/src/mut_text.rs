@@ -75,10 +75,17 @@ where
         // Clear the buffer
         self.buffer.clear(BinaryColor::Off).ok();
         
+        // Calculate x position based on alignment
+        let x = match self.text_style.alignment {
+            Alignment::Left => 0,
+            Alignment::Center => W as i32 / 2,
+            Alignment::Right => W as i32,
+        };
+        
         // Draw the text
         let text_obj = EgText::with_text_style(
             self.text.as_str(),
-            Point::new(W as i32 / 2, 0),
+            Point::new(x, 0),
             self.character_style.clone(),
             self.text_style,
         );
