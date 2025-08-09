@@ -13,7 +13,7 @@ use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
-    Upstream,
+    Upstream, FIRMWARE_IMAGE_SIZE,
 };
 use frostsnap_comms::{Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
@@ -108,7 +108,12 @@ where
         }
 
         let active_partition = partitions.ota.active_partition();
-        let active_firmware_digest = active_partition.sha256_digest(&mut sha256);
+        let size = partitions
+            .ota
+            .active_slot_metadata()
+            .map(|metadata| metadata.size)
+            .unwrap_or(FIRMWARE_IMAGE_SIZE);
+        let active_firmware_digest = active_partition.sha256_digest(&mut sha256, size);
 
         let device_id = signer.device_id();
         if let Some(name) = &name {

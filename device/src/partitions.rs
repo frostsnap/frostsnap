@@ -85,23 +85,50 @@ impl<'a> Partitions<'a> {
 }
 
 pub trait PartitionExt {
-    fn sha256_digest(&self, sha256: &mut Sha<'_>) -> Sha256Digest;
+    fn sha256_digest(&self, sha256: &mut Sha<'_>, firmware_size: u32) -> Sha256Digest;
 }
 
 impl PartitionExt for EspFlashPartition<'_> {
-    fn sha256_digest(&self, sha256: &mut esp_hal::sha::Sha<'_>) -> Sha256Digest {
+    fn sha256_digest(
+        &self,
+        sha256: &mut esp_hal::sha::Sha<'_>,
+        firmware_size: u32,
+    ) -> Sha256Digest {
         let mut digest = [0u8; 32];
         let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
+        let mut bytes_hashed = 0u32;
+
         for i in 0..self.n_sectors() {
+            if bytes_hashed >= firmware_size {
+                break;
+            }
             let sector = self.read_sector(i).unwrap();
-            let mut remaining = &sector[..];
+            let bytes_to_hash = (firmware_size - bytes_hashed).min(sector.len() as u32) as usize;
+
+            let mut remaining = &sector[..bytes_to_hash];
             while !remaining.is_empty() {
                 remaining = nb::block!(hasher.update(remaining)).unwrap();
             }
+            bytes_hashed += bytes_to_hash as u32;
         }
 
         nb::block!(hasher.finish(&mut digest)).unwrap();
-
         Sha256Digest(digest)
     }
+
+    // fn sha256_digest(&self, sha256: &mut esp_hal::sha::Sha<'_>) -> Sha256Digest {
+    //     let mut digest = [0u8; 32];
+    //     let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
+    //     for i in 0..self.n_sectors() {
+    //         let sector = self.read_sector(i).unwrap();
+    //         let mut remaining = &sector[..];
+    //         while !remaining.is_empty() {
+    //             remaining = nb::block!(hasher.update(remaining)).unwrap();
+    //         }
+    //     }
+
+    //     nb::block!(hasher.finish(&mut digest)).unwrap();
+
+    //     Sha256Digest(digest)
+    // }
 }
