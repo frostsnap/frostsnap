@@ -24,10 +24,10 @@ jobs:
         with:
           key: "build-device-firmware-deterministic-v2"
           path: "/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release"
-      - name: Build and verify firmware
+      - name: Build Firmware
         run: |
-          chmod +x ./build-deterministic.sh
-          ./build-deterministic.sh
+          chmod +x device/deterministic-build.sh
+          just build-deterministic
           echo "Firmware hash: $(sha256sum /tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin)"
       - uses: "./.github/actions/upload-artifact"
         with:
