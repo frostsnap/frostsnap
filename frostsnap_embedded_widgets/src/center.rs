@@ -11,6 +11,7 @@ use embedded_graphics::{
 pub struct Center<W> {
     pub child: W,
     last_child_rect: Option<Rectangle>,
+    constraints: Option<Size>,
 }
 
 impl<W> Center<W> {
@@ -18,11 +19,28 @@ impl<W> Center<W> {
         Self { 
             child,
             last_child_rect: None,
+            constraints: None,
         }
     }
 }
 
 impl<W: Widget> crate::DynWidget for Center<W> {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.constraints = Some(max_size);
+        self.child.set_constraints(max_size);
+        
+        // Calculate centered position for child
+        let child_size: Size = self.child.sizing().into();
+        let x_offset = ((max_size.width as i32 - child_size.width as i32) / 2).max(0);
+        let y_offset = ((max_size.height as i32 - child_size.height as i32) / 2).max(0);
+        self.last_child_rect = Some(Rectangle::new(Point::new(x_offset, y_offset), child_size));
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        // Center takes up all available space
+        self.constraints.unwrap_or(Size::zero()).into()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -69,16 +87,9 @@ impl<W: Widget> Widget for Center<W> {
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
-
-        let rect = self.last_child_rect.get_or_insert_with(|| {
-            let target_size = target.bounding_box().size;
-            let child_size: Size = self.child.sizing().into();
-            // Calculate centered position
-            let x_offset = ((target_size.width as i32 - child_size.width as i32) / 2).max(0);
-            let y_offset = ((target_size.height as i32 - child_size.height as i32) / 2).max(0);
-            Rectangle::new(Point::new(x_offset, y_offset), child_size)
-        });
-
+        self.constraints.unwrap();
+        
+        let rect = self.last_child_rect.unwrap();
         self.child.draw(&mut target.free_cropped(&rect), current_time)?;
 
         Ok(())

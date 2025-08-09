@@ -253,10 +253,7 @@ macro_rules! impl_row_for_tuple {
                 target: &mut D,
                 current_time: Instant,
             ) -> Result<(), D::Error> {
-                // If constraints haven't been set yet, set them based on target
-                if self.sizing.is_none() {
-                    <Self as crate::DynWidget>::set_constraints(self, target.bounding_box().size);
-                }
+                self.sizing.unwrap();
                 
                 // Get mutable references to children
                 #[allow(non_snake_case, unused_variables)]

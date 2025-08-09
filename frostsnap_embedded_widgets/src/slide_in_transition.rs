@@ -15,6 +15,7 @@ pub struct SlideInTransition<T: Widget<Color = Rgb565>> {
     transition_duration_ms: u64,
     slide_from_position: Point,
     bg_color: Rgb565,
+    constraints: Option<Size>,
 }
 
 impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
@@ -35,6 +36,7 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
             transition_duration_ms,
             slide_from_position,
             bg_color,
+            constraints: None,
         };
         self_.switch_to(initial);
         self_
@@ -55,6 +57,11 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
         // Create new fader with fade starting
         let mut new_fader = Fader::new_faded_out(new_translate);
         new_fader.set_animation_speed(AnimationSpeed::EaseOut);
+        
+        // If we have constraints, propagate them to the new widget
+        if let Some(constraints) = self.constraints {
+            new_fader.set_constraints(constraints);
+        }
 
         // Use mem::replace to swap in the new widget and get the old one
         if let Some(old) = self.current.as_mut() {
@@ -71,6 +78,28 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
 }
 
 impl<T: Widget<Color = Rgb565>> DynWidget for SlideInTransition<T> {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.constraints = Some(max_size);
+        
+        // Propagate constraints to current and old widgets
+        if let Some(ref mut current) = self.current {
+            current.set_constraints(max_size);
+        }
+        if let Some(ref mut old) = self.old {
+            old.set_constraints(max_size);
+        }
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        // Return the sizing of the current widget if available
+        if let Some(ref current) = self.current {
+            current.sizing()
+        } else {
+            // If no current widget, return the constraint size or zero
+            self.constraints.unwrap_or(Size::zero()).into()
+        }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -105,6 +134,8 @@ impl<T: Widget<Color = Rgb565>> Widget for SlideInTransition<T> {
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
+        self.constraints.unwrap();
+        
         // Draw old widget once to let it fade out (clear pixels)
         if let Some(ref mut old) = self.old {
             old.draw(target, current_time)?;

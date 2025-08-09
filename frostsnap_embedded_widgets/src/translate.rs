@@ -41,6 +41,8 @@ pub struct Translate<W: Widget> {
     previous_bitmap: Bitmap,
     /// Bitmap tracking current frame's pixels
     current_bitmap: Bitmap,
+    /// Cached constraints
+    constraints: Option<Size>,
 }
 
 impl<W: Widget> Translate<W> 
@@ -48,16 +50,17 @@ where
     W::Color: Copy,
 {
     pub fn new(child: W, background_color: W::Color) -> Self {
-        let size = child.sizing().into();
+        // We'll initialize bitmaps when we get constraints
         Self {
-            previous_bitmap: Bitmap::new(size, BinaryColor::Off),
-            current_bitmap: Bitmap::new(size, BinaryColor::Off),
+            previous_bitmap: Bitmap::new(Size::zero(), BinaryColor::Off),
+            current_bitmap: Bitmap::new(Size::zero(), BinaryColor::Off),
             child,
             current_offset: Point::zero(),
             translation_direction: TranslationDirection::Idle { offset: Point::zero() },
             repeat: false,
             animation_speed: AnimationSpeed::Linear,
             background_color,
+            constraints: None,
         }
     }
     
@@ -165,6 +168,20 @@ where
     W::Color: Copy,
 
 {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.constraints = Some(max_size);
+        self.child.set_constraints(max_size);
+        
+        // Reinitialize bitmaps with the child's actual size
+        let child_size = self.child.sizing().into();
+        self.previous_bitmap = Bitmap::new(child_size, BinaryColor::Off);
+        self.current_bitmap = Bitmap::new(child_size, BinaryColor::Off);
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.child.sizing()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -196,6 +213,8 @@ where
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
+        self.constraints.unwrap();
+        
         // Calculate the current offset (will initialize start time if needed)
         let offset = self.calculate_offset(current_time);
 

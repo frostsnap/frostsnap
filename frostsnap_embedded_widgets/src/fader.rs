@@ -38,6 +38,7 @@ pub struct Fader<W> {
     redraw_interval_ms: u64,
     last_redraw_time: Option<crate::Instant>,
     animation_speed: AnimationSpeed,
+    constraints: Option<Size>,
 }
 
 impl<W: Widget<Color = Rgb565>> Fader<W> {
@@ -48,6 +49,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             redraw_interval_ms: 0,
             last_redraw_time: None,
             animation_speed: AnimationSpeed::Linear,
+            constraints: None,
         }
     }
     
@@ -59,6 +61,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             redraw_interval_ms: 0,
             last_redraw_time: None,
             animation_speed: AnimationSpeed::Linear,
+            constraints: None,
         }
     }
     
@@ -197,6 +200,15 @@ impl<'a, D: DrawTarget<Color = Rgb565>> Dimensions for FadingDrawTarget<'a, D> {
 }
 
 impl<W: Widget<Color = Rgb565>> crate::DynWidget for Fader<W> {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.constraints = Some(max_size);
+        self.child.set_constraints(max_size);
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.child.sizing()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -235,6 +247,8 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
+        self.constraints.unwrap();
+        
         match &mut self.state {
             FadeState::FadedOut => {
                 Ok(())

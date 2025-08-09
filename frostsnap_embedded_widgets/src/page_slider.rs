@@ -111,6 +111,14 @@ where
     L: WidgetList<T>,
     T: Widget<Color = Rgb565>
 {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.transition.set_constraints(max_size);
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.transition.sizing()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
