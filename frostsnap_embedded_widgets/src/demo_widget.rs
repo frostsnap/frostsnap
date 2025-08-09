@@ -30,7 +30,7 @@ macro_rules! demo_widget {
                 panic!("vertical_slide demo is temporarily disabled while refactoring");
             }
             "bip39_backup" => {
-                use $crate::{bip39::Bip39BackupDisplay, PaginatorWithScrollBar, palette::PALETTE, text::Text, center::Center};
+                use $crate::bip39::Bip39BackupDisplay;
                 use embedded_graphics::prelude::*;
                 
                 // Generate test word indices - same words as original display
@@ -63,26 +63,8 @@ macro_rules! demo_widget {
                 ];
                 let share_index = 42;
                 
-                // Create the backup display with PageByPage trait
-                let backup_display = Bip39BackupDisplay::new($screen_size, TEST_WORD_INDICES, share_index);
-                
-                // Map Gray2 to Rgb565 colors
-                let mapped_display = backup_display.color_map(|c| match c.luma() {
-                    0 => PALETTE.background,           // Black background
-                    1 => PALETTE.on_surface_variant,   // Gray for secondary text
-                    2 => PALETTE.outline,              // Medium gray
-                    3 => PALETTE.primary,              // Primary text
-                    _ => PALETTE.on_background
-                });
-                
-                // Create a simple final page widget
-                let final_page = Center::new(Text::new(
-                    "All done!",
-                    u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.primary)
-                ));
-                
-                // Wrap with PaginatorWithScrollBar for vertical pagination
-                let widget = PaginatorWithScrollBar::new(mapped_display, final_page);
+                // Create the backup display - it now uses PageSlider internally and outputs Rgb565
+                let widget = Bip39BackupDisplay::new($screen_size, TEST_WORD_INDICES, share_index);
                 
                 $run_macro!(widget);
             }

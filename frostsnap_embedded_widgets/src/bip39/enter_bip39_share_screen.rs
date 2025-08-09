@@ -1,5 +1,6 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, EnteredWords, WordSelector};
 use crate::{DynWidget, Key, KeyTouch, Widget};
+use crate::prelude::FreeCrop;
 use alloc::{string::String, vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_backup::bip39_words::{self, FROSTSNAP_BACKUP_WORDS};
@@ -92,7 +93,7 @@ impl EnterBip39ShareScreen {
         } else {
             // Normal keyboard and input preview
             let _ = self.alphabetic_keyboard
-                .draw(&mut target.cropped(&self.keyboard_rect), current_time);
+                .draw(&mut target.free_cropped(&self.keyboard_rect), current_time);
 
             // Draw BIP39 input preview
             let input_display_rect = Rectangle::new(
@@ -100,7 +101,7 @@ impl EnterBip39ShareScreen {
                 Size::new(target.bounding_box().size.width, 60),
             );
             let _ = self.bip39_input
-                .draw(&mut target.cropped(&input_display_rect), current_time);
+                .draw(&mut target.free_cropped(&input_display_rect), current_time);
         }
 
         // Draw touches and clean up
@@ -423,7 +424,7 @@ impl Widget for EnterBip39ShareScreen {
         } else {
             // Normal keyboard and input preview
             self.alphabetic_keyboard
-                .draw(&mut target.cropped(&self.keyboard_rect), current_time)?;
+                .draw(&mut target.free_cropped(&self.keyboard_rect), current_time)?;
 
             // Draw BIP39 input preview
             let input_display_rect = Rectangle::new(
@@ -431,7 +432,7 @@ impl Widget for EnterBip39ShareScreen {
                 Size::new(target.bounding_box().size.width, 60),
             );
             self.bip39_input
-                .draw(&mut target.cropped(&input_display_rect), current_time)?;
+                .draw(&mut target.free_cropped(&input_display_rect), current_time)?;
         }
 
         // Draw touches and clean up

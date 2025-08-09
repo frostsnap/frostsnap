@@ -1,4 +1,5 @@
 use crate::{Key, KeyTouch, Widget};
+use crate::prelude::FreeCrop;
 use super::{NumericKey, NumericKeyboard, ShareIndexInputDisplay};
 use alloc::{vec::Vec, vec};
 use embedded_graphics::{
@@ -119,10 +120,10 @@ impl Widget for EnterShareIndexScreen {
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        let mut keyboard_target = target.cropped(&self.keyboard_rect);
+        let mut keyboard_target = target.free_cropped(&self.keyboard_rect);
         self.numeric_keyboard.draw(&mut keyboard_target, current_time)?;
 
-        let mut input_display_target = target.cropped(&self.input_display_rect);
+        let mut input_display_target = target.free_cropped(&self.input_display_rect);
         self.share_index_input_display.draw(&mut input_display_target, current_time)?;
 
         self.touches.retain_mut(|touch| {

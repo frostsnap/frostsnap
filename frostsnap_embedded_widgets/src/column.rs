@@ -1,4 +1,5 @@
 use crate::{Widget, Instant, widget_tuple::WidgetTuple};
+use crate::prelude::FreeCrop;
 use alloc::vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -275,7 +276,7 @@ macro_rules! impl_column_for_tuple {
                             }
                         };
                         self.child_rects[child_index].top_left = Point::new(x_offset, y_offset);
-                        let mut cropped = target.cropped(&self.child_rects[child_index]);
+                        let mut cropped = target.free_cropped(&self.child_rects[child_index]);
                         $t.draw(&mut cropped, current_time)?;
                         
                         // Draw debug border if enabled

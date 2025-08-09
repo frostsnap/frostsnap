@@ -5,7 +5,7 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
 };
 
-const ANIMATION_DURATION_MS: u64 = 900;
+const ANIMATION_DURATION_MS: u64 = 1_500;
 const MIN_SWIPE_DISTANCE: u32 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -69,7 +69,7 @@ where
         self.current_index > 0
     }
     
-    fn start_transition(&mut self, direction: Direction) {
+    pub fn start_transition(&mut self, direction: Direction) {
         // Calculate target index
         let target_index = match direction {
             Direction::Up => {

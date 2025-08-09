@@ -1,5 +1,6 @@
 use super::Widget;
 use crate::Instant;
+use crate::prelude::FreeCrop;
 use embedded_graphics::{
     draw_target::{DrawTarget, DrawTargetExt},
     geometry::{Point, Size},
@@ -168,7 +169,7 @@ impl<W: Widget> Widget for Padding<W> {
         let padded_area = Rectangle::new(padded_origin, padded_size);
 
         // Create a cropped target with reduced area
-        let mut cropped = target.cropped(&padded_area);
+        let mut cropped = target.free_cropped(&padded_area);
 
         // Draw the child in the reduced area
         self.child.draw(&mut cropped, current_time)?;

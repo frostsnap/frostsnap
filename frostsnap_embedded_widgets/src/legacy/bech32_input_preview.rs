@@ -1,5 +1,6 @@
 use crate::{Key, KeyTouch, icons, FONT_LARGE};
 use crate::palette::PALETTE;
+use crate::prelude::FreeCrop;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use embedded_graphics::framebuffer::{buffer_size, Framebuffer};
@@ -112,9 +113,9 @@ impl Bech32InputPreview {
         }
 
         self.framebuf
-            .draw(&mut target.cropped(&self.preview_rect), current_time);
+            .draw(&mut target.free_cropped(&self.preview_rect), current_time);
 
-        let _ = self.progress.draw(&mut target.cropped(&self.progress_rect));
+        let _ = self.progress.draw(&mut target.free_cropped(&self.progress_rect));
     }
 
     // Method to add a character and start animation if needed
@@ -284,7 +285,7 @@ impl Bech32Framebuf {
 
     fn character_frame(&mut self, index: usize) -> impl DrawTarget<Color = Gray2> + '_ {
         let character_pos = Self::position_for_character(index);
-        self.framebuffer.cropped(&Rectangle::new(
+        self.framebuffer.free_cropped(&Rectangle::new(
             Point::new(character_pos as i32, 0),
             FONT_SIZE,
         ))

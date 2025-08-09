@@ -14,6 +14,7 @@ use embedded_graphics::{
 use u8g2_fonts::U8g2TextStyle;
 
 use crate::palette::PALETTE;
+use crate::prelude::FreeCrop;
 
 use crate::{Key, KeyTouch, FONT_LARGE};
 
@@ -97,7 +98,7 @@ impl Bech32Keyboard {
 
     // Render the full keyboard to the framebuffer (called once during initialization)
     fn render_full_keyboard(&mut self) {
-        let mut keyspace = self.framebuffer.cropped(&self.keyspace);
+        let mut keyspace = self.framebuffer.free_cropped(&self.keyspace);
         // the space where keys will be drawn is a bit smaller than the framebuffer
         // because of the top and bottom bars
 

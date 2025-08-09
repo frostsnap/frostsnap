@@ -1,4 +1,5 @@
 use crate::{palette::PALETTE, DynWidget, Fader, PageByPage, Rat, ScrollBar, SwipeUpChevron, Widget, SCROLLBAR_WIDTH};
+use crate::prelude::FreeCrop;
 use embedded_graphics::{
     draw_target::DrawTarget, geometry::AnchorX, pixelcolor::Rgb565, prelude::*, primitives::Rectangle
 };
@@ -163,7 +164,7 @@ where
         }
 
         // Draw child/final page in content area (cropped to child_area)
-        let mut child_target = target.cropped(&content_area);
+        let mut child_target = target.free_cropped(&content_area);
         let mut child_target = child_target.clipped(&content_area); // to make sure we don't draw over scrollbar
         self.child.draw(&mut child_target, current_time)?;
         self.final_page.draw(target, current_time)?;
@@ -175,7 +176,7 @@ where
             Point::new(scrollbar_x, bounds.top_left.y + SCROLLBAR_TOP_OFFSET as i32),
             Size::new(SCROLLBAR_WIDTH, scrollbar_height)
         );
-        self.scrollbar.draw(&mut target.cropped(&scrollbar_area), current_time)?;
+        self.scrollbar.draw(&mut target.free_cropped(&scrollbar_area), current_time)?;
 
         let child_is_ready = !self.child.is_transitioning() && self.child.is_not_faded();
 
@@ -191,7 +192,7 @@ where
                 Point::new(0, (bounds.size.height - swipe_hint_height) as i32),
                 Size::new(bounds.size.width, swipe_hint_height)
             );
-            swipe_hint.draw(&mut target.cropped(&hint_area), current_time)?;
+            swipe_hint.draw(&mut target.free_cropped(&hint_area), current_time)?;
         }
 
         self.child_was_ready = child_is_ready;
