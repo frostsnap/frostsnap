@@ -2,7 +2,7 @@ use super::Widget;
 use crate::Instant;
 use crate::prelude::FreeCrop;
 use embedded_graphics::{
-    draw_target::{DrawTarget, DrawTargetExt},
+    draw_target::DrawTarget,
     geometry::{Point, Size},
     primitives::Rectangle,
 };

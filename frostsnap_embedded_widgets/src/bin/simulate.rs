@@ -137,6 +137,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     macro_rules! run_widget {
         ($widget:expr) => {{
             let mut widget = $widget;
+            // Set constraints on root widget
+            widget.set_constraints(Size::new(240, 280));
             let mut last_touch: Option<Point> = None;
             let mut drag_start: Option<Point> = None; // Initial position when mouse down
             let mut is_dragging = false;

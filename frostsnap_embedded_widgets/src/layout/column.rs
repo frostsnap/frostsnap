@@ -1,5 +1,6 @@
 use crate::{Widget, Instant, widget_tuple::WidgetTuple};
 use crate::prelude::FreeCrop;
+use super::{CrossAxisAlignment, MainAxisAlignment};
 use alloc::vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -8,41 +9,6 @@ use embedded_graphics::{
     prelude::*,
     primitives::Rectangle,
 };
-
-// Helper macro to count arguments
-macro_rules! count_args {
-    () => (0usize);
-    ($head:ident) => (1usize);
-    ($head:ident, $($tail:ident),*) => (1usize + count_args!($($tail),*));
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CrossAxisAlignment {
-    /// Align children to the start (left) of the cross axis
-    Start,
-    /// Center children along the cross axis
-    Center,
-}
-
-/// Defines how children are distributed along the main (vertical) axis of a Column
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MainAxisAlignment {
-    /// Place children at the start (top) of the column with no spacing between them
-    Start,
-    /// Center children vertically in the column with no spacing between them
-    Center,
-    /// Place children at the end (bottom) of the column with no spacing between them
-    End,
-    /// Place children with equal spacing between them, with no space before the first or after the last child
-    /// Example with 3 children: [Child1]--space--[Child2]--space--[Child3]
-    SpaceBetween,
-    /// Place children with equal spacing around them, with half spacing before the first and after the last child
-    /// Example with 3 children: -half-[Child1]-full-[Child2]-full-[Child3]-half-
-    SpaceAround,
-    /// Place children with equal spacing between and around them
-    /// Example with 3 children: --space--[Child1]--space--[Child2]--space--[Child3]--space--
-    SpaceEvenly,
-}
 
 /// A column widget that arranges its children vertically
 /// 
@@ -63,26 +29,22 @@ pub struct Column<T> {
     pub main_axis_alignment: MainAxisAlignment,
     child_rects: alloc::vec::Vec<Rectangle>,
     debug_borders: bool,
+    sizing: Option<crate::Sizing>,
 }
 
 impl<T: WidgetTuple> Column<T> {
     pub fn new(children: T) -> Self {
-        let mut column = Self {
+        let column = Self {
             children,
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_alignment: MainAxisAlignment::Start,
             child_rects: vec![Rectangle::zero(); T::TUPLE_LEN],
             debug_borders: false,
+            sizing: None,
         };
         
-        // Extract and cache sizes
-        let sizes = column.children.extract_sizes();
-        
-        // Initialize rectangles with sizes (zero for unsized children)
-        for (i, size) in sizes.into_iter().enumerate() {
-            column.child_rects[i].size = size;
-            // Position will be set during draw
-        }
+        // Don't extract sizes here - wait for set_constraints to be called
+        // child_rects are already initialized to zero in the struct creation above
         
         column
     }
@@ -104,10 +66,132 @@ impl<T: WidgetTuple> Column<T> {
 }
 
 // Macro to implement Widget for Column with tuples of different sizes
-// Macro to implement Widget for Column with tuples of different sizes
 macro_rules! impl_column_for_tuple {
     ($len:literal, $($t:ident),+) => {
         impl<$($t: Widget<Color = C>),+, C: PixelColor> crate::DynWidget for Column<($($t,)+)> {
+            #[allow(unused_assignments)]
+            fn set_constraints(&mut self, max_size: Size) {
+                
+                #[allow(non_snake_case)]
+                let ($(ref mut $t,)+) = self.children;
+                
+                // First pass: query flex status and set initial constraints on non-flex children
+                let mut is_flex = [false; $len];
+                let mut flex_count = 0;
+                let mut child_index = 0;
+                let mut remaining_height = max_size.height;
+                
+                $(
+                    {
+                        let flex = $t.flex();
+                        is_flex[child_index] = flex;
+                        if flex {
+                            flex_count += 1;
+                        } else {
+                            // Set constraints on non-flex child with remaining available height
+                            $t.set_constraints(Size::new(max_size.width, remaining_height));
+                            let sizing = $t.sizing();
+                            remaining_height = remaining_height.saturating_sub(sizing.height);
+                        }
+                        child_index += 1;
+                    }
+                )+
+                
+                // Calculate height for each flex child
+                let flex_height = if flex_count > 0 {
+                    remaining_height / flex_count as u32
+                } else {
+                    0
+                };
+                
+                // Second pass: set constraints on flex children and update cached rects with sizes
+                let mut child_index = 0;
+                $(
+                    {
+                        if is_flex[child_index] {
+                            // Set constraints on flex child with calculated height
+                            $t.set_constraints(Size::new(max_size.width, flex_height));
+                            let sizing = $t.sizing();
+                            self.child_rects[child_index].size = sizing.into();
+                            remaining_height = remaining_height.saturating_sub(sizing.height);
+                        } else {
+                            // Non-flex child already has constraints set, just get final size
+                            let sizing = $t.sizing();
+                            self.child_rects[child_index].size = sizing.into();
+                        }
+                        child_index += 1;
+                    }
+                )+
+                
+                // Now compute positions based on alignment
+                // remaining_height now has any leftover space for alignment
+                
+                let (mut y_offset, spacing) = match self.main_axis_alignment {
+                    MainAxisAlignment::Start => (0u32, 0u32),
+                    MainAxisAlignment::Center => {
+                        (remaining_height / 2, 0)
+                    }
+                    MainAxisAlignment::End => {
+                        (remaining_height, 0)
+                    }
+                    MainAxisAlignment::SpaceBetween => {
+                        if $len > 1 {
+                            (0, remaining_height / ($len as u32 - 1))
+                        } else {
+                            (0, 0)
+                        }
+                    }
+                    MainAxisAlignment::SpaceAround => {
+                        let spacing = remaining_height / ($len as u32);
+                        (spacing / 2, spacing)
+                    }
+                    MainAxisAlignment::SpaceEvenly => {
+                        let spacing = remaining_height / ($len as u32 + 1);
+                        (spacing, spacing)
+                    }
+                };
+                
+                // Set positions for all children
+                let mut max_child_width = 0u32;
+                let mut total_child_height = 0u32;
+                for i in 0..$len {
+                    let size = self.child_rects[i].size;
+                    max_child_width = max_child_width.max(size.width);
+                    total_child_height += size.height;
+                    
+                    let x_offset = match self.cross_axis_alignment {
+                        CrossAxisAlignment::Start => 0,
+                        CrossAxisAlignment::Center => {
+                            let available_width = max_size.width.saturating_sub(size.width);
+                            (available_width / 2) as i32
+                        }
+                        CrossAxisAlignment::End => {
+                            let available_width = max_size.width.saturating_sub(size.width);
+                            available_width as i32
+                        }
+                    };
+                    self.child_rects[i].top_left = Point::new(x_offset, y_offset as i32);
+                    y_offset = y_offset.saturating_add(size.height).saturating_add(spacing);
+                }
+                
+                // Compute and store sizing based on alignment
+                let width = match self.cross_axis_alignment {
+                    CrossAxisAlignment::Start => max_child_width,
+                    _ => max_size.width,  // Center and End need full width
+                };
+                
+                let height = match self.main_axis_alignment {
+                    MainAxisAlignment::Start => total_child_height,
+                    _ => max_size.height,  // All other alignments need full height
+                };
+                
+                self.sizing = Some(crate::Sizing { width, height });
+            }
+            
+            fn sizing(&self) -> crate::Sizing {
+                self.sizing.expect("set_constraints must be called before sizing")
+            }
+            
             #[allow(unused_assignments)]
             fn handle_touch(
                 &mut self,
@@ -149,28 +233,6 @@ macro_rules! impl_column_for_tuple {
                 )+
             }
             
-            fn size_hint(&self) -> Option<Size> {
-                #[allow(non_snake_case)]
-                let ($(ref $t,)+) = self.children;
-
-                // Calculate total height and maximum width
-                let mut total_height = 0;
-                let mut max_width = 0;
-
-                // All children
-                $(
-                    let size = $t.size_hint()?;
-                    total_height += size.height;
-                    max_width = max_width.max(size.width);
-                )+
-                match self.main_axis_alignment {
-                    MainAxisAlignment::Start => {
-
-                        Some(Size::new(max_width, total_height))
-                    }
-                    _ => Some(Size::new(max_width, 0)),
-                }
-            }
             
             fn force_full_redraw(&mut self) {
                 #[allow(non_snake_case)]
@@ -191,91 +253,19 @@ macro_rules! impl_column_for_tuple {
                 target: &mut D,
                 current_time: Instant,
             ) -> Result<(), D::Error> {
-                // Count the number of children at compile time
-                const NUM_CHILDREN: usize = count_args!($($t),+);
-                
+                // If constraints haven't been set yet, set them based on target
+                if self.sizing.is_none() {
+                    <Self as crate::DynWidget>::set_constraints(self, target.bounding_box().size);
+                }
                 
                 // Get mutable references to children
                 #[allow(non_snake_case, unused_variables)]
                 let ($(ref mut $t,)+) = self.children;
                 
-                let target_bounds = target.bounding_box();
-                let target_height = target_bounds.size.height;
-
-                // Find first unsized child and calculate total height of sized children
-                let mut first_unsized_index = None;
-                let mut total_sized_height = 0u32;
-                for (i, rect) in self.child_rects.iter().enumerate() {
-                    if rect.size.height == 0 && first_unsized_index.is_none() {
-                        first_unsized_index = Some(i);
-                    } else {
-                        total_sized_height += rect.size.height;
-                    }
-                }
-                
-                // Calculate available space for unsized child
-                let available_space_for_unsized = if first_unsized_index.is_some() {
-                    target_height.saturating_sub(total_sized_height)
-                } else {
-                    0
-                };
-                
-                // If we have an unsized child, assign it the available space
-                if let Some(unsized_idx) = first_unsized_index {
-                    self.child_rects[unsized_idx].size.height = available_space_for_unsized;
-                }
-                
-                // Recalculate total height now that unsized child has a size
-                let total_height: u32 = self.child_rects.iter().map(|r| r.size.height).sum();
-                
-                // Calculate initial y_offset and spacing based on MainAxisAlignment
-                let (mut y_offset, spacing) = match self.main_axis_alignment {
-                    MainAxisAlignment::Start => (0i32, 0i32),
-                    MainAxisAlignment::Center => {
-                        let offset = (target_height as i32 - total_height as i32) / 2;
-                        (offset.max(0), 0)
-                    }
-                    MainAxisAlignment::End => {
-                        let offset = target_height as i32 - total_height as i32;
-                        (offset.max(0), 0)
-                    }
-                    MainAxisAlignment::SpaceBetween => {
-                        if NUM_CHILDREN > 1usize {
-                            let available_space = target_height as i32 - total_height as i32;
-                            (0, available_space / (NUM_CHILDREN as i32 - 1))
-                        } else {
-                            (0, 0)
-                        }
-                    }
-                    MainAxisAlignment::SpaceAround => {
-                        let available_space = target_height as i32 - total_height as i32;
-                        let spacing = available_space / (NUM_CHILDREN as i32);
-                        (spacing / 2, spacing)
-                    }
-                    MainAxisAlignment::SpaceEvenly => {
-                        let available_space = target_height as i32 - total_height as i32;
-                        let spacing = available_space / (NUM_CHILDREN as i32 + 1);
-                        (spacing, spacing)
-                    }
-                };
-                
-                // Get mutable references to children
-                #[allow(non_snake_case, unused_variables)]
-                let ($(ref mut $t,)+) = self.children;
-                
-                // Update positions and draw
+                // Draw each child in its pre-computed rectangle
                 let mut child_index = 0;
                 $(
                     {
-                        let size = self.child_rects[child_index].size;
-                        let x_offset = match self.cross_axis_alignment {
-                            CrossAxisAlignment::Start => 0,
-                            CrossAxisAlignment::Center => {
-                                let target_width = target_bounds.size.width as i32;
-                                (target_width - size.width as i32) / 2
-                            }
-                        };
-                        self.child_rects[child_index].top_left = Point::new(x_offset, y_offset);
                         let mut cropped = target.free_cropped(&self.child_rects[child_index]);
                         $t.draw(&mut cropped, current_time)?;
                         
@@ -285,7 +275,6 @@ macro_rules! impl_column_for_tuple {
                             use embedded_graphics::pixelcolor::{Rgb565, Gray4, Gray2};
                             use embedded_graphics::pixelcolor::raw::RawData;
                             
-                            // We support debug borders for common pixel formats based on bits per pixel
                             let rect = self.child_rects[child_index];
                             
                             if let Some(debug_color) = match C::Raw::BITS_PER_PIXEL {
@@ -314,7 +303,6 @@ macro_rules! impl_column_for_tuple {
                             }
                         }
                         
-                        y_offset += size.height as i32 + spacing;
                         child_index += 1;
                     }
                 )+
@@ -325,7 +313,7 @@ macro_rules! impl_column_for_tuple {
     };
 }
 
-// Generate implementations for tuples up to 9 elements
+// Generate implementations for tuples up to 12 elements
 impl_column_for_tuple!(1, T1);
 impl_column_for_tuple!(2, T1, T2);
 impl_column_for_tuple!(3, T1, T2, T3);
@@ -335,3 +323,6 @@ impl_column_for_tuple!(6, T1, T2, T3, T4, T5, T6);
 impl_column_for_tuple!(7, T1, T2, T3, T4, T5, T6, T7);
 impl_column_for_tuple!(8, T1, T2, T3, T4, T5, T6, T7, T8);
 impl_column_for_tuple!(9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+impl_column_for_tuple!(10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+impl_column_for_tuple!(11, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+impl_column_for_tuple!(12, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);

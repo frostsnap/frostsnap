@@ -3,10 +3,9 @@ use embedded_graphics::{
     geometry::Size,
     pixelcolor::Rgb565,
     text::Alignment,
-    primitives::PrimitiveStyleBuilder,
 };
 use u8g2_fonts::{U8g2TextStyle, fonts};
-use crate::column::MainAxisAlignment;
+use crate::MainAxisAlignment;
 use alloc::format;
 
 // Use small font (17px) for the hash
@@ -93,11 +92,8 @@ impl FirmwareUpgradeConfirm {
         let hash_column = Column::new((hash1, hash2, hash3, hash4));
         let hash_with_padding = Padding::all(5, hash_column);
         let hash_container = Container::new(hash_with_padding)
-            .with_border(PrimitiveStyleBuilder::new()
-                .stroke_color(PALETTE.outline)
-                .stroke_width(2)
-                .fill_color(PALETTE.surface)
-                .build())
+            .with_border(PALETTE.outline, 2)
+            .with_fill(PALETTE.surface)
             .with_corner_radius(Size::new(10, 10));
         
         // Create main column with title, container, and size

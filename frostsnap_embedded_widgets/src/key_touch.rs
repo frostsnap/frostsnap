@@ -3,7 +3,7 @@ use crate::{Container, Fader, SizedBox, Widget};
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::{PrimitiveStyleBuilder, Rectangle, StrokeAlignment}
+    primitives::Rectangle
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,15 +31,10 @@ impl KeyTouch {
     }
     pub fn new(key: Key, rect: Rectangle) -> Self {
         const CORNER_RADIUS: u32 = 8;
-        let border_style = PrimitiveStyleBuilder::new()
-            .stroke_color(PALETTE.primary)
-            .stroke_alignment(StrokeAlignment::Inside)
-            .stroke_width(2)
-            .build();
         
         let sized_box = SizedBox::new(rect.size);
         let container = Container::with_size(sized_box, rect.size)
-            .with_border(border_style)
+            .with_border(PALETTE.primary, 2)
             .with_corner_radius(Size::new(CORNER_RADIUS, CORNER_RADIUS));
         let widget = Fader::new(container);
         

@@ -21,7 +21,6 @@ pub mod bitmap;
 pub mod center;
 pub mod checkmark;
 pub mod color_map;
-pub mod column;
 pub mod cursor;
 pub mod fader;
 pub mod rat;
@@ -39,8 +38,8 @@ pub mod paginator_with_scrollbar;
 pub mod widget_list;
 pub mod progress;
 pub mod progress_bars;
-pub mod row;
 pub mod buffered;
+pub mod layout;
 pub mod scroll_bar;
 pub mod sized_box;
 pub mod container;
@@ -87,7 +86,7 @@ pub use center::*;
 pub use checkmark::*;
 pub use color_map::*;
 pub use container::*;
-pub use column::*;
+pub use layout::{Column, Row, CrossAxisAlignment, MainAxisAlignment};
 pub use cursor::*;
 pub use fader::*;
 pub use rat::{Rat, Frac};
@@ -97,7 +96,6 @@ pub use hold_to_confirm_border::HoldToConfirmBorder;
 pub use paginator_with_scrollbar::*;
 pub use progress::{ProgressBar, ProgressIndicator};
 pub use progress_bars::*;
-pub use row::*;
 pub use scroll_bar::*;
 pub use sized_box::*;
 pub use swipe_up_chevron::*;
@@ -124,9 +122,53 @@ pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_m
 pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 pub const CODE_FONT: fonts::u8g2_font_profont29_mr = fonts::u8g2_font_profont29_mr;
 
+/// Sizing information for a widget
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Sizing {
+    pub width: u32,
+    pub height: u32,
+    // Future: min_width, min_height, preferred_width, preferred_height, etc.
+}
+
+impl From<Size> for Sizing {
+    fn from(size: Size) -> Self {
+        Sizing {
+            width: size.width,
+            height: size.height,
+        }
+    }
+}
+
+impl From<Sizing> for Size {
+    fn from(sizing: Sizing) -> Self {
+        Size::new(sizing.width, sizing.height)
+    }
+}
+
 /// A trait for widgets that can be used as trait objects
 /// This contains all the non-generic methods from Widget
 pub trait DynWidget {
+    /// Set maximum available size for this widget. Parent calls this before asking for size.
+    /// Default implementation does nothing for backwards compatibility.
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Default: do nothing - widgets that need constraints override this
+    }
+    
+    /// Get sizing information for this widget given its constraints.
+    /// Must be called after set_constraints.
+    fn sizing(&self) -> Sizing {
+        // Default: use size_hint for backwards compat
+        self.size_hint()
+            .unwrap_or(Size::zero())
+            .into()  // Uses From<Size> for Sizing
+    }
+    
+    /// Whether this widget wants to expand to fill available space.
+    /// This is an intrinsic property that doesn't depend on constraints.
+    fn flex(&self) -> bool {
+        false  // Default: most widgets are not flexible
+    }
+    
     /// Handle touch events. Returns true if the touch was handled.
     fn handle_touch(
         &mut self,
@@ -196,6 +238,18 @@ impl<T: Widget + ?Sized> Widget for alloc::boxed::Box<T> {
 
 // Implement DynWidget for Box<T> where T: DynWidget
 impl<T: DynWidget + ?Sized> DynWidget for alloc::boxed::Box<T> {
+    fn set_constraints(&mut self, max_size: Size) {
+        (**self).set_constraints(max_size)
+    }
+    
+    fn sizing(&self) -> Sizing {
+        (**self).sizing()
+    }
+    
+    fn flex(&self) -> bool {
+        (**self).flex()
+    }
+    
     fn handle_touch(&mut self, point: Point, current_time: crate::Instant, is_release: bool) -> Option<KeyTouch> {
         (**self).handle_touch(point, current_time, is_release)
     }

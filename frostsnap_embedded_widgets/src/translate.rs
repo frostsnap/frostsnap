@@ -48,7 +48,7 @@ where
     W::Color: Copy,
 {
     pub fn new(child: W, background_color: W::Color) -> Self {
-        let size = child.size_hint().expect("translated widgets must have size");
+        let size = child.sizing().into();
         Self {
             previous_bitmap: Bitmap::new(size, BinaryColor::Off),
             current_bitmap: Bitmap::new(size, BinaryColor::Off),

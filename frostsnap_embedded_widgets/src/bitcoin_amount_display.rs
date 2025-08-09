@@ -1,4 +1,4 @@
-use crate::{rat::FatRat, row::Row, sized_box::SizedBox, text::Text, Instant, Widget};
+use crate::{rat::FatRat, Row, sized_box::SizedBox, text::Text, Instant, Widget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},

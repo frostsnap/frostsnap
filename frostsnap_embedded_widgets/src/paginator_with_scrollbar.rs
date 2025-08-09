@@ -108,12 +108,13 @@ where
     }
 
     fn size_hint(&self) -> Option<Size> {
-        // Get child's size hint
-        let child_size = self.child.size_hint()?;
+        // Get child's size
+        let child_size: Size = self.child.sizing().into();
         
         // Add swipe hint height if present
         let swipe_hint_height = if let Some(swipe_hint) = &self.swipe_hint {
-            swipe_hint.size_hint().unwrap().height
+            let swipe_sizing: Size = swipe_hint.sizing().into();
+            swipe_sizing.height
         } else {
             0
         };

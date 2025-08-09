@@ -1,5 +1,5 @@
 use crate::{
-    any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay, color_map::ColorMap, column::{Column, CrossAxisAlignment, MainAxisAlignment}, page_by_page::PageByPage, sized_box::SizedBox, text::Text, DynWidget, Instant, Padding, Widget
+    any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay, color_map::ColorMap, Column, CrossAxisAlignment, MainAxisAlignment, page_by_page::PageByPage, sized_box::SizedBox, text::Text, DynWidget, Instant, Padding, Widget
 };
 use alloc::{format, string::{String, ToString}, vec::Vec};
 use embedded_graphics::{
@@ -372,7 +372,7 @@ pub struct SignPrompt {
             crate::animation::VerticalPaginator<SignPromptDisplay, SCREEN_WIDTH, SCREEN_HEIGHT, { embedded_graphics::framebuffer::buffer_size::<Gray4>(SCREEN_WIDTH, SCREEN_HEIGHT) }>,
             embedded_graphics::pixelcolor::Rgb565
         >,
-        crate::HoldToConfirm<crate::column::Column<(
+        crate::HoldToConfirm<crate::Column<(
             Text<U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>,
             Text<U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>,
             crate::color_map::ColorMap<crate::bitcoin_amount_display::BitcoinAmountDisplay, embedded_graphics::pixelcolor::Rgb565>,
@@ -383,7 +383,7 @@ pub struct SignPrompt {
 
 impl SignPrompt {
     pub fn new(screen_size: Size, prompt: PromptSignBitcoinTx) -> Self {
-        use crate::{palette::PALETTE, animation::VerticalPaginator, HoldToConfirm, PaginatorWithScrollBar, column::{Column, MainAxisAlignment}, bitcoin_amount_display::BitcoinAmountDisplay};
+        use crate::{palette::PALETTE, animation::VerticalPaginator, HoldToConfirm, PaginatorWithScrollBar, Column, MainAxisAlignment, bitcoin_amount_display::BitcoinAmountDisplay};
         use embedded_graphics::{pixelcolor::BinaryColor, prelude::GrayColor};
         
         // Calculate total amount being sent

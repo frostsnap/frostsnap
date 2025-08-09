@@ -1,30 +1,13 @@
-use crate::Widget;
-use alloc::vec::Vec;
-use embedded_graphics::geometry::Size;
-
-/// Trait to get tuple length at compile time and handle initialization
+/// Trait to get tuple length at compile time
 pub trait WidgetTuple {
     const TUPLE_LEN: usize;
-    
-    fn extract_sizes(&self) -> Vec<Size>;
 }
 
 // Macro to implement WidgetTuple for tuples
 macro_rules! impl_widget_tuple {
     ($len:literal, $($t:ident),+) => {
-        impl<$($t: Widget),+> WidgetTuple for ($($t,)+) {
+        impl<$($t),+> WidgetTuple for ($($t,)+) {
             const TUPLE_LEN: usize = $len;
-            
-            fn extract_sizes(&self) -> Vec<Size> {
-                #[allow(non_snake_case)]
-                let ($(ref $t,)+) = self;
-                
-                let mut sizes = Vec::with_capacity($len);
-                $(
-                    sizes.push($t.size_hint().unwrap_or_default());
-                )+
-                sizes
-            }
         }
     };
 }

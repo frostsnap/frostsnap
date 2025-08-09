@@ -1,11 +1,10 @@
 use super::{Widget, Text, HoldToConfirm, Container, Column, Padding, Row};
-use crate::{Instant, palette::PALETTE, column::MainAxisAlignment};
+use crate::{Instant, palette::PALETTE, MainAxisAlignment};
 use alloc::format;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
-    primitives::{PrimitiveStyleBuilder, StrokeAlignment},
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -50,16 +49,10 @@ impl KeygenCheck {
         let code_column = Column::new((t_of_n_widget, code_widget));
 
         // Put the column in a container with a border
-        let border_style = PrimitiveStyleBuilder::new()
-            .stroke_color(PALETTE.outline)
-            .stroke_width(2)
-            .fill_color(PALETTE.surface)
-            .stroke_alignment(StrokeAlignment::Inside)
-            .build();
-        
         let padded_code_column = Padding::all(10, code_column);
         let code_container = Container::new(padded_code_column)
-            .with_border(border_style)
+            .with_border(PALETTE.outline, 2)
+            .with_fill(PALETTE.surface)
             .with_corner_radius(Size::new(8, 8));
         
         // Create the "confirm identical" text

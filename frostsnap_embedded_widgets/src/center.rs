@@ -72,7 +72,7 @@ impl<W: Widget> Widget for Center<W> {
 
         let rect = self.last_child_rect.get_or_insert_with(|| {
             let target_size = target.bounding_box().size;
-            let child_size = self.child.size_hint().expect("Center's child must be sized");
+            let child_size: Size = self.child.sizing().into();
             // Calculate centered position
             let x_offset = ((target_size.width as i32 - child_size.width as i32) / 2).max(0);
             let y_offset = ((target_size.height as i32 - child_size.height as i32) / 2).max(0);

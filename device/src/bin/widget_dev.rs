@@ -95,6 +95,8 @@ fn main() -> ! {
     macro_rules! run_widget {
         ($widget:expr) => {{
             let mut widget = $widget;
+            // Set constraints on root widget
+            widget.set_constraints(Size::new(240, 280));
             let mut last_touch: Option<(Point, u32)> = None;
             
             // Create status widget (FPS and memory)

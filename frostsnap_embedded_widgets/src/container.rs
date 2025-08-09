@@ -1,9 +1,9 @@
 use super::Widget;
-use crate::free_cropped::FreeCrop;
+use crate::{free_cropped::FreeCrop, DynWidget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     prelude::*,
-    primitives::{PrimitiveStyle, Rectangle, RoundedRectangle},
+    primitives::{Rectangle, RoundedRectangle, StrokeAlignment},
 };
 
 /// A container that can optionally draw a border around its child
@@ -13,11 +13,13 @@ where
     W: Widget,
 {
     pub child: W,
-    size: Option<Size>,
-    border_style: Option<PrimitiveStyle<W::Color>>,
+    size: Option<Size>,  // None = shrink-wrap, Some(size) = explicit size (including MAX for fill)
+    border_color: Option<W::Color>,
+    border_width: u32,
+    fill_color: Option<W::Color>,
     corner_radius: Option<Size>,
     border_needs_redraw: bool,
-    expanded: bool,
+    constraints: Option<Size>,
 }
 
 impl<W: Widget> Container<W> {
@@ -26,10 +28,12 @@ impl<W: Widget> Container<W> {
         Self {
             child,
             size: None,
-            border_style: None,
+            border_color: None,
+            border_width: 0,
+            fill_color: None,
             corner_radius: None,
             border_needs_redraw: true,
-            expanded: false,
+            constraints: None,
         }
     }
     
@@ -38,24 +42,26 @@ impl<W: Widget> Container<W> {
         Self {
             child,
             size: Some(size),
-            border_style: None,
+            border_color: None,
+            border_width: 0,
+            fill_color: None,
             corner_radius: None,
             border_needs_redraw: true,
-            expanded: false,
+            constraints: None,
         }
     }
     
-    /// Set the border style
-    pub fn with_border(mut self, border_style: PrimitiveStyle<W::Color>) -> Self {
-        self.border_style = Some(border_style);
+    /// Set the border with a color and width
+    pub fn with_border(mut self, color: W::Color, width: u32) -> Self {
+        self.border_color = Some(color);
+        self.border_width = width;
         self
     }
-
-    fn border_width(&self) -> u32 {
-        match &self.border_style {
-            Some(style) => style.stroke_width,
-            None => 0,
-        }
+    
+    /// Set the fill color
+    pub fn with_fill(mut self, color: W::Color) -> Self {
+        self.fill_color = Some(color);
+        self
     }
 
     
@@ -65,55 +71,76 @@ impl<W: Widget> Container<W> {
         self
     }
     
-    /// Set the container to expanded mode - it will fill the available space from DrawTarget
+    /// Set the container to expanded mode - it will fill the available space
     pub fn with_expanded(mut self) -> Self {
-        self.expanded = true;
-        self.size = None; // Clear any explicit size
+        // Expanded means requesting u32::MAX size
+        self.size = Some(Size::new(u32::MAX, u32::MAX));
         self
-    }
-    
-    /// Get the effective size of the container
-    fn effective_size(&self) -> Option<Size> {
-        self.size.or_else(|| self.child.size_hint())
     }
 }
 
 impl<W: Widget> crate::DynWidget for Container<W>
 {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.constraints = Some(max_size);
+        
+        // Calculate child constraints based on our mode
+        if let Some(requested_size) = self.size {
+            // We have an explicit size - constrain child to that minus border
+            let container_size = requested_size.component_min(max_size);
+            let child_max_size = Size::new(
+                container_size.width.saturating_sub(2 * self.border_width),
+                container_size.height.saturating_sub(2 * self.border_width)
+            );
+            self.child.set_constraints(child_max_size);
+        } else {
+            // Shrink-wrap mode - give child the available space minus border
+            let child_max_size = Size::new(
+                max_size.width.saturating_sub(2 * self.border_width),
+                max_size.height.saturating_sub(2 * self.border_width)
+            );
+            self.child.set_constraints(child_max_size);
+        }
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        let constraints = self.constraints.expect("set_constraints must be called before sizing");
+        
+        // Calculate the size based on our mode
+        let size = if let Some(requested_size) = self.size {
+            // We have a requested size - constrain it to max_size
+            requested_size.component_min(constraints)
+        } else {
+            // Shrink-wrap mode - use child size plus border
+            let child_sizing = self.child.sizing();
+            Size::new(
+                child_sizing.width + 2 * self.border_width,
+                child_sizing.height + 2 * self.border_width
+            )
+        };
+        
+        crate::Sizing {
+            width: size.width,
+            height: size.height,
+        }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
         current_time: crate::Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        if let Some(size) = self.effective_size() {
-            let bounds = Rectangle::new(Point::zero(), size);
-            if bounds.contains(point) {
-                self.child.handle_touch(point, current_time, is_release)
-            } else {
-                None
-            }
-        } else {
-            self.child.handle_touch(point, current_time, is_release)
-        }
+        // Offset point by border width when passing to child
+        let child_point = Point::new(
+            point.x - self.border_width as i32,
+            point.y - self.border_width as i32
+        );
+        self.child.handle_touch(child_point, current_time, is_release)
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
         self.child.handle_vertical_drag(prev_y, new_y, is_release);
-    }
-
-    fn size_hint(&self) -> Option<Size> {
-        if self.expanded {
-            // Expanded containers have no size hint
-            None
-        } else {
-            let base_size = self.effective_size()?;
-            let border_width = self.border_width();
-            Some(Size::new(
-                base_size.width + 2 * border_width,
-                base_size.height + 2 * border_width,
-            ))
-        }
     }
 
     fn force_full_redraw(&mut self) {
@@ -130,47 +157,64 @@ impl<W: Widget> Widget for Container<W> {
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        // Determine the size to use
-        let size = if self.expanded {
-            // Use the full target bounding box
-            Some(target.bounding_box().size)
-        } else if let Some(size) = self.effective_size() {
-            // Use effective size (explicit or child's)
-            Some(size)
-        } else {
-            // No size available - default to expanded behavior
-            Some(target.bounding_box().size)
-        };
-        
-        if let Some(size) = size {
-            let rect = Rectangle::new( Point::new_equal(self.border_width() as i32), size);
-            if self.border_needs_redraw {
-                if let Some(style) = self.border_style {
-                    if let Some(corner_radius) = self.corner_radius {
-                        RoundedRectangle::with_equal_corners(
-                            rect,
-                            corner_radius,
-                        )
-                        .into_styled(style)
-                        .draw(target)?;
-                    } else {
-                        rect
-                            .into_styled(style)
-                            .draw(target)?;
-                    }
-                }
-                self.border_needs_redraw = false;
-            }
-
-            let mut free_cropped = target.free_cropped(&rect);
-            self.child.draw(&mut free_cropped, current_time)?;
-        } else {
-            self.child.draw(target, current_time)?;
+        // If constraints haven't been set yet, set them based on target
+        if self.constraints.is_none() {
+            <Self as crate::DynWidget>::set_constraints(self, target.bounding_box().size);
         }
+        
+        // Get our actual size
+        let container_size = Size::from(self.sizing());
+        
+        // Draw border if needed
+        if self.border_needs_redraw && (self.border_color.is_some() || self.fill_color.is_some()) {
+            let border_rect = Rectangle::new(Point::zero(), container_size);
+            
+            // Build the primitive style with inside stroke alignment
+            let mut style_builder = embedded_graphics::primitives::PrimitiveStyleBuilder::new();
+            
+            if let Some(fill_color) = self.fill_color {
+                style_builder = style_builder.fill_color(fill_color);
+            }
+            
+            if let Some(border_color) = self.border_color {
+                style_builder = style_builder
+                    .stroke_color(border_color)
+                    .stroke_width(self.border_width)
+                    .stroke_alignment(StrokeAlignment::Inside);
+            }
+            
+            let style = style_builder.build();
+            
+            if let Some(corner_radius) = self.corner_radius {
+                RoundedRectangle::with_equal_corners(
+                    border_rect,
+                    corner_radius,
+                )
+                .into_styled(style)
+                .draw(target)?;
+            } else {
+                border_rect
+                    .into_styled(style)
+                    .draw(target)?;
+            }
+            
+            self.border_needs_redraw = false;
+        }
+        
+        // Draw child with proper offset and cropping
+        let child_area = Rectangle::new(
+            Point::new(self.border_width as i32, self.border_width as i32),
+            Size::new(
+                container_size.width.saturating_sub(2 * self.border_width),
+                container_size.height.saturating_sub(2 * self.border_width)
+            )
+        );
+        
+        let mut cropped = target.free_cropped(&child_area);
+        self.child.draw(&mut cropped, current_time)?;
         
         Ok(())
     }
-    
 }
 
 
@@ -182,7 +226,8 @@ where
         f.debug_struct("Container")
             .field("child", &self.child)
             .field("size", &self.size)
-            .field("has_border", &self.border_style.is_some())
+            .field("has_border", &self.border_color.is_some())
+            .field("border_width", &self.border_width)
             .finish()
     }
 }

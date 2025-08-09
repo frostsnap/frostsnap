@@ -74,6 +74,19 @@ impl RootWidget {
 }
 
 impl DynWidget for RootWidget {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.page_switcher.set_constraints(max_size);
+        self.debug_text.set_constraints(max_size);
+    }
+    
+    fn sizing(&self) -> frostsnap_embedded_widgets::Sizing {
+        self.page_switcher.sizing()
+    }
+    
+    fn flex(&self) -> bool {
+        self.page_switcher.flex()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,

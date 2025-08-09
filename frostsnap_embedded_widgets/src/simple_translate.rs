@@ -27,6 +27,18 @@ impl<T> SimpleTranslate<T> {
 }
 
 impl<T: DynWidget> DynWidget for SimpleTranslate<T> {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.child.set_constraints(max_size)
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.child.sizing()
+    }
+    
+    fn flex(&self) -> bool {
+        self.child.flex()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,

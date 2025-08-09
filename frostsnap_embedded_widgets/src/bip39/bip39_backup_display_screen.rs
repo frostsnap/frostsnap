@@ -1,5 +1,5 @@
 use crate::{
-    column::{Column, CrossAxisAlignment}, page_slider::PageSlider, palette::PALETTE, sized_box::SizedBox, text::Text, widget_list::WidgetList, Row, HoldToConfirm, FONT_LARGE, FONT_MED, FONT_SMALL
+    Column, CrossAxisAlignment, page_slider::PageSlider, palette::PALETTE, sized_box::SizedBox, text::Text, widget_list::WidgetList, Row, HoldToConfirm, FONT_LARGE, FONT_MED, FONT_SMALL
 };
 use alloc::{format, string::String, vec::Vec};
 use embedded_graphics::{

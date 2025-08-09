@@ -207,9 +207,12 @@ fn main() -> ! {
     // TODO: maybe re-key the rng based on entropy from touces etc
     let rng = hmac_keys.fixed_entropy.mix_in_rng(&mut first_rng);
 
+    let mut root_widget = RootWidget::new(WidgetTree::default(), 300, PALETTE.background);
+    root_widget.set_constraints(Size::new(240, 280));
+    
     let ui = FrostyUi {
         display,
-        root_widget: RootWidget::new(WidgetTree::default(), 300, PALETTE.background),
+        root_widget,
         status_widget: create_status(),
         capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,

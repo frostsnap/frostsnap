@@ -15,6 +15,7 @@ where
     fade_duration_ms: u32,
     fade_redraw_interval_ms: u64,
     bg_color: Rgb565,
+    constraints: Option<Size>,
 }
 
 impl<T> FadeSwitcher<T>
@@ -31,11 +32,17 @@ where
             fade_duration_ms,
             fade_redraw_interval_ms,
             bg_color,
+            constraints: None,
         }
     }
     
     /// Switch to a new widget with a fade transition
-    pub fn switch_to(&mut self, widget: T) {
+    pub fn switch_to(&mut self, mut widget: T) {
+        // Apply constraints to the new widget if we have them
+        if let Some(constraints) = self.constraints {
+            widget.set_constraints(constraints);
+        }
+        
         let mut prev_fader = core::mem::replace(&mut self.current, Fader::new_faded_out(widget));
         if self.prev.is_none() {
             // we only care about fading out the old widget if it was ever drawn. An existing `self.prev` means it wasn't.
@@ -60,6 +67,24 @@ where
     T: Widget<Color = Rgb565>,
 
 {
+    fn set_constraints(&mut self, max_size: Size) {
+        // Store the constraints
+        self.constraints = Some(max_size);
+        // Apply to current and previous widgets
+        self.current.set_constraints(max_size);
+        if let Some(ref mut prev) = self.prev {
+            prev.set_constraints(max_size);
+        }
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.current.sizing()
+    }
+    
+    fn flex(&self) -> bool {
+        self.current.flex()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,

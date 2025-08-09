@@ -170,7 +170,7 @@ impl DeviceNameScreen {
             logo_colored,
             device_name_widget,
         ))
-        .with_main_axis_alignment(crate::column::MainAxisAlignment::SpaceEvenly);
+        .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
         
         Self { column }
     }

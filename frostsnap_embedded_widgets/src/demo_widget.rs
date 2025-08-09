@@ -25,6 +25,108 @@ macro_rules! demo_widget {
                 let widget = Welcome::new();
                 $run_macro!(widget);
             }
+            "column_cross_axis" => {
+                use $crate::{text::Text, Column, palette::PALETTE};
+                
+                // First column with Start alignment (left-aligned)
+                let text1 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text2 = Text::new("start", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let inner_column1 = Column::new((text1, text2))
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::Start);
+                
+                // Second column with center cross-axis alignment
+                let text3 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text4 = Text::new("center", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let inner_column2 = Column::new((text3, text4))
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::Center);
+                
+                // Third column with End alignment (right-aligned)
+                let text5 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text6 = Text::new("end", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let inner_column3 = Column::new((text5, text6))
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::End);
+                
+                // Outer column containing all three inner columns (default center alignment)
+                let widget = Column::new((inner_column1, inner_column2, inner_column3));
+                $run_macro!(widget);
+            }
+            "row_cross_axis" => {
+                use $crate::{text::Text, Row, Column, Container, palette::PALETTE};
+                
+                // First row with Start alignment (top-aligned)
+                let text1 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text2 = Text::new("start", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let inner_row1 = Row::new((text1, text2))
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::Start)
+                    .with_debug_borders(true);
+                let container1 = Container::with_size(inner_row1, Size::new(240, 80))
+                    .with_border(PALETTE.primary, 2);
+                
+                // Second row with center cross-axis alignment
+                let text3 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text4 = Text::new("center", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let inner_row2 = Row::new((text3, text4))
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::Center)
+                    .with_debug_borders(true);
+                let container2 = Container::with_size(inner_row2, Size::new(240, 80))
+                    .with_border(PALETTE.primary, 2);
+                
+                // Third row with End alignment (bottom-aligned)
+                let text5 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text6 = Text::new("end", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let inner_row3 = Row::new((text5, text6))
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::End)
+                    .with_debug_borders(true);
+                let container3 = Container::with_size(inner_row3, Size::new(240, 80))
+                    .with_border(PALETTE.primary, 2);
+                
+                // Outer column containing all three containers
+                let widget = Column::new((container1, container2, container3));
+                $run_macro!(widget);
+            }
+            "row_center" => {
+                use $crate::{text::Text, Row, Container, palette::PALETTE};
+                
+                // First row with Start alignment
+                let text_a = Text::new("A", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text_b = Text::new("B", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let start_row = Row::new((text_a, text_b))
+                    .with_main_axis_alignment($crate::MainAxisAlignment::Start)
+                    .with_debug_borders(true);
+                let start_container = Container::new(start_row).with_border(PALETTE.primary, 2);
+
+                // Second row with Center alignment
+                let text_c = Text::new("C", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text_d = Text::new("D", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let center_row = Row::new((text_c, text_d))
+                    .with_main_axis_alignment($crate::MainAxisAlignment::Center)
+                    .with_debug_borders(true);
+                let center_container = Container::new(center_row).with_border(PALETTE.primary, 2);
+                
+                // Outer row containing both containers
+                let widget = Row::new((start_container, center_container));
+                $run_macro!(widget);
+            }
+            "column_center" => {
+                use $crate::{text::Text, Column, Container, palette::PALETTE};
+                
+                // First column with Start alignment
+                let text1 = Text::new("main axis alignment", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text2 = Text::new("start", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let start_column = Column::new((text1, text2)).with_debug_borders(true);
+                let start_container = Container::new(start_column).with_border(PALETTE.primary, 2);
+
+                // Second column with Center alignment
+                let text3 = Text::new("main axis alignment", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text4 = Text::new("center", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let center_column = Column::new((text3, text4))
+                    .with_main_axis_alignment($crate::MainAxisAlignment::Center).with_debug_borders(true);
+                let center_container = Container::new(center_column).with_border(PALETTE.primary, 2);
+                
+                // Outer column containing both containers
+                let widget = Column::new((start_container, center_container));
+                $run_macro!(widget);
+            }
             "vertical_slide" => {
                 // Commented out until VerticalPaginator is refactored
                 panic!("vertical_slide demo is temporarily disabled while refactoring");
@@ -163,7 +265,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "bitcoin_amount" => {
-                use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, column::{Column, MainAxisAlignment}, palette::PALETTE};
+                use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, Column, MainAxisAlignment, palette::PALETTE};
                 
                 // Create a simple BitcoinAmountDisplay with 21 BTC
                 let amount_display = BitcoinAmountDisplay::new(21_000_000); // 21 BTC
@@ -199,7 +301,7 @@ macro_rules! demo_widget {
                             u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                         );
                         let container = Container::new(text)
-                            .with_border(PrimitiveStyle::with_stroke(PALETTE.primary, 2));
+                            .with_border(PALETTE.primary, 2);
                         Some(container)
                     }
                 }
@@ -220,7 +322,7 @@ macro_rules! demo_widget {
                 // Create initial text widget centered in a container with border
                 let text = Text::new("Page 1\nLorem ipus\nderp herp!", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
                 let container = Container::new(text)
-                    .with_border(PrimitiveStyle::with_stroke(PALETTE.primary, 2));
+                    .with_border(PALETTE.primary, 2);
 
                 // Create slide-in transition widget
                 let mut transition = SlideInTransition::new(
@@ -255,7 +357,7 @@ macro_rules! demo_widget {
                                 u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                             );
                             let container = Container::new(text)
-                                .with_border(PrimitiveStyle::with_stroke(PALETTE.primary, 2));
+                                .with_border(PALETTE.primary, 2);
                             
                             self.transition.switch_to(container);
                         }
@@ -388,7 +490,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade", $demo);
             }
         }
     };

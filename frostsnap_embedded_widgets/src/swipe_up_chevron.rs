@@ -1,4 +1,4 @@
-use crate::{Widget, FONT_SMALL, bobbing_carat::BobbingCarat, column::Column, text::Text};
+use crate::{Widget, FONT_SMALL, bobbing_carat::BobbingCarat, Column, text::Text};
 use embedded_graphics::{
     pixelcolor::{PixelColor, RgbColor},
     prelude::*,

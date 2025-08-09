@@ -1,5 +1,5 @@
 use crate::{
-    column::Column, row::Row, sized_box::SizedBox, text::Text, 
+    Column, Row, sized_box::SizedBox, text::Text, 
     DynWidget, Instant, Widget
 };
 use alloc::string::ToString;
