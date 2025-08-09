@@ -11,6 +11,12 @@
   };
   
   outputs = { self, nixpkgs, rust-overlay, flake-utils }:
+    let
+      versions = {
+        rust = "1.88.0";
+        riscv-gcc = "2024.09.03"; # Should match justfetch.lock version!
+      };
+    in
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -18,7 +24,7 @@
           overlays = [ (import rust-overlay) ];
         };
         
-        toolchain = pkgs.rust-bin.stable."1.88.0".default.override {
+        toolchain = pkgs.rust-bin.stable.${versions.rust}.default.override {
           extensions = [ "rust-src" "rustfmt" "clippy" ];
           targets = [ "riscv32imc-unknown-none-elf" ];
         };
@@ -30,16 +36,19 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             toolchain
-            esptool
             riscvPkgs.stdenv.cc
-            pkg-config
-            openssl
             just
-            cargo-watch
-            cargo-expand
+            esptool
+            openssl
           ];
           
           shellHook = ''
+            # Version info
+            echo "Toolchain versions:"
+            echo "Rust: ${versions.rust}"
+            echo "RISC-V GCC target: ${versions.riscv-gcc} (justfetch), $(riscv32-unknown-elf-gcc --version | head -1) (nix)"
+            echo
+
             # Deterministic environment settings
             export SOURCE_DATE_EPOCH="1704067200"
             export CARGO_BUILD_INCREMENTAL="false"
@@ -55,7 +64,7 @@
             # Simple path remapping - now cargo paths will be identical
             export CARGO_BUILD_RUSTFLAGS="--remap-path-prefix=/tmp/deterministic-cargo=CARGO_HOME --remap-path-prefix=/nix/store=NIXSTORE --remap-path-prefix=/tmp=TMP --remap-path-prefix=/home=HOME -Ccodegen-units=1 -Cdebuginfo=0 -Cstrip=symbols -Cllvm-args=-disable-symbolication -Clink-arg=--sort-section=name -Clink-arg=--build-id=none -Clink-arg=--hash-style=gnu"
             
-            echo "🔧 Rust build environment:"
+            echo "Rust build environment:"
             echo "CARGO_HOME: $CARGO_HOME"
             echo "RUSTFLAGS: $CARGO_BUILD_RUSTFLAGS"
           '';

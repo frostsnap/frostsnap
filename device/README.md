@@ -1,20 +1,31 @@
-## Requires RISC-V GCC toolchain
+# Frostsnap Firmware
 
-Requires `gcc-riscv64-unknown-elf` to compile rust bitcoin for the device ([Debian](https://stackoverflow.com/questions/74231514/how-to-install-riscv32-unknown-elf-gcc-on-debian-based-linuxes), [Arch](https://aur.archlinux.org/riscv-gnu-toolchain-bin.git)).
+ESP32-C3 firmware built with Rust.
 
-# Usage
+Requires RISC-V GCC toolchain for `riscv32imc-unknown-none-elf` target.
 
-## Flash and run the device
+### Install Rust toolchain
 
-Install no-std for RISC-V toolchain installation
-
+```bash
+rustup toolchain install stable --component rust-src
+rustup target add riscv32imc-unknown-none-elf
 ```
-rustup toolchain install nightly --component rust-src
+
+### Install RISC-V GCC
+
+- **Debian/Ubuntu**: `apt install gcc-riscv32-unknown-elf`
+- **Arch**: Install `riscv-gnu-toolchain-bin` from AUR
+- **Other**: Use `just fetch-riscv` to download pinned version
+
+### Build and flash
+
+```bash
+just build-device v2
+just flash
 ```
 
-Flash the device (use a good USB cable)
+## Deterministic Builds
 
-```
-cd device/
-cargo run --release --bin blue --features blue
+```bash
+./deterministic-build.sh
 ```
