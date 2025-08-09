@@ -1,5 +1,5 @@
 use super::{Widget, Text, Column};
-use crate::{bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap, palette::PALETTE};
+use crate::{bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap, palette::PALETTE, Center};
 use alloc::string::String;
 use embedded_graphics::{
     pixelcolor::{BinaryColor, Rgb565}, text::Alignment,
@@ -11,11 +11,12 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 /// A widget that displays the Frostsnap logo with a key name and device name
 #[derive(frostsnap_macros::Widget)]
 pub struct Standby {
-    column: Column<(
+    #[widget_delegate]
+    content: Center<Column<(
         ColorMap<BitmapWidget, Rgb565>,
         Text<U8g2TextStyle<Rgb565>>,
         Text<U8g2TextStyle<Rgb565>>,
-    )>,
+    )>>,
 }
 
 impl Standby {
@@ -46,6 +47,8 @@ impl Standby {
             device_text,
         )).with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
         
-        Self { column }
+        let content = Center::new(column);
+        
+        Self { content }
     }
 }

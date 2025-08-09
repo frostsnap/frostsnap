@@ -157,11 +157,8 @@ impl<W: Widget> Widget for Container<W> {
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        // If constraints haven't been set yet, set them based on target
-        if self.constraints.is_none() {
-            <Self as crate::DynWidget>::set_constraints(self, target.bounding_box().size);
-        }
-        
+        self.constraints.expect("constraints must be set");
+
         // Get our actual size
         let container_size = Size::from(self.sizing());
         

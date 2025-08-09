@@ -1,9 +1,9 @@
 #![no_std]
+#![allow(unused)]
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
 
-#[allow(unused)]
 #[macro_use]
 pub extern crate alloc;
 
@@ -60,6 +60,7 @@ pub mod keygen_check;
 pub mod padding;
 pub mod circle_button;
 pub mod fade_switcher;
+pub mod expanded;
 pub mod firmware_upgrade;
 pub mod fps;
 pub mod widget_tuple;
@@ -88,6 +89,7 @@ pub use color_map::*;
 pub use container::*;
 pub use layout::{Column, Row, CrossAxisAlignment, MainAxisAlignment};
 pub use cursor::*;
+pub use expanded::Expanded;
 pub use fader::*;
 pub use rat::{Rat, Frac};
 pub use hold_to_confirm::HoldToConfirm;
@@ -114,6 +116,7 @@ pub use circle_button::*;
 pub use fade_switcher::FadeSwitcher;
 pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};
 pub use fps::Fps;
+pub use icons::IconWidget;
 
 // Font re-exports
 use u8g2_fonts::fonts;

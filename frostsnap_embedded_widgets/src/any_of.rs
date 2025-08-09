@@ -23,6 +23,18 @@ impl<T> AnyOf<T> {
             _phantom: core::marker::PhantomData,
         }
     }
+    
+    /// Try to get a mutable reference to the inner widget as a specific type
+    pub fn downcast_mut<W: Any>(&mut self) -> Option<&mut W> {
+        let widget = self.inner.as_mut() as &mut dyn Any;
+        widget.downcast_mut::<W>()
+    }
+    
+    /// Try to get a reference to the inner widget as a specific type
+    pub fn downcast_ref<W: Any>(&self) -> Option<&W> {
+        let widget = self.inner.as_ref() as &dyn Any;
+        widget.downcast_ref::<W>()
+    }
 }
 
 // Helper macro to implement DynWidget for AnyOf
@@ -58,6 +70,18 @@ macro_rules! impl_any_of {
         
         impl<$($t: AnyDynWidget + 'static),+> DynWidget for AnyOf<($($t,)+)> 
         {
+            fn set_constraints(&mut self, max_size: Size) {
+                self.inner.set_constraints(max_size)
+            }
+            
+            fn sizing(&self) -> crate::Sizing {
+                self.inner.sizing()
+            }
+            
+            fn flex(&self) -> bool {
+                self.inner.flex()
+            }
+            
             fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
                 self.inner.handle_touch(point, current_time, is_release)
             }

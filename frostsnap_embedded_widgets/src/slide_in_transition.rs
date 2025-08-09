@@ -47,6 +47,29 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
         self.slide_from_position = position;
     }
     
+    /// Get mutable access to the current widget if available
+    pub fn current_widget_mut(&mut self) -> Option<&mut T> {
+        self.current.as_mut().map(|fader| &mut fader.child.child)
+    }
+    
+    /// Check if the transition animation is complete
+    pub fn is_transition_complete(&self) -> bool {
+        // Check if current widget exists and its animation is complete
+        if let Some(ref current) = self.current {
+            // The transition is complete when:
+            // 1. The fader is visible (fade-in complete)
+            // 2. The translate animation is idle (slide complete)
+            if current.is_visible() {
+                // Access the translate widget inside the fader
+                current.child.is_idle()
+            } else {
+                false
+            }
+        } else {
+            true // No transition in progress
+        }
+    }
+    
     /// Switch to a new widget with slide-in transition
     pub fn switch_to(&mut self, widget: T) {
         // Create translate widget and start the slide animation from the offset

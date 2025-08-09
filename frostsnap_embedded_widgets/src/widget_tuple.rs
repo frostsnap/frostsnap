@@ -12,7 +12,7 @@ macro_rules! impl_widget_tuple {
     };
 }
 
-// Generate implementations for tuples up to 12 elements
+// Generate implementations for tuples up to 20 elements
 impl_widget_tuple!(1, T1);
 impl_widget_tuple!(2, T1, T2);
 impl_widget_tuple!(3, T1, T2, T3);
@@ -25,3 +25,11 @@ impl_widget_tuple!(9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
 impl_widget_tuple!(10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 impl_widget_tuple!(11, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 impl_widget_tuple!(12, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+impl_widget_tuple!(13, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+impl_widget_tuple!(14, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+impl_widget_tuple!(15, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+impl_widget_tuple!(16, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
+impl_widget_tuple!(17, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17);
+impl_widget_tuple!(18, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18);
+impl_widget_tuple!(19, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19);
+impl_widget_tuple!(20, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20);

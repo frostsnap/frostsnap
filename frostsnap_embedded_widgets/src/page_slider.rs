@@ -1,12 +1,13 @@
 use crate::{Widget, WidgetList, SlideInTransition, Instant, palette::PALETTE, DynWidget};
+use alloc::boxed::Box;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
 };
 
-const ANIMATION_DURATION_MS: u64 = 1_500;
-const MIN_SWIPE_DISTANCE: u32 = 30;
+const ANIMATION_DURATION_MS: u64 = 500;
+const MIN_SWIPE_DISTANCE: u32 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Direction {
@@ -25,6 +26,8 @@ where
     transition: SlideInTransition<T>,
     drag_start: Option<u32>,
     height: u32,
+    on_page_ready: Option<Box<dyn FnMut(&mut T)>>,
+    page_ready_triggered: bool,
 }
 
 impl<L, T> PageSlider<L, T>
@@ -50,7 +53,18 @@ where
             transition,
             drag_start: None,
             height,
+            on_page_ready: None,
+            page_ready_triggered: false,
         }
+    }
+    
+    /// Builder method to set a callback that's called when a page is ready (animation complete)
+    pub fn with_on_page_ready<F>(mut self, callback: F) -> Self 
+    where
+        F: FnMut(&mut T) + 'static,
+    {
+        self.on_page_ready = Some(Box::new(callback));
+        self
     }
     
     pub fn current_index(&self) -> usize {
@@ -69,7 +83,24 @@ where
         self.current_index > 0
     }
     
+    /// Get a reference to the current widget
+    pub fn current_widget(&mut self) -> Option<&mut T> {
+        self.transition.current_widget_mut()
+    }
+    
     pub fn start_transition(&mut self, direction: Direction) {
+        // First check if navigation is allowed based on the current widget
+        if let Some(current_widget) = self.transition.current_widget_mut() {
+            let allowed = match direction {
+                Direction::Up => self.list.can_go_next(self.current_index, current_widget),
+                Direction::Down => self.list.can_go_prev(self.current_index, current_widget),
+            };
+            
+            if !allowed {
+                return; // Navigation blocked by the widget list
+            }
+        }
+        
         // Calculate target index
         let target_index = match direction {
             Direction::Up => {
@@ -102,6 +133,8 @@ where
             self.transition.switch_to(new_widget);
             
             self.current_index = target_index;
+            // Reset the ready flag for the new page
+            self.page_ready_triggered = false;
         }
     }
 }
@@ -173,6 +206,19 @@ where
     ) -> Result<(), D::Error> {
         // Draw the transition
         self.transition.draw(target, current_time)?;
+        
+        // Check if transition is complete and trigger callback if not already triggered
+        if !self.page_ready_triggered && self.transition.is_transition_complete() {
+            self.page_ready_triggered = true;
+            
+            // Call the on_page_ready callback if set
+            if let Some(ref mut callback) = self.on_page_ready {
+                // Get mutable access to the current widget
+                if let Some(widget) = self.transition.current_widget_mut() {
+                    callback(widget);
+                }
+            }
+        }
         
         Ok(())
     }

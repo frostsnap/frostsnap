@@ -2,13 +2,14 @@ use frostsnap_embedded_widgets::Widget;
 #[cfg(feature = "debug_fps")]
 use frostsnap_embedded_widgets::Fps;
 #[cfg(all(feature = "debug_fps", feature = "debug_mem"))]
-use frostsnap_embedded_widgets::Row;
+use frostsnap_embedded_widgets::{Row, Container};
 #[cfg(not(any(feature = "debug_fps", feature = "debug_mem")))]
 use frostsnap_embedded_widgets::SizedBox;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::geometry::Size;
 #[cfg(feature = "debug_mem")]
 use frostsnap_embedded_widgets::{
+    prelude::*,
     DynWidget, Instant, FONT_SMALL, 
     mut_text::{MutText, mut_text_buffer_size},
     palette::PALETTE,
@@ -30,8 +31,10 @@ pub fn create_status() -> impl Widget<Color = Rgb565> {
     {
         let fps = Fps::new();
         let memory = MemoryIndicator::new();
+        
         Row::new((fps, memory))
-            .with_cross_axis_alignment(frostsnap_embedded_widgets::row::CrossAxisAlignment::Start)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceAround)
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
     }
     
     #[cfg(all(feature = "debug_fps", not(feature = "debug_mem")))]
@@ -55,8 +58,9 @@ pub fn create_status() -> impl Widget<Color = Rgb565> {
 #[cfg(feature = "debug_mem")]
 const MEM_MAX_CHARS: usize = 15;  // Increased for full byte count
 #[cfg(feature = "debug_mem")]
-// ProFont17 is ~10px wide per character, add some padding
-const MEM_WIDTH: usize = MEM_MAX_CHARS * 10 + 10;  // 160px for 15 chars + padding
+// ProFont17 is exactly 10px wide per character for ASCII
+// "Mem: 262144" = 11 chars = 110px wide
+const MEM_WIDTH: usize = 110;  // Exact width for "Mem: 262144"
 #[cfg(feature = "debug_mem")]
 const MEM_HEIGHT: usize = 17;  // ProFont17 is exactly 17px tall
 #[cfg(feature = "debug_mem")]
@@ -94,6 +98,14 @@ impl MemoryIndicator {
 
 #[cfg(feature = "debug_mem")]
 impl DynWidget for MemoryIndicator {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.display.set_constraints(max_size);
+    }
+    
+    fn sizing(&self) -> frostsnap_embedded_widgets::Sizing {
+        self.display.sizing()
+    }
+    
     fn size_hint(&self) -> Option<Size> {
         self.display.size_hint()
     }
@@ -129,6 +141,9 @@ impl Widget for MemoryIndicator {
             let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
             write!(&mut buf, "Mem: {}", used).ok();
             self.display.child.set_text(buf.as_str());
+            
+            // Force a redraw even if the text hasn't changed
+            self.display.force_full_redraw();
             
             self.last_draw_time = Some(current_time);
         }

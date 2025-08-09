@@ -80,6 +80,7 @@ macro_rules! impl_row_for_tuple {
                 let mut flex_count = 0;
                 let mut child_index = 0;
                 let mut remaining_width = max_size.width;
+                let mut max_child_height = 0u32;
                 
                 $(
                     {
@@ -92,6 +93,7 @@ macro_rules! impl_row_for_tuple {
                             $t.set_constraints(Size::new(remaining_width, max_size.height));
                             let sizing = $t.sizing();
                             remaining_width = remaining_width.saturating_sub(sizing.width);
+                            max_child_height = max_child_height.max(sizing.height);
                         }
                         child_index += 1;
                     }
@@ -114,6 +116,7 @@ macro_rules! impl_row_for_tuple {
                             let sizing = $t.sizing();
                             self.child_rects[child_index].size = sizing.into();
                             remaining_width = remaining_width.saturating_sub(sizing.width);
+                            max_child_height = max_child_height.max(sizing.height);
                         } else {
                             // Non-flex child already has constraints set, just get final size
                             let sizing = $t.sizing();
@@ -152,21 +155,19 @@ macro_rules! impl_row_for_tuple {
                 };
                 
                 // Set positions for all children
-                let mut max_child_height = 0u32;
                 let mut total_child_width = 0u32;
                 for i in 0..$len {
                     let size = self.child_rects[i].size;
-                    max_child_height = max_child_height.max(size.height);
                     total_child_width += size.width;
                     
                     let y_offset = match self.cross_axis_alignment {
                         CrossAxisAlignment::Start => 0,
                         CrossAxisAlignment::Center => {
-                            let available_height = max_size.height.saturating_sub(size.height);
+                            let available_height = max_child_height.saturating_sub(size.height);
                             (available_height / 2) as i32
                         }
                         CrossAxisAlignment::End => {
-                            let available_height = max_size.height.saturating_sub(size.height);
+                            let available_height = max_child_height.saturating_sub(size.height);
                             available_height as i32
                         }
                     };
@@ -174,16 +175,15 @@ macro_rules! impl_row_for_tuple {
                     x_offset = x_offset.saturating_add(size.width).saturating_add(spacing);
                 }
                 
-                // Compute and store sizing based on alignment
+                // Compute and store sizing
+                // Width depends on main axis alignment
                 let width = match self.main_axis_alignment {
                     MainAxisAlignment::Start => total_child_width,
-                    _ => max_size.width,  // All other alignments need full width
+                    _ => max_size.width,  // All other alignments need full width for spacing
                 };
                 
-                let height = match self.cross_axis_alignment {
-                    CrossAxisAlignment::Start => max_child_height,
-                    _ => max_size.height,  // Center and End need full height
-                };
+                // Height is always the maximum child height (cross-axis doesn't affect sizing)
+                let height = max_child_height;
                 
                 self.sizing = Some(crate::Sizing { width, height });
             }
@@ -310,7 +310,7 @@ macro_rules! impl_row_for_tuple {
     };
 }
 
-// Generate implementations for tuples up to 12 elements
+// Generate implementations for tuples up to 20 elements
 impl_row_for_tuple!(1, T1);
 impl_row_for_tuple!(2, T1, T2);
 impl_row_for_tuple!(3, T1, T2, T3);
@@ -323,3 +323,11 @@ impl_row_for_tuple!(9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
 impl_row_for_tuple!(10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 impl_row_for_tuple!(11, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 impl_row_for_tuple!(12, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+impl_row_for_tuple!(13, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+impl_row_for_tuple!(14, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+impl_row_for_tuple!(15, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+impl_row_for_tuple!(16, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
+impl_row_for_tuple!(17, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17);
+impl_row_for_tuple!(18, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18);
+impl_row_for_tuple!(19, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19);
+impl_row_for_tuple!(20, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20);

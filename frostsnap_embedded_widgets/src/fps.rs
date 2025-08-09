@@ -9,8 +9,9 @@ use core::fmt::Write;
 
 // Constants for MutText dimensions - "FPS: 999" is max 8 chars
 const FPS_MAX_CHARS: usize = 10;
-// ProFont17 is ~10px wide per character, add some padding
-const FPS_WIDTH: usize = FPS_MAX_CHARS * 10 + 10;  // 110px for 10 chars + padding
+// ProFont17 is exactly 10px wide per character for ASCII
+// "FPS: 999" = 8 chars = 80px wide
+const FPS_WIDTH: usize = 80;  // Exact width for "FPS: 999"
 const FPS_HEIGHT: usize = 17;  // ProFont17 is exactly 17px tall
 const FPS_BUFFER_SIZE: usize = mut_text_buffer_size::<FPS_WIDTH, FPS_HEIGHT>();
 
@@ -53,6 +54,14 @@ impl Fps {
 }
 
 impl DynWidget for Fps {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.display.set_constraints(max_size);
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.display.sizing()
+    }
+    
     fn handle_touch(
         &mut self,
         _point: Point,

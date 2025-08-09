@@ -115,6 +115,18 @@ where
     S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
 
 {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // MutText has a fixed size, so we ignore constraints
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        // MutText always reports its fixed size
+        crate::Sizing {
+            width: W as u32,
+            height: H as u32,
+        }
+    }
+
     fn handle_touch(
         &mut self,
         _point: Point,

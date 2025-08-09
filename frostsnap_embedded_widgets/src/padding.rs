@@ -107,6 +107,21 @@ impl<W: Widget> PaddingBuilder<W> {
 
 impl<W: Widget> crate::DynWidget for Padding<W> 
 {
+    fn set_constraints(&mut self, max_size: Size) {
+        // Reduce max size by padding
+        let padded_width = max_size.width.saturating_sub(self.left + self.right);
+        let padded_height = max_size.height.saturating_sub(self.top + self.bottom);
+        self.child.set_constraints(Size::new(padded_width, padded_height));
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        let child_sizing = self.child.sizing();
+        crate::Sizing {
+            width: child_sizing.width + self.left + self.right,
+            height: child_sizing.height + self.top + self.bottom,
+        }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,

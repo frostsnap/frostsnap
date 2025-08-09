@@ -4,7 +4,6 @@
 extern crate alloc;
 use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
-use embedded_graphics::prelude::*;
 use esp_hal::{
     delay::Delay,
     entry,
@@ -20,7 +19,7 @@ use esp_hal::{
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
 use frostsnap_device::status::create_status;
-use frostsnap_embedded_widgets::{palette::PALETTE, DynWidget, Widget};
+use frostsnap_embedded_widgets::DynWidget;
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 // Screen constants
@@ -101,6 +100,8 @@ fn main() -> ! {
             
             // Create status widget (FPS and memory)
             let mut status = create_status();
+            // Set constraints for status widget
+            status.set_constraints(Size::new(240, 280));
             
             // Track last redraw time
             let mut last_redraw_time = timer.now();
@@ -158,7 +159,7 @@ fn main() -> ! {
 
                 // Only redraw if at least 10ms has passed since last redraw
                 let elapsed_ms = (current_time - last_redraw_time).to_millis();
-                if elapsed_ms >= 10 {
+                if elapsed_ms >= 5 {
                     // Draw the main widget
                     let _ = widget.draw(
                         &mut display,

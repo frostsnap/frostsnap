@@ -73,6 +73,16 @@ impl CircleButton {
 }
 
 impl crate::DynWidget for CircleButton {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // CircleButton has a fixed size, but we need to set constraints on the checkmark
+        // Give the checkmark the full circle area to work with
+        self.checkmark.set_constraints(Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER));
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER).into()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,

@@ -1,12 +1,11 @@
 use crate::{
     circle_button::{CircleButton, CircleButtonState},
     Column, MainAxisAlignment,
-    fader::Fader,
+    Container, Center, Expanded,
     hold_to_confirm_border::HoldToConfirmBorder,
-    padding::Padding,
     palette::PALETTE,
     rat::Frac,
-    Widget,
+    Widget, Fader,
 };
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -19,9 +18,7 @@ pub struct HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
 {
-    content: Padding<Column<(W, CircleButton)>>,
-    border: Fader<HoldToConfirmBorder<crate::SizedBox<Rgb565>, Rgb565>>,
-    size: Size,
+    content: HoldToConfirmBorder<Container<Center<Column<(Expanded<W>, Fader<CircleButton>)>>>, Rgb565>,
     last_update: Option<crate::Instant>,
     hold_duration_ms: u32,
     completed: bool,
@@ -31,40 +28,58 @@ impl<W> HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
 {
-    pub fn new(size: Size, hold_duration_ms: u32, widget: W) -> Self {
+    pub fn new(hold_duration_ms: u32, widget: W) -> Self {
         const BORDER_WIDTH: u32 = 10;
         
-        // Create the circle button
+        // Create the circle button wrapped in a fader (starts visible by default)
         let button = CircleButton::new();
+        let faded_button = Fader::new(button);
         
-        // Create column with the widget and button
-        let column = Column::new((widget, button))
+        // Wrap the widget in Expanded so it takes up available space
+        let expanded_widget = Expanded::new(widget);
+        
+        // Create column with the expanded widget and faded button
+        let column = Column::new((expanded_widget, faded_button))
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
         
-        // Add padding around the column
-        let content = Padding::all(BORDER_WIDTH + 5, column);
+        // Center the column, then put it in an expanded container to fill available space
+        let centered = Center::new(column);
+        let content = Container::new(centered).with_expanded();
         
-        // Create the border separately with a SizedBox
-        let sized_box = crate::SizedBox::new(size);
-        let border_holder = HoldToConfirmBorder::new(sized_box, BORDER_WIDTH, PALETTE.confirm_progress, PALETTE.background);
-        let border = Fader::new(border_holder);
+        // Create the border with the actual content inside
+        let border = HoldToConfirmBorder::new(content, BORDER_WIDTH, PALETTE.confirm_progress, PALETTE.background);
 
         Self {
-            content,
-            border,
-            size,
+            content: border,
             last_update: None,
             hold_duration_ms,
             completed: false,
         }
     }
+    
+    /// Builder method to start with the button faded out
+    pub fn with_faded_out_button(mut self) -> Self {
+        self.button_fader_mut().set_faded_out();
+        self
+    }
+    
+    /// Fade in the button
+    pub fn fade_in_button(&mut self) {
+        if self.button_fader_mut().is_faded_out() {
+            self.button_fader_mut().start_fade_in(
+                800,  // 800ms fade duration
+                50,   // 50ms redraw interval
+                PALETTE.background
+            );
+        }
+    }
 
     pub fn reset(&mut self) {
         // Reset border progress
-        self.border.child.set_progress(Frac::ZERO);
+        self.content.set_progress(Frac::ZERO);
         
-        // Reset the button (second element in tuple)
-        self.content.child.children.1.reset();
+        // Reset the button (second element in tuple, inside the Fader)
+        self.content.child.child.child.children.1.child.reset();
         
         // Reset state
         self.last_update = None;
@@ -72,21 +87,25 @@ where
     }
 
     pub fn button_mut(&mut self) -> &mut CircleButton {
-        &mut self.content.child.children.1
+        &mut self.content.child.child.child.children.1.child
     }
 
     pub fn button(&self) -> &CircleButton {
-        &self.content.child.children.1
+        &self.content.child.child.child.children.1.child
+    }
+    
+    fn button_fader_mut(&mut self) -> &mut Fader<CircleButton> {
+        &mut self.content.child.child.child.children.1
     }
     
     /// Get mutable access to the inner widget
     pub fn widget_mut(&mut self) -> &mut W {
-        &mut self.content.child.children.0
+        &mut self.content.child.child.child.children.0.child
     }
     
     /// Get access to the inner widget
     pub fn widget(&self) -> &W {
-        &self.content.child.children.0
+        &self.content.child.child.child.children.0.child
     }
 
     pub fn is_completed(&self) -> bool {
@@ -99,7 +118,7 @@ where
 
     fn update_progress(&mut self, current_time: crate::Instant) {
         let holding = self.is_holding();
-        let current_progress = self.border.child.get_progress();
+        let current_progress = self.content.get_progress();
         
         // Early exit if not holding and no progress
         if !holding && current_progress == Frac::ZERO {
@@ -117,19 +136,19 @@ where
             if holding && !self.completed {
                 let increment = Frac::from_ratio(elapsed_ms, self.hold_duration_ms);
                 let new_progress = current_progress + increment;
-                self.border.child.set_progress(new_progress);
+                self.content.set_progress(new_progress);
 
                 if new_progress >= Frac::ONE {
                     self.completed = true;
                     
-                    // Start fading out the border
-                    self.border.start_fade(500, 50, PALETTE.background);
+                    // Start fading out the border only
+                    self.content.start_fade_out(500);
                     self.button_mut().set_state(CircleButtonState::ShowingCheckmark);
                 }
             } else if !holding && current_progress > Frac::ZERO && !self.completed {
                 let decrement = Frac::from_ratio(elapsed_ms, 1000);
                 let new_progress = current_progress - decrement;
-                self.border.child.set_progress(new_progress);
+                self.content.set_progress(new_progress);
                 
                 // If we've fully released, clear last_update
                 if new_progress == Frac::ZERO {
@@ -150,24 +169,31 @@ impl<W> crate::DynWidget for HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
 {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.content.set_constraints(max_size);
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.content.sizing()
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
         current_time: crate::Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        // Handle touch on the content
+        // Handle touch on the border (which will pass it to content)
         self.content.handle_touch(point, current_time, is_release)
     }
 
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
 
     fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
+        self.content.size_hint()
     }
 
     fn force_full_redraw(&mut self) {
-        self.border.force_full_redraw();
         self.content.force_full_redraw();
     }
 }
@@ -183,19 +209,18 @@ where
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        if self.is_holding() || self.border.child.get_progress() > Frac::ZERO {
+        if self.is_holding() || self.content.get_progress() > Frac::ZERO {
             self.update_progress(current_time);
         }
         
-        // Draw the border first
-        self.border.draw(target, current_time)?;
+        // Draw the border (which includes the content)
+        self.content.draw(target, current_time)?;
 
-        if self.border.is_faded_out() && !self.button().checkmark().drawing_started() {
+        if self.content.is_faded_out() && !self.button().checkmark().drawing_started() {
             self.button_mut().checkmark_mut().start_drawing()
         }
 
-        // Then draw the content on top
-        self.content.draw(target, current_time)
+        Ok(())
     }
 
 }

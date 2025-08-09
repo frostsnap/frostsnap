@@ -115,6 +115,11 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
         matches!(self.state, FadeState::FadedOut)
     }
     
+    /// Set the fader to faded out state
+    pub fn set_faded_out(&mut self) {
+        self.state = FadeState::FadedOut;
+    }
+    
     /// Check if the widget is showing (not faded out and not fading out)
     pub fn is_not_faded(&self) -> bool {
         matches!(self.state, FadeState::Idle)
@@ -155,10 +160,10 @@ fn interpolate_color(from: Rgb565, to: Rgb565, t: Frac) -> Rgb565 {
 }
 
 /// A custom DrawTarget that intercepts pixel drawing and applies fade
-struct FadingDrawTarget<'a, D> {
-    target: &'a mut D,
-    fade_progress: Frac,
-    target_color: Rgb565,
+pub struct FadingDrawTarget<'a, D> {
+    pub target: &'a mut D,
+    pub fade_progress: Frac,
+    pub target_color: Rgb565,
 }
 
 impl<'a, D: DrawTarget<Color = Rgb565>> DrawTarget for FadingDrawTarget<'a, D> {
@@ -247,8 +252,6 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
         target: &mut D,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        self.constraints.unwrap();
-        
         match &mut self.state {
             FadeState::FadedOut => {
                 Ok(())

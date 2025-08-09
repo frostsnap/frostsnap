@@ -16,7 +16,6 @@ use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
 pub struct SignPromptDisplay {
     prompt: PromptSignBitcoinTx,
     current_page: usize,
-    size: Size,
     
     // Current widget stored as AnyOf  
     current_widget: SignPromptPage,
@@ -217,14 +216,13 @@ impl WarningPage {
 type SignPromptPage = AnyOf<(AmountPage, AddressPage, FeePage, WarningPage)>;
 
 impl SignPromptDisplay {
-    pub fn new(size: Size, prompt: PromptSignBitcoinTx) -> Self {
+    pub fn new(prompt: PromptSignBitcoinTx) -> Self {
         // Create first widget
         let current_widget = Self::create_widget_for_page(0, &prompt);
 
         Self {
             prompt,
             current_page: 0,
-            size,
             current_widget,
         }
     }
@@ -294,7 +292,7 @@ impl DynWidget for SignPromptDisplay {
     }
     
     fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
+        None
     }
     
     fn force_full_redraw(&mut self) {
@@ -382,7 +380,7 @@ pub struct SignPrompt {
 }
 
 impl SignPrompt {
-    pub fn new(screen_size: Size, prompt: PromptSignBitcoinTx) -> Self {
+    pub fn new(prompt: PromptSignBitcoinTx) -> Self {
         use crate::{palette::PALETTE, animation::VerticalPaginator, HoldToConfirm, PaginatorWithScrollBar, Column, MainAxisAlignment, bitcoin_amount_display::BitcoinAmountDisplay};
         use embedded_graphics::{pixelcolor::BinaryColor, prelude::GrayColor};
         
@@ -390,7 +388,7 @@ impl SignPrompt {
         let total_sats = prompt.total_sent().to_sat();
         
         // Create the sign prompt display widget
-        let sign_display = SignPromptDisplay::new(screen_size, prompt);
+        let sign_display = SignPromptDisplay::new(prompt);
         
         // Wrap in vertical paginator
         const BUFFER_SIZE: usize = embedded_graphics::framebuffer::buffer_size::<Gray4>(SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -421,7 +419,7 @@ impl SignPrompt {
         let confirm_content = Column::new((sign_text, sending_text, amount_display, btc_text))
             .with_main_axis_alignment(MainAxisAlignment::Center);
         
-        let hold_confirm = HoldToConfirm::new(screen_size, 1500, confirm_content);
+        let hold_confirm = HoldToConfirm::new(1500, confirm_content);
         
         // Wrap in PaginatorWithScrollBar
         let widget = PaginatorWithScrollBar::new(paginator_mapped, hold_confirm);

@@ -390,8 +390,7 @@ where
                                 let prompt = tx_template.user_prompt(*network);
 
                                 // Create the SignPrompt widget
-                                let screen_size = embedded_graphics::geometry::Size::new(240, 280);
-                                let widget = Box::new(SignPrompt::new(screen_size, prompt));
+                                let widget = Box::new(SignPrompt::new(prompt));
 
                                 // Store both widget and phase in the WidgetTree
                                 WidgetTree::SignPrompt {
@@ -411,8 +410,7 @@ where
                         size,
                     } => {
                         // Create the FirmwareUpgradeConfirm widget
-                        let screen_size = embedded_graphics::geometry::Size::new(240, 280);
-                        let widget = Box::new(FirmwareUpgradeConfirm::new(screen_size, firmware_digest.0, size));
+                        let widget = Box::new(FirmwareUpgradeConfirm::new(firmware_digest.0, size));
                         
                         // Store the widget and metadata in the WidgetTree
                         WidgetTree::FirmwareUpgradeConfirm {

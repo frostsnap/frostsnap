@@ -39,6 +39,14 @@ impl<C> SizedBox<C> {
 
 impl<C: PixelColor> crate::DynWidget for SizedBox<C>
 {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // SizedBox has a fixed size, ignores constraints
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.size.into()
+    }
+    
     fn handle_touch(
         &mut self,
         _point: Point,

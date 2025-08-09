@@ -10,16 +10,16 @@ use embedded_graphics::{
 #[derive(PartialEq)]
 pub struct Center<W> {
     pub child: W,
-    last_child_rect: Option<Rectangle>,
     constraints: Option<Size>,
+    child_rect: Rectangle,
 }
 
 impl<W> Center<W> {
     pub fn new(child: W) -> Self {
         Self { 
             child,
-            last_child_rect: None,
             constraints: None,
+            child_rect: Rectangle::zero(),
         }
     }
 }
@@ -33,12 +33,12 @@ impl<W: Widget> crate::DynWidget for Center<W> {
         let child_size: Size = self.child.sizing().into();
         let x_offset = ((max_size.width as i32 - child_size.width as i32) / 2).max(0);
         let y_offset = ((max_size.height as i32 - child_size.height as i32) / 2).max(0);
-        self.last_child_rect = Some(Rectangle::new(Point::new(x_offset, y_offset), child_size));
+        self.child_rect = Rectangle::new(Point::new(x_offset, y_offset), child_size);
     }
     
     fn sizing(&self) -> crate::Sizing {
         // Center takes up all available space
-        self.constraints.unwrap_or(Size::zero()).into()
+        self.constraints.unwrap().into()
     }
     
     fn handle_touch(
@@ -47,21 +47,16 @@ impl<W: Widget> crate::DynWidget for Center<W> {
         current_time: Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        if let Some(child_rect) = self.last_child_rect {
-            // Check if the touch is within the child's bounds
-            if child_rect.contains(point) {
-                // Translate the touch point to the child's coordinate system
-                let translated_point = Point::new(
-                    point.x - child_rect.top_left.x,
-                    point.y - child_rect.top_left.y,
-                );
-                self.child.handle_touch(translated_point, current_time, is_release)
-            } else {
-                None
-            }
+        // Check if the touch is within the child's bounds
+        if self.child_rect.contains(point) {
+            // Translate the touch point to the child's coordinate system
+            let translated_point = Point::new(
+                point.x - self.child_rect.top_left.x,
+                point.y - self.child_rect.top_left.y,
+            );
+            self.child.handle_touch(translated_point, current_time, is_release)
         } else {
-            // No centering was applied, pass through as-is
-            self.child.handle_touch(point, current_time, is_release)
+            None
         }
     }
     
@@ -70,7 +65,6 @@ impl<W: Widget> crate::DynWidget for Center<W> {
     }
 
     fn force_full_redraw(&mut self) {
-        self.last_child_rect = None;
         self.child.force_full_redraw()
     }
     
@@ -89,8 +83,7 @@ impl<W: Widget> Widget for Center<W> {
     ) -> Result<(), D::Error> {
         self.constraints.unwrap();
         
-        let rect = self.last_child_rect.unwrap();
-        self.child.draw(&mut target.free_cropped(&rect), current_time)?;
+        self.child.draw(&mut target.free_cropped(&self.child_rect), current_time)?;
 
         Ok(())
     }

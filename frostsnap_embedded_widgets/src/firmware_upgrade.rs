@@ -31,7 +31,7 @@ pub struct FirmwareUpgradeConfirm {
 }
 
 impl FirmwareUpgradeConfirm {
-    pub fn new(screen_size: Size, firmware_digest: [u8; 32], size_bytes: u32) -> Self {
+    pub fn new(firmware_digest: [u8; 32], size_bytes: u32) -> Self {
         // Format the full hash as 4 lines of 16 hex chars each
         let hash_line1 = format!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
             firmware_digest[0], firmware_digest[1], firmware_digest[2], firmware_digest[3],
@@ -101,8 +101,8 @@ impl FirmwareUpgradeConfirm {
         let spacer2 = SizedBox::<Rgb565>::new(Size::new(1, 8));
         let content = Column::new((title, spacer1, hash_container, spacer2, size));
         
-        // Create hold to confirm with 3 second hold time
-        let hold_to_confirm = HoldToConfirm::new(screen_size, 1000, content);
+        // Create hold to confirm with 1 second hold time
+        let hold_to_confirm = HoldToConfirm::new(1000, content);
         
         Self {
             hold_to_confirm,

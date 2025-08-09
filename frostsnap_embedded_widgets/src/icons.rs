@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use embedded_graphics::{image::Image, pixelcolor::Rgb565, prelude::*};
+use embedded_graphics::{image::Image, pixelcolor::Rgb565, prelude::*, geometry::Size};
 use embedded_iconoir::{
     icons::size24px::actions::Check, prelude::IconoirNewIcon, size32px::navigation::NavArrowLeft,
 };
@@ -49,4 +49,56 @@ pub fn backspace() -> Icon<NavArrowLeft> {
 
 pub fn confirm() -> Icon<Check> {
     Icon::default()
+}
+
+/// Wrapper to make an icon into a widget
+pub struct IconWidget<I> {
+    icon: I,
+    constraints: Option<Size>,
+    needs_redraw: bool,
+}
+
+impl<I: embedded_graphics::image::ImageDrawable<Color = Rgb565>> IconWidget<I> {
+    pub fn new(icon: I) -> Self {
+        Self { 
+            icon,
+            constraints: None,
+            needs_redraw: true,
+        }
+    }
+}
+
+impl<I: embedded_graphics::image::ImageDrawable<Color = Rgb565>> crate::DynWidget for IconWidget<I> {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.constraints = Some(max_size);
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        let size = self.icon.bounding_box().size;
+        crate::Sizing {
+            width: size.width,
+            height: size.height,
+        }
+    }
+    
+
+    fn force_full_redraw(&mut self) {
+        self.needs_redraw = true;
+    }
+}
+
+impl<I: embedded_graphics::image::ImageDrawable<Color = Rgb565>> crate::Widget for IconWidget<I> {
+    type Color = Rgb565;
+    
+    fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        if self.needs_redraw {
+            Image::new(&self.icon, Point::zero()).draw(target)?;
+            self.needs_redraw = false;
+        }
+        Ok(())
+    }
 }

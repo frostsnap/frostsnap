@@ -1,4 +1,4 @@
-use crate::{Widget, Instant, Fader};
+use crate::{Widget, DynWidget, Instant, Fader};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -43,7 +43,13 @@ where
             widget.set_constraints(constraints);
         }
         
-        let mut prev_fader = core::mem::replace(&mut self.current, Fader::new_faded_out(widget));
+        let mut new_fader = Fader::new_faded_out(widget);
+        // Set constraints on the new fader
+        if let Some(constraints) = self.constraints {
+            new_fader.set_constraints(constraints);
+        }
+        
+        let mut prev_fader = core::mem::replace(&mut self.current, new_fader);
         if self.prev.is_none() {
             // we only care about fading out the old widget if it was ever drawn. An existing `self.prev` means it wasn't.
             prev_fader.start_fade(self.fade_duration_ms as u64, self.fade_redraw_interval_ms, self.bg_color);

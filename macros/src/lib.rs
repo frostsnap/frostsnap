@@ -127,6 +127,9 @@ fn derive_widget_for_enum(
 ) -> TokenStream {
     // Generate match arms for each method
     let draw_arms = generate_match_arms(&data_enum.variants, quote!(draw(target, current_time)));
+    let set_constraints_arms = generate_match_arms(&data_enum.variants, quote!(set_constraints(max_size)));
+    let sizing_arms = generate_match_arms(&data_enum.variants, quote!(sizing()));
+    let flex_arms = generate_match_arms(&data_enum.variants, quote!(flex()));
     let handle_touch_arms = generate_match_arms(&data_enum.variants, quote!(handle_touch(point, current_time, is_release)));
     let handle_vertical_drag_arms = generate_match_arms(&data_enum.variants, quote!(handle_vertical_drag(prev_y, new_y, is_release)));
     let size_hint_arms = generate_match_arms(&data_enum.variants, quote!(size_hint()));
@@ -161,6 +164,24 @@ fn derive_widget_for_enum(
         }
 
         impl #impl_generics #crate_path::DynWidget for #name #ty_generics #where_clause {
+            fn set_constraints(&mut self, max_size: embedded_graphics::geometry::Size) {
+                match self {
+                    #(#set_constraints_arms)*
+                }
+            }
+            
+            fn sizing(&self) -> #crate_path::Sizing {
+                match self {
+                    #(#sizing_arms)*
+                }
+            }
+            
+            fn flex(&self) -> bool {
+                match self {
+                    #(#flex_arms)*
+                }
+            }
+            
             fn handle_touch(
                 &mut self,
                 point: embedded_graphics::geometry::Point,
@@ -237,6 +258,18 @@ fn derive_widget_for_struct(
     // Generate both DynWidget and Widget trait implementations
     let expanded = quote! {
         impl #impl_generics #crate_path::DynWidget for #name #ty_generics #where_clause {
+            fn set_constraints(&mut self, max_size: embedded_graphics::geometry::Size) {
+                self.#delegate_field.set_constraints(max_size)
+            }
+            
+            fn sizing(&self) -> #crate_path::Sizing {
+                self.#delegate_field.sizing()
+            }
+            
+            fn flex(&self) -> bool {
+                self.#delegate_field.flex()
+            }
+            
             fn handle_touch(
                 &mut self,
                 point: embedded_graphics::geometry::Point,

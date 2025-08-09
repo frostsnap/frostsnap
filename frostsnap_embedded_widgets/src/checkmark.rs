@@ -232,6 +232,17 @@ impl<C: PixelColor> Checkmark<C> {
 }
 
 impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Checkmark has a fixed size based on check_width and check_height
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing {
+            width: self.check_width,
+            height: self.check_height,
+        }
+    }
+    
     fn handle_touch(
         &mut self,
         _point: Point,

@@ -72,7 +72,6 @@ impl KeygenCheck {
         
         // Create the hold-to-confirm widget
         let hold_to_confirm = HoldToConfirm::new(
-            Size::new(240, 280),
             2000, // 2 second hold duration
             prompt_column,
         );

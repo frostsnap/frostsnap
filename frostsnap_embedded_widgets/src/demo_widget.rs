@@ -2,6 +2,50 @@
 #[macro_export]
 macro_rules! demo_widget {
     ($demo:expr, $screen_size:expr, $run_macro:ident) => {
+        // Common imports for all demos
+        use $crate::{
+            text::Text, Column, Row, Container, palette::PALETTE,
+            MainAxisAlignment, CrossAxisAlignment, Widget,
+            HoldToConfirm, center::Center, Padding, SizedBox,
+            FONT_SMALL, FONT_MED, FONT_LARGE,
+        };
+        use embedded_graphics::{
+            prelude::*,
+            pixelcolor::{Rgb565, BinaryColor},
+            text::Alignment,
+        };
+        use u8g2_fonts::U8g2TextStyle;
+        use $crate::alloc::string::{String, ToString};
+        
+        // Shared test word indices for demos that need them
+        const TEST_WORD_INDICES: [u16; 25] = [
+            1337, // owner
+            432,  // deny
+            1789, // survey
+            923,  // journey
+            567,  // embark
+            1456, // recall
+            234,  // churn
+            1678, // spawn
+            890,  // invest
+            345,  // crater
+            1234, // neutral
+            678,  // fiscal
+            1890, // thumb
+            456,  // diamond
+            1567, // robot
+            789,  // guitar
+            1345, // oyster
+            123,  // badge
+            1789, // survey
+            567,  // embark
+            1012, // lizard
+            1456, // recall
+            789,  // guitar
+            1678, // spawn
+            234,  // churn
+        ];
+        
         match $demo.as_ref() {
             "bip39_entry" => {
                 let widget = $crate::bip39::EnterBip39ShareScreen::new($screen_size);
@@ -16,8 +60,8 @@ macro_rules! demo_widget {
                 use embedded_graphics::text::Alignment;
                 use embedded_graphics::pixelcolor::BinaryColor;
                 
-                let prompt_text = Text::new("Confirm\ntransaction", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background)).with_alignment(Alignment::Center);
-                let widget = HoldToConfirm::new($screen_size, 2000, prompt_text);
+                let prompt_text = Text::new("Confirm\ntransaction", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)).with_alignment(Alignment::Center);
+                let widget = HoldToConfirm::new(2000, prompt_text);
                 $run_macro!(widget);
             }
             "welcome" => {
@@ -135,38 +179,10 @@ macro_rules! demo_widget {
                 use $crate::bip39::Bip39BackupDisplay;
                 use embedded_graphics::prelude::*;
                 
-                // Generate test word indices - same words as original display
-                const TEST_WORD_INDICES: [u16; 25] = [
-                    1337, // owner
-                    432,  // deny
-                    1789, // survey
-                    923,  // journey
-                    567,  // embark
-                    1456, // recall
-                    234,  // churn
-                    1678, // spawn
-                    890,  // invest
-                    345,  // crater
-                    1234, // neutral
-                    678,  // fiscal
-                    1890, // thumb
-                    456,  // diamond
-                    1567, // robot
-                    789,  // guitar
-                    1345, // oyster
-                    123,  // badge
-                    1789, // survey
-                    567,  // embark
-                    1012, // lizard
-                    1456, // recall
-                    789,  // guitar
-                    1678, // spawn
-                    234,  // churn
-                ];
                 let share_index = 42;
                 
                 // Create the backup display - it now uses PageSlider internally and outputs Rgb565
-                let widget = Bip39BackupDisplay::new($screen_size, TEST_WORD_INDICES, share_index);
+                let widget = Bip39BackupDisplay::new(TEST_WORD_INDICES, share_index);
                 
                 $run_macro!(widget);
             }
@@ -260,7 +276,7 @@ macro_rules! demo_widget {
                 };
                 
                 // Create the sign prompt widget
-                let widget = SignPrompt::new($screen_size, prompt);
+                let widget = SignPrompt::new(prompt);
                 
                 $run_macro!(widget);
             }
@@ -283,44 +299,87 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "slide_in" => {
-                use $crate::{PageSlider, WidgetList, Widget, center::Center, text::Text, container::Container, palette::PALETTE};
+                use $crate::{PageSlider, WidgetList, Widget, center::Center, text::Text, Column, Row, Container, palette::PALETTE};
                 use embedded_graphics::prelude::*;
-                use embedded_graphics::primitives::PrimitiveStyle;
+                use embedded_graphics::pixelcolor::Rgb565;
+                use u8g2_fonts::U8g2TextStyle;
                 
-                // Create a WidgetList that generates text widgets on the fly
+                // Type aliases to simplify the complex nested types
+                type StyledText = Text<U8g2TextStyle<Rgb565>>;
+                type NumberRow = Row<(StyledText, StyledText)>;
+                type ThreeRowColumn = Column<(NumberRow, NumberRow, NumberRow)>;
+                type PageWidget = Center<Container<ThreeRowColumn>>;
+                
+                // Create a WidgetList that generates column widgets with rows on the fly
                 struct InfiniteTextPages;
                 
-                impl WidgetList<Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>> for InfiniteTextPages {
+                impl WidgetList<PageWidget> for InfiniteTextPages {
                     fn len(&self) -> usize {
                         usize::MAX // Infinite pages!
                     }
                     
-                    fn get(&self, index: usize) -> Option<Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>> {
-                        let text = Text::new(
-                            $crate::alloc::format!("Page {}\nLorem ipsum\nderp herp!", index + 1),
-                            u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
-                        );
-                        let container = Container::new(text)
+                    fn get(&self, index: usize) -> Option<PageWidget> {
+                        let number_words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", 
+                                            "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", 
+                                            "seventeen", "eighteen", "nineteen", "twenty"];
+                        
+                        let start_num = index * 3 + 1; // Each page has 3 items
+                        
+                        // Create three rows with number and word
+                        let row1 = Row::new((
+                            Text::new(
+                                $crate::alloc::format!("{}.", start_num),
+                                U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                            ),
+                            Text::new(
+                                number_words.get(start_num).unwrap_or(&"many").to_string(),
+                                U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                            )
+                        ));
+                        
+                        let row2 = Row::new((
+                            Text::new(
+                                $crate::alloc::format!("{}.", start_num + 1),
+                                U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                            ),
+                            Text::new(
+                                number_words.get(start_num + 1).unwrap_or(&"many").to_string(),
+                                U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                            )
+                        ));
+                        
+                        let row3 = Row::new((
+                            Text::new(
+                                $crate::alloc::format!("{}.", start_num + 2),
+                                U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                            ),
+                            Text::new(
+                                number_words.get(start_num + 2).unwrap_or(&"many").to_string(),
+                                U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                            )
+                        ));
+                        
+                        let column = Column::new((row1, row2, row3));
+                        let container = Container::new(column)
                             .with_border(PALETTE.primary, 2);
-                        Some(container)
+                        Some(Center::new(container))
                     }
                 }
                 
                 // Create the PageSlider with infinite text pages
-                let page_slider = PageSlider::new(InfiniteTextPages, $screen_size.height);
-                let widget = Center::new(page_slider);
+                let page_slider = PageSlider::new(InfiniteTextPages, 100);
+                let widget = page_slider;
                 
                 $run_macro!(widget);
             }
             "slide_in_old" => {
                 // Keep the old demo for reference
-                use $crate::{slide_in_transition::SlideInTransition, text::Text, palette::PALETTE, Instant, Widget, container::Container, center::Center};
-                use embedded_graphics::prelude::*;
+                use $crate::{slide_in_transition::SlideInTransition, Instant, container::Container};
                 use embedded_graphics::primitives::PrimitiveStyle;
                 use $crate::alloc::format;
                 
                 // Create initial text widget centered in a container with border
-                let text = Text::new("Page 1\nLorem ipus\nderp herp!", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text = Text::new("Page 1\nLorem ipus\nderp herp!", U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background));
                 let container = Container::new(text)
                     .with_border(PALETTE.primary, 2);
 
@@ -334,12 +393,12 @@ macro_rules! demo_widget {
                 
                 // Create a wrapper that advances pages on touch release
                 struct SlideInDemo {
-                    transition: SlideInTransition<$crate::container::Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>>,
+                    transition: SlideInTransition<$crate::container::Container<Text<U8g2TextStyle<Rgb565>>>>,
                     page_num: usize,
                 }
                 
                 impl SlideInDemo {
-                    fn new(transition: SlideInTransition<$crate::container::Container<Text<u8g2_fonts::U8g2TextStyle<embedded_graphics::pixelcolor::Rgb565>>>>) -> Self {
+                    fn new(transition: SlideInTransition<$crate::container::Container<Text<U8g2TextStyle<Rgb565>>>>) -> Self {
                         Self {
                             transition,
                             page_num: 1,
@@ -354,7 +413,7 @@ macro_rules! demo_widget {
                             self.page_num += 1;
                             let text = Text::new(
                                 format!("Page {}\nLorem ipus\nderp herp!", self.page_num),
-                                u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                                U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background)
                             );
                             let container = Container::new(text)
                                 .with_border(PALETTE.primary, 2);
@@ -378,7 +437,7 @@ macro_rules! demo_widget {
                 }
                 
                 impl Widget for SlideInDemo {
-                    type Color = embedded_graphics::pixelcolor::Rgb565;
+                    type Color = Rgb565;
                     
                     fn draw<D: DrawTarget<Color = Self::Color>>(
                         &mut self,
@@ -445,7 +504,7 @@ macro_rules! demo_widget {
                 }
                 
                 impl Widget for AnimatedProgress {
-                    type Color = embedded_graphics::pixelcolor::Rgb565;
+                    type Color = Rgb565;
                     
                     fn draw<D: DrawTarget<Color = Self::Color>>(
                         &mut self,
@@ -485,12 +544,93 @@ macro_rules! demo_widget {
                 ];
                 let size_bytes = 1_234_567; // ~1.2 MB
                 
-                let widget = FirmwareUpgradeConfirm::new($screen_size, firmware_digest, size_bytes);
+                let widget = FirmwareUpgradeConfirm::new(firmware_digest, size_bytes);
+                
+                $run_macro!(widget);
+            }
+            "all_words" => {
+                use frostsnap_backup::bip39_words::BIP39_WORDS;
+                use $crate::alloc::format;
+                use u8g2_fonts::fonts;
+                
+                // Use 17px font
+                const FONT_17: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+                
+                // Build the text with all 25 words in two columns
+                let mut text = String::new();
+                
+                // Format in two columns - build each row
+                for i in 0..13 {
+                    // Left column word (1-13)
+                    let left_num = i + 1;
+                    let left_word = BIP39_WORDS[TEST_WORD_INDICES[i] as usize];
+                    let left_text = format!("{:2}. {:<8}", left_num, left_word);
+                    
+                    // Right column word (14-25) if it exists
+                    if i < 12 {
+                        let right_num = i + 14;
+                        let right_word = BIP39_WORDS[TEST_WORD_INDICES[i + 13] as usize];
+                        text.push_str(&format!("{}  {:2}. {}\n", left_text, right_num, right_word));
+                    } else {
+                        // Last row only has left column
+                        text.push_str(&left_text);
+                    }
+                }
+                
+                // Create the AllWordsPage-like widget with 17px font
+                let all_words_text = Text::new(
+                    text,
+                    U8g2TextStyle::new(FONT_17, PALETTE.primary)
+                ).with_alignment(Alignment::Left);
+                
+                let widget = Center::new(all_words_text);
+                $run_macro!(widget);
+            }
+            "row_inside_column" => {
+                use $crate::{text::Text, Column, Row, Container, palette::PALETTE};
+                
+                // Create three rows with number and word
+                let row1 = Row::new((
+                    Text::new(
+                        "1.",
+                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                    ),
+                    Text::new(
+                        "one",
+                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                    )
+                ));
+                
+                let row2 = Row::new((
+                    Text::new(
+                        "2.",
+                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                    ),
+                    Text::new(
+                        "two",
+                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                    )
+                ));
+                
+                let row3 = Row::new((
+                    Text::new(
+                        "3.",
+                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                    ),
+                    Text::new(
+                        "three",
+                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                    )
+                ));
+                
+                let column = Column::new((row1, row2, row3));
+                let widget = Container::new(column)
+                    .with_border(PALETTE.primary, 2);
                 
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, vertical_slide, bip39_backup, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, vertical_slide, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade", $demo);
             }
         }
     };
