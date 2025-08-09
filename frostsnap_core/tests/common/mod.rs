@@ -161,11 +161,6 @@ pub trait Env {
     }
 }
 
-#[derive(Default)]
-pub struct DefaultTestEnv;
-
-impl Env for DefaultTestEnv {}
-
 #[derive(Clone)]
 pub struct Run {
     pub coordinator: FrostCoordinator,
