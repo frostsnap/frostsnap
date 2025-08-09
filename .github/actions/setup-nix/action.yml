@@ -1,0 +1,20 @@
+name: "Setup Nix with Flakes"
+description: "Installs and configures Nix"
+runs:
+  using: "composite"
+  steps:
+    - name: Cache Nix artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/nix
+          ~/.nix-profile
+        key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-nix-
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v23
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
