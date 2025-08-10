@@ -1,5 +1,5 @@
 use super::{Widget, Column, MutText}; // , Cursor};
-use crate::{Instant, palette::PALETTE, bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap};
+use crate::{Instant, palette::PALETTE, bitmap::EncodedImage, vec_framebuffer::VecFramebuffer, image::Image, color_map::ColorMap};
 use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -87,7 +87,7 @@ impl DeviceName {
 
 impl crate::DynWidget for DeviceName {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.text_widget.sizing()
     }
     
     fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
@@ -138,7 +138,7 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 /// A screen showing the Frostsnap logo and the DeviceName widget
 pub struct DeviceNameScreen {
     column: Column<(
-        ColorMap<BitmapWidget, Rgb565>,
+        ColorMap<Image<VecFramebuffer<BinaryColor>>, Rgb565>,
         DeviceName,
     )>,
 }
@@ -156,9 +156,10 @@ impl DeviceNameScreen {
     
     pub fn new(device_name: String) -> Self {
         // Load logo
-        let image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let bitmap_widget = BitmapWidget::new(image.into());
-        let logo_colored = bitmap_widget.color_map(|c| match c {
+        let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
+        let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
+        let image_widget = Image::new(framebuffer);
+        let logo_colored = image_widget.color_map(|c| match c {
             BinaryColor::On => PALETTE.logo,
             BinaryColor::Off => PALETTE.background,
         });
@@ -194,7 +195,7 @@ impl DeviceNameScreen {
 
 impl crate::DynWidget for DeviceNameScreen {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.column.sizing()
     }
     
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {

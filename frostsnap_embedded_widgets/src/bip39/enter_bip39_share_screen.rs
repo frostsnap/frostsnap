@@ -450,7 +450,7 @@ impl Widget for EnterBip39ShareScreen {
 
 impl crate::DynWidget for EnterBip39ShareScreen {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.size.into()
     }
     
     fn handle_touch(

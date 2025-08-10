@@ -93,7 +93,7 @@ where
     S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.cached_size.into()
     }
     
     fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {

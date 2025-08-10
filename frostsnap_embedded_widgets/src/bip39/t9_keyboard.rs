@@ -244,7 +244,7 @@ impl T9Keyboard {
 
 impl crate::DynWidget for T9Keyboard {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.bounds.size.into()
     }
     
     fn handle_touch(

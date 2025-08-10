@@ -72,7 +72,9 @@ impl ShareIndexInputDisplay {
 
 impl crate::DynWidget for ShareIndexInputDisplay {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        // This widget adapts to whatever size it's given
+        // Return a reasonable minimum size for the text
+        crate::Sizing { width: 240, height: 60 }
     }
 
 }

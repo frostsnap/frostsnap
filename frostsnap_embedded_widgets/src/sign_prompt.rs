@@ -284,7 +284,7 @@ impl SignPromptDisplay {
 
 impl DynWidget for SignPromptDisplay {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.current_widget.sizing()
     }
     
     fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {

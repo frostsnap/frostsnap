@@ -20,6 +20,12 @@ pub struct ProgressBar {
     corner_radius: u32,
     /// Padding from edges
     padding: u32,
+    /// Pre-calculated bar rectangle (set in set_constraints)
+    bar_rect: Option<Rectangle>,
+    /// Last drawn filled width to track changes
+    last_filled_width: Option<u32>,
+    /// Whether background has been drawn
+    background_drawn: bool,
 }
 
 impl ProgressBar {
@@ -30,6 +36,9 @@ impl ProgressBar {
             bar_height: 20,
             corner_radius: 10,
             padding: 20,
+            bar_rect: None,
+            last_filled_width: None,
+            background_drawn: false,
         }
     }
     
@@ -40,6 +49,9 @@ impl ProgressBar {
             bar_height,
             corner_radius,
             padding,
+            bar_rect: None,
+            last_filled_width: None,
+            background_drawn: false,
         }
     }
     
@@ -62,12 +74,33 @@ impl Default for ProgressBar {
 
 impl crate::DynWidget for ProgressBar {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        // ProgressBar needs the full width available and has a fixed height
+        let rect = self.bar_rect.expect("ProgressBar::sizing called before set_constraints");
+        crate::Sizing { 
+            width: rect.size.width + (self.padding * 2),
+            height: self.bar_height
+        }
     }
     
+    fn set_constraints(&mut self, max_size: Size) {
+        // Pre-calculate the bar rectangle based on constraints
+        let bar_width = max_size.width - (self.padding * 2);
+        let bar_x = (max_size.width as i32 / 2) - (bar_width / 2) as i32;
+        let bar_y = (max_size.height as i32 / 2) - (self.bar_height / 2) as i32;
+        
+        self.bar_rect = Some(Rectangle::new(
+            Point::new(bar_x, bar_y),
+            Size::new(bar_width, self.bar_height),
+        ));
+        
+        // Reset drawing state when constraints change
+        self.background_drawn = false;
+        self.last_filled_width = None;
+    }
     
     fn force_full_redraw(&mut self) {
-        // No internal state to reset
+        self.background_drawn = false;
+        self.last_filled_width = None;
     }
 }
 
@@ -79,46 +112,58 @@ impl Widget for ProgressBar {
         target: &mut D,
         _current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        let bounds = target.bounding_box();
-        let size = bounds.size;
-        let center_x = bounds.center().x;
-        let center_y = bounds.center().y;
-        let bar_width = size.width - (self.padding * 2);
-        let bar_x = center_x - (bar_width / 2) as i32;
-        let bar_y = center_y - (self.bar_height / 2) as i32;
+        let bar_rect = self.bar_rect.expect("ProgressBar::draw called before set_constraints");
         
-        // Draw the background/border rounded rectangle
-        let background_rect = RoundedRectangle::with_equal_corners(
-            Rectangle::new(
-                Point::new(bar_x, bar_y),
-                Size::new(bar_width, self.bar_height),
-            ),
-            Size::new(self.corner_radius, self.corner_radius),
-        );
-        
-        let background_style = PrimitiveStyleBuilder::new()
-            .stroke_color(PALETTE.outline)
-            .stroke_width(2)
-            .build();
-            
-        background_rect.into_styled(background_style).draw(target)?;
-        
-        // Calculate the filled width based on progress
-        let filled_width = (self.progress * bar_width).round().max(1);
-        
-        // Draw the filled progress rectangle (if there's any progress)
-        if self.progress > Frac::ZERO && filled_width > 2 {
-            // Account for the border width
-            let fill_rect = RoundedRectangle::with_equal_corners(
-                Rectangle::new(
-                    Point::new(bar_x + 2, bar_y + 2),
-                    Size::new(filled_width.saturating_sub(4), self.bar_height - 4),
-                ),
-                Size::new(self.corner_radius.saturating_sub(2), self.corner_radius.saturating_sub(2)),
+        // Draw the background/border only if not already drawn
+        if !self.background_drawn {
+            let background_rect = RoundedRectangle::with_equal_corners(
+                bar_rect,
+                Size::new(self.corner_radius, self.corner_radius),
             );
             
-            let fill_style = PrimitiveStyle::with_fill(PALETTE.primary);
-            fill_rect.into_styled(fill_style).draw(target)?;
+            let background_style = PrimitiveStyleBuilder::new()
+                .stroke_color(PALETTE.outline)
+                .stroke_width(2)
+                .build();
+                
+            background_rect.into_styled(background_style).draw(target)?;
+            self.background_drawn = true;
+        }
+        
+        // Calculate the filled width based on progress
+        let filled_width = (self.progress * bar_rect.size.width).round().max(1);
+        
+        // Only redraw if the filled width has changed
+        if self.last_filled_width != Some(filled_width) {
+            // Clear the inside of the bar first (in case progress decreased)
+            if let Some(last_width) = self.last_filled_width {
+                if filled_width < last_width {
+                    // Clear the area that was previously filled
+                    let clear_rect = Rectangle::new(
+                        Point::new(bar_rect.top_left.x + 2 + filled_width as i32, bar_rect.top_left.y + 2),
+                        Size::new(last_width - filled_width, self.bar_height - 4),
+                    );
+                    let clear_style = PrimitiveStyle::with_fill(PALETTE.background);
+                    clear_rect.into_styled(clear_style).draw(target)?;
+                }
+            }
+            
+            // Draw the filled progress rectangle (if there's any progress)
+            if self.progress > Frac::ZERO && filled_width > 2 {
+                // Account for the border width
+                let fill_rect = RoundedRectangle::with_equal_corners(
+                    Rectangle::new(
+                        Point::new(bar_rect.top_left.x + 2, bar_rect.top_left.y + 2),
+                        Size::new(filled_width.saturating_sub(4), self.bar_height - 4),
+                    ),
+                    Size::new(self.corner_radius.saturating_sub(2), self.corner_radius.saturating_sub(2)),
+                );
+                
+                let fill_style = PrimitiveStyle::with_fill(PALETTE.primary);
+                fill_rect.into_styled(fill_style).draw(target)?;
+            }
+            
+            self.last_filled_width = Some(filled_width);
         }
         
         Ok(())
@@ -178,7 +223,7 @@ impl ProgressIndicator {
 
 impl crate::DynWidget for ProgressIndicator {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.column.sizing()
     }
     
     

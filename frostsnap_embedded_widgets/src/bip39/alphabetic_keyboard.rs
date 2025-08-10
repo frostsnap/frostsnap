@@ -142,7 +142,10 @@ impl AlphabeticKeyboard {
 
 impl crate::DynWidget for AlphabeticKeyboard {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        crate::Sizing { 
+            width: FRAMEBUFFER_WIDTH, 
+            height: self.visible_height 
+        }
     }
     
     fn handle_touch(

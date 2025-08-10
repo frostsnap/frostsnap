@@ -101,7 +101,7 @@ impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> crate
     where W: PageByPage
 {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        crate::Sizing { width: WIDTH as u32, height: HEIGHT as u32 }
     }
     
     fn handle_touch(

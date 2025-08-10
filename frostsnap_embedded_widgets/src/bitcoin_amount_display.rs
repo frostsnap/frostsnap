@@ -78,7 +78,7 @@ impl BitcoinAmountDisplay {
 
 impl crate::DynWidget for BitcoinAmountDisplay {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.row.sizing()
     }
     
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {

@@ -1,5 +1,5 @@
 use super::{Widget, Text, Column};
-use crate::{bitmap::{EncodedImage, BitmapWidget}, color_map::ColorMap, palette::PALETTE, Center};
+use crate::{bitmap::EncodedImage, vec_framebuffer::VecFramebuffer, image::Image, color_map::ColorMap, palette::PALETTE, Center};
 use embedded_graphics::{
     pixelcolor::{BinaryColor, Rgb565}, text::Alignment,
 };
@@ -12,7 +12,7 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 pub struct Welcome {
     #[widget_delegate]
     content: Center<Column<(
-        ColorMap<BitmapWidget, Rgb565>,
+        ColorMap<Image<VecFramebuffer<BinaryColor>>, Rgb565>,
         Text<U8g2TextStyle<Rgb565>>,
         Text<U8g2TextStyle<Rgb565>>,
     )>>,
@@ -29,9 +29,10 @@ impl Welcome {
         let url_text = Text::new("frostsnap.com/start", url_style).with_underline(PALETTE.primary);
         
         // Load logo
-        let image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let bitmap_widget = BitmapWidget::new(image.into());
-        let logo = bitmap_widget.color_map(|color| match color {
+        let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
+        let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
+        let image_widget = Image::new(framebuffer);
+        let logo = image_widget.color_map(|color| match color {
             BinaryColor::On => PALETTE.logo,
             BinaryColor::Off => PALETTE.background,
         });

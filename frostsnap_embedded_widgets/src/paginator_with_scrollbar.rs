@@ -62,7 +62,8 @@ where
     F: Widget<Color = Rgb565>,
 {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        // This widget should delegate to its child
+        self.child.sizing()
     }
     
     fn handle_touch(

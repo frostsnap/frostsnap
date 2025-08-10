@@ -13,6 +13,7 @@ pub struct ScrollBar {
     last_scroll_position: Option<Rat>,
     thumb_size: Frac,
     scroll_position: Rat,
+    height: Option<u32>,
 }
 
 impl ScrollBar {
@@ -21,6 +22,7 @@ impl ScrollBar {
             last_scroll_position: None,
             thumb_size,
             scroll_position: Rat::ZERO,
+            height: None,
         }
     }
     
@@ -86,9 +88,15 @@ impl ScrollBar {
 
 impl crate::DynWidget for ScrollBar {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        crate::Sizing { 
+            width: SCROLLBAR_WIDTH, 
+            height: self.height.expect("ScrollBar::sizing called before set_constraints")
+        }
     }
     
+    fn set_constraints(&mut self, max_size: Size) {
+        self.height = Some(max_size.height);
+    }
     
     fn force_full_redraw(&mut self) {
         self.last_scroll_position = None;

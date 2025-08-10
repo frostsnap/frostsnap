@@ -21,15 +21,15 @@ impl SinglePixelWidget {
 }
 
 impl DynWidget for SinglePixelWidget {
+    fn sizing(&self) -> frostsnap_embedded_widgets::Sizing {
+        frostsnap_embedded_widgets::Sizing { width: 1, height: 1 }
+    }
+    
     fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<frostsnap_embedded_widgets::KeyTouch> {
         None
     }
 
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
-
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(1, 1))
-    }
 
     fn force_full_redraw(&mut self) {}
 }

@@ -334,7 +334,7 @@ impl EnterBip39T9Screen {
 
 impl crate::DynWidget for EnterBip39T9Screen {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.size.into()
     }
     
     fn handle_touch(

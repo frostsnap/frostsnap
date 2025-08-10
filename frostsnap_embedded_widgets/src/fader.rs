@@ -327,35 +327,3 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
 
 }
 
-impl<W> crate::PageByPage for Fader<W>
-where
-    W: crate::PageByPage<Color = Rgb565>,
-{
-    fn has_next_page(&self) -> bool {
-        self.child.has_next_page()
-    }
-    
-    fn has_prev_page(&self) -> bool {
-        self.child.has_prev_page()
-    }
-    
-    fn next_page(&mut self) {
-        self.child.next_page()
-    }
-    
-    fn prev_page(&mut self) {
-        self.child.prev_page()
-    }
-    
-    fn current_page(&self) -> usize {
-        self.child.current_page()
-    }
-    
-    fn total_pages(&self) -> usize {
-        self.child.total_pages()
-    }
-    
-    fn is_transitioning(&self) -> bool {
-        self.child.is_transitioning()
-    }
-}

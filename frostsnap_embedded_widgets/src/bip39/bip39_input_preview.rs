@@ -346,7 +346,7 @@ impl Bip39InputPreview {
 
 impl crate::DynWidget for Bip39InputPreview {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.area.size.into()
     }
     
     fn handle_touch(
@@ -689,9 +689,10 @@ impl Bip39Framebuf {
 
 impl crate::DynWidget for Bip39Framebuf {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        // Return the actual framebuffer dimensions
+        crate::Sizing { width: FB_WIDTH, height: self.viewport_height }
     }
-    }
+}
 
 impl Widget for Bip39Framebuf {
     type Color = Rgb565;

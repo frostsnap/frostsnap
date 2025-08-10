@@ -58,7 +58,7 @@ impl NumericKeyboard {
 
 impl crate::DynWidget for NumericKeyboard {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.size().into()
     }
     
 

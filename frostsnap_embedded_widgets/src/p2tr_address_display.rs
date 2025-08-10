@@ -101,7 +101,7 @@ impl P2trAddressDisplay {
 
 impl DynWidget for P2trAddressDisplay {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.column.sizing()
     }
     
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {

@@ -46,7 +46,11 @@ impl EnterShareScreen {
 
 impl crate::DynWidget for EnterShareScreen {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        // Total size is the keyboard rect plus input display rect
+        crate::Sizing { 
+            width: self.keyboard_rect.size.width,
+            height: self.keyboard_rect.size.height + self.input_display_rect.size.height
+        }
     }
     
 

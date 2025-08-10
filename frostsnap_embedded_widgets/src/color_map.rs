@@ -1,5 +1,5 @@
 use super::Widget;
-use crate::{Instant, PageByPage};
+use crate::Instant;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Dimensions, Point, Size},
@@ -85,7 +85,7 @@ where
 
 impl<W: Widget, C: PixelColor> crate::DynWidget for ColorMap<W, C> {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.child.sizing()
     }
     
     fn handle_touch(
@@ -125,39 +125,6 @@ impl<W: Widget, C: PixelColor> Widget for ColorMap<W, C> {
     }
 }
 
-impl<W, C> PageByPage for ColorMap<W, C>
-where
-    W: PageByPage,
-    C: PixelColor,
-{
-    fn has_next_page(&self) -> bool {
-        self.child.has_next_page()
-    }
-    
-    fn has_prev_page(&self) -> bool {
-        self.child.has_prev_page()
-    }
-    
-    fn next_page(&mut self) {
-        self.child.next_page()
-    }
-    
-    fn prev_page(&mut self) {
-        self.child.prev_page()
-    }
-    
-    fn current_page(&self) -> usize {
-        self.child.current_page()
-    }
-    
-    fn total_pages(&self) -> usize {
-        self.child.total_pages()
-    }
-    
-    fn is_transitioning(&self) -> bool {
-        self.child.is_transitioning()
-    }
-}
 
 // Example usage:
 // let widget = Text::new("Hello");

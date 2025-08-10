@@ -1,4 +1,4 @@
-use crate::{Widget, Instant, Frac, bitmap::Bitmap, animation_speed::AnimationSpeed};
+use crate::{Widget, Instant, Frac, vec_framebuffer::VecFramebuffer, animation_speed::AnimationSpeed};
 use embedded_graphics::{
     draw_target::DrawTarget, geometry::{Dimensions, Point, Size}, pixelcolor::BinaryColor, primitives::Rectangle, Pixel, prelude::*,
 };
@@ -38,9 +38,9 @@ pub struct Translate<W: Widget> {
     /// Background color for erasing
     background_color: W::Color,
     /// Bitmap tracking previous frame's pixels
-    previous_bitmap: Bitmap,
+    previous_bitmap: VecFramebuffer<BinaryColor>,
     /// Bitmap tracking current frame's pixels
-    current_bitmap: Bitmap,
+    current_bitmap: VecFramebuffer<BinaryColor>,
     /// Cached constraints
     constraints: Option<Size>,
 }
@@ -52,8 +52,8 @@ where
     pub fn new(child: W, background_color: W::Color) -> Self {
         // We'll initialize bitmaps when we get constraints
         Self {
-            previous_bitmap: Bitmap::new(Size::zero(), BinaryColor::Off),
-            current_bitmap: Bitmap::new(Size::zero(), BinaryColor::Off),
+            previous_bitmap: VecFramebuffer::new(0, 0),
+            current_bitmap: VecFramebuffer::new(0, 0),
             child,
             current_offset: Point::zero(),
             translation_direction: TranslationDirection::Idle { offset: Point::zero() },
@@ -173,9 +173,9 @@ where
         self.child.set_constraints(max_size);
         
         // Reinitialize bitmaps with the child's actual size
-        let child_size = self.child.sizing().into();
-        self.previous_bitmap = Bitmap::new(child_size, BinaryColor::Off);
-        self.current_bitmap = Bitmap::new(child_size, BinaryColor::Off);
+        let child_size: Size = self.child.sizing().into();
+        self.previous_bitmap = VecFramebuffer::new(child_size.width as usize, child_size.height as usize);
+        self.current_bitmap = VecFramebuffer::new(child_size.width as usize, child_size.height as usize);
     }
     
     fn sizing(&self) -> crate::Sizing {
@@ -220,7 +220,7 @@ where
             self.child.force_full_redraw();
             
             // Clear current bitmap for reuse
-            self.current_bitmap.clear();
+            self.current_bitmap.clear(BinaryColor::Off);
             
             // Calculate offset difference
             let diff_offset = offset - self.current_offset;
@@ -261,8 +261,8 @@ where
 /// A DrawTarget wrapper that tracks pixels for the translate animation
 struct TranslatorDrawTarget<'a, D> {
     inner: &'a mut D,
-    current_bitmap: &'a mut Bitmap,
-    previous_bitmap: &'a mut Bitmap,
+    current_bitmap: &'a mut VecFramebuffer<BinaryColor>,
+    previous_bitmap: &'a mut VecFramebuffer<BinaryColor>,
     diff_offset: Point,
 }
 
@@ -283,14 +283,14 @@ where
         
         self.inner.draw_iter(pixels.into_iter().inspect(|Pixel(point, _color)| {
             // Mark this pixel as drawn in the current bitmap
-            current_bitmap.set_pixel(point.x as u32, point.y as u32, BinaryColor::On);
+            VecFramebuffer::<BinaryColor>::set_pixel(current_bitmap, *point, BinaryColor::On);
             
             // Clear this pixel from the previous bitmap (offset by diff_offset)
             let prev_point = *point + diff_offset;
             if prev_point.x >= 0 && prev_point.y >= 0 {
-                previous_bitmap.set_pixel(
-                    prev_point.x as u32,
-                    prev_point.y as u32,
+                VecFramebuffer::<BinaryColor>::set_pixel(
+                    previous_bitmap,
+                    prev_point,
                     BinaryColor::Off
                 );
             }

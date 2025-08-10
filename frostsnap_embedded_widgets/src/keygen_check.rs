@@ -94,7 +94,7 @@ impl KeygenCheck {
 
 impl crate::DynWidget for KeygenCheck {
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing { width: 240, height: 280 }
+        self.hold_to_confirm.sizing()
     }
     
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
