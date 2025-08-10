@@ -100,21 +100,21 @@ jobs:
           link-to-sdk: true
           add-to-path: true
       - name: Build App APK
-        run: just frostsnapp/build apk --release
+        run: just frostsnapp/build apk --release --flavor direct
       - name: Build appbundle
-        run: just frostsnapp/build appbundle --release
+        run: just frostsnapp/build appbundle --release --flavor playstore
       - name: Upload APK (Android)
         uses: "./.github/actions/upload-artifact"
         with:
           friendly: "Frostsnap.apk"
           description: "Frostsnap for android"
           name: Frostsnap-${{ github.sha }}.apk
-          path: frostsnapp/build/app/outputs/apk/release/app-release.apk
+          path: frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk
       - name: Upload App Bundle (Android)
         uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnapp-${{ github.sha }}.aab
-          path: frostsnapp/build/app/outputs/bundle/release/app-release.aab
+          path: frostsnapp/build/app/outputs/bundle/playstoreRelease/app-playstore-release.aab
 
   app-build-linux:
     needs: ["build-device-firmware"]
