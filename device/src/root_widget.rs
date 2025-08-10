@@ -3,7 +3,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
-    prelude::*,
 };
 use frostsnap_embedded_widgets::{DynWidget, FadeSwitcher, Widget};
 

@@ -19,7 +19,7 @@ use esp_hal::{
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
 use frostsnap_device::status::create_status;
-use frostsnap_embedded_widgets::DynWidget;
+use frostsnap_embedded_widgets::{DynWidget, Stack, StackAlignment};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 // Screen constants
@@ -93,15 +93,16 @@ fn main() -> ! {
     // Macro to run a widget with all the hardware peripherals
     macro_rules! run_widget {
         ($widget:expr) => {{
-            let mut widget = $widget;
-            // Set constraints on root widget
-            widget.set_constraints(Size::new(240, 280));
-            let mut last_touch: Option<(Point, u32)> = None;
+            let widget = $widget;
             
-            // Create status widget (FPS and memory)
-            let mut status = create_status();
-            // Set constraints for status widget
-            status.set_constraints(Size::new(240, 280));
+            // Create UI stack with widget and status overlay
+            let mut ui_stack = Stack::builder()
+                .push(widget)
+                .push_aligned(create_status(), StackAlignment::TopLeft);
+            
+            // Set constraints on the stack
+            ui_stack.set_constraints(Size::new(240, 280));
+            let mut last_touch: Option<(Point, u32)> = None;
             
             // Track last redraw time
             let mut last_redraw_time = timer.now();
@@ -130,7 +131,7 @@ fn main() -> ! {
 
                         // Handle vertical drag for widgets that support it
                         if is_vertical_drag {
-                            widget.handle_vertical_drag(
+                            ui_stack.handle_vertical_drag(
                                 last_touch.map(|(_, y)| y),
                                 adjusted_y as u32,
                                 lift_up,
@@ -140,7 +141,7 @@ fn main() -> ! {
                         if !is_vertical_drag || lift_up {
                             // Always handle touch events (for both press and release)
                             // This is important so that lift_up is processed after drag
-                            widget.handle_touch(
+                            ui_stack.handle_touch(
                                 touch_point,
                                 frostsnap_embedded_widgets::Instant::from_millis(
                                     current_time.duration_since_epoch().to_millis(),
@@ -160,18 +161,9 @@ fn main() -> ! {
                 // Only redraw if at least 10ms has passed since last redraw
                 let elapsed_ms = (current_time - last_redraw_time).to_millis();
                 if elapsed_ms >= 5 {
-                    // Draw the main widget
-                    let _ = widget.draw(
+                    // Draw the UI stack (includes status overlay)
+                    let _ = ui_stack.draw(
                         &mut display,
-                        frostsnap_embedded_widgets::Instant::from_millis(
-                            current_time.duration_since_epoch().to_millis(),
-                        ),
-                    );
-                    
-                    // Draw status widget on top at position (5, 15)
-                    let mut translated = display.translated(Point::new(5, 15));
-                    let _ = status.draw(
-                        &mut translated,
                         frostsnap_embedded_widgets::Instant::from_millis(
                             current_time.duration_since_epoch().to_millis(),
                         ),
