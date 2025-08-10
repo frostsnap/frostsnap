@@ -20,7 +20,7 @@ pub mod ota;
 pub mod panic;
 pub mod partitions;
 pub mod root_widget;
-pub mod status;
+pub mod debug_stats;
 pub mod touch_calibration;
 pub mod ui;
 pub mod widget_tree;

@@ -41,7 +41,7 @@ use frostsnap_device::{
     esp32_run,
     io::SerialInterface,
     root_widget::RootWidget,
-    status::create_status,
+    debug_stats::create_debug_stats,
     touch_calibration::{x_based_adjustment, y_based_adjustment},
     ui::{BusyTask, FirmwareUpgradeStatus, Prompt, UiEvent, UserInteraction, Workflow},
     widget_tree::WidgetTree,
@@ -210,10 +210,10 @@ fn main() -> ! {
 
     let root_widget = RootWidget::new(WidgetTree::default(), 300, PALETTE.background);
     
-    // Build UI stack with root widget and status overlay (create_status handles feature flags)
+    // Build UI stack with root widget and debug stats overlay (create_debug_stats handles feature flags)
     let mut ui_stack = Stack::builder()
         .push(root_widget)
-        .push_aligned(create_status(), StackAlignment::TopLeft);
+        .push_aligned(create_debug_stats(), StackAlignment::TopLeft);
     
     ui_stack.set_constraints(Size::new(240, 280));
     
@@ -262,8 +262,8 @@ impl embedded_hal::digital::ErrorType for NoCs {
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST, SW> {
     display: DT,
-    /// Stack composing root_widget with optional status overlay
-    ui_stack: Stack<(RootWidget, Option<SW>)>,
+    /// Stack composing root_widget with debug stats overlay
+    ui_stack: Stack<(RootWidget, SW)>,
     capsense: CST816S<I2C, PINT, RST>,
     last_touch: Option<(Point, Instant)>,
     last_redraw_time: Instant,
@@ -511,7 +511,7 @@ where
 
                 // Handle touch
                 let _ = self
-                    .root_widget
+                    .ui_stack
                     .handle_touch(corrected_point, current_time, is_release);
             }
             None => {}
@@ -521,7 +521,7 @@ where
         let elapsed_ms = (now - self.last_redraw_time).to_millis();
         if elapsed_ms >= 10 {
             // Draw the widget tree
-            // Draw the UI stack (includes status overlay)
+            // Draw the UI stack (includes debug stats overlay)
             let _ = self.ui_stack.draw(&mut self.display, current_time);
             
             // Update last redraw time
@@ -583,8 +583,8 @@ where
         self.ui_stack.force_full_redraw();
     }
 
-    fn debug<S: ToString>(&mut self, debug: S) {
-        // Debug text removed - status widget handles debug display
+    fn debug<S: ToString>(&mut self, _debug: S) {
+        // Debug text removed - debug stats widget handles debug display
     }
 }
 

@@ -6,7 +6,8 @@ use frostsnap_embedded_widgets::{Row, Container};
 #[cfg(not(any(feature = "debug_fps", feature = "debug_mem")))]
 use frostsnap_embedded_widgets::SizedBox;
 use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::geometry::Size;
+#[cfg(not(any(feature = "debug_fps", feature = "debug_mem")))]
+use embedded_graphics::prelude::Size;
 #[cfg(feature = "debug_mem")]
 use frostsnap_embedded_widgets::{
     prelude::*,
@@ -25,8 +26,8 @@ use embedded_graphics::{
 #[cfg(feature = "debug_mem")]
 use u8g2_fonts::U8g2TextStyle;
 
-/// Create a status widget that conditionally displays FPS and/or memory usage
-pub fn create_status() -> impl Widget<Color = Rgb565> {
+/// Create a debug stats widget that conditionally displays FPS and/or memory usage
+pub fn create_debug_stats() -> impl Widget<Color = Rgb565> {
     #[cfg(all(feature = "debug_fps", feature = "debug_mem"))]
     {
         let fps = Fps::new();

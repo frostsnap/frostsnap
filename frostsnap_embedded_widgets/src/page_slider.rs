@@ -8,7 +8,7 @@ use embedded_graphics::{
 };
 
 const ANIMATION_DURATION_MS: u64 = 500;
-const MIN_SWIPE_DISTANCE: u32 = 10;
+const MIN_SWIPE_DISTANCE: u32 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Direction {
@@ -108,11 +108,7 @@ where
     }
     
     pub fn start_transition(&mut self, direction: Direction) {
-        // Instantly fade out the chevron when starting a transition
-        if let Some(ref mut chevron) = &mut self.stack.children.1 {
-            chevron.instant_fade(PALETTE.background);
-        }
-        
+
         // First check if navigation is allowed based on the current widget
         let current_widget = self.stack.children.0.current_widget_mut();
         let allowed = match direction {
@@ -123,6 +119,12 @@ where
         if !allowed {
             return; // Navigation blocked by the widget list
         }
+
+        // Instantly fade out the chevron when starting a transition
+        if let Some(ref mut chevron) = &mut self.stack.children.1 {
+            chevron.instant_fade(PALETTE.background);
+        }
+
 
         // Calculate target index
         let target_index = match direction {
@@ -246,7 +248,7 @@ where
                 let current_widget = self.stack.children.0.current_widget_mut();
 
                 if self.list.can_go_next(self.current_index, current_widget) {
-                    chevron.start_fade_in(800, 20, PALETTE.background);
+                    chevron.start_fade_in(400, 20, PALETTE.background);
                 }
             }
         }

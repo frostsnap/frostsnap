@@ -18,7 +18,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use frostsnap_device::touch_calibration::adjust_touch_point;
-use frostsnap_device::status::create_status;
+use frostsnap_device::debug_stats::create_debug_stats;
 use frostsnap_embedded_widgets::{DynWidget, Stack, StackAlignment};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
@@ -95,10 +95,10 @@ fn main() -> ! {
         ($widget:expr) => {{
             let widget = $widget;
             
-            // Create UI stack with widget and status overlay
+            // Create UI stack with widget and debug stats overlay
             let mut ui_stack = Stack::builder()
                 .push(widget)
-                .push_aligned(create_status(), StackAlignment::TopLeft);
+                .push_aligned(create_debug_stats(), StackAlignment::TopLeft);
             
             // Set constraints on the stack
             ui_stack.set_constraints(Size::new(240, 280));
@@ -161,7 +161,7 @@ fn main() -> ! {
                 // Only redraw if at least 10ms has passed since last redraw
                 let elapsed_ms = (current_time - last_redraw_time).to_millis();
                 if elapsed_ms >= 5 {
-                    // Draw the UI stack (includes status overlay)
+                    // Draw the UI stack (includes debug stats overlay)
                     let _ = ui_stack.draw(
                         &mut display,
                         frostsnap_embedded_widgets::Instant::from_millis(
