@@ -565,7 +565,7 @@ class _ReceiverPageState extends State<ReceivePage> {
         txDetails: txDetails,
         onTap: () => showBottomSheetOrDialog(
           context,
-          titleText: 'Transaction Details',
+          title: Text('Transaction Details'),
           builder: (context, scrollController) => walletCtx.wrap(
             TxDetailsPage(
               scrollController: scrollController,
@@ -703,7 +703,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     final walletCtx = WalletContext.of(context)!;
     showBottomSheetOrDialog(
       context,
-      titleText: 'Receive Addresses',
+      title: Text('Receive Addresses'),
       builder: (context, scrollController) {
         return walletCtx.wrap(
           AddressList(

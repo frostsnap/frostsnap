@@ -434,7 +434,7 @@ class _TxListState extends State<TxList> {
                   return TxSentOrReceivedTile(
                     onTap: () => showBottomSheetOrDialog(
                       context,
-                      titleText: 'Transaction Details',
+                      title: Text('Transaction Details'),
                       builder: (context, scrollController) => walletCtx.wrap(
                         TxDetailsPage.needsBroadcast(
                           scrollController: scrollController,
@@ -469,7 +469,7 @@ class _TxListState extends State<TxList> {
                   return TxSentOrReceivedTile(
                     onTap: () => showBottomSheetOrDialog(
                       context,
-                      titleText: 'Transaction Details',
+                      title: Text('Transaction Details'),
                       builder: (context, scrollController) => walletCtx.wrap(
                         TxDetailsPage.restoreSigning(
                           scrollController: scrollController,
@@ -517,7 +517,7 @@ class _TxListState extends State<TxList> {
                     txDetails: txDetails,
                     onTap: () => showBottomSheetOrDialog(
                       context,
-                      titleText: 'Transaction Details',
+                      title: Text('Transaction Details'),
                       builder: (context, scrollController) => walletCtx.wrap(
                         TxDetailsPage(
                           scrollController: scrollController,
@@ -736,7 +736,7 @@ class WalletBottomBar extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () => showBottomSheetOrDialog(
                     context,
-                    titleText: 'Receive',
+                    title: Text('Receive'),
                     builder: (context, scrollController) => walletCtx.wrap(
                       ReceivePage(
                         wallet: walletCtx.wallet,
@@ -758,7 +758,7 @@ class WalletBottomBar extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () => showBottomSheetOrDialog(
                     context,
-                    titleText: 'Send',
+                    title: Text('Send'),
                     builder: (context, scrollController) => walletCtx.wrap(
                       WalletSendPage(scrollController: scrollController),
                     ),
@@ -1062,7 +1062,7 @@ class BackupWarningBanner extends StatelessWidget {
   onTap(BuildContext context, WalletContext walletContext) {
     showBottomSheetOrDialog(
       context,
-      titleText: 'Backup Checklist',
+      title: Text('Backup Checklist'),
       builder: (context, scrollController) => walletContext.wrap(
         BackupChecklist(
           scrollController: scrollController,

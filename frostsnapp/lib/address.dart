@@ -69,7 +69,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
         ElevatedButton(
           onPressed: () => showBottomSheetOrDialog(
             context,
-            titleText: 'Receive',
+            title: Text('Receive'),
             builder: (context, scrollController) => walletCtx.wrap(
               ReceivePage(
                 wallet: walletCtx.wallet,

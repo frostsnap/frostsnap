@@ -30,7 +30,7 @@ Color tintOnSurface(
 Future<T?> showBottomSheetOrDialog<T>(
   BuildContext context, {
   required Widget Function(BuildContext, ScrollController) builder,
-  required String titleText,
+  required Widget title,
   Color? backgroundColor,
 }) {
   final mediaSize = MediaQuery.sizeOf(context);
@@ -46,7 +46,7 @@ Future<T?> showBottomSheetOrDialog<T>(
       mainAxisSize: MainAxisSize.min,
       children: [
         TopBar(
-          titleText: titleText,
+          title: title,
           backgroundColor: backgroundColor,
           isDialog: isDialog,
           scrollController: scrollController,
@@ -142,14 +142,14 @@ class TopBar extends StatefulWidget implements PreferredSizeWidget {
   static const headerPadding = EdgeInsets.fromLTRB(20, 0, 20, 16);
   static const animationDuration = Durations.short3;
 
-  final String? titleText;
+  final Widget? title;
   final bool isDialog;
   final Color? backgroundColor;
   final ScrollController? scrollController;
 
   const TopBar({
     super.key,
-    this.titleText,
+    this.title,
     this.backgroundColor,
     this.scrollController,
     this.isDialog = false,
@@ -187,9 +187,9 @@ class _TopBarState extends State<TopBar> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(
-            child: Text(
-              widget.titleText ?? '',
-              style: theme.textTheme.titleLarge,
+            child: DefaultTextStyle(
+              style: theme.textTheme.titleLarge!,
+              child: widget.title ?? const SizedBox.shrink(),
             ),
           ),
           if (widget.isDialog)

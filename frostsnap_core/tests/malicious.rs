@@ -1,5 +1,5 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
-use common::{DefaultTestEnv, TEST_ENCRYPTION_KEY};
+use common::{Env, TEST_ENCRYPTION_KEY};
 use frostsnap_core::coordinator::CoordinatorSend;
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
@@ -11,6 +11,11 @@ use rand_chacha::ChaCha20Rng;
 
 use crate::common::{Run, Send};
 mod common;
+
+#[derive(Default)]
+pub struct DefaultTestEnv;
+
+impl Env for DefaultTestEnv {}
 
 /// Models a coordinator maliciously replacing a public polynomial contribution and providing a
 /// correct share under that malicious polynomial. The device that has had their share replaced
