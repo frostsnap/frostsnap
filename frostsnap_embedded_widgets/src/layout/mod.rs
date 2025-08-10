@@ -1,8 +1,10 @@
 mod column;
 mod row;
+mod stack;
 
 pub use column::Column;
 pub use row::Row;
+pub use stack::{Stack, StackAlignment, Positioned};
 
 /// Alignment options for the cross axis (horizontal for Column, vertical for Row)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

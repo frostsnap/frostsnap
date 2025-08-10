@@ -87,7 +87,7 @@ pub use center::*;
 pub use checkmark::*;
 pub use color_map::*;
 pub use container::*;
-pub use layout::{Column, Row, CrossAxisAlignment, MainAxisAlignment};
+pub use layout::{Column, Row, Stack, StackAlignment, CrossAxisAlignment, MainAxisAlignment};
 pub use cursor::*;
 pub use expanded::Expanded;
 pub use fader::*;

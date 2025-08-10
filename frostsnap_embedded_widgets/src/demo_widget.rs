@@ -598,8 +598,44 @@ macro_rules! demo_widget {
                 
                 $run_macro!(widget);
             }
+            "stack" => {
+                use $crate::{Stack, StackAlignment, Container, text::Text, palette::PALETTE};
+                use embedded_graphics::primitives::{Rectangle, PrimitiveStyle};
+                
+                // Create a background container
+                let background = Container::with_size(
+                    Text::new("Background", U8g2TextStyle::new(FONT_LARGE, PALETTE.surface_variant)),
+                    Size::new(200, 150)
+                )
+                .with_fill(PALETTE.surface)
+                .with_border(PALETTE.primary, 2);
+                
+                // Create some text to overlay  
+                let centered_text = Text::new(
+                    "Centered",
+                    U8g2TextStyle::new(FONT_MED, PALETTE.primary)
+                ).with_alignment(Alignment::Center);
+                
+                // Create a small icon-like widget positioned at top-right
+                let icon = Container::with_size(
+                    Text::new("!", U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background)),
+                    Size::new(20, 20)
+                )
+                .with_fill(PALETTE.error)
+                .with_corner_radius(Size::new(10, 10));
+                
+                // Build the stack
+                let stack = Stack::builder()
+                    .push(background)
+                    .push(centered_text)  // This will be centered
+                    .push_positioned(icon, 170, 10)  // Position in top-right
+                    .with_alignment(StackAlignment::Center);
+                
+                let widget = Center::new(stack);
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, vertical_slide, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, vertical_slide, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, stack", $demo);
             }
         }
     };
