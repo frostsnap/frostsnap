@@ -147,7 +147,7 @@ impl<'a> OtaPartitions<'a> {
         size: u32,
         expected_digest: Sha256Digest,
         active_partition_digest: Sha256Digest,
-    ) -> FirmwareUpgradeMode {
+    ) -> FirmwareUpgradeMode<'_> {
         let slot = self.next_slot();
         let partition = &self.ota_partitions()[slot];
         assert_eq!(

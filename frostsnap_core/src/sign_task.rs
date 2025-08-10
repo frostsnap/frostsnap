@@ -153,7 +153,7 @@ impl SignItem {
         schnorr.verify(&derived_key, self.schnorr_fun_message(), signature)
     }
 
-    pub fn schnorr_fun_message(&self) -> schnorr_fun::Message<Public> {
+    pub fn schnorr_fun_message(&'_ self) -> schnorr_fun::Message<'_, Public> {
         match self.app_tweak {
             AppTweak::TestMessage => Message::plain("frostsnap-test", &self.message[..]),
             AppTweak::Bitcoin(_) => Message::raw(&self.message[..]),
