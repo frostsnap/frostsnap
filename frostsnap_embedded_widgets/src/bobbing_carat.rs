@@ -31,8 +31,15 @@ where
 impl<C: PixelColor> crate::DynWidget for BobbingCarat<C>
 where
     C: Copy,
-
 {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.translate.set_constraints(max_size);
+    }
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.translate.sizing()
+    }
+    
     fn size_hint(&self) -> Option<Size> {
         self.translate.size_hint()
     }

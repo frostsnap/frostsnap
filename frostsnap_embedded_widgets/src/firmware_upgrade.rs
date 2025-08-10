@@ -18,14 +18,12 @@ pub struct FirmwareUpgradeConfirm {
     #[widget_delegate]
     hold_to_confirm: HoldToConfirm<Column<(
         Text<U8g2TextStyle<Rgb565>>,
-        SizedBox<Rgb565>,
         Container<Padding<Column<(
             Text<U8g2TextStyle<Rgb565>>,
             Text<U8g2TextStyle<Rgb565>>,
             Text<U8g2TextStyle<Rgb565>>,
             Text<U8g2TextStyle<Rgb565>>
         )>>>,
-        SizedBox<Rgb565>,
         Text<U8g2TextStyle<Rgb565>>
     )>>,
 }
@@ -97,9 +95,10 @@ impl FirmwareUpgradeConfirm {
             .with_corner_radius(Size::new(10, 10));
         
         // Create main column with title, container, and size
-        let spacer1 = SizedBox::<Rgb565>::new(Size::new(1, 8));
-        let spacer2 = SizedBox::<Rgb565>::new(Size::new(1, 8));
-        let content = Column::new((title, spacer1, hash_container, spacer2, size));
+        let content = Column::builder()
+            .push(title)
+            .push_with_gap(hash_container, 8)
+            .push_with_gap(size, 8);
         
         // Create hold to confirm with 1 second hold time
         let hold_to_confirm = HoldToConfirm::new(1000, content);

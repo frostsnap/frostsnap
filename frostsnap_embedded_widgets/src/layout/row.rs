@@ -1,7 +1,6 @@
 use crate::{Widget, Instant, widget_tuple::WidgetTuple};
 use crate::prelude::FreeCrop;
 use super::{CrossAxisAlignment, MainAxisAlignment};
-use alloc::vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -23,13 +22,22 @@ use embedded_graphics::{
 ///     .with_cross_axis_alignment(CrossAxisAlignment::Center);
 /// ```
 #[derive(PartialEq)]
-pub struct Row<T> {
+pub struct Row<T: WidgetTuple> {
     pub children: T,
     pub cross_axis_alignment: CrossAxisAlignment,
     pub main_axis_alignment: MainAxisAlignment,
-    child_rects: alloc::vec::Vec<Rectangle>,
+    child_rects: T::Array<Rectangle>,
     debug_borders: bool,
     sizing: Option<crate::Sizing>,
+    /// Spacing to add before each child (indexed by child position)
+    spacing_before: T::Array<u32>,
+}
+
+/// Helper to start building a Row with no children
+impl Row<()> {
+    pub fn builder() -> Self {
+        Self::new(())
+    }
 }
 
 impl<T: WidgetTuple> Row<T> {
@@ -38,15 +46,43 @@ impl<T: WidgetTuple> Row<T> {
             children,
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_alignment: MainAxisAlignment::Start,
-            child_rects: vec![Rectangle::zero(); T::TUPLE_LEN],
+            child_rects: T::create_array_with(Rectangle::zero()),
             debug_borders: false,
             sizing: None,
+            spacing_before: T::create_array_with(0),
         };
         
         // Don't extract sizes here - wait for set_constraints to be called
         // child_rects are already initialized to zero in the struct creation above
         
         row
+    }
+    
+    /// Add a widget to the row
+    pub fn push<W>(self, widget: W) -> Row<T::Add<W>> {
+        self.push_with_gap(widget, 0)
+    }
+    
+    /// Add a widget with a gap before it
+    pub fn push_with_gap<W>(self, widget: W, gap: u32) -> Row<T::Add<W>> {
+        let new_children = self.children.add(widget);
+        
+        // Copy over existing spacing values and add new one
+        let mut new_spacing = <T::Add<W>>::create_array_with(0);
+        let old_spacing = self.spacing_before.as_ref();
+        // copy_from_slice for the existing values
+        new_spacing.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_spacing);
+        new_spacing.as_mut()[T::TUPLE_LEN] = gap;  // Gap BEFORE this widget
+        
+        Row {
+            children: new_children,
+            cross_axis_alignment: self.cross_axis_alignment,
+            main_axis_alignment: self.main_axis_alignment,
+            child_rects: <T::Add<W>>::create_array_with(Rectangle::zero()),
+            debug_borders: self.debug_borders,
+            sizing: None,
+            spacing_before: new_spacing,
+        }
     }
     
     pub fn with_cross_axis_alignment(mut self, alignment: CrossAxisAlignment) -> Self {
@@ -81,6 +117,10 @@ macro_rules! impl_row_for_tuple {
                 let mut child_index = 0;
                 let mut remaining_width = max_size.width;
                 let mut max_child_height = 0u32;
+                
+                // Account for all spacing in remaining width
+                let total_spacing: u32 = self.spacing_before[..$len].iter().sum();
+                remaining_width = remaining_width.saturating_sub(total_spacing);
                 
                 $(
                     {
@@ -157,6 +197,9 @@ macro_rules! impl_row_for_tuple {
                 // Set positions for all children
                 let mut total_child_width = 0u32;
                 for i in 0..$len {
+                    // Add spacing BEFORE this child
+                    x_offset = x_offset.saturating_add(self.spacing_before[i]);
+                    
                     let size = self.child_rects[i].size;
                     total_child_width += size.width;
                     
@@ -172,13 +215,15 @@ macro_rules! impl_row_for_tuple {
                         }
                     };
                     self.child_rects[i].top_left = Point::new(x_offset as i32, y_offset);
-                    x_offset = x_offset.saturating_add(size.width).saturating_add(spacing);
+                    // Add the child width and alignment spacing
+                    x_offset = x_offset.saturating_add(size.width)
+                        .saturating_add(spacing);
                 }
                 
                 // Compute and store sizing
                 // Width depends on main axis alignment
                 let width = match self.main_axis_alignment {
-                    MainAxisAlignment::Start => total_child_width,
+                    MainAxisAlignment::Start => total_child_width + total_spacing,
                     _ => max_size.width,  // All other alignments need full width for spacing
                 };
                 

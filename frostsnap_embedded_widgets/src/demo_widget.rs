@@ -549,42 +549,11 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "all_words" => {
-                use frostsnap_backup::bip39_words::BIP39_WORDS;
-                use $crate::alloc::format;
-                use u8g2_fonts::fonts;
+                use $crate::bip39::AllWordsPage;
                 
-                // Use 17px font
-                const FONT_17: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
-                
-                // Build the text with all 25 words in two columns
-                let mut text = String::new();
-                
-                // Format in two columns - build each row
-                for i in 0..13 {
-                    // Left column word (1-13)
-                    let left_num = i + 1;
-                    let left_word = BIP39_WORDS[TEST_WORD_INDICES[i] as usize];
-                    let left_text = format!("{:2}. {:<8}", left_num, left_word);
-                    
-                    // Right column word (14-25) if it exists
-                    if i < 12 {
-                        let right_num = i + 14;
-                        let right_word = BIP39_WORDS[TEST_WORD_INDICES[i + 13] as usize];
-                        text.push_str(&format!("{}  {:2}. {}\n", left_text, right_num, right_word));
-                    } else {
-                        // Last row only has left column
-                        text.push_str(&left_text);
-                    }
-                }
-                
-                // Create the AllWordsPage-like widget with 17px font
-                let all_words_text = Text::new(
-                    text,
-                    U8g2TextStyle::new(FONT_17, PALETTE.primary)
-                ).with_alignment(Alignment::Left);
-                
-                let widget = Center::new(all_words_text);
-                $run_macro!(widget);
+                // Use the actual AllWordsPage widget with test word indices
+                let all_words_page = AllWordsPage::new(&TEST_WORD_INDICES, 42);
+                $run_macro!(all_words_page);
             }
             "row_inside_column" => {
                 use $crate::{text::Text, Column, Row, Container, palette::PALETTE};

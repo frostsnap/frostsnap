@@ -7,6 +7,7 @@ use u8g2_fonts::U8g2TextStyle;
 
 pub struct SwipeUpChevron<C: PixelColor> {
     column: Column<(BobbingCarat<C>, Text<U8g2TextStyle<C>>)>,
+    cached_size: Option<crate::Sizing>,
 }
 
 impl<C: PixelColor + RgbColor> SwipeUpChevron<C> 
@@ -26,19 +27,25 @@ where
         // Create column with both widgets
         let column = Column::new((bobbing_carat, text));
         
-        Self { column }
+        Self { 
+            column,
+            cached_size: None,
+        }
     }
 }
 
 impl<C: PixelColor + RgbColor + Default> crate::DynWidget for SwipeUpChevron<C> 
 where
     C: Copy,
-
 {
-    fn size_hint(&self) -> Option<Size> {
-        self.column.size_hint()
+    fn set_constraints(&mut self, max_size: Size) {
+        self.column.set_constraints(max_size);
     }
-
+    
+    fn sizing(&self) -> crate::Sizing {
+        self.column.sizing()
+    }
+    
     fn force_full_redraw(&mut self) {
         self.column.force_full_redraw();
     }

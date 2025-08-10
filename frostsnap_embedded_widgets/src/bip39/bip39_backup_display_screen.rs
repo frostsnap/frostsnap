@@ -22,8 +22,7 @@ pub struct ShareIndexPage {
     #[widget_delegate]
     center: Center<Column<(
         Text<U8g2TextStyle<Rgb565>>,
-        SizedBox<Rgb565>,
-        Text<U8g2TextStyle<Rgb565>>,
+        Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>,
     )>>,
 }
 
@@ -34,12 +33,22 @@ impl ShareIndexPage {
             U8g2TextStyle::new(FONT_MED, PALETTE.text_secondary),
         );
 
+        let hash = Text::new(
+            "#",
+            U8g2TextStyle::new(FONT, PALETTE.text_secondary)
+        );
+
         let share_text = Text::new(
-            format!("#{}", share_index),
+            format!("{}", share_index),
             U8g2TextStyle::new(FONT, PALETTE.primary),
         );
 
-        let column = Column::new((label, SizedBox::height(8), share_text)).with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let row = Row::new((hash, share_text));
+
+        let column = Column::builder()
+            .push(label)
+            .push_with_gap(row, 8)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
         let center = Center::new(column);
 
         Self { center }
@@ -81,8 +90,8 @@ impl WordRow {
 /// Enum for different word page layouts
 type WordsPageLayout = Center<crate::any_of::AnyOf<(
     Column<(WordRow,)>,
-    Column<(WordRow, SizedBox<Rgb565>, WordRow)>,
-    Column<(WordRow, SizedBox<Rgb565>, WordRow, SizedBox<Rgb565>, WordRow)>,
+    Column<(WordRow, WordRow)>,
+    Column<(WordRow, WordRow, WordRow)>,
 )>>;
 
 /// A page showing up to 3 words
@@ -94,8 +103,6 @@ pub struct WordsPage {
 
 impl WordsPage {
     fn new(words: Vec<(usize, String)>) -> Self {
-        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 20));
-        
         // Build the layout based on how many words we have
         let layout = match words.len() {
             1 => {
@@ -109,7 +116,9 @@ impl WordsPage {
                 let row1 = WordRow::new(words[0].0, &words[0].1);
                 let row2 = WordRow::new(words[1].0, &words[1].1);
                 Center::new(crate::any_of::AnyOf::new(
-                    Column::new((row1, spacer, row2))
+                    Column::builder()
+                        .push(row1)
+                        .push_with_gap(row2, 20)
                         .with_cross_axis_alignment(CrossAxisAlignment::Start)
                 ))
             }
@@ -117,9 +126,11 @@ impl WordsPage {
                 let row1 = WordRow::new(words[0].0, &words[0].1);
                 let row2 = WordRow::new(words[1].0, &words[1].1);
                 let row3 = WordRow::new(words[2].0, &words[2].1);
-                let spacer2 = SizedBox::<Rgb565>::new(Size::new(1, 20));
                 Center::new(crate::any_of::AnyOf::new(
-                    Column::new((row1, spacer, row2, spacer2, row3))
+                    Column::builder()
+                        .push(row1)
+                        .push_with_gap(row2, 20)
+                        .push_with_gap(row3, 20)
                         .with_cross_axis_alignment(CrossAxisAlignment::Start)
                 ))
             }
@@ -168,7 +179,7 @@ pub struct AllWordsPage {
 }
 
 impl AllWordsPage {
-    fn new(word_indices: &[u16; 25], share_index: u16) -> Self {
+    pub fn new(word_indices: &[u16; 25], share_index: u16) -> Self {
         // Helper to create a word row (word_idx is 0-based)
         let make_word_row = |word_idx: usize| -> SingleWordRow {
             Row::new((
@@ -188,13 +199,13 @@ impl AllWordsPage {
             // First row: share index
             let share_row = Row::new((
                 Text::new(
-                    "   #",
-                    U8g2TextStyle::new(FONT_ALL_WORDS, PALETTE.primary)
+                    " #.",
+                    U8g2TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary)
                 ),
                 Text::new(
                     format!("{}", share_index),
                     U8g2TextStyle::new(FONT_ALL_WORDS, PALETTE.primary)
-                ),
+                ).with_underline(PALETTE.surface),
             )).with_main_axis_alignment(MainAxisAlignment::Start);
             
             Column::new((
@@ -257,7 +268,6 @@ pub struct ConfirmContent {
     #[widget_delegate]
     column: Column<(
         IconWidget<embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::other::Notes>>,
-        SizedBox<Rgb565>,
         Text<U8g2TextStyle<Rgb565>>,
         Text<U8g2TextStyle<Rgb565>>,
     )>,
@@ -269,7 +279,6 @@ pub struct SafetyReminder {
     #[widget_delegate]
     content: Center<Column<(
         IconWidget<embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::security::Shield>>,
-        SizedBox<Rgb565>,
         Text<U8g2TextStyle<Rgb565>>,
         Text<U8g2TextStyle<Rgb565>>,
     )>>,
@@ -283,8 +292,6 @@ impl ConfirmContent {
             embedded_iconoir::icons::size48px::other::Notes::new(PALETTE.primary)
         );
         
-        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 20));
-        
         let title = Text::new(
             "Backup\nrecorded?",
             U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background)
@@ -295,7 +302,10 @@ impl ConfirmContent {
             U8g2TextStyle::new(FONT_SMALL, PALETTE.text_secondary)
         ).with_alignment(Alignment::Center);
         
-        let column = Column::new((notes_icon, spacer, title, subtitle))
+        let column = Column::builder()
+            .push(notes_icon)
+            .push_with_gap(title, 10)
+            .push(subtitle)
             .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
 
         Self { column }
@@ -310,8 +320,6 @@ impl SafetyReminder {
             embedded_iconoir::icons::size48px::security::Shield::new(PALETTE.primary)
         );
         
-        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 20));
-        
         let title = Text::new(
             "Keep it secret",
             U8g2TextStyle::new(FONT_MED, PALETTE.on_surface)
@@ -322,7 +330,10 @@ impl SafetyReminder {
             U8g2TextStyle::new(FONT_MED, PALETTE.text_secondary)
         ).with_alignment(Alignment::Center);
         
-        let column = Column::new((shield_icon, spacer, title, subtitle))
+        let column = Column::builder()
+            .push(shield_icon)
+            .push_with_gap(title, 20)
+            .push(subtitle)
             .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
 
         Self { content: Center::new(column) }
@@ -497,7 +508,8 @@ impl Bip39BackupDisplay {
                     // Fade in the button when the confirmation page is ready
                     confirmation_screen.hold_confirm.fade_in_button();
                 }
-            });
+            })
+            .with_swipe_up_chevron();
 
         Self { page_slider }
     }
@@ -506,11 +518,9 @@ impl Bip39BackupDisplay {
     pub fn is_confirmed(&mut self) -> bool {
         // Check if we're on the last page
         if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
-            // Try to get the current widget and check if it's confirmed
-            if let Some(current_widget) = self.page_slider.current_widget() {
-                if let Some(confirmation_screen) = current_widget.downcast_ref::<BackupConfirmationScreen>() {
-                    return confirmation_screen.is_confirmed();
-                }
+            let current_widget = self.page_slider.current_widget();
+            if let Some(confirmation_screen) = current_widget.downcast_ref::<BackupConfirmationScreen>() {
+                return confirmation_screen.is_confirmed();
             }
         }
         false

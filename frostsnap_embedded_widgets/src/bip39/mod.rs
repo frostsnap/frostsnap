@@ -16,4 +16,4 @@ pub use entered_words::EnteredWords;
 pub use submit_backup_button::SubmitBackupButton;
 pub use t9_keyboard::T9Keyboard;
 pub use word_selector::WordSelector;
-pub use bip39_backup_display_screen::Bip39BackupDisplay;
+pub use bip39_backup_display_screen::{Bip39BackupDisplay, AllWordsPage};

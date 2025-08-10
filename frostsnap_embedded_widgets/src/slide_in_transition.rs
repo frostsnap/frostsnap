@@ -48,8 +48,8 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
     }
     
     /// Get mutable access to the current widget if available
-    pub fn current_widget_mut(&mut self) -> Option<&mut T> {
-        self.current.as_mut().map(|fader| &mut fader.child.child)
+    pub fn current_widget_mut(&mut self) -> &mut T {
+        &mut self.current.as_mut().unwrap().child.child
     }
     
     /// Check if the transition animation is complete

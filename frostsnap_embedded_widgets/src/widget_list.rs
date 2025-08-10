@@ -12,12 +12,12 @@ pub trait WidgetList<T> {
     }
     
     /// Returns true if navigation to the next page is allowed from the current page
-    fn can_go_next(&self, _from_index: usize, _current_widget: &T) -> bool {
-        true // Default: always allow forward navigation
+    fn can_go_next(&self, from_index: usize, _current_widget: &T) -> bool {
+        from_index + 1 < self.len()
     }
     
     /// Returns true if navigation to the previous page is allowed from the current page
-    fn can_go_prev(&self, _from_index: usize, _current_widget: &T) -> bool {
-        true // Default: always allow backward navigation
+    fn can_go_prev(&self, from_index: usize, _current_widget: &T) -> bool {
+        from_index > 0
     }
 }
