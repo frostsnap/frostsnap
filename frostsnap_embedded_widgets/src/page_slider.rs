@@ -1,4 +1,4 @@
-use crate::{Widget, WidgetList, SlideInTransition, Instant, palette::PALETTE, DynWidget, Fader, SwipeUpChevron};
+use crate::{Widget, WidgetList, SlideInTransition, Instant, palette::PALETTE, DynWidget, Fader, SwipeUpChevron, Stack, StackAlignment};
 use alloc::boxed::Box;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -24,12 +24,11 @@ where
 {
     list: L,
     current_index: usize,
-    transition: SlideInTransition<T>,
+    stack: Stack<(SlideInTransition<T>, Option<Fader<SwipeUpChevron<Rgb565>>>)>,
     drag_start: Option<u32>,
     height: u32,
     on_page_ready: Option<Box<dyn FnMut(&mut T)>>,
     page_ready_triggered: bool,
-    swipe_chevron: Option<Fader<SwipeUpChevron<Rgb565>>>,
     screen_size: Option<Size>,
 }
 
@@ -50,15 +49,19 @@ where
             PALETTE.background,
         );
         
+        // Build stack with transition and optional chevron aligned at bottom center
+        let stack = Stack::builder()
+            .push(transition)
+            .push_aligned(None::<Fader<SwipeUpChevron<Rgb565>>>, StackAlignment::BottomCenter);
+        
         Self {
             list,
             current_index: 0,
-            transition,
+            stack,
             drag_start: None,
             height,
             on_page_ready: None,
             page_ready_triggered: false,
-            swipe_chevron: None,
             screen_size: None,
         }
     }
@@ -74,11 +77,12 @@ where
     
     /// Builder method to enable swipe up chevron indicator
     pub fn with_swipe_up_chevron(mut self) -> Self {
+        // Create chevron
         let chevron = SwipeUpChevron::new(PALETTE.on_surface, PALETTE.background);
-        let mut fader = Fader::new_faded_out(chevron);
-        // Set constraints for the chevron (it will be positioned at bottom)
-        fader.set_constraints(Size::new(240, 40)); // Give it reasonable size
-        self.swipe_chevron = Some(fader);
+        let fader = Fader::new_faded_out(chevron);
+        
+        // Set the chevron in the stack (it's already positioned with BottomCenter alignment)
+        self.stack.children.1 = Some(fader);
         self
     }
     
@@ -100,17 +104,17 @@ where
     
     /// Get a reference to the current widget
     pub fn current_widget(&mut self) -> &mut T {
-        self.transition.current_widget_mut()
+        self.stack.children.0.current_widget_mut()
     }
     
     pub fn start_transition(&mut self, direction: Direction) {
         // Instantly fade out the chevron when starting a transition
-        if let Some(ref mut chevron) = self.swipe_chevron {
+        if let Some(ref mut chevron) = &mut self.stack.children.1 {
             chevron.instant_fade(PALETTE.background);
         }
         
         // First check if navigation is allowed based on the current widget
-        let current_widget = self.transition.current_widget_mut();
+        let current_widget = self.stack.children.0.current_widget_mut();
         let allowed = match direction {
             Direction::Up => self.list.can_go_next(self.current_index, current_widget),
             Direction::Down => self.list.can_go_prev(self.current_index, current_widget),
@@ -148,8 +152,9 @@ where
             };
             
             // Update the slide-from position and switch to the new widget
-            self.transition.set_slide_from(slide_from);
-            self.transition.switch_to(new_widget);
+            let transition = &mut self.stack.children.0;
+            transition.set_slide_from(slide_from);
+            transition.switch_to(new_widget);
             
             self.current_index = target_index;
             // Reset the ready flag for the new page
@@ -165,16 +170,12 @@ where
 {
     fn set_constraints(&mut self, max_size: Size) {
         self.screen_size = Some(max_size);
-        self.transition.set_constraints(max_size);
-        
-        // Update chevron constraints if present
-        if let Some(ref mut chevron) = self.swipe_chevron {
-            chevron.set_constraints(Size::new(max_size.width, 40));
-        }
+        // Just propagate to the stack - it handles all positioning
+        self.stack.set_constraints(max_size);
     }
     
     fn sizing(&self) -> crate::Sizing {
-        self.transition.sizing()
+        self.stack.sizing()
     }
     
     fn handle_touch(
@@ -183,8 +184,8 @@ where
         current_time: Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        // Pass through to transition
-        self.transition.handle_touch(point, current_time, is_release)
+        // Pass through to stack
+        self.stack.handle_touch(point, current_time, is_release)
     }
     
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, new_y: u32, is_release: bool) {
@@ -208,12 +209,12 @@ where
     }
     
     fn size_hint(&self) -> Option<Size> {
-        // Use the size of the child widget in the transition
-        self.transition.size_hint()
+        // Use the size of the stack
+        self.stack.size_hint()
     }
     
     fn force_full_redraw(&mut self) {
-        self.transition.force_full_redraw();
+        self.stack.force_full_redraw();
     }
 }
 
@@ -229,23 +230,20 @@ where
         target: &mut D,
         current_time: Instant,
     ) -> Result<(), D::Error> {
-        // Draw the transition
-        self.transition.draw(target, current_time)?;
-        
         // Check if transition is complete and trigger callback if not already triggered
-        if !self.page_ready_triggered && self.transition.is_transition_complete() {
+        if !self.page_ready_triggered && self.stack.children.0.is_transition_complete() {
             self.page_ready_triggered = true;
             
             // Call the on_page_ready callback if set
             if let Some(ref mut callback) = self.on_page_ready {
                 // Get mutable access to the current widget
-                let current_widget = self.transition.current_widget_mut();
+                let current_widget = self.stack.children.0.current_widget_mut();
                 callback(current_widget);
             }
             
-            // Fade in the swipe chevron
-            if let Some(ref mut chevron) = self.swipe_chevron {
-                let current_widget = self.transition.current_widget_mut();
+            // Fade in the swipe chevron if present
+            if let Some(ref mut chevron) = &mut self.stack.children.1 {
+                let current_widget = self.stack.children.0.current_widget_mut();
 
                 if self.list.can_go_next(self.current_index, current_widget) {
                     chevron.start_fade_in(800, 20, PALETTE.background);
@@ -253,28 +251,7 @@ where
             }
         }
         
-        // Draw the swipe chevron as an overlay at the bottom if present and valid transition exists
-        // Check if there's a valid upward transition available first (before borrowing chevron)
-
-        if let Some(ref mut chevron) = self.swipe_chevron {
-            // TODO: use Positioned widget to just position the chevron during set_constraints.
-            if let Some(screen_size) = self.screen_size {
-                // Position chevron at bottom center
-                let chevron_size = chevron.sizing();
-                let x = ((screen_size.width as i32 - chevron_size.width as i32) / 2).max(0);
-                let y = (screen_size.height as i32 - chevron_size.height as i32 - 10).max(0); // 10px from bottom
-
-                // Use FreeCrop to draw at a specific position
-                use crate::prelude::FreeCrop;
-                let rect = embedded_graphics::primitives::Rectangle::new(
-                    Point::new(x, y),
-                    Size::new(chevron_size.width, chevron_size.height)
-                );
-                let mut cropped = target.free_cropped(&rect);
-                chevron.draw(&mut cropped, current_time)?;
-            }
-        }
-        
-        Ok(())
+        // Draw the stack (it handles drawing both transition and chevron overlay)
+        self.stack.draw(target, current_time)
     }
 }

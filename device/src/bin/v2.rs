@@ -50,6 +50,7 @@ use frostsnap_device::{
 use frostsnap_embedded_widgets::{
     keygen_check::KeygenCheck, sign_prompt::SignPrompt, DeviceNameScreen, DynWidget, 
     FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Welcome, Widget,
+    Stack, StackAlignment,
 };
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
@@ -207,13 +208,18 @@ fn main() -> ! {
     // TODO: maybe re-key the rng based on entropy from touces etc
     let rng = hmac_keys.fixed_entropy.mix_in_rng(&mut first_rng);
 
-    let mut root_widget = RootWidget::new(WidgetTree::default(), 300, PALETTE.background);
-    root_widget.set_constraints(Size::new(240, 280));
+    let root_widget = RootWidget::new(WidgetTree::default(), 300, PALETTE.background);
+    
+    // Build UI stack with root widget and status overlay (create_status handles feature flags)
+    let mut ui_stack = Stack::builder()
+        .push(root_widget)
+        .push_aligned(create_status(), StackAlignment::TopLeft);
+    
+    ui_stack.set_constraints(Size::new(240, 280));
     
     let ui = FrostyUi {
         display,
-        root_widget,
-        status_widget: create_status(),
+        ui_stack,
         capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,
         upstream_connection_state: None,
@@ -256,8 +262,8 @@ impl embedded_hal::digital::ErrorType for NoCs {
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST, SW> {
     display: DT,
-    root_widget: RootWidget,
-    status_widget: SW,
+    /// Stack composing root_widget with optional status overlay
+    ui_stack: Stack<(RootWidget, Option<SW>)>,
     capsense: CST816S<I2C, PINT, RST>,
     last_touch: Option<(Point, Instant)>,
     last_redraw_time: Instant,
@@ -283,14 +289,14 @@ where
     ) {
         if state != self.downstream_connection_state {
             self.downstream_connection_state = state;
-            self.root_widget.force_full_redraw();
+            self.ui_stack.force_full_redraw();
         }
     }
 
     fn set_upstream_connection_state(&mut self, state: frostsnap_device::UpstreamConnectionState) {
         if Some(state) != self.upstream_connection_state {
             self.upstream_connection_state = Some(state);
-            self.root_widget.force_full_redraw();
+            self.ui_stack.force_full_redraw();
         }
     }
 
@@ -301,7 +307,7 @@ where
 
     fn set_workflow(&mut self, workflow: Workflow) {
         // Check if we can update the current widget instead of switching
-        let current_widget = self.root_widget.current_mut();
+        let current_widget = self.ui_stack.children.0.current_mut();
 
         match (current_widget, &workflow) {
             // If we're already showing a Welcome screen and need a Welcome screen, just leave it
@@ -467,7 +473,7 @@ where
         };
 
         // Switch to the new page with fade transition
-        self.root_widget.switch_to(new_page);
+        self.ui_stack.children.0.switch_to(new_page);
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
@@ -489,7 +495,7 @@ where
                 if let (Some((last_point, _)), TouchGesture::SlideUp | TouchGesture::SlideDown) =
                     (self.last_touch, touch.gesture)
                 {
-                    self.root_widget.handle_vertical_drag(
+                    self.ui_stack.handle_vertical_drag(
                         Some(last_point.y as u32),
                         corrected_y as u32,
                         is_release,
@@ -515,18 +521,15 @@ where
         let elapsed_ms = (now - self.last_redraw_time).to_millis();
         if elapsed_ms >= 10 {
             // Draw the widget tree
-            let _ = self.root_widget.draw(&mut self.display, current_time);
-            
-            // Draw the status widget on top at position (5, 15)
-            let mut translated = self.display.translated(Point::new(5, 15));
-            let _ = self.status_widget.draw(&mut translated, current_time);
+            // Draw the UI stack (includes status overlay)
+            let _ = self.ui_stack.draw(&mut self.display, current_time);
             
             // Update last redraw time
             self.last_redraw_time = now;
         }
 
         // Check widget states and generate UI events
-        match self.root_widget.current_mut() {
+        match self.ui_stack.children.0.current_mut() {
             WidgetTree::KeygenCheck {
                 widget: keygen_check,
                 phase,
@@ -567,21 +570,21 @@ where
     fn set_busy_task(&mut self, task: BusyTask) {
         self.busy_task = Some(task);
         // TODO: Update widget tree based on busy task
-        self.root_widget.force_full_redraw();
+        self.ui_stack.force_full_redraw();
     }
 
     fn clear_busy_task(&mut self) {
         self.busy_task = None;
-        self.root_widget.force_full_redraw();
+        self.ui_stack.force_full_redraw();
     }
 
     fn set_recovery_mode(&mut self, value: bool) {
         self.recovery_mode = value;
-        self.root_widget.force_full_redraw();
+        self.ui_stack.force_full_redraw();
     }
 
     fn debug<S: ToString>(&mut self, debug: S) {
-        self.root_widget.set_debug_text(debug);
+        // Debug text removed - status widget handles debug display
     }
 }
 

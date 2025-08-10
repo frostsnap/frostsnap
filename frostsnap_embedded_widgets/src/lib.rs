@@ -270,6 +270,76 @@ impl<T: DynWidget + ?Sized> DynWidget for alloc::boxed::Box<T> {
     }
 }
 
+// Implement DynWidget for Option<T> where T: DynWidget
+impl<T: DynWidget> DynWidget for Option<T> {
+    fn set_constraints(&mut self, max_size: Size) {
+        if let Some(widget) = self {
+            widget.set_constraints(max_size)
+        }
+    }
+    
+    fn sizing(&self) -> Sizing {
+        if let Some(widget) = self {
+            widget.sizing()
+        } else {
+            Sizing { width: 0, height: 0 }
+        }
+    }
+    
+    fn flex(&self) -> bool {
+        if let Some(widget) = self {
+            widget.flex()
+        } else {
+            false
+        }
+    }
+    
+    fn handle_touch(&mut self, point: Point, current_time: crate::Instant, is_release: bool) -> Option<KeyTouch> {
+        if let Some(widget) = self {
+            widget.handle_touch(point, current_time, is_release)
+        } else {
+            None
+        }
+    }
+    
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        if let Some(widget) = self {
+            widget.handle_vertical_drag(prev_y, new_y, is_release)
+        }
+    }
+    
+    fn size_hint(&self) -> Option<Size> {
+        if let Some(widget) = self {
+            widget.size_hint()
+        } else {
+            Some(Size::zero())
+        }
+    }
+    
+    fn force_full_redraw(&mut self) {
+        if let Some(widget) = self {
+            widget.force_full_redraw()
+        }
+    }
+}
+
+// Implement Widget for Option<W> where W: Widget
+impl<W: Widget> Widget for Option<W> {
+    type Color = W::Color;
+    
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut D,
+        current_time: Instant,
+    ) -> Result<(), D::Error> {
+        if let Some(widget) = self {
+            widget.draw(target, current_time)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 
 /// Milliseconds since device start
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
