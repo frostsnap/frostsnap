@@ -90,10 +90,6 @@ macro_rules! impl_any_of {
                 self.inner.handle_vertical_drag(prev_y, new_y, is_release)
             }
             
-            fn size_hint(&self) -> Option<Size> {
-                self.inner.size_hint()
-            }
-            
             fn force_full_redraw(&mut self) {
                 self.inner.force_full_redraw()
             }

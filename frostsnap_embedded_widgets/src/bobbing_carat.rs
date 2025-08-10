@@ -40,9 +40,6 @@ where
         self.translate.sizing()
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        self.translate.size_hint()
-    }
 
     fn force_full_redraw(&mut self) {
         self.translate.force_full_redraw();

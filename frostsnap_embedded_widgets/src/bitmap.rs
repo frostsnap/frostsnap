@@ -168,6 +168,10 @@ impl BitmapWidget {
 }
 
 impl crate::DynWidget for BitmapWidget {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         _point: Point,
@@ -179,9 +183,6 @@ impl crate::DynWidget for BitmapWidget {
     
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(self.bitmap.width(), self.bitmap.height()))
-    }
     
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;

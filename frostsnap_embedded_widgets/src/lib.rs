@@ -159,12 +159,7 @@ pub trait DynWidget {
     
     /// Get sizing information for this widget given its constraints.
     /// Must be called after set_constraints.
-    fn sizing(&self) -> Sizing {
-        // Default: use size_hint for backwards compat
-        self.size_hint()
-            .unwrap_or(Size::zero())
-            .into()  // Uses From<Size> for Sizing
-    }
+    fn sizing(&self) -> Sizing;
     
     /// Whether this widget wants to expand to fill available space.
     /// This is an intrinsic property that doesn't depend on constraints.
@@ -184,11 +179,6 @@ pub trait DynWidget {
 
     /// Handle vertical drag events. Returns true if the drag was handled.
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
-
-    /// Get the preferred size of this widget, if it has one
-    fn size_hint(&self) -> Option<Size> {
-        None
-    }
     
     /// Force a full redraw of the widget
     /// This is typically used when the widget needs to be redrawn completely,
@@ -261,9 +251,6 @@ impl<T: DynWidget + ?Sized> DynWidget for alloc::boxed::Box<T> {
         (**self).handle_vertical_drag(prev_y, new_y, is_release)
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        (**self).size_hint()
-    }
     
     fn force_full_redraw(&mut self) {
         (**self).force_full_redraw()
@@ -308,13 +295,6 @@ impl<T: DynWidget> DynWidget for Option<T> {
         }
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        if let Some(widget) = self {
-            widget.size_hint()
-        } else {
-            Some(Size::zero())
-        }
-    }
     
     fn force_full_redraw(&mut self) {
         if let Some(widget) = self {

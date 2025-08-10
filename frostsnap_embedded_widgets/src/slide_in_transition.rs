@@ -138,9 +138,6 @@ impl<T: Widget<Color = Rgb565>> DynWidget for SlideInTransition<T> {
         }
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        self.current.as_ref().and_then(|c| c.size_hint())
-    }
     
     fn force_full_redraw(&mut self) {
         if let Some(ref mut current) = self.current {

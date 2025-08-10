@@ -93,6 +93,10 @@ impl KeygenCheck {
 }
 
 impl crate::DynWidget for KeygenCheck {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
         self.hold_to_confirm.handle_touch(point, current_time, is_release)
     }
@@ -101,9 +105,6 @@ impl crate::DynWidget for KeygenCheck {
         self.hold_to_confirm.handle_vertical_drag(prev_y, new_y, is_release)
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        self.hold_to_confirm.size_hint()
-    }
     
     fn force_full_redraw(&mut self) {
         self.hold_to_confirm.force_full_redraw()

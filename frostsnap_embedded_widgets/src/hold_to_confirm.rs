@@ -189,9 +189,6 @@ where
 
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
 
-    fn size_hint(&self) -> Option<Size> {
-        self.content.size_hint()
-    }
 
     fn force_full_redraw(&mut self) {
         self.content.force_full_redraw();

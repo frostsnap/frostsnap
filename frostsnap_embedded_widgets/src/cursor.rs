@@ -35,7 +35,11 @@ impl Cursor {
 
 }
 
-impl crate::DynWidget for Cursor {}
+impl crate::DynWidget for Cursor {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    }
 
 impl Widget for Cursor {
     type Color = Rgb565;

@@ -86,15 +86,16 @@ impl DeviceName {
 }
 
 impl crate::DynWidget for DeviceName {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
         None
     }
     
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
     
-    fn size_hint(&self) -> Option<Size> {
-        self.text_widget.size_hint()
-    }
     
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;
@@ -192,6 +193,10 @@ impl DeviceNameScreen {
 }
 
 impl crate::DynWidget for DeviceNameScreen {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
         self.column.handle_touch(point, current_time, is_release)
     }
@@ -200,9 +205,6 @@ impl crate::DynWidget for DeviceNameScreen {
         self.column.handle_vertical_drag(prev_y, new_y, is_release)
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        self.column.size_hint()
-    }
     
     fn force_full_redraw(&mut self) {
         self.column.force_full_redraw()

@@ -71,9 +71,6 @@ impl DynWidget for Fps {
         None
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        self.display.size_hint()
-    }
     
     fn force_full_redraw(&mut self) {
         self.display.force_full_redraw();

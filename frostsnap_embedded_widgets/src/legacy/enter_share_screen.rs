@@ -45,6 +45,11 @@ impl EnterShareScreen {
 }
 
 impl crate::DynWidget for EnterShareScreen {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
+
     fn handle_touch(
         &mut self,
         point: Point,
@@ -110,9 +115,6 @@ impl crate::DynWidget for EnterShareScreen {
             .handle_vertical_drag(prev_y, new_y, is_release);
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(240, 320)) // Standard screen size
-    }
     
     fn force_full_redraw(&mut self) {
         self.backup_input_preview.force_full_redraw();

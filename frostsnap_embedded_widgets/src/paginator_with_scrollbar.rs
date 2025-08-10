@@ -61,6 +61,10 @@ where
     W: PageByPage<Color = Rgb565>,
     F: Widget<Color = Rgb565>,
 {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -107,20 +111,6 @@ where
         }
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        // Get child's size
-        let child_size: Size = self.child.sizing().into();
-        
-        // Add swipe hint height if present
-        let swipe_hint_height = if let Some(swipe_hint) = &self.swipe_hint {
-            let swipe_sizing: Size = swipe_hint.sizing().into();
-            swipe_sizing.height
-        } else {
-            0
-        };
-        
-        Some(Size::new(child_size.width, child_size.height + swipe_hint_height))
-    }
 
     fn force_full_redraw(&mut self) {
         self.child.force_full_redraw();
@@ -145,7 +135,7 @@ where
         
         // Get swipe hint height if present
         let swipe_hint_height = if let Some(swipe_hint) = &self.swipe_hint {
-            swipe_hint.size_hint().unwrap().height
+            swipe_hint.sizing().height
         } else {
             0
         };

@@ -92,6 +92,10 @@ where
     C: PixelColor,
     S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(&mut self, _point: Point, _current_time: Instant, _is_release: bool) -> Option<crate::KeyTouch> {
         None
     }
@@ -100,10 +104,6 @@ where
         // No drag handling needed
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        // Simply return the cached size
-        Some(self.cached_size)
-    }
     
     fn force_full_redraw(&mut self) {
         self.drawn = false;

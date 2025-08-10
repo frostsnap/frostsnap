@@ -353,9 +353,10 @@ impl Bech32Framebuf {
 }
 
 impl crate::DynWidget for Bech32InputPreview {
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(self.preview_rect.size.width, self.preview_rect.size.height + self.backspace_rect.size.height))
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
     }
+
 }
 
 impl crate::Widget for Bech32InputPreview {

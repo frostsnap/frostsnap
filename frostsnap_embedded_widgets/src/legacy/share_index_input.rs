@@ -71,9 +71,10 @@ impl ShareIndexInputDisplay {
 }
 
 impl crate::DynWidget for ShareIndexInputDisplay {
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(240, self.min_height()))
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
     }
+
 }
 
 impl crate::Widget for ShareIndexInputDisplay {

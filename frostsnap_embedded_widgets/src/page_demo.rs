@@ -26,6 +26,11 @@ impl PageDemo {
 }
 
 impl crate::DynWidget for PageDemo {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
+
     fn handle_touch(
         &mut self,
         _point: Point,
@@ -39,9 +44,6 @@ impl crate::DynWidget for PageDemo {
         // No dragging behavior for this widget
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
-    }
     
     fn force_full_redraw(&mut self) {
         // No state to reset for redraw

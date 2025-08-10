@@ -84,6 +84,10 @@ where
 }
 
 impl<W: Widget, C: PixelColor> crate::DynWidget for ColorMap<W, C> {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -97,9 +101,6 @@ impl<W: Widget, C: PixelColor> crate::DynWidget for ColorMap<W, C> {
         self.child.handle_vertical_drag(start_y, current_y, _is_release)
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        self.child.size_hint()
-    }
     
     fn force_full_redraw(&mut self) {
         self.child.force_full_redraw()

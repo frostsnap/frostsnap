@@ -36,6 +36,10 @@ where W: Widget,
       for<'a> RawDataSlice<'a, <W::Color as PixelColor>::Raw, LittleEndian>: IntoIterator<Item=<W::Color as PixelColor>::Raw>,
 
 {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -49,9 +53,6 @@ where W: Widget,
         self.child.handle_vertical_drag(prev_y, new_y, _is_release);
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        self.child.size_hint()
-    }
 
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;

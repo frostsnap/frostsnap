@@ -210,10 +210,6 @@ where
         }
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        // Use the size of the stack
-        self.stack.size_hint()
-    }
     
     fn force_full_redraw(&mut self) {
         self.stack.force_full_redraw();

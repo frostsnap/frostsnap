@@ -100,6 +100,10 @@ impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> Verti
 impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> crate::DynWidget for VerticalPaginator<W, WIDTH, HEIGHT, BUFFER_SIZE>
     where W: PageByPage
 {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -146,9 +150,6 @@ impl<W, const WIDTH: usize, const HEIGHT: usize, const BUFFER_SIZE: usize> crate
 
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size { width: WIDTH as u32, height: HEIGHT as u32 })
-    }
 
     fn force_full_redraw(&mut self) {
         self.force_redraw = true;

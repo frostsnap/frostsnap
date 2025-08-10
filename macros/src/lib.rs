@@ -132,7 +132,6 @@ fn derive_widget_for_enum(
     let flex_arms = generate_match_arms(&data_enum.variants, quote!(flex()));
     let handle_touch_arms = generate_match_arms(&data_enum.variants, quote!(handle_touch(point, current_time, is_release)));
     let handle_vertical_drag_arms = generate_match_arms(&data_enum.variants, quote!(handle_vertical_drag(prev_y, new_y, is_release)));
-    let size_hint_arms = generate_match_arms(&data_enum.variants, quote!(size_hint()));
     let force_full_redraw_arms = generate_match_arms(&data_enum.variants, quote!(force_full_redraw()));
 
     // Generate match arms for widget_name
@@ -196,12 +195,6 @@ fn derive_widget_for_enum(
             fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
                 match self {
                     #(#handle_vertical_drag_arms)*
-                }
-            }
-
-            fn size_hint(&self) -> Option<embedded_graphics::geometry::Size> {
-                match self {
-                    #(#size_hint_arms)*
                 }
             }
 
@@ -281,10 +274,6 @@ fn derive_widget_for_struct(
 
             fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
                 self.#delegate_field.handle_vertical_drag(prev_y, new_y, is_release)
-            }
-
-            fn size_hint(&self) -> Option<embedded_graphics::geometry::Size> {
-                self.#delegate_field.size_hint()
             }
 
             fn force_full_redraw(&mut self) {

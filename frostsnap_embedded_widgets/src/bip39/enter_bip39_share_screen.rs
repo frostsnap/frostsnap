@@ -449,6 +449,10 @@ impl Widget for EnterBip39ShareScreen {
 }
 
 impl crate::DynWidget for EnterBip39ShareScreen {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -618,9 +622,6 @@ impl crate::DynWidget for EnterBip39ShareScreen {
         }
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
-    }
     
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;

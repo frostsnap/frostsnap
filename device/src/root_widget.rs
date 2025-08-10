@@ -64,10 +64,6 @@ impl DynWidget for RootWidget {
         self.page_switcher.handle_vertical_drag(prev_y, new_y, is_release)
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        self.page_switcher.size_hint()
-    }
-
     fn force_full_redraw(&mut self) {
         self.page_switcher.force_full_redraw();
     }

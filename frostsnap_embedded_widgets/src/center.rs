@@ -68,9 +68,6 @@ impl<W: Widget> crate::DynWidget for Center<W> {
         self.child.force_full_redraw()
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        None
-    }
 }
 
 impl<W: Widget> Widget for Center<W> {

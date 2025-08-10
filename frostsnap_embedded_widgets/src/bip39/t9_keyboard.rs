@@ -243,6 +243,10 @@ impl T9Keyboard {
 }
 
 impl crate::DynWidget for T9Keyboard {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -262,9 +266,6 @@ impl crate::DynWidget for T9Keyboard {
         // No drag behavior for keyboard
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.bounds.size)
-    }
     
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;

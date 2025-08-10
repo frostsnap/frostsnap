@@ -149,15 +149,6 @@ impl<W: Widget> crate::DynWidget for Padding<W>
         self.child.handle_vertical_drag(adjusted_prev_y, adjusted_new_y, is_release);
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        // Return the child's size plus padding
-        self.child.size_hint().map(|child_size| {
-            Size::new(
-                child_size.width + self.left + self.right,
-                child_size.height + self.top + self.bottom,
-            )
-        })
-    }
 
     fn force_full_redraw(&mut self) {
         self.child.force_full_redraw();

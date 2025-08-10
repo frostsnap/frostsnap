@@ -193,9 +193,6 @@ where
         self.child.handle_touch(adjusted_point, current_time, is_release)
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        self.child.size_hint()
-    }
 
     fn force_full_redraw(&mut self) {
         self.child.force_full_redraw();

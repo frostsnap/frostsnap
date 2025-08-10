@@ -57,6 +57,11 @@ impl NumericKeyboard {
 }
 
 impl crate::DynWidget for NumericKeyboard {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
+
     fn handle_touch(
         &mut self,
         point: Point,
@@ -93,9 +98,6 @@ impl crate::DynWidget for NumericKeyboard {
         None
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size())
-    }
 }
 
 impl crate::Widget for NumericKeyboard {

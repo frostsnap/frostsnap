@@ -60,9 +60,6 @@ impl<C: PixelColor> crate::DynWidget for SizedBox<C>
         // No-op
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
-    }
 }
 
 impl<C: PixelColor> Widget for SizedBox<C> {

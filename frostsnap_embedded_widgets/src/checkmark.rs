@@ -254,10 +254,6 @@ impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
 
     fn handle_vertical_drag(&mut self, _start_y: Option<u32>, _current_y: u32, _is_release: bool) {}
 
-    fn size_hint(&self) -> Option<Size> {
-        // Return the actual size of the checkmark
-        Some(Size::new(self.check_width, self.check_height))
-    }
     
     fn force_full_redraw(&mut self) {
         self.last_drawn_check_progress = None;

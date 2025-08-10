@@ -61,10 +61,10 @@ impl Default for ProgressBar {
 }
 
 impl crate::DynWidget for ProgressBar {
-    fn size_hint(&self) -> Option<Size> {
-        // Return a reasonable default size for the progress bar
-        Some(Size::new(200, self.bar_height))
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
     }
+    
     
     fn force_full_redraw(&mut self) {
         // No internal state to reset
@@ -177,9 +177,10 @@ impl ProgressIndicator {
 }
 
 impl crate::DynWidget for ProgressIndicator {
-    fn size_hint(&self) -> Option<Size> {
-        self.column.size_hint()
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
     }
+    
     
     fn force_full_redraw(&mut self) {
         self.column.force_full_redraw()

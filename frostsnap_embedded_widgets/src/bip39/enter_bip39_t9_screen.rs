@@ -333,6 +333,10 @@ impl EnterBip39T9Screen {
 }
 
 impl crate::DynWidget for EnterBip39T9Screen {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
     fn handle_touch(
         &mut self,
         point: Point,
@@ -470,9 +474,6 @@ impl crate::DynWidget for EnterBip39T9Screen {
         // Not implemented for T9 screen
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(self.size)
-    }
     
     fn force_full_redraw(&mut self) {
         self.needs_redraw = true;

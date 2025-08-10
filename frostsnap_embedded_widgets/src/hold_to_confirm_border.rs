@@ -171,9 +171,6 @@ where
         self.child.handle_vertical_drag(prev_y, new_y, _is_release);
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        self.constraints
-    }
 
     fn force_full_redraw(&mut self) {
         self.last_drawn_progress = Frac::ZERO;

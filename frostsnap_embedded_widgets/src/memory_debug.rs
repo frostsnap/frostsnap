@@ -106,7 +106,11 @@ impl MemoryDebugWidget {
     
 }
 
-impl crate::DynWidget for MemoryDebugWidget {}
+impl crate::DynWidget for MemoryDebugWidget {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+}
 
 impl Widget for MemoryDebugWidget {
     type Color = Rgb565;

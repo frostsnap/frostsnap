@@ -407,6 +407,10 @@ macro_rules! demo_widget {
                 }
                 
                 impl $crate::DynWidget for SlideInDemo {
+                    fn sizing(&self) -> $crate::Sizing {
+                        self.transition.sizing()
+                    }
+                    
                     fn handle_touch(&mut self, _point: Point, _current_time: Instant, is_release: bool) -> Option<$crate::KeyTouch> {
                         // Advance to next page on touch release
                         if is_release {
@@ -425,10 +429,6 @@ macro_rules! demo_widget {
                     
                     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
                         self.transition.handle_vertical_drag(prev_y, new_y, is_release)
-                    }
-                    
-                    fn size_hint(&self) -> Option<Size> {
-                        self.transition.size_hint()
                     }
                     
                     fn force_full_redraw(&mut self) {
@@ -494,8 +494,8 @@ macro_rules! demo_widget {
                 }
                 
                 impl $crate::DynWidget for AnimatedProgress {
-                    fn size_hint(&self) -> Option<Size> {
-                        self.indicator.size_hint()
+                    fn sizing(&self) -> $crate::Sizing {
+                        self.indicator.sizing()
                     }
                     
                     fn force_full_redraw(&mut self) {

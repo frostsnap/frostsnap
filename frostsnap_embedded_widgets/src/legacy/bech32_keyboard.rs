@@ -144,6 +144,11 @@ impl Bech32Keyboard {
 }
 
 impl crate::DynWidget for Bech32Keyboard {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
+
     fn handle_touch(
             &mut self,
             mut point: Point,
@@ -198,9 +203,6 @@ impl crate::DynWidget for Bech32Keyboard {
             }
         }
 
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT))
-    }
 }
 
 impl crate::Widget for Bech32Keyboard {

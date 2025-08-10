@@ -85,10 +85,10 @@ impl ScrollBar {
 }
 
 impl crate::DynWidget for ScrollBar {
-    fn size_hint(&self) -> Option<Size> {
-        // No fixed size - fills the draw target
-        None
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
     }
+    
     
     fn force_full_redraw(&mut self) {
         self.last_scroll_position = None;

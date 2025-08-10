@@ -140,9 +140,6 @@ where
         // No drag handling needed
     }
 
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(W as u32, H as u32))
-    }
 
     fn force_full_redraw(&mut self) {
         self.dirty = true;

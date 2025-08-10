@@ -47,6 +47,11 @@ impl EnterShareIndexScreen {
 }
 
 impl crate::DynWidget for EnterShareIndexScreen {
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing { width: 240, height: 280 }
+    }
+    
+
     fn handle_touch(
         &mut self,
         point: Point,
@@ -102,9 +107,6 @@ impl crate::DynWidget for EnterShareIndexScreen {
         // No drag behavior for this screen
     }
     
-    fn size_hint(&self) -> Option<Size> {
-        Some(Size::new(240, 320)) // Standard screen size
-    }
     
     fn force_full_redraw(&mut self) {
         self.numeric_keyboard.force_full_redraw();
