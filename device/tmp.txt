@@ -1,0 +1,1003 @@
+File  .text    Size                       Crate Name
+0.0%   5.1% 64.7KiB            frostsnap_device frostsnap_device::esp32_run::Run<Rng,Ui,T,DownstreamDetectPin>::run
+0.0%   3.7% 47.3KiB              bitcoin_hashes <bitcoin_hashes::sha512::HashEngine as bitcoin_hashes::HashEngine>::input
+0.0%   2.2% 27.7KiB              frostsnap_core frostsnap_core::device::FrostSigner<S>::recv_coordinator_message
+0.0%   2.0% 25.6KiB             frostsnap_comms <frostsnap_core::message::CoordinatorToDeviceMessage as bincode::de::Decode>::decode
+0.0%   1.7% 22.0KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::translate::Translate<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   1.7% 21.0KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::translate::Translate<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   1.6% 20.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::translate::Translate<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   1.2% 14.9KiB                         v2? <v2::FrostyUi<T,DT,I2C,PINT,RST,SW> as frostsnap_device::ui::UserInteraction>::set_workflow
+0.0%   1.1% 14.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   1.1% 13.4KiB              bitcoin_hashes <bitcoin_hashes::sha256::HashEngine as bitcoin_hashes::HashEngine>::input
+0.0%   1.0% 13.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   1.0% 13.1KiB           frostsnap_device? <frostsnap_device::widget_tree::WidgetTree as frostsnap_embedded_widgets::Widget>::draw
+0.0%   1.0% 12.6KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::translate::Translate<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   1.0% 12.4KiB           frostsnap_device? <frostsnap_device::widget_tree::WidgetTree as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.9% 11.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::hold_to_confirm_border::HoldToConfirmBorder<W,embedded_graphics_core::pixelcolor::rgb_col...
+0.0%   0.8% 10.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::hold_to_confirm_border::HoldToConfirmBorder<W,embedded_graphics_core::pixelcolor::rgb_col...
+0.0%   0.8% 10.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::hold_to_confirm_border::HoldToConfirmBorder<W,embedded_graphics_core::pixelcolor::rgb_col...
+0.0%   0.8% 10.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::hold_to_confirm_border::HoldToConfirmBorder<W,embedded_graphics_core::pixelcolor::rgb_col...
+0.0%   0.8% 10.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::hold_to_confirm_border::HoldToConfirmBorder<W,embedded_graphics_core::pixelcolor::rgb_col...
+0.0%   0.5%  6.3KiB            frostsnap_device <frostsnap_device::widget_tree::WidgetTree as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.5%  6.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  6.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  6.1KiB              frostsnap_core frostsnap_core::device::FrostSigner<S>::apply_mutation
+0.0%   0.5%  6.0KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.9KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.9KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.8KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.8KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.8KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.8KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.5%  5.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.6KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::SignPromptPageList as frostsnap_embedded_widgets::widget_list::WidgetList<fr...
+0.0%   0.4%  5.6KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.6KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.6KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.3KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.3KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.3KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.3KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.3KiB                        sha2 sha2::sha256::compress256
+0.0%   0.4%  5.3KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.3KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.2KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.1KiB               embedded_text <embedded_text::rendering::line::RenderElementHandler<F,D,M> as embedded_text::rendering::line_iter::ElementHandler>::...
+0.0%   0.4%  5.0KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.0KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  5.0KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.9KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.9KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.9KiB                   [Unknown] main
+0.0%   0.4%  4.9KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.9KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.8KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.6KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.6KiB                   rand_core rand_core::block::BlockRng<R>::generate_and_set
+0.0%   0.4%  4.6KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.4%  4.5KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  4.4KiB                 secp256kfun secp256kfun::vendor::k256::field::field_10x26::FieldElement10x26::mul
+0.0%   0.3%  4.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  4.3KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  4.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  4.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  4.0KiB                 secp256kfun secp256kfun::vendor::k256::scalar::Scalar::mul
+0.0%   0.3%  3.8KiB                         v2? <v2::FrostyUi<T,DT,I2C,PINT,RST,SW> as frostsnap_device::ui::UserInteraction>::poll
+0.0%   0.3%  3.8KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  3.8KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::text::Text<S> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  3.7KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  3.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.3%  3.2KiB                   [Unknown] rustsecp256k1_v0_10_0_fe_mul_inner
+0.0%   0.3%  3.2KiB                 schnorr_fun schnorr_fun::frost::chilldkg::encpedpop::receive_share
+0.0%   0.3%  3.2KiB             frostsnap_core? <frostsnap_core::device::Mutation as bincode::de::Decode>::decode
+0.0%   0.2%  3.1KiB                 schnorr_fun secp256kfun::poly::point::eval
+0.0%   0.2%  3.1KiB                 secp256kfun secp256kfun::vendor::k256::projective::ProjectivePoint::add
+0.0%   0.2%  3.0KiB  frostsnap_embedded_widgets core::slice::sort::stable::quicksort::quicksort
+0.0%   0.2%  3.0KiB  frostsnap_embedded_widgets core::slice::sort::stable::quicksort::quicksort
+0.0%   0.2%  3.0KiB  frostsnap_embedded_widgets core::slice::sort::stable::quicksort::quicksort
+0.0%   0.2%  2.9KiB                         std core::num::flt2dec::strategy::dragon::format_shortest
+0.0%   0.2%  2.8KiB                 secp256kfun <secp256kfun::backend::k256_impl::ConstantTime as secp256kfun::backend::TimeSensitive>::point_add_norm_point
+0.0%   0.2%  2.8KiB             frostsnap_core? <frostsnap_core::message::CoordinatorToDeviceMessage as core::clone::Clone>::clone
+0.0%   0.2%  2.7KiB               embedded_text embedded_text::rendering::<impl embedded_graphics_core::drawable::Drawable for embedded_text::TextBox<F,M>>::draw
+0.0%   0.2%  2.6KiB                         std core::num::flt2dec::strategy::dragon::format_exact
+0.0%   0.2%  2.6KiB                         std core::num::flt2dec::strategy::grisu::format_shortest_opt
+0.0%   0.2%  2.6KiB              frostsnap_core frostsnap_core::device_nonces::NonceStreamSlot::read_slot
+0.0%   0.2%  2.5KiB          frostsnap_embedded frostsnap_embedded::ab_write::Slot<S>::write
+0.0%   0.2%  2.5KiB                         std core::num::flt2dec::strategy::dragon::mul_pow10
+0.0%   0.2%  2.4KiB                 secp256kfun secp256kfun::vendor::k256::field::FieldElement::square
+0.0%   0.2%  2.3KiB                         md5 md5::transform
+0.0%   0.2%  2.3KiB                 secp256kfun secp256kfun::vendor::k256::scalar::Scalar::mul_shift_var
+0.0%   0.2%  2.3KiB  frostsnap_embedded_widgets core::slice::sort::stable::drift::sort
+0.0%   0.2%  2.3KiB  frostsnap_embedded_widgets core::slice::sort::stable::drift::sort
+0.0%   0.2%  2.3KiB  frostsnap_embedded_widgets core::slice::sort::stable::drift::sort
+0.0%   0.2%  2.1KiB                         std __rustc::rust_begin_unwind
+0.0%   0.2%  2.1KiB                 secp256kfun secp256kfun::backend::k256_impl::<impl secp256kfun::backend::BackendPoint for secp256kfun::vendor::k256::projective::P...
+0.0%   0.2%  2.0KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::center::Center<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.2%  2.0KiB               embedded_text embedded_text::style::TextBoxStyle::measure_line
+0.0%   0.2%  2.0KiB                   [Unknown] rustsecp256k1_v0_10_0_fe_sqr_inner
+0.0%   0.2%  1.9KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.9KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::center::Center<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.1%  1.9KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.8KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.8KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.8KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.8KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.8KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.8KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.8KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.7KiB                         std core::slice::sort::stable::drift::sort
+0.0%   0.1%  1.7KiB                         std core::slice::sort::stable::drift::sort
+0.0%   0.1%  1.7KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.7KiB  frostsnap_embedded_widgets frostsnap_embedded_widgets::mut_text::MutText<S,_,_,_,_>::render_to_buffer
+0.0%   0.1%  1.7KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.7KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.7KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.7KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.7KiB                 schnorr_fun core::slice::sort::stable::drift::sort
+0.0%   0.1%  1.7KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.7KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.7KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.7KiB                         std core::slice::sort::stable::drift::sort
+0.0%   0.1%  1.7KiB                         std core::slice::sort::stable::drift::sort
+0.0%   0.1%  1.6KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.6KiB          frostsnap_embedded frostsnap_embedded::ab_write::Slot<S>::write
+0.0%   0.1%  1.6KiB                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB  frostsnap_embedded_widgets core::slice::sort::stable::drift::sort
+0.0%   0.1%  1.6KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.6KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.6KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.6KiB             frostsnap_comms <frostsnap_core::bitcoin_transaction::SpkOwner as bincode::de::Decode>::decode
+0.0%   0.1%  1.5KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.5KiB frostsnap_embedded_widgets? <frostsnap_embedded_widgets::color_map::MappedDrawTarget<D,F,CSrc> as embedded_graphics_core::draw_target::DrawTarget>...
+0.0%   0.1%  1.5KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.5KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.5KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.5KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.5KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.5KiB              frostsnap_core frostsnap_core::bitcoin_transaction::LocalSpk::spk
+0.0%   0.1%  1.5KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.5KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.5KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.5KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.5KiB            frostsnap_device frostsnap_device::flash::log::MutationLog<S>::push
+0.0%   0.1%  1.5KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB  frostsnap_embedded_widgets core::slice::sort::stable::quicksort::quicksort
+0.0%   0.1%  1.4KiB            frostsnap_device frostsnap_device::efuse::EfuseController::write_block
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB                     bitcoin <bitcoin::address::Address as core::fmt::Display>::fmt
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB                         std alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::Node...
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB                 secp256kfun secp256kfun::vendor::k256::projective::ProjectivePoint::double
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB frostsnap_embedded_widgets? <frostsnap_embedded_widgets::color_map::MappedDrawTarget<D,F,CSrc> as embedded_graphics_core::draw_target::DrawTarget>...
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::ConfirmationPage as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.4KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB                         std core::num::flt2dec::strategy::grisu::format_exact_opt
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB              frostsnap_core frostsnap_core::SessionHash::from_agg_input
+0.0%   0.1%  1.3KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.3KiB                         std core::slice::sort::stable::quicksort::quicksort
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB                 secp256kfun secp256kfun::vendor::k256::mul::lincomb_generic
+0.0%   0.1%  1.3KiB           embedded_graphics embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB                         std core::slice::sort::stable::quicksort::quicksort
+0.0%   0.1%  1.3KiB                         std <core::time::Duration as core::fmt::Debug>::fmt::fmt_decimal
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.3KiB                         std alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::Node...
+0.0%   0.1%  1.3KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.2KiB                         std core::slice::sort::stable::quicksort::quicksort
+0.0%   0.1%  1.2KiB                         std core::slice::sort::stable::quicksort::quicksort
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB                 schnorr_fun core::slice::sort::stable::quicksort::quicksort
+0.0%   0.1%  1.2KiB  frostsnap_embedded_widgets frostsnap_embedded_widgets::bitcoin_amount_display::BitcoinAmountDisplay::new
+0.0%   0.1%  1.2KiB  frostsnap_embedded_widgets frostsnap_embedded_widgets::p2tr_address_display::P2trAddressDisplay::new
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.2KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.1KiB          embedded_graphics? <embedded_graphics::draw_target::translated::Translated<T> as embedded_graphics_core::draw_target::DrawTarget>::draw_iter
+0.0%   0.1%  1.1KiB          embedded_graphics? <embedded_graphics::draw_target::translated::Translated<T> as embedded_graphics_core::draw_target::DrawTarget>::draw_iter
+0.0%   0.1%  1.1KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.1KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.1KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.1KiB          frostsnap_embedded frostsnap_embedded::ab_write::Slot<S>::write
+0.0%   0.1%  1.1KiB                         std core::char::methods::<impl char>::escape_debug_ext
+0.0%   0.1%  1.1KiB  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::stack::Stack<(T1,T2)> as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.1%  1.1KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.1KiB                     bincode bincode::features::impl_alloc::<impl bincode::enc::Encode for alloc::string::String>::encode
+0.0%   0.1%  1.1KiB          embedded_graphics? <embedded_graphics::draw_target::translated::Translated<T> as embedded_graphics_core::draw_target::DrawTarget>::draw_iter
+0.0%   0.1%  1.1KiB          embedded_graphics? <embedded_graphics::draw_target::translated::Translated<T> as embedded_graphics_core::draw_target::DrawTarget>::draw_iter
+0.0%   0.1%  1.0KiB      embedded_graphics_core embedded_graphics_core::draw_target::DrawTarget::fill_solid
+0.0%   0.1%  1.0KiB                 secp256kfun <secp256kfun::backend::k256_impl::ConstantTime as secp256kfun::backend::TimeSensitive>::point_normalize
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%  1.0KiB               embedded_text embedded_text::plugin::PluginWrapper<M,C>::peek_token
+0.0%   0.1%    992B                         std alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::Node...
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    982B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    978B                    poly1305 <poly1305::backend::soft::State as universal_hash::UhfBackend>::proc_block
+0.0%   0.1%    974B             frostsnap_core? <frostsnap_core::device::restoration::RestorationMutation as bincode::de::Decode>::decode
+0.0%   0.1%    934B                     bincode bincode::encode_into_writer
+0.0%   0.1%    934B             frostsnap_core? <frostsnap_core::ShareImage as bincode::de::Decode>::decode
+0.0%   0.1%    932B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.1%    922B                     esp_hal esp_hal::spi::master::Spi<esp_hal::Blocking>::new_with_config
+0.0%   0.1%    918B              frostsnap_core <chacha20::ChaChaCore<R> as cipher::stream_core::StreamCipherCore>::process_with_backend
+0.0%   0.1%    916B                     bincode <&T as core::fmt::Debug>::fmt
+0.0%   0.1%    912B                    bincode? <bincode::error::DecodeError as core::fmt::Debug>::fmt
+0.0%   0.1%    912B                    bincode? <bincode::error::DecodeError as core::fmt::Debug>::fmt
+0.0%   0.1%    912B                    bitcoin? <bitcoin::crypto::sighash::TaprootError as core::fmt::Debug>::fmt
+0.0%   0.1%    912B                    bincode? <bincode::error::DecodeError as core::fmt::Debug>::fmt
+0.0%   0.1%    886B              frostsnap_core frostsnap_core::device::EncryptedSecretShare::encrypt
+0.0%   0.1%    876B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    876B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    876B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    876B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    876B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    876B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.1%    844B  frostsnap_embedded_widgets embedded_graphics::primitives::circle::styled::<impl embedded_graphics::primitives::styled::StyledDrawable<embedded_gr...
+0.0%   0.1%    820B            frostsnap_device frostsnap_device::efuse::EfuseHmacKey::hash
+0.0%   0.1%    818B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.1%    794B  frostsnap_embedded_widgets core::slice::sort::shared::smallsort::sort4_stable
+0.0%   0.1%    792B                         std core::fmt::float::float_to_decimal_common_exact
+0.0%   0.1%    782B                         std alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_right
+0.0%   0.1%    776B                         std alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_left
+0.0%   0.1%    770B              frostsnap_core frostsnap_core::symmetric_encryption::Ciphertext<_,T>::decrypt
+0.0%   0.1%    768B                         std core::str::slice_error_fail_rt
+0.0%   0.1%    756B                         std core::num::bignum::Big32x40::mul_pow2
+0.0%   0.1%    756B                         std alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.1%    750B             frostsnap_core? <frostsnap_core::ShareImage as bincode::enc::Encode>::encode
+0.0%   0.1%    734B              frostsnap_core frostsnap_core::device::FrostSigner<S>::clear_tmp_data
+0.0%   0.1%    732B                   [Unknown] rustsecp256k1_v0_10_0_fe_sqrt
+0.0%   0.1%    732B                         std core::fmt::float::float_to_decimal_common_exact
+0.0%   0.1%    732B                         std <str as core::fmt::Debug>::fmt
+0.0%   0.1%    730B                         std alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_right
+0.0%   0.1%    730B                         std alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_left
+0.0%   0.1%    728B                     bincode bincode::varint::decode_unsigned::deserialize_varint_cold_u64
+0.0%   0.1%    724B                 schnorr_fun <secp256kfun::scalar::Scalar<secp256kfun::marker::secrecy::Public,Z> as core::cmp::Ord>::cmp
+0.0%   0.1%    716B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11)> as frostsnap_embedded_widgets::Dyn...
+0.0%   0.1%    716B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_right
+0.0%   0.1%    708B                 secp256kfun secp256kfun::backend::k256_impl::<impl secp256kfun::backend::BackendScalar for secp256kfun::vendor::k256::scalar::Scal...
+0.0%   0.1%    704B                    base58ck base58ck::encode_check_to_fmt
+0.0%   0.1%    692B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_right
+0.0%   0.1%    688B              frostsnap_core bitcoin::crypto::sighash::SighashCache<R>::common_cache_minimal_borrow
+0.0%   0.1%    688B              frostsnap_core <chacha20::ChaChaCore<R> as cipher::stream_core::StreamCipherCore>::process_with_backend
+0.0%   0.1%    680B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_left
+0.0%   0.1%    674B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_left
+0.0%   0.1%    670B              frostsnap_core alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::Node...
+0.0%   0.1%    670B                     bincode bincode::encode_into_writer
+0.0%   0.1%    666B              frostsnap_core alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::Node...
+0.0%   0.1%    664B                     mipidsi mipidsi::builder::Builder<DI,MODEL,RST>::init
+0.0%   0.1%    656B                         std alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    644B                 secp256kfun secp256kfun::vendor::k256::scalar::scalar_8x32::Scalar8x32::add
+0.0%   0.0%    644B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    628B             frostsnap_comms <frostsnap_core::nonce_stream::CoordNonceStreamState as bincode::de::Decode>::decode
+0.0%   0.0%    626B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    622B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::AmountPage as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.0%    620B                 secp256kfun secp256kfun::vendor::k256::scalar::Scalar::from_repr
+0.0%   0.0%    600B  frostsnap_embedded_widgets frostsnap_embedded_widgets::progress::ProgressIndicator::set_progress
+0.0%   0.0%    598B                   esp_alloc <esp_alloc::EspHeap as core::alloc::global::GlobalAlloc>::dealloc
+0.0%   0.0%    598B                embedded_hal embedded_hal::spi::SpiDevice::write
+0.0%   0.0%    596B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    592B              frostsnap_core frostsnap_core::device_nonces::SecretNonceSlot::nonce_segment
+0.0%   0.0%    588B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    586B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    584B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    584B                 schnorr_fun schnorr_fun::schnorr::new_with_deterministic_nonces
+0.0%   0.0%    580B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    578B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    576B  frostsnap_embedded_widgets embedded_graphics::primitives::rounded_rectangle::styled::<impl embedded_graphics::primitives::styled::StyledDrawable<...
+0.0%   0.0%    576B                     bitcoin bitcoin_hashes::hmac::HmacEngine<T>::new
+0.0%   0.0%    574B                     esp_hal esp_hal::rtc_cntl::RtcClock::calibrate
+0.0%   0.0%    574B                        std? <alloc::collections::btree::map::BTreeMap<K,V,A> as core::clone::Clone>::clone::clone_subtree
+0.0%   0.0%    568B                         std core::fmt::Formatter::pad_integral
+0.0%   0.0%    568B                        std? <<alloc::collections::vec_deque::drain::Drain<T,A> as core::ops::drop::Drop>::drop::DropGuard<T,A> as core::ops::drop:...
+0.0%   0.0%    568B                        std? <<alloc::collections::vec_deque::drain::Drain<T,A> as core::ops::drop::Drop>::drop::DropGuard<T,A> as core::ops::drop:...
+0.0%   0.0%    562B  frostsnap_embedded_widgets frostsnap_embedded_widgets::welcome::Welcome::new
+0.0%   0.0%    562B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::AddressPage as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.0%    560B                     bincode bincode::varint::decode_unsigned::deserialize_varint_cold_u32
+0.0%   0.0%    558B                     esp_hal esp_hal::uart::Info::apply_config
+0.0%   0.0%    556B             frostsnap_comms alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::Node...
+0.0%   0.0%    552B                     bincode bincode::enc::impls::<impl bincode::enc::Encode for u16>::encode
+0.0%   0.0%    548B  frostsnap_embedded_widgets frostsnap_embedded_widgets::bitmap::EncodedImage::from_bytes
+0.0%   0.0%    546B                         std core::str::converts::from_utf8
+0.0%   0.0%    544B                 secp256kfun <secp256kfun::backend::k256_impl::ConstantTime as secp256kfun::backend::TimeSensitive>::scalar_sub
+0.0%   0.0%    542B                         std alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_right
+0.0%   0.0%    540B                    bincode? <bincode::error::EncodeError as core::fmt::Debug>::fmt
+0.0%   0.0%    538B                         std core::fmt::Formatter::pad_formatted_parts
+0.0%   0.0%    538B                         std core::str::iter::SplitInternal<P>::next_back
+0.0%   0.0%    536B                         std <core::time::Duration as core::fmt::Debug>::fmt::fmt_decimal::{{closure}}
+0.0%   0.0%    534B                         std alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    534B                         std alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_left
+0.0%   0.0%    530B           embedded_graphics <embedded_graphics::primitives::rounded_rectangle::RoundedRectangle as embedded_graphics::primitives::OffsetOutline>::...
+0.0%   0.0%    530B                        std? <alloc::collections::btree::map::BTreeMap<K,V,A> as core::clone::Clone>::clone::clone_subtree
+0.0%   0.0%    528B                         std core::fmt::float::float_to_decimal_common_shortest
+0.0%   0.0%    524B                  u8g2_fonts u8g2_fonts::font_reader::FontReader::try_retrieve_glyph_data
+0.0%   0.0%    524B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::FeePage as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.0%    524B                         std core::num::flt2dec::strategy::grisu::format_exact_opt::possibly_round
+0.0%   0.0%    522B              frostsnap_core alloc::collections::btree::map::BTreeMap<K,V,A>::remove_entry
+0.0%   0.0%    514B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    512B              frostsnap_core alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    510B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    506B                         std <core::iter::adapters::zip::Zip<A,B> as core::iter::adapters::zip::ZipImpl<A,B>>::next
+0.0%   0.0%    504B                       serde <serde::de::Unexpected as core::fmt::Display>::fmt
+0.0%   0.0%    504B             frostsnap_comms bincode::features::impl_alloc::<impl bincode::de::Decode for alloc::vec::Vec<T>>::decode
+0.0%   0.0%    504B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    502B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::color_map::ColorMap<W,C> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    500B             frostsnap_core? <frostsnap_core::AccessStructureRef as bincode::de::Decode>::decode
+0.0%   0.0%    498B                     esp_hal esp_hal::i2c::master::Driver::setup
+0.0%   0.0%    496B                  secp256k1? <secp256k1::Error as core::fmt::Debug>::fmt
+0.0%   0.0%    494B                         std <core::iter::adapters::zip::Zip<A,B> as core::iter::adapters::zip::ZipImpl<A,B>>::next
+0.0%   0.0%    492B            frostsnap_device esp_hal::sha::ShaDigest<A,S>::finish
+0.0%   0.0%    488B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    486B  frostsnap_embedded_widgets core::slice::sort::shared::pivot::median3_rec
+0.0%   0.0%    484B  frostsnap_embedded_widgets core::slice::sort::shared::smallsort::bidirectional_merge
+0.0%   0.0%    484B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    484B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::fader::Fader<W> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    482B                 schnorr_fun schnorr_fun::frost::share::SecretShare::to_bytes
+0.0%   0.0%    482B             frostsnap_comms alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_right
+0.0%   0.0%    480B                         std <core::fmt::builders::PadAdapter as core::fmt::Write>::write_str
+0.0%   0.0%    478B                        std? <alloc::collections::btree::map::BTreeMap<K,V,A> as core::clone::Clone>::clone::clone_subtree
+0.0%   0.0%    476B             frostsnap_comms <frostsnap_core::nonce_stream::NonceStreamSegment as bincode::enc::Encode>::encode
+0.0%   0.0%    474B  frostsnap_embedded_widgets <embedded_graphics::text::text::Text<S> as embedded_graphics_core::geometry::Dimensions>::bounding_box
+0.0%   0.0%    474B  frostsnap_embedded_widgets <embedded_graphics::text::text::Text<S> as embedded_graphics_core::geometry::Dimensions>::bounding_box
+0.0%   0.0%    474B              frostsnap_core bitcoin::crypto::sighash::SighashCache<R>::taproot_cache
+0.0%   0.0%    472B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::bulk_steal_left
+0.0%   0.0%    472B                         std core::fmt::float::float_to_decimal_common_shortest
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    472B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    470B  frostsnap_embedded_widgets u8g2_fonts::renderer::FontRenderer::get_rendered_dimensions
+0.0%   0.0%    470B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    470B             frostsnap_comms alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    470B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    468B            frostsnap_device frostsnap_embedded::partition::FlashPartition<S>::read
+0.0%   0.0%    468B                 secp256kfun <secp256kfun::scalar::Scalar<S,Z> as secp256kfun::hash::HashInto>::hash_into
+0.0%   0.0%    466B            frostsnap_device <frostsnap_device::efuse::EfuseHmacKey as frostsnap_core::device::DeviceSymmetricKeyGen>::get_share_encryption_key
+0.0%   0.0%    466B             frostsnap_comms alloc::collections::btree::node::BalancingContext<K,V>::do_merge
+0.0%   0.0%    466B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    458B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    456B                 secp256kfun secp256kfun::vendor::k256::mul::Radix16Decomposition::new
+0.0%   0.0%    456B                   esp_alloc esp_alloc::EspHeap::alloc_caps
+0.0%   0.0%    454B  frostsnap_embedded_widgets alloc::str::join_generic_copy
+0.0%   0.0%    452B                     esp_hal esp_hal::i2c::master::Driver::write_operation_blocking
+0.0%   0.0%    450B                         std core::fmt::Formatter::pad
+0.0%   0.0%    448B  frostsnap_embedded_widgets frostsnap_embedded_widgets::circle_button::CircleButton::new
+0.0%   0.0%    446B                 secp256kfun <secp256kfun::vendor::k256::field::field_10x26::FieldElement10x26 as subtle_ng::ConstantTimeEq>::ct_eq
+0.0%   0.0%    436B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::WarningPage as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.0%    436B                     bincode bincode::features::impl_alloc::<impl bincode::de::Decode for alloc::vec::Vec<T>>::decode
+0.0%   0.0%    434B              frostsnap_core bitcoin::address::Address::from_script
+0.0%   0.0%    432B                 secp256kfun <secp256kfun::backend::k256_impl::ConstantTime as secp256kfun::backend::TimeSensitive>::point_eq_point
+0.0%   0.0%    432B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::center::Center<W> as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.0%    430B                        std? <alloc::collections::btree::map::BTreeMap<K,V,A> as core::clone::Clone>::clone::clone_subtree
+0.0%   0.0%    428B                 secp256kfun <D as secp256kfun::hash::HashAdd>::add
+0.0%   0.0%    428B       display_interface_spi display_interface_spi::send_u8
+0.0%   0.0%    426B             frostsnap_comms <<bincode::features::serde::de_owned::SerdeDecoder<DE> as serde::de::Deserializer>::deserialize_tuple::Access<DE> as s...
+0.0%   0.0%    426B           embedded_graphics embedded_graphics::primitives::line::thick_points::ParallelsIterator::next_parallel
+0.0%   0.0%    426B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    424B           embedded_graphics <embedded_graphics::primitives::rounded_rectangle::points::Scanlines as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    422B           embedded_graphics embedded_graphics::primitives::line::thick_points::ThickPoints::new
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    420B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::Widget>::draw
+0.0%   0.0%    416B  frostsnap_embedded_widgets frostsnap_embedded_widgets::slide_in_transition::SlideInTransition<T>::switch_to
+0.0%   0.0%    416B           embedded_graphics <embedded_graphics::mono_font::mapping::StrGlyphMapping as embedded_graphics::mono_font::mapping::GlyphMapping>::index
+0.0%   0.0%    416B                         std <core::ops::range::Range<Idx> as core::fmt::Debug>::fmt
+0.0%   0.0%    414B                         std core::fmt::write
+0.0%   0.0%    414B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    412B                    poly1305 <poly1305::Poly1305 as universal_hash::UniversalHash>::finalize
+0.0%   0.0%    412B             frostsnap_comms <frostsnap_core::ShareImage as bincode::enc::Encode>::encode
+0.0%   0.0%    410B                      bech32 bech32::primitives::hrp::Hrp::parse
+0.0%   0.0%    404B              frostsnap_core frostsnap_core::tweak::Xpub<T>::derive_bip32_in_place
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    404B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    402B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    402B                     esp_hal esp_hal::system::PeripheralClockControl::enable
+0.0%   0.0%    402B  frostsnap_embedded_widgets frostsnap_embedded_widgets::translate::Translate<W>::calculate_offset
+0.0%   0.0%    402B  frostsnap_embedded_widgets frostsnap_embedded_widgets::translate::Translate<W>::calculate_offset
+0.0%   0.0%    398B                      digest digest::FixedOutput::finalize_fixed
+0.0%   0.0%    398B                      digest digest::FixedOutput::finalize_fixed
+0.0%   0.0%    394B          embedded_graphics? <embedded_graphics::primitives::styled::Styled<T,S> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    392B                        sha2 sha2::sha256::soft::schedule
+0.0%   0.0%    392B                         std core::fmt::num::imp::<impl u64>::_fmt
+0.0%   0.0%    390B                     esp_hal esp_hal::system::PeripheralClockControl::reset
+0.0%   0.0%    388B           frostsnap_device? <frostsnap_device::flash::log::Mutation as bincode::de::Decode>::decode
+0.0%   0.0%    386B               embedded_text embedded_text::rendering::line_iter::LineElementParser<M,C>::should_draw_whitespace
+0.0%   0.0%    382B  frostsnap_embedded_widgets frostsnap_embedded_widgets::progress::ProgressIndicator::new
+0.0%   0.0%    382B                     esp_hal esp_hal::soc::implementation::trng::ensure_randomness
+0.0%   0.0%    382B           embedded_graphics embedded_graphics::primitives::rounded_rectangle::RoundedRectangle::get_confined_corner_quadrant
+0.0%   0.0%    382B                        std? <alloc::collections::btree::map::BTreeMap<K,V,A> as core::clone::Clone>::clone::clone_subtree
+0.0%   0.0%    382B                rand_chacha? <rand_chacha::chacha::ChaCha20Rng as rand_core::SeedableRng>::from_seed
+0.0%   0.0%    380B            frostsnap_device frostsnap_device::efuse::EfuseHmacKeys::load_or_init
+0.0%   0.0%    378B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_normalize
+0.0%   0.0%    378B            frostsnap_device <&mut T as core::fmt::Debug>::fmt
+0.0%   0.0%    378B               embedded_text embedded_text::rendering::line_iter::LineElementParser<M,C>::should_draw_whitespace
+0.0%   0.0%    376B                         std core::fmt::builders::DebugStruct::field
+0.0%   0.0%    376B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    374B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_normalize_var
+0.0%   0.0%    374B                 secp256kfun secp256kfun::vendor::k256::field::FieldElement::to_bytes
+0.0%   0.0%    372B                    bitcoin? <bitcoin::address::error::FromScriptError as core::fmt::Debug>::fmt
+0.0%   0.0%    372B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    370B                         std core::fmt::num::imp::<impl u32>::_fmt
+0.0%   0.0%    370B  frostsnap_embedded_widgets frostsnap_embedded_widgets::hold_to_confirm::HoldToConfirm<W>::update_progress
+0.0%   0.0%    370B  frostsnap_embedded_widgets frostsnap_embedded_widgets::hold_to_confirm::HoldToConfirm<W>::update_progress
+0.0%   0.0%    370B  frostsnap_embedded_widgets frostsnap_embedded_widgets::hold_to_confirm::HoldToConfirm<W>::update_progress
+0.0%   0.0%    368B                 secp256kfun <secp256kfun::backend::k256_impl::ConstantTime as secp256kfun::backend::TimeSensitive>::scalar_eq
+0.0%   0.0%    368B             frostsnap_comms alloc::slice::<impl [T]>::join
+0.0%   0.0%    366B                         std core::fmt::num::imp::<impl usize>::_fmt
+0.0%   0.0%    366B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    360B              frostsnap_core alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    358B                     bech32? <bech32::primitives::hrp::Error as core::fmt::Debug>::fmt
+0.0%   0.0%    356B            frostsnap_device <frostsnap_device::ota::EspOtadataSlot as bincode::de::Decode>::decode
+0.0%   0.0%    354B      embedded_graphics_core embedded_graphics_core::primitives::rectangle::Rectangle::intersection
+0.0%   0.0%    352B              bitcoin_hashes <bitcoin_hashes::sha512::Hash as bitcoin_hashes::Hash>::from_engine
+0.0%   0.0%    352B                        std? <alloc::collections::btree::map::BTreeMap<K,V,A> as core::clone::Clone>::clone::clone_subtree
+0.0%   0.0%    350B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::layout::row::Row<(T1,T2,T3)> as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.0%    350B                     esp_hal esp_hal::reg_access::AlignmentHelper<E>::aligned_volatile_copy
+0.0%   0.0%    350B                 secp256kfun secp256kfun::hash::Tag::tag
+0.0%   0.0%    348B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_set_b32_mod
+0.0%   0.0%    348B                 schnorr_fun schnorr_fun::signature::Signature<S>::to_bytes
+0.0%   0.0%    346B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    344B              frostsnap_core <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    342B  frostsnap_embedded_widgets core::slice::sort::shared::smallsort::insert_tail
+0.0%   0.0%    342B            frostsnap_device <frostsnap_embedded::partition::FlashPartition<esp_storage::common::FlashStorage> as frostsnap_device::partitions::Par...
+0.0%   0.0%    338B                         std core::str::count::do_count_chars
+0.0%   0.0%    332B             frostsnap_comms <frostsnap_core::device::KeyPurpose as bincode::de::Decode>::decode
+0.0%   0.0%    328B                         std core::fmt::Formatter::write_formatted_parts
+0.0%   0.0%    324B                         std <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    322B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_get_b32
+0.0%   0.0%    320B  frostsnap_embedded_widgets frostsnap_embedded_widgets::bitmap::<impl core::convert::From<frostsnap_embedded_widgets::bitmap::EncodedImage> for fr...
+0.0%   0.0%    320B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    320B                         std core::slice::sort::shared::smallsort::sort4_stable
+0.0%   0.0%    320B                         std core::slice::sort::shared::smallsort::sort4_stable
+0.0%   0.0%    318B            frostsnap_device frostsnap_embedded::partition::FlashPartition<S>::nor_write
+0.0%   0.0%    318B             frostsnap_comms bincode::features::impl_alloc::<impl bincode::de::Decode for alloc::string::String>::decode
+0.0%   0.0%    318B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    312B  frostsnap_embedded_widgets frostsnap_embedded_widgets::page_slider::PageSlider<L,T>::start_transition
+0.0%   0.0%    312B  frostsnap_embedded_widgets bincode::varint::decode_unsigned::deserialize_varint_cold_u64
+0.0%   0.0%    312B            frostsnap_device frostsnap_device::ota::OtaPartitions::current_slot
+0.0%   0.0%    312B                         std core::slice::sort::shared::smallsort::sort4_stable
+0.0%   0.0%    312B                         std core::ptr::drop_in_place<core::iter::adapters::map::Map<alloc::collections::vec_deque::drain::Drain<frostsnap_core::de...
+0.0%   0.0%    310B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    310B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    310B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    310B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    308B                         std <core::str::iter::Split<P> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    308B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    306B                        sha2 sha2::sha256::soft::sha256_digest_round_x2
+0.0%   0.0%    306B              frostsnap_core alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    306B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    304B  frostsnap_embedded_widgets u8g2_fonts::content::vertical_offset::compute_vertical_offset_from_dynamic_newlines
+0.0%   0.0%    302B             frostsnap_comms <frostsnap_core::KeygenId as bincode::de::Decode>::decode
+0.0%   0.0%    302B                     esp_hal esp_hal::spi::master::Info::write_bytes
+0.0%   0.0%    302B                         std core::fmt::Formatter::debug_struct_field4_finish
+0.0%   0.0%    302B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    300B                      cipher cipher::stream::StreamCipher::apply_keystream
+0.0%   0.0%    298B              frostsnap_core <secp256kfun::point::Point as frostsnap_core::tweak::TweakableKey>::to_libsecp_xonly
+0.0%   0.0%    298B             frostsnap_comms <frostsnap_core::nonce_stream::NonceStreamSegment as bincode::enc::Encode>::encode
+0.0%   0.0%    298B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    296B             frostsnap_core? <frostsnap_core::AccessStructureRef as bincode::enc::Encode>::encode
+0.0%   0.0%    294B              bitcoin_hashes <bitcoin_hashes::sha256::Hash as bitcoin_hashes::Hash>::from_engine
+0.0%   0.0%    294B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    292B                     bincode bincode::varint::decode_unsigned::deserialize_varint_cold_u64
+0.0%   0.0%    288B                 schnorr_fun core::slice::sort::shared::smallsort::sort4_stable
+0.0%   0.0%    288B  frostsnap_embedded_widgets frostsnap_embedded_widgets::fader::interpolate_color
+0.0%   0.0%    288B                      cipher cipher::stream::StreamCipher::apply_keystream
+0.0%   0.0%    286B                 schnorr_fun schnorr_fun::binonce::SecretNonce::from_bytes
+0.0%   0.0%    286B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    286B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    284B              frostsnap_core <schnorr_fun::frost::share::PairedSecretShare as frostsnap_core::tweak::TweakableKey>::tweak
+0.0%   0.0%    284B                     esp_hal esp_hal::gpio::internal::<impl esp_hal::gpio::OutputPin for esp_hal::gpio::AnyPin>::set_to_push_pull_output
+0.0%   0.0%    284B                     esp_hal esp_hal::gpio::internal::<impl esp_hal::gpio::OutputPin for esp_hal::gpio::AnyPin>::set_to_open_drain_output
+0.0%   0.0%    284B            frostsnap_device frostsnap_device::efuse::EfuseHmacKey::mix_in_rng
+0.0%   0.0%    282B                         std <core::iter::sources::from_fn::FromFn<F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    278B            chacha20poly1305 chacha20poly1305::cipher::Cipher<C>::new
+0.0%   0.0%    278B              frostsnap_core frostsnap_core::CoordShareDecryptionContrib::for_master_share
+0.0%   0.0%    276B                     mipidsi mipidsi::Display<DI,M,RST>::set_address_window
+0.0%   0.0%    276B                     bincode bincode::enc::impls::<impl bincode::enc::Encode for u32>::encode
+0.0%   0.0%    274B                     esp_hal esp_hal::spi::master::Spi<M,T>::with_mosi
+0.0%   0.0%    274B                         std <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    272B                         std core::ptr::drop_in_place<core::option::Option<frostsnap_comms::DeviceSendMessage<frostsnap_comms::DeviceSendBody>>>
+0.0%   0.0%    272B              frostsnap_core <frostsnap_core::bitcoin_transaction::SpkOwner as bincode::enc::Encode>::encode
+0.0%   0.0%    272B                         std core::fmt::builders::DebugList::entry
+0.0%   0.0%    270B            frostsnap_device <frostsnap_embedded::partition::BincodeFlashWriter<S,_> as bincode::enc::write::Writer>::write
+0.0%   0.0%    270B              frostsnap_core <frostsnap_core::KeygenId as core::fmt::Display>::fmt
+0.0%   0.0%    270B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    268B            frostsnap_device <frostsnap_device::widget_tree::WidgetTree as frostsnap_embedded_widgets::DynWidget>::force_full_redraw
+0.0%   0.0%    268B                         std core::unicode::unicode_data::grapheme_extend::lookup_slow
+0.0%   0.0%    268B                 secp256kfun secp256kfun::scalar::Scalar::random
+0.0%   0.0%    266B                 secp256kfun secp256kfun::vendor::k256::scalar::Scalar::negate
+0.0%   0.0%    266B                         std core::fmt::num::imp::<impl core::fmt::Display for u16>::fmt
+0.0%   0.0%    266B                         std alloc::fmt::format::format_inner
+0.0%   0.0%    264B                 secp256kfun <secp256kfun::vendor::k256::field::field_10x26::FieldElement10x26 as subtle_ng::ConditionallySelectable>::conditional_...
+0.0%   0.0%    264B                     bitcoin <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    264B             frostsnap_core? <frostsnap_core::KeyId as bincode::enc::Encode>::encode
+0.0%   0.0%    262B                        std? <alloc::string::String as core::fmt::Write>::write_char
+0.0%   0.0%    260B                        std? <alloc::string::String as core::fmt::Write>::write_char
+0.0%   0.0%    260B                        std? <alloc::string::String as core::fmt::Write>::write_char
+0.0%   0.0%    260B                        std? <alloc::string::String as core::fmt::Write>::write_char
+0.0%   0.0%    258B                 schnorr_fun <alloc::collections::btree::map::BTreeMap<K,V,A> as core::ops::drop::Drop>::drop
+0.0%   0.0%    258B                 schnorr_fun <alloc::collections::btree::map::BTreeMap<K,V,A> as core::ops::drop::Drop>::drop
+0.0%   0.0%    258B              frostsnap_core <alloc::collections::btree::map::BTreeMap<K,V,A> as core::ops::drop::Drop>::drop
+0.0%   0.0%    258B             frostsnap_comms <alloc::collections::btree::map::BTreeMap<K,V,A> as core::ops::drop::Drop>::drop
+0.0%   0.0%    258B             frostsnap_comms bincode::features::impl_alloc::<impl bincode::de::Decode for alloc::vec::Vec<T>>::decode
+0.0%   0.0%    256B                 secp256kfun secp256kfun::vendor::k256::mul::LookupTable::select
+0.0%   0.0%    256B  frostsnap_embedded_widgets frostsnap_embedded_widgets::text::Text<S>::new
+0.0%   0.0%    254B                     esp_hal esp_hal::spi::master::Info::read_bytes_from_fifo
+0.0%   0.0%    254B                         std core::slice::sort::stable::driftsort_main
+0.0%   0.0%    254B                         std core::slice::sort::stable::driftsort_main
+0.0%   0.0%    254B              frostsnap_core frostsnap_core::tweak::Xpub<T>::derive_bip32_in_place
+0.0%   0.0%    250B              frostsnap_core frostsnap_core::device::FrostSigner<S>::save_complete_share
+0.0%   0.0%    248B             frostsnap_comms bincode::varint::decode_unsigned::varint_decode_u64
+0.0%   0.0%    248B           embedded_graphics embedded_graphics::primitives::rounded_rectangle::RoundedRectangleContains::new
+0.0%   0.0%    248B                         std core::num::flt2dec::digits_to_dec_str
+0.0%   0.0%    248B          frostsnap_embedded frostsnap_embedded::partition::BincodeFlashWriter<S,_>::flush
+0.0%   0.0%    246B                         std core::panicking::assert_failed_inner
+0.0%   0.0%    246B                     bitcoin bitcoin::taproot::TapTweakHash::from_key_and_tweak
+0.0%   0.0%    246B            frostsnap_device frostsnap_device::extract_entropy
+0.0%   0.0%    244B                 schnorr_fun schnorr_fun::frost::chilldkg::simplepedpop::AggKeygenInput::shared_key
+0.0%   0.0%    244B              frostsnap_core alloc::collections::btree::map::IntoIter<K,V,A>::dying_next
+0.0%   0.0%    244B                     esp_hal esp_hal::gpio::interconnect::DirectOutputSignal::connect_peripheral_to_output
+0.0%   0.0%    242B                 schnorr_fun core::slice::sort::stable::driftsort_main
+0.0%   0.0%    242B             frostsnap_comms <frostsnap_core::master_appkey::MasterAppkey as bincode::de::Decode>::decode
+0.0%   0.0%    242B             frostsnap_comms <<bincode::features::serde::de_owned::SerdeDecoder<DE> as serde::de::Deserializer>::deserialize_tuple::Access<DE> as s...
+0.0%   0.0%    242B                         std core::fmt::Formatter::debug_tuple_field1_finish
+0.0%   0.0%    238B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    238B                     mipidsi mipidsi::graphics::<impl embedded_graphics_core::draw_target::DrawTarget for mipidsi::Display<DI,M,RST>>::fill_solid
+0.0%   0.0%    236B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    236B                     bincode bincode::varint::decode_unsigned::deserialize_varint_cold_u32
+0.0%   0.0%    234B                         std core::ptr::drop_in_place<frostsnap_core::sign_task::WireSignTask>
+0.0%   0.0%    234B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    232B                     esp_hal esp_hal::gpio::interconnect::DirectInputSignal::connect_input_to_peripheral
+0.0%   0.0%    232B                         std alloc::collections::btree::map::BTreeMap<K,V,A>::entry
+0.0%   0.0%    232B                         std alloc::collections::btree::map::BTreeMap<K,V,A>::entry
+0.0%   0.0%    232B                         std core::result::Result<T,E>::map_err
+0.0%   0.0%    230B                         std <core::array::TryFromSliceError as core::fmt::Debug>::fmt
+0.0%   0.0%    230B                         std core::num::bignum::Big32x40::mul_digits::mul_inner
+0.0%   0.0%    230B                         std <core::num::error::TryFromIntError as core::fmt::Debug>::fmt
+0.0%   0.0%    228B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_normalizes_to_zero
+0.0%   0.0%    228B             frostsnap_comms bincode::de::impls::<impl bincode::de::Decode for usize>::decode
+0.0%   0.0%    228B                         std core::fmt::Formatter::debug_struct_field3_finish
+0.0%   0.0%    228B              frostsnap_core frostsnap_core::device_nonces::NonceStreamSlot::initialize
+0.0%   0.0%    226B              frostsnap_core <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    226B             frostsnap_comms bincode::varint::decode_unsigned::deserialize_varint_cold_usize
+0.0%   0.0%    226B           embedded_graphics embedded_graphics::primitives::rounded_rectangle::RoundedRectangleContains::contains
+0.0%   0.0%    224B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    224B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    224B                         std core::ptr::drop_in_place<frostsnap_core::message::DeviceToCoordinatorMessage>
+0.0%   0.0%    224B                         std core::ptr::drop_in_place<frostsnap_core::device::KeyData>
+0.0%   0.0%    222B             frostsnap_core? <frostsnap_core::device::KeyPurpose as bincode::de::Decode>::decode
+0.0%   0.0%    220B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::ConfirmationPage as frostsnap_embedded_widgets::DynWidget>::handle_touch
+0.0%   0.0%    220B                 u8g2_fonts? <u8g2_fonts::error::LookupError as core::fmt::Debug>::fmt
+0.0%   0.0%    220B             frostsnap_comms <frostsnap_comms::Sha256Digest as core::fmt::Debug>::fmt
+0.0%   0.0%    220B             frostsnap_core? <frostsnap_core::ActionError as core::fmt::Debug>::fmt
+0.0%   0.0%    218B                  u8g2_fonts u8g2_fonts::font_reader::glyph_reader::GlyphReader::new
+0.0%   0.0%    218B             frostsnap_comms bincode::varint::decode_unsigned::deserialize_varint_cold_u32
+0.0%   0.0%    218B                         std <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    218B             frostsnap_core? <frostsnap_core::KeyId as bincode::de::Decode>::decode
+0.0%   0.0%    218B                         std core::slice::sort::shared::pivot::median3_rec
+0.0%   0.0%    218B                         std core::slice::sort::shared::pivot::median3_rec
+0.0%   0.0%    218B                         std core::slice::sort::shared::pivot::median3_rec
+0.0%   0.0%    216B                     bincode bincode::enc::impls::<impl bincode::enc::Encode for u8>::encode
+0.0%   0.0%    216B                         std alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    214B  frostsnap_embedded_widgets <embedded_graphics::text::text::Text<S> as embedded_graphics_core::geometry::Dimensions>::bounding_box
+0.0%   0.0%    214B           embedded_graphics embedded_graphics::mono_font::mono_text_style::MonoTextStyle<C>::draw_decorations
+0.0%   0.0%    214B            frostsnap_device frostsnap_device::UpstreamConnection::set_state
+0.0%   0.0%    214B                     cipher? <cipher::stream_wrapper::StreamCipherCoreWrapper<T> as crypto_common::KeyIvInit>::new
+0.0%   0.0%    212B  frostsnap_embedded_widgets frostsnap_embedded_widgets::text::Text<S>::new
+0.0%   0.0%    212B                         std core::unicode::printable::check
+0.0%   0.0%    210B             frostsnap_comms <secp256kfun::point::Point<secp256kfun::marker::point_type::Normal,S,Z> as bincode::de::Decode>::decode
+0.0%   0.0%    210B             frostsnap_comms <secp256kfun::point::Point<secp256kfun::marker::point_type::Normal,S,Z> as bincode::de::Decode>::decode
+0.0%   0.0%    210B                     bincode <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    208B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    206B  frostsnap_embedded_widgets frostsnap_embedded_widgets::text::Text<S>::new
+0.0%   0.0%    206B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::sign_prompt::AddressPage as frostsnap_embedded_widgets::DynWidget>::handle_touch
+0.0%   0.0%    206B  frostsnap_embedded_widgets core::slice::sort::shared::smallsort::bidirectional_merge
+0.0%   0.0%    206B             frostsnap_comms <secp256kfun::scalar::Scalar<S,Z> as bincode::de::Decode>::decode
+0.0%   0.0%    206B                         std <char as core::fmt::Display>::fmt
+0.0%   0.0%    204B  frostsnap_embedded_widgets frostsnap_embedded_widgets::text::Text<S>::new
+0.0%   0.0%    204B                     esp_hal esp_hal::uart::UartBuilder<M,T>::init
+0.0%   0.0%    202B           embedded_graphics <embedded_graphics::primitives::line::thick_points::ThickPoints as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    202B                     bincode bincode::varint::decode_unsigned::deserialize_varint_cold_u16
+0.0%   0.0%    200B                         std core::fmt::Formatter::debug_struct_field2_finish
+0.0%   0.0%    200B                     bincode bincode::enc::impls::<impl bincode::enc::Encode for u32>::encode
+0.0%   0.0%    200B                     bincode bincode::enc::impls::<impl bincode::enc::Encode for u8>::encode
+0.0%   0.0%    200B                         std alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    198B                   micromath micromath::float::powi::<impl micromath::float::F32>::powi
+0.0%   0.0%    198B  frostsnap_embedded_widgets core::slice::sort::shared::smallsort::sort4_stable
+0.0%   0.0%    198B  frostsnap_embedded_widgets <u8g2_fonts::u8g2_text_style::U8g2TextStyle<C> as embedded_graphics::text::renderer::TextRenderer>::measure_string
+0.0%   0.0%    198B              frostsnap_core frostsnap_core::tweak::Xpub<T>::derive_bip32_in_place
+0.0%   0.0%    198B                     bincode bincode::features::impl_alloc::<impl bincode::de::Decode for alloc::vec::Vec<T>>::decode
+0.0%   0.0%    198B                         std <&T as core::fmt::Display>::fmt
+0.0%   0.0%    198B                 schnorr_fun schnorr_fun::schnorr::Schnorr<CH,NG>::challenge
+0.0%   0.0%    198B          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    198B          embedded_graphics? <embedded_graphics::image::Image<T> as embedded_graphics_core::drawable::Drawable>::draw
+0.0%   0.0%    196B  frostsnap_embedded_widgets core::slice::sort::stable::driftsort_main
+0.0%   0.0%    196B  frostsnap_embedded_widgets core::slice::sort::stable::driftsort_main
+0.0%   0.0%    196B  frostsnap_embedded_widgets core::slice::sort::stable::driftsort_main
+0.0%   0.0%    196B  frostsnap_embedded_widgets <u8g2_fonts::u8g2_text_style::U8g2TextStyle<C> as embedded_graphics::text::renderer::TextRenderer>::measure_string
+0.0%   0.0%    196B                         std alloc::collections::vec_deque::VecDeque<T,A>::reserve
+0.0%   0.0%    196B                         std alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    196B                         std core::ptr::drop_in_place<frostsnap_core::message::CoordinatorToDeviceMessage>
+0.0%   0.0%    196B                 secp256kfun <secp256kfun::point::Point<secp256kfun::marker::point_type::EvenY,S> as secp256kfun::hash::HashInto>::hash_into
+0.0%   0.0%    194B                         std alloc::collections::vec_deque::VecDeque<T,A>::reserve
+0.0%   0.0%    194B                         std core::slice::sort::stable::driftsort_main
+0.0%   0.0%    194B                         std core::slice::sort::stable::driftsort_main
+0.0%   0.0%    194B            frostsnap_device frostsnap_device::UpstreamConnection::send_to_coordinator
+0.0%   0.0%    192B                 secp256kfun secp256kfun::vendor::k256::projective::ProjectivePoint::neg
+0.0%   0.0%    192B               secp256k1_sys <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    192B                     bincode bincode::features::impl_alloc::<impl bincode::de::Decode for alloc::string::String>::decode
+0.0%   0.0%    192B                     bincode bincode::features::impl_alloc::<impl bincode::de::Decode for alloc::string::String>::decode
+0.0%   0.0%    190B                  u8g2_fonts u8g2_fonts::utils::combine_bounding_boxes::combine_bounding_boxes
+0.0%   0.0%    190B                         std core::slice::memchr::memchr_aligned
+0.0%   0.0%    190B                         std <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    190B                     bitcoin bitcoin::consensus::encode::consensus_encode_with_size
+0.0%   0.0%    188B                 secp256kfun <secp256kfun::vendor::k256::scalar::scalar_8x32::Scalar8x32 as subtle_ng::ConditionallySelectable>::conditional_select
+0.0%   0.0%    188B                 schnorr_fun alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    188B                 schnorr_fun core::slice::sort::shared::pivot::median3_rec
+0.0%   0.0%    188B              frostsnap_core bincode::varint::encode_unsigned::varint_encode_u64
+0.0%   0.0%    188B  frostsnap_embedded_widgets frostsnap_embedded_widgets::checkmark::Checkmark<C>::update_animation
+0.0%   0.0%    186B                 secp256kfun secp256kfun::point::Point<secp256kfun::marker::point_type::EvenY>::even_y_from_scalar_mul
+0.0%   0.0%    186B                 schnorr_fun <alloc::collections::btree::map::Iter<K,V> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    186B                         std core::ptr::drop_in_place<frostsnap_embedded_widgets::color_map::ColorMap<frostsnap_embedded_widgets::bitcoin_amount_di...
+0.0%   0.0%    186B             frostsnap_comms <alloc::collections::btree::map::Iter<K,V> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    186B           embedded_graphics <embedded_graphics::primitives::rounded_rectangle::styled::StyledScanlines as core::iter::traits::iterator::Iterator>:...
+0.0%   0.0%    186B                  bitcoin_io <bitcoin_io::error::Error as core::fmt::Display>::fmt
+0.0%   0.0%    184B  frostsnap_embedded_widgets core::slice::sort::stable::driftsort_main
+0.0%   0.0%    184B                     bincode bincode::features::impl_alloc::<impl bincode::enc::Encode for alloc::string::String>::encode
+0.0%   0.0%    184B              frostsnap_core frostsnap_core::device_nonces::AbSlots<S>::get
+0.0%   0.0%    184B               embedded_text embedded_text::plugin::PluginWrapper<M,C>::consume_partial
+0.0%   0.0%    182B             frostsnap_comms <frostsnap_core::CoordShareDecryptionContrib as bincode::de::Decode>::decode
+0.0%   0.0%    182B             frostsnap_comms <frostsnap_core::AccessStructureId as bincode::de::Decode>::decode
+0.0%   0.0%    180B                         std core::iter::traits::iterator::Iterator::nth
+0.0%   0.0%    180B                         std core::ptr::drop_in_place<frostsnap_core::device::AccessStructureData>
+0.0%   0.0%    180B               embedded_text embedded_text::style::TextBoxStyle::measure_text_height_impl
+0.0%   0.0%    178B                         std <T as alloc::string::ToString>::to_string
+0.0%   0.0%    178B                        std? <alloc::collections::btree::map::Iter<K,V> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    176B                 secp256kfun secp256kfun::vendor::k256::field::field_10x26::FieldElement10x26::add_modulus_correction
+0.0%   0.0%    176B  frostsnap_embedded_widgets core::fmt::Write::write_char
+0.0%   0.0%    174B                 schnorr_fun <alloc::collections::btree::map::Iter<K,V> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    174B            hex_conservative alloc::raw_vec::RawVecInner<A>::grow_amortized
+0.0%   0.0%    174B              frostsnap_core frostsnap_core::KeyId::from_master_appkey
+0.0%   0.0%    174B               bitcoin_units alloc::raw_vec::RawVecInner<A>::grow_amortized
+0.0%   0.0%    174B                     mipidsi mipidsi::Display<DI,M,RST>::set_pixels
+0.0%   0.0%    174B                         std <core::iter::adapters::cloned::Cloned<I> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    172B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::translate::Translate<W> as frostsnap_embedded_widgets::DynWidget>::set_constraints
+0.0%   0.0%    172B  frostsnap_embedded_widgets embedded_graphics::primitives::common::scanline::Scanline::draw
+0.0%   0.0%    172B             frostsnap_comms bincode::features::serde::<impl serde::de::Error for bincode::error::DecodeError>::custom
+0.0%   0.0%    172B               embedded_text embedded_text::parser::is_word_char
+0.0%   0.0%    172B             frostsnap_core? <frostsnap_core::device::KeyPurpose as bincode::enc::Encode>::encode
+0.0%   0.0%    172B                    bincode? <bincode::features::serde::de_owned::SerdeDecoder<DE> as serde::de::EnumAccess>::variant_seed
+0.0%   0.0%    170B                       serde <serde::de::WithDecimalPoint as core::fmt::Display>::fmt
+0.0%   0.0%    170B                         md5 md5::consume
+0.0%   0.0%    170B            frostsnap_device frostsnap_device::io::SerialIo::change_baud
+0.0%   0.0%    170B              frostsnap_core frostsnap_core::AccessStructureId::from_app_poly
+0.0%   0.0%    170B             frostsnap_comms bincode::varint::decode_unsigned::deserialize_varint_cold_u16
+0.0%   0.0%    170B                     esp_hal esp_hal::delay::Delay::delay
+0.0%   0.0%    170B                 secp256kfun <secp256kfun::point::Point<secp256kfun::marker::point_type::Normal,S,Z> as secp256kfun::hash::HashInto>::hash_into
+0.0%   0.0%    168B  frostsnap_embedded_widgets bincode::varint::decode_unsigned::varint_decode_u32
+0.0%   0.0%    168B              frostsnap_core <alloc::collections::btree::map::Keys<K,V> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    168B                     esp_hal esp_hal::gpio::internal::<impl esp_hal::gpio::Pin for esp_hal::gpio::AnyPin>::set_alternate_function
+0.0%   0.0%    168B                         std core::ptr::drop_in_place<frostsnap_device::ui::Prompt>
+0.0%   0.0%    168B                        std? <alloc::collections::vec_deque::VecDeque<T,A> as core::iter::traits::collect::Extend<T>>::extend
+0.0%   0.0%    166B                 secp256kfun secp256kfun::vendor::k256::mul::decompose_scalar
+0.0%   0.0%    166B  frostsnap_embedded_widgets core::slice::sort::shared::pivot::median3_rec
+0.0%   0.0%    166B              frostsnap_core alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    166B             frostsnap_comms bincode::de::impls::<impl bincode::de::Decode for u16>::decode
+0.0%   0.0%    166B           embedded_graphics embedded_graphics::primitives::rectangle::<impl embedded_graphics::primitives::OffsetOutline for embedded_graphics_cor...
+0.0%   0.0%    166B              frostsnap_core frostsnap_core::device_nonces::NonceStreamSlot::reconcile_coord_nonce_stream_state
+0.0%   0.0%    166B               embedded_text <embedded_text::rendering::line::RenderElementHandler<F,D,M> as embedded_text::rendering::line_iter::ElementHandler>::...
+0.0%   0.0%    164B       linked_list_allocator <*mut T as core::fmt::Debug>::fmt
+0.0%   0.0%    164B              frostsnap_core <&T as core::fmt::Display>::fmt
+0.0%   0.0%    162B             frostsnap_comms alloc::collections::btree::search::<impl alloc::collections::btree::node::NodeRef<BorrowType,K,V,alloc::collections::b...
+0.0%   0.0%    162B                     bincode bincode::enc::impls::<impl bincode::enc::Encode for u32>::encode
+0.0%   0.0%    162B                     bincode bincode::enc::encode_slice_len
+0.0%   0.0%    162B                         std alloc::collections::btree::search::<impl alloc::collections::btree::node::NodeRef<BorrowType,K,V,alloc::collections::b...
+0.0%   0.0%    160B                 schnorr_fun <alloc::vec::Vec<T,A> as core::clone::Clone>::clone
+0.0%   0.0%    160B            frostsnap_device esp_hal::sha::ShaDigest<A,S>::write_data
+0.0%   0.0%    160B              frostsnap_core <frostsnap_core::DeviceId as core::fmt::Display>::fmt
+0.0%   0.0%    160B          frostsnap_embedded frostsnap_embedded::ab_write::AbSlot<S>::write
+0.0%   0.0%    160B          frostsnap_embedded frostsnap_embedded::ab_write::AbSlot<S>::new
+0.0%   0.0%    160B              frostsnap_core frostsnap_core::device_nonces::NonceStreamSlot::write_slot
+0.0%   0.0%    158B                 schnorr_fun secp256kfun::scalar::Scalar<S,Z>::from_bytes
+0.0%   0.0%    158B              frostsnap_core frostsnap_core::Error::signer_invalid_message
+0.0%   0.0%    156B              frostsnap_core <frostsnap_core::KeyId as core::fmt::Display>::fmt
+0.0%   0.0%    156B                         std core::fmt::Formatter::debug_struct_field1_finish
+0.0%   0.0%    156B                         std core::ptr::drop_in_place<alloc::collections::btree::map::BTreeMap<secp256kfun::scalar::Scalar<secp256kfun::marker::sec...
+0.0%   0.0%    156B                         std <&T as core::fmt::Display>::fmt
+0.0%   0.0%    154B              frostsnap_core frostsnap_core::bitcoin_transaction::TransactionTemplate::fee
+0.0%   0.0%    154B              frostsnap_core alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    154B             frostsnap_comms alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::mark...
+0.0%   0.0%    154B                         std alloc::collections::btree::search::<impl alloc::collections::btree::node::NodeRef<BorrowType,K,V,alloc::collections::b...
+0.0%   0.0%    152B            frostsnap_device <frostsnap_embedded::partition::FlashPartition<S> as core::fmt::Debug>::fmt
+0.0%   0.0%    152B                         std alloc::raw_vec::RawVecInner<A>::reserve::do_reserve_and_handle
+0.0%   0.0%    150B                         std core::ptr::drop_in_place<bitcoin::blockdata::transaction::Transaction>
+0.0%   0.0%    150B                         std core::fmt::num::imp::<impl core::fmt::Display for u8>::fmt
+0.0%   0.0%    150B                     esp_hal esp_hal::gpio::InputPin::init_input
+0.0%   0.0%    150B                     esp_hal esp_hal::spi::master::Spi<M,T>::with_sck
+0.0%   0.0%    150B           embedded_graphics embedded_graphics::mono_font::mono_text_style::MonoTextStyle<C>::line_elements
+0.0%   0.0%    148B                 secp256kfun secp256kfun::scalar::Scalar<S,Z>::from_bytes
+0.0%   0.0%    148B                 schnorr_fun schnorr_fun::frost::shared_key::SharedKey<secp256kfun::marker::point_type::Normal,secp256kfun::marker::zero_choice::Ze...
+0.0%   0.0%    148B                 schnorr_fun alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    148B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::container::Container<W> as frostsnap_embedded_widgets::DynWidget>::sizing
+0.0%   0.0%    148B                     esp_hal esp_hal::i2c::master::Driver::wait_for_completion_blocking
+0.0%   0.0%    148B                         std alloc::collections::btree::map::BTreeMap<K,V,A>::get
+0.0%   0.0%    148B                         std alloc::collections::btree::map::BTreeMap<K,V,A>::get
+0.0%   0.0%    148B             frostsnap_core? <frostsnap_core::Error as core::fmt::Debug>::fmt
+0.0%   0.0%    148B                         std core::ops::function::impls::<impl core::ops::function::FnMut<A> for &mut F>::call_mut
+0.0%   0.0%    146B                 secp256kfun <secp256kfun::backend::k256_impl::ConstantTime as secp256kfun::backend::TimeSensitive>::norm_point_eq_norm_point
+0.0%   0.0%    146B                 secp256kfun secp256kfun::vendor::k256::field::FieldElement::normalizes_to_zero
+0.0%   0.0%    146B  frostsnap_embedded_widgets embedded_graphics::primitives::line::styled::<impl embedded_graphics::primitives::styled::StyledDrawable<embedded_grap...
+0.0%   0.0%    146B              frostsnap_core alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    146B              frostsnap_core alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    146B           embedded_graphics embedded_graphics::primitives::rounded_rectangle::ellipse_quadrant::EllipseQuadrant::new
+0.0%   0.0%    146B                     bincode <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    146B                         std alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    146B                         std core::ptr::drop_in_place<frostsnap_core::device::restoration::ToUserRestoration>
+0.0%   0.0%    144B                 secp256kfun <secp256kfun::vendor::k256::mul::LookupTable as core::convert::From<&secp256kfun::vendor::k256::projective::Projective...
+0.0%   0.0%    144B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::container::Container<W> as frostsnap_embedded_widgets::DynWidget>::sizing
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    144B                         std core::ptr::drop_in_place<frostsnap_device::ui::UiEvent>
+0.0%   0.0%    142B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_from_storage
+0.0%   0.0%    142B            frostsnap_device <frostsnap_embedded::partition::BincodeFlashReader<S> as bincode::de::read::Reader>::read
+0.0%   0.0%    142B              frostsnap_core bincode::varint::encode_unsigned::varint_encode_u32
+0.0%   0.0%    142B                     esp_hal esp_hal::time::now
+0.0%   0.0%    142B           embedded_graphics <embedded_graphics::primitives::circle::styled::StyledScanlines as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    142B                         std alloc::collections::btree::map::BTreeMap<K,V,A>::get
+0.0%   0.0%    142B                         std alloc::collections::btree::map::BTreeMap<K,V,A>::get
+0.0%   0.0%    140B  frostsnap_embedded_widgets frostsnap_embedded_widgets::sign_prompt::SignPrompt::new::{{closure}}
+0.0%   0.0%    140B                         std core::ops::function::FnOnce::call_once{{vtable.shim}}
+0.0%   0.0%    140B            frostsnap_device <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    140B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    140B                         std core::iter::traits::iterator::Iterator::nth
+0.0%   0.0%    140B          embedded_graphics? <embedded_graphics::iterator::contiguous::Cropped<I> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    138B              frostsnap_core alloc::collections::btree::search::<impl alloc::collections::btree::node::NodeRef<BorrowType,K,V,Type>>::find_key_index
+0.0%   0.0%    138B              frostsnap_core alloc::collections::btree::search::<impl alloc::collections::btree::node::NodeRef<BorrowType,K,V,Type>>::find_key_index
+0.0%   0.0%    138B              frostsnap_core schnorr_fun::frost::share::PairedSecretShare<T,Z>::non_zero
+0.0%   0.0%    138B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    138B                         std core::slice::sort::shared::smallsort::insert_tail
+0.0%   0.0%    138B                         std core::slice::sort::shared::smallsort::insert_tail
+0.0%   0.0%    138B                         std core::slice::sort::shared::smallsort::insert_tail
+0.0%   0.0%    136B                 secp256kfun secp256kfun::point::Point<T,S>::into_point_with_even_y
+0.0%   0.0%    136B                         std <char as core::fmt::Debug>::fmt
+0.0%   0.0%    136B                         std alloc::raw_vec::RawVec<T,A>::grow_one
+0.0%   0.0%    134B  frostsnap_embedded_widgets frostsnap_embedded_widgets::sign_prompt::SignPromptPageList::has_high_fee
+0.0%   0.0%    134B                         std alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    134B                         std alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    132B                         std core::ptr::drop_in_place<frostsnap_embedded_widgets::sign_prompt::ConfirmationPage>
+0.0%   0.0%    132B             frostsnap_comms alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::n...
+0.0%   0.0%    130B                     esp_hal esp_hal::gpio::OutputPin::init_output
+0.0%   0.0%    130B             frostsnap_core? <frostsnap_core::AccessStructureKind as bincode::de::Decode>::decode
+0.0%   0.0%    130B                         std alloc::collections::vec_deque::VecDeque<T,A>::grow
+0.0%   0.0%    130B                         std alloc::collections::vec_deque::VecDeque<T,A>::grow
+0.0%   0.0%    130B           embedded_graphics <embedded_graphics::mono_font::mono_text_style::MonoTextStyle<C> as embedded_graphics::text::renderer::TextRenderer>::...
+0.0%   0.0%    128B                   [Unknown] rustsecp256k1_v0_10_0_ge_set_xo_var
+0.0%   0.0%    128B           frostsnap_device? <frostsnap_device::ota::OtaPartitions as core::fmt::Debug>::fmt
+0.0%   0.0%    128B            frostsnap_device <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    128B              frostsnap_core serde::ser::Serializer::collect_seq
+0.0%   0.0%    128B             frostsnap_comms secp256kfun::point::Point<secp256kfun::marker::point_type::Normal,S,Z>::from_bytes
+0.0%   0.0%    128B                     esp_hal esp_hal::i2c::master::add_cmd
+0.0%   0.0%    128B                     bitcoin <alloc::vec::Vec<T,A> as core::clone::Clone>::clone
+0.0%   0.0%    128B              frostsnap_core frostsnap_core::Error::signer_invalid_message
+0.0%   0.0%    128B                 secp256kfun secp256kfun::scalar::Scalar::from_hash
+0.0%   0.0%    126B                 secp256kfun secp256kfun::vendor::k256::field::field_10x26::FieldElement10x26::normalize
+0.0%   0.0%    126B                 schnorr_fun core::slice::sort::shared::smallsort::insert_tail
+0.0%   0.0%    126B                embassy_time <[T] as core::fmt::Debug>::fmt
+0.0%   0.0%    126B                         std core::ptr::drop_in_place<alloc::boxed::Box<frostsnap_core::nostr::UnsignedEvent>>
+0.0%   0.0%    124B                 schnorr_fun schnorr_fun::frost::share::SecretShare::from_bytes
+0.0%   0.0%    124B              frostsnap_core <secp256kfun::point::Point as frostsnap_core::tweak::TweakableKey>::tweak
+0.0%   0.0%    124B                     esp_hal <esp_hal::interrupt::InterruptStatusIterator as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    124B                     bitcoin alloc::raw_vec::RawVecInner<A>::shrink_unchecked
+0.0%   0.0%    124B                        std? <alloc::string::String as core::clone::Clone>::clone
+0.0%   0.0%    124B                    bitcoin? <bitcoin::network::_::<impl serde::de::Deserialize for bitcoin::network::Network>::deserialize::__Visitor as serde::de...
+0.0%   0.0%    122B               secp256k1_sys rustsecp256k1_v0_10_0_xonly_pubkey_parse
+0.0%   0.0%    122B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_negate_unchecked
+0.0%   0.0%    122B                 secp256kfun secp256kfun::vendor::k256::scalar::Scalar::is_high
+0.0%   0.0%    122B                 schnorr_fun schnorr_fun::frost::chilldkg::encpedpop::Contributor::verify_agg_input
+0.0%   0.0%    122B                 schnorr_fun alloc::vec::Vec<T,A>::extend_trusted
+0.0%   0.0%    122B                 schnorr_fun alloc::vec::Vec<T,A>::extend_trusted
+0.0%   0.0%    122B                 schnorr_fun alloc::vec::Vec<T,A>::extend_trusted
+0.0%   0.0%    122B  frostsnap_embedded_widgets frostsnap_embedded_widgets::text::Text<S>::create_eg_text
+0.0%   0.0%    122B            frostsnap_device frostsnap_device::io::SerialIo::write_bytes
+0.0%   0.0%    122B              frostsnap_core <frostsnap_core::message::CoordinatorToDeviceMessage as frostsnap_core::Kind>::kind
+0.0%   0.0%    122B              frostsnap_core schnorr_fun::frost::shared_key::SharedKey<T,Z>::non_zero
+0.0%   0.0%    122B                         std core::ptr::drop_in_place<frostsnap_core::device::device_to_user::DeviceToUserMessage>
+0.0%   0.0%    120B                       serde <<serde::de::WithDecimalPoint as core::fmt::Display>::fmt::LookForDecimalPoint as core::fmt::Write>::write_str
+0.0%   0.0%    120B                 secp256kfun secp256kfun::point::Point<T,S,Z>::to_bytes
+0.0%   0.0%    120B                     esp_hal esp_hal::timer::timg::ticks_to_timeout
+0.0%   0.0%    120B            frostsnap_device frostsnap_device::UpstreamConnection::send_debug
+0.0%   0.0%    118B                   [Unknown] rustsecp256k1_v0_10_0_pubkey_save
+0.0%   0.0%    118B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::container::Container<W> as frostsnap_embedded_widgets::DynWidget>::sizing
+0.0%   0.0%    118B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::container::Container<W> as frostsnap_embedded_widgets::DynWidget>::sizing
+0.0%   0.0%    118B  frostsnap_embedded_widgets <frostsnap_embedded_widgets::container::Container<W> as frostsnap_embedded_widgets::DynWidget>::sizing
+0.0%   0.0%    118B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::merge_tracking_child_edge
+0.0%   0.0%    118B              frostsnap_core alloc::collections::btree::node::BalancingContext<K,V>::merge_tracking_child_edge
+0.0%   0.0%    118B                     esp_hal esp_hal::spi::master::Info::read_bytes
+0.0%   0.0%    118B           embedded_graphics <embedded_graphics::primitives::circle::points::Scanlines as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    118B                     bincode <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    118B                     bincode <&T as core::fmt::Debug>::fmt
+0.0%   0.0%    118B           frostsnap_device? <frostsnap_device::efuse::EfuseError as core::fmt::Debug>::fmt
+0.0%   0.0%    118B                         std alloc::collections::btree::node::BalancingContext<K,V>::merge_tracking_child_edge
+0.0%   0.0%    118B                         std core::ptr::drop_in_place<frostsnap_core::message::CoordinatorRestoration>
+0.0%   0.0%    118B  frostsnap_embedded_widgets frostsnap_embedded_widgets::layout::stack::Stack<T>::push_aligned
+0.0%   0.0%    118B  frostsnap_embedded_widgets frostsnap_embedded_widgets::text::Text<S>::create_eg_text
+0.0%   0.0%    118B            frostsnap_device frostsnap_device::io::SerialInterface<T,D>::new_uart
+0.0%   0.0%    116B                 secp256kfun secp256kfun::vendor::k256::field::field_10x26::FieldElement10x26::add
+0.0%   0.0%    116B                 schnorr_fun schnorr_fun::frost::shared_key::SharedKey<T,Z>::public_key
+0.0%   0.0%    116B                         std core::ops::function::FnOnce::call_once
+0.0%   0.0%    116B  frostsnap_embedded_widgets embedded_graphics::primitives::common::styled_scanline::StyledScanline::draw_stroke_and_fill
+0.0%   0.0%    116B                     esp_hal esp_hal::reg_access::AlignmentHelper<E>::volatile_write_bytes
+0.0%   0.0%    116B                     esp_hal _setup_interrupts
+0.0%   0.0%    116B                         std core::fmt::num::<impl core::fmt::UpperHex for u64>::fmt
+0.0%   0.0%    116B                         std core::fmt::num::<impl core::fmt::LowerHex for u64>::fmt
+0.0%   0.0%    116B                     bincode bincode::de::impls::<impl bincode::de::Decode for [T; N]>::decode
+0.0%   0.0%    116B                         std alloc::collections::vec_deque::VecDeque<T,A>::grow
+0.0%   0.0%    114B                         std core::iter::traits::iterator::Iterator::nth
+0.0%   0.0%    114B                         std core::iter::traits::iterator::Iterator::advance_by
+0.0%   0.0%    114B  frostsnap_embedded_widgets frostsnap_embedded_widgets::text::Text<S>::create_eg_text
+0.0%   0.0%    114B          embedded_graphics? <embedded_graphics::image::image_raw::ContiguousPixels<C,BO> as core::iter::traits::iterator::Iterator>::next
+0.0%   0.0%    112B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_to_storage
+0.0%   0.0%    112B                   [Unknown] rustsecp256k1_v0_10_0_fe_impl_set_b32_limit
+0.0%   0.0%    112B              frostsnap_core frostsnap_core::master_appkey::MasterAppkey::derive_from_rootkey
+0.0%   0.0%    112B           embedded_graphics embedded_graphics::mono_font::MonoFont::glyph
+0.0%   0.0%    112B                embassy_sync embassy_sync::waitqueue::atomic_waker::AtomicWaker::wake
+0.0%   0.0%    112B                         std core::result::unwrap_failed
+0.0%   0.0%    112B                     bitcoin alloc::vec::Vec<T,A>::resize
+0.0%   0.0%    112B                         std core::ptr::drop_in_place<frostsnap_core::message::GroupSignReq>
+0.0%   0.0%    110B               secp256k1_sys rustsecp256k1_v0_10_0_xonly_pubkey_serialize
+0.0%   0.0%    110B                 secp256kfun <secp256kfun::backend::k256_impl::ConstantTime as secp256kfun::backend::TimeSensitive>::norm_point_conditional_negate
+0.0%   0.0%    110B             frostsnap_comms alloc::collections::btree::node::BalancingContext<K,V>::merge_tracking_child_edge
+0.0%   0.0%    110B                         std <core::fmt::builders::PadAdapter as core::fmt::Write>::write_char
+0.0%   0.0%    110B                         std alloc::collections::btree::node::BalancingContext<K,V>::merge_tracking_child_edge
+0.0%   0.0%    110B                         std alloc::collections::btree::node::BalancingContext<K,V>::merge_tracking_child_edge
+0.0%   0.0%    110B          frostsnap_embedded frostsnap_embedded::partition::FlashPartition<S>::split_off_front
+0.0%   0.0%    108B                  u8g2_fonts u8g2_fonts::font_reader::glyph_reader::GlyphReader::read_unsigned
+0.0%   0.0%    108B                         std core::ptr::drop_in_place<core::option::Option<frostsnap_embedded_widgets::fader::Fader<frostsnap_embedded_widgets::tra...
+0.0%   0.0%    108B              frostsnap_core <u8 as secp256kfun::hash::HashInto>::hash_into
+0.0%   0.0%    108B                         std core::iter::traits::iterator::Iterator::nth
+0.0%   0.0%    108B                     bitcoin <bitcoin_hashes::hmac::Hmac<T> as bitcoin_hashes::Hash>::from_engine
+0.0%   0.0%    108B          frostsnap_embedded frostsnap_embedded::ab_write::Slot<S>::read_index
+0.0%   0.0%    108B              frostsnap_core frostsnap_core::device::FrostSigner<S>::mutate
+0.0%   0.0%    106B                   rand_core rand_core::impls::fill_via_u32_chunks
+0.0%   0.0%    106B              frostsnap_core <frostsnap_core::bitcoin_transaction::SpkOwner as bincode::enc::Encode>::encode
+0.0%   0.0%    106B                         std core::fmt::num::<impl core::fmt::LowerHex for u8>::fmt
+0.0%   0.0%    106B                         std core::fmt::num::<impl core::fmt::UpperHex for u8>::fmt
+0.0%   1.6% 20.8KiB                             And 404 smaller methods. Use -n N to show more.
+0.9% 100.0%  1.2MiB                             .text section size, the file size is 143.8MiB

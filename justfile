@@ -59,8 +59,9 @@ fix-rust:
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
 
+gen-firmware: build-device save-image
 
-run +ARGS="": build-device save-image
+run +ARGS="": gen-firmware
     (cd frostsnapp; BUNDLE_FIRMWARE=1 flutter run {{ARGS}})
 
 fetch-riscv VERSION="2024.09.03-nightly":

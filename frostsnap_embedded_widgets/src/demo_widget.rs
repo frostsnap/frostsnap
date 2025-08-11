@@ -171,10 +171,6 @@ macro_rules! demo_widget {
                 let widget = Column::new((start_container, center_container));
                 $run_macro!(widget);
             }
-            "vertical_slide" => {
-                // Commented out until VerticalPaginator is refactored
-                panic!("vertical_slide demo is temporarily disabled while refactoring");
-            }
             "bip39_backup" => {
                 use $crate::bip39::Bip39BackupDisplay;
                 use embedded_graphics::prelude::*;

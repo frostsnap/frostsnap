@@ -1,7 +1,7 @@
-use crate::{rat::FatRat, Row, sized_box::SizedBox, text::Text};
+use crate::{rat::FatRat, Row, sized_box::SizedBox, text::Text, palette::PALETTE};
 use embedded_graphics::{
     geometry::Size,
-    pixelcolor::BinaryColor,
+    pixelcolor::Rgb565,
 };
 use u8g2_fonts::U8g2TextStyle;
 use alloc::{string::{ToString}};
@@ -13,17 +13,17 @@ pub struct BitcoinAmountDisplay {
     /// The row containing all elements - delegated by the derive macro
     #[widget_delegate]
     row: Row<(
-        Text<U8g2TextStyle<BinaryColor>>,  // Whole part + decimal point
-        Text<U8g2TextStyle<BinaryColor>>,  // First decimal digit
-        Text<U8g2TextStyle<BinaryColor>>,  // Second decimal digit
-        SizedBox<BinaryColor>,             // Half-width space
-        Text<U8g2TextStyle<BinaryColor>>,  // Third decimal digit
-        Text<U8g2TextStyle<BinaryColor>>,  // Fourth decimal digit
-        Text<U8g2TextStyle<BinaryColor>>,  // Fifth decimal digit
-        SizedBox<BinaryColor>,             // Half-width space
-        Text<U8g2TextStyle<BinaryColor>>,  // Sixth decimal digit
-        Text<U8g2TextStyle<BinaryColor>>,  // Seventh decimal digit
-        Text<U8g2TextStyle<BinaryColor>>,  // Eighth decimal digit
+        Text<U8g2TextStyle<Rgb565>>,  // Whole part + decimal point
+        Text<U8g2TextStyle<Rgb565>>,  // First decimal digit
+        Text<U8g2TextStyle<Rgb565>>,  // Second decimal digit
+        SizedBox<Rgb565>,             // Half-width space
+        Text<U8g2TextStyle<Rgb565>>,  // Third decimal digit
+        Text<U8g2TextStyle<Rgb565>>,  // Fourth decimal digit
+        Text<U8g2TextStyle<Rgb565>>,  // Fifth decimal digit
+        SizedBox<Rgb565>,             // Half-width space
+        Text<U8g2TextStyle<Rgb565>>,  // Sixth decimal digit
+        Text<U8g2TextStyle<Rgb565>>,  // Seventh decimal digit
+        Text<U8g2TextStyle<Rgb565>>,  // Eighth decimal digit
     )>,
     /// Amount in satoshis (for reference)
     satoshis: u64,
@@ -33,23 +33,23 @@ impl BitcoinAmountDisplay {
     pub fn new(satoshis: u64) -> Self {
         let btc = FatRat::from_ratio(satoshis, 100_000_000);
         let amount_str = format!("{}.", btc.whole_part());
-        let mut color = BinaryColor::Off;
+        let mut color = PALETTE.text_disabled;
         if btc.whole_part() > 0 {
-            color = BinaryColor::On;
+            color = PALETTE.primary;
         }
         let whole_text = Text::new(amount_str, U8g2TextStyle::new(crate::FONT_LARGE, color));
 
         // Get decimal digits iterator (take only 8 for Bitcoin)
         let mut after_decimal = btc.decimal_digits().take(8).map(|digit| {
             if digit > 0 {
-                color = BinaryColor::On;
+                color = PALETTE.primary;
             }
             Text::new(digit.to_string(), U8g2TextStyle::new(crate::FONT_LARGE, color))
         });
 
         // Half-width spacers (approximately half the width of a digit)
-        let spacer1 = SizedBox::<BinaryColor>::new(Size::new(4, 1));
-        let spacer2 = SizedBox::<BinaryColor>::new(Size::new(4, 1));
+        let spacer1 = SizedBox::<Rgb565>::new(Size::new(4, 1));
+        let spacer2 = SizedBox::<Rgb565>::new(Size::new(4, 1));
         
         // Create row with all elements
         let row = Row::new((

@@ -33,7 +33,6 @@ pub mod legacy;
 // pub mod page_by_page;
 // pub mod page_demo;
 pub mod page_slider;
-// pub mod paginator_with_scrollbar;
 pub mod widget_list;
 pub mod progress;
 pub mod progress_bars;
@@ -96,7 +95,6 @@ pub use rat::{Rat, Frac};
 pub use hold_to_confirm::HoldToConfirm;
 pub use hold_to_confirm_border::HoldToConfirmBorder;
 // pub use hold_to_confirm_button::*;
-// pub use paginator_with_scrollbar::*;
 pub use progress::{ProgressBar, ProgressIndicator};
 pub use progress_bars::*;
 pub use scroll_bar::*;
@@ -125,7 +123,6 @@ use u8g2_fonts::fonts;
 pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
 pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
 pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
-pub const CODE_FONT: fonts::u8g2_font_profont29_mr = fonts::u8g2_font_profont29_mr;
 
 /// Sizing information for a widget
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

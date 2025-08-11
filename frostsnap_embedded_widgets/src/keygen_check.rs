@@ -43,8 +43,8 @@ impl KeygenCheck {
         let t_of_n_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_surface);
         let t_of_n_widget = Text::new(t_of_n_text.clone(), t_of_n_style.clone());
         
-        // Create the hex code text widget using CODE_FONT
-        let code_style = U8g2TextStyle::new(crate::CODE_FONT, PALETTE.on_surface);
+        // Create the hex code text widget using FONT_LARGE
+        let code_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_surface);
         let code_widget = Text::new(hex_code.clone(), code_style);
         
         // Create internal column with t_of_n and code

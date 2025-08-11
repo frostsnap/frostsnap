@@ -22,7 +22,7 @@ pub struct SignPromptPageList {
 #[derive(frostsnap_macros::Widget)]
 pub struct AmountPage {
     #[widget_delegate]
-    center: Center<Column<(Text<U8g2TextStyle<Rgb565>>, SizedBox<Rgb565>, ColorMap<BitcoinAmountDisplay, Rgb565>, SizedBox<Rgb565>, Text<U8g2TextStyle<Rgb565>>)>>,
+    center: Center<Column<(Text<U8g2TextStyle<Rgb565>>, SizedBox<Rgb565>, BitcoinAmountDisplay, SizedBox<Rgb565>, Text<U8g2TextStyle<Rgb565>>)>>,
 }
 
 impl AmountPage {
@@ -34,10 +34,7 @@ impl AmountPage {
         
         let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15)); // 15px height spacing
         
-        let amount_display = BitcoinAmountDisplay::new(amount_sats).color_map(|c| match c {
-            embedded_graphics::pixelcolor::BinaryColor::Off => PALETTE.text_disabled,
-            embedded_graphics::pixelcolor::BinaryColor::On => PALETTE.primary,
-        });
+        let amount_display = BitcoinAmountDisplay::new(amount_sats);
         
         let btc_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10)); // 10px spacing before BTC
         
@@ -139,7 +136,7 @@ pub struct FeePage {
     #[widget_delegate]
     center: Center<Column<(
         Text<U8g2TextStyle<Rgb565>>,
-        ColorMap<BitcoinAmountDisplay, Rgb565>,
+        BitcoinAmountDisplay,
         Text<U8g2TextStyle<Rgb565>>,
     )>>,
 }
@@ -151,10 +148,7 @@ impl FeePage {
             U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary)
         );
         
-        let fee_amount = BitcoinAmountDisplay::new(fee_sats).color_map(|c| match c {
-            embedded_graphics::pixelcolor::BinaryColor::Off => PALETTE.text_disabled,
-            embedded_graphics::pixelcolor::BinaryColor::On => PALETTE.primary,
-        });
+        let fee_amount = BitcoinAmountDisplay::new(fee_sats);
         
         let fee_sats_text = Text::new(
             format!("{} sats", fee_sats),
@@ -229,7 +223,7 @@ pub struct ConfirmationPage {
     hold_confirm: HoldToConfirm<Column<(
         Text<U8g2TextStyle<Rgb565>>,
         Text<U8g2TextStyle<Rgb565>>,
-        ColorMap<BitcoinAmountDisplay, Rgb565>,
+        BitcoinAmountDisplay,
         Text<U8g2TextStyle<Rgb565>>
     )>>,
 }
@@ -238,10 +232,7 @@ impl ConfirmationPage {
     fn new(total_sats: u64) -> Self {
         let sign_text = Text::new("Sign transaction?", U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background));
         let sending_text = Text::new("sending", U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary));
-        let amount_display = BitcoinAmountDisplay::new(total_sats).color_map(|c| match c {
-            embedded_graphics::pixelcolor::BinaryColor::On => PALETTE.primary,
-            embedded_graphics::pixelcolor::BinaryColor::Off => PALETTE.text_disabled,
-        });
+        let amount_display = BitcoinAmountDisplay::new(total_sats);
         let btc_text = Text::new("BTC", U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary));
         
         let confirm_content = Column::new((sign_text, sending_text, amount_display, btc_text))
