@@ -86,6 +86,7 @@ impl<'a> Partitions<'a> {
 
 pub trait PartitionExt {
     fn sha256_digest(&self, sha256: &mut Sha<'_>, firmware_size: u32) -> Sha256Digest;
+    fn firmware_size(&self) -> u32;
 }
 
 impl PartitionExt for EspFlashPartition<'_> {
@@ -131,4 +132,125 @@ impl PartitionExt for EspFlashPartition<'_> {
 
     //     Sha256Digest(digest)
     // }
+
+    // From: https://github.com/esp-rs/espflash/blob/main/espflash/src/image_format/idf.rs
+    fn firmware_size(&self) -> u32 {
+        const ESP_MAGIC: u8 = 0xE9;
+
+        #[derive(Debug, Clone, Copy)]
+        #[repr(C, packed)]
+        struct ImageHeader {
+            magic: u8,
+            segment_count: u8,
+            flash_mode: u8,
+            flash_config: u8,
+            entry: u32,
+            // extended header part
+            wp_pin: u8,
+            clk_q_drv: u8,
+            d_cs_drv: u8,
+            gd_wp_drv: u8,
+            chip_id: u16,
+            min_rev: u8,
+            min_chip_rev_full: u16,
+            max_chip_rev_full: u16,
+            reserved: [u8; 4],
+            append_digest: u8,
+        }
+
+        #[derive(Debug, Clone, Copy)]
+        #[repr(C, packed)]
+        struct SegmentHeader {
+            addr: u32,
+            length: u32,
+        }
+
+        let first_sector = self.read_sector(0).unwrap();
+
+        // Use espflash's proven header parsing
+        let header =
+            unsafe { core::ptr::read_unaligned(first_sector.as_ptr() as *const ImageHeader) };
+
+        if header.magic != ESP_MAGIC {
+            panic!("Invalid firmware header magic");
+        }
+
+        // Use your proven layout logic, espflash structs
+        let mut current_pos = 24u32; // After header
+        let mut max_data_end = 24u32;
+
+        for _ in 0..header.segment_count {
+            let sector_num = (current_pos / 4096) as u32;
+            let sector_offset = (current_pos % 4096) as usize;
+
+            let sector = if sector_num == 0 {
+                &first_sector
+            } else {
+                &self.read_sector(sector_num).unwrap()
+            };
+
+            // Use espflash's struct instead of manual byte extraction
+            let seg_header = if sector_offset + 8 <= sector.len() {
+                unsafe {
+                    core::ptr::read_unaligned(
+                        sector.as_ptr().add(sector_offset) as *const SegmentHeader
+                    )
+                }
+            } else {
+                // Handle spanning (keep your logic)
+                let mut seg_bytes = [0u8; 8];
+                let first_part = sector.len() - sector_offset;
+                seg_bytes[..first_part].copy_from_slice(&sector[sector_offset..]);
+
+                let next_sector = self.read_sector(sector_num + 1).unwrap();
+                seg_bytes[first_part..].copy_from_slice(&next_sector[..8 - first_part]);
+
+                unsafe { core::ptr::read_unaligned(seg_bytes.as_ptr() as *const SegmentHeader) }
+            };
+
+            let segment_data_end = current_pos + 8 + seg_header.length;
+            max_data_end = max_data_end.max(segment_data_end);
+            current_pos += 8 + seg_header.length;
+        }
+
+        // Use espflash's exact padding logic
+        let mut firmware_end = (max_data_end + 15) & !15;
+
+        // Use header flag instead of hardcoded check
+        if header.append_digest == 1 {
+            firmware_end += 32;
+        }
+
+        // Check for signatures without large buffer allocation
+        let signature_search_start = firmware_end;
+        let search_sectors = 2u32; // Only search 2 sectors (8KB) for signatures
+
+        for i in 0..search_sectors {
+            let sector_start = signature_search_start + (i * 4096);
+            if sector_start >= self.size() {
+                break;
+            }
+
+            let sector_num = sector_start / 4096;
+            if sector_num >= self.n_sectors() as u32 {
+                break;
+            }
+
+            let sector = self.read_sector(sector_num).unwrap();
+
+            // Search for signature magic in this sector
+            for pos in 0..sector.len().saturating_sub(4) {
+                if sector[pos] == 0xE7
+                    && sector[pos + 1] == 0x02
+                    && sector[pos + 2] == 0x00
+                    && sector[pos + 3] == 0x00
+                {
+                    // Found signature - return position relative to partition start
+                    return sector_start + pos as u32;
+                }
+            }
+        }
+
+        firmware_end
+    }
 }

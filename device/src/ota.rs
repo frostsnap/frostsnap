@@ -414,19 +414,19 @@ impl FirmwareUpgradeMode<'_> {
         } = &self
         {
             let partition = &ota.ota_partitions()[*ota_slot];
-            let digest = partition.sha256_digest(sha, *size);
+            let firmware_size = partition.firmware_size();
+            assert_eq!(*size, firmware_size);
+            let digest = partition.sha256_digest(sha, firmware_size);
             if digest != *expected_digest {
                 panic!(
                     "upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",
                     expected_digest
                 );
             }
-            ota.switch_partition(*ota_slot, OtaMetadata { size: *size });
+            ota.switch_partition(*ota_slot, OtaMetadata {});
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct OtaMetadata {
-    pub size: u32,
-}
+pub struct OtaMetadata {}
