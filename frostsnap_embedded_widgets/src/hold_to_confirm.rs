@@ -67,8 +67,8 @@ where
     pub fn fade_in_button(&mut self) {
         if self.button_fader_mut().is_faded_out() {
             self.button_fader_mut().start_fade_in(
-                800,  // 800ms fade duration
-                50,   // 50ms redraw interval
+                300,  // 800ms fade duration
+                20,   // 50ms redraw interval
                 PALETTE.background
             );
         }

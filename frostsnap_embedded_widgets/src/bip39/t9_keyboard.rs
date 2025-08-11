@@ -243,6 +243,10 @@ impl T9Keyboard {
 }
 
 impl crate::DynWidget for T9Keyboard {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // T9Keyboard has fixed size based on its bounds
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.bounds.size.into()
     }

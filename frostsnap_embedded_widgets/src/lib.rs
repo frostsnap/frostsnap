@@ -65,7 +65,7 @@ pub mod fps;
 pub mod widget_tuple;
 pub mod demo_widget;
 pub mod bitcoin_amount_display;
-// pub mod sign_prompt;
+pub mod sign_prompt;
 pub mod p2tr_address_display;
 pub mod any_of;
 pub mod prelude;
@@ -77,7 +77,7 @@ pub use key_touch::{Key, KeyTouch};
 // pub use page_by_page::PageByPage;
 // pub use page_demo::PageDemo;
 pub use page_slider::PageSlider;
-// pub use sign_prompt::SignPrompt;
+pub use sign_prompt::SignPrompt;
 pub use widget_list::WidgetList;
 pub use free_cropped::*;
 
@@ -154,10 +154,8 @@ impl From<Sizing> for Size {
 /// This contains all the non-generic methods from Widget
 pub trait DynWidget {
     /// Set maximum available size for this widget. Parent calls this before asking for size.
-    /// Default implementation does nothing for backwards compatibility.
-    fn set_constraints(&mut self, _max_size: Size) {
-        // Default: do nothing - widgets that need constraints override this
-    }
+    /// This must be called before sizing().
+    fn set_constraints(&mut self, max_size: Size);
     
     /// Get sizing information for this widget given its constraints.
     /// Must be called after set_constraints.

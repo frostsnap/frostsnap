@@ -141,6 +141,10 @@ impl AlphabeticKeyboard {
 }
 
 impl crate::DynWidget for AlphabeticKeyboard {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // AlphabeticKeyboard has fixed size based on framebuffer
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         crate::Sizing { 
             width: FRAMEBUFFER_WIDTH, 

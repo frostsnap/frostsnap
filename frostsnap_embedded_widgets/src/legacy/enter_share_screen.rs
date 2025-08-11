@@ -45,6 +45,10 @@ impl EnterShareScreen {
 }
 
 impl crate::DynWidget for EnterShareScreen {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // EnterShareScreen has fixed size based on keyboard and input display
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         // Total size is the keyboard rect plus input display rect
         crate::Sizing { 

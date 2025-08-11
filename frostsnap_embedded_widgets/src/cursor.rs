@@ -36,6 +36,10 @@ impl Cursor {
 }
 
 impl crate::DynWidget for Cursor {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Cursor has a fixed size
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         // Cursor is just a small underline with fixed size
         crate::Sizing { 

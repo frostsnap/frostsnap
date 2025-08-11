@@ -449,6 +449,10 @@ impl Widget for EnterBip39ShareScreen {
 }
 
 impl crate::DynWidget for EnterBip39ShareScreen {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // EnterBip39ShareScreen has fixed size based on its area
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.size.into()
     }

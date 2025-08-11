@@ -71,6 +71,10 @@ impl ShareIndexInputDisplay {
 }
 
 impl crate::DynWidget for ShareIndexInputDisplay {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // ShareIndexInputDisplay has fixed size for text display
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         // This widget adapts to whatever size it's given
         // Return a reasonable minimum size for the text

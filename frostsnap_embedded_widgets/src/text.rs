@@ -92,6 +92,10 @@ where
     C: PixelColor,
     S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Text has a fixed size based on its content, no action needed
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.cached_size.into()
     }

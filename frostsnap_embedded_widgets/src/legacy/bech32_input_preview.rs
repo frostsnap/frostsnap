@@ -353,6 +353,10 @@ impl Bech32Framebuf {
 }
 
 impl crate::DynWidget for Bech32InputPreview {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Bech32InputPreview has fixed size based on its internal layout
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         // Calculate from the rectangles - progress_rect is at the bottom
         let width = self.progress_rect.size.width;

@@ -345,6 +345,10 @@ impl Bip39InputPreview {
 }
 
 impl crate::DynWidget for Bip39InputPreview {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Bip39InputPreview has fixed size based on its area
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.area.size.into()
     }
@@ -688,6 +692,11 @@ impl Bip39Framebuf {
 }
 
 impl crate::DynWidget for Bip39Framebuf {
+    fn set_constraints(&mut self, max_size: Size) {
+        // Update viewport height based on constraints
+        self.viewport_height = max_size.height;
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         // Return the actual framebuffer dimensions
         crate::Sizing { width: FB_WIDTH, height: self.viewport_height }

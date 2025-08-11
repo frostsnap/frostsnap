@@ -84,6 +84,10 @@ where
 }
 
 impl<W: Widget, C: PixelColor> crate::DynWidget for ColorMap<W, C> {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.child.set_constraints(max_size);
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.child.sizing()
     }

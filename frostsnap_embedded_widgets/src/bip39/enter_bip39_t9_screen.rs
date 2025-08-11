@@ -333,6 +333,10 @@ impl EnterBip39T9Screen {
 }
 
 impl crate::DynWidget for EnterBip39T9Screen {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // EnterBip39T9Screen has fixed size based on its area
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.size.into()
     }

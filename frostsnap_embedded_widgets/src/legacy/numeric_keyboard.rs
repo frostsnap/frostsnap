@@ -57,6 +57,10 @@ impl NumericKeyboard {
 }
 
 impl crate::DynWidget for NumericKeyboard {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // NumericKeyboard has fixed size
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.size().into()
     }

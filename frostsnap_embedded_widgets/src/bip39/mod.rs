@@ -6,7 +6,7 @@ mod entered_words;
 mod submit_backup_button;
 mod t9_keyboard;
 mod word_selector;
-mod bip39_backup_display_screen;
+mod bip39_backup_display;
 
 pub use alphabetic_keyboard::AlphabeticKeyboard;
 pub use bip39_input_preview::Bip39InputPreview;
@@ -16,4 +16,4 @@ pub use entered_words::EnteredWords;
 pub use submit_backup_button::SubmitBackupButton;
 pub use t9_keyboard::T9Keyboard;
 pub use word_selector::WordSelector;
-pub use bip39_backup_display_screen::{Bip39BackupDisplay, AllWordsPage};
+pub use bip39_backup_display::{Bip39BackupDisplay, AllWordsPage};

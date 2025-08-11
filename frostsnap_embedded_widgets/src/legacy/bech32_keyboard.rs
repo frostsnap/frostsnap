@@ -144,6 +144,10 @@ impl Bech32Keyboard {
 }
 
 impl crate::DynWidget for Bech32Keyboard {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Bech32Keyboard has fixed size based on framebuffer dimensions
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         // Return the framebuffer width and the visible height based on max_scroll
         crate::Sizing { 

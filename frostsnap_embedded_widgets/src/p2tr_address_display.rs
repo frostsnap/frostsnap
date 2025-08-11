@@ -1,11 +1,8 @@
 use crate::{
-    Column, Row, sized_box::SizedBox, text::Text, 
-    DynWidget, Instant, Widget
+    Column, Row, text::Text, MainAxisAlignment
 };
-use alloc::string::ToString;
+use alloc::{string::{String, ToString}, vec::Vec};
 use embedded_graphics::{
-    draw_target::DrawTarget,
-    geometry::{Point, Size},
     pixelcolor::Gray4,
 };
 use u8g2_fonts::U8g2TextStyle;
@@ -14,83 +11,52 @@ use u8g2_fonts::U8g2TextStyle;
 /// - 1 row with the first chunk (grayed out)
 /// - 5 rows with 3 chunks each (4 chars per chunk)
 /// - Total: 62 characters displayed as 16 chunks
+#[derive(frostsnap_macros::Widget)]
 pub struct P2trAddressDisplay {
+    #[widget_delegate]
     column: Column<(
         Row<(Text<U8g2TextStyle<Gray4>>,)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>, SizedBox<Gray4>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
     )>,
 }
 
 impl P2trAddressDisplay {
     pub fn new(address: &str) -> Self {
         // P2TR addresses are always 62 characters (ASCII)
-        // Split into chunks of 4 characters without allocations
-        let mut chunks = (0..address.len()).step_by(4).map(move |start| {
+        // Split into chunks of 4 characters, padding with spaces as needed
+        let chunks: Vec<String> = (0..address.len()).step_by(4).map(|start| {
             let end = (start + 4).min(address.len());
-            address[start..end].to_string()
-        });
+            let chunk = &address[start..end];
+            // Pad to 4 characters with spaces
+            format!("{:4}", chunk)
+        }).collect();
         
         let text_style = U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(14));
-        let grayed_style = U8g2TextStyle::new(crate::FONT_MED, Gray4::new(8)); // Grayed out for type indicator
-        let spacer_width = 8; // Space between chunks
-        
-        // Helper to create a spacer
-        let make_spacer = || SizedBox::<Gray4>::new(Size::new(spacer_width, 1));
         
         // First chunk on its own row (grayed out)
         let type_indicator = Row::new((
-            Text::new(chunks.next().unwrap(), grayed_style),
+            Text::new(chunks[0].clone(), text_style.clone()),
         ));
         
+        // Create an iterator that produces rows of 3 chunks each
+        let mut row_iter = chunks[1..].chunks(3).map(|row_chunks| {
+            Row::new((
+                Text::new(row_chunks[0].clone(), text_style.clone()),
+                Text::new(row_chunks[1].clone(), text_style.clone()),
+                Text::new(row_chunks[2].clone(), text_style.clone()),
+            )).with_main_axis_alignment(MainAxisAlignment::SpaceAround)
+        });
 
-        // Row 0: chunks 1, 2, 3 (now that chunk 0 is the type indicator)
-        let row0 = Row::new((
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-        ));
-        
-        // Row 1: chunks 4, 5, 6
-        let row1 = Row::new((
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-        ));
-        
-        // Row 2: chunks 7, 8, 9
-        let row2 = Row::new((
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-        ));
-        
-        // Row 3: chunks 10, 11, 12
-        let row3 = Row::new((
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-        ));
-        
-        // Row 4: chunks 13, 14, 15 (last chunk is only 2 chars)
-        let row4 = Row::new((
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(chunks.next().unwrap(), text_style.clone()),
-            make_spacer(),
-            Text::new(format!("{}  ", chunks.next().unwrap()), text_style.clone()),
-        ));
+        // Get the 5 rows
+        let row0 = row_iter.next().unwrap();
+        let row1 = row_iter.next().unwrap();
+        let row2 = row_iter.next().unwrap();
+        let row3 = row_iter.next().unwrap();
+        let row4 = row_iter.next().unwrap();
         
         // Create column with all rows
         let column = Column::new((type_indicator, row0, row1, row2, row3, row4));
@@ -99,29 +65,4 @@ impl P2trAddressDisplay {
     }
 }
 
-impl DynWidget for P2trAddressDisplay {
-    fn sizing(&self) -> crate::Sizing {
-        self.column.sizing()
-    }
-    
-    fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
-        self.column.handle_touch(point, current_time, is_release)
-    }
-    
-    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        self.column.handle_vertical_drag(prev_y, new_y, is_release)
-    }
-    
-    
-    fn force_full_redraw(&mut self) {
-        self.column.force_full_redraw()
-    }
-}
-
-impl Widget for P2trAddressDisplay {
-    type Color = Gray4;
-    
-    fn draw<D: DrawTarget<Color = Self::Color>>(&mut self, target: &mut D, current_time: Instant) -> Result<(), D::Error> {
-        self.column.draw(target, current_time)
-    }
-}
+// All trait implementations are now generated by the derive macro

@@ -28,6 +28,10 @@ where
     I: ImageDrawable + OriginDimensions,
     I::Color: PixelColor,
 {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Image has a fixed size based on its content
+    }
+    
     fn sizing(&self) -> crate::Sizing {
         self.image.size().into()
     }
