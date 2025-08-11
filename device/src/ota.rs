@@ -1,11 +1,12 @@
 use crate::{
     io::SerialIo,
     partitions::{EspFlashPartition, PartitionExt},
+    secure_boot,
     ui::{self, UserInteraction},
 };
 use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
-use esp_hal::sha::Sha;
+use esp_hal::{rsa::Rsa, sha::Sha, Blocking};
 use frostsnap_comms::{
     CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
     FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -17,7 +18,6 @@ pub struct OtaPartitions<'a> {
     pub otadata: EspFlashPartition<'a>,
     pub ota_0: EspFlashPartition<'a>,
     pub ota_1: EspFlashPartition<'a>,
-    pub factory: EspFlashPartition<'a>,
 }
 
 /// CRC used by out bootloader (and incidentally python's binutils crc32 function when passed 0xFFFFFFFF as the init).
@@ -70,7 +70,7 @@ impl<'a> OtaPartitions<'a> {
     pub fn active_partition(&self) -> EspFlashPartition<'a> {
         match self.current_slot() {
             Some((slot, _)) => self.ota_partitions()[slot],
-            None => self.factory,
+            None => self.ota_0,
         }
     }
 
@@ -221,6 +221,7 @@ impl FirmwareUpgradeMode<'_> {
                     }
                     State::Erase { seq } => {
                         let mut finished = false;
+
                         /// So we erase multiple sectors poll (otherwise it's slow).
                         const ERASE_CHUNK_SIZE: usize = 32;
                         for _ in 0..ERASE_CHUNK_SIZE {
@@ -240,7 +241,6 @@ impl FirmwareUpgradeMode<'_> {
                                 break;
                             }
                         }
-
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
                                 progress: *seq as f32 / SECTORS_PER_IMAGE as f32,
@@ -298,6 +298,7 @@ impl FirmwareUpgradeMode<'_> {
         mut downstream_io: Option<&mut SerialIo<'_>>,
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
+        rsa: &mut Rsa<'_, Blocking>,
     ) {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {
@@ -408,16 +409,19 @@ impl FirmwareUpgradeMode<'_> {
             ..
         } = &self
         {
-            let partition = &ota.ota_partitions()[*ota_slot];
+            let partition = &mut ota.ota_partitions()[*ota_slot];
             let digest = partition.sha256_digest(sha);
-            if digest == *expected_digest {
-                ota.switch_partition(*ota_slot, OtaMetadata::default());
-            } else {
-                panic!(
-                    "upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",
-                    expected_digest
-                );
+
+            if digest != *expected_digest {
+                panic!("upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",
+                    expected_digest);
             }
+
+            if secure_boot::is_secure_boot_enabled() {
+                secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
+            }
+
+            ota.switch_partition(*ota_slot, OtaMetadata::default());
         }
     }
 }
