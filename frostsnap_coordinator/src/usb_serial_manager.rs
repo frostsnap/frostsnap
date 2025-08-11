@@ -821,14 +821,10 @@ impl FirmwareBin {
     }
 
     pub fn digest(&self) -> Sha256Digest {
-        // ⚠ This MUST be switched to the new digest format for future firmware updates.
-
-        // use frostsnap_core::sha2::digest::Digest;
-        // let mut state = sha2::Sha256::default();
-        // state.update(self.bin);
-        // Sha256Digest(state.finalize().into())
-
-        self.padded_digest()
+        use frostsnap_core::sha2::digest::Digest;
+        let mut state = sha2::Sha256::default();
+        state.update(self.bin);
+        Sha256Digest(state.finalize().into())
     }
 
     #[allow(dead_code)]
