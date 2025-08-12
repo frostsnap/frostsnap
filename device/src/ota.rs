@@ -414,7 +414,7 @@ impl FirmwareUpgradeMode<'_> {
         } = &self
         {
             let partition = &ota.ota_partitions()[*ota_slot];
-            let firmware_size = partition.firmware_size();
+            let firmware_size = partition.firmware_size().unwrap();
             assert_eq!(*size, firmware_size);
             let digest = partition.sha256_digest(sha, firmware_size);
             if digest != *expected_digest {
