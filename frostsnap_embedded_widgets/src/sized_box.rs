@@ -1,4 +1,5 @@
 use super::Widget;
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
     pixelcolor::{PixelColor, Rgb565},
@@ -62,14 +63,17 @@ impl<C: PixelColor> crate::DynWidget for SizedBox<C>
 
 }
 
-impl<C: PixelColor> Widget for SizedBox<C> {
+impl<C: crate::WidgetColor> Widget for SizedBox<C> {
     type Color = C;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        _target: &mut D,
+        _target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         // Don't draw anything - this is just a placeholder widget
         Ok(())
     }

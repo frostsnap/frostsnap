@@ -1,4 +1,5 @@
 use crate::{checkmark::Checkmark, palette::PALETTE, Center, Instant, Widget};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -118,11 +119,13 @@ impl crate::DynWidget for CircleButton {
 impl Widget for CircleButton {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
         
         // Only redraw the circle if state changed

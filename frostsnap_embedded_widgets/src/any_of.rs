@@ -1,4 +1,5 @@
 use crate::{AnyDynWidget, DynWidget, Widget, Instant};
+use crate::super_draw_target::SuperDrawTarget;
 use alloc::boxed::Box;
 use core::any::{Any, TypeId};
 use embedded_graphics::{
@@ -95,11 +96,14 @@ macro_rules! impl_any_of {
             }
         }
         
-        impl<$($t: Widget<Color = COLOR> + 'static),+, COLOR: PixelColor> Widget for AnyOf<($($t,)+)> 
+        impl<$($t: Widget<Color = COLOR> + 'static),+, COLOR: crate::WidgetColor> Widget for AnyOf<($($t,)+)> 
         {
             type Color = COLOR;
             
-            fn draw<DT: DrawTarget<Color = COLOR>>(&mut self, target: &mut DT, current_time: Instant) -> Result<(), DT::Error> {
+            fn draw<DT>(&mut self, target: &mut crate::super_draw_target::SuperDrawTarget<DT, COLOR>, current_time: Instant) -> Result<(), DT::Error> 
+            where
+                DT: DrawTarget<Color = COLOR>,
+            {
                 let type_id = self.inner.as_ref().type_id();
                 
                 $(

@@ -1,4 +1,5 @@
 use crate::palette::PALETTE;
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{Key, KeyTouch, Widget, FONT_LARGE, FONT_SMALL};
 use alloc::string::String;
 use embedded_graphics::{
@@ -191,7 +192,7 @@ impl T9Keyboard {
 
     fn draw_key<D: DrawTarget<Color = Rgb565>>(
         &self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         rect: Rectangle,
         text: &str,
         is_valid: bool,
@@ -279,11 +280,13 @@ impl crate::DynWidget for T9Keyboard {
 impl Widget for T9Keyboard {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Check for timeout before drawing
         let timed_out = self.check_timeout(current_time).is_some();
         

@@ -1,5 +1,6 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use crate::{Widget, Instant, widget_tuple::WidgetTuple};
-use crate::prelude::FreeCrop;
+use crate::super_draw_target::SuperDrawTarget;
 use super::{CrossAxisAlignment, MainAxisAlignment};
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -289,15 +290,18 @@ macro_rules! impl_column_for_tuple {
             }
         }
         
-        impl<$($t: Widget<Color = C>),+, C: PixelColor> Widget for Column<($($t,)+)> {
+        impl<$($t: Widget<Color = C>),+, C: crate::WidgetColor> Widget for Column<($($t,)+)> {
             type Color = C;
             
             #[allow(unused_assignments)]
-            fn draw<D: DrawTarget<Color = C>>(
+            fn draw<D>(
                 &mut self,
-                target: &mut D,
+                target: &mut SuperDrawTarget<D, Self::Color>,
                 current_time: Instant,
-            ) -> Result<(), D::Error> {
+            ) -> Result<(), D::Error>
+            where
+                D: DrawTarget<Color = Self::Color>,
+            {
                 self.sizing.unwrap();
                 
                 // Get mutable references to children
@@ -308,8 +312,7 @@ macro_rules! impl_column_for_tuple {
                 let mut child_index = 0;
                 $(
                     {
-                        let mut cropped = target.free_cropped(&self.child_rects[child_index]);
-                        $t.draw(&mut cropped, current_time)?;
+                        $t.draw(&mut target.clone().crop(self.child_rects[child_index]), current_time)?;
                         
                         // Draw debug border if enabled
                         if self.debug_borders {

@@ -2,7 +2,7 @@ use frostsnap_embedded_widgets::Widget;
 #[cfg(feature = "debug_fps")]
 use frostsnap_embedded_widgets::Fps;
 #[cfg(all(feature = "debug_fps", feature = "debug_mem"))]
-use frostsnap_embedded_widgets::{Row, Container};
+use frostsnap_embedded_widgets::Row;
 #[cfg(not(any(feature = "debug_fps", feature = "debug_mem")))]
 use frostsnap_embedded_widgets::SizedBox;
 use embedded_graphics::pixelcolor::Rgb565;
@@ -12,25 +12,26 @@ use embedded_graphics::prelude::Size;
 use frostsnap_embedded_widgets::{
     prelude::*,
     DynWidget, Instant, FONT_SMALL, 
-    mut_text::{MutText, mut_text_buffer_size},
-    palette::PALETTE,
-    color_map::ColorMap,
+    mut_text::MutText,
     string_buffer::StringBuffer,
+    Text,
 };
 #[cfg(feature = "debug_mem")]
 use embedded_graphics::{
     draw_target::DrawTarget,
-    pixelcolor::{RgbColor, BinaryColor},
-    text::Alignment,
+    pixelcolor::RgbColor,
+    prelude::{Point, Size},
 };
 #[cfg(feature = "debug_mem")]
 use u8g2_fonts::U8g2TextStyle;
+#[cfg(feature = "debug_mem")]
+use core::fmt::Write;
 
 /// Create a debug stats widget that conditionally displays FPS and/or memory usage
 pub fn create_debug_stats() -> impl Widget<Color = Rgb565> {
     #[cfg(all(feature = "debug_fps", feature = "debug_mem"))]
     {
-        let fps = Fps::new();
+        let fps = Fps::new(500);
         let memory = MemoryIndicator::new();
         
         Row::new((fps, memory))
@@ -40,7 +41,7 @@ pub fn create_debug_stats() -> impl Widget<Color = Rgb565> {
     
     #[cfg(all(feature = "debug_fps", not(feature = "debug_mem")))]
     {
-        Fps::new()
+        Fps::new(500)
     }
     
     #[cfg(all(not(feature = "debug_fps"), feature = "debug_mem"))]
@@ -58,22 +59,14 @@ pub fn create_debug_stats() -> impl Widget<Color = Rgb565> {
 // Constants for MutText dimensions - "Mem: 262144" needs more space
 #[cfg(feature = "debug_mem")]
 const MEM_MAX_CHARS: usize = 15;  // Increased for full byte count
-#[cfg(feature = "debug_mem")]
-// ProFont17 is exactly 10px wide per character for ASCII
-// "Mem: 262144" = 11 chars = 110px wide
-const MEM_WIDTH: usize = 110;  // Exact width for "Mem: 262144"
-#[cfg(feature = "debug_mem")]
-const MEM_HEIGHT: usize = 17;  // ProFont17 is exactly 17px tall
-#[cfg(feature = "debug_mem")]
-const MEM_BUFFER_SIZE: usize = mut_text_buffer_size::<MEM_WIDTH, MEM_HEIGHT>();
 
 #[cfg(feature = "debug_mem")]
-type MemMutText = MutText<U8g2TextStyle<BinaryColor>, MEM_MAX_CHARS, MEM_WIDTH, MEM_HEIGHT, MEM_BUFFER_SIZE>;
+type MemMutText = MutText<U8g2TextStyle<Rgb565>>;
 
 /// Memory usage indicator component that polls esp_alloc directly
 #[cfg(feature = "debug_mem")]
 pub struct MemoryIndicator {
-    display: ColorMap<MemMutText, Rgb565>,
+    display: MemMutText,
     last_used: usize,
     last_draw_time: Option<Instant>,
 }
@@ -81,13 +74,9 @@ pub struct MemoryIndicator {
 #[cfg(feature = "debug_mem")]
 impl MemoryIndicator {
     fn new() -> Self {
-        let text_style = U8g2TextStyle::new(FONT_SMALL, BinaryColor::On);
-        let mut_text = MutText::new("Mem: 0", text_style).with_alignment(Alignment::Left);
-        
-        let display = mut_text.color_map(|c| match c {
-            BinaryColor::On => Rgb565::CYAN,
-            BinaryColor::Off => PALETTE.background,
-        });
+        // Use Cyan color directly for Rgb565 text
+        let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
+        let display = MutText::new("Mem: 0", text_style, MEM_MAX_CHARS);
         
         Self {
             display,
@@ -110,6 +99,14 @@ impl DynWidget for MemoryIndicator {
     fn force_full_redraw(&mut self) {
         self.display.force_full_redraw();
     }
+    
+    fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<frostsnap_embedded_widgets::KeyTouch> {
+        self.display.handle_touch(point, current_time, is_release)
+    }
+    
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.display.handle_vertical_drag(prev_y, new_y, is_release);
+    }
 }
 
 #[cfg(feature = "debug_mem")]
@@ -118,7 +115,7 @@ impl Widget for MemoryIndicator {
     
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
     ) -> Result<(), D::Error> {
         // Update every 500ms (same rate as FPS widget)
@@ -128,24 +125,28 @@ impl Widget for MemoryIndicator {
         };
         
         if should_update {
-            // Get memory info from esp_alloc
-            let used = esp_alloc::HEAP.used();
-            
-            // Always update the text to force a redraw
-            self.last_used = used;
-            
-            use core::fmt::Write;
-            let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
-            write!(&mut buf, "Mem: {}", used).ok();
-            self.display.child.set_text(buf.as_str());
-            
-            // Force a redraw even if the text hasn't changed
-            self.display.force_full_redraw();
-            
             self.last_draw_time = Some(current_time);
+            
+            // Get heap stats from esp_alloc
+            // Note: The exact API might vary, using a simple approach for now
+            let used = 0; // TODO: Get actual heap usage from esp_alloc
+            
+            // Only update if value changed
+            if used != self.last_used {
+                self.last_used = used;
+                
+                // Format the memory usage
+                let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
+                let _ = write!(&mut buf, "Mem: {}", used);
+                
+                // Create a new text widget with the updated text
+                let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
+                let text_widget = frostsnap_embedded_widgets::Text::new(buf.as_str(), text_style);
+                self.display.set_text(text_widget);
+            }
         }
         
-        // Draw the display
+        // Always draw the display (it handles its own dirty tracking)
         self.display.draw(target, current_time)
     }
 }

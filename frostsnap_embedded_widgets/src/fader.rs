@@ -1,4 +1,5 @@
 use super::{Widget, Frac};
+use crate::super_draw_target::SuperDrawTarget;
 use crate::animation_speed::AnimationSpeed;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -244,11 +245,13 @@ impl<W: Widget<Color = Rgb565>> crate::DynWidget for Fader<W> {
 impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
     type Color = Rgb565;
 
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         match &mut self.state {
             FadeState::FadedOut => {
                 Ok(())
@@ -294,12 +297,8 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
 
                     self.child.force_full_redraw();
 
-                    let mut fading_target = FadingDrawTarget {
-                        target,
-                        fade_progress,
-                        target_color,
-                    };
-
+                    // Use SuperDrawTarget's opacity method for fading
+                    let mut fading_target = target.clone().opacity(Frac::ONE - fade_progress);
                     self.child.draw(&mut fading_target, current_time)?;
 
                     self.last_redraw_time = Some(current_time);

@@ -1,4 +1,5 @@
 use crate::{DynWidget, Widget, Instant, translate::Translate, fader::Fader, animation_speed::AnimationSpeed};
+use crate::super_draw_target::SuperDrawTarget;
 use core::mem;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -149,11 +150,13 @@ impl<T: Widget<Color = Rgb565>> DynWidget for SlideInTransition<T> {
 impl<T: Widget<Color = Rgb565>> Widget for SlideInTransition<T> {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         self.constraints.unwrap();
         
         // Draw old widget once to let it fade out (clear pixels)

@@ -1,6 +1,8 @@
 //! Vec-based framebuffer implementation for dynamic sizing
 //! This is a translation of embedded-graphics framebuffer that uses Vec instead of const generics
 
+use crate::super_draw_target::SuperDrawTarget;
+
 use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,

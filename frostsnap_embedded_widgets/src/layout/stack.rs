@@ -1,5 +1,6 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use crate::{Widget, Instant, widget_tuple::WidgetTuple};
-use crate::prelude::FreeCrop;
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -355,15 +356,18 @@ macro_rules! impl_stack_for_tuple {
             }
         }
         
-        impl<$($t: Widget<Color = C>),+, C: PixelColor> Widget for Stack<($($t,)+)> {
+        impl<$($t: Widget<Color = C>),+, C: crate::WidgetColor> Widget for Stack<($($t,)+)> {
             type Color = C;
             
             #[allow(unused_assignments)]
-            fn draw<D: DrawTarget<Color = C>>(
+            fn draw<D>(
                 &mut self,
-                target: &mut D,
+                target: &mut SuperDrawTarget<D, Self::Color>,
                 current_time: Instant,
-            ) -> Result<(), D::Error> {
+            ) -> Result<(), D::Error>
+            where
+                D: DrawTarget<Color = Self::Color>,
+            {
                 self.sizing.unwrap();
                 
                 // Get mutable references to children
@@ -377,8 +381,7 @@ macro_rules! impl_stack_for_tuple {
                         let rect = self.child_rects[child_index];
                         // Only draw if the rectangle is within bounds
                         if rect.size.width > 0 && rect.size.height > 0 {
-                            let mut cropped = target.free_cropped(&rect);
-                            $t.draw(&mut cropped, current_time)?;
+                            $t.draw(&mut target.clone().crop(rect), current_time)?;
                         }
                         child_index += 1;
                     }

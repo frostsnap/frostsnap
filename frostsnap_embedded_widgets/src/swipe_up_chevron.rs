@@ -1,18 +1,20 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use crate::{Widget, FONT_SMALL, bobbing_carat::BobbingCarat, Column, text::Text};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
-    pixelcolor::{PixelColor, RgbColor},
+    pixelcolor::PixelColor,
     prelude::*,
 };
 use u8g2_fonts::U8g2TextStyle;
 
-pub struct SwipeUpChevron<C: PixelColor> {
+pub struct SwipeUpChevron<C: crate::WidgetColor> {
     column: Column<(BobbingCarat<C>, Text<U8g2TextStyle<C>>)>,
     cached_size: Option<crate::Sizing>,
 }
 
-impl<C: PixelColor + RgbColor> SwipeUpChevron<C> 
+impl<C: crate::WidgetColor> SwipeUpChevron<C> 
 where
-    C: Copy + Default,
+    C: Copy,
 {
     pub fn new(color: C, background_color: C) -> Self {
         // Create bobbing carat
@@ -34,7 +36,7 @@ where
     }
 }
 
-impl<C: PixelColor + RgbColor + Default> crate::DynWidget for SwipeUpChevron<C> 
+impl<C: crate::WidgetColor> crate::DynWidget for SwipeUpChevron<C> 
 where
     C: Copy,
 {
@@ -51,17 +53,19 @@ where
     }
 }
 
-impl<C: PixelColor + RgbColor + Default> Widget for SwipeUpChevron<C> 
+impl<C: crate::WidgetColor> Widget for SwipeUpChevron<C> 
 where
     C: Copy,
-{
+ {
     type Color = C;
 
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         self.column.draw(target, current_time)
     }
 

@@ -208,11 +208,14 @@ fn derive_widget_for_enum(
         impl #impl_generics #crate_path::Widget for #name #ty_generics #where_clause {
             type Color = embedded_graphics::pixelcolor::Rgb565;
 
-            fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
+            fn draw<D>(
                 &mut self,
-                target: &mut D,
+                target: &mut #crate_path::SuperDrawTarget<D, Self::Color>,
                 current_time: #crate_path::Instant,
-            ) -> Result<(), D::Error> {
+            ) -> Result<(), D::Error>
+            where
+                D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>,
+            {
                 match self {
                     #(#draw_arms)*
                 }
@@ -284,11 +287,14 @@ fn derive_widget_for_struct(
         impl #impl_generics #crate_path::Widget for #name #ty_generics #where_clause {
             type Color = <#field_type as #crate_path::Widget>::Color;
 
-            fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
+            fn draw<D>(
                 &mut self,
-                target: &mut D,
+                target: &mut #crate_path::SuperDrawTarget<D, Self::Color>,
                 current_time: #crate_path::Instant,
-            ) -> Result<(), D::Error> {
+            ) -> Result<(), D::Error>
+            where
+                D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>,
+            {
                 self.#delegate_field.draw(target, current_time)
             }
         }

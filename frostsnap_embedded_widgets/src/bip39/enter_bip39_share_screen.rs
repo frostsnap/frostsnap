@@ -1,6 +1,6 @@
 use super::{AlphabeticKeyboard, Bip39InputPreview, EnteredWords, WordSelector};
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{DynWidget, Key, KeyTouch, Widget};
-use crate::prelude::FreeCrop;
 use alloc::{string::String, vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_backup::bip39_words::{self, FROSTSNAP_BACKUP_WORDS};
@@ -52,7 +52,7 @@ impl EnterBip39ShareScreen {
 
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
     ) {
         if self.mnemonic_complete {
@@ -93,7 +93,7 @@ impl EnterBip39ShareScreen {
         } else {
             // Normal keyboard and input preview
             let _ = self.alphabetic_keyboard
-                .draw(&mut target.free_cropped(&self.keyboard_rect), current_time);
+                .draw(&mut target.clone().crop(self.keyboard_rect), current_time);
 
             // Draw BIP39 input preview
             let input_display_rect = Rectangle::new(
@@ -101,7 +101,7 @@ impl EnterBip39ShareScreen {
                 Size::new(target.bounding_box().size.width, 60),
             );
             let _ = self.bip39_input
-                .draw(&mut target.free_cropped(&input_display_rect), current_time);
+                .draw(&mut target.clone().crop(input_display_rect), current_time);
         }
 
         // Draw touches and clean up
@@ -381,11 +381,13 @@ impl EnterBip39ShareScreen {
 impl Widget for EnterBip39ShareScreen {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         if self.mnemonic_complete {
             // Only draw if we just transitioned to complete state
             if self.needs_redraw {
@@ -424,7 +426,7 @@ impl Widget for EnterBip39ShareScreen {
         } else {
             // Normal keyboard and input preview
             self.alphabetic_keyboard
-                .draw(&mut target.free_cropped(&self.keyboard_rect), current_time)?;
+                .draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
 
             // Draw BIP39 input preview
             let input_display_rect = Rectangle::new(
@@ -432,7 +434,7 @@ impl Widget for EnterBip39ShareScreen {
                 Size::new(target.bounding_box().size.width, 60),
             );
             self.bip39_input
-                .draw(&mut target.free_cropped(&input_display_rect), current_time)?;
+                .draw(&mut target.clone().crop(input_display_rect), current_time)?;
         }
 
         // Draw touches and clean up

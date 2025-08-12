@@ -1,9 +1,9 @@
 use crate::{
-    Column, Row, text::Text, MainAxisAlignment
+    Column, Row, text::Text, MainAxisAlignment, palette::PALETTE
 };
 use alloc::{string::{String, ToString}, vec::Vec};
 use embedded_graphics::{
-    pixelcolor::Gray4,
+    pixelcolor::Rgb565,
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -15,12 +15,12 @@ use u8g2_fonts::U8g2TextStyle;
 pub struct P2trAddressDisplay {
     #[widget_delegate]
     column: Column<(
-        Row<(Text<U8g2TextStyle<Gray4>>,)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
-        Row<(Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>, Text<U8g2TextStyle<Gray4>>)>,
+        Row<(Text<U8g2TextStyle<Rgb565>>,)>,
+        Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>,
+        Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>,
+        Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>,
+        Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>,
+        Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>,
     )>,
 }
 
@@ -35,7 +35,8 @@ impl P2trAddressDisplay {
             format!("{:4}", chunk)
         }).collect();
         
-        let text_style = U8g2TextStyle::new(crate::FONT_LARGE, Gray4::new(14));
+        // Use a light grey color for the address text
+        let text_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_surface);
         
         // First chunk on its own row (grayed out)
         let type_indicator = Row::new((

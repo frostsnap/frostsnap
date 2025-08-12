@@ -1,4 +1,5 @@
 use crate::{Widget, DynWidget, Instant, Fader};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -121,11 +122,13 @@ where
 {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Draw the previous widget if it's still fading out
         if let Some(prev) = &mut self.prev {
             prev.draw(target, current_time)?;

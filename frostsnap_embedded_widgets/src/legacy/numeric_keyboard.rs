@@ -1,4 +1,5 @@
 use crate::palette::PALETTE;
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{icons, Key, KeyTouch};
 use alloc::string::ToString;
 use embedded_graphics::mono_font::{ascii::*, MonoTextStyle};
@@ -109,7 +110,7 @@ impl crate::Widget for NumericKeyboard {
 
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         if !self.redraw && !self.redraw_disabled_keys {

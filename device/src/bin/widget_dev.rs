@@ -60,13 +60,15 @@ fn main() -> ! {
     .with_mosi(peripherals.GPIO7);
     let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
     let di = SPIInterface::new(spi_device, Output::new(peripherals.GPIO9, Level::Low));
-    let mut display = mipidsi::Builder::new(ST7789, di)
+    let display_inner = mipidsi::Builder::new(ST7789, di)
         .display_size(SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16)
         .display_offset(0, SCREEN_OFFSET_Y)
         .invert_colors(ColorInversion::Inverted)
         .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
         .init(&mut delay)
         .unwrap();
+    
+    let mut display = frostsnap_embedded_widgets::SuperDrawTarget::new(display_inner, frostsnap_embedded_widgets::palette::PALETTE.background);
 
     // Initialize I2C for CST816S touch controller
     let i2c = I2c::new(

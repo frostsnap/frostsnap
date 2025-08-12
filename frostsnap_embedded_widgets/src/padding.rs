@@ -1,6 +1,6 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use super::Widget;
-use crate::Instant;
-use crate::prelude::FreeCrop;
+use crate::{Instant, super_draw_target::SuperDrawTarget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -158,27 +158,24 @@ impl<W: Widget> crate::DynWidget for Padding<W>
 impl<W: Widget> Widget for Padding<W> {
     type Color = W::Color;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
-    ) -> Result<(), D::Error> {
-        let target_bounds = target.bounding_box();
-        let padded_origin = Point::new(
-            target_bounds.top_left.x + self.left as i32,
-            target_bounds.top_left.y + self.top as i32,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        // SuperDrawTarget doesn't expose bounding_box directly, so we work with relative coordinates
+        // The padding creates an offset from the current drawing area
+        let padded_area = Rectangle::new(
+            Point::new(self.left as i32, self.top as i32),
+            self.sizing().into(),
         );
-        let padded_size = Size::new(
-            target_bounds.size.width.saturating_sub(self.left + self.right),
-            target_bounds.size.height.saturating_sub(self.top + self.bottom),
-        );
-        let padded_area = Rectangle::new(padded_origin, padded_size);
 
-        // Create a cropped target with reduced area
-        let mut cropped = target.free_cropped(&padded_area);
-
-        // Draw the child in the reduced area
-        self.child.draw(&mut cropped, current_time)?;
+        // Draw the child in the padded area
+        let mut cropped_target = target.clone().crop(padded_area);
+        self.child.draw(&mut cropped_target, current_time)?;
 
         Ok(())
     }

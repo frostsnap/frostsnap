@@ -1,6 +1,6 @@
 use crate::palette::PALETTE;
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{Key, KeyTouch, Widget};
-use crate::prelude::FreeCrop;
 use super::{Bech32InputPreview, Bech32Keyboard};
 use alloc::{vec::Vec, vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
@@ -133,15 +133,17 @@ impl crate::DynWidget for EnterShareScreen {
 impl Widget for EnterShareScreen {
     type Color = Rgb565;
 
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        let mut keyboard_target = target.free_cropped(&self.keyboard_rect);
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
+        let mut keyboard_target = target.clone().crop(self.keyboard_rect);
         self.bech32_keyboard.draw(&mut keyboard_target, current_time)?;
 
-        let mut input_display_target = target.free_cropped(&self.input_display_rect);
+        let mut input_display_target = target.clone().crop(self.input_display_rect);
         <Bech32InputPreview as Widget>::draw(&mut self.backup_input_preview, &mut input_display_target, current_time)?;
 
         self.touches.retain_mut(|touch| {

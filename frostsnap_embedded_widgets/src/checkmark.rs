@@ -1,5 +1,6 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use super::{pixel_recorder::PixelRecorder, Widget};
-use crate::{compressed_point::CompressedPoint, Frac, Rat};
+use crate::{compressed_point::CompressedPoint, Frac, Rat, Instant, super_draw_target::SuperDrawTarget};
 use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -200,35 +201,6 @@ impl<C: PixelColor> Checkmark<C> {
         }
     }
 
-    fn draw_animation<D: DrawTarget<Color = C>>(
-        &mut self,
-        target: &mut D,
-    ) -> Result<(), D::Error> {
-        match self.animation_state {
-            AnimationState::Idle => {}
-            AnimationState::Drawing | AnimationState::Complete => {
-                let check_progress = self.progress;
-                let current_pixels = (check_progress * self.check_pixels.len() as u32).round() as usize;
-                let last_pixels = if let Some(last_progress) = self.last_drawn_check_progress {
-                    (last_progress * self.check_pixels.len() as u32).round() as usize
-                } else {
-                    0
-                };
-
-                if current_pixels > last_pixels && current_pixels <= self.check_pixels.len() {
-                    target.draw_iter(
-                        self.check_pixels[last_pixels..current_pixels]
-                            .iter()
-                            .map(|cp| Pixel(cp.to_point(), self.color)),
-                    )?;
-                }
-
-                self.last_drawn_check_progress = Some(check_progress);
-            }
-        }
-
-        Ok(())
-    }
 }
 
 impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
@@ -260,17 +232,42 @@ impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
     }
 }
 
-impl<C: PixelColor> Widget for Checkmark<C> {
+impl<C: crate::WidgetColor> Widget for Checkmark<C> {
     type Color = C;
 
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         if self.enabled {
             self.update_animation(current_time);
-            self.draw_animation(target)?;
+            
+            // Draw animation inline
+            match self.animation_state {
+                AnimationState::Idle => {}
+                AnimationState::Drawing | AnimationState::Complete => {
+                    let check_progress = self.progress;
+                    let current_pixels = (check_progress * self.check_pixels.len() as u32).round() as usize;
+                    let last_pixels = if let Some(last_progress) = self.last_drawn_check_progress {
+                        (last_progress * self.check_pixels.len() as u32).round() as usize
+                    } else {
+                        0
+                    };
+
+                    if current_pixels > last_pixels && current_pixels <= self.check_pixels.len() {
+                        target.draw_iter(
+                            self.check_pixels[last_pixels..current_pixels]
+                                .iter()
+                                .map(|cp| Pixel(cp.to_point(), self.color)),
+                        )?;
+                    }
+
+                    self.last_drawn_check_progress = Some(check_progress);
+                }
+            }
         }
         Ok(())
     }

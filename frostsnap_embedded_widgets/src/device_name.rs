@@ -1,5 +1,6 @@
-use super::{Widget, Column, MutText}; // , Cursor};
-use crate::{Instant, palette::PALETTE, bitmap::EncodedImage, vec_framebuffer::VecFramebuffer, image::Image, color_map::ColorMap};
+use super::{Widget, Column, MutText, Text as TextWidget}; // , Cursor};
+use crate::super_draw_target::SuperDrawTarget;
+use crate::{Instant, palette::PALETTE, bitmap::EncodedImage, vec_framebuffer::VecFramebuffer, image::Image};
 use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -10,18 +11,13 @@ use u8g2_fonts::U8g2TextStyle;
 
 // Constants for MutText buffer
 const MAX_NAME_CHARS: usize = 16;  // Capped at 16 characters
-const NAME_WIDTH: usize = 220;  // Reasonable width for 16 chars with larger font
-const NAME_HEIGHT: usize = 40;  // Increased for larger font
-// Calculate buffer size: BinaryColor uses 1 bit per pixel, so W*H/8 bytes
-// Add some extra bytes for alignment
-const NAME_BUFFER_SIZE: usize = ((NAME_WIDTH * NAME_HEIGHT + 7) / 8) + 100;
 
-type MutTextWidget = MutText<U8g2TextStyle<BinaryColor>, MAX_NAME_CHARS, NAME_WIDTH, NAME_HEIGHT, NAME_BUFFER_SIZE>;
+type MutTextWidget = MutText<U8g2TextStyle<Rgb565>>;
 
 /// A widget for displaying device name with optional edit mode cursor
 pub struct DeviceName {
-    /// The device name text widget (mutable text with color mapping)
-    text_widget: ColorMap<MutTextWidget, Rgb565>,
+    /// The device name text widget
+    text_widget: MutTextWidget,
     /// The cursor widget (used in edit mode)
     // cursor: Option<Cursor>,
     /// Whether we're in edit mode
@@ -34,13 +30,9 @@ impl DeviceName {
     /// Create a new device name widget
     pub fn new<S: Into<String>>(name: S) -> Self {
         let name_string = name.into();
-        let char_style = U8g2TextStyle::new(crate::FONT_LARGE, BinaryColor::On);
+        let char_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.primary);
         
-        let mut_text = MutText::new(&name_string, char_style);
-        let text_widget = mut_text.color_map(|c| match c {
-            BinaryColor::On => PALETTE.primary,
-            BinaryColor::Off => PALETTE.background,
-        });
+        let text_widget = MutText::new(&name_string, char_style, MAX_NAME_CHARS);
         
         Self {
             text_widget,
@@ -74,13 +66,15 @@ impl DeviceName {
     
     /// Get the current name
     pub fn name(&self) -> &str {
-        self.text_widget.child.text()
+        self.text_widget.text()
     }
     
     /// Set a new device name
     pub fn set_name<S: Into<String>>(&mut self, name: S) {
         let name_string = name.into();
-        self.text_widget.child.set_text(&name_string);
+        let char_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.primary);
+        let text_widget = TextWidget::new(&name_string, char_style);
+        self.text_widget.set_text(text_widget);
         self.needs_redraw = true;
     }
 }
@@ -110,11 +104,13 @@ impl crate::DynWidget for DeviceName {
 impl Widget for DeviceName {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Only redraw if needed
         if !self.needs_redraw {
             // // Still need to update cursor if in edit mode
@@ -144,7 +140,7 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 pub struct DeviceNameScreen {
     #[widget_delegate]
     column: Column<(
-        ColorMap<Image<VecFramebuffer<BinaryColor>>, Rgb565>,
+        Image<VecFramebuffer<BinaryColor>, Rgb565>,
         DeviceName,
     )>,
 }
@@ -164,8 +160,7 @@ impl DeviceNameScreen {
         // Load logo
         let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
         let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
-        let image_widget = Image::new(framebuffer);
-        let logo_colored = image_widget.color_map(|c| match c {
+        let logo_colored = Image::with_color_map(framebuffer, |c| match c {
             BinaryColor::On => PALETTE.logo,
             BinaryColor::Off => PALETTE.background,
         });

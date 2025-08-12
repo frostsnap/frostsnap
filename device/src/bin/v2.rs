@@ -218,7 +218,7 @@ fn main() -> ! {
     ui_stack.set_constraints(Size::new(240, 280));
     
     let ui = FrostyUi {
-        display,
+        display: frostsnap_embedded_widgets::SuperDrawTarget::new(display, PALETTE.background),
         ui_stack,
         capsense,
         downstream_connection_state: DownstreamConnectionState::Disconnected,
@@ -260,8 +260,11 @@ impl embedded_hal::digital::ErrorType for NoCs {
     type Error = core::convert::Infallible;
 }
 
-pub struct FrostyUi<'t, T, DT, I2C, PINT, RST, SW> {
-    display: DT,
+pub struct FrostyUi<'t, T, DT, I2C, PINT, RST, SW> 
+where
+    DT: DrawTarget<Color = Rgb565>,
+{
+    display: frostsnap_embedded_widgets::SuperDrawTarget<DT, embedded_graphics::pixelcolor::Rgb565>,
     /// Stack composing root_widget with debug stats overlay
     ui_stack: Stack<(RootWidget, SW)>,
     capsense: CST816S<I2C, PINT, RST>,

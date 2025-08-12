@@ -1,6 +1,6 @@
 use crate::{Key, KeyTouch, icons, FONT_LARGE};
+use crate::super_draw_target::SuperDrawTarget;
 use crate::palette::PALETTE;
-use crate::prelude::FreeCrop;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use embedded_graphics::framebuffer::{buffer_size, Framebuffer};
@@ -94,7 +94,7 @@ impl Bech32InputPreview {
     // Draw the input area with the current characters
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
     ) {
         if !self.init_draw {
@@ -113,9 +113,9 @@ impl Bech32InputPreview {
         }
 
         self.framebuf
-            .draw(&mut target.free_cropped(&self.preview_rect), current_time);
+            .draw(&mut target.clone().crop(self.preview_rect), current_time);
 
-        let _ = self.progress.draw(&mut target.free_cropped(&self.progress_rect));
+        let _ = self.progress.draw(&mut target.clone().crop(self.progress_rect));
     }
 
     // Method to add a character and start animation if needed
@@ -285,7 +285,7 @@ impl Bech32Framebuf {
 
     fn character_frame(&mut self, index: usize) -> impl DrawTarget<Color = Gray2> + '_ {
         let character_pos = Self::position_for_character(index);
-        self.framebuffer.free_cropped(&Rectangle::new(
+        self.framebuffer.cropped(&Rectangle::new(
             Point::new(character_pos as i32, 0),
             FONT_SIZE,
         ))
@@ -369,11 +369,13 @@ impl crate::DynWidget for Bech32InputPreview {
 impl crate::Widget for Bech32InputPreview {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         self.draw(target, current_time);
         Ok(())
     }

@@ -3,11 +3,13 @@
 use embedded_graphics_simulator::{
     OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
-use frostsnap_embedded_widgets::{ DynWidget, Instant};
+use frostsnap_embedded_widgets::DynWidget;
 use std::time::SystemTime;
 use std::io::{self, BufRead};
 use std::sync::mpsc;
 use std::thread;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 const SCREEN_WIDTH: u32 = 240;
 const SCREEN_HEIGHT: u32 = 280;
@@ -87,10 +89,10 @@ fn parse_command(line: &str) -> Option<Command> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create display
-    let mut display = SimulatorDisplay::<Rgb565>::new(Size::new(SCREEN_WIDTH, SCREEN_HEIGHT));
+    let display = Rc::new(RefCell::new(SimulatorDisplay::<Rgb565>::new(Size::new(SCREEN_WIDTH, SCREEN_HEIGHT))));
     
     // Clear display with background color
-    display.clear(PALETTE.background)?;
+    display.borrow_mut().clear(PALETTE.background)?;
 
     // Create output settings with proper RGB color and scaling
     // Device is 3.75cm (37.5mm) tall with 280 pixels = 0.134mm/pixel
@@ -148,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Initial draw and update to initialize the window
             let _initial_time = Instant::from_millis(0);
-            window.update(&display);
+            window.update(&display.borrow());
 
             'running: loop {
                 let current_time = Instant::from_millis(
@@ -193,18 +195,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // Draw green circle at touch point
                                     let _ = Circle::new(*point - Point::new(10, 10), 20)
                                         .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 3))
-                                        .draw(&mut display);
+                                        .draw(&mut *display.borrow_mut());
                                     // Also draw a filled circle in the center
                                     let _ = Circle::new(*point - Point::new(2, 2), 4)
                                         .into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN))
-                                        .draw(&mut display);
+                                        .draw(&mut *display.borrow_mut());
                                 }
 
                                 // Update window to show the circles
-                                window.update(&display);
+                                window.update(&display.borrow());
 
                                 // Save screenshot using the display's output image
-                                let output_image = display.to_rgb_output_image(&output_settings);
+                                let output_image = display.borrow().to_rgb_output_image(&output_settings);
                                 if let Err(e) = output_image.save_png(&filename) {
                                     eprintln!("Failed to save screenshot: {}", e);
                                 } else {
@@ -267,7 +269,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                let _ = widget.draw(&mut display, current_time);
+                let mut target = SuperDrawTarget::from_shared(display.clone(), PALETTE.background);
+                let _ = widget.draw(&mut target, current_time);
 
                 // Draw touch feedback circles
                 use embedded_graphics::{
@@ -281,11 +284,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Draw green circle at touch point
                         let _ = Circle::new(*point - Point::new(10, 10), 20)
                             .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 3))
-                            .draw(&mut display);
+                            .draw(&mut *display.borrow_mut());
                         // Also draw a filled circle in the center
                         let _ = Circle::new(*point - Point::new(2, 2), 4)
                             .into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN))
-                            .draw(&mut display);
+                            .draw(&mut *display.borrow_mut());
                         *frames -= 1;
                         true
                     } else {
@@ -294,7 +297,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
 
                 // Update window
-                window.update(&display);
+                window.update(&display.borrow());
                 
             }
 

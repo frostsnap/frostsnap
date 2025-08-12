@@ -1,3 +1,4 @@
+use crate::super_draw_target::SuperDrawTarget;
 use crate::palette::PALETTE;
 use crate::{Container, Fader, SizedBox, Widget};
 use embedded_graphics::{
@@ -69,7 +70,7 @@ impl KeyTouch {
 
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
     ) {
         if self.finished {
@@ -77,7 +78,7 @@ impl KeyTouch {
         }
 
         // Translate the target to draw at the correct position
-        let mut translated = target.translated(self.rect.top_left);
+        let mut translated = target.clone().translate(self.rect.top_left);
         
         // Let the widget handle all drawing
         let _ = self.widget.draw(&mut translated, current_time);

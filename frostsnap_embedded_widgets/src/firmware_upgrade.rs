@@ -1,4 +1,5 @@
 use crate::{HoldToConfirm, Text, Column, SizedBox, Container, Padding, palette::PALETTE, FONT_SMALL, FONT_MED, ProgressIndicator, Center};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     geometry::Size,
     pixelcolor::Rgb565,

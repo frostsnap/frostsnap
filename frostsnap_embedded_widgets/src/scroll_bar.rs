@@ -1,4 +1,5 @@
 use crate::{palette::PALETTE, Rat, Frac, Widget};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
@@ -108,7 +109,7 @@ impl Widget for ScrollBar {
     
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         self.draw(target);

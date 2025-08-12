@@ -1,174 +1,107 @@
-use crate::{Widget, string_buffer::StringBuffer};
+use crate::{Widget, Container, Switcher, Text as TextWidget};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
-    framebuffer::{Framebuffer, buffer_size},
     geometry::{Point, Size},
-    pixelcolor::{BinaryColor, raw::{RawU1, LittleEndian}},
     prelude::*,
-    text::{Text as EgText, TextStyle, TextStyleBuilder, Alignment, Baseline, renderer::{CharacterStyle, TextRenderer}},
+    text::{Text as EgText, TextStyle, TextStyleBuilder, Baseline, renderer::{CharacterStyle, TextRenderer}},
+    pixelcolor::Rgb565,
 };
+use alloc::string::String;
 
-/// A mutable text widget with a fixed-size framebuffer
-/// N = max number of bytes for the text string
-/// W = width in pixels
-/// H = height in pixels
-/// BUFFER_SIZE = buffer size in bytes (must be calculated externally)
-pub struct MutText<S, const N: usize, const W: usize, const H: usize, const BUFFER_SIZE: usize> 
+/// A mutable text widget that maintains consistent size across text changes
+pub struct MutText<S> 
 where
-    S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
+    S: CharacterStyle<Color = Rgb565> + TextRenderer<Color = Rgb565> + Clone,
 {
-    text: StringBuffer<N>,
+    container: Container<Switcher<TextWidget<S>>>,
     character_style: S,
-    text_style: TextStyle,
-    buffer: Framebuffer<BinaryColor, RawU1, LittleEndian, W, H, BUFFER_SIZE>,
-    dirty: bool,
+    max_chars: usize,
 }
 
-impl<S, const N: usize, const W: usize, const H: usize, const BUFFER_SIZE: usize> MutText<S, N, W, H, BUFFER_SIZE>
+impl<S> MutText<S>
 where
-    S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
+    S: CharacterStyle<Color = Rgb565> + TextRenderer<Color = Rgb565> + Clone,
 {
-    pub fn new(text: &str, character_style: S) -> Self {
-        let mut text_buf = StringBuffer::new();
-        use core::fmt::Write;
-        write!(&mut text_buf, "{}", text).ok();
+    pub fn new(text: impl Into<String>, character_style: S, max_chars: usize) -> Self {
+        // Calculate the maximum size needed by creating a test string with max chars
+        let test_string = "M".repeat(max_chars); // Use 'M' as it's typically widest
+        let test_text = EgText::with_text_style(
+            &test_string,
+            Point::zero(),
+            character_style.clone(),
+            TextStyleBuilder::new().baseline(Baseline::Top).build(),
+        );
+        let max_size = test_text.bounding_box().size;
         
-        let text_style = TextStyleBuilder::new()
-            .baseline(Baseline::Top)
-            .alignment(Alignment::Center)
-            .build();
+        // Create initial text widget 
+        let text_widget = TextWidget::new(text, character_style.clone());
         
-        let mut widget = Self {
-            text: text_buf,
+        // Create switcher and wrap in fixed-size container
+        let switcher = Switcher::new(text_widget);
+        let container = Container::with_size(switcher, max_size);
+        
+        Self {
+            container,
             character_style,
-            text_style,
-            buffer: Framebuffer::new(),
-            dirty: true,
-        };
-        
-        // Initial render
-        widget.render_to_buffer();
-        widget
+            max_chars,
+        }
     }
     
-    /// Set new text and mark as dirty
-    pub fn set_text(&mut self, text: &str) {
-        let old_text = self.text.as_str();
-        
-        // Check if text has changed
-        if old_text != text {
-            self.text.clear();
-            use core::fmt::Write;
-            write!(&mut self.text, "{}", text).ok();
-            self.render_to_buffer();
-            self.dirty = true;
-        }
+    /// Set new text widget
+    pub fn set_text(&mut self, text_widget: TextWidget<S>) {
+        self.container.child.switch_to(text_widget);
     }
     
     /// Get the current text
     pub fn text(&self) -> &str {
-        self.text.as_str()
-    }
-    
-    /// Render text to the internal buffer
-    fn render_to_buffer(&mut self) {
-        // Clear the buffer
-        self.buffer.clear(BinaryColor::Off).ok();
-        
-        // Calculate x position based on alignment
-        let x = match self.text_style.alignment {
-            Alignment::Left => 0,
-            Alignment::Center => W as i32 / 2,
-            Alignment::Right => W as i32,
-        };
-        
-        // Draw the text
-        let text_obj = EgText::with_text_style(
-            self.text.as_str(),
-            Point::new(x, 0),
-            self.character_style.clone(),
-            self.text_style,
-        );
-        
-        text_obj.draw(&mut self.buffer).ok();
-    }
-    
-    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
-        self.text_style = TextStyleBuilder::from(&self.text_style)
-            .alignment(alignment)
-            .build();
-        self.render_to_buffer();
-        self
-    }
-    
-    pub fn with_baseline(mut self, baseline: Baseline) -> Self {
-        self.text_style = TextStyleBuilder::from(&self.text_style)
-            .baseline(baseline)
-            .build();
-        self.render_to_buffer();
-        self
+        self.container.child.current().text()
     }
 }
 
-impl<S, const N: usize, const W: usize, const H: usize, const BUFFER_SIZE: usize> crate::DynWidget for MutText<S, N, W, H, BUFFER_SIZE>
+impl<S> crate::DynWidget for MutText<S>
 where
-    S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
-
+    S: CharacterStyle<Color = Rgb565> + TextRenderer<Color = Rgb565> + Clone,
 {
-    fn set_constraints(&mut self, _max_size: Size) {
-        // MutText has a fixed size, so we ignore constraints
+    fn set_constraints(&mut self, max_size: Size) {
+        self.container.set_constraints(max_size);
     }
     
     fn sizing(&self) -> crate::Sizing {
-        // MutText always reports its fixed size
-        crate::Sizing {
-            width: W as u32,
-            height: H as u32,
-        }
+        self.container.sizing()
     }
 
     fn handle_touch(
         &mut self,
-        _point: Point,
-        _current_time: crate::Instant,
-        _is_release: bool,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        None
+        self.container.handle_touch(point, current_time, is_release)
     }
 
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
-        // No drag handling needed
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.container.handle_vertical_drag(prev_y, new_y, is_release)
     }
-
 
     fn force_full_redraw(&mut self) {
-        self.dirty = true;
+        self.container.force_full_redraw()
     }
 }
 
-impl<S, const N: usize, const W: usize, const H: usize, const BUFFER_SIZE: usize> Widget for MutText<S, N, W, H, BUFFER_SIZE>
+impl<S> Widget for MutText<S>
 where
-    S: CharacterStyle<Color = BinaryColor> + TextRenderer<Color = BinaryColor> + Clone,
+    S: CharacterStyle<Color = Rgb565> + TextRenderer<Color = Rgb565> + Clone,
 {
-    type Color = BinaryColor;
+    type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
-        _current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        if self.dirty {
-            // Draw the framebuffer as an image
-            self.buffer.as_image().draw(target)?;
-            self.dirty = false;
-        }
-        
-        Ok(())
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
+        self.container.draw(target, current_time)
     }
-    
-}
-
-/// Helper to calculate buffer size at compile time
-pub const fn mut_text_buffer_size<const W: usize, const H: usize>() -> usize {
-    buffer_size::<BinaryColor>(W, H)
 }

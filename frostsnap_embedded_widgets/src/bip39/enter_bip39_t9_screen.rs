@@ -1,6 +1,6 @@
 use super::{T9Keyboard, Bip39InputPreview, EnteredWords, WordSelector};
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{DynWidget, Key, KeyTouch, Widget};
-use crate::prelude::FreeCrop;
 use alloc::{string::String, vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_backup::bip39_words::{self, FROSTSNAP_BACKUP_WORDS};
@@ -52,7 +52,7 @@ impl EnterBip39T9Screen {
 
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
     ) {
         // Check for T9 timeout and commit any pending character
@@ -96,7 +96,7 @@ impl EnterBip39T9Screen {
         } else {
             // Normal keyboard and input preview
             let _ = self.t9_keyboard
-                .draw(&mut target.free_cropped(&self.keyboard_rect), current_time);
+                .draw(&mut target.clone().crop(self.keyboard_rect), current_time);
 
             // Draw BIP39 input preview
             let input_display_rect = Rectangle::new(
@@ -107,7 +107,7 @@ impl EnterBip39T9Screen {
             // If there's a pending T9 character, we should show it
             // For now, we'll just draw the input preview as normal
             let _ = self.bip39_input
-                .draw(&mut target.free_cropped(&input_display_rect), current_time);
+                .draw(&mut target.clone().crop(input_display_rect), current_time);
         }
 
         // Draw touches and clean up
@@ -496,11 +496,13 @@ impl crate::DynWidget for EnterBip39T9Screen {
 impl Widget for EnterBip39T9Screen {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Check for T9 timeout and commit any pending character
         if let Some(ch) = self.t9_keyboard.check_timeout(current_time) {
             self.push_letter_and_autocomplete(ch);
@@ -542,7 +544,7 @@ impl Widget for EnterBip39T9Screen {
         } else {
             // Normal keyboard and input preview
             self.t9_keyboard
-                .draw(&mut target.free_cropped(&self.keyboard_rect), current_time)?;
+                .draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
 
             // Draw BIP39 input preview
             let input_display_rect = Rectangle::new(
@@ -550,7 +552,7 @@ impl Widget for EnterBip39T9Screen {
                 Size::new(target.bounding_box().size.width, 60),
             );
             self.bip39_input
-                .draw(&mut target.free_cropped(&input_display_rect), current_time)?;
+                .draw(&mut target.clone().crop(input_display_rect), current_time)?;
         }
 
         // Draw touches and clean up

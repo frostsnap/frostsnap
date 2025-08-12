@@ -1,4 +1,5 @@
 use crate::{
+    super_draw_target::SuperDrawTarget,
     circle_button::{CircleButton, CircleButtonState},
     Column, MainAxisAlignment,
     Container, Center, Expanded,
@@ -201,11 +202,13 @@ where
 {
     type Color = Rgb565;
 
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         if self.is_holding() || self.content.get_progress() > Frac::ZERO {
             self.update_progress(current_time);
         }

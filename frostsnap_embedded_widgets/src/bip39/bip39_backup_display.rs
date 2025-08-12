@@ -1,4 +1,5 @@
 use crate::{
+    super_draw_target::SuperDrawTarget,
     icons::IconWidget, page_slider::PageSlider, palette::PALETTE, sized_box::SizedBox, text::Text, widget_list::WidgetList, Center, Column, CrossAxisAlignment, FadeSwitcher, HoldToConfirm, MainAxisAlignment, Row, FONT_LARGE, FONT_MED, FONT_SMALL
 };
 use alloc::{format, string::String, vec::Vec};
@@ -397,7 +398,7 @@ impl crate::Widget for BackupConfirmationScreen {
     
     fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         // Check if we should trigger the fade

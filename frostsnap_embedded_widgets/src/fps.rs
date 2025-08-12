@@ -1,51 +1,45 @@
-use crate::{Widget, DynWidget, Instant, mut_text::{MutText, mut_text_buffer_size}, palette::PALETTE, color_map::ColorMap, string_buffer::StringBuffer};
+use crate::{Widget, DynWidget, Instant, mut_text::MutText, palette::PALETTE, Text as TextWidget, string_buffer::StringBuffer};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::{Rgb565, RgbColor, BinaryColor},
+    pixelcolor::{Rgb565, RgbColor},
     text::Alignment,
 };
 use core::fmt::Write;
 
 // Constants for MutText dimensions - "FPS: 999" is max 8 chars
 const FPS_MAX_CHARS: usize = 10;
-// ProFont17 is exactly 10px wide per character for ASCII
-// "FPS: 999" = 8 chars = 80px wide
-const FPS_WIDTH: usize = 80;  // Exact width for "FPS: 999"
-const FPS_HEIGHT: usize = 17;  // ProFont17 is exactly 17px tall
-const FPS_BUFFER_SIZE: usize = mut_text_buffer_size::<FPS_WIDTH, FPS_HEIGHT>();
 
-type FpsMutText = MutText<u8g2_fonts::U8g2TextStyle<BinaryColor>, FPS_MAX_CHARS, FPS_WIDTH, FPS_HEIGHT, FPS_BUFFER_SIZE>;
+type FpsMutText = MutText<u8g2_fonts::U8g2TextStyle<Rgb565>>;
 
 /// A widget that displays frames per second using simple frame counting
 pub struct Fps {
-    display: ColorMap<FpsMutText, Rgb565>,
+    display: FpsMutText,
     frame_count: u32,
     last_fps_time: Option<Instant>,
     last_display_update: Option<Instant>,
     current_fps: u32,
+    update_interval_ms: u64,
 }
 
 impl Fps {
     /// Create a new FPS counter widget with green text
-    pub fn new() -> Self {
+    pub fn new(update_interval_ms: u64) -> Self {
         let text_style = u8g2_fonts::U8g2TextStyle::new(
             crate::FONT_SMALL,
-            BinaryColor::On,
+            Rgb565::GREEN,
         );
-        let mut_text = MutText::new(
+        let display = MutText::new(
             "FPS: 0",
             text_style,
-        ).with_alignment(Alignment::Left);
-        
-        let display = mut_text.color_map(|c| match c {
-            BinaryColor::On => Rgb565::GREEN,
-            BinaryColor::Off => PALETTE.background,
-        });
+            FPS_MAX_CHARS,
+        );
         
         Self {
             display,
             frame_count: 0,
+            update_interval_ms,
             last_fps_time: None,
             last_display_update: None,
             current_fps: 0,
@@ -80,11 +74,13 @@ impl DynWidget for Fps {
 impl Widget for Fps {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Count frames
         self.frame_count += 1;
         
@@ -112,9 +108,9 @@ impl Widget for Fps {
             self.last_fps_time = Some(current_time);
         }
         
-        // Update display every 500ms
+        // Update display at the configured interval
         let should_update_display = match self.last_display_update {
-            Some(last_update) => current_time.saturating_duration_since(last_update) >= 500,
+            Some(last_update) => current_time.saturating_duration_since(last_update) >= self.update_interval_ms,
             None => true,
         };
         
@@ -122,7 +118,14 @@ impl Widget for Fps {
             // Format and update the display
             let mut buf = StringBuffer::<FPS_MAX_CHARS>::new();
             write!(&mut buf, "FPS: {}", self.current_fps).ok();
-            self.display.child.set_text(buf.as_str());
+            
+            // Create new text widget with updated text
+            let text_style = u8g2_fonts::U8g2TextStyle::new(
+                crate::FONT_SMALL,
+                Rgb565::GREEN,
+            );
+            let text_widget = TextWidget::new(buf.as_str(), text_style);
+            self.display.set_text(text_widget);
             
             self.last_display_update = Some(current_time);
         }

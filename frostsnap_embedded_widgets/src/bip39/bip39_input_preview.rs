@@ -1,9 +1,9 @@
 use super::submit_backup_button::SubmitBackupState;
+use crate::super_draw_target::SuperDrawTarget;
 use crate::cursor::Cursor;
 use crate::progress_bars::ProgressBars;
 use crate::palette::PALETTE;
 use crate::{icons, Key, KeyTouch, Widget, FONT_LARGE};
-use crate::prelude::FreeCrop;
 use alloc::{
     borrow::Cow,
     boxed::Box,
@@ -321,7 +321,7 @@ impl Bip39InputPreview {
 
     fn draw_cursor<D: DrawTarget<Color = Rgb565>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         // Calculate cursor position based on current word and character count
@@ -373,11 +373,13 @@ impl crate::DynWidget for Bip39InputPreview {
 impl Widget for Bip39InputPreview {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Draw backspace icon on first draw
         if !self.init_draw {
             // Clear the entire area first
@@ -403,15 +405,15 @@ impl Widget for Bip39InputPreview {
 
         // Always draw the framebuffer (it has its own redraw logic)
         self.framebuf
-            .draw(&mut target.free_cropped(&self.preview_rect), current_time)?;
+            .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
 
         // Draw cursor if on current word
         if self.framebuf.current_input < FROSTSNAP_BACKUP_WORDS {
-            let _ = self.draw_cursor(&mut target.free_cropped(&self.preview_rect), current_time);
+            let _ = self.draw_cursor(&mut target.clone().crop(self.preview_rect), current_time);
         }
 
         // Always draw progress bars (they have their own redraw logic)
-        self.progress.draw(&mut target.free_cropped(&self.progress_rect))?;
+        self.progress.draw(&mut target.clone().crop(self.progress_rect))?;
         
         Ok(())
     }
@@ -500,7 +502,7 @@ impl Bip39Framebuf {
         drop(words); // Release the borrow before borrowing framebuffer
 
         let mut fb = self.framebuffer.borrow_mut();
-        let mut char_frame = fb.free_cropped(&Rectangle::new(
+        let mut char_frame = fb.cropped(&Rectangle::new(
             Point::new(x as i32, y as i32),
             Size::new(FONT_SIZE.width, FONT_SIZE.height),
         ));
@@ -561,7 +563,7 @@ impl Bip39Framebuf {
                 + (VERTICAL_PAD / 2) as usize;
 
             let mut fb = self.framebuffer.borrow_mut();
-            let mut char_frame = fb.free_cropped(&Rectangle::new(
+            let mut char_frame = fb.cropped(&Rectangle::new(
                 Point::new(x as i32, y as i32),
                 Size::new(FONT_SIZE.width, FONT_SIZE.height),
             ));
@@ -611,13 +613,13 @@ impl Bip39Framebuf {
             ),
             Size::new(FONT_SIZE.width * 8, FONT_SIZE.height), // Max 8 chars
         );
-        let mut word_frame = fb.free_cropped(&word_rect);
+        let mut word_frame = fb.cropped(&word_rect);
         let _ = word_frame.clear(Gray2::BLACK);
 
         // Redraw each character
         for (i, ch) in current_word.chars().enumerate() {
             let x = ((INDEX_CHARS + SPACE_BETWEEN) as usize + i) * FONT_SIZE.width as usize;
-            let mut char_frame = fb.free_cropped(&Rectangle::new(
+            let mut char_frame = fb.cropped(&Rectangle::new(
                 Point::new(x as i32, y as i32),
                 Size::new(FONT_SIZE.width, FONT_SIZE.height),
             ));
@@ -706,11 +708,13 @@ impl crate::DynWidget for Bip39Framebuf {
 impl Widget for Bip39Framebuf {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         let bb = target.bounding_box();
 
         // Assert that framebuffer width matches target width

@@ -1,4 +1,5 @@
 use crate::palette::PALETTE;
+use crate::super_draw_target::SuperDrawTarget;
 use crate::Widget;
 use embedded_graphics::{
     pixelcolor::Rgb565,
@@ -52,11 +53,13 @@ impl crate::DynWidget for Cursor {
 impl Widget for Cursor {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Update visibility based on time
         let cursor_rect = Rectangle::new(
             Point::new(

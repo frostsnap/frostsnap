@@ -1,4 +1,5 @@
 use core::marker::PhantomData;
+use crate::super_draw_target::SuperDrawTarget;
 
 use embedded_graphics::{image::Image, pixelcolor::Rgb565, prelude::*, geometry::Size};
 use embedded_iconoir::{
@@ -92,7 +93,7 @@ impl<I: embedded_graphics::image::ImageDrawable<Color = Rgb565>> crate::Widget f
     
     fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         if self.needs_redraw {

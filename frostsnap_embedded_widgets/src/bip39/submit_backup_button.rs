@@ -1,3 +1,4 @@
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{
     palette::PALETTE,
     FONT_LARGE, FONT_SMALL,
@@ -54,7 +55,7 @@ impl SubmitBackupButton {
 
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Rgb565>,
         bounds: Rectangle,
     ) -> Result<(), D::Error> {
         // Clear the background

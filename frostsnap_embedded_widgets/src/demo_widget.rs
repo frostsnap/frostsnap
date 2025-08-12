@@ -4,10 +4,11 @@ macro_rules! demo_widget {
     ($demo:expr, $screen_size:expr, $run_macro:ident) => {
         // Common imports for all demos
         use $crate::{
+            SuperDrawTarget,
             text::Text, Column, Row, Container, palette::PALETTE,
             MainAxisAlignment, CrossAxisAlignment, Widget,
             HoldToConfirm, center::Center, Padding, SizedBox,
-            FONT_SMALL, FONT_MED, FONT_LARGE,
+            FONT_SMALL, FONT_MED, FONT_LARGE, Instant,
         };
         use embedded_graphics::{
             prelude::*,
@@ -47,6 +48,11 @@ macro_rules! demo_widget {
         ];
         
         match $demo.as_ref() {
+            "hello_world" => {
+                use $crate::text::Text;
+                let widget = Text::new("Hello World!", U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background));
+                $run_macro!(widget);
+            }
             "bip39_entry" => {
                 let widget = $crate::bip39::EnterBip39ShareScreen::new($screen_size);
                 $run_macro!(widget);
@@ -184,17 +190,12 @@ macro_rules! demo_widget {
             }
             "fade_in_fade_out" => {
                 use $crate::{fader::Fader, text::Text, palette::PALETTE};
-                use embedded_graphics::pixelcolor::BinaryColor;
                 
                 // Simple text widget that will fade in/out
-                let text = Text::new("Fade Demo", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, BinaryColor::On));
-                let text_colored = text.color_map(|c| match c {
-                    BinaryColor::On => PALETTE.on_background,
-                    BinaryColor::Off => PALETTE.background,
-                });
+                let text = Text::new("Fade Demo", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
                 
                 // Create a fader starting faded out
-                let mut fader = Fader::new_faded_out(text_colored);
+                let mut fader = Fader::new_faded_out(text);
                 // Start the fade-in immediately
                 fader.start_fade_in(1000, 50, PALETTE.background);
                 
@@ -277,19 +278,13 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "bitcoin_amount" => {
-                use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, Column, MainAxisAlignment, palette::PALETTE};
+                use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, Column, MainAxisAlignment};
                 
                 // Create a simple BitcoinAmountDisplay with 21 BTC
                 let amount_display = BitcoinAmountDisplay::new(21_000_000); // 21 BTC
                 
-                // Map binary colors to Gray4 for display
-                let amount_mapped = amount_display.color_map(|c| match c {
-                    embedded_graphics::pixelcolor::BinaryColor::Off => PALETTE.text_disabled,
-                    embedded_graphics::pixelcolor::BinaryColor::On => PALETTE.primary,
-                });
-                
                 // Put it in a Column with MainAxisAlignment::Center like in sign_prompt
-                let widget = Column::new((amount_mapped,))
+                let widget = Column::new((amount_display,))
                     .with_main_axis_alignment(MainAxisAlignment::Center);
                 
                 $run_macro!(widget);
@@ -368,89 +363,6 @@ macro_rules! demo_widget {
                 
                 $run_macro!(widget);
             }
-            "slide_in_old" => {
-                // Keep the old demo for reference
-                use $crate::{slide_in_transition::SlideInTransition, Instant, container::Container};
-                use embedded_graphics::primitives::PrimitiveStyle;
-                use $crate::alloc::format;
-                
-                // Create initial text widget centered in a container with border
-                let text = Text::new("Page 1\nLorem ipus\nderp herp!", U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background));
-                let container = Container::new(text)
-                    .with_border(PALETTE.primary, 2);
-
-                // Create slide-in transition widget
-                let mut transition = SlideInTransition::new(
-                    container,
-                    1000, // 500ms transition
-                    Point::new(0, 150), // Slide up from bottom
-                    PALETTE.background
-                );
-                
-                // Create a wrapper that advances pages on touch release
-                struct SlideInDemo {
-                    transition: SlideInTransition<$crate::container::Container<Text<U8g2TextStyle<Rgb565>>>>,
-                    page_num: usize,
-                }
-                
-                impl SlideInDemo {
-                    fn new(transition: SlideInTransition<$crate::container::Container<Text<U8g2TextStyle<Rgb565>>>>) -> Self {
-                        Self {
-                            transition,
-                            page_num: 1,
-                        }
-                    }
-                }
-                
-                impl $crate::DynWidget for SlideInDemo {
-                    fn set_constraints(&mut self, max_size: Size) {
-                        self.transition.set_constraints(max_size);
-                    }
-                    
-                    fn sizing(&self) -> $crate::Sizing {
-                        self.transition.sizing()
-                    }
-                    
-                    fn handle_touch(&mut self, _point: Point, _current_time: Instant, is_release: bool) -> Option<$crate::KeyTouch> {
-                        // Advance to next page on touch release
-                        if is_release {
-                            self.page_num += 1;
-                            let text = Text::new(
-                                format!("Page {}\nLorem ipus\nderp herp!", self.page_num),
-                                U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background)
-                            );
-                            let container = Container::new(text)
-                                .with_border(PALETTE.primary, 2);
-                            
-                            self.transition.switch_to(container);
-                        }
-                        None
-                    }
-                    
-                    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-                        self.transition.handle_vertical_drag(prev_y, new_y, is_release)
-                    }
-                    
-                    fn force_full_redraw(&mut self) {
-                        self.transition.force_full_redraw()
-                    }
-                }
-                
-                impl Widget for SlideInDemo {
-                    type Color = Rgb565;
-                    
-                    fn draw<D: DrawTarget<Color = Self::Color>>(
-                        &mut self,
-                        target: &mut D,
-                        current_time: Instant,
-                    ) -> Result<(), D::Error> {
-                        self.transition.draw(target, current_time)
-                    }
-                }
-                
-                let demo = SlideInDemo::new(transition);
-                $run_macro!(Center::new(demo));
-            }
             "firmware_upgrade_progress" | "firmware_upgrade_download" => {
                 use $crate::firmware_upgrade::FirmwareUpgradeProgress;
                 
@@ -510,11 +422,13 @@ macro_rules! demo_widget {
                 impl Widget for AnimatedProgress {
                     type Color = Rgb565;
                     
-                    fn draw<D: DrawTarget<Color = Self::Color>>(
-                        &mut self,
-                        target: &mut D,
-                        current_time: Instant,
-                    ) -> Result<(), D::Error> {
+                    fn draw<D>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: $crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
                         // Initialize start time on first draw
                         if self.start_time.is_none() {
                             self.start_time = Some(current_time);

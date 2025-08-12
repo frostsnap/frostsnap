@@ -1,4 +1,5 @@
-use crate::{Widget, DynWidget, Sizing, Instant};
+use embedded_graphics::pixelcolor::Rgb565;
+use crate::{Widget, DynWidget, Sizing, Instant, super_draw_target::SuperDrawTarget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -66,11 +67,14 @@ where
 {
     type Color = W::Color;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         self.child.draw(target, current_time)
     }
 }

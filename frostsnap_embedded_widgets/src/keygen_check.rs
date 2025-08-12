@@ -1,4 +1,5 @@
 use super::{Widget, Text, HoldToConfirm, Container, Column, Padding, Row};
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{Instant, palette::PALETTE, MainAxisAlignment};
 use alloc::format;
 use embedded_graphics::{

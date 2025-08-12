@@ -1,6 +1,7 @@
 use crate::{
     palette::PALETTE,
     Widget, FONT_LARGE,
+    super_draw_target::SuperDrawTarget,
 };
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::{
@@ -211,11 +212,14 @@ impl crate::DynWidget for AlphabeticKeyboard {
 impl Widget for AlphabeticKeyboard {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Rgb565>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         if !self.needs_redraw {
             return Ok(());
         }

@@ -1,5 +1,6 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use super::Widget;
-use crate::{Instant, FreeCrop};
+use crate::{Instant, super_draw_target::SuperDrawTarget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -73,14 +74,17 @@ impl<W: Widget> crate::DynWidget for Center<W> {
 impl<W: Widget> Widget for Center<W> {
     type Color = W::Color;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         self.constraints.unwrap();
         
-        self.child.draw(&mut target.free_cropped(&self.child_rect), current_time)?;
+        self.child.draw(&mut target.clone().crop(self.child_rect), current_time)?;
 
         Ok(())
     }

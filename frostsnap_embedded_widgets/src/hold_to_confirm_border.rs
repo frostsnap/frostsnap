@@ -1,4 +1,5 @@
 use super::{pixel_recorder::PixelRecorder, compressed_point::CompressedPoint, rat::Frac, Widget};
+use crate::super_draw_target::SuperDrawTarget;
 use crate::prelude::*;
 use alloc::vec::Vec;
 use embedded_graphics::{
@@ -186,15 +187,17 @@ where
 {
     type Color = Rgb565;
 
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         let offset = Point::new(self.border_width as i32, self.border_width as i32);
         let child_size = self.child.sizing();
         let child_area = Rectangle::new(offset, Size::new(child_size.width, child_size.height));
-        let mut cropped = target.free_cropped(&child_area);
+        let mut cropped = target.clone().crop(child_area);
         self.child.draw(&mut cropped, current_time)?;
 
         // Don't draw anything if fully faded out

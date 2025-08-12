@@ -5,7 +5,7 @@ use embedded_graphics::{
     primitives::{Primitive, PrimitiveStyle, Rectangle},
     Drawable,
 };
-use frostsnap_embedded_widgets::{Fader, Frac, Instant, Widget, DynWidget};
+use frostsnap_embedded_widgets::{Fader, Frac, Instant, Widget, DynWidget, SuperDrawTarget};
 use proptest::prelude::*;
 
 /// A simple widget that draws a single pixel of a specific color
@@ -21,6 +21,10 @@ impl SinglePixelWidget {
 }
 
 impl DynWidget for SinglePixelWidget {
+    fn set_constraints(&mut self, _max_size: Size) {
+        // Single pixel widget has fixed size
+    }
+    
     fn sizing(&self) -> frostsnap_embedded_widgets::Sizing {
         frostsnap_embedded_widgets::Sizing { width: 1, height: 1 }
     }
@@ -39,7 +43,7 @@ impl Widget for SinglePixelWidget {
 
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: Instant,
     ) -> Result<(), D::Error> {
         // Draw a single pixel at (0, 0)
@@ -112,9 +116,11 @@ proptest! {
         fader.start_fade_in(fade_duration_ms, redraw_interval_ms, bg_color);
         
         // Test at t=0 (should draw bg_color exclusively when fading in from it)
-        let mut capture_t0 = SinglePixelCapture::new();
+        let capture_t0 = SinglePixelCapture::new();
+        let mut target_t0 = SuperDrawTarget::new(capture_t0, bg_color);
         let t0 = Instant::from_millis(0);
-        fader.draw(&mut capture_t0, t0).unwrap();
+        fader.draw(&mut target_t0, t0).unwrap();
+        let capture_t0 = target_t0.inner_mut().unwrap();
         
         // At t=0 when fading in from bg_color, we should see the background color
         let captured_t0 = capture_t0.get_captured_color().expect("Should have drawn a pixel at t=0");
@@ -128,18 +134,21 @@ proptest! {
         
         // Draw at t = f * fade_duration_ms
         // This is an intermediate point, no need to assert
-        let mut capture_mid = SinglePixelCapture::new();
+        let capture_mid = SinglePixelCapture::new();
+        let mut target_mid = SuperDrawTarget::new(capture_mid, bg_color);
         let t_mid_ms = (f * (fade_duration_ms as u32)).round() as u64;
         let t_mid = Instant::from_millis(t_mid_ms);
-        fader.draw(&mut capture_mid, t_mid).unwrap();
+        fader.draw(&mut target_mid, t_mid).unwrap();
         
         // Draw at t = fade_duration_ms (should be fully color_a and idle)
         // But we need to respect redraw_interval_ms, so keep drawing until we get a pixel
         let mut captured_end = None;
         let mut t = fade_duration_ms;
         for _ in 0..10 {  // Try up to 10 times
-            let mut capture_end = SinglePixelCapture::new();
-            fader.draw(&mut capture_end, Instant::from_millis(t)).unwrap();
+            let capture_end = SinglePixelCapture::new();
+            let mut target_end = SuperDrawTarget::new(capture_end, bg_color);
+            fader.draw(&mut target_end, Instant::from_millis(t)).unwrap();
+            let capture_end = target_end.inner_mut().unwrap();
             if let Some(color) = capture_end.get_captured_color() {
                 captured_end = Some(color);
                 break;
@@ -158,9 +167,11 @@ proptest! {
         );
         
         // Verify fader is idle (draw again at a later time, should still be color_a)
-        let mut capture_idle = SinglePixelCapture::new();
+        let capture_idle = SinglePixelCapture::new();
+        let mut target_idle = SuperDrawTarget::new(capture_idle, bg_color);
         let t_idle = Instant::from_millis(fade_duration_ms + 1000);
-        fader.draw(&mut capture_idle, t_idle).unwrap();
+        fader.draw(&mut target_idle, t_idle).unwrap();
+        let capture_idle = target_idle.inner_mut().unwrap();
         
         let captured_idle = capture_idle.get_captured_color().expect("Should have drawn a pixel when idle");
         prop_assert_eq!(
@@ -182,8 +193,10 @@ proptest! {
         
         // Draw at t=0 relative to fade out start (should still show color_a)
         let fade_out_start = fade_duration_ms + 1000;
-        let mut capture_fade_out_t0 = SinglePixelCapture::new();
-        fader.draw(&mut capture_fade_out_t0, Instant::from_millis(fade_out_start)).unwrap();
+        let capture_fade_out_t0 = SinglePixelCapture::new();
+        let mut target_fade_out_t0 = SuperDrawTarget::new(capture_fade_out_t0, bg_color);
+        fader.draw(&mut target_fade_out_t0, Instant::from_millis(fade_out_start)).unwrap();
+        let capture_fade_out_t0 = target_fade_out_t0.inner_mut().unwrap();
         
         let captured_fade_out_t0 = capture_fade_out_t0.get_captured_color().expect("Should have drawn at fade out start");
         prop_assert_eq!(
@@ -198,8 +211,10 @@ proptest! {
         let mut captured_fade_out_end = None;
         let mut t_fade_out = fade_out_start + fade_duration_ms;
         for _ in 0..10 {  // Try up to 10 times to respect redraw interval
-            let mut capture_fade_out_end = SinglePixelCapture::new();
-            fader.draw(&mut capture_fade_out_end, Instant::from_millis(t_fade_out)).unwrap();
+            let capture_fade_out_end = SinglePixelCapture::new();
+            let mut target_fade_out_end = SuperDrawTarget::new(capture_fade_out_end, bg_color);
+            fader.draw(&mut target_fade_out_end, Instant::from_millis(t_fade_out)).unwrap();
+            let capture_fade_out_end = target_fade_out_end.inner_mut().unwrap();
             if let Some(color) = capture_fade_out_end.get_captured_color() {
                 captured_fade_out_end = Some(color);
                 break;
@@ -227,8 +242,10 @@ proptest! {
         );
         
         // Try to draw again - should draw nothing (FadedOut state)
-        let mut capture_faded_out = SinglePixelCapture::new();
-        fader.draw(&mut capture_faded_out, Instant::from_millis(t_fade_out + 1000)).unwrap();
+        let capture_faded_out = SinglePixelCapture::new();
+        let mut target_faded_out = SuperDrawTarget::new(capture_faded_out, bg_color);
+        fader.draw(&mut target_faded_out, Instant::from_millis(t_fade_out + 1000)).unwrap();
+        let capture_faded_out = target_faded_out.inner_mut().unwrap();
         prop_assert_eq!(
             capture_faded_out.get_captured_color(),
             None,

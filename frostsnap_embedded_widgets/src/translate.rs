@@ -207,7 +207,7 @@ where
     
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut crate::SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
     ) -> Result<(), D::Error> {
         self.constraints.unwrap();
@@ -225,15 +225,22 @@ where
             // Calculate offset difference
             let diff_offset = offset - self.current_offset;
             
-            // Draw the child using the TranslatorDrawTarget with custom bounding box
-            let mut translated = target.translated(offset);
-            let mut translator_target = TranslatorDrawTarget {
-                inner: &mut translated,
+            // Create a translated SuperDrawTarget
+            let translated_target = target.clone().translate(offset);
+            
+            // Wrap it in TranslatorDrawTarget for pixel tracking
+            let mut translator = TranslatorDrawTarget {
+                inner: translated_target,
                 current_bitmap: &mut self.current_bitmap,
                 previous_bitmap: &mut self.previous_bitmap,
                 diff_offset,
             };
-            self.child.draw(&mut translator_target, current_time)?;
+            
+            // Wrap the TranslatorDrawTarget in another SuperDrawTarget
+            let mut outer_target = crate::SuperDrawTarget::new(translator, self.background_color);
+            
+            // Draw the child
+            self.child.draw(&mut outer_target, current_time)?;
             
             // Clear any remaining pixels from the previous bitmap
             let clear_pixels = self.previous_bitmap.on_pixels()
@@ -249,7 +256,8 @@ where
             self.current_offset = offset;
         } else {
             // No movement - just draw normally
-            self.child.draw(&mut target.translated(offset), current_time)?;
+            let mut translated_target = target.clone().translate(offset);
+            self.child.draw(&mut translated_target, current_time)?;
         }
         
         Ok(())
@@ -259,18 +267,23 @@ where
 
 
 /// A DrawTarget wrapper that tracks pixels for the translate animation
-struct TranslatorDrawTarget<'a, D> {
-    inner: &'a mut D,
+struct TranslatorDrawTarget<'a, D, C> 
+where
+    D: DrawTarget<Color = C>,
+    C: crate::WidgetColor,
+{
+    inner: crate::SuperDrawTarget<D, C>,
     current_bitmap: &'a mut VecFramebuffer<BinaryColor>,
     previous_bitmap: &'a mut VecFramebuffer<BinaryColor>,
     diff_offset: Point,
 }
 
-impl<'a, D> DrawTarget for TranslatorDrawTarget<'a, D>
+impl<'a, D, C> DrawTarget for TranslatorDrawTarget<'a, D, C>
 where
-    D: DrawTarget,
+    D: DrawTarget<Color = C>,
+    C: crate::WidgetColor,
 {
-    type Color = D::Color;
+    type Color = C;
     type Error = D::Error;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
@@ -298,9 +311,10 @@ where
     }
 }
 
-impl<'a, D> Dimensions for TranslatorDrawTarget<'a, D>
+impl<'a, D, C> Dimensions for TranslatorDrawTarget<'a, D, C>
 where
-    D: DrawTarget,
+    D: DrawTarget<Color = C>,
+    C: crate::WidgetColor,
 {
     fn bounding_box(&self) -> Rectangle {
         self.inner.bounding_box()

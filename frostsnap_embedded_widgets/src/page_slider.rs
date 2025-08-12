@@ -1,4 +1,5 @@
 use crate::{Widget, WidgetList, SlideInTransition, Instant, palette::PALETTE, DynWidget, Fader, SwipeUpChevron, Stack, StackAlignment};
+use crate::super_draw_target::SuperDrawTarget;
 use alloc::boxed::Box;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -223,11 +224,13 @@ where
 {
     type Color = Rgb565;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         // Check if transition is complete and trigger callback if not already triggered
         if !self.page_ready_triggered && self.stack.children.0.is_transition_complete() {
             self.page_ready_triggered = true;

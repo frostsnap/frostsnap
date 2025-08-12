@@ -1,4 +1,5 @@
 use alloc::{string::ToString, format};
+use crate::super_draw_target::SuperDrawTarget;
 use crate::{palette::PALETTE, FONT_LARGE};
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -88,7 +89,7 @@ impl crate::Widget for ShareIndexInputDisplay {
 
     fn draw<D: DrawTarget<Color = Self::Color>>(
             &mut self,
-            target: &mut D,
+            target: &mut SuperDrawTarget<D, Self::Color>,
             _current_time: crate::Instant,
         ) -> Result<(), D::Error> {
             if !self.changed {

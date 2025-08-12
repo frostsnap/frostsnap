@@ -1,4 +1,5 @@
 use crate::{Widget, Frac, Column, Text as TextWidget, Switcher, SizedBox, palette::PALETTE, FONT_SMALL};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -109,7 +110,7 @@ impl Widget for ProgressBar {
     
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         let bar_rect = self.bar_rect.expect("ProgressBar::draw called before set_constraints");

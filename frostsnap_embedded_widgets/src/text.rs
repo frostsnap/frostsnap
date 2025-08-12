@@ -1,5 +1,6 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use super::Widget;
-use crate::Instant;
+use crate::{Instant, super_draw_target::SuperDrawTarget};
 use alloc::string::String;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -116,16 +117,19 @@ where
 
 impl<S, C> Widget for Text<S>
 where
-    C: PixelColor,
+    C: crate::WidgetColor,
     S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {
     type Color = C;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         _current_time: Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         if !self.drawn {
             let mut text_obj = self.create_eg_text();
             if text_obj.bounding_box().top_left.x < 0 {

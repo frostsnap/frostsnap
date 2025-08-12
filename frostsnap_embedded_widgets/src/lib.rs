@@ -20,7 +20,6 @@ pub mod bip39;
 pub mod bitmap;
 pub mod center;
 pub mod checkmark;
-pub mod color_map;
 pub mod cursor;
 pub mod fader;
 pub mod rat;
@@ -47,9 +46,9 @@ pub mod text;
 pub mod mut_text;
 pub mod string_buffer;
 pub mod translate;
-pub mod simple_translate;
 pub mod slide_in_transition;
-pub mod free_cropped;
+mod super_draw_target;
+pub mod widget_color;
 pub mod welcome;
 pub mod standby;
 pub mod device_name;
@@ -69,7 +68,6 @@ pub mod p2tr_address_display;
 pub mod any_of;
 pub mod prelude;
 pub mod vec_framebuffer;
-pub mod snapshot;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -78,14 +76,14 @@ pub use key_touch::{Key, KeyTouch};
 pub use page_slider::PageSlider;
 pub use sign_prompt::SignPrompt;
 pub use widget_list::WidgetList;
-pub use free_cropped::*;
+pub use super_draw_target::SuperDrawTarget;
+pub use widget_color::{ColorInterpolate, WidgetColor};
 
 // Re-export all widget items
 pub use animation::*;
 pub use bip39::*;
 pub use center::*;
 pub use checkmark::*;
-pub use color_map::*;
 pub use container::*;
 pub use layout::{Column, Row, Stack, StackAlignment, CrossAxisAlignment, MainAxisAlignment};
 pub use cursor::*;
@@ -116,7 +114,6 @@ pub use fade_switcher::FadeSwitcher;
 pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};
 pub use fps::Fps;
 pub use icons::IconWidget;
-pub use snapshot::Snapshot;
 
 // Font re-exports
 use u8g2_fonts::fonts;
@@ -192,36 +189,34 @@ pub trait AnyDynWidget: core::any::Any + DynWidget {}
 /// Blanket implementation for any type that implements both Any and DynWidget
 impl<T: core::any::Any + DynWidget> AnyDynWidget for T {}
 
+
 /// A trait for drawable widgets that can handle user interactions
 pub trait Widget: DynWidget {
     /// The color type this widget natively draws in
-    type Color: PixelColor;
+    type Color: WidgetColor;
     
     /// Draw the widget to the target
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut super_draw_target::SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error>;
-    
-    /// Create a new widget that maps this widget's colors to a different color space
-    fn color_map<C: PixelColor>(self, map_fn: fn(Self::Color) -> C) -> color_map::ColorMap<Self, C>
+    ) -> Result<(), D::Error>
     where
-        Self: Sized,
-    {
-        color_map::ColorMap::new(self, map_fn)
-    }
+        D: DrawTarget<Color = Self::Color>;
 }
 
 // Implement Widget for Box<T> where T: Widget
 impl<T: Widget + ?Sized> Widget for alloc::boxed::Box<T> {
     type Color = T::Color;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut super_draw_target::SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         (**self).draw(target, current_time)
     }
 }
@@ -304,11 +299,14 @@ impl<T: DynWidget> DynWidget for Option<T> {
 impl<W: Widget> Widget for Option<W> {
     type Color = W::Color;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut super_draw_target::SuperDrawTarget<D, Self::Color>,
         current_time: Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         if let Some(widget) = self {
             widget.draw(target, current_time)
         } else {

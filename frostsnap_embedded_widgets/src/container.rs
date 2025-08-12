@@ -1,5 +1,6 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use super::Widget;
-use crate::{free_cropped::FreeCrop, DynWidget};
+use crate::{super_draw_target::SuperDrawTarget, DynWidget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     prelude::*,
@@ -152,11 +153,14 @@ impl<W: Widget> crate::DynWidget for Container<W>
 impl<W: Widget> Widget for Container<W> {
     type Color = W::Color;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
+        target: &mut SuperDrawTarget<D, Self::Color>,
         current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
         self.constraints.expect("constraints must be set");
 
         // Get our actual size
@@ -207,8 +211,7 @@ impl<W: Widget> Widget for Container<W> {
             )
         );
         
-        let mut cropped = target.free_cropped(&child_area);
-        self.child.draw(&mut cropped, current_time)?;
+        self.child.draw(&mut target.clone().crop(child_area), current_time)?;
         
         Ok(())
     }

@@ -74,7 +74,7 @@ impl Widget for RootWidget {
 
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
-        target: &mut D,
+        target: &mut frostsnap_embedded_widgets::SuperDrawTarget<D, Self::Color>,
         current_time: frostsnap_embedded_widgets::Instant,
     ) -> Result<(), D::Error> {
         self.page_switcher.draw(target, current_time)

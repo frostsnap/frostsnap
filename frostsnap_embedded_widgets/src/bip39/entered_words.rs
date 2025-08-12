@@ -1,6 +1,5 @@
 use crate::palette::PALETTE;
 use crate::{Key, KeyTouch, FONT_SMALL};
-use crate::prelude::FreeCrop;
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use embedded_graphics::{
@@ -108,7 +107,7 @@ impl EnteredWords {
         self.needs_redraw = true;
     }
 
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D) {
+    pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut crate::SuperDrawTarget<D, Rgb565>) {
         if !self.needs_redraw {
             return;
         }
@@ -132,7 +131,7 @@ impl EnteredWords {
             Size::new(FB_WIDTH, bounds.size.height),
         );
 
-        let mut cropped_target = target.free_cropped(&cropped_rect);
+        let mut cropped_target = target.clone().crop(cropped_rect);
         let cropped_bounds = cropped_target.bounding_box();
 
         // Get dynamic content height
@@ -180,7 +179,7 @@ impl EnteredWords {
 
         // Only draw the button if it needs redrawing
         if self.button_needs_redraw {
-            let mut button_target = target.free_cropped(&button_rect);
+            let mut button_target = target.clone().crop(button_rect);
             let _ = self.submit_button.draw(&mut button_target, Rectangle::new(Point::zero(), button_rect.size));
             self.button_needs_redraw = false;
         }
@@ -200,7 +199,7 @@ impl EnteredWords {
             Point::new(scrollbar_x, scrollbar_y),
             Size::new(SCROLLBAR_WIDTH, scrollbar_height)
         );
-        self.scroll_bar.draw(&mut target.free_cropped(&scrollbar_area));
+        self.scroll_bar.draw(&mut target.clone().crop(scrollbar_area));
 
         // Draw "tap to edit" hint text in the middle of the scrollable area
         if self.first_draw || self.needs_redraw {

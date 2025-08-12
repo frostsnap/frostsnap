@@ -1,19 +1,21 @@
+use embedded_graphics::pixelcolor::Rgb565;
 use crate::{Widget, Instant, translate::Translate, image::Image};
+use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Size, Point},
-    pixelcolor::{PixelColor, RgbColor},
+    pixelcolor::PixelColor,
 };
 use embedded_iconoir::{size24px::navigation::NavArrowUp, prelude::IconoirNewIcon};
 
 /// A carat icon that bobs up and down
-pub struct BobbingCarat<C: PixelColor> {
+pub struct BobbingCarat<C: crate::WidgetColor> {
     translate: Translate<Image<embedded_iconoir::Icon<C, NavArrowUp>>>,
 }
 
-impl<C: PixelColor + RgbColor> BobbingCarat<C> 
+impl<C: crate::WidgetColor> BobbingCarat<C> 
 where
-    C: Copy + Default,
+    C: Copy,
 {
     pub fn new(color: C, background_color: C) -> Self {
         let icon = NavArrowUp::new(color);
@@ -28,7 +30,7 @@ where
     }
 }
 
-impl<C: PixelColor> crate::DynWidget for BobbingCarat<C>
+impl<C: crate::WidgetColor> crate::DynWidget for BobbingCarat<C>
 where
     C: Copy,
 {
@@ -46,17 +48,19 @@ where
     }
 }
 
-impl<C: PixelColor> Widget for BobbingCarat<C>
+impl<C: crate::WidgetColor> Widget for BobbingCarat<C>
 where
     C: Copy,
-{
+ {
     type Color = C;
     
-    fn draw<D: DrawTarget<Color = Self::Color>>(
+    fn draw<D>(
         &mut self,
-        target: &mut D,
-        current_time: Instant,
-    ) -> Result<(), D::Error> {
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>, {
         self.translate.draw(target, current_time)
     }
     
