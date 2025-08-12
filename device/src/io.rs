@@ -96,14 +96,18 @@ where
             &mut *self,
             BINCODE_CONFIG,
         )?;
-        self.io.nb_flush();
         Ok(())
     }
 
     pub fn receive(&mut self) -> Option<Result<ReceiveSerial<D>, bincode::error::DecodeError>> {
         self.fill_buffer();
         if !self.ring_buffer.is_empty() {
-            Some(bincode::decode_from_reader(self, BINCODE_CONFIG))
+            let res = bincode::decode_from_reader(&mut *self, BINCODE_CONFIG);
+            if res.is_err() {
+                // https://github.com/espressif/arduino-esp32/issues/6326
+                self.inner_mut().hardware_fifo_reset();
+            }
+            Some(res)
         } else {
             None
         }
@@ -115,7 +119,6 @@ where
             &mut *self,
             BINCODE_CONFIG,
         )?;
-        self.io.nb_flush();
         Ok(())
     }
     pub fn write_conch(&mut self) -> Result<(), bincode::error::EncodeError> {
@@ -124,7 +127,6 @@ where
             &mut *self,
             BINCODE_CONFIG,
         )?;
-        self.io.nb_flush();
 
         Ok(())
     }
@@ -135,7 +137,6 @@ where
             &mut *self,
             BINCODE_CONFIG,
         )?;
-        self.flush();
 
         Ok(())
     }
@@ -157,30 +158,30 @@ where
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         for (i, target_byte) in bytes.iter_mut().enumerate() {
-            let start_time = self.timer.now();
+            *target_byte = if let Some(next_byte) = self.ring_buffer.pop_front() {
+                next_byte
+            } else {
+                let start_time = self.timer.now();
+                loop {
+                    self.fill_buffer();
+                    if let Some(next_byte) = self.ring_buffer.pop_front() {
+                        break next_byte;
+                    }
 
-            *target_byte = loop {
-                // eagerly fill the buffer so we pull bytes from the hardware serial buffer as fast
-                // as possible.
-                self.fill_buffer();
-
-                if let Some(next_byte) = self.ring_buffer.pop_front() {
-                    break next_byte;
+                    if self
+                        .timer
+                        .now()
+                        .checked_duration_since(start_time)
+                        .unwrap()
+                        .to_millis()
+                        > 1_000
+                    {
+                        return Err(DecodeError::UnexpectedEnd {
+                            additional: bytes.len() - i + 1,
+                        });
+                    }
                 }
-
-                if self
-                    .timer
-                    .now()
-                    .checked_duration_since(start_time)
-                    .unwrap()
-                    .to_millis()
-                    > 1_000
-                {
-                    return Err(DecodeError::UnexpectedEnd {
-                        additional: bytes.len() - i + 1,
-                    });
-                }
-            };
+            }
         }
         Ok(())
     }
@@ -237,8 +238,19 @@ impl SerialIo<'_> {
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError> {
-        for byte in bytes {
-            while self.write_byte_nb(*byte).is_err() {}
+        // both these methods flush internally
+        match self {
+            SerialIo::Uart { uart } => {
+                let res = uart
+                    .write_bytes(bytes)
+                    .map_err(|e| SerialInterfaceError::UartWriteError(e))?;
+                assert_eq!(res, bytes.len());
+            }
+            SerialIo::Jtag(usb_serial_jtag) => {
+                usb_serial_jtag
+                    .write_bytes(bytes)
+                    .map_err(|_e| SerialInterfaceError::JtagError)?;
+            }
         }
         Ok(())
     }
@@ -254,6 +266,15 @@ impl SerialIo<'_> {
                 // though so ignore return value.
                 let _ = jtag.flush_tx_nb();
             }
+        }
+    }
+
+    pub fn hardware_fifo_reset(&mut self) {
+        match self {
+            SerialIo::Uart { .. } => {
+                self.change_baud(frostsnap_comms::BAUDRATE);
+            }
+            SerialIo::Jtag(_) => {}
         }
     }
 
