@@ -314,6 +314,7 @@ where
                                                             if downstream_connection_state == DownstreamConnectionState::Established { Some(downstream_serial.inner_mut()) } else { None },
                                                             &mut ui,
                                                             &mut sha256,
+                                                            timer
                                                         );
                                                         reset(&mut upstream_serial);
                                                     } else {
