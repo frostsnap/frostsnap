@@ -10,7 +10,6 @@ use embedded_graphics::{
 };
 use embedded_hal as hal;
 use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
-use esp_hal::delay::Delay;
 use esp_hal::{hmac::Hmac, peripherals::DS, timer, usb_serial_jtag::UsbSerialJtag, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
@@ -147,10 +146,9 @@ where
         )
         .unwrap();
 
-        // I was experiencing a hang SOMEWHERE HERE.
-        // Not sure if this actually fixes since im out of fresh devices with that keyslot..
-        let delay = Delay::new();
-        delay.delay_millis(100);
+        // // I experienced a hang somewhere here in the past
+        // let delay = Delay::new();
+        // delay.delay_millis(100);
 
         text_display!(
             display,

@@ -176,8 +176,6 @@ fn main() -> ! {
         ds,
     );
 
-    let jtag_iface = SerialInterface::new_jtag(&mut jtag, &timer0);
-
     let mut display = graphics::Graphics::new(display);
 
     display.header("Frostsnap");
@@ -188,17 +186,24 @@ fn main() -> ! {
         ..Default::default()
     };
     let detect_device_upstream = upstream_detect.is_low();
-    let mut uart_upstream = Uart::new_with_config(
-        peripherals.UART1,
-        serial_conf,
-        peripherals.GPIO18,
-        peripherals.GPIO19,
-    )
-    .unwrap();
-    let upstream_serial = if detect_device_upstream {
-        SerialInterface::new_uart(&mut uart_upstream, &timer0)
+    let mut uart_upstream = if detect_device_upstream {
+        Some(
+            Uart::new_with_config(
+                peripherals.UART1,
+                serial_conf,
+                peripherals.GPIO18,
+                peripherals.GPIO19,
+            )
+            .unwrap(),
+        )
     } else {
-        jtag_iface
+        None
+    };
+
+    let upstream_serial = if detect_device_upstream {
+        SerialInterface::new_uart(uart_upstream.as_mut().unwrap(), &timer0)
+    } else {
+        SerialInterface::new_jtag(&mut jtag, &timer0)
     };
 
     let mut downstream_uart = Uart::new_with_config(
