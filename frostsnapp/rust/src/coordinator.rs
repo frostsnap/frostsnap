@@ -1006,7 +1006,7 @@ impl FfiCoordinator {
             {
                 return device_id == phase.from
                     && rid == restoration_id
-                    && share_index == phase.backup.share_image.share_index;
+                    && share_index == phase.backup.share_image.index;
             }
             false
         });
@@ -1054,7 +1054,7 @@ impl FfiCoordinator {
             {
                 return device_id == phase.from
                     && assid == access_structure_ref
-                    && share_index == phase.backup.share_image.share_index;
+                    && share_index == phase.backup.share_image.index;
             }
             false
         });

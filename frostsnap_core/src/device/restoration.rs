@@ -18,7 +18,7 @@ impl State {
         match &mutation {
             Save(saved_backup) => {
                 self.saved_backups.insert(
-                    ShareImage::from_secret(saved_backup.secret_share),
+                    saved_backup.secret_share.share_image(),
                     saved_backup.clone(),
                 );
             }
@@ -66,7 +66,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                             key_name: key_name.clone(),
                         },
                     )));
-                    let share_image = ShareImage::from_secret(secret_share);
+                    let share_image = secret_share.share_image();
 
                     Ok(vec![
                         DeviceSend::ToUser(Box::new(DeviceToUserMessage::Restoration(
@@ -94,12 +94,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 let root_shared_key = &consolidate.root_shared_key;
                 let access_structure_ref =
                     AccessStructureRef::from_root_shared_key(root_shared_key);
-                let share_image = ShareImage {
-                    share_index: consolidate.share_index,
-                    point: root_shared_key
-                        .share_image(consolidate.share_index)
-                        .normalize(),
-                };
+                let share_image = root_shared_key.share_image(consolidate.share_index);
 
                 let secret_share = self
                     .restoration
@@ -271,7 +266,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         let mut ret = vec![];
         let enter_physical_id = phase.enter_physical_id;
 
-        let share_image = ShareImage::from_secret(secret_share);
+        let share_image = secret_share.share_image();
         self.restoration
             .tmp_loaded_backups
             .insert(share_image, secret_share);
@@ -333,7 +328,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         phase: ConsolidatePhase,
         rng: &mut impl rand_core::RngCore,
     ) -> impl IntoIterator<Item = DeviceSend> {
-        let share_image = ShareImage::from_secret(phase.complete_share.secret_share);
+        let share_image = phase.complete_share.secret_share.share_image();
         let access_structure_ref = phase.complete_share.access_structure_ref;
         self.mutate(Mutation::Restoration(RestorationMutation::UnSave(
             share_image,
@@ -357,7 +352,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
         vec![DeviceSend::ToCoordinator(Box::new(
             DeviceToCoordinatorMessage::Restoration(DeviceRestoration::FinishedConsolidation {
-                share_index: share_image.share_index,
+                share_index: share_image.index,
                 access_structure_ref,
             }),
         ))]
@@ -400,7 +395,7 @@ pub struct ConsolidatePhase {
 #[derive(Clone, Debug)]
 pub struct BackupDisplayPhase {
     pub access_structure_ref: AccessStructureRef,
-    pub party_index: PartyIndex,
+    pub party_index: ShareIndex,
     pub encrypted_secret_share: Ciphertext<32, Scalar<Secret, Zero>>,
     pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
     pub key_name: String,

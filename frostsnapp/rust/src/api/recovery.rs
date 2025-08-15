@@ -10,7 +10,7 @@ pub use frostsnap_core::coordinator::restoration::{
 };
 use frostsnap_core::{device::KeyPurpose, AccessStructureRef, DeviceId, RestorationId};
 
-pub use frostsnap_core::{message::HeldShare, ShareImage};
+pub use frostsnap_core::{message::HeldShare, schnorr_fun::frost::ShareImage};
 use std::collections::HashSet;
 use tracing::{event, Level};
 
@@ -78,7 +78,12 @@ impl super::coordinator::Coordinator {
                 AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
                 ConflictingShareImage { conflicts_with } => ShareCompatibility::ConflictsWith {
                     device_id: conflicts_with,
-                    index: recover_share.held_share.share_image.share_index_u16(),
+                    index: recover_share
+                        .held_share
+                        .share_image
+                        .index
+                        .try_into()
+                        .expect("should be small"),
                 },
             },
         }
@@ -209,7 +214,12 @@ impl super::coordinator::Coordinator {
                 AlreadyGotThisShare => ShareCompatibility::AlreadyGotIt,
                 ConflictingShareImage { conflicts_with } => ShareCompatibility::ConflictsWith {
                     device_id: conflicts_with,
-                    index: phase.backup.share_image.share_index_u16(),
+                    index: phase
+                        .backup
+                        .share_image
+                        .index
+                        .try_into()
+                        .expect("should be small"),
                 },
             },
         }

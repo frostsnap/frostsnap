@@ -100,7 +100,10 @@ where
         Ok(())
     }
 
-    pub fn receive(&mut self) -> Option<Result<ReceiveSerial<D>, bincode::error::DecodeError>> {
+    pub fn receive(&mut self) -> Option<Result<ReceiveSerial<D>, bincode::error::DecodeError>>
+    where
+        ReceiveSerial<D>: bincode::Decode<()>,
+    {
         self.fill_buffer();
         if !self.ring_buffer.is_empty() {
             Some(bincode::decode_from_reader(self, BINCODE_CONFIG))

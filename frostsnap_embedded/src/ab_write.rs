@@ -57,10 +57,7 @@ impl<'a, S: NorFlash> AbSlot<'a, S> {
         self.slots[other_slot].write(slot_value);
     }
 
-    pub fn read<T>(&self) -> Option<T>
-    where
-        T: bincode::Decode,
-    {
+    pub fn read<T: bincode::Decode<()>>(&self) -> Option<T> {
         let current_slot = self.current_slot();
         let slot_value = self.slots[current_slot].read();
         slot_value.map(|slot_value| slot_value.value)
@@ -99,7 +96,7 @@ struct Slot<'a, S> {
 
 impl<S: NorFlash> Slot<'_, S> {
     // TODO: justify no erorr type here
-    pub fn read<T: bincode::Decode>(&self) -> Option<SlotValue<T>> {
+    pub fn read<T: bincode::Decode<()>>(&self) -> Option<SlotValue<T>> {
         let value = bincode::decode_from_reader::<SlotValue<T>, _, _>(
             self.flash.bincode_reader(),
             ABWRITE_BINCODE_CONFIG,
