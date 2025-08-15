@@ -6,6 +6,8 @@ use crate::{
 use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
 use esp_hal::sha::Sha;
+use esp_hal::time::Duration;
+use esp_hal::timer;
 use frostsnap_comms::{
     CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
     FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -292,12 +294,13 @@ impl FirmwareUpgradeMode<'_> {
         }
     }
 
-    pub fn enter_upgrade_mode(
+    pub fn enter_upgrade_mode<T: timer::Timer>(
         &mut self,
         upstream_io: &mut SerialIo<'_>,
         mut downstream_io: Option<&mut SerialIo<'_>>,
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
+        timer: &T,
     ) {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {
@@ -316,6 +319,11 @@ impl FirmwareUpgradeMode<'_> {
         upstream_io.change_baud(OTA_UPDATE_BAUD);
         if let Some(downstream_io) = downstream_io.as_mut() {
             downstream_io.change_baud(OTA_UPDATE_BAUD);
+        }
+
+        let start = timer.now();
+        while timer.now().checked_duration_since(start).unwrap() < Duration::millis(100) {
+            // wait for everyone to finish changing BAUD rates to prevent race condition
         }
 
         // allocate it on heap with Box to avoid enlarging stack
