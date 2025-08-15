@@ -465,7 +465,7 @@ impl UsbSerialManager {
                     }
                 };
                 event!(Level::DEBUG, message = message.gist(), "queueing message");
-                port.queue_send(message.clone());
+                port.queue_send(message.clone().into());
             }
         }
 

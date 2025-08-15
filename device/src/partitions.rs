@@ -13,6 +13,7 @@ pub type EspFlashPartition<'a> = FlashPartition<'a, FlashStorage>;
 pub struct Partitions<'a> {
     pub ota: OtaPartitions<'a>,
     pub nvs: EspFlashPartition<'a>,
+    pub factory_data: EspFlashPartition<'a>,
 }
 
 impl<'a> Partitions<'a> {
@@ -25,6 +26,7 @@ impl<'a> Partitions<'a> {
                 factory: EspFlashPartition::new(flash, 0, 0, "factory"),
             },
             nvs: EspFlashPartition::new(flash, 0, 0, "nvs"),
+            factory_data: EspFlashPartition::new(flash, 0, 0, "factory_data"),
         }
     }
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
@@ -66,6 +68,11 @@ impl<'a> Partitions<'a> {
                 "nvs" => {
                     self_.nvs.set_offset_and_size(row.offset, row.size as u32);
                 }
+                "factory_data" => {
+                    self_
+                        .factory_data
+                        .set_offset_and_size(row.offset, row.size as u32);
+                }
                 _ => { /*ignore*/ }
             }
         }
@@ -76,8 +83,9 @@ impl<'a> Partitions<'a> {
             self_.ota.ota_0,
             self_.ota.ota_1,
             self_.ota.factory,
+            self_.factory_data,
         ] {
-            assert!(part.size() > 0, "partition {} must not me empty", part.tag);
+            assert!(part.size() > 0, "partition {} must not be empty", part.tag);
         }
 
         self_
