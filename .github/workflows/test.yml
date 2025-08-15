@@ -23,16 +23,15 @@ jobs:
       - uses: "./.github/actions/cache-rust-target"
         with:
           key: "build-device-firmware-deterministic-v2"
-          path: "/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release"
+          path: "/var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release"
       - name: Build Firmware
         run: |
           chmod +x device/deterministic-build.sh
           just build-deterministic
-          echo "Firmware hash: $(sha256sum /tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin)"
       - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-${{ github.sha }}.bin
-          path: /tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin
+          path: /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin
 
   test-ordinary-libs:
     name: Test ordinary libraries
