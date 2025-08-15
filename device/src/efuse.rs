@@ -290,7 +290,7 @@ impl frostsnap_core::device::DeviceSymmetricKeyGen for EfuseHmacKey<'_> {
     fn get_share_encryption_key(
         &mut self,
         access_structure_ref: AccessStructureRef,
-        party_index: frostsnap_core::schnorr_fun::frost::PartyIndex,
+        party_index: frostsnap_core::schnorr_fun::frost::ShareIndex,
         coord_key: frostsnap_core::CoordShareDecryptionContrib,
     ) -> frostsnap_core::SymmetricKey {
         let mut src = [0u8; 128];

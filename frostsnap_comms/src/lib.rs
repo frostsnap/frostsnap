@@ -44,7 +44,11 @@ pub const BINCODE_CONFIG: bincode::config::Configuration<
 > = bincode::config::standard().with_limit::<MAX_MESSAGE_ALLOC_SIZE>();
 
 #[derive(Encode, Decode, Debug, Clone)]
-#[bincode(bounds = "D: Direction")]
+#[bincode(
+    encode_bounds = "D: Direction",
+    decode_bounds = "D: Direction, <D as Direction>::RecvType: bincode::Decode<__Context>",
+    borrow_decode_bounds = "D: Direction, <D as Direction>::RecvType:  bincode::BorrowDecode<'__de, __Context>"
+)]
 pub enum ReceiveSerial<D: Direction> {
     MagicBytes(MagicBytes<D>),
     Message(D::RecvType),
@@ -287,7 +291,7 @@ pub trait HasMagicBytes {
 }
 
 pub trait Direction: HasMagicBytes {
-    type RecvType: bincode::Decode + bincode::Encode + for<'a> bincode::BorrowDecode<'a> + Gist;
+    type RecvType: bincode::Encode + Gist;
     type Opposite: Direction;
 }
 
@@ -322,7 +326,7 @@ impl<O: HasMagicBytes> bincode::Encode for MagicBytes<O> {
     }
 }
 
-impl<O: HasMagicBytes> bincode::Decode for MagicBytes<O> {
+impl<Context, O: HasMagicBytes> bincode::Decode<Context> for MagicBytes<O> {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
@@ -356,7 +360,7 @@ impl DeviceSupportedFeatures {
     }
 }
 
-impl<'de, O: HasMagicBytes> bincode::BorrowDecode<'de> for MagicBytes<O> {
+impl<'de, Context, O: HasMagicBytes> bincode::BorrowDecode<'de, Context> for MagicBytes<O> {
     fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
         decoder: &mut D,
     ) -> core::result::Result<Self, bincode::error::DecodeError> {

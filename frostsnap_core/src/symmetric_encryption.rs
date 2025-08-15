@@ -12,7 +12,7 @@ pub struct Ciphertext<const N: usize, T> {
     tag: [u8; 16],
 }
 
-impl<const N: usize, T: bincode::Encode + bincode::Decode> Ciphertext<N, T> {
+impl<const N: usize, T: bincode::Encode + bincode::Decode<()>> Ciphertext<N, T> {
     pub fn decrypt(&self, encryption_key: SymmetricKey) -> Option<T> {
         let cipher = ChaCha20Poly1305::new(&encryption_key.0.into());
         let mut plaintext = self.data;

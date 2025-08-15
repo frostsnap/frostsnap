@@ -236,7 +236,7 @@ impl<T: bincode::Encode> ToSql for BincodeWrapper<T> {
     }
 }
 
-impl<T: bincode::Decode> FromSql for BincodeWrapper<T> {
+impl<T: bincode::Decode<()>> FromSql for BincodeWrapper<T> {
     fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
         let (decoded, _len) =
             bincode::decode_from_slice::<T, _>(value.as_blob()?, bincode::config::standard())

@@ -16,7 +16,7 @@ pub mod tweak;
 use core::ops::RangeBounds;
 
 use schnorr_fun::{
-    frost::{self, chilldkg::encpedpop, PartyIndex, SharedKey},
+    frost::{chilldkg::encpedpop, ShareImage, ShareIndex, SharedKey},
     fun::{hash::HashAdd, prelude::*},
 };
 pub use sha2;
@@ -262,7 +262,7 @@ impl CoordShareDecryptionContrib {
     /// knowledge of the main polynomial.
     pub fn for_master_share(
         device_id: DeviceId,
-        share_index: PartyIndex,
+        share_index: ShareIndex,
         shared_key: &SharedKey<Normal, impl ZeroChoice>,
     ) -> Self {
         Self(
@@ -316,25 +316,6 @@ impl_fromstr_deserialize! {
     }
 }
 
-#[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode, Ord, PartialOrd, PartialEq, Eq)]
-pub struct ShareImage {
-    pub share_index: PartyIndex,
-    pub point: Point<Normal, Public, Zero>,
-}
-
-impl ShareImage {
-    pub fn from_secret(secret_share: frost::SecretShare) -> Self {
-        Self {
-            share_index: secret_share.index,
-            point: g!(secret_share.share * G).normalize(),
-        }
-    }
-
-    pub fn share_index_u16(&self) -> u16 {
-        // XXX: temporary HACK
-        u16::from_str_radix(&self.share_index.to_string(), 16).expect("share index is small")
-    }
-}
 // Uniquely identifies an access structure for a particular `key_id`.
 #[derive(
     Debug, Clone, Copy, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash, Ord, PartialOrd,

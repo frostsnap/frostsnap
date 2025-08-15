@@ -228,19 +228,20 @@ checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
 
 [[package]]
 name = "bincode"
-version = "2.0.0-rc.3"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11ea1a0346b94ef188834a65c068a03aec181c94896d481d7a0a40d85b0ce95"
+checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
 dependencies = [
  "bincode_derive",
  "serde",
+ "unty",
 ]
 
 [[package]]
 name = "bincode_derive"
-version = "2.0.0-rc.3"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
+checksum = "bf95709a440f45e986983918d0e8a1f30a9b1df04918fc828670606804ac3c09"
 dependencies = [
  "virtue",
 ]
@@ -1260,7 +1261,6 @@ name = "frostsnap_comms"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "bincode_derive",
  "frostsnap_core",
  "serde",
 ]
@@ -2567,10 +2567,10 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 [[package]]
 name = "schnorr_fun"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ca8c22cb9ac73a4f0f1807ed9cfb8ca16de23c0ec520fc9475816eb3d6e7c13"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=3831f3656e76c2f1680e573e04511d1077f7e9f0#3831f3656e76c2f1680e573e04511d1077f7e9f0"
 dependencies = [
  "bech32",
+ "bincode",
  "secp256kfun",
 ]
 
@@ -2606,7 +2606,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.14.0",
+ "bitcoin_hashes 0.12.0",
  "secp256k1-sys 0.10.1",
  "serde",
 ]
@@ -2651,8 +2651,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b39f4d955c99d8f7487ab89f2b7d296a05d2a9288687464ce9743027f41dbc3f"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=3831f3656e76c2f1680e573e04511d1077f7e9f0#3831f3656e76c2f1680e573e04511d1077f7e9f0"
 dependencies = [
  "bincode",
  "digest",
@@ -2669,8 +2668,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91b7c385a72530ebfe6010ff476ad9e235743fb33408a360052bb706f1481e1e"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=3831f3656e76c2f1680e573e04511d1077f7e9f0#3831f3656e76c2f1680e573e04511d1077f7e9f0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3222,6 +3220,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "unty"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
+
+[[package]]
 name = "ur"
 version = "0.4.1"
 source = "git+https://github.com/nickfarrow/ur-rs?rev=2e267e5e019b6c8129f66efba00327ff3d0ae5a4#2e267e5e019b6c8129f66efba00327ff3d0ae5a4"
@@ -3259,9 +3263,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "virtue"
-version = "0.0.13"
+version = "0.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
+checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 
 [[package]]
 name = "void"

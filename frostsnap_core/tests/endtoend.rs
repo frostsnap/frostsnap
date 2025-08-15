@@ -145,7 +145,7 @@ impl common::Env for TestEnv {
                                     if !run.coordinator.knows_about_share(
                                         held_by,
                                         access_structure_ref,
-                                        held_share.share_image.share_index,
+                                        held_share.share_image.index,
                                     ) {
                                         run.coordinator
                                             .recover_share(

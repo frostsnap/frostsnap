@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use super::*;
 use crate::{fail, EnterPhysicalId, RestorationId};
@@ -26,8 +26,8 @@ impl RestorationState {
             .map(|&(device_id, share_image)| {
                 let validity = if self.need_to_consolidate.contains(&device_id) {
                     if let Some(shared_key) = &shared_key {
-                        let expected = shared_key.share_image(share_image.share_index);
-                        if expected == share_image.point {
+                        let expected = shared_key.share_image(share_image.index);
+                        if expected == share_image {
                             RestorationShareValidity::Valid
                         } else {
                             RestorationShareValidity::Invalid
@@ -41,7 +41,7 @@ impl RestorationState {
 
                 RestorationShare {
                     device_id,
-                    index: share_image.share_index_u16(),
+                    index: share_image.index.try_into().expect("share index is small"),
                     validity,
                 }
             })
@@ -288,13 +288,13 @@ impl FrostCoordinator {
         access_structure_ref: AccessStructureRef,
         phase: PhysicalBackupPhase,
         encryption_key: SymmetricKey,
-    ) -> Result<PartyIndex, CheckBackupError> {
+    ) -> Result<ShareIndex, CheckBackupError> {
         let AccessStructureRef {
             key_id,
             access_structure_id,
         } = access_structure_ref;
 
-        let share_index = phase.backup.share_image.share_index;
+        let share_index = phase.backup.share_image.index;
         let CoordFrostKey { complete_key, .. } = self
             .keys
             .get(&key_id)
@@ -304,10 +304,7 @@ impl FrostCoordinator {
             .root_shared_key(access_structure_id, encryption_key)
             .ok_or(CheckBackupError::DecryptionError)?;
 
-        let expected_image = ShareImage {
-            point: poly::point::eval(root_shared_key.point_polynomial(), share_index).normalize(),
-            share_index,
-        };
+        let expected_image = root_shared_key.share_image(share_index);
 
         if phase.backup.share_image != expected_image {
             return Err(CheckBackupError::ShareImageIsWrong);
@@ -374,7 +371,7 @@ impl FrostCoordinator {
         let message = CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::Consolidate(
                 Box::new(ConsolidateBackup {
-                    share_index: share_image.share_index,
+                    share_index: share_image.index,
                     root_shared_key,
                     key_name: frost_key.key_name.clone(),
                     purpose: frost_key.purpose,
@@ -388,7 +385,7 @@ impl FrostCoordinator {
             .insert(PendingConsolidation {
                 device_id: from,
                 access_structure_ref,
-                share_index: share_image.share_index,
+                share_index: share_image.index,
             });
 
         Ok(vec![message])
@@ -525,7 +522,7 @@ impl FrostCoordinator {
             .access_structure
             .share_images
             .iter()
-            .map(|&(device_id, share_image)| (device_id, share_image.share_index))
+            .map(|&(device_id, share_image)| (device_id, share_image.index))
             .collect();
 
         self.mutate_new_key(
@@ -546,7 +543,7 @@ impl FrostCoordinator {
                         .access_structure
                         .get_device_contribution(device_id)
                         .expect("invariant")
-                        .share_index,
+                        .index,
                 }),
             ))
         }
@@ -575,7 +572,7 @@ impl FrostCoordinator {
             encryption_key,
         )?;
 
-        let share_index = recover_share.held_share.share_image.share_index;
+        let share_index = recover_share.held_share.share_image.index;
 
         self.mutate(Mutation::NewShare {
             access_structure_ref,
@@ -631,9 +628,9 @@ impl FrostCoordinator {
 
         let share_image = recover_share.held_share.share_image;
 
-        let expected_image = root_shared_key.share_image(share_image.share_index);
+        let expected_image = root_shared_key.share_image(share_image.index);
 
-        if expected_image != share_image.point {
+        if expected_image != share_image {
             return Err(RecoverShareError::ShareImageIsWrong);
         }
         Ok(())
@@ -713,7 +710,7 @@ impl FrostCoordinator {
                             ToUserRestoration::PhysicalBackupSaved {
                                 device_id: from,
                                 restoration_id,
-                                share_index: share_image.share_index,
+                                share_index: share_image.index,
                             },
                         ),
                     )])
@@ -964,12 +961,12 @@ pub enum ToUserRestoration {
     PhysicalBackupSaved {
         device_id: DeviceId,
         restoration_id: RestorationId,
-        share_index: PartyIndex,
+        share_index: ShareIndex,
     },
     FinishedConsolidation {
         device_id: DeviceId,
         access_structure_ref: AccessStructureRef,
-        share_index: PartyIndex,
+        share_index: ShareIndex,
     },
 }
 
@@ -985,7 +982,7 @@ impl From<ToUserRestoration> for CoordinatorToUserMessage {
 pub struct PendingConsolidation {
     pub device_id: DeviceId,
     pub access_structure_ref: AccessStructureRef,
-    pub share_index: PartyIndex,
+    pub share_index: ShareIndex,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1181,7 +1178,7 @@ impl RecoveringAccessStructure {
     pub fn progress(&self) -> u16 {
         self.share_images
             .iter()
-            .map(|(_, share_image)| share_image.share_index)
+            .map(|(_, share_image)| share_image.index)
             .collect::<BTreeSet<_>>()
             .len()
             .try_into()
@@ -1200,23 +1197,23 @@ impl RecoveringAccessStructure {
             .share_images
             .iter()
             .filter(|(id, _)| !exclude.contains(id))
-            .map(|(_, share_image)| (share_image.share_index, share_image.point))
-            // For deduplication
-            .collect::<BTreeMap<_, _>>()
+            .map(|(_, share_image)| *share_image)
+            // For deduplication - use a BTreeSet to deduplicate by ShareImage
+            .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
 
         if share_images.len() >= self.threshold.into() {
-            Some(SharedKey::from_share_images(&share_images[..]).non_zero()?)
+            Some(SharedKey::from_share_images(share_images).non_zero()?)
         } else {
             None
         }
     }
 
-    pub fn has_got_share_index(&self, share_index: PartyIndex) -> bool {
+    pub fn has_got_share_index(&self, share_index: ShareIndex) -> bool {
         self.share_images
             .iter()
-            .any(|(_, share_image)| share_image.share_index == share_index)
+            .any(|(_, share_image)| share_image.index == share_index)
     }
 
     pub fn has_got_share_image(&self, device_id: DeviceId, share_image: ShareImage) -> bool {
@@ -1235,7 +1232,7 @@ impl RecoveringAccessStructure {
 
     pub fn contradicts(&self, share_image: ShareImage) -> Option<DeviceId> {
         let (device_id, _) = self.share_images.iter().find(|(_, expected)| {
-            expected.share_index == share_image.share_index && expected.point != share_image.point
+            expected.index == share_image.index && expected.image != share_image.image
         })?;
 
         Some(*device_id)

@@ -21,10 +21,10 @@ use core::fmt;
 use frostsnap_macros::Kind;
 use schnorr_fun::{
     frost::{
-        self, chilldkg::encpedpop, CoordinatorSignSession, Frost, PartyIndex, SharedKey,
+        self, chilldkg::encpedpop, CoordinatorSignSession, Frost, ShareIndex, SharedKey,
         SignatureShare,
     },
-    fun::{poly, prelude::*},
+    fun::prelude::*,
     Schnorr, Signature,
 };
 use sha2::Sha256;
@@ -474,7 +474,7 @@ impl FrostCoordinator {
                                 device_to_share_index: device_to_share_index
                                     .into_iter()
                                     .map(|(device, share_index)| {
-                                        (device, PartyIndex::from(share_index))
+                                        (device, ShareIndex::from(share_index))
                                     })
                                     .collect(),
                                 acks: Default::default(),
@@ -679,7 +679,7 @@ impl FrostCoordinator {
         }
         let share_receivers_enckeys = device_to_share_index
             .iter()
-            .map(|(device, share_index)| (PartyIndex::from(*share_index), device.pubkey()))
+            .map(|(device, share_index)| (ShareIndex::from(*share_index), device.pubkey()))
             .collect::<BTreeMap<_, _>>();
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
         let mut input_aggregator = encpedpop::Coordinator::new(
@@ -986,7 +986,7 @@ impl FrostCoordinator {
         &mut self,
         name: String,
         root_shared_key: SharedKey,
-        device_to_share_index: BTreeMap<DeviceId, PartyIndex>,
+        device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
         encryption_key: SymmetricKey,
         purpose: KeyPurpose,
         rng: &mut impl rand_core::RngCore,
@@ -1151,7 +1151,7 @@ impl FrostCoordinator {
         &self,
         device_id: DeviceId,
         access_structure_ref: AccessStructureRef,
-        index: PartyIndex,
+        index: ShareIndex,
     ) -> bool {
         let already_got_under_key = self
             .keys
@@ -1198,7 +1198,7 @@ impl SignSessionProgress {
         frost: &Frost<sha2::Sha256, NG>,
         app_shared_key: Xpub<SharedKey>,
         sign_item: SignItem,
-        nonces: BTreeMap<frost::PartyIndex, frost::Nonce>,
+        nonces: BTreeMap<frost::ShareIndex, frost::Nonce>,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let tweaked_key = sign_item.app_tweak.derive_xonly_key(&app_shared_key);
@@ -1302,7 +1302,7 @@ pub enum KeyGenState {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct CoordAccessStructure {
     app_shared_key: Xpub<SharedKey>,
-    device_to_share_index: BTreeMap<DeviceId, PartyIndex>,
+    device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
     kind: crate::AccessStructureKind,
 }
 
@@ -1415,7 +1415,7 @@ pub enum Mutation {
     NewShare {
         access_structure_ref: AccessStructureRef,
         device_id: DeviceId,
-        share_index: PartyIndex,
+        share_index: ShareIndex,
     },
     DeleteKey(KeyId),
     NewNonces {

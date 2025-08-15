@@ -11,7 +11,7 @@ use frostsnap_core::{
 };
 use frostsnap_core::{AccessStructureRef, MessageResult};
 use rand::RngCore;
-use schnorr_fun::frost::PartyIndex;
+use schnorr_fun::frost::ShareIndex;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub const TEST_ENCRYPTION_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
@@ -76,7 +76,7 @@ impl DeviceSymmetricKeyGen for TestDeviceKeyGen {
     fn get_share_encryption_key(
         &mut self,
         _access_structure_ref: AccessStructureRef,
-        _party_index: PartyIndex,
+        _party_index: ShareIndex,
         _coord_key: frostsnap_core::CoordShareDecryptionContrib,
     ) -> SymmetricKey {
         TEST_ENCRYPTION_KEY

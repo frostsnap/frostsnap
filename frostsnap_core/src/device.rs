@@ -17,7 +17,7 @@ use alloc::{
 };
 use core::num::NonZeroU32;
 use schnorr_fun::frost::chilldkg::encpedpop::{self};
-use schnorr_fun::frost::{PairedSecretShare, PartyIndex, SecretShare};
+use schnorr_fun::frost::{PairedSecretShare, SecretShare, ShareIndex};
 use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{frost, fun::prelude::*};
 use sha2::Sha256;
@@ -79,7 +79,7 @@ pub struct AccessStructureData {
     /// Keep the threshold around to make recover easier. The device tells the coordinator about it
     /// so they can tell the user how close they are to restoring the key.
     pub threshold: u16,
-    pub shares: BTreeMap<PartyIndex, EncryptedSecretShare>,
+    pub shares: BTreeMap<ShareIndex, EncryptedSecretShare>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, bincode::Decode, bincode::Encode)]
@@ -99,7 +99,7 @@ impl EncryptedSecretShare {
         symm_keygen: &mut impl DeviceSymmetricKeyGen,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
-        let share_image = ShareImage::from_secret(secret_share);
+        let share_image = secret_share.share_image();
         let encryption_key = symm_keygen.get_share_encryption_key(
             access_structure_ref,
             secret_share.index,
@@ -120,14 +120,14 @@ impl EncryptedSecretShare {
     ) -> Option<SecretShare> {
         let encryption_key = symm_keygen.get_share_encryption_key(
             access_structure_ref,
-            self.share_image.share_index,
+            self.share_image.index,
             coord_contrib,
         );
 
         self.ciphertext
             .decrypt(encryption_key)
             .map(|share| SecretShare {
-                index: self.share_image.share_index,
+                index: self.share_image.index,
                 share,
             })
     }
@@ -248,7 +248,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             .entry(access_structure_ref.access_structure_id)
                             .and_modify(|access_structure_data| {
                                 access_structure_data.shares.insert(
-                                    encrypted_secret_share.share_image.share_index,
+                                    encrypted_secret_share.share_image.index,
                                     *encrypted_secret_share,
                                 );
                             });
@@ -343,7 +343,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     let share_receivers_enckeys = device_to_share_index
                         .iter()
                         .map(|(device, share_index)| {
-                            (PartyIndex::from(*share_index), device.pubkey())
+                            (ShareIndex::from(*share_index), device.pubkey())
                         })
                         .collect::<BTreeMap<_, _>>();
                     let my_index =
@@ -406,7 +406,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         .get(&self.device_id())
                         .expect("already checked");
 
-                    let secret_share = encpedpop::receive_share(
+                    let secret_share = encpedpop::receive_secret_share(
                         &schnorr,
                         (*my_index).into(),
                         &self.keypair,
@@ -657,7 +657,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
         let sign_items = sign_task.sign_items();
         let key_id = KeyId::from_rootkey(rootkey);
-        let my_party_index = encrypted_secret_share.share_image.share_index;
+        let my_party_index = encrypted_secret_share.share_image.index;
         let access_structure_ref = AccessStructureRef {
             key_id,
             access_structure_id,
@@ -750,7 +750,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn get_encrypted_share(
         &self,
         access_structure_ref: AccessStructureRef,
-        share_index: PartyIndex,
+        share_index: ShareIndex,
     ) -> Option<EncryptedSecretShare> {
         self.keys
             .get(&access_structure_ref.key_id)?
@@ -802,7 +802,7 @@ pub trait DeviceSymmetricKeyGen {
     fn get_share_encryption_key(
         &mut self,
         access_structure_ref: AccessStructureRef,
-        party_index: PartyIndex,
+        party_index: ShareIndex,
         coord_key: CoordShareDecryptionContrib,
     ) -> SymmetricKey;
 }

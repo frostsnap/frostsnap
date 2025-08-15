@@ -14,7 +14,7 @@ use alloc::{
 use core::num::NonZeroU32;
 use frostsnap_macros::Kind;
 use schnorr_fun::binonce;
-use schnorr_fun::frost::{chilldkg::encpedpop, PartyIndex};
+use schnorr_fun::frost::{chilldkg::encpedpop, ShareIndex};
 use schnorr_fun::frost::{SharedKey, SignatureShare};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::fun::Point;
@@ -63,14 +63,14 @@ pub enum CoordinatorRestoration {
     DisplayBackup {
         access_structure_ref: AccessStructureRef,
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
-        party_index: PartyIndex,
+        party_index: ShareIndex,
     },
     RequestHeldShares,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct ConsolidateBackup {
-    pub share_index: PartyIndex,
+    pub share_index: ShareIndex,
     pub root_shared_key: SharedKey,
     pub key_name: String,
     pub purpose: KeyPurpose,
@@ -78,7 +78,7 @@ pub struct ConsolidateBackup {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct GroupSignReq<ST = WireSignTask> {
-    pub parties: BTreeSet<PartyIndex>,
+    pub parties: BTreeSet<ShareIndex>,
     pub agg_nonces: Vec<binonce::Nonce<Zero>>,
     pub sign_task: ST,
     pub access_structure_id: AccessStructureId,
@@ -141,7 +141,7 @@ pub enum DeviceRestoration {
     PhysicalSaved(ShareImage),
     FinishedConsolidation {
         access_structure_ref: AccessStructureRef,
-        share_index: PartyIndex,
+        share_index: ShareIndex,
     },
     HeldShares(Vec<HeldShare>),
 }
