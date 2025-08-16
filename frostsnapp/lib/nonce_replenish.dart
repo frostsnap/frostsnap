@@ -6,6 +6,8 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/theme.dart';
 
+// Standalone widget for nonce replenshment to be called after recovery, this is separate from the
+// streamlined widget that sits inside the wallet creation workflow.
 class NonceReplenishWidget extends StatelessWidget {
   final Stream<NonceReplenishState> stream;
   final VoidCallback? onCancel;
@@ -37,7 +39,7 @@ class NonceReplenishWidget extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    isComplete ? 'Ready' : 'Finalizing..',
+                    isComplete ? 'Ready' : 'Preparing..',
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: isComplete ? Colors.green : null,
                     ),
@@ -87,11 +89,11 @@ class NonceReplenishWidget extends StatelessWidget {
                     spacing: 12,
                     children: [
                       Text(
-                        'Finalizing wallet',
+                        'Preparing devices',
                         style: theme.textTheme.headlineLarge,
                       ),
                       Text(
-                        'Preparing for future signing sessions.',
+                        'Preparing devices for future signing sessions.',
                         style: theme.textTheme.bodyLarge,
                       ),
                     ],
@@ -167,8 +169,8 @@ class NonceReplenishWidget extends StatelessWidget {
                           Center(
                             child: Text(
                               allComplete
-                                  ? 'Wallet ready.'
-                                  : 'Finalizing wallet and preparing for future signing.',
+                                  ? 'Devices ready.'
+                                  : 'Preparing devices for future signing.',
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 fontWeight: allComplete
                                     ? FontWeight.w600
