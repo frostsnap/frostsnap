@@ -3,6 +3,7 @@ pub mod display_backup;
 pub mod enter_physical_backup;
 pub mod firmware_upgrade;
 pub mod keygen;
+pub mod nonce_replenish;
 mod serial_port;
 pub mod signing;
 mod ui_protocol;
