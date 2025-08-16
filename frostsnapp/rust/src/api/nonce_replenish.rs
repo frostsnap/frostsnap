@@ -12,6 +12,7 @@ pub struct _NonceReplenishState {
 }
 
 impl super::coordinator::Coordinator {
+    #[frb(sync)]
     pub fn create_nonce_request(&self, devices: Vec<DeviceId>) -> NonceRequest {
         NonceRequest {
             inner: self

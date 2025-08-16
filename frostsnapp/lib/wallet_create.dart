@@ -8,12 +8,12 @@ import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
-import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
+import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:glowy_borders/glowy_borders.dart';
@@ -50,6 +50,14 @@ class WalletCreateController extends ChangeNotifier {
   String? _nameError;
   late final StreamSubscription _deviceListSub;
   late DeviceListState _deviceList;
+
+  bool _nonceReplenishmentComplete = false;
+  bool get nonceReplenishmentComplete => _nonceReplenishmentComplete;
+
+  void setNonceReplenishmentComplete({required bool complete}) {
+    _nonceReplenishmentComplete = complete;
+    notifyListeners();
+  }
 
   KeyGenState? _keygenState;
   late final FullscreenActionDialogController _keygenController;
@@ -221,12 +229,19 @@ class WalletCreateController extends ChangeNotifier {
     (selectedId) =>
         _deviceList.devices.any((dev) => deviceIdEquals(dev.id, selectedId)),
   );
+  bool get devicesNeedNonceReplenishment {
+    final nonceRequest = coord.createNonceRequest(
+      devices: _form.selectedDevices.toList(),
+    );
+    return nonceRequest.someNoncesRequested();
+  }
 
   bool get canGoNext => switch (_step) {
     WalletCreateStep.name =>
       _nameError == null && _nameController.value.text.isNotEmpty,
     WalletCreateStep.deviceCount =>
       _deviceList.devices.isNotEmpty && !devicesNeedUpgrade && !devicesUsed,
+    WalletCreateStep.nonceReplenish => _nonceReplenishmentComplete,
     WalletCreateStep.deviceNames =>
       allWalletDevicesConnected && _form.allDevicesNamed,
     WalletCreateStep.threshold =>
@@ -258,6 +273,8 @@ class WalletCreateController extends ChangeNotifier {
       case WalletCreateStep.deviceCount:
         _form.selectedDevices.clear();
         _form.selectedDevices.addAll(_deviceList.devices.map((dev) => dev.id));
+        return true;
+      case WalletCreateStep.nonceReplenish:
         return true;
       case WalletCreateStep.deviceNames:
         return true;
@@ -366,27 +383,7 @@ class WalletCreateController extends ChangeNotifier {
       _step = nextStep;
       notifyListeners();
     } else {
-      // wallet creation complete - now show nonce replenishment if required
-      final devices = form.selectedDevices.toList();
-      final nonceRequest = await coord.createNonceRequest(devices: devices);
-      if (context.mounted && nonceRequest.someNoncesRequested()) {
-        await MaybeFullscreenDialog.show<bool>(
-          context: context,
-          child: NonceReplenishWidget(
-            stream: coord
-                .replenishNonces(nonceRequest: nonceRequest, devices: devices)
-                .toBehaviorSubject(),
-            // onCancel: () {
-            //   coord.cancelProtocol();
-            //   Navigator.pop(context, false);
-            // },
-          ),
-        );
-
-        if (context.mounted) {
-          Navigator.pop(context, _asRef);
-        }
-      }
+      Navigator.pop(context, _asRef);
     }
   }
 
@@ -419,6 +416,7 @@ class WalletCreateController extends ChangeNotifier {
       1 => 'Continue with 1 device',
       _ => 'Continue with ${_deviceList.devices.length} devices',
     },
+    WalletCreateStep.nonceReplenish => null,
     WalletCreateStep.deviceNames =>
       _form.allDevicesNamed ? null : 'Name all devices to continue',
     WalletCreateStep.threshold => 'Generate keys',
@@ -427,6 +425,7 @@ class WalletCreateController extends ChangeNotifier {
   String get title => switch (_step) {
     WalletCreateStep.name => 'Name wallet',
     WalletCreateStep.deviceCount => 'Pick devices',
+    WalletCreateStep.nonceReplenish => "Preparing devices",
     WalletCreateStep.deviceNames => 'Name devices',
     WalletCreateStep.threshold => 'Choose threshold',
   };
@@ -435,6 +434,8 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.name => 'Choose a name for this wallet',
     WalletCreateStep.deviceCount =>
       'Connect devices to become keys for "${form.name ?? ''}"',
+    WalletCreateStep.nonceReplenish =>
+      "Preparing devices for future signing sessions.",
     WalletCreateStep.deviceNames => 'Each device needs a name to idenitfy it',
     WalletCreateStep.threshold =>
       'Decide how many devices will be required to sign transactions or to make changes to this wallet',
@@ -453,7 +454,13 @@ class WalletCreateController extends ChangeNotifier {
   }
 }
 
-enum WalletCreateStep { name, deviceCount, deviceNames, threshold }
+enum WalletCreateStep {
+  name,
+  deviceCount,
+  nonceReplenish,
+  deviceNames,
+  threshold,
+}
 
 class WalletCreatePage extends StatefulWidget {
   const WalletCreatePage({super.key});
@@ -821,12 +828,145 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     ),
   );
 
+  Widget buildNonceReplenish(BuildContext context) {
+    return FutureBuilder<Stream<NonceReplenishState>?>(
+      future: _createNonceStream(),
+      builder: (context, futureSnapshot) {
+        if (futureSnapshot.connectionState != ConnectionState.done) {
+          return MultiSliver(
+            children: [
+              SliverDeviceList(
+                deviceBuilder: (context, device) => buildDevice(
+                  context,
+                  device,
+                  trailing: buildDeviceTrailingInfo(
+                    context,
+                    text: 'Preparing..',
+                    icon: null,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final stream = futureSnapshot.data;
+        if (stream == null) {
+          // No nonces needed - all devices ready immediately
+          if (!_controller.nonceReplenishmentComplete) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _controller.setNonceReplenishmentComplete(complete: true);
+              }
+            });
+          }
+          return MultiSliver(
+            children: [
+              SliverDeviceList(
+                deviceBuilder: (context, device) => buildDevice(
+                  context,
+                  device,
+                  trailing: buildDeviceTrailingInfo(
+                    context,
+                    text: 'Ready',
+                    icon: Icons.check_circle_rounded,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        // Nonces needed - show progress
+        return StreamBuilder<NonceReplenishState>(
+          stream: stream,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return MultiSliver(
+                children: [
+                  SliverDeviceList(
+                    deviceBuilder: (context, device) => buildDevice(
+                      context,
+                      device,
+                      trailing: buildDeviceTrailingInfo(
+                        context,
+                        text: 'Preparing..',
+                        icon: null,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            final state = snapshot.data!;
+            final allComplete =
+                state.receivedFrom.length == state.devices.length;
+
+            // Update completion state only when it changes, after build
+            if (_controller.nonceReplenishmentComplete != allComplete) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  _controller.setNonceReplenishmentComplete(
+                    complete: allComplete,
+                  );
+                }
+              });
+            }
+
+            return MultiSliver(
+              children: [
+                SliverDeviceList(
+                  deviceBuilder: (context, device) {
+                    final isDeviceComplete = state.receivedFrom.any(
+                      (deviceId) => deviceIdEquals(deviceId, device.id),
+                    );
+                    return buildDevice(
+                      context,
+                      device,
+                      trailing: buildDeviceTrailingInfo(
+                        context,
+                        text: isDeviceComplete ? 'Ready' : 'Preparing..',
+                        icon: isDeviceComplete
+                            ? Icons.check_circle_rounded
+                            : null,
+                        color: isDeviceComplete ? Colors.green : null,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<Stream<NonceReplenishState>?> _createNonceStream() async {
+    final form = _controller.form;
+    final devices = form.selectedDevices.toList();
+    final nonceRequest = await coord.createNonceRequest(devices: devices);
+
+    if (nonceRequest.someNoncesRequested()) {
+      return coord
+          .replenishNonces(nonceRequest: nonceRequest, devices: devices)
+          .toBehaviorSubject();
+    }
+
+    // No nonces needed
+    return null;
+  }
+
   Widget buildBody(BuildContext context) {
     switch (_controller.step) {
       case WalletCreateStep.name:
         return buildWalletNameBody(context);
       case WalletCreateStep.deviceCount:
         return buildDevicesBody(context);
+      case WalletCreateStep.nonceReplenish:
+        return buildNonceReplenish(context);
       case WalletCreateStep.deviceNames:
         return buildNameDevicesBody(context);
       case WalletCreateStep.threshold:
