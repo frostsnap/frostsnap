@@ -129,13 +129,21 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         return Card.filled(
           margin: EdgeInsets.zero,
           color: theme.colorScheme.errorContainer,
-          child: ListTile(
-            leading: Icon(Icons.warning_rounded),
-            title: Text('This will wipe the key from the device.'),
-            subtitle: Text('This action cannot be reverted.'),
-            textColor: theme.colorScheme.onErrorContainer,
-            iconColor: theme.colorScheme.onErrorContainer,
-            contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.warning_rounded),
+                title: Text('This will wipe the key from the device.'),
+                subtitle: Text(
+                  'The device will be rendered blank.\nThis action can not be reverted, and the only way to restore this key is through loading of a backup.',
+                ),
+                isThreeLine: true,
+                textColor: theme.colorScheme.onErrorContainer,
+                iconColor: theme.colorScheme.onErrorContainer,
+                contentPadding: EdgeInsets.symmetric(horizontal: 16),
+              ),
+            ],
           ),
         );
       },
