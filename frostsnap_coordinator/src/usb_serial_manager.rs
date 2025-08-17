@@ -820,19 +820,23 @@ impl FirmwareBin {
         digest
     }
 
-    /// Frostsnap firmware is padded to a device partition length because this makes it simpler to hash
     pub fn digest(&self) -> Sha256Digest {
         use frostsnap_core::sha2::digest::Digest;
         let mut state = sha2::Sha256::default();
+        state.update(self.bin);
+        Sha256Digest(state.finalize().into())
+    }
 
+    #[allow(dead_code)]
+    fn padded_digest(&self) -> Sha256Digest {
+        use frostsnap_core::sha2::digest::Digest;
+        let mut state = sha2::Sha256::default();
         state.update(self.bin);
         let mut len = self.bin.len();
-
         while len < FIRMWARE_IMAGE_SIZE as usize {
             len += 1;
             state.update([0xff]);
         }
-
         Sha256Digest(state.finalize().into())
     }
 }

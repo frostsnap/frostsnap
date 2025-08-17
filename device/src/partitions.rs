@@ -1,6 +1,7 @@
-use core::cell::RefCell;
-
+use crate::firmware::{FirmwareReader, FirmwareSizeError};
 use crate::ota::OtaPartitions;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 use embedded_storage::nor_flash::NorFlash;
 use esp_hal::sha::Sha;
 use esp_storage::FlashStorage;
@@ -27,11 +28,10 @@ impl<'a> Partitions<'a> {
             nvs: EspFlashPartition::new(flash, 0, 0, "nvs"),
         }
     }
+
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
         let table = esp_partition_table::PartitionTable::new(0x8000, 10 * 32);
-
         let mut self_ = Self::new(flash);
-
         for row in table.iter_storage(&mut *flash.borrow_mut(), false) {
             let row = match row {
                 Ok(row) => row,
@@ -69,7 +69,6 @@ impl<'a> Partitions<'a> {
                 _ => { /*ignore*/ }
             }
         }
-
         for part in [
             self_.nvs,
             self_.ota.otadata,
@@ -77,31 +76,68 @@ impl<'a> Partitions<'a> {
             self_.ota.ota_1,
             self_.ota.factory,
         ] {
-            assert!(part.size() > 0, "partition {} must not me empty", part.tag);
+            assert!(part.size() > 0, "partition {} must not be empty", part.tag);
         }
-
         self_
     }
 }
 
+// Implement FirmwareReader for EspFlashPartition
+impl<'a> FirmwareReader for EspFlashPartition<'a> {
+    fn sector_size(&self) -> u32 {
+        4096 // SECTOR_SIZE as u32
+    }
+
+    fn n_sectors(&self) -> u32 {
+        self.n_sectors()
+    }
+
+    fn size(&self) -> u32 {
+        self.n_sectors() * 4096
+    }
+
+    fn read_sector(&self, sector: u32) -> Result<Vec<u8>, FirmwareSizeError> {
+        match FlashPartition::read_sector(self, sector) {
+            Ok(sector_data) => Ok(sector_data.to_vec()),
+            Err(e) => Err(FirmwareSizeError::IoError(format!(
+                "Failed to read sector {}: {:?}",
+                sector, e
+            ))),
+        }
+    }
+}
+
 pub trait PartitionExt {
-    fn sha256_digest(&self, sha256: &mut Sha<'_>) -> Sha256Digest;
+    fn sha256_digest(&self, sha256: &mut Sha<'_>, firmware_size: u32) -> Sha256Digest;
+    fn firmware_size(&self) -> Result<u32, FirmwareSizeError>;
 }
 
 impl PartitionExt for EspFlashPartition<'_> {
-    fn sha256_digest(&self, sha256: &mut esp_hal::sha::Sha<'_>) -> Sha256Digest {
+    fn sha256_digest(
+        &self,
+        sha256: &mut esp_hal::sha::Sha<'_>,
+        firmware_size: u32,
+    ) -> Sha256Digest {
         let mut digest = [0u8; 32];
         let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
+        let mut bytes_hashed = 0u32;
         for i in 0..self.n_sectors() {
+            if bytes_hashed >= firmware_size {
+                break;
+            }
             let sector = self.read_sector(i).unwrap();
-            let mut remaining = &sector[..];
+            let bytes_to_hash = (firmware_size - bytes_hashed).min(sector.len() as u32) as usize;
+            let mut remaining = &sector[..bytes_to_hash];
             while !remaining.is_empty() {
                 remaining = nb::block!(hasher.update(remaining)).unwrap();
             }
+            bytes_hashed += bytes_to_hash as u32;
         }
-
         nb::block!(hasher.finish(&mut digest)).unwrap();
-
         Sha256Digest(digest)
+    }
+
+    fn firmware_size(&self) -> Result<u32, FirmwareSizeError> {
+        crate::firmware::firmware_size(self)
     }
 }
