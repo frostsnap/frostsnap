@@ -415,14 +415,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
 
     const titleText = 'Connected Devices';
     final header = isFullscreen
-        ? SliverAppBar.large(
-            title: Text(titleText),
-            leading: IconButton(
-              icon: Icon(Icons.close_rounded),
-              onPressed: () => Navigator.pop(context),
-            ),
-            pinned: true,
-          )
+        ? SliverAppBar.large(title: Text(titleText), pinned: true)
         : SliverPinnedHeader(
             child: TopBar(
               title: Text(titleText),

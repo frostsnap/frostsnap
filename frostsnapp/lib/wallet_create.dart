@@ -152,7 +152,6 @@ class WalletCreateController extends ChangeNotifier {
           },
         ),
       ],
-      onDismissed: _onCancel,
     );
   }
 
@@ -520,7 +519,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             child: Card.outlined(
               margin: EdgeInsets.zero,
               child: ListTile(
+                dense: true,
                 title: Text('Plug in devices to include them in this wallet.'),
+                contentPadding: EdgeInsets.symmetric(horizontal: 16),
                 leading: Icon(Icons.info_rounded),
               ),
             ),
@@ -784,6 +785,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   Widget buildDisconnectedWarningCard(BuildContext context) => Card.outlined(
     margin: EdgeInsets.symmetric(vertical: 16),
     child: ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 16),
       leading: Icon(Icons.warning_rounded),
       title: Text(
         'One or more devices have been disconnected. Reconnect to continue.',
@@ -818,14 +821,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
     final titleText = '${_controller.title}$appBarTrailingText';
     final header = isFullscreen
-        ? SliverAppBar.large(
-            title: Text(titleText),
-            leading: IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: Icon(Icons.close),
-            ),
-            pinned: true,
-          )
+        ? SliverAppBar.large(title: Text(titleText), pinned: true)
         : SliverPinnedHeader(child: TopBar(title: Text(titleText)));
 
     return Column(
@@ -833,35 +829,31 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Flexible(
-          child: AnimatedSize(
-            duration: Durations.medium1,
-            curve: Curves.easeInOutCubicEmphasized,
-            child: AnimatedSwitcher(
-              duration: Durations.short4,
-              child: CustomScrollView(
-                key: ValueKey<WalletCreateStep>(_controller.step),
-                physics: ClampingScrollPhysics(),
-                shrinkWrap: windowSize != WindowSizeClass.compact,
-                slivers: [
-                  header,
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: topSectionPadding.copyWith(
-                        top: isFullscreen ? null : 8,
-                      ),
-                      child: Text(
-                        _controller.subtitle,
-                        style: theme.textTheme.titleMedium,
-                      ),
+          child: AnimatedSwitcher(
+            duration: Durations.short4,
+            child: CustomScrollView(
+              key: ValueKey<WalletCreateStep>(_controller.step),
+              physics: ClampingScrollPhysics(),
+              shrinkWrap: windowSize != WindowSizeClass.compact,
+              slivers: [
+                header,
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: topSectionPadding.copyWith(
+                      top: isFullscreen ? null : 8,
+                    ),
+                    child: Text(
+                      _controller.subtitle,
+                      style: theme.textTheme.titleMedium,
                     ),
                   ),
-                  SliverPadding(
-                    padding: sectionPadding,
-                    sliver: buildBody(context),
-                  ),
-                  SliverPadding(padding: EdgeInsets.only(bottom: 32)),
-                ],
-              ),
+                ),
+                SliverPadding(
+                  padding: sectionPadding,
+                  sliver: buildBody(context),
+                ),
+                SliverPadding(padding: EdgeInsets.only(bottom: 32)),
+              ],
             ),
           ),
         ),
