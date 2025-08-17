@@ -117,6 +117,12 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         (device) => deviceIdEquals(device.id, widget.deviceId),
       );
       if (device?.name == null) await _eraseController.clearAllActionsNeeded();
+      final _deviceWasSome = _device != null;
+      final updateIsNone = device == null;
+      if (_deviceWasSome && updateIsNone) {
+        Navigator.pop(context);
+        return;
+      }
       setState(() {
         _gotFirstData = true;
         _device = device;
@@ -188,28 +194,9 @@ class _DeviceDetailsState extends State<DeviceDetails> {
   }
 
   Widget _buildDisconnectedWidget(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 40),
-      child: Center(
-        heightFactor: 2.1,
-        child: Column(
-          spacing: 12,
-          children: [
-            Icon(
-              Icons.sentiment_dissatisfied,
-              color: theme.colorScheme.onSurfaceVariant,
-              size: 64,
-            ),
-            Text(
-              'Device disconnected',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: Center(heightFactor: 2.1, child: CircularProgressIndicator()),
     );
   }
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -193,6 +192,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
       );
     }
     final success = progress == 1.0;
+    await Future.delayed(Duration(seconds: 1));
     await _dialogController.clearAllActionsNeeded();
     await showUpgradeDoneDialog(context, success);
     return success;
@@ -208,7 +208,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
               ? Text.rich(
                   TextSpan(
                     children: [
-                      TextSpan(text: 'Upgraded to firmware '),
+                      TextSpan(text: 'Upgraded device(s) to firmware '),
                       TextSpan(
                         text: coord.upgradeFirmwareDigest() ?? '',
                         style: monospaceTextStyle,
