@@ -563,7 +563,7 @@ class WalletDrawer extends StatelessWidget {
   static const allShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.all(outerRadius),
   );
-  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 0);
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 4);
 
   @override
   Widget build(BuildContext context) {
@@ -638,6 +638,13 @@ class WalletDrawer extends StatelessWidget {
                     dense: true,
                     contentPadding: tilePadding,
                     leading: Icon(Icons.devices_rounded),
+                    trailing: StreamBuilder(
+                      stream: GlobalStreams.deviceListSubject,
+                      builder: (context, snapshot) {
+                        final n = snapshot.data?.state.devices.length;
+                        return n == null ? SizedBox.shrink() : Text('$n');
+                      },
+                    ),
                     title: Text('Connected Devices'),
                     textColor: theme.colorScheme.secondary,
                     iconColor: theme.colorScheme.secondary,
