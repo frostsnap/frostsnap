@@ -108,7 +108,8 @@ where
         }
 
         let active_partition = partitions.ota.active_partition();
-        let active_firmware_digest = active_partition.sha256_digest(&mut sha256);
+        let firmware_size = active_partition.firmware_size().unwrap();
+        let active_firmware_digest = active_partition.sha256_digest(&mut sha256, firmware_size);
 
         let device_id = signer.device_id();
         if let Some(name) = &name {
