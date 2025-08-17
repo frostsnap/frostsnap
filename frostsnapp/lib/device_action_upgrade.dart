@@ -93,7 +93,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
             final theme = Theme.of(context);
             return Row(
               mainAxisSize: MainAxisSize.min,
-              spacing: 12,
+              spacing: 4,
               children: [
                 ...switch (state.stage) {
                   FirmwareUpgradeStage.Acks => [
@@ -116,9 +116,15 @@ class DeviceActionUpgradeController with ChangeNotifier {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    SizedBox(
-                      width: 100,
-                      child: LinearProgressIndicator(value: state.progress),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 16.0,
+                        horizontal: 8.0,
+                      ),
+                      child: SizedBox(
+                        width: 100,
+                        child: LinearProgressIndicator(value: state.progress),
+                      ),
                     ),
                   ],
                 },
@@ -186,8 +192,42 @@ class DeviceActionUpgradeController with ChangeNotifier {
         FirmwareUpgradeState.progress(progress: progress),
       );
     }
-
+    final success = progress == 1.0;
     await _dialogController.clearAllActionsNeeded();
-    return progress == 1.0;
+    await showUpgradeDoneDialog(context, success);
+    return success;
+  }
+
+  Future<void> showUpgradeDoneDialog(BuildContext context, bool success) async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(success ? 'Upgrade Successful' : 'Upgrade Failed'),
+          content: success
+              ? Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: 'Upgraded to firmware '),
+                      TextSpan(
+                        text: coord.upgradeFirmwareDigest() ?? '',
+                        style: monospaceTextStyle,
+                      ),
+                    ],
+                  ),
+                )
+              : Text(
+                  'Either a device got disconnected mid-upgrade, or you encountered a bug!',
+                ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Done'),
+            ),
+          ],
+          actionsAlignment: MainAxisAlignment.end,
+        );
+      },
+    );
   }
 }
