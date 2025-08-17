@@ -251,7 +251,6 @@ class DeviceActionHint extends StatelessWidget {
     final theme = Theme.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
-      spacing: 12,
       children: [
         Text(
           label,
@@ -259,8 +258,14 @@ class DeviceActionHint extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 20),
-        SizedBox(width: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: Icon(
+            icon,
+            color: theme.colorScheme.onSurfaceVariant,
+            size: 20,
+          ),
+        ),
       ],
     );
   }

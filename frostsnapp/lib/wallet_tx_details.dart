@@ -264,18 +264,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   bool? broadcastDone;
   Set<DeviceId> connectedDevices = deviceIdSet([]);
 
-  final actionDialogController = FullscreenActionDialogController(
-    title: 'Confirm transaction on device',
-    actionButtons: [
-      Builder(
-        builder: (context) => OutlinedButton(
-          child: Text('Cancel'),
-          onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
-        ),
-      ),
-      DeviceActionHint(),
-    ],
-  );
+  late final actionDialogController;
 
   bool? get signingDone => signingState == null
       ? null
@@ -316,6 +305,11 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     }
   }
 
+  void _onCancelSigning() {
+    if (signingDone ?? false) return;
+    Navigator.popUntil(context, (r) => r.isFirst);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -324,6 +318,20 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     ssid = widget.signingSessionId ?? widget.finishedSigningSessionId;
 
     txStateSub = widget.txStates.listen(onTxStateData);
+
+    actionDialogController = FullscreenActionDialogController(
+      title: 'Sign transaction with device',
+      actionButtons: [
+        Builder(
+          builder: (context) => OutlinedButton(
+            child: Text('Cancel'),
+            onPressed: _onCancelSigning,
+          ),
+        ),
+        DeviceActionHint(),
+      ],
+      onDismissed: _onCancelSigning,
+    );
 
     if (widget.isSigning) {
       devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);

@@ -140,38 +140,17 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         );
       },
       actionButtons: [
-        OutlinedButton(
-          child: Text('Cancel'),
-          onPressed: () async {
-            final id = _device?.id;
-            if (id != null) await coord.sendCancel(id: id);
-            await _eraseController.clearAllActionsNeeded();
-          },
-        ),
-        Builder(
-          builder: (context) {
-            final theme = Theme.of(context);
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 12,
-              children: [
-                Text(
-                  'Confirm on device',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Icon(
-                  Icons.touch_app_rounded,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
-            );
-          },
-        ),
+        OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
+        DeviceActionHint(),
       ],
+      onDismissed: _onCancel,
     );
+  }
+
+  void _onCancel() async {
+    final id = _device?.id;
+    if (id != null) await coord.sendCancel(id: id);
+    await _eraseController.clearAllActionsNeeded();
   }
 
   @override

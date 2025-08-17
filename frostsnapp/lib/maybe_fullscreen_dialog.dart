@@ -126,7 +126,7 @@ class _MaybeFullscreenDialogState extends State<MaybeFullscreenDialog>
       valueListenable: _sizeClass,
       child: ConstrainedBox(
         key: boxKey,
-        constraints: const BoxConstraints(maxWidth: 640),
+        constraints: const BoxConstraints(maxWidth: 560),
         child: widget.child,
       ),
       builder: (context, sizeClass, child) => WindowSizeContext(

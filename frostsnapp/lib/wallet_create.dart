@@ -125,10 +125,7 @@ class WalletCreateController extends ChangeNotifier {
         },
       ),
       actionButtons: [
-        OutlinedButton(
-          onPressed: () async => await coord.cancelProtocol(),
-          child: Text('Cancel'),
-        ),
+        OutlinedButton(onPressed: _onCancel, child: Text('Cancel')),
         ListenableBuilder(
           listenable: this,
           builder: (context, _) {
@@ -155,6 +152,7 @@ class WalletCreateController extends ChangeNotifier {
           },
         ),
       ],
+      onDismissed: _onCancel,
     );
   }
 
@@ -172,6 +170,10 @@ class WalletCreateController extends ChangeNotifier {
   @override
   void notifyListeners() {
     if (hasListeners) super.notifyListeners();
+  }
+
+  void _onCancel() async {
+    await coord.cancelProtocol();
   }
 
   Future<void> resetDeviceNames(Iterable<ConnectedDevice> devices) async {

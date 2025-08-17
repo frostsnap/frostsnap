@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -79,7 +80,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
           builder: (context, snapshot) => switch (snapshot.requireData.stage) {
             FirmwareUpgradeStage.Acks => OutlinedButton(
               child: Text('Cancel'),
-              onPressed: () async => await coord.cancelProtocol(),
+              onPressed: _onCancel,
             ),
             FirmwareUpgradeStage.Progress => SizedBox.shrink(),
           },
@@ -126,7 +127,10 @@ class DeviceActionUpgradeController with ChangeNotifier {
           },
         ),
       ],
-      onDismissed: () async => await coord.cancelProtocol(),
+
+      // NOTE: We purposefully disable cancelling on 'back' as there is no way to stop a commencing
+      // upgrade other than unplugging the device.
+      // onDismissed: _onCancel,
     );
   }
 
@@ -136,6 +140,10 @@ class DeviceActionUpgradeController with ChangeNotifier {
     _dialogController.dispose();
     _progressController.close();
     super.dispose();
+  }
+
+  void _onCancel() async {
+    await coord.cancelProtocol();
   }
 
   /// Number of devices that needs upgrade.

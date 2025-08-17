@@ -55,20 +55,14 @@ class DeviceActionBackupController with ChangeNotifier {
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: InfoRow.toColumn(context, [
-              InfoRow('For share', '#$deviceIndex'),
+              InfoRow('For key', '#$deviceIndex'),
               InfoRow('Of wallet', walletName ?? ''),
             ]),
           ),
         );
       },
       actionButtons: [
-        OutlinedButton(
-          child: Text('Cancel'),
-          onPressed: () {
-            if (_cancelButtonController.isClosed) return;
-            _cancelButtonController.add(null);
-          },
-        ),
+        OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
         ListenableBuilder(
           listenable: this,
           builder: (context, _) {
@@ -85,6 +79,7 @@ class DeviceActionBackupController with ChangeNotifier {
           },
         ),
       ],
+      onDismissed: _onCancel,
     );
   }
 
@@ -94,6 +89,11 @@ class DeviceActionBackupController with ChangeNotifier {
     await _backupRecordedButtonController.close();
     _dialogController.dispose();
     super.dispose();
+  }
+
+  void _onCancel() {
+    if (_cancelButtonController.isClosed) return;
+    _cancelButtonController.add(null);
   }
 
   Future<bool> show(BuildContext context, DeviceId id) async {

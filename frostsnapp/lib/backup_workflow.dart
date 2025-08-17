@@ -95,7 +95,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
     );
   }
 
-  showThatWasQuickDialog(BuildContext context, DeviceId deviceId) async {
+  void showThatWasQuickDialog(BuildContext context, DeviceId deviceId) async {
     final manager = FrostsnapContext.of(context)!.backupManager;
     final walletCtx = WalletContext.of(context)!;
 
@@ -315,8 +315,8 @@ class _BackupChecklistState extends State<BackupChecklist> {
                             : FilledButton.styleFrom(
                                 backgroundColor: theme.colorScheme.primary,
                               ),
-                        onPressed: () async =>
-                            await showThatWasQuickDialog(context, deviceId),
+                        onPressed: () =>
+                            showThatWasQuickDialog(context, deviceId),
                         child: isCompleted
                             ? const Text('Show')
                             : Text("I'm here"),
