@@ -45,3 +45,62 @@ impl<const N: usize> core::fmt::Write for PanicBuffer<N> {
         Ok(())
     }
 }
+
+/// Display an error message on the screen with a red header
+pub fn error_print<DT>(display: &mut DT, error: impl AsRef<str>)
+where
+    DT: embedded_graphics::draw_target::DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>
+        + embedded_graphics::prelude::OriginDimensions,
+{
+    use embedded_graphics::{
+        geometry::{Point, Size},
+        pixelcolor::Rgb565,
+        prelude::*,
+        primitives::{PrimitiveStyleBuilder, Rectangle},
+        text::{Alignment, Text},
+    };
+    use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
+    use frostsnap_embedded_widgets::palette::PALETTE;
+
+    let y = 25;
+    let header_area = Rectangle::new(Point::zero(), Size::new(display.size().width, y));
+    let _ = header_area
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(PALETTE.error)
+                .build(),
+        )
+        .draw(display);
+
+    let error_header_text = "Oh no, panic!";
+    let _ = Text::with_alignment(
+        error_header_text,
+        Point::new((display.size().width / 2) as i32, 17),
+        embedded_graphics::mono_font::MonoTextStyle::new(
+            &embedded_graphics::mono_font::ascii::FONT_9X15,
+            Rgb565::WHITE,
+        ),
+        Alignment::Center,
+    )
+    .draw(display);
+
+    let textbox_style = TextBoxStyleBuilder::new()
+        .alignment(HorizontalAlignment::Justified)
+        .build();
+
+    let body_area = Rectangle::new(
+        Point::new(10, y as i32 + 5),
+        Size::new(display.size().width - 20, display.size().height - y - 10),
+    );
+
+    let _ = TextBox::with_textbox_style(
+        error.as_ref(),
+        body_area,
+        embedded_graphics::mono_font::MonoTextStyle::new(
+            &embedded_graphics::mono_font::ascii::FONT_6X10,
+            PALETTE.on_background,
+        ),
+        textbox_style,
+    )
+    .draw(display);
+}

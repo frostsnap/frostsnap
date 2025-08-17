@@ -537,7 +537,7 @@ impl Env for ProptestEnv {
     ) {
         use DeviceToUserMessage::*;
         match message {
-            FinalizeKeyGen => {
+            FinalizeKeyGen { .. } => {
                 // TODO: Do we need to keep track of keygen-finalized messages received by the user?
                 // TODO: Ignore for now.
             }

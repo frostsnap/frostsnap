@@ -142,7 +142,7 @@ pub struct KeyGenPhase1 {
     pub key_purpose: KeyPurpose,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenPhase2 {
     pub keygen_id: KeygenId,
     secret_share: PairedSecretShare,
@@ -439,10 +439,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             &message,
                             format!("device doesn't have keygen for {keygen_id}"),
                         ))?;
+                    let key_name = keygen_pending_finalize.key_name.clone();
                     self.save_complete_share(keygen_pending_finalize);
 
                     Ok(vec![DeviceSend::ToUser(Box::new(
-                        DeviceToUserMessage::FinalizeKeyGen,
+                        DeviceToUserMessage::FinalizeKeyGen { key_name },
                     ))])
                 }
             },
@@ -759,6 +760,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             .shares
             .get(&share_index)
             .cloned()
+    }
+
+    pub fn key_names(&self) -> impl Iterator<Item = (KeyId, &str)> {
+        self.keys
+            .iter()
+            .map(|(key_id, data)| (*key_id, data.key_name.as_str()))
     }
 }
 

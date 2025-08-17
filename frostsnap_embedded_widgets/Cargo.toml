@@ -1,0 +1,33 @@
+[package]
+name = "frostsnap_embedded_widgets"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+embedded-graphics = "0.8.1"
+u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
+embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px", "96px"] }
+embedded-text = "0.7.0"
+micromath = "0.2"
+frostsnap_backup = { workspace = true }
+frostsnap_core = { workspace = true }
+frostsnap_macros = { path = "../macros" }
+bincode = { workspace = true }
+bitcoin = { workspace = true }
+
+# For the simulator binary
+[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
+embedded-graphics-simulator = "0.6.0"
+rand = "0.8"
+
+[dev-dependencies]
+proptest = "=1.6.0"
+
+[[bin]]
+name = "simulate"
+required-features = []
+

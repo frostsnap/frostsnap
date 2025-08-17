@@ -4,10 +4,14 @@ use crate::{
     io::SerialInterface,
     ota,
     partitions::PartitionExt,
-    ui::{self, UiEvent, UserInteraction},
+    ui::{self, UiEvent, UserInteraction, Workflow},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{
+    collections::VecDeque,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::cell::RefCell;
 use esp_hal::{gpio, sha::Sha, timer};
 use esp_storage::FlashStorage;
@@ -18,7 +22,7 @@ use frostsnap_comms::{
 use frostsnap_comms::{Downstream, MAGIC_BYTES_PERIOD};
 use frostsnap_core::{
     device::{DeviceToUserMessage, FrostSigner},
-    message::{DeviceSend, DeviceToCoordinatorMessage},
+    message::DeviceSend,
 };
 use rand_chacha::rand_core::RngCore;
 
@@ -111,9 +115,6 @@ where
         let active_firmware_digest = active_partition.sha256_digest(&mut sha256);
 
         let device_id = signer.device_id();
-        if let Some(name) = &name {
-            ui.set_device_name(name.into());
-        }
 
         let mut soft_reset = true;
         let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
@@ -125,18 +126,30 @@ where
         // the upstream doesn't think we're awake yet and we should soft reset.
         let mut magic_bytes_timeout_counter = 0;
 
-        ui.set_workflow(ui::Workflow::WaitingFor(
-            ui::WaitingFor::LookingForUpstream {
-                jtag: upstream_serial.is_jtag(),
-            },
-        ));
-
         let mut upstream_connection = UpstreamConnection::new(device_id);
 
         ui.set_upstream_connection_state(upstream_connection.state);
         let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
         let mut ui_event_queue = VecDeque::default();
         let mut conch_is_downstream = false;
+        let mut pending_device_name: Option<String> = None;
+
+        macro_rules! default_workflow {
+            ($name:expr, $signer:expr) => {
+                if let Some(ref name) = $name {
+                    Workflow::Standby {
+                        name: name.clone(),
+                        key_name: $signer
+                            .key_names()
+                            .next()
+                            .map(|(_, name)| name.to_string())
+                            .unwrap_or("unknown".to_string()),
+                    }
+                } else {
+                    Workflow::None
+                }
+            };
+        }
 
         ui.clear_busy_task();
         loop {
@@ -150,10 +163,10 @@ where
                 downstream_connection_state = DownstreamConnectionState::Disconnected;
                 upstream_connection.set_state(UpstreamConnectionState::PowerOn, &mut ui);
                 next_write_magic_bytes_downstream = Instant::from_ticks(0);
+                ui.set_workflow(default_workflow!(name, signer));
                 upgrade = None;
-                ui.set_device_name(name.clone());
+                pending_device_name = None;
                 outbox.clear();
-                ui.cancel();
             }
             let is_usb_connected_downstream = !downstream_detect.is_high();
 
@@ -361,7 +374,7 @@ where
                             // We get unexpected magic bytes after receiving normal messages.
                             // Upstream must have reset so we should reset.
                             soft_reset = true;
-                        } else if magic_bytes_timeout_counter > 1 {
+                        } else if magic_bytes_timeout_counter > 20 {
                             // We keep receving magic bytes so we reset the
                             // connection and try announce again.
                             upstream_connection
@@ -379,20 +392,16 @@ where
                 }
             }
 
-            if let Some(ui_event) = ui.poll() {
-                ui_event_queue.push_back(ui_event);
-            }
-
             if has_conch || !conch_is_downstream {
                 // we don't have the conch so we shouldn't do any more work -- just restart the loop
                 for message_body in inbox.drain(..) {
                     match &message_body {
                         CoordinatorSendBody::Cancel => {
                             signer.clear_tmp_data();
-                            ui.cancel();
+                            ui.set_workflow(default_workflow!(name, signer));
                             // This either resets to the previous name, or clears it (if prev name does
                             // not exist).
-                            ui.set_device_name(name.clone());
+                            pending_device_name = None;
                             upgrade = None;
                         }
                         CoordinatorSendBody::AnnounceAck => {
@@ -403,7 +412,10 @@ where
                         }
                         CoordinatorSendBody::Naming(naming) => match naming {
                             frostsnap_comms::NameCommand::Preview(preview_name) => {
-                                ui.set_device_name(Some(preview_name));
+                                pending_device_name = Some(preview_name.to_string());
+                                ui.set_workflow(ui::Workflow::NamingDevice {
+                                    new_name: preview_name.to_string(),
+                                });
                             }
                             frostsnap_comms::NameCommand::Prompt(new_name) => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::NewName {
@@ -461,26 +473,14 @@ where
                 while let Some(send) = outbox.pop_front() {
                     match send {
                         DeviceSend::ToCoordinator(boxed) => {
-                            if matches!(
-                                boxed.as_ref(),
-                                DeviceToCoordinatorMessage::KeyGenResponse(_)
-                            ) {
-                                ui.set_workflow(ui::Workflow::WaitingFor(
-                                    ui::WaitingFor::CoordinatorResponse(
-                                        ui::WaitingResponse::KeyGen,
-                                    ),
-                                ));
-                            }
-
                             upstream_connection.send_to_coordinator([DeviceSendBody::Core(*boxed)]);
                         }
                         DeviceSend::ToUser(boxed) => {
                             match *boxed {
-                                DeviceToUserMessage::FinalizeKeyGen => {
-                                    let new_name = ui
-                                        .get_device_name()
-                                        .expect("must have set name before starting keygen")
-                                        .to_string();
+                                DeviceToUserMessage::FinalizeKeyGen { key_name: _ } => {
+                                    let new_name = pending_device_name.clone().expect(
+                                        "must have set pending_device_name before starting keygen",
+                                    );
                                     // Save the device's name now that it's finished
                                     name = Some(new_name.clone());
                                     mutation_log
@@ -533,9 +533,7 @@ where
                                             });
                                         }
                                         EnterBackup { phase } => {
-                                            ui.set_workflow(ui::Workflow::EnteringBackup(
-                                                ui::EnteringBackupStage::Init { phase },
-                                            ));
+                                            ui.set_workflow(ui::Workflow::EnteringBackup(phase));
                                         }
                                         BackupSaved { .. } => {
                                             ui.set_recovery_mode(true);
@@ -558,25 +556,13 @@ where
                 }
 
                 for ui_event in ui_event_queue.drain(..) {
-                    let mut switch_workflow = Some(ui::Workflow::WaitingFor(
-                        ui::WaitingFor::CoordinatorInstruction {
-                            completed_task: Some(ui_event.clone()),
-                        },
-                    )); // this is just the default
-
                     match ui_event {
                         UiEvent::KeyGenConfirm { phase } => {
-                            let waiting_for = ui::WaitingFor::WaitingForKeyGenFinalize {
-                                key_name: phase.key_name().to_string(),
-                                t_of_n: phase.t_of_n(),
-                                session_hash: phase.session_hash(),
-                            };
                             outbox.extend(
                                 signer
                                     .keygen_ack(*phase, &mut hmac_keys.share_encryption, &mut rng)
                                     .expect("state changed while confirming keygen"),
                             );
-                            switch_workflow = Some(ui::Workflow::WaitingFor(waiting_for));
                         }
                         UiEvent::SigningConfirm { phase } => {
                             ui.set_busy_task(ui::BusyTask::Signing);
@@ -587,11 +573,14 @@ where
                             );
                         }
                         UiEvent::NameConfirm(ref new_name) => {
-                            name = Some(new_name.into());
                             mutation_log
                                 .push(Mutation::Name(new_name.to_string()))
                                 .expect("flash write fail");
-                            ui.set_device_name(new_name.into());
+                            name = Some(new_name.to_string());
+                            pending_device_name = Some(new_name.to_string());
+                            ui.set_workflow(ui::Workflow::NamingDevice {
+                                new_name: new_name.to_string(),
+                            });
                             upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
                                 name: new_name.into(),
                             }]);
@@ -610,8 +599,6 @@ where
                             if let Some(upgrade) = upgrade.as_mut() {
                                 upgrade.upgrade_confirm();
                             }
-                            // special case because upgrade will handle things from now on
-                            switch_workflow = None;
                         }
                         UiEvent::EnteredShareBackup {
                             phase,
@@ -627,18 +614,14 @@ where
                             reset(&mut upstream_serial);
                         }
                     }
-
-                    if let Some(switch_workflow) = switch_workflow {
-                        ui.set_workflow(switch_workflow);
-                    }
                 }
-            }
 
-            // XXX: We let the ui redraw itself again in case one of the messages we processed led
-            // to ui state change. This could be fixed maybe by distinguishing between polling for
-            // redrawing and polling for events.
-            if let Some(ui_event) = ui.poll() {
-                ui_event_queue.push_back(ui_event);
+                // XXX: We let the ui redraw itself again in case one of the messages we processed led
+                // to ui state change. This could be fixed maybe by distinguishing between polling for
+                // redrawing and polling for events.
+                if let Some(ui_event) = ui.poll() {
+                    ui_event_queue.push_back(ui_event);
+                }
             }
 
             if has_conch {

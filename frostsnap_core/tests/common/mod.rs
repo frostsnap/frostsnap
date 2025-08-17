@@ -117,7 +117,7 @@ pub trait Env {
         rng: &mut impl RngCore,
     ) {
         match message {
-            DeviceToUserMessage::FinalizeKeyGen => {}
+            DeviceToUserMessage::FinalizeKeyGen { .. } => {}
             DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                 let ack = run
                     .device(from)
