@@ -142,47 +142,69 @@ Future<T?> showFullscreenActionDialog<T>(
   final body = controller.body;
   final actionButtons = controller.actionButtons;
 
-  final content = Padding(
-    padding: const EdgeInsets.all(20).copyWith(top: 32),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SvgPicture.string(
-          DeviceWidget.deviceSvg,
-          width: 162,
-          height: 134,
-          colorFilter: ColorFilter.mode(
-            theme.colorScheme.onSurface,
-            BlendMode.srcATop,
-          ),
+  final bodyColumn = Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SvgPicture.string(
+        DeviceWidget.deviceSvg,
+        width: 162,
+        height: 134,
+        colorFilter: ColorFilter.mode(
+          theme.colorScheme.onSurface,
+          BlendMode.srcATop,
         ),
-        if (title != null) ...[
-          SizedBox(height: 32),
-          Text(
-            title,
-            style: theme.textTheme.headlineSmall,
-            textAlign: TextAlign.center,
-          ),
-        ],
-        if (body != null) ...[
-          SizedBox(height: 24),
-          DefaultTextStyle(
-            style: theme.textTheme.bodyLarge!,
-            child: body(context),
-          ),
-        ],
-        if (actionButtons != null) ...[
-          SizedBox(height: 32),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            mainAxisSize: MainAxisSize.max,
-            spacing: 8,
-            children: actionButtons,
-          ),
-        ],
+      ),
+      if (title != null) ...[
+        SizedBox(height: 32),
+        Text(
+          title,
+          style: theme.textTheme.headlineSmall,
+          textAlign: TextAlign.center,
+        ),
       ],
+      if (body != null) ...[
+        SizedBox(height: 24),
+        DefaultTextStyle(
+          style: theme.textTheme.bodyLarge!,
+          child: body(context),
+        ),
+      ],
+    ],
+  );
+
+  final footerRow = Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    mainAxisSize: MainAxisSize.max,
+    spacing: 8,
+    children: actionButtons ?? [],
+  );
+
+  final card = Card(
+    color: Colors.black,
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          bodyColumn,
+          if (actionButtons != null) ...[SizedBox(height: 32), footerRow],
+        ],
+      ),
     ),
+  );
+
+  final scaffold = Scaffold(
+    backgroundColor: Colors.black,
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        child: bodyColumn,
+      ),
+    ),
+    persistentFooterButtons: [footerRow],
   );
 
   final listenableBuilder = ListenableBuilder(
@@ -191,22 +213,7 @@ Future<T?> showFullscreenActionDialog<T>(
       if (!controller.hasActionsNeeded) Navigator.pop(context);
       final windowSize = WindowSizeContext.of(context);
       final isCompact = windowSize == WindowSizeClass.compact;
-
-      return SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 580),
-            child: isCompact
-                ? content
-                : Card(
-                    elevation: 10,
-                    color: Colors.black26,
-                    margin: EdgeInsets.zero,
-                    child: content,
-                  ),
-          ),
-        ),
-      );
+      return isCompact ? scaffold : card;
     },
   );
 
@@ -221,7 +228,7 @@ Future<T?> showFullscreenActionDialog<T>(
         if (didPop) return;
         showCannotDismissDialog(context);
       },
-      child: BackdropFilter(filter: blurFilter, child: listenableBuilder),
+      child: listenableBuilder,
     ),
   );
 
@@ -253,6 +260,7 @@ class DeviceActionHint extends StatelessWidget {
           ),
         ),
         Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 20),
+        SizedBox(width: 8),
       ],
     );
   }
