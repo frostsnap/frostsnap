@@ -66,7 +66,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
       body: (context) => Card(
         margin: EdgeInsets.zero,
         child: ListTile(
-          title: Text('Firmware Digest'),
+          title: Text('New Firmware Digest'),
           subtitle: Text(
             coord.upgradeFirmwareDigest() ?? '',
             style: monospaceTextStyle,
