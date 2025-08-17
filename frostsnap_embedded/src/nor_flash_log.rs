@@ -43,7 +43,7 @@ impl<'a, S: NorFlash> NorFlashLog<'a, S> {
         Ok(())
     }
 
-    pub fn seek_iter<I: bincode::Decode>(
+    pub fn seek_iter<I: bincode::Decode<()>>(
         &mut self,
     ) -> impl Iterator<Item = Result<I, bincode::error::DecodeError>> + use<'_, 'a, S, I> {
         self.word_pos = 0;

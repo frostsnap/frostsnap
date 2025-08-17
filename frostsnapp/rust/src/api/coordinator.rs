@@ -6,7 +6,7 @@ pub use frostsnap_core::coordinator::CoordAccessStructure as AccessStructure;
 pub use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
     coordinator::CoordFrostKey,
-    schnorr_fun::frost::{PartyIndex, SharedKey},
+    schnorr_fun::frost::{ShareIndex, SharedKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SymmetricKey,
 };
@@ -81,7 +81,7 @@ impl From<CoordFrostKey> for FrostKey {
 #[allow(unused)]
 pub struct _AccessStructure {
     app_shared_key: Xpub<SharedKey>,
-    device_to_share_index: BTreeMap<DeviceId, PartyIndex>,
+    device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
 }
 
 #[frb(external)]

@@ -1,7 +1,7 @@
 use crate::{bitcoin_transaction, device::KeyPurpose, tweak::AppTweak, MasterAppkey};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use bitcoin::hashes::Hash;
-use schnorr_fun::{fun::marker::*, Message, Schnorr, Signature};
+use schnorr_fun::{Message, Schnorr, Signature};
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash)]
 pub enum WireSignTask {
@@ -153,9 +153,9 @@ impl SignItem {
         schnorr.verify(&derived_key, self.schnorr_fun_message(), signature)
     }
 
-    pub fn schnorr_fun_message(&'_ self) -> schnorr_fun::Message<'_, Public> {
+    pub fn schnorr_fun_message(&self) -> schnorr_fun::Message<'_> {
         match self.app_tweak {
-            AppTweak::TestMessage => Message::plain("frostsnap-test", &self.message[..]),
+            AppTweak::TestMessage => Message::new("frostsnap-test", &self.message[..]),
             AppTweak::Bitcoin(_) => Message::raw(&self.message[..]),
             AppTweak::Nostr => Message::raw(&self.message[..]),
         }
