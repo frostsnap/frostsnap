@@ -95,7 +95,10 @@ class _BackupChecklistState extends State<BackupChecklist> {
     );
   }
 
-  void showThatWasQuickDialog(BuildContext context, DeviceId deviceId) async {
+  void maybeShowThatWasQuickDialog(
+    BuildContext context,
+    DeviceId deviceId,
+  ) async {
     final manager = FrostsnapContext.of(context)!.backupManager;
     final walletCtx = WalletContext.of(context)!;
 
@@ -275,62 +278,75 @@ class _BackupChecklistState extends State<BackupChecklist> {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isCompleted)
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor:
-                                theme.colorScheme.surfaceContainerLow,
-                            foregroundColor: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          onPressed: () async {
-                            while (true) {
-                              final isBackupValid = await _checkDialogController
-                                  .show(context, deviceId);
-                              if (isBackupValid == null) /* cancelled */ return;
-                              if (isBackupValid) {
-                                await showBackupOkayDialog(context);
-                                return;
-                              }
-
-                              final tryAgain = await showBackupInvalidDialog(
-                                context,
-                              );
-                              if (!tryAgain) return;
-                            }
-                          },
-                          child: const Text('Check'),
-                        ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        style: isCompleted
-                            ? FilledButton.styleFrom(
+                  leading: Icon(
+                    isCompleted ? Icons.check_circle : Icons.circle_outlined,
+                    color: isCompleted
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  trailing: StreamBuilder(
+                    stream: GlobalStreams.deviceListSubject,
+                    builder: (context, deviceListSnapshot) {
+                      final connectedDevice = deviceListSnapshot.data?.state
+                          .getDevice(id: deviceId);
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 8,
+                        children: [
+                          if (connectedDevice == null) Text('Disconnected'),
+                          if (isCompleted && connectedDevice != null)
+                            FilledButton(
+                              style: FilledButton.styleFrom(
                                 backgroundColor:
                                     theme.colorScheme.surfaceContainerLow,
                                 foregroundColor:
                                     theme.colorScheme.onSurfaceVariant,
-                              )
-                            : FilledButton.styleFrom(
-                                backgroundColor: theme.colorScheme.primary,
                               ),
-                        onPressed: () =>
-                            showThatWasQuickDialog(context, deviceId),
-                        child: isCompleted
-                            ? const Text('Show')
-                            : Text("I'm here"),
-                      ),
-                      const SizedBox(width: 16),
-                      Icon(
-                        isCompleted
-                            ? Icons.check_circle
-                            : Icons.circle_outlined,
-                        color: isCompleted
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ],
+                              onPressed: () async {
+                                while (true) {
+                                  final isBackupValid =
+                                      await _checkDialogController.show(
+                                        context,
+                                        deviceId,
+                                      );
+                                  if (isBackupValid == null) /* cancelled */
+                                    return;
+                                  if (isBackupValid) {
+                                    await showBackupOkayDialog(context);
+                                    return;
+                                  }
+
+                                  final tryAgain =
+                                      await showBackupInvalidDialog(context);
+                                  if (!tryAgain) return;
+                                }
+                              },
+                              child: const Text('Check'),
+                            ),
+                          if (connectedDevice != null)
+                            FilledButton(
+                              style: isCompleted
+                                  ? FilledButton.styleFrom(
+                                      backgroundColor:
+                                          theme.colorScheme.surfaceContainerLow,
+                                      foregroundColor:
+                                          theme.colorScheme.onSurfaceVariant,
+                                    )
+                                  : FilledButton.styleFrom(
+                                      backgroundColor:
+                                          theme.colorScheme.primary,
+                                    ),
+                              onPressed: () => maybeShowThatWasQuickDialog(
+                                context,
+                                deviceId,
+                              ),
+                              child: isCompleted
+                                  ? const Text('Show')
+                                  : Text("I'm here"),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               );
@@ -359,7 +375,12 @@ class _BackupChecklistState extends State<BackupChecklist> {
       controller: widget.scrollController,
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
-      slivers: [if (widget.showAppBar) appBar, infoColumn, devicesColumn],
+      slivers: [
+        if (widget.showAppBar) appBar,
+        infoColumn,
+        devicesColumn,
+        SliverSafeArea(sliver: SliverToBoxAdapter()),
+      ],
     );
   }
 }
