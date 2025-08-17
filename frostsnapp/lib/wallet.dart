@@ -140,12 +140,13 @@ class WalletHome extends StatelessWidget {
     final bottomBar = ListenableBuilder(
       listenable: walletListController,
       builder: (context, _) {
+        final bar = WalletBottomBar();
         return switch (walletListController.selected) {
           WalletItemKey item => item.tryWrapInWalletContext(
             context: context,
-            child: WalletBottomBar(),
+            child: bar,
           ),
-          _ => BottomAppBar(color: Colors.transparent),
+          _ => bar,
         };
       },
     );
@@ -712,6 +713,7 @@ class WalletBottomBar extends StatelessWidget {
     final theme = Theme.of(context);
     const elevation = 3.0;
     return BottomAppBar(
+      color: Colors.transparent,
       child: Align(
         alignment: AlignmentDirectional.center,
         child: ConstrainedBox(
