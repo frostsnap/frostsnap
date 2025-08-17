@@ -266,7 +266,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
     final nonEmptyRows = [
       ListTile(
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
-        title: Text('Name'),
+        title: Text('Device Name'),
         subtitle: Text(
           deviceName ?? 'Unnamed',
           style: monospaceTextStyle.copyWith(
