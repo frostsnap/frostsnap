@@ -364,10 +364,10 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "firmware_upgrade_progress" | "firmware_upgrade_download" => {
-                use $crate::firmware_upgrade::FirmwareUpgradeProgress;
+                use $crate::{ firmware_upgrade::FirmwareUpgradeProgress, Padding };
 
                 // Show downloading state at 65% progress
-                let widget = FirmwareUpgradeProgress::downloading(0.65);
+                let widget = Padding::symmetric(20, 0, FirmwareUpgradeProgress::downloading(0.65)) ;
                 $run_macro!(widget);
             }
             "firmware_upgrade_erase" => {

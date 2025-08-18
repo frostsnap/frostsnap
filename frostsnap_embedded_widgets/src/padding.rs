@@ -31,7 +31,7 @@ impl<W: Widget> Padding<W> {
     }
 
     /// Create padding with symmetric values (vertical and horizontal)
-    pub fn symmetric(vertical: u32, horizontal: u32, child: W) -> Self {
+    pub fn symmetric(horizontal: u32, vertical: u32, child: W) -> Self {
         Self {
             child,
             top: vertical,

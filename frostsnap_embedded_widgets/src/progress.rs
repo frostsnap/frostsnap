@@ -22,8 +22,6 @@ pub struct ProgressBar {
     /// Corner radius for the rounded rectangles
     corner_radius: u32,
     /// Padding from edges
-    padding: u32,
-    /// Pre-calculated bar rectangle (set in set_constraints)
     bar_rect: Option<Rectangle>,
     /// Last drawn filled width to track changes
     last_filled_width: Option<u32>,
@@ -38,7 +36,6 @@ impl ProgressBar {
             progress: Frac::ZERO,
             bar_height: 20,
             corner_radius: 10,
-            padding: 20,
             bar_rect: None,
             last_filled_width: None,
             background_drawn: false,
@@ -46,12 +43,11 @@ impl ProgressBar {
     }
 
     /// Create a new progress bar with custom dimensions
-    pub fn with_dimensions(bar_height: u32, corner_radius: u32, padding: u32) -> Self {
+    pub fn with_dimensions(bar_height: u32, corner_radius: u32) -> Self {
         Self {
             progress: Frac::ZERO,
             bar_height,
             corner_radius,
-            padding,
             bar_rect: None,
             last_filled_width: None,
             background_drawn: false,
@@ -77,21 +73,17 @@ impl Default for ProgressBar {
 
 impl crate::DynWidget for ProgressBar {
     fn sizing(&self) -> crate::Sizing {
-        // ProgressBar needs the full width available and has a fixed height
-        let rect = self
-            .bar_rect
-            .expect("ProgressBar::sizing called before set_constraints");
-        crate::Sizing {
-            width: rect.size.width + (self.padding * 2),
-            height: self.bar_height,
-        }
+        self.bar_rect
+            .expect("ProgressBar::sizing called before set_constraints")
+            .size
+            .into()
     }
 
     fn set_constraints(&mut self, max_size: Size) {
         // Pre-calculate the bar rectangle based on constraints
-        let bar_width = max_size.width - (self.padding * 2);
-        let bar_x = (max_size.width as i32 / 2) - (bar_width / 2) as i32;
-        let bar_y = (max_size.height as i32 / 2) - (self.bar_height / 2) as i32;
+        let bar_width = max_size.width;
+        let bar_x = 0;
+        let bar_y = 0;
 
         self.bar_rect = Some(Rectangle::new(
             Point::new(bar_x, bar_y),
@@ -134,7 +126,6 @@ impl Widget for ProgressBar {
                 .build();
 
             background_rect.into_styled(background_style).draw(target)?;
-            self.background_drawn = true;
         }
 
         // Calculate the filled width based on progress
@@ -188,11 +179,7 @@ impl Widget for ProgressBar {
 pub struct ProgressIndicator {
     /// Column containing the progress bar, spacer, and text switcher
     #[widget_delegate]
-    column: Column<(
-        ProgressBar,
-        SizedBox<Rgb565>,
-        Switcher<TextWidget<U8g2TextStyle<Rgb565>>>,
-    )>,
+    column: Column<(ProgressBar, Switcher<TextWidget<U8g2TextStyle<Rgb565>>>)>,
     /// Last percentage to track changes
     last_percentage: u32,
 }
@@ -207,13 +194,14 @@ impl ProgressIndicator {
     /// Create a new progress indicator
     pub fn new() -> Self {
         let progress_bar = ProgressBar::new();
-        let spacer = SizedBox::height(5);
         let initial_text =
             TextWidget::new("00%", U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background))
                 .with_alignment(Alignment::Center);
         let text_switcher = Switcher::new(initial_text);
 
-        let column = Column::new((progress_bar, spacer, text_switcher));
+        let column = Column::builder()
+            .push(progress_bar)
+            .push_with_gap(text_switcher, 8);
 
         Self {
             column,
@@ -236,7 +224,7 @@ impl ProgressIndicator {
                 U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background),
             )
             .with_alignment(Alignment::Center);
-            self.column.children.2.switch_to(new_text);
+            self.column.children.1.switch_to(new_text);
         }
     }
 
