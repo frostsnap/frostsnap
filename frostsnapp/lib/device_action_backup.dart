@@ -68,8 +68,7 @@ class DeviceActionBackupController with ChangeNotifier {
           builder: (context, _) {
             return _isShowingBackup
                 ? OutlinedButton.icon(
-                    icon: Icon(Icons.check_rounded),
-                    label: Text('Backup Recorded'),
+                    label: Text('Mark Backup Recorded'),
                     onPressed: () {
                       if (_backupRecordedButtonController.isClosed) return;
                       _backupRecordedButtonController.add(null);

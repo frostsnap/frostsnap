@@ -279,7 +279,7 @@ Widget buildInteractiveDevice(
           );
         },
         child: Text(
-          'New Device',
+          'Fresh Device',
           style: theme.textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),

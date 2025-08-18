@@ -206,7 +206,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
           ),
           ("Key Shares", keyList),
           ("Nonces", NonceCounterDisplay(id: device_.id)),
-          ("Update Firmware", firmwareSettings),
+          ("Upgrade Firmware", firmwareSettings),
           ("Wipe Device", wipeDeviceSettings),
         ],
       );

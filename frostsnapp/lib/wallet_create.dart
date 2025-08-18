@@ -492,7 +492,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     context,
                     text: 'Old firmware',
                     subText: "Upgrade to continue",
-                    icon: Icons.warning,
+                    icon: Icons.system_update_alt_rounded,
                     color: Colors.orange,
                   )
                 : buildDeviceTrailingInfo(
