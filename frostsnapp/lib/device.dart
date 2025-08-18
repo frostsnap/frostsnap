@@ -7,12 +7,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/keygen.dart';
-import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:frostsnap/wallet_create.dart';
 
 import 'global.dart';
 
@@ -215,25 +212,10 @@ class _DeviceDetailsState extends State<DeviceDetails> {
     final emptyRows = [
       ListTile(
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
-        title: Text('Empty Device'),
-        subtitle: Text('Create a wallet to get started'),
-        leading: Icon(Icons.warning_rounded),
-        trailing: FilledButton.icon(
-          onPressed: () async {
-            Navigator.popUntil(context, (r) => r.isFirst);
-            final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
-              context: context,
-              barrierDismissible: false,
-              child: WalletCreatePage(),
-            );
-            if (context.mounted && asRef != null) {
-              homeCtx.openNewlyCreatedWallet(asRef.keyId);
-              showWalletCreatedDialog(context, asRef);
-            }
-          },
-          icon: Icon(Icons.add_circle_rounded),
-          label: Text('Create Wallet'),
-        ),
+        title: Text('Fresh Device'),
+        subtitle: Text('Can be used to create a wallet'),
+        leading: Icon(Icons.ac_unit_rounded),
+        enabled: false,
       ),
     ];
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_create.dart';
 
@@ -46,8 +47,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
   late final StreamSubscription<DeviceListUpdate> _sub;
   late final FullscreenActionDialogController<void> _dialogController;
   int _needsUpgradeCount = 0;
-  final _progressController =
-      StreamController<FirmwareUpgradeState>.broadcast();
+  final _progressController = StreamController<FirmwareUpgradeState>();
 
   DeviceActionUpgradeController() {
     _sub = GlobalStreams.deviceListSubject.listen((update) {
@@ -59,6 +59,8 @@ class DeviceActionUpgradeController with ChangeNotifier {
         notifyListeners();
       }
     });
+    // Ensure that we do not skip device events.
+    final replayStream = _progressController.stream.toReplaySubject();
 
     _dialogController = FullscreenActionDialogController(
       title: 'Upgrade Firmware',
@@ -74,7 +76,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
       ),
       actionButtons: [
         StreamBuilder(
-          stream: _progressController.stream,
+          stream: replayStream,
           initialData: FirmwareUpgradeState.empty(),
           builder: (context, snapshot) => switch (snapshot.requireData.stage) {
             FirmwareUpgradeStage.Acks => OutlinedButton(
@@ -85,7 +87,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
           },
         ),
         StreamBuilder(
-          stream: _progressController.stream,
+          stream: replayStream,
           initialData: FirmwareUpgradeState.empty(),
           builder: (context, snapshot) {
             final state = snapshot.requireData;
@@ -194,7 +196,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
     final success = progress == 1.0;
     await Future.delayed(Duration(seconds: 1));
     await _dialogController.clearAllActionsNeeded();
-    await showUpgradeDoneDialog(context, success);
+    if (context.mounted) await showUpgradeDoneDialog(context, success);
     return success;
   }
 
@@ -204,21 +206,24 @@ class DeviceActionUpgradeController with ChangeNotifier {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text(success ? 'Upgrade Successful' : 'Upgrade Failed'),
-          content: success
-              ? Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(text: 'Upgraded device(s) to firmware '),
-                      TextSpan(
-                        text: coord.upgradeFirmwareDigest() ?? '',
-                        style: monospaceTextStyle,
-                      ),
-                    ],
+          content: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 560, minWidth: 280),
+            child: success
+                ? Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: 'Upgraded device(s) to firmware '),
+                        TextSpan(
+                          text: coord.upgradeFirmwareDigest() ?? '',
+                          style: monospaceTextStyle,
+                        ),
+                      ],
+                    ),
+                  )
+                : Text(
+                    'Either a device got disconnected mid-upgrade, or you encountered a bug!',
                   ),
-                )
-              : Text(
-                  'Either a device got disconnected mid-upgrade, or you encountered a bug!',
-                ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),

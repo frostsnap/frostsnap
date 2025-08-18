@@ -473,6 +473,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   Widget buildDevicesBody(BuildContext context) {
     final theme = Theme.of(context);
+    final parentCtx = context;
     return MultiSliver(
       children: [
         SliverDeviceList(
@@ -501,13 +502,46 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     icon: Icons.check_circle_rounded,
                     color: Colors.green,
                   ),
+            onPressed: device.needsFirmwareUpgrade()
+                ? () async => await _upgradeController.run(parentCtx)
+                : null,
           ),
         ),
+
+        if (_controller.devicesNeedUpgrade)
+          SliverToBoxAdapter(
+            child: Card.outlined(
+              margin: EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    title: Text(
+                      'One or more devices require a firmware update before continuing.',
+                    ),
+                    leading: Icon(
+                      Icons.system_update_alt_rounded,
+                      color: Colors.orange,
+                    ),
+                    trailing: TextButton(
+                      onPressed: () async =>
+                          await _upgradeController.run(context),
+                      child: Text('Start Upgrade'),
+                    ),
+                    onTap: () async => await _upgradeController.run(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
         SliverToBoxAdapter(
           child: AnimatedGradientBorder(
             stretchAlongAxis: true,
             borderSize: 1.0,
-            glowSize: 5.0,
+            glowSize: 4.0,
             animationTime: 6,
             borderRadius: BorderRadius.circular(12.0),
             gradientColors: [
@@ -516,7 +550,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               theme.colorScheme.secondary,
               theme.colorScheme.tertiary,
             ],
-            child: Card.outlined(
+            child: Card(
               margin: EdgeInsets.zero,
               child: ListTile(
                 dense: true,
@@ -527,46 +561,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
           ),
         ),
-        if (_controller.devicesNeedUpgrade)
-          SliverToBoxAdapter(
-            child: Card.outlined(
-              margin: EdgeInsets.symmetric(vertical: 16),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: 12,
-                  children: [
-                    Row(
-                      spacing: 12,
-                      children: [
-                        Icon(
-                          Icons.warning_rounded,
-                          size: 32,
-                          color: Colors.orange,
-                        ),
-                        Expanded(
-                          child: Text(
-                            'One or more devices require a firmware update before continuing.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed: () async =>
-                          await _upgradeController.run(context),
-                      label: Text('Start upgrade'),
-                      icon: Icon(Icons.system_update_alt_rounded),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
