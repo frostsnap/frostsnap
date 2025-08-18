@@ -1,5 +1,5 @@
 use frostsnap_comms::factory::Certificate;
-use frostsnap_core::schnorr_fun::fun::marker::{NonZero, Public, Secret};
+use frostsnap_core::schnorr_fun::fun::marker::{NonZero, Secret};
 use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
 use frostsnap_core::schnorr_fun::Message;
 use rsa::pkcs1::EncodeRsaPublicKey;
@@ -29,7 +29,7 @@ pub fn generate(
             rand::rngs::ThreadRng,
         >();
 
-        let message = Message::<Public>::plain("frostsnap-genuine-key", &pem_bytes);
+        let message = Message::new("frostsnap-genuine-key", &pem_bytes);
         let signature = schnorr.sign(&factory_keypair, message);
 
         Certificate {
@@ -46,7 +46,7 @@ pub fn generate(
 }
 
 pub fn verify(certificate: &Certificate) -> bool {
-    let message = Message::<Public>::plain("frostsnap-genuine-key", &certificate.rsa_key);
+    let message = Message::new("frostsnap-genuine-key", &certificate.rsa_key);
     let schnorr = frostsnap_core::schnorr_fun::new_with_synthetic_nonces::<
         sha2::Sha256,
         rand::rngs::ThreadRng,
