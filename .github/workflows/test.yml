@@ -162,6 +162,26 @@ jobs:
           name: Frostsnap-${{ github.sha }}-x64.AppImage
           path: frostsnapp/Frostsnap-x86_64.AppImage
 
+  app-build-windows:
+    name: "Build app for Windows"
+    needs: ["build-device-firmware"]
+    strategy:
+      fail-fast: false
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: "./.github/actions/set-up-app-build"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: "./.github/actions/cache-rust-target"
+        with:
+          key: "app-build-windows-v0"
+      - name: Build App Windows
+        run: just frostsnapp/build windows --release
+      - uses: "./.github/actions/upload-artifact"
+        with:
+          name: Frostsnap-${{ github.sha }}-windows
+          path: frostsnapp/build/windows/x64/runner/Release
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest

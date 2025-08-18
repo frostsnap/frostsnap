@@ -7,7 +7,7 @@ CANARY  := "binding-rerun.sha256"
 
 gen +ARGS="":
     flutter_rust_bridge_codegen generate {{ARGS}}
-    find {{API_DIR}} -type f -exec shasum -a256 {} + > {{CANARY}}
+    find {{API_DIR}} -type f -exec sha256sum {} + > {{CANARY}}
 
 build TARGET="linux" +ARGS="": maybe-gen
     BUNDLE_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
@@ -17,7 +17,7 @@ run +ARGS="":
 
 maybe-gen:
     #!/bin/sh
-    if ! shasum -a256 --check {{CANARY}} >/dev/null 2>&1 ; then
+    if ! sha256sum --check {{CANARY}} >/dev/null 2>&1 ; then
        echo "$input changed so re-running bindgen">&2;
        just gen
     fi

@@ -22,8 +22,8 @@ runs:
       if: steps.generate-frb.outputs.cache-hit != 'true'
       with:
         components: rustfmt # FRB needs this
-    - name: "install libclang-dev" #FRB needs libclang-dev
-      if: steps.generate-frb.outputs.cache-hit != 'true'
+    - name: "install libclang-dev (Linux)" #FRB needs libclang-dev
+      if: steps.generate-frb.outputs.cache-hit != 'true' && runner.os == 'Linux'
       shell: sh
       run: |
         sudo apt update
@@ -48,4 +48,4 @@ runs:
     - name: Generate FFI Files
       if: steps.generate-frb.outputs.cache-hit != 'true'
       run: just gen
-      shell: sh
+      shell: bash
