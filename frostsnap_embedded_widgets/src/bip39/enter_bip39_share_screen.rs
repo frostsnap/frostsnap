@@ -5,7 +5,7 @@ use alloc::{string::String, vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 use frostsnap_backup::bip39_words::{self, FROSTSNAP_BACKUP_WORDS};
 
-pub const MAX_WORD_SELECTOR_WORDS: usize = 6;
+pub const MAX_WORD_SELECTOR_WORDS: usize = 8;
 
 #[derive(Debug)]
 pub struct EnterBip39ShareScreen {

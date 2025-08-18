@@ -549,8 +549,132 @@ macro_rules! demo_widget {
                 let widget = Center::new(stack);
                 $run_macro!(widget);
             }
+            "array_column" => {
+                use $crate::{text::Text, Column, palette::PALETTE};
+                use embedded_graphics::prelude::*;
+                
+                // Create a column from a fixed-size array
+                let texts = [
+                    Text::new("First", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
+                    Text::new("Second", U8g2TextStyle::new(FONT_MED, PALETTE.tertiary)),
+                    Text::new("Third", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
+                    Text::new("Fourth", U8g2TextStyle::new(FONT_MED, PALETTE.tertiary)),
+                    Text::new("Fifth", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
+                ];
+                
+                let widget = Column::new(texts)
+                    .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center);
+                    
+                $run_macro!(widget);
+            }
+            "vec_column" => {
+                use $crate::{text::Text, Column, Switcher, palette::PALETTE, DynWidget, Widget};
+                use $crate::alloc::vec::Vec;
+                use embedded_graphics::prelude::*;
+
+                // Interactive demo that adds text widgets on touch
+                struct VecColumnDemo {
+                    texts: Vec<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>,
+                    switcher: Switcher<Column<Vec<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>>>,
+                    touch_count: usize,
+                }
+
+                impl VecColumnDemo {
+                    fn new() -> Self {
+                        // Start with one text widget
+                        let mut texts = Vec::new();
+                        texts.push(Text::new(
+                            "Touch to add more!",
+                            U8g2TextStyle::new(FONT_MED, PALETTE.on_background)
+                        ));
+
+                        // Create initial column
+                        let column = Column::new(texts.clone())
+                            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+
+                        Self {
+                            texts,
+                            switcher: Switcher::new(column),
+                            touch_count: 0,
+                        }
+                    }
+
+                    fn add_text(&mut self) {
+                        self.touch_count += 1;
+
+                        // Add new text to the vec
+                        self.texts.push(Text::new(
+                            match self.touch_count {
+                                1 => "First touch!",
+                                2 => "Second touch!",
+                                3 => "Third touch!",
+                                4 => "Fourth touch!",
+                                5 => "Fifth touch!",
+                                6 => "Sixth touch!",
+                                7 => "Seventh touch!",
+                                8 => "Eighth touch!",
+                                9 => "Ninth touch!",
+                                _ => "Many touches!",
+                            },
+                            U8g2TextStyle::new(FONT_MED, PALETTE.tertiary)
+                        ));
+
+                        // Create NEW column with the updated vec (do not mutate existing!)
+                        let new_column = Column::new(self.texts.clone())
+                            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+
+                        // Switch to the new column
+                        self.switcher.switch_to(new_column);
+                    }
+                }
+
+                impl DynWidget for VecColumnDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.switcher.set_constraints(max_size);
+                    }
+
+                    fn sizing(&self) -> $crate::Sizing {
+                        self.switcher.sizing()
+                    }
+
+                    fn handle_touch(
+                        &mut self,
+                        _point: Point,
+                        _current_time: Instant,
+                        is_release: bool,
+                    ) -> Option<$crate::KeyTouch> {
+                        if !is_release {
+                            self.add_text();
+                        }
+                        None
+                    }
+
+                    fn force_full_redraw(&mut self) {
+                        self.switcher.force_full_redraw();
+                    }
+                }
+
+                impl Widget for VecColumnDemo {
+                    type Color = Rgb565;
+
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut SuperDrawTarget<D, Self::Color>,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: DrawTarget<Color = Self::Color>,
+                    {
+                        self.switcher.draw(target, current_time)
+                    }
+                }
+
+                let widget = VecColumnDemo::new();
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, stack", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, stack, array_column, vec_column", $demo);
             }
         }
     };

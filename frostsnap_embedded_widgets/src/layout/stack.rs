@@ -1,5 +1,5 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{alignment::Alignment, widget_tuple::WidgetTuple, Instant, Widget};
+use crate::{alignment::Alignment, widget_tuple::{AssociatedArray, WidgetTuple}, Instant, Widget};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -47,16 +47,16 @@ pub enum StackChild<W> {
 ///     .with_alignment(Alignment::Center);
 /// ```
 #[derive(PartialEq)]
-pub struct Stack<T: WidgetTuple> {
+pub struct Stack<T: AssociatedArray> {
     pub children: T,
     pub alignment: Alignment,
     /// Tracks which children are positioned (true) vs non-positioned (false)
-    is_positioned: T::Array<bool>,
+    pub(crate) is_positioned: T::Array<bool>,
     /// Positions for all children (only used for positioned children)
-    positions: T::Array<Point>,
+    pub(crate) positions: T::Array<Point>,
     /// Cached rectangles for each child
-    child_rects: T::Array<Rectangle>,
-    sizing: Option<crate::Sizing>,
+    pub(crate) child_rects: T::Array<Rectangle>,
+    pub(crate) sizing: Option<crate::Sizing>,
 }
 
 /// Helper to start building a Stack with no children
@@ -66,25 +66,36 @@ impl Stack<()> {
     }
 }
 
-impl<T: WidgetTuple> Stack<T> {
+impl<T: AssociatedArray> Stack<T> {
     pub fn new(children: T) -> Self {
         Self {
+            is_positioned: children.create_array_with(false),
+            positions: children.create_array_with(Point::zero()),
+            child_rects: children.create_array_with(Rectangle::zero()),
             children,
             alignment: Alignment::default(),
-            is_positioned: T::create_array_with(false),
-            positions: T::create_array_with(Point::zero()),
-            child_rects: T::create_array_with(Rectangle::zero()),
             sizing: None,
         }
     }
 
+    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
+        self.alignment = alignment;
+        self
+    }
+}
+
+impl<T: WidgetTuple> Stack<T> {
+
     /// Add a non-positioned widget to the stack
-    pub fn push<W>(self, widget: W) -> Stack<T::Add<W>> {
+    pub fn push<W: crate::DynWidget>(self, widget: W) -> Stack<T::Add<W>>
+    where
+        T: WidgetTuple
+    {
         let new_children = self.children.add(widget);
 
         // Copy over existing arrays and add new entry
-        let mut new_is_positioned = <T::Add<W>>::create_array_with(false);
-        let mut new_positions = <T::Add<W>>::create_array_with(Point::zero());
+        let mut new_is_positioned = new_children.create_array_with(false);
+        let mut new_positions = new_children.create_array_with(Point::zero());
 
         new_is_positioned.as_mut()[..T::TUPLE_LEN].copy_from_slice(self.is_positioned.as_ref());
         new_positions.as_mut()[..T::TUPLE_LEN].copy_from_slice(self.positions.as_ref());
@@ -93,22 +104,25 @@ impl<T: WidgetTuple> Stack<T> {
         new_is_positioned.as_mut()[T::TUPLE_LEN] = false;
 
         Stack {
-            children: new_children,
-            alignment: self.alignment,
             is_positioned: new_is_positioned,
             positions: new_positions,
-            child_rects: <T::Add<W>>::create_array_with(Rectangle::zero()),
+            child_rects: new_children.create_array_with(Rectangle::zero()),
+            children: new_children,
+            alignment: self.alignment,
             sizing: None,
         }
     }
 
     /// Add a positioned widget to the stack at a specific location
-    pub fn push_positioned<W>(self, widget: W, x: i32, y: i32) -> Stack<T::Add<W>> {
+    pub fn push_positioned<W: crate::DynWidget>(self, widget: W, x: i32, y: i32) -> Stack<T::Add<W>>
+    where
+        T: WidgetTuple
+    {
         let new_children = self.children.add(widget);
 
         // Copy over existing arrays and add new entry
-        let mut new_is_positioned = <T::Add<W>>::create_array_with(false);
-        let mut new_positions = <T::Add<W>>::create_array_with(Point::zero());
+        let mut new_is_positioned = new_children.create_array_with(false);
+        let mut new_positions = new_children.create_array_with(Point::zero());
 
         new_is_positioned.as_mut()[..T::TUPLE_LEN].copy_from_slice(self.is_positioned.as_ref());
         new_positions.as_mut()[..T::TUPLE_LEN].copy_from_slice(self.positions.as_ref());
@@ -118,23 +132,26 @@ impl<T: WidgetTuple> Stack<T> {
         new_positions.as_mut()[T::TUPLE_LEN] = Point::new(x, y);
 
         Stack {
-            children: new_children,
-            alignment: self.alignment,
             is_positioned: new_is_positioned,
             positions: new_positions,
-            child_rects: <T::Add<W>>::create_array_with(Rectangle::zero()),
+            child_rects: new_children.create_array_with(Rectangle::zero()),
+            children: new_children,
+            alignment: self.alignment,
             sizing: None,
         }
     }
 
     /// Add a widget with alignment-based positioning
     /// The widget will be positioned according to the alignment within the Stack's bounds
-    pub fn push_aligned<W>(self, widget: W, alignment: Alignment) -> Stack<T::Add<W>> {
+    pub fn push_aligned<W: crate::DynWidget>(self, widget: W, alignment: Alignment) -> Stack<T::Add<W>>
+    where
+        T: WidgetTuple
+    {
         let new_children = self.children.add(widget);
 
         // Copy over existing arrays and add new entry
-        let mut new_is_positioned = <T::Add<W>>::create_array_with(false);
-        let mut new_positions = <T::Add<W>>::create_array_with(Point::zero());
+        let mut new_is_positioned = new_children.create_array_with(false);
+        let mut new_positions = new_children.create_array_with(Point::zero());
 
         new_is_positioned.as_mut()[..T::TUPLE_LEN].copy_from_slice(self.is_positioned.as_ref());
         new_positions.as_mut()[..T::TUPLE_LEN].copy_from_slice(self.positions.as_ref());
@@ -157,145 +174,19 @@ impl<T: WidgetTuple> Stack<T> {
         new_positions.as_mut()[T::TUPLE_LEN] = alignment_encoded;
 
         Stack {
-            children: new_children,
-            alignment: self.alignment,
             is_positioned: new_is_positioned,
             positions: new_positions,
-            child_rects: <T::Add<W>>::create_array_with(Rectangle::zero()),
+            child_rects: new_children.create_array_with(Rectangle::zero()),
+            children: new_children,
+            alignment: self.alignment,
             sizing: None,
         }
-    }
-
-    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
-        self.alignment = alignment;
-        self
     }
 }
 
 // Macro to implement Widget for Stack with tuples of different sizes
 macro_rules! impl_stack_for_tuple {
     ($len:literal, $($t:ident),+) => {
-        impl<$($t: Widget<Color = C>),+, C: PixelColor> crate::DynWidget for Stack<($($t,)+)> {
-            #[allow(unused_assignments)]
-            fn set_constraints(&mut self, max_size: Size) {
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-
-                let mut child_index = 0;
-                let mut max_width = 0u32;
-                let mut max_height = 0u32;
-
-                $(
-                    {
-                        // Set constraints on each child with full available size
-                        $t.set_constraints(max_size);
-                        let sizing = $t.sizing();
-
-                        // Calculate position based on whether it's positioned or not
-                        let position = if self.is_positioned[child_index] {
-                            let pos = self.positions[child_index];
-                            // Check if this is an alignment-encoded position (negative values)
-                            if pos.x < 0 || pos.y < 0 {
-                                // Decode alignment from the encoded position
-                                let alignment = match (pos.x, pos.y) {
-                                    (-1, -1) => Alignment::TopLeft,
-                                    (-2, -1) => Alignment::TopCenter,
-                                    (-3, -1) => Alignment::TopRight,
-                                    (-1, -2) => Alignment::CenterLeft,
-                                    (-2, -2) => Alignment::Center,
-                                    (-3, -2) => Alignment::CenterRight,
-                                    (-1, -3) => Alignment::BottomLeft,
-                                    (-2, -3) => Alignment::BottomCenter,
-                                    (-3, -3) => Alignment::BottomRight,
-                                    _ => Alignment::TopLeft, // Default fallback
-                                };
-
-                                // Use the alignment helper methods
-                                alignment.offset(max_size, sizing.into())
-                            } else {
-                                // Use the absolute position
-                                pos
-                            }
-                        } else {
-                            // Use the alignment helper methods
-                            self.alignment.offset(max_size, sizing.into())
-                        };
-
-                        // Store the child's rectangle
-                        self.child_rects[child_index] = Rectangle::new(position, sizing.into());
-
-                        // Track maximum dimensions for the stack's sizing
-                        let right = (position.x as u32).saturating_add(sizing.width);
-                        let bottom = (position.y as u32).saturating_add(sizing.height);
-                        max_width = max_width.max(right);
-                        max_height = max_height.max(bottom);
-
-                        child_index += 1;
-                    }
-                )+
-
-                // Stack's size is the bounding box of all children
-                self.sizing = Some(crate::Sizing {
-                    width: max_width.min(max_size.width),
-                    height: max_height.min(max_size.height),
-                });
-            }
-
-            fn sizing(&self) -> crate::Sizing {
-                self.sizing.expect("set_constraints must be called before sizing")
-            }
-
-            #[allow(unused_assignments)]
-            fn handle_touch(
-                &mut self,
-                point: Point,
-                current_time: Instant,
-                is_release: bool,
-            ) -> Option<crate::KeyTouch> {
-                // Handle touches in reverse order (top-most children first)
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-
-                // We need to check children in reverse order for proper z-ordering
-                // For now, we'll just check all children (can be optimized later)
-                let mut child_index = 0;
-                $(
-                    {
-                        let area = self.child_rects[child_index];
-                        if area.contains(point) || is_release {
-                            let relative_point = Point::new(
-                                point.x - area.top_left.x,
-                                point.y - area.top_left.y
-                            );
-                            $t.handle_touch(relative_point, current_time, is_release);
-                        }
-                        child_index += 1;
-                    }
-                )+
-
-                None
-            }
-
-            fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, _is_release: bool) {
-                // Pass drag to all children
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-
-                $(
-                    $t.handle_vertical_drag(start_y, current_y, _is_release);
-                )+
-            }
-
-            fn force_full_redraw(&mut self) {
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-
-                $(
-                    $t.force_full_redraw();
-                )+
-            }
-        }
-
         impl<$($t: Widget<Color = C>),+, C: crate::WidgetColor> Widget for Stack<($($t,)+)> {
             type Color = C;
 

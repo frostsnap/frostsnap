@@ -1,6 +1,6 @@
 use super::{CrossAxisAlignment, MainAxisAlignment};
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{widget_tuple::WidgetTuple, Instant, Widget};
+use crate::{widget_tuple::{AssociatedArray, WidgetTuple}, Instant, Widget};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -23,15 +23,15 @@ use embedded_graphics::{
 ///     .with_cross_axis_alignment(CrossAxisAlignment::Center);
 /// ```
 #[derive(PartialEq)]
-pub struct Row<T: WidgetTuple> {
+pub struct Row<T: AssociatedArray> {
     pub children: T,
     pub cross_axis_alignment: CrossAxisAlignment,
     pub main_axis_alignment: MainAxisAlignment,
-    child_rects: T::Array<Rectangle>,
-    debug_borders: bool,
-    sizing: Option<crate::Sizing>,
+    pub(crate) child_rects: T::Array<Rectangle>,
+    pub(crate) debug_borders: bool,
+    pub(crate) sizing: Option<crate::Sizing>,
     /// Spacing to add before each child (indexed by child position)
-    spacing_before: T::Array<u32>,
+    pub(crate) spacing_before: T::Array<u32>,
 }
 
 /// Helper to start building a Row with no children
@@ -41,46 +41,52 @@ impl Row<()> {
     }
 }
 
-impl<T: WidgetTuple> Row<T> {
+impl<T: AssociatedArray> Row<T> {
     pub fn new(children: T) -> Self {
         // Don't extract sizes here - wait for set_constraints to be called
-        // child_rects are already initialized to zero in the struct creation above
-
         Self {
+            child_rects: children.create_array_with(Rectangle::zero()),
+            spacing_before: children.create_array_with(0),
             children,
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_alignment: MainAxisAlignment::Start,
-            child_rects: T::create_array_with(Rectangle::zero()),
             debug_borders: false,
             sizing: None,
-            spacing_before: T::create_array_with(0),
         }
     }
+}
 
+impl<T: WidgetTuple> Row<T> {
     /// Add a widget to the row
-    pub fn push<W>(self, widget: W) -> Row<T::Add<W>> {
+    pub fn push<W: crate::DynWidget>(self, widget: W) -> Row<T::Add<W>> 
+    where
+        T: WidgetTuple
+    {
         self.push_with_gap(widget, 0)
     }
 
     /// Add a widget with a gap before it
-    pub fn push_with_gap<W>(self, widget: W, gap: u32) -> Row<T::Add<W>> {
+    pub fn push_with_gap<W: crate::DynWidget>(self, widget: W, gap: u32) -> Row<T::Add<W>> 
+    where
+        T: WidgetTuple
+    {
         let new_children = self.children.add(widget);
 
         // Copy over existing spacing values and add new one
-        let mut new_spacing = <T::Add<W>>::create_array_with(0);
+        let mut new_spacing = new_children.create_array_with(0);
         let old_spacing = self.spacing_before.as_ref();
         // copy_from_slice for the existing values
         new_spacing.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_spacing);
         new_spacing.as_mut()[T::TUPLE_LEN] = gap; // Gap BEFORE this widget
 
         Row {
+            child_rects: new_children.create_array_with(Rectangle::zero()),
+            spacing_before: new_spacing,
             children: new_children,
             cross_axis_alignment: self.cross_axis_alignment,
             main_axis_alignment: self.main_axis_alignment,
-            child_rects: <T::Add<W>>::create_array_with(Rectangle::zero()),
             debug_borders: self.debug_borders,
             sizing: None,
-            spacing_before: new_spacing,
         }
     }
 
@@ -103,191 +109,6 @@ impl<T: WidgetTuple> Row<T> {
 // Macro to implement Widget for Row with tuples of different sizes
 macro_rules! impl_row_for_tuple {
     ($len:literal, $($t:ident),+) => {
-        impl<$($t: Widget<Color = C>),+, C: PixelColor> crate::DynWidget for Row<($($t,)+)> {
-            #[allow(unused_assignments)]
-            fn set_constraints(&mut self, max_size: Size) {
-
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-
-                // First pass: query flex status and set initial constraints on non-flex children
-                let mut is_flex = [false; $len];
-                let mut flex_count = 0;
-                let mut child_index = 0;
-                let mut remaining_width = max_size.width;
-                let mut max_child_height = 0u32;
-
-                // Account for all spacing in remaining width
-                let total_spacing: u32 = self.spacing_before[..$len].iter().sum();
-                remaining_width = remaining_width.saturating_sub(total_spacing);
-
-                $(
-                    {
-                        let flex = $t.flex();
-                        is_flex[child_index] = flex;
-                        if flex {
-                            flex_count += 1;
-                        } else {
-                            // Set constraints on non-flex child with remaining available width
-                            $t.set_constraints(Size::new(remaining_width, max_size.height));
-                            let sizing = $t.sizing();
-                            remaining_width = remaining_width.saturating_sub(sizing.width);
-                            max_child_height = max_child_height.max(sizing.height);
-                        }
-                        child_index += 1;
-                    }
-                )+
-
-                // Calculate width for each flex child
-                let flex_width = if flex_count > 0 {
-                    remaining_width / flex_count as u32
-                } else {
-                    0
-                };
-
-                // Second pass: set constraints on flex children and update cached rects with sizes
-                let mut child_index = 0;
-                $(
-                    {
-                        if is_flex[child_index] {
-                            // Set constraints on flex child with calculated width
-                            $t.set_constraints(Size::new(flex_width, max_size.height));
-                            let sizing = $t.sizing();
-                            self.child_rects[child_index].size = sizing.into();
-                            remaining_width = remaining_width.saturating_sub(sizing.width);
-                            max_child_height = max_child_height.max(sizing.height);
-                        } else {
-                            // Non-flex child already has constraints set, just get final size
-                            let sizing = $t.sizing();
-                            self.child_rects[child_index].size = sizing.into();
-                        }
-                        child_index += 1;
-                    }
-                )+
-
-                // Now compute positions based on alignment
-                // remaining_width now has any leftover space for alignment
-
-                let (mut x_offset, spacing) = match self.main_axis_alignment {
-                    MainAxisAlignment::Start => (0u32, 0u32),
-                    MainAxisAlignment::Center => {
-                        (remaining_width / 2, 0)
-                    }
-                    MainAxisAlignment::End => {
-                        (remaining_width, 0)
-                    }
-                    MainAxisAlignment::SpaceBetween => {
-                        if $len > 1 {
-                            (0, remaining_width / ($len as u32 - 1))
-                        } else {
-                            (0, 0)
-                        }
-                    }
-                    MainAxisAlignment::SpaceAround => {
-                        let spacing = remaining_width / ($len as u32);
-                        (spacing / 2, spacing)
-                    }
-                    MainAxisAlignment::SpaceEvenly => {
-                        let spacing = remaining_width / ($len as u32 + 1);
-                        (spacing, spacing)
-                    }
-                };
-
-                // Set positions for all children
-                let mut total_child_width = 0u32;
-                for i in 0..$len {
-                    // Add spacing BEFORE this child
-                    x_offset = x_offset.saturating_add(self.spacing_before[i]);
-
-                    let size = self.child_rects[i].size;
-                    total_child_width += size.width;
-
-                    let y_offset = match self.cross_axis_alignment {
-                        CrossAxisAlignment::Start => 0,
-                        CrossAxisAlignment::Center => {
-                            let available_height = max_child_height.saturating_sub(size.height);
-                            (available_height / 2) as i32
-                        }
-                        CrossAxisAlignment::End => {
-                            let available_height = max_child_height.saturating_sub(size.height);
-                            available_height as i32
-                        }
-                    };
-                    self.child_rects[i].top_left = Point::new(x_offset as i32, y_offset);
-                    // Add the child width and alignment spacing
-                    x_offset = x_offset.saturating_add(size.width)
-                        .saturating_add(spacing);
-                }
-
-                // Compute and store sizing
-                // Width depends on main axis alignment
-                let width = match self.main_axis_alignment {
-                    MainAxisAlignment::Start => total_child_width + total_spacing,
-                    _ => max_size.width,  // All other alignments need full width for spacing
-                };
-
-                // Height is always the maximum child height (cross-axis doesn't affect sizing)
-                let height = max_child_height;
-
-                self.sizing = Some(crate::Sizing { width, height });
-            }
-
-            fn sizing(&self) -> crate::Sizing {
-                self.sizing.expect("set_constraints must be called before sizing")
-            }
-
-            #[allow(unused_assignments)]
-            fn handle_touch(
-                &mut self,
-                point: Point,
-                current_time: Instant,
-                is_release: bool,
-            ) -> Option<crate::KeyTouch> {
-                // Use cached rectangles
-                if !self.child_rects.is_empty() {
-                    #[allow(non_snake_case)]
-                    let ($(ref mut $t,)+) = self.children;
-
-                    let mut child_index = 0;
-                    $(
-                        {
-                            let area = self.child_rects[child_index];
-                            if area.contains(point) || is_release {
-                                let relative_point = Point::new(
-                                    point.x - area.top_left.x,
-                                    point.y - area.top_left.y
-                                );
-                                $t.handle_touch(relative_point, current_time, is_release);
-                            }
-                            child_index += 1;
-                        }
-                    )+
-                }
-
-                None
-            }
-
-            fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, _is_release: bool) {
-                // For now, pass drag to all children - could be improved to only send to relevant child
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-
-                $(
-                    $t.handle_vertical_drag(start_y, current_y, _is_release);
-                )+
-            }
-
-
-            fn force_full_redraw(&mut self) {
-                #[allow(non_snake_case)]
-                let ($(ref mut $t,)+) = self.children;
-
-                $(
-                    $t.force_full_redraw();
-                )+
-            }
-        }
-
         impl<$($t: Widget<Color = C>),+, C: crate::WidgetColor> Widget for Row<($($t,)+)> {
             type Color = C;
 

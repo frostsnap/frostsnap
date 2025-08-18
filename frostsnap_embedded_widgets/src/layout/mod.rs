@@ -1,6 +1,7 @@
 mod column;
 mod row;
 mod stack;
+mod vec_column;
 
 pub use column::Column;
 pub use row::Row;

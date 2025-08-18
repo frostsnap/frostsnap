@@ -46,15 +46,24 @@ impl WordSelector {
     fn word_rect(&self, index: usize) -> Rectangle {
         let text_y_start = 30;
         let available_height = self.size.height - text_y_start as u32;
-        let word_height = available_height / self.words.len() as u32;
-
-        let y_pos = text_y_start + (index as u32 * word_height) as i32;
+        
+        // Calculate rows needed for two columns
+        let rows_needed = (self.words.len() + 1) / 2; // +1 to round up
+        let word_height = available_height / rows_needed as u32;
+        
+        // Determine column and row
+        let column = index % 2;
+        let row = index / 2;
+        
+        // Calculate width for each column (minus backspace button area)
+        let column_width = (self.size.width - self.backspace_rect.size.width) / 2;
+        
+        let x_pos = (column as u32 * column_width) as i32;
+        let y_pos = text_y_start + (row as u32 * word_height) as i32;
+        
         Rectangle::new(
-            Point::new(0, y_pos),
-            Size::new(
-                self.size.width - self.backspace_rect.size.width,
-                word_height,
-            ),
+            Point::new(x_pos, y_pos),
+            Size::new(column_width, word_height),
         )
     }
 
@@ -85,10 +94,20 @@ impl WordSelector {
             return;
         }
 
-        // Draw each word with left alignment and padding
+        // Draw each word in two columns
         for (i, &word) in self.words.iter().enumerate() {
             let rect = self.word_rect(i);
-            let padding_x = 40; // Horizontal padding to center words
+            
+            // Add padding for better visual alignment
+            // Left column gets more padding from left edge
+            // Right column gets centered in its rectangle
+            let column = i % 2;
+            let padding_x = if column == 0 {
+                20 // Left column padding
+            } else {
+                10 // Right column padding (closer to center)
+            };
+            
             let text_pos = Point::new(rect.top_left.x + padding_x, rect.center().y);
 
             // First draw the full word in green (same as progress bar)
