@@ -80,14 +80,9 @@ impl crate::DynWidget for ProgressBar {
     }
 
     fn set_constraints(&mut self, max_size: Size) {
-        // Pre-calculate the bar rectangle based on constraints
-        let bar_width = max_size.width;
-        let bar_x = 0;
-        let bar_y = 0;
-
         self.bar_rect = Some(Rectangle::new(
-            Point::new(bar_x, bar_y),
-            Size::new(bar_width, self.bar_height),
+            Point::new(0, 0),
+            Size::new(max_size.width, self.bar_height),
         ));
 
         // Reset drawing state when constraints change

@@ -14,7 +14,8 @@ where
     W: Widget,
 {
     pub child: W,
-    size: Option<Size>, // None = shrink-wrap, Some(size) = explicit size (including MAX for fill)
+    width: Option<u32>, // None = shrink-wrap, Some(width) = explicit width (including MAX for fill)
+    height: Option<u32>, // None = shrink-wrap, Some(height) = explicit height (including MAX for fill)
     border_color: Option<W::Color>,
     border_width: u32,
     fill_color: Option<W::Color>,
@@ -28,7 +29,8 @@ impl<W: Widget> Container<W> {
     pub fn new(child: W) -> Self {
         Self {
             child,
-            size: None,
+            width: None,
+            height: None,
             border_color: None,
             border_width: 0,
             fill_color: None,
@@ -42,7 +44,8 @@ impl<W: Widget> Container<W> {
     pub fn with_size(child: W, size: Size) -> Self {
         Self {
             child,
-            size: Some(size),
+            width: Some(size.width),
+            height: Some(size.height),
             border_color: None,
             border_width: 0,
             fill_color: None,
@@ -50,6 +53,18 @@ impl<W: Widget> Container<W> {
             border_needs_redraw: true,
             constraints: None,
         }
+    }
+
+    /// Set the width of the container
+    pub fn with_width(mut self, width: u32) -> Self {
+        self.width = Some(width);
+        self
+    }
+
+    /// Set the height of the container
+    pub fn with_height(mut self, height: u32) -> Self {
+        self.height = Some(height);
+        self
     }
 
     /// Set the border with a color and width
@@ -74,7 +89,8 @@ impl<W: Widget> Container<W> {
     /// Set the container to expanded mode - it will fill the available space
     pub fn with_expanded(mut self) -> Self {
         // Expanded means requesting u32::MAX size
-        self.size = Some(Size::new(u32::MAX, u32::MAX));
+        self.width = Some(u32::MAX);
+        self.height = Some(u32::MAX);
         self
     }
 }
@@ -83,23 +99,15 @@ impl<W: Widget> crate::DynWidget for Container<W> {
     fn set_constraints(&mut self, max_size: Size) {
         self.constraints = Some(max_size);
 
-        // Calculate child constraints based on our mode
-        if let Some(requested_size) = self.size {
-            // We have an explicit size - constrain child to that minus border
-            let container_size = requested_size.component_min(max_size);
-            let child_max_size = Size::new(
-                container_size.width.saturating_sub(2 * self.border_width),
-                container_size.height.saturating_sub(2 * self.border_width),
-            );
-            self.child.set_constraints(child_max_size);
-        } else {
-            // Shrink-wrap mode - give child the available space minus border
-            let child_max_size = Size::new(
-                max_size.width.saturating_sub(2 * self.border_width),
-                max_size.height.saturating_sub(2 * self.border_width),
-            );
-            self.child.set_constraints(child_max_size);
-        }
+        // Calculate child constraints based on our width and height settings
+        let container_width = self.width.unwrap_or(max_size.width).min(max_size.width);
+        let container_height = self.height.unwrap_or(max_size.height).min(max_size.height);
+
+        let child_max_size = Size::new(
+            container_width.saturating_sub(2 * self.border_width),
+            container_height.saturating_sub(2 * self.border_width),
+        );
+        self.child.set_constraints(child_max_size);
     }
 
     fn sizing(&self) -> crate::Sizing {
@@ -107,23 +115,23 @@ impl<W: Widget> crate::DynWidget for Container<W> {
             .constraints
             .expect("set_constraints must be called before sizing");
 
-        // Calculate the size based on our mode
-        let size = if let Some(requested_size) = self.size {
-            // We have a requested size - constrain it to max_size
-            requested_size.component_min(constraints)
+        let child_sizing = self.child.sizing();
+
+        // Calculate width: use explicit width if set, otherwise shrink-wrap
+        let width = if let Some(requested_width) = self.width {
+            requested_width.min(constraints.width)
         } else {
-            // Shrink-wrap mode - use child size plus border
-            let child_sizing = self.child.sizing();
-            Size::new(
-                child_sizing.width + 2 * self.border_width,
-                child_sizing.height + 2 * self.border_width,
-            )
+            child_sizing.width + 2 * self.border_width
         };
 
-        crate::Sizing {
-            width: size.width,
-            height: size.height,
-        }
+        // Calculate height: use explicit height if set, otherwise shrink-wrap
+        let height = if let Some(requested_height) = self.height {
+            requested_height.min(constraints.height)
+        } else {
+            child_sizing.height + 2 * self.border_width
+        };
+
+        crate::Sizing { width, height }
     }
 
     fn handle_touch(
@@ -221,7 +229,8 @@ where
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Container")
             .field("child", &self.child)
-            .field("size", &self.size)
+            .field("width", &self.width)
+            .field("height", &self.height)
             .field("has_border", &self.border_color.is_some())
             .field("border_width", &self.border_width)
             .finish()

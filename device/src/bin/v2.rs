@@ -48,9 +48,8 @@ use frostsnap_device::{
     DownstreamConnectionState, Instant, UpstreamConnectionState,
 };
 use frostsnap_embedded_widgets::{
-    keygen_check::KeygenCheck, sign_prompt::SignPrompt, DeviceNameScreen, DynWidget,
-    FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Stack, StackAlignment, Standby, Welcome,
-    Widget,
+    keygen_check::KeygenCheck, sign_prompt::SignPrompt, Alignment, DeviceNameScreen, DynWidget,
+    FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Stack, Standby, Welcome, Widget,
 };
 use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 
@@ -213,7 +212,7 @@ fn main() -> ! {
     // Build UI stack with root widget and debug stats overlay (create_debug_stats handles feature flags)
     let mut ui_stack = Stack::builder()
         .push(root_widget)
-        .push_aligned(create_debug_stats(), StackAlignment::TopLeft);
+        .push_aligned(create_debug_stats(), Alignment::TopLeft);
 
     ui_stack.set_constraints(Size::new(240, 280));
 
@@ -440,8 +439,7 @@ where
             }
 
             Workflow::NamingDevice { new_name } => {
-                let mut device_name_screen = DeviceNameScreen::new(new_name);
-                device_name_screen.set_edit_mode(true);
+                let device_name_screen = DeviceNameScreen::new(new_name);
                 WidgetTree::DeviceNaming(Box::new(device_name_screen))
             }
 

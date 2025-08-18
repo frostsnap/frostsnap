@@ -1,6 +1,6 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{
-    palette::PALETTE, DynWidget, Fader, Instant, SlideInTransition, Stack, StackAlignment,
+    alignment::Alignment, palette::PALETTE, DynWidget, Fader, Instant, SlideInTransition, Stack,
     SwipeUpChevron, Widget, WidgetList,
 };
 use alloc::boxed::Box;
@@ -61,7 +61,7 @@ where
         // Build stack with transition and optional chevron aligned at bottom center
         let stack = Stack::builder().push(transition).push_aligned(
             None::<Fader<SwipeUpChevron<Rgb565>>>,
-            StackAlignment::BottomCenter,
+            Alignment::BottomCenter,
         );
 
         Self {

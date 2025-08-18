@@ -1,5 +1,5 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{widget_tuple::WidgetTuple, Instant, Widget};
+use crate::{alignment::Alignment, widget_tuple::WidgetTuple, Instant, Widget};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -8,26 +8,6 @@ use embedded_graphics::{
     prelude::*,
     primitives::Rectangle,
 };
-
-/// Alignment for non-positioned children in a Stack
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum StackAlignment {
-    TopLeft,
-    TopCenter,
-    TopRight,
-    CenterLeft,
-    Center,
-    CenterRight,
-    BottomLeft,
-    BottomCenter,
-    BottomRight,
-}
-
-impl Default for StackAlignment {
-    fn default() -> Self {
-        Self::TopLeft
-    }
-}
 
 /// A positioned wrapper for widgets in a Stack
 pub struct Positioned<W> {
@@ -64,12 +44,12 @@ pub enum StackChild<W> {
 ///     .push(background_widget)
 ///     .push_positioned(icon_widget, 10, 10)
 ///     .push(centered_text)
-///     .with_alignment(StackAlignment::Center);
+///     .with_alignment(Alignment::Center);
 /// ```
 #[derive(PartialEq)]
 pub struct Stack<T: WidgetTuple> {
     pub children: T,
-    pub alignment: StackAlignment,
+    pub alignment: Alignment,
     /// Tracks which children are positioned (true) vs non-positioned (false)
     is_positioned: T::Array<bool>,
     /// Positions for all children (only used for positioned children)
@@ -90,7 +70,7 @@ impl<T: WidgetTuple> Stack<T> {
     pub fn new(children: T) -> Self {
         Self {
             children,
-            alignment: StackAlignment::default(),
+            alignment: Alignment::default(),
             is_positioned: T::create_array_with(false),
             positions: T::create_array_with(Point::zero()),
             child_rects: T::create_array_with(Rectangle::zero()),
@@ -149,7 +129,7 @@ impl<T: WidgetTuple> Stack<T> {
 
     /// Add a widget with alignment-based positioning
     /// The widget will be positioned according to the alignment within the Stack's bounds
-    pub fn push_aligned<W>(self, widget: W, alignment: StackAlignment) -> Stack<T::Add<W>> {
+    pub fn push_aligned<W>(self, widget: W, alignment: Alignment) -> Stack<T::Add<W>> {
         let new_children = self.children.add(widget);
 
         // Copy over existing arrays and add new entry
@@ -162,15 +142,15 @@ impl<T: WidgetTuple> Stack<T> {
         // Store alignment as a special position value (we'll interpret negative values as alignment)
         // This is a hack - ideally we'd have a separate array for alignments
         let alignment_encoded = match alignment {
-            StackAlignment::TopLeft => Point::new(-1, -1),
-            StackAlignment::TopCenter => Point::new(-2, -1),
-            StackAlignment::TopRight => Point::new(-3, -1),
-            StackAlignment::CenterLeft => Point::new(-1, -2),
-            StackAlignment::Center => Point::new(-2, -2),
-            StackAlignment::CenterRight => Point::new(-3, -2),
-            StackAlignment::BottomLeft => Point::new(-1, -3),
-            StackAlignment::BottomCenter => Point::new(-2, -3),
-            StackAlignment::BottomRight => Point::new(-3, -3),
+            Alignment::TopLeft => Point::new(-1, -1),
+            Alignment::TopCenter => Point::new(-2, -1),
+            Alignment::TopRight => Point::new(-3, -1),
+            Alignment::CenterLeft => Point::new(-1, -2),
+            Alignment::Center => Point::new(-2, -2),
+            Alignment::CenterRight => Point::new(-3, -2),
+            Alignment::BottomLeft => Point::new(-1, -3),
+            Alignment::BottomCenter => Point::new(-2, -3),
+            Alignment::BottomRight => Point::new(-3, -3),
         };
 
         new_is_positioned.as_mut()[T::TUPLE_LEN] = true;
@@ -186,7 +166,7 @@ impl<T: WidgetTuple> Stack<T> {
         }
     }
 
-    pub fn with_alignment(mut self, alignment: StackAlignment) -> Self {
+    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
         self.alignment = alignment;
         self
     }
@@ -218,67 +198,27 @@ macro_rules! impl_stack_for_tuple {
                             if pos.x < 0 || pos.y < 0 {
                                 // Decode alignment from the encoded position
                                 let alignment = match (pos.x, pos.y) {
-                                    (-1, -1) => StackAlignment::TopLeft,
-                                    (-2, -1) => StackAlignment::TopCenter,
-                                    (-3, -1) => StackAlignment::TopRight,
-                                    (-1, -2) => StackAlignment::CenterLeft,
-                                    (-2, -2) => StackAlignment::Center,
-                                    (-3, -2) => StackAlignment::CenterRight,
-                                    (-1, -3) => StackAlignment::BottomLeft,
-                                    (-2, -3) => StackAlignment::BottomCenter,
-                                    (-3, -3) => StackAlignment::BottomRight,
-                                    _ => StackAlignment::TopLeft, // Default fallback
+                                    (-1, -1) => Alignment::TopLeft,
+                                    (-2, -1) => Alignment::TopCenter,
+                                    (-3, -1) => Alignment::TopRight,
+                                    (-1, -2) => Alignment::CenterLeft,
+                                    (-2, -2) => Alignment::Center,
+                                    (-3, -2) => Alignment::CenterRight,
+                                    (-1, -3) => Alignment::BottomLeft,
+                                    (-2, -3) => Alignment::BottomCenter,
+                                    (-3, -3) => Alignment::BottomRight,
+                                    _ => Alignment::TopLeft, // Default fallback
                                 };
 
-                                // Calculate position based on alignment
-                                let x = match alignment {
-                                    StackAlignment::TopLeft | StackAlignment::CenterLeft | StackAlignment::BottomLeft => 0,
-                                    StackAlignment::TopCenter | StackAlignment::Center | StackAlignment::BottomCenter => {
-                                        ((max_size.width.saturating_sub(sizing.width)) / 2) as i32
-                                    },
-                                    StackAlignment::TopRight | StackAlignment::CenterRight | StackAlignment::BottomRight => {
-                                        (max_size.width.saturating_sub(sizing.width)) as i32
-                                    },
-                                };
-
-                                let y = match alignment {
-                                    StackAlignment::TopLeft | StackAlignment::TopCenter | StackAlignment::TopRight => 0,
-                                    StackAlignment::CenterLeft | StackAlignment::Center | StackAlignment::CenterRight => {
-                                        ((max_size.height.saturating_sub(sizing.height)) / 2) as i32
-                                    },
-                                    StackAlignment::BottomLeft | StackAlignment::BottomCenter | StackAlignment::BottomRight => {
-                                        (max_size.height.saturating_sub(sizing.height)) as i32
-                                    },
-                                };
-
-                                Point::new(x, y)
+                                // Use the alignment helper methods
+                                alignment.offset(max_size, sizing.into())
                             } else {
                                 // Use the absolute position
                                 pos
                             }
                         } else {
-                            // Calculate position based on alignment
-                            let x = match self.alignment {
-                                StackAlignment::TopLeft | StackAlignment::CenterLeft | StackAlignment::BottomLeft => 0,
-                                StackAlignment::TopCenter | StackAlignment::Center | StackAlignment::BottomCenter => {
-                                    ((max_size.width.saturating_sub(sizing.width)) / 2) as i32
-                                },
-                                StackAlignment::TopRight | StackAlignment::CenterRight | StackAlignment::BottomRight => {
-                                    (max_size.width.saturating_sub(sizing.width)) as i32
-                                },
-                            };
-
-                            let y = match self.alignment {
-                                StackAlignment::TopLeft | StackAlignment::TopCenter | StackAlignment::TopRight => 0,
-                                StackAlignment::CenterLeft | StackAlignment::Center | StackAlignment::CenterRight => {
-                                    ((max_size.height.saturating_sub(sizing.height)) / 2) as i32
-                                },
-                                StackAlignment::BottomLeft | StackAlignment::BottomCenter | StackAlignment::BottomRight => {
-                                    (max_size.height.saturating_sub(sizing.height)) as i32
-                                },
-                            };
-
-                            Point::new(x, y)
+                            // Use the alignment helper methods
+                            self.alignment.offset(max_size, sizing.into())
                         };
 
                         // Store the child's rectangle

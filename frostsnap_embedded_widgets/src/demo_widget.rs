@@ -9,11 +9,11 @@ macro_rules! demo_widget {
             MainAxisAlignment, CrossAxisAlignment, Widget,
             HoldToConfirm, center::Center, Padding, SizedBox,
             FONT_SMALL, FONT_MED, FONT_LARGE, Instant,
+            Alignment
         };
         use embedded_graphics::{
             prelude::*,
             pixelcolor::{Rgb565, BinaryColor},
-            text::Alignment,
         };
         use u8g2_fonts::U8g2TextStyle;
         use $crate::alloc::string::{String, ToString};
@@ -63,10 +63,8 @@ macro_rules! demo_widget {
             }
             "confirm_touch" | "hold_confirm" | "hold_checkmark" | "hold_to_confirm" => {
                 use $crate::{text::Text, HoldToConfirm, palette::PALETTE};
-                use embedded_graphics::text::Alignment;
                 use embedded_graphics::pixelcolor::BinaryColor;
-
-                let prompt_text = Text::new("Confirm\ntransaction", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)).with_alignment(Alignment::Center);
+                let prompt_text = Text::new("Confirm\ntransaction", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)).with_alignment(embedded_graphics::text::Alignment::Center);
                 let widget = HoldToConfirm::new(2000, prompt_text);
                 $run_macro!(widget);
             }
@@ -205,8 +203,7 @@ macro_rules! demo_widget {
                 use $crate::DeviceNameScreen;
 
                 // Create device name screen with a long name to test
-                let mut device_name_screen = DeviceNameScreen::new("Frank Zappppper".into());
-                device_name_screen.set_edit_mode(true);
+                let mut device_name_screen = DeviceNameScreen::new("Frank L".into());
 
                 $run_macro!(device_name_screen);
             }
@@ -517,7 +514,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "stack" => {
-                use $crate::{Stack, StackAlignment, Container, text::Text, palette::PALETTE};
+                use $crate::{Stack, Alignment, Container, text::Text, palette::PALETTE};
                 use embedded_graphics::primitives::{Rectangle, PrimitiveStyle};
 
                 // Create a background container
@@ -532,7 +529,7 @@ macro_rules! demo_widget {
                 let centered_text = Text::new(
                     "Centered",
                     U8g2TextStyle::new(FONT_MED, PALETTE.primary)
-                ).with_alignment(Alignment::Center);
+                ).with_alignment(embedded_graphics::text::Alignment::Center);
 
                 // Create a small icon-like widget positioned at top-right
                 let icon = Container::with_size(
@@ -547,7 +544,7 @@ macro_rules! demo_widget {
                     .push(background)
                     .push(centered_text)  // This will be centered
                     .push_positioned(icon, 170, 10)  // Position in top-right
-                    .with_alignment(StackAlignment::Center);
+                    .with_alignment(Alignment::Center);
 
                 let widget = Center::new(stack);
                 $run_macro!(widget);

@@ -1,7 +1,7 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{
-    mut_text::MutText, palette::PALETTE, string_buffer::StringBuffer, DynWidget, Instant,
-    Text as TextWidget, Widget,
+    Container, palette::PALETTE, string_buffer::StringBuffer, DynWidget, Instant,
+    Switcher, Text as TextWidget, Widget,
 };
 use core::fmt::Write;
 use embedded_graphics::{
@@ -11,14 +11,14 @@ use embedded_graphics::{
     text::Alignment,
 };
 
-// Constants for MutText dimensions - "FPS: 999" is max 8 chars
+// Constants for FPS text dimensions - "FPS: 999" is max 8 chars
 const FPS_MAX_CHARS: usize = 10;
 
-type FpsMutText = MutText<u8g2_fonts::U8g2TextStyle<Rgb565>>;
+type FpsDisplay = Container<Switcher<TextWidget<u8g2_fonts::U8g2TextStyle<Rgb565>>>>;
 
 /// A widget that displays frames per second using simple frame counting
 pub struct Fps {
-    display: FpsMutText,
+    display: FpsDisplay,
     frame_count: u32,
     last_fps_time: Option<Instant>,
     last_display_update: Option<Instant>,
@@ -30,7 +30,9 @@ impl Fps {
     /// Create a new FPS counter widget with green text
     pub fn new(update_interval_ms: u64) -> Self {
         let text_style = u8g2_fonts::U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
-        let display = MutText::new("FPS: 0", text_style, FPS_MAX_CHARS);
+        let text = TextWidget::new("FPS: 0", text_style);
+        let switcher = Switcher::new(text);
+        let display = Container::new(switcher).with_width(100);
 
         Self {
             display,
@@ -119,8 +121,8 @@ impl Widget for Fps {
 
             // Create new text widget with updated text
             let text_style = u8g2_fonts::U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
-            let text_widget = TextWidget::new(buf.as_str(), text_style);
-            self.display.set_text(text_widget);
+            let text = TextWidget::new(buf.as_str(), text_style);
+            self.display.child.switch_to(text);
 
             self.last_display_update = Some(current_time);
         }

@@ -19,7 +19,7 @@ use esp_hal::{
 };
 use frostsnap_device::debug_stats::create_debug_stats;
 use frostsnap_device::touch_calibration::adjust_touch_point;
-use frostsnap_embedded_widgets::{DynWidget, Stack, StackAlignment};
+use frostsnap_embedded_widgets::{Alignment, DynWidget, Stack};
 use mipidsi::{models::ST7789, options::ColorInversion};
 
 // Screen constants
@@ -103,7 +103,7 @@ fn main() -> ! {
             // Create UI stack with widget and debug stats overlay
             let mut ui_stack = Stack::builder()
                 .push(widget)
-                .push_aligned(create_debug_stats(), StackAlignment::TopLeft);
+                .push_aligned(create_debug_stats(), Alignment::TopLeft);
 
             // Set constraints on the stack
             ui_stack.set_constraints(Size::new(240, 280));
