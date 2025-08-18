@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:frostsnap/global.dart';
-import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/theme.dart';
 
 void showWalletCreatedDialog(
   BuildContext context,
-  AccessStructureRef accessStructureRef,
+  AccessStructure accessStructure,
 ) async {
-  final accessStructure = coord.getAccessStructure(asRef: accessStructureRef)!;
-  final backupManager = FrostsnapContext.of(context)!.backupManager;
   await showDialog(
     context: context,
     barrierDismissible: false,
@@ -99,7 +96,7 @@ void showWalletCreatedDialog(
                     return SuperWalletContext.of(
                       context,
                     )!.tryWrapInWalletContext(
-                      keyId: accessStructureRef.keyId,
+                      keyId: accessStructure.masterAppkey().keyId(),
                       child: BackupChecklist(
                         backupManager: backupManager,
                         accessStructure: accessStructure,
@@ -117,5 +114,4 @@ void showWalletCreatedDialog(
       );
     },
   );
-  await backupManager.startBackupRun(accessStructure: accessStructure);
 }

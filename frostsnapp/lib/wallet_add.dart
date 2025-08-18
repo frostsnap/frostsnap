@@ -15,9 +15,13 @@ class WalletAddColumn extends StatelessWidget {
   static const contentPadding = EdgeInsets.symmetric(horizontal: 16);
 
   final bool showNewToFrostsnap;
-  final Function(AddType)? onPressed;
+  final Function(AddType) onPressed;
 
-  WalletAddColumn({super.key, this.showNewToFrostsnap = true, this.onPressed});
+  WalletAddColumn({
+    super.key,
+    this.showNewToFrostsnap = true,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +31,7 @@ class WalletAddColumn extends StatelessWidget {
         if (showNewToFrostsnap) _buildTitle(context, text: 'New to Frostsnap?'),
         _buildCard(
           context,
-          action: () => showWalletCreateDialog(context),
+          action: () => onPressed(AddType.newWallet),
           emphasize: true,
           icon: Icon(Icons.add_rounded, size: iconSize),
           title: 'Create a new wallet',
@@ -45,7 +49,7 @@ class WalletAddColumn extends StatelessWidget {
         ),
         _buildCard(
           context,
-          action: () => showWalletRecoverWithDeviceDialog(context),
+          action: () => onPressed(AddType.recoverWalletWithDevice),
           icon: ImageIcon(
             AssetImage('assets/icons/device2.png'),
             size: iconSize,
@@ -55,7 +59,7 @@ class WalletAddColumn extends StatelessWidget {
         ),
         _buildCard(
           context,
-          action: () => showWalletRecoverWithBackupDialog(context),
+          action: () => onPressed(AddType.recoverWalletWithBackup),
           icon: Icon(Icons.description_outlined, size: iconSize),
           title: 'Physical backup',
           subtitle: 'Restore with a recorded key backup',
@@ -149,14 +153,7 @@ class WalletAddColumn extends StatelessWidget {
           );
   }
 
-  void maybeTriggerOnPressed(AddType t) {
-    final onPressed = this.onPressed;
-    if (onPressed != null) onPressed(t);
-  }
-
-  void showWalletCreateDialog(BuildContext context) async {
-    maybeTriggerOnPressed(AddType.newWallet);
-
+  static void showWalletCreateDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
@@ -165,20 +162,20 @@ class WalletAddColumn extends StatelessWidget {
     );
 
     if (!context.mounted || asRef == null) return;
+    final accessStructure = coord.getAccessStructure(asRef: asRef)!;
+    final backupManager = FrostsnapContext.of(context)!.backupManager;
 
     homeCtx.openNewlyCreatedWallet(asRef.keyId);
-
-    // WORKAROUND: Sometimes the device names do not show up on the Backup Checklist. This fixes it
-    // for some reason.
-    await Future.delayed(Duration(milliseconds: 100));
-    if (!context.mounted) return;
-
-    showWalletCreatedDialog(context, asRef);
+    showWalletCreatedDialog(context, accessStructure);
+    // Delay this to avoid race condition.
+    await Future.delayed(
+      Duration(seconds: 1),
+      () async =>
+          await backupManager.startBackupRun(accessStructure: accessStructure),
+    );
   }
 
-  void showWalletRecoverWithDeviceDialog(BuildContext context) async {
-    maybeTriggerOnPressed(AddType.recoverWalletWithDevice);
-
+  static void showWalletRecoverWithDeviceDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
     final restorationId = await MaybeFullscreenDialog.show<RestorationId>(
       context: context,
@@ -190,9 +187,7 @@ class WalletAddColumn extends StatelessWidget {
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
   }
 
-  void showWalletRecoverWithBackupDialog(BuildContext context) async {
-    maybeTriggerOnPressed(AddType.recoverWalletWithBackup);
-
+  static void showWalletRecoverWithBackupDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
     final restorationId = await MaybeFullscreenDialog.show<RestorationId>(
       context: context,
@@ -203,4 +198,17 @@ class WalletAddColumn extends StatelessWidget {
     if (restorationId == null) return;
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
   }
+}
+
+Function(AddType) makeOnPressed(BuildContext context) {
+  return (addType) {
+    switch (addType) {
+      case AddType.newWallet:
+        WalletAddColumn.showWalletCreateDialog(context);
+      case AddType.recoverWalletWithDevice:
+        WalletAddColumn.showWalletRecoverWithDeviceDialog(context);
+      case AddType.recoverWalletWithBackup:
+        WalletAddColumn.showWalletRecoverWithBackupDialog(context);
+    }
+  };
 }

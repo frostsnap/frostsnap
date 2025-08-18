@@ -80,7 +80,7 @@ class WalletHome extends StatelessWidget {
             alignment: Alignment.center,
             image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
           ),
-          WalletAddColumn(),
+          WalletAddColumn(onPressed: makeOnPressed(context)),
         ],
       ),
     );
