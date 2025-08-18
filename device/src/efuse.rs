@@ -220,12 +220,12 @@ pub struct EfuseHmacKeys<'a> {
 impl<'a> EfuseHmacKeys<'a> {
     const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key0;
     const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key1;
-    const RSA_EFUSE_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key4;
+    const DS_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key4;
 
     const HMAC_KEYIDS: [esp_hal::hmac::KeyId; 3] = [
         Self::ENCRYPTION_KEYID,
         Self::FIXED_ENTROPY_KEYID,
-        Self::RSA_EFUSE_KEYID,
+        Self::DS_KEYID,
     ];
 
     pub fn has_been_initialized() -> bool {
@@ -261,19 +261,18 @@ impl<'a> EfuseHmacKeys<'a> {
                 KeyPurpose::HmacUpstream,
                 read_protect,
             ),
-            (Self::RSA_EFUSE_KEYID as u8, KeyPurpose::Ds, read_protect),
+            (Self::DS_KEYID as u8, KeyPurpose::Ds, read_protect),
         ];
         // Write keys then key purposes
         unsafe {
             efuse.set_efuse_key(Self::ENCRYPTION_KEYID as u8, share_encryption_key)?;
-            Self::validate_key_write(hmac, Self::ENCRYPTION_KEYID, &share_encryption_key)?;
-
             efuse.set_efuse_key(Self::FIXED_ENTROPY_KEYID as u8, fixed_entropy_key)?;
-            Self::validate_key_write(hmac, Self::FIXED_ENTROPY_KEYID, &fixed_entropy_key)?;
-
-            efuse.set_efuse_key(Self::RSA_EFUSE_KEYID as u8, ds_hmac_key)?;
+            efuse.set_efuse_key(Self::DS_KEYID as u8, ds_hmac_key)?;
 
             efuse.write_key_purposes(&key_configs)?;
+
+            Self::validate_key_write(hmac, Self::ENCRYPTION_KEYID, &share_encryption_key)?;
+            Self::validate_key_write(hmac, Self::FIXED_ENTROPY_KEYID, &fixed_entropy_key)?;
         }
         Ok(EfuseHmacKeys {
             share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
