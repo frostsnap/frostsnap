@@ -15,21 +15,20 @@ use esp_hal::{prelude::*, timer, uart, usb_serial_jtag::UsbSerialJtag};
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::ReceiveSerial;
-use frostsnap_comms::Upstream;
 use frostsnap_comms::BINCODE_CONFIG;
 
 const RING_BUFFER_SIZE: usize = 256;
 
-pub struct SerialInterface<'a, T, D> {
-    io: SerialIo<'a>,
+pub struct SerialInterface<'a, 'b, T, D> {
+    io: SerialIo<'a, 'b>,
     ring_buffer: VecDeque<u8>,
     magic_bytes_progress: usize,
     timer: &'a T,
     direction: PhantomData<D>,
 }
 
-impl<'a, T, D> SerialInterface<'a, T, D> {
-    pub fn new_uart(uart: uart::Uart<'a, Blocking, AnyUart>, timer: &'a T) -> Self {
+impl<'a, 'b, T, D> SerialInterface<'a, 'b, T, D> {
+    pub fn new_uart(uart: &'b mut uart::Uart<'a, Blocking, AnyUart>, timer: &'a T) -> Self {
         Self {
             io: SerialIo::Uart { uart },
             ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
@@ -48,8 +47,8 @@ impl<'a, T, D> SerialInterface<'a, T, D> {
     }
 }
 
-impl<'a, T> SerialInterface<'a, T, Upstream> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a, Blocking>, timer: &'a T) -> Self {
+impl<'a, 'b, T, D> SerialInterface<'a, 'b, T, D> {
+    pub fn new_jtag(jtag: &'b mut UsbSerialJtag<'a, Blocking>, timer: &'a T) -> Self {
         Self {
             io: SerialIo::Jtag(jtag),
             ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
@@ -60,7 +59,7 @@ impl<'a, T> SerialInterface<'a, T, Upstream> {
     }
 }
 
-impl<'a, T, D> SerialInterface<'a, T, D>
+impl<'a, 'b, T, D> SerialInterface<'a, 'b, T, D>
 where
     T: timer::Timer,
     D: Direction,
@@ -148,12 +147,16 @@ where
         self.io.flush()
     }
 
-    pub fn inner_mut(&mut self) -> &mut SerialIo<'a> {
+    pub fn into_inner(self) -> SerialIo<'a, 'b> {
+        self.io
+    }
+
+    pub fn inner_mut(&mut self) -> &mut SerialIo<'a, 'b> {
         &mut self.io
     }
 }
 
-impl<T, D> Reader for SerialInterface<'_, T, D>
+impl<'a, 'b, T, D> Reader for SerialInterface<'a, 'b, T, D>
 where
     T: timer::Timer,
     D: Direction,
@@ -189,7 +192,7 @@ where
     }
 }
 
-impl<T, D> Writer for SerialInterface<'_, T, D> {
+impl<T, D> Writer for SerialInterface<'_, '_, T, D> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         match self.io.write_bytes(bytes) {
             Err(e) => Err(EncodeError::OtherString(format!("{e:?}"))),
@@ -198,14 +201,14 @@ impl<T, D> Writer for SerialInterface<'_, T, D> {
     }
 }
 
-pub enum SerialIo<'a> {
+pub enum SerialIo<'a, 'b> {
     Uart {
-        uart: uart::Uart<'a, Blocking, AnyUart>,
+        uart: &'b mut uart::Uart<'a, Blocking, AnyUart>,
     },
-    Jtag(UsbSerialJtag<'a, Blocking>),
+    Jtag(&'b mut UsbSerialJtag<'a, Blocking>),
 }
 
-impl SerialIo<'_> {
+impl<'a, 'b> SerialIo<'a, 'b> {
     pub fn change_baud(&mut self, baudrate: u32) {
         self.flush();
         match self {

@@ -5,6 +5,7 @@ extern crate std;
 
 #[macro_use]
 extern crate alloc;
+pub mod factory;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
@@ -291,7 +292,7 @@ pub trait HasMagicBytes {
 }
 
 pub trait Direction: HasMagicBytes {
-    type RecvType: bincode::Encode + Gist;
+    type RecvType: bincode::Encode + bincode::Decode<()> + Gist;
     type Opposite: Direction;
 }
 
