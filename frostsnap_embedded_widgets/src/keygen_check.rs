@@ -6,6 +6,7 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
+    text::Alignment,
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -15,8 +16,7 @@ type CodeColumn = Column<(TofNText, CodeText)>;
 type PaddedCodeColumn = Padding<CodeColumn>;
 type CodeContainer = Container<PaddedCodeColumn>;
 type ConfirmText = Text<U8g2TextStyle<Rgb565>>;
-type OnAllDevicesRow = Row<(ConfirmText, ConfirmText)>;
-type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow)>;
+type PromptColumn = Column<(ConfirmText, CodeContainer, ConfirmText)>;
 
 /// Widget for checking and confirming key generation
 #[derive(frostsnap_macros::Widget)]
@@ -41,39 +41,37 @@ impl KeygenCheck {
             security_check_code[3]
         );
 
-        // Create the t of n text widget
-        let t_of_n_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_surface);
+        // Create the t of n text widget in blue
+        let t_of_n_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.primary);
         let t_of_n_widget = Text::new(t_of_n_text.clone(), t_of_n_style.clone());
 
-        // Create the hex code text widget using FONT_LARGE
-        let code_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_surface);
+        // Create the hex code text widget using FONT_LARGE in blue
+        let code_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.primary);
         let code_widget = Text::new(hex_code.clone(), code_style);
 
         // Create internal column with t_of_n and code
         let code_column = Column::new((t_of_n_widget, code_widget));
 
-        // Put the column in a container with a border
+        // Put the column in a container with a border (no fill for cleaner look)
         let padded_code_column = Padding::all(10, code_column);
         let code_container = Container::new(padded_code_column)
             .with_border(PALETTE.outline, 2)
-            .with_fill(PALETTE.surface)
             .with_corner_radius(Size::new(8, 8));
 
-        // Create the "confirm identical" text
-        let confirm_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background);
-        let confirm_identical_widget = Text::new("Confirm identical:", confirm_style.clone());
+        // Create the subtitle text in smaller grey (now at the top)
+        let subtitle_style = U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary);
+        let subtitle_text = Text::new(
+            "Check this code matches\non every device",
+            subtitle_style
+        ).with_alignment(Alignment::Center);
 
-        // Create the "on all devices" text with underline
-        let on_text = Text::new("on ", confirm_style.clone());
-        let all_devices_text =
-            Text::new("all devices", confirm_style).with_underline(PALETTE.on_background);
-
-        let on_all_devices_row = Row::new((on_text, all_devices_text));
+        // Create the main title "Hold to Confirm" (now at the bottom)
+        let title_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background);
+        let title_text = Text::new("Hold to Confirm", title_style);
 
         // Create the prompt column with SpaceEvenly alignment
-        let prompt_column =
-            Column::new((confirm_identical_widget, code_container, on_all_devices_row))
-                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        let prompt_column = Column::new((subtitle_text, code_container, title_text))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
         // Create the hold-to-confirm widget
         let hold_to_confirm = HoldToConfirm::new(
@@ -81,12 +79,19 @@ impl KeygenCheck {
             prompt_column,
         );
 
-        Self { hold_to_confirm }
+        Self {
+            hold_to_confirm,
+        }
     }
 
     /// Check if the user has confirmed
     pub fn is_confirmed(&self) -> bool {
         self.hold_to_confirm.is_completed()
+    }
+
+    /// Reset the confirmation state
+    pub fn reset(&mut self) {
+        self.hold_to_confirm.reset();
     }
 }
 

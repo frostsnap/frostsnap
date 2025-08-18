@@ -35,7 +35,7 @@ where
     stack: PageStack<T>,
     drag_start: Option<u32>,
     height: u32,
-    on_page_ready: Option<PageReadyCallback<T>>,
+    on_page_ready: Option<Box<dyn FnMut(&mut T)>>,
     page_ready_triggered: bool,
     screen_size: Option<Size>,
 }
@@ -47,8 +47,7 @@ where
 {
     pub fn new(list: L, height: u32) -> Self {
         // Get the initial widget (index 0)
-        let initial_widget = list
-            .get(0)
+        let initial_widget = list.get(0)
             .expect("PageSlider requires at least one widget in the list");
 
         let transition = SlideInTransition::new(
@@ -59,10 +58,9 @@ where
         );
 
         // Build stack with transition and optional chevron aligned at bottom center
-        let stack = Stack::builder().push(transition).push_aligned(
-            None::<Fader<SwipeUpChevron<Rgb565>>>,
-            Alignment::BottomCenter,
-        );
+        let stack = Stack::builder()
+            .push(transition)
+            .push_aligned(None::<Fader<SwipeUpChevron<Rgb565>>>, Alignment::BottomCenter);
 
         Self {
             list,
@@ -88,7 +86,7 @@ where
     /// Builder method to enable swipe up chevron indicator
     pub fn with_swipe_up_chevron(mut self) -> Self {
         // Create chevron
-        let chevron = SwipeUpChevron::new(PALETTE.on_surface, PALETTE.background);
+        let chevron = SwipeUpChevron::new(PALETTE.text_secondary, PALETTE.background);
         let fader = Fader::new_faded_out(chevron);
 
         // Set the chevron in the stack (it's already positioned with BottomCenter alignment)
@@ -118,6 +116,7 @@ where
     }
 
     pub fn start_transition(&mut self, direction: Direction) {
+
         // First check if navigation is allowed based on the current widget
         let current_widget = self.stack.children.0.current_widget_mut();
         let allowed = match direction {
@@ -129,12 +128,7 @@ where
             return; // Navigation blocked by the widget list
         }
 
-        // Instantly fade out the chevron when starting a transition
-        if let Some(ref mut chevron) = &mut self.stack.children.1 {
-            chevron.instant_fade(PALETTE.background);
-        }
-
-        // Calculate target index
+        // Calculate target index and check if we can actually transition
         let target_index = match direction {
             Direction::Up => {
                 if self.has_next() {
@@ -152,12 +146,17 @@ where
             }
         };
 
+        // Only fade out the chevron if we're actually going to transition
+        if let Some(ref mut chevron) = &mut self.stack.children.1 {
+            chevron.instant_fade(PALETTE.background);
+        };
+
         // Get the new widget
         if let Some(new_widget) = self.list.get(target_index) {
             // Set slide direction based on height
             let height = self.height as i32;
             let slide_from = match direction {
-                Direction::Up => Point::new(0, height), // Slide from bottom
+                Direction::Up => Point::new(0, height),  // Slide from bottom
                 Direction::Down => Point::new(0, -height), // Slide from top
             };
 
@@ -217,6 +216,7 @@ where
             }
         }
     }
+
 
     fn force_full_redraw(&mut self) {
         self.stack.force_full_redraw();

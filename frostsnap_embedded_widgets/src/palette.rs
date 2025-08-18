@@ -26,6 +26,7 @@ pub struct MaterialDarkPalette565 {
     pub outline: Rgb565,
     pub error: Rgb565,
     pub on_error: Rgb565,
+    pub caution: Rgb565,
 
     pub confirm_progress: Rgb565,
     pub logo: Rgb565,
@@ -63,8 +64,9 @@ pub const PALETTE: MaterialDarkPalette565 = MaterialDarkPalette565 {
     on_surface_variant: Rgb565::new(25, 54, 27),
 
     outline: Rgb565::new(16, 41, 21),
-    error: Rgb565::new(29, 45, 22),
+    error: Rgb565::new(31, 12, 6),  // Proper red for errors
     on_error: Rgb565::new(12, 5, 2),
+    caution: Rgb565::new(31, 55, 0),  // Yellow/amber for cautions
 
     confirm_progress: Rgb565::new(3, 46, 16),
     logo: Rgb565::new(0, 55, 30),

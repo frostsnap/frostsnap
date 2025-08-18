@@ -2,7 +2,7 @@ use crate::{
     any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay, center::Center, icons::IconWidget,
     page_slider::PageSlider, palette::PALETTE, sized_box::SizedBox,
     super_draw_target::SuperDrawTarget, text::Text, widget_list::WidgetList, Column,
-    CrossAxisAlignment, DynWidget, HoldToConfirm, Instant, MainAxisAlignment, Padding, Widget,
+    CrossAxisAlignment, DynWidget, HoldToConfirm, Instant, MainAxisAlignment, Padding, Row, Widget,
 };
 use alloc::{
     format,
@@ -13,6 +13,7 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
+    text::Alignment,
 };
 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
 use u8g2_fonts::U8g2TextStyle;
@@ -71,65 +72,123 @@ impl AmountPage {
 /// Type alias for possible address display widgets
 type AddressDisplayWidget = AnyOf<(
     crate::p2tr_address_display::P2trAddressDisplay,
-    Text<U8g2TextStyle<Rgb565>>,
+    crate::p2wsh_address_display::P2wshAddressDisplay,
+    crate::p2wpkh_address_display::P2wpkhAddressDisplay,
+    crate::p2sh_address_display::P2shAddressDisplay,
+    crate::p2pkh_address_display::P2pkhAddressDisplay,
+    Text<U8g2TextStyle<Rgb565>>
 )>;
 
 /// Page widget for displaying recipient address
 #[derive(frostsnap_macros::Widget)]
 pub struct AddressPage {
     #[widget_delegate]
-    center: Center<Padding<Column<(Text<U8g2TextStyle<Rgb565>>, AddressDisplayWidget)>>>,
+    center: Center<Padding<Column<(
+        Text<U8g2TextStyle<Rgb565>>,
+        AddressDisplayWidget,
+    )>>>,
 }
 
 impl AddressPage {
+    /// Create a demo page showing the fallback "Unrecognised Address Format" message
+    pub fn new_fallback_demo(index: usize) -> Self {
+        let title = Text::new(
+            format!("Address #{}", index + 1),
+            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
+        );
+
+        // Create the fallback display directly
+        let error_text = Text::new(
+            "Unrecognised\nAddress Format",
+            U8g2TextStyle::new(crate::FONT_MED, PALETTE.primary)
+        ).with_alignment(Alignment::Center);
+
+        let address_display = AddressDisplayWidget::new(error_text);
+
+        let column = Column::new((title, address_display)).with_main_axis_alignment(MainAxisAlignment::SpaceAround);
+        let padded = Padding::only(column).bottom(40).build();
+
+        Self { center: Center::new(padded) }
+    }
+
     fn new(index: usize, address: &bitcoin::Address) -> Self {
         let title = Text::new(
             format!("Address #{}", index + 1),
             U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
         );
 
+        // DEMO HACK: Check if this is a special demo address to show fallback
+        // Using the genesis block address as a trigger for the demo
+        let address_str = address.to_string();
+        if address_str == "1111111111111111111114oLvT2" {
+            // Show the fallback for demo purposes
+            let error_text = Text::new(
+                "Unrecognised\nAddress Format",
+                U8g2TextStyle::new(crate::FONT_MED, PALETTE.primary)
+            ).with_alignment(Alignment::Center);
+
+            let address_display = AddressDisplayWidget::new(error_text);
+            let column = Column::new((title, address_display)).with_main_axis_alignment(MainAxisAlignment::SpaceAround);
+            let padded = Padding::only(column).bottom(40).build();
+            return Self { center: Center::new(padded) };
+        }
+
         // Determine address type and create appropriate display widget
         let address_display = match address.address_type() {
             Some(bitcoin::AddressType::P2tr) => {
-                // P2TR address (Taproot)
-                let p2tr_display =
-                    crate::p2tr_address_display::P2trAddressDisplay::new(&address.to_string());
+                // P2TR address (Taproot) - 62 characters
+                // Use index combined with a large prime for seed variation
+                let seed = (index as u32).wrapping_mul(2654435761); // Large prime for better distribution
+                let p2tr_display = crate::p2tr_address_display::P2trAddressDisplay::new_with_seed(&address.to_string(), seed);
                 AddressDisplayWidget::new(p2tr_display)
             }
+            Some(bitcoin::AddressType::P2wsh) => {
+                // P2WSH address - 62 characters (same as P2TR)
+                // Use index combined with a large prime for seed variation
+                let seed = (index as u32).wrapping_mul(2654435761); // Large prime for better distribution
+                let p2wsh_display = crate::p2wsh_address_display::P2wshAddressDisplay::new_with_seed(&address.to_string(), seed);
+                AddressDisplayWidget::new(p2wsh_display)
+            }
+            Some(bitcoin::AddressType::P2wpkh) => {
+                // P2WPKH address - 42 characters
+                // Use index combined with a large prime for seed variation
+                let seed = (index as u32).wrapping_mul(2654435761); // Large prime for better distribution
+                let p2wpkh_display = crate::p2wpkh_address_display::P2wpkhAddressDisplay::new_with_seed(&address.to_string(), seed);
+                AddressDisplayWidget::new(p2wpkh_display)
+            }
+            Some(bitcoin::AddressType::P2sh) => {
+                // P2SH address - typically 34 characters
+                // Use index combined with a large prime for seed variation
+                let seed = (index as u32).wrapping_mul(2654435761); // Large prime for better distribution
+                let p2sh_display = crate::p2sh_address_display::P2shAddressDisplay::new_with_seed(&address.to_string(), seed);
+                AddressDisplayWidget::new(p2sh_display)
+            }
+            Some(bitcoin::AddressType::P2pkh) => {
+                // P2PKH address - typically 34 characters
+                // Use index combined with a large prime for seed variation
+                let seed = (index as u32).wrapping_mul(2654435761); // Large prime for better distribution
+                let p2pkh_display = crate::p2pkh_address_display::P2pkhAddressDisplay::new_with_seed(&address.to_string(), seed);
+                AddressDisplayWidget::new(p2pkh_display)
+            }
             _ => {
-                // For now, fall back to simple text display for other address types
-                // In the future, we can add P2wpkhAddressDisplay, P2pkhAddressDisplay, etc.
-                let address_str = address.to_string();
-                let chunks: Vec<String> = address_str
-                    .chars()
-                    .collect::<Vec<_>>()
-                    .chunks(4)
-                    .map(|chunk| chunk.iter().collect::<String>())
-                    .collect();
+                // Fallback for any address type that returns None
+                // This includes OP_RETURN, P2PK, bare multisig, etc.
+                // Display a clear message that the format is not recognized
+                let error_text = Text::new(
+                    "Unrecognised\nAddress Format",
+                    U8g2TextStyle::new(crate::FONT_MED, PALETTE.primary)
+                ).with_alignment(Alignment::Center);
 
-                let mut formatted_lines = Vec::new();
-                for row_chunks in chunks.chunks(3) {
-                    let line = row_chunks.join("  ");
-                    formatted_lines.push(line);
-                }
-
-                let address_text = Text::new(
-                    formatted_lines.join("\n"),
-                    U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_surface),
-                );
-
-                AddressDisplayWidget::new(address_text)
+                AddressDisplayWidget::new(error_text)
             }
         };
 
-        let column = Column::new((title, address_display))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceAround);
+        let column = Column::new((title, address_display)).with_main_axis_alignment(MainAxisAlignment::SpaceAround);
         let padded = Padding::only(column).bottom(40).build();
 
-        Self {
-            center: Center::new(padded),
-        }
+        Self { center: Center::new(padded) }
     }
+
 }
 
 // Trait implementations are now generated by the derive macro
@@ -138,13 +197,13 @@ impl AddressPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct FeePage {
     #[widget_delegate]
-    center: Center<
-        Column<(
-            Text<U8g2TextStyle<Rgb565>>,
-            BitcoinAmountDisplay,
-            Text<U8g2TextStyle<Rgb565>>,
-        )>,
-    >,
+    center: Center<Column<(
+        Text<U8g2TextStyle<Rgb565>>,
+        SizedBox<Rgb565>,
+        BitcoinAmountDisplay,
+        SizedBox<Rgb565>,
+        Text<U8g2TextStyle<Rgb565>>,
+    )>>,
 }
 
 impl FeePage {
@@ -154,15 +213,25 @@ impl FeePage {
             U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
         );
 
+        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15)); // 15px height spacing (same as AmountPage)
+
         let fee_amount = BitcoinAmountDisplay::new(fee_sats);
 
-        let fee_sats_text = Text::new(
-            format!("{} sats", fee_sats),
-            U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
+        let btc_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10)); // 10px spacing before sats/vb (same as AmountPage)
+
+        // Estimate sats/vb - typical 2-of-3 multisig transaction is ~250-350 vbytes
+        // For demo purposes, using a reasonable estimate
+        let estimated_vbytes = 300; // Reasonable estimate for a multisig transaction
+        let sats_per_vbyte = fee_sats / estimated_vbytes;
+
+        let fee_rate_text = Text::new(
+            format!("{} sats/vb", sats_per_vbyte),
+            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary) // Same font as "BTC" in AmountPage
         );
 
-        let column = Column::new((title, fee_amount, fee_sats_text))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        let column = Column::new((title, spacer, fee_amount, btc_spacer, fee_rate_text))
+            .with_main_axis_alignment(MainAxisAlignment::Center) // Same as AmountPage
+            .with_cross_axis_alignment(CrossAxisAlignment::Center); // Same as AmountPage
 
         Self {
             center: Center::new(column),
@@ -172,50 +241,116 @@ impl FeePage {
 
 // Trait implementations are now generated by the derive macro
 
+/// Page widget for displaying total amount
+#[derive(frostsnap_macros::Widget)]
+pub struct TotalAmountPage {
+    #[widget_delegate]
+    center: Center<Column<(
+        Text<U8g2TextStyle<Rgb565>>,
+        SizedBox<Rgb565>,
+        BitcoinAmountDisplay,
+        SizedBox<Rgb565>,
+        Text<U8g2TextStyle<Rgb565>>,
+    )>>,
+}
+
+impl TotalAmountPage {
+    fn new(total_sent: u64, fee_sats: u64) -> Self {
+        // Calculate total (amount sent + fee)
+        let total_amount = total_sent + fee_sats;
+
+        let title = Text::new(
+            "Total Amount".to_string(),
+            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
+        );
+
+        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15)); // 15px height spacing
+
+        let amount_display = BitcoinAmountDisplay::new(total_amount);
+
+        let btc_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10)); // 10px spacing before BTC
+
+        let btc_text = Text::new(
+            "BTC".to_string(),
+            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
+        );
+
+        let column = Column::new((title, spacer, amount_display, btc_spacer, btc_text))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        Self {
+            center: Center::new(column),
+        }
+    }
+}
+
 /// Page widget for high fee warning
 #[derive(frostsnap_macros::Widget)]
 pub struct WarningPage {
     #[widget_delegate]
-    center: Center<
-        Column<(
-            IconWidget<
-                embedded_iconoir::Icon<
-                    Rgb565,
-                    embedded_iconoir::icons::size48px::actions::WarningTriangle,
-                >,
-            >,
-            Text<U8g2TextStyle<Rgb565>>,
+    center: Center<Column<(
+        Row<(
+            IconWidget<embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size24px::actions::WarningTriangle>>,
+            SizedBox<Rgb565>,
             Text<U8g2TextStyle<Rgb565>>,
         )>,
-    >,
+        SizedBox<Rgb565>,
+        Text<U8g2TextStyle<Rgb565>>,
+        SizedBox<Rgb565>,
+        Text<U8g2TextStyle<Rgb565>>,
+    )>>,
 }
 
 impl WarningPage {
-    fn new(fee_sats: u64, _total_sent: u64) -> Self {
+    fn new(fee_sats: u64, total_sent: u64) -> Self {
         use embedded_iconoir::prelude::*;
 
         let warning_icon = IconWidget::new(
-            embedded_iconoir::icons::size48px::actions::WarningTriangle::new(PALETTE.error),
+            embedded_iconoir::icons::size24px::actions::WarningTriangle::new(PALETTE.caution)
         );
+
+        let icon_spacer = SizedBox::<Rgb565>::new(Size::new(5, 1)); // 5px horizontal spacing
 
         let caution_text = Text::new(
             "Caution".to_string(),
-            U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.error),
+            U8g2TextStyle::new(crate::FONT_MED, PALETTE.caution)
         );
 
+        // Put icon, spacer, and "Caution" on same row with bottom alignment
+        let caution_row = Row::new((warning_icon, icon_spacer, caution_text))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::End);  // Align to bottom
+
+        let spacer1 = SizedBox::<Rgb565>::new(Size::new(1, 15)); // Space after caution row
+
+        // Title in white
+        let title_text = Text::new(
+            "High Fee".to_string(),
+            U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_background)
+        );
+
+        let spacer2 = SizedBox::<Rgb565>::new(Size::new(1, 10)); // Space after title
+
+        // Warning message in grey
         let warning_msg = if fee_sats > 100_000 {
             "Fee exceeds\n0.001 BTC"
         } else {
-            "Fee exceeds\n5% of amount"
+            "Fee exceeds 15% of\ntotal amount"
         };
 
         let warning_text = Text::new(
             warning_msg.to_string(),
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_surface),
+            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
         );
 
-        let column = Column::new((warning_icon, caution_text, warning_text))
-            .with_main_axis_alignment(MainAxisAlignment::Center);
+        let column = Column::new((
+            caution_row,
+            spacer1,
+            title_text,
+            spacer2,
+            warning_text,
+        )).with_main_axis_alignment(MainAxisAlignment::Center);
 
         Self {
             center: Center::new(column),
@@ -229,34 +364,36 @@ impl WarningPage {
 pub struct ConfirmationPage {
     hold_confirm: HoldToConfirm<
         Column<(
+            SizedBox<Rgb565>,
             Text<U8g2TextStyle<Rgb565>>,
+            SizedBox<Rgb565>,
             Text<U8g2TextStyle<Rgb565>>,
-            BitcoinAmountDisplay,
-            Text<U8g2TextStyle<Rgb565>>,
+            SizedBox<Rgb565>,
         )>,
     >,
 }
 
 impl ConfirmationPage {
-    fn new(total_sats: u64) -> Self {
-        let sign_text = Text::new(
-            "Sign transaction?",
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background),
-        );
-        let sending_text = Text::new(
-            "sending",
-            U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
-        );
-        let amount_display = BitcoinAmountDisplay::new(total_sats);
-        let btc_text = Text::new(
-            "BTC",
-            U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
-        );
+    fn new() -> Self {
+        // Add more breathing room with larger spacers
+        let spacer1 = SizedBox::<Rgb565>::new(Size::new(1, 40)); // Space before Hold to Sign
 
-        let confirm_content = Column::new((sign_text, sending_text, amount_display, btc_text))
-            .with_main_axis_alignment(MainAxisAlignment::Center);
+        let sign_text = Text::new("Hold to Sign", U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background));
 
-        let hold_confirm = HoldToConfirm::new(1500, confirm_content).with_faded_out_button();
+        let spacer2 = SizedBox::<Rgb565>::new(Size::new(1, 15)); // Space between texts
+
+        // Use FONT_SMALL instead of FONT_TINY and split across two lines
+        let press_text = Text::new("Press and hold\nfor 3 seconds", U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary))
+            .with_alignment(embedded_graphics::text::Alignment::Center);
+
+        let spacer3 = SizedBox::<Rgb565>::new(Size::new(1, 40)); // Space after text
+
+        let confirm_content = Column::new((spacer1, sign_text, spacer2, press_text, spacer3))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        let hold_confirm = HoldToConfirm::new(3000, confirm_content)  // Changed to 3000ms (3 seconds)
+            .with_faded_out_button();
 
         Self { hold_confirm }
     }
@@ -275,19 +412,12 @@ impl DynWidget for ConfirmationPage {
         self.hold_confirm.sizing()
     }
 
-    fn handle_touch(
-        &mut self,
-        point: Point,
-        current_time: Instant,
-        is_release: bool,
-    ) -> Option<crate::KeyTouch> {
-        self.hold_confirm
-            .handle_touch(point, current_time, is_release)
+    fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
+        self.hold_confirm.handle_touch(point, current_time, is_release)
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        self.hold_confirm
-            .handle_vertical_drag(prev_y, new_y, is_release);
+        self.hold_confirm.handle_vertical_drag(prev_y, new_y, is_release);
     }
 
     fn force_full_redraw(&mut self) {
@@ -311,21 +441,15 @@ impl Widget for ConfirmationPage {
 }
 
 /// Type alias for the different pages that can be displayed
-type SignPromptPage = AnyOf<(
-    AmountPage,
-    AddressPage,
-    FeePage,
-    WarningPage,
-    ConfirmationPage,
-)>;
+type SignPromptPage = AnyOf<(AmountPage, AddressPage, FeePage, WarningPage, TotalAmountPage, ConfirmationPage)>;
 
 impl SignPromptPageList {
     fn new(prompt: PromptSignBitcoinTx) -> Self {
         let num_recipients = prompt.foreign_recipients.len();
         let has_warning = Self::has_high_fee(&prompt);
 
-        // Each recipient has 2 pages (amount, address), plus fee page, plus optional warning, plus confirmation
-        let total_pages = num_recipients * 2 + 1 + if has_warning { 1 } else { 0 } + 1;
+        // Each recipient has 2 pages (amount, address), plus optional warning, plus fee page, plus total amount page, plus confirmation
+        let total_pages = num_recipients * 2 + if has_warning { 1 } else { 0 } + 1 + 1 + 1;
 
         Self {
             prompt,
@@ -384,11 +508,8 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
                 let (address, _) = &self.prompt.foreign_recipients[recipient_idx];
                 SignPromptPage::new(AddressPage::new(recipient_idx, address))
             }
-        } else if index == recipient_pages {
-            // Fee page
-            SignPromptPage::new(FeePage::new(self.prompt.fee.to_sat()))
-        } else if has_warning && index == recipient_pages + 1 {
-            // Warning page (if applicable)
+        } else if has_warning && index == recipient_pages {
+            // Warning page (if applicable) - now BEFORE fee page
             let total_sent: u64 = self
                 .prompt
                 .foreign_recipients
@@ -396,15 +517,21 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
             SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent))
-        } else {
-            // Confirmation page (last page)
+        } else if (!has_warning && index == recipient_pages) || (has_warning && index == recipient_pages + 1) {
+            // Fee page - after warning if it exists, otherwise after recipient pages
+            SignPromptPage::new(FeePage::new(self.prompt.fee.to_sat()))
+        } else if index == self.total_pages - 2 {
+            // Total amount page (second to last page)
             let total_sent: u64 = self
                 .prompt
                 .foreign_recipients
                 .iter()
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
-            SignPromptPage::new(ConfirmationPage::new(total_sent))
+            SignPromptPage::new(TotalAmountPage::new(total_sent, self.prompt.fee.to_sat()))
+        } else {
+            // Confirmation page (last page)
+            SignPromptPage::new(ConfirmationPage::new())
         };
 
         Some(page)
