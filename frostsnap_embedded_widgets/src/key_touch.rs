@@ -1,6 +1,6 @@
 use crate::palette::PALETTE;
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{Container, Fader, SizedBox, Widget};
+use crate::{Container, DynWidget as _, Fader, SizedBox, Widget};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,9 +30,14 @@ impl KeyTouch {
         const CORNER_RADIUS: u32 = 8;
 
         let sized_box = SizedBox::new(rect.size);
-        let container = Container::with_size(sized_box, rect.size)
+        let mut container = Container::with_size(sized_box, rect.size)
             .with_border(PALETTE.primary, 2)
             .with_corner_radius(Size::new(CORNER_RADIUS, CORNER_RADIUS));
+        // HACK: we it's sized itself already so the constraints here don't matter.
+        container.set_constraints(Size {
+            width: u32::MAX,
+            height: u32::MAX,
+        });
         let widget = Fader::new(container);
 
         Self {

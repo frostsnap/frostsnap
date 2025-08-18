@@ -21,7 +21,8 @@ where
     fill_color: Option<W::Color>,
     corner_radius: Option<Size>,
     border_needs_redraw: bool,
-    constraints: Option<Size>,
+    computed_sizing: Option<crate::Sizing>,
+    child_rect: Option<Rectangle>,
 }
 
 impl<W: Widget> Container<W> {
@@ -36,7 +37,8 @@ impl<W: Widget> Container<W> {
             fill_color: None,
             corner_radius: None,
             border_needs_redraw: true,
-            constraints: None,
+            computed_sizing: None,
+            child_rect: None,
         }
     }
 
@@ -51,7 +53,8 @@ impl<W: Widget> Container<W> {
             fill_color: None,
             corner_radius: None,
             border_needs_redraw: true,
-            constraints: None,
+            computed_sizing: None,
+            child_rect: None,
         }
     }
 
@@ -97,8 +100,6 @@ impl<W: Widget> Container<W> {
 
 impl<W: Widget> crate::DynWidget for Container<W> {
     fn set_constraints(&mut self, max_size: Size) {
-        self.constraints = Some(max_size);
-
         // Calculate child constraints based on our width and height settings
         let container_width = self.width.unwrap_or(max_size.width).min(max_size.width);
         let container_height = self.height.unwrap_or(max_size.height).min(max_size.height);
@@ -108,30 +109,39 @@ impl<W: Widget> crate::DynWidget for Container<W> {
             container_height.saturating_sub(2 * self.border_width),
         );
         self.child.set_constraints(child_max_size);
-    }
 
-    fn sizing(&self) -> crate::Sizing {
-        let constraints = self
-            .constraints
-            .expect("set_constraints must be called before sizing");
-
+        // Now compute and store the sizing
         let child_sizing = self.child.sizing();
 
         // Calculate width: use explicit width if set, otherwise shrink-wrap
         let width = if let Some(requested_width) = self.width {
-            requested_width.min(constraints.width)
+            requested_width.min(max_size.width)
         } else {
             child_sizing.width + 2 * self.border_width
         };
 
         // Calculate height: use explicit height if set, otherwise shrink-wrap
         let height = if let Some(requested_height) = self.height {
-            requested_height.min(constraints.height)
+            requested_height.min(max_size.height)
         } else {
             child_sizing.height + 2 * self.border_width
         };
 
-        crate::Sizing { width, height }
+        self.computed_sizing = Some(crate::Sizing { width, height });
+
+        // Also compute and store the child rectangle
+        self.child_rect = Some(Rectangle::new(
+            Point::new(self.border_width as i32, self.border_width as i32),
+            Size::new(
+                width.saturating_sub(2 * self.border_width),
+                height.saturating_sub(2 * self.border_width),
+            ),
+        ));
+    }
+
+    fn sizing(&self) -> crate::Sizing {
+        self.computed_sizing
+            .expect("set_constraints must be called before sizing")
     }
 
     fn handle_touch(
@@ -170,13 +180,17 @@ impl<W: Widget> Widget for Container<W> {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        self.constraints.expect("constraints must be set");
-
-        // Get our actual size
-        let container_size = Size::from(self.sizing());
+        let child_area = self
+            .child_rect
+            .expect("set_constraints must be called before draw");
 
         // Draw border if needed
         if self.border_needs_redraw && (self.border_color.is_some() || self.fill_color.is_some()) {
+            let container_size = Size::from(
+                self.computed_sizing
+                    .expect("set_constraints must be called before draw"),
+            );
+
             let border_rect = Rectangle::new(Point::zero(), container_size);
 
             // Build the primitive style with inside stroke alignment
@@ -207,14 +221,6 @@ impl<W: Widget> Widget for Container<W> {
         }
 
         // Draw child with proper offset and cropping
-        let child_area = Rectangle::new(
-            Point::new(self.border_width as i32, self.border_width as i32),
-            Size::new(
-                container_size.width.saturating_sub(2 * self.border_width),
-                container_size.height.saturating_sub(2 * self.border_width),
-            ),
-        );
-
         self.child
             .draw(&mut target.clone().crop(child_area), current_time)?;
 
