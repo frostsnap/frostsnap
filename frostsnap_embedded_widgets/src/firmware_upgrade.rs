@@ -137,8 +137,8 @@ impl FirmwareUpgradeConfirm {
         // Create main column with title, container, and size
         let content = Column::builder()
             .push(title)
-            .push_with_gap(hash_container, 8)
-            .push_with_gap(size, 8);
+            .push(hash_container).gap(8)
+            .push(size).gap(8);
 
         // Create hold to confirm with 1 second hold time
         let hold_to_confirm = HoldToConfirm::new(1000, content);

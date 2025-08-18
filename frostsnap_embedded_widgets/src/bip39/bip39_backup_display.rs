@@ -44,7 +44,7 @@ impl ShareIndexPage {
 
         let column = Column::builder()
             .push(label)
-            .push_with_gap(row, 8)
+            .push(row).gap(8)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
         let center = Center::new(column);
 
@@ -116,7 +116,7 @@ impl WordsPage {
                 Center::new(crate::any_of::AnyOf::new(
                     Column::builder()
                         .push(row1)
-                        .push_with_gap(row2, 20)
+                        .push(row2).gap(20)
                         .with_cross_axis_alignment(CrossAxisAlignment::Start),
                 ))
             }
@@ -127,8 +127,8 @@ impl WordsPage {
                 Center::new(crate::any_of::AnyOf::new(
                     Column::builder()
                         .push(row1)
-                        .push_with_gap(row2, 20)
-                        .push_with_gap(row3, 20)
+                        .push(row2).gap(20)
+                        .push(row3).gap(20)
                         .with_cross_axis_alignment(CrossAxisAlignment::Start),
                 ))
             }
@@ -310,7 +310,7 @@ impl ConfirmContent {
 
         let column = Column::builder()
             .push(notes_icon)
-            .push_with_gap(title, 10)
+            .push(title).gap(10)
             .push(subtitle)
             .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
 
@@ -340,7 +340,7 @@ impl SafetyReminder {
 
         let column = Column::builder()
             .push(shield_icon)
-            .push_with_gap(title, 20)
+            .push(title).gap(20)
             .push(subtitle)
             .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
 

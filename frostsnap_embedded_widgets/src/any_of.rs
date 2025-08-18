@@ -78,10 +78,6 @@ macro_rules! impl_any_of {
                 self.inner.sizing()
             }
 
-            fn flex(&self) -> bool {
-                self.inner.flex()
-            }
-
             fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
                 self.inner.handle_touch(point, current_time, is_release)
             }

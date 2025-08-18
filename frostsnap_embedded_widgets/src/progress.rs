@@ -196,7 +196,7 @@ impl ProgressIndicator {
 
         let column = Column::builder()
             .push(progress_bar)
-            .push_with_gap(text_switcher, 8);
+            .push(text_switcher).gap(8);
 
         Self {
             column,

@@ -96,10 +96,6 @@ where
         self.current.sizing()
     }
 
-    fn flex(&self) -> bool {
-        self.current.flex()
-    }
-
     fn handle_touch(
         &mut self,
         point: Point,

@@ -138,7 +138,6 @@ fn derive_widget_for_enum(
     let set_constraints_arms =
         generate_match_arms(&data_enum.variants, quote!(set_constraints(max_size)));
     let sizing_arms = generate_match_arms(&data_enum.variants, quote!(sizing()));
-    let flex_arms = generate_match_arms(&data_enum.variants, quote!(flex()));
     let handle_touch_arms = generate_match_arms(
         &data_enum.variants,
         quote!(handle_touch(point, current_time, is_release)),
@@ -188,12 +187,6 @@ fn derive_widget_for_enum(
             fn sizing(&self) -> #crate_path::Sizing {
                 match self {
                     #(#sizing_arms)*
-                }
-            }
-
-            fn flex(&self) -> bool {
-                match self {
-                    #(#flex_arms)*
                 }
             }
 
@@ -277,10 +270,6 @@ fn derive_widget_for_struct(
 
             fn sizing(&self) -> #crate_path::Sizing {
                 self.#delegate_field.sizing()
-            }
-
-            fn flex(&self) -> bool {
-                self.#delegate_field.flex()
             }
 
             fn handle_touch(

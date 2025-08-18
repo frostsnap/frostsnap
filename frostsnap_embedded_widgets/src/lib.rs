@@ -45,7 +45,6 @@ pub mod circle_button;
 pub mod container;
 pub mod demo_widget;
 pub mod device_name;
-pub mod expanded;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
 pub mod fps;
@@ -87,7 +86,6 @@ pub use center::*;
 pub use checkmark::*;
 pub use container::*;
 pub use cursor::*;
-pub use expanded::Expanded;
 pub use fader::*;
 pub use hold_to_confirm::HoldToConfirm;
 pub use hold_to_confirm_border::HoldToConfirmBorder;
@@ -155,12 +153,6 @@ pub trait DynWidget {
     /// Get sizing information for this widget given its constraints.
     /// Must be called after set_constraints.
     fn sizing(&self) -> Sizing;
-
-    /// Whether this widget wants to expand to fill available space.
-    /// This is an intrinsic property that doesn't depend on constraints.
-    fn flex(&self) -> bool {
-        false // Default: most widgets are not flexible
-    }
 
     /// Handle touch events. Returns true if the touch was handled.
     fn handle_touch(
@@ -231,10 +223,6 @@ impl<T: DynWidget + ?Sized> DynWidget for alloc::boxed::Box<T> {
         (**self).sizing()
     }
 
-    fn flex(&self) -> bool {
-        (**self).flex()
-    }
-
     fn handle_touch(
         &mut self,
         point: Point,
@@ -269,14 +257,6 @@ impl<T: DynWidget> DynWidget for Option<T> {
                 width: 0,
                 height: 0,
             }
-        }
-    }
-
-    fn flex(&self) -> bool {
-        if let Some(widget) = self {
-            widget.flex()
-        } else {
-            false
         }
     }
 

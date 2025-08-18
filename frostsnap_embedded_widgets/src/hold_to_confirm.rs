@@ -4,7 +4,7 @@ use crate::{
     palette::PALETTE,
     rat::Frac,
     super_draw_target::SuperDrawTarget,
-    Center, Column, Container, Expanded, Fader, MainAxisAlignment, Widget,
+    Center, Column, Container, Fader, MainAxisAlignment, Widget,
 };
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -17,8 +17,7 @@ pub struct HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
 {
-    content:
-        HoldToConfirmBorder<Container<Center<Column<(Expanded<W>, Fader<CircleButton>)>>>, Rgb565>,
+    content: HoldToConfirmBorder<Container<Center<Column<(W, Fader<CircleButton>)>>>, Rgb565>,
     last_update: Option<crate::Instant>,
     hold_duration_ms: u32,
     completed: bool,
@@ -35,12 +34,12 @@ where
         let button = CircleButton::new();
         let faded_button = Fader::new(button);
 
-        // Wrap the widget in Expanded so it takes up available space
-        let expanded_widget = Expanded::new(widget);
-
-        // Create column with the expanded widget and faded button
-        let column = Column::new((expanded_widget, faded_button))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
+        // Create column with the widget (flex) and faded button
+        let column = Column::builder()
+            .push(widget)
+            .flex(1)
+            .push(faded_button)
+            .with_main_axis_alignment(MainAxisAlignment::Center);
 
         // Center the column, then put it in an expanded container to fill available space
         let centered = Center::new(column);
@@ -93,12 +92,12 @@ where
 
     /// Get mutable access to the inner widget
     pub fn widget_mut(&mut self) -> &mut W {
-        &mut self.content.child.child.child.children.0.child
+        &mut self.content.child.child.child.children.0
     }
 
     /// Get access to the inner widget
     pub fn widget(&self) -> &W {
-        &self.content.child.child.child.children.0.child
+        &self.content.child.child.child.children.0
     }
 
     pub fn is_completed(&self) -> bool {

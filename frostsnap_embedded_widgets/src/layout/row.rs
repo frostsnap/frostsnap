@@ -32,6 +32,8 @@ pub struct Row<T: AssociatedArray> {
     pub(crate) sizing: Option<crate::Sizing>,
     /// Spacing to add before each child (indexed by child position)
     pub(crate) spacing_before: T::Array<u32>,
+    /// Flex scores for each child (0 means not flexible)
+    pub(crate) flex_scores: T::Array<u32>,
 }
 
 /// Helper to start building a Row with no children
@@ -47,6 +49,7 @@ impl<T: AssociatedArray> Row<T> {
         Self {
             child_rects: children.create_array_with(Rectangle::zero()),
             spacing_before: children.create_array_with(0),
+            flex_scores: children.create_array_with(0),
             children,
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_alignment: MainAxisAlignment::Start,
@@ -62,26 +65,23 @@ impl<T: WidgetTuple> Row<T> {
     where
         T: WidgetTuple
     {
-        self.push_with_gap(widget, 0)
-    }
-
-    /// Add a widget with a gap before it
-    pub fn push_with_gap<W: crate::DynWidget>(self, widget: W, gap: u32) -> Row<T::Add<W>> 
-    where
-        T: WidgetTuple
-    {
         let new_children = self.children.add(widget);
 
-        // Copy over existing spacing values and add new one
+        // Copy over existing values and add new ones
         let mut new_spacing = new_children.create_array_with(0);
         let old_spacing = self.spacing_before.as_ref();
-        // copy_from_slice for the existing values
         new_spacing.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_spacing);
-        new_spacing.as_mut()[T::TUPLE_LEN] = gap; // Gap BEFORE this widget
+        new_spacing.as_mut()[T::TUPLE_LEN] = 0; // Default gap is 0
+        
+        let mut new_flex = new_children.create_array_with(0);
+        let old_flex = self.flex_scores.as_ref();
+        new_flex.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_flex);
+        new_flex.as_mut()[T::TUPLE_LEN] = 0; // Default flex is 0 (not flexible)
 
         Row {
             child_rects: new_children.create_array_with(Rectangle::zero()),
             spacing_before: new_spacing,
+            flex_scores: new_flex,
             children: new_children,
             cross_axis_alignment: self.cross_axis_alignment,
             main_axis_alignment: self.main_axis_alignment,
@@ -89,6 +89,26 @@ impl<T: WidgetTuple> Row<T> {
             sizing: None,
         }
     }
+
+    
+    /// Set a gap before the last added widget
+    pub fn gap(mut self, gap: u32) -> Self {
+        let len = T::TUPLE_LEN;
+        if len > 0 {
+            self.spacing_before.as_mut()[len - 1] = gap;
+        }
+        self
+    }
+    
+    /// Set the flex score for the last added widget
+    pub fn flex(mut self, score: u32) -> Self {
+        let len = T::TUPLE_LEN;
+        if len > 0 {
+            self.flex_scores.as_mut()[len - 1] = score;
+        }
+        self
+    }
+    
 
     pub fn with_cross_axis_alignment(mut self, alignment: CrossAxisAlignment) -> Self {
         self.cross_axis_alignment = alignment;

@@ -58,24 +58,21 @@ where
             return;
         }
 
-        // Temporary vectors for tracking flex status
-        let mut is_flex = vec![false; len];
-        let mut flex_count = 0;
         let mut remaining_height = max_size.height;
         let mut max_child_width = 0u32;
 
         // Account for all spacing in remaining height
         let total_spacing: u32 = self.spacing_before.as_ref().iter().sum();
         remaining_height = remaining_height.saturating_sub(total_spacing);
+        
+        // Get flex scores and calculate total flex
+        let flex_scores = self.flex_scores.as_ref();
+        let total_flex: u32 = flex_scores.iter().sum();
 
-        // First pass: determine flex status and set constraints on non-flex children
+        // First pass: set constraints on non-flex children
         for i in 0..len {
             if let Some(child) = self.children.get_dyn_child(i) {
-                let flex = child.flex();
-                is_flex[i] = flex;
-                if flex {
-                    flex_count += 1;
-                } else {
+                if flex_scores[i] == 0 {
                     // Set constraints on non-flex child with remaining available height
                     child.set_constraints(Size::new(max_size.width, remaining_height));
                     let sizing = child.sizing();
@@ -85,22 +82,21 @@ where
             }
         }
 
-        // Calculate height for each flex child
-        let flex_height = if flex_count > 0 {
-            remaining_height / flex_count as u32
-        } else {
-            0
-        };
-
         // Second pass: set constraints on flex children and update cached rects with sizes
         for i in 0..len {
             if let Some(child) = self.children.get_dyn_child(i) {
-                if is_flex[i] {
+                if flex_scores[i] > 0 {
+                    // Calculate height for this flex child based on its flex score
+                    let flex_height = if total_flex > 0 {
+                        (remaining_height * flex_scores[i]) / total_flex
+                    } else {
+                        0
+                    };
+                    
                     // Set constraints on flex child with calculated height
                     child.set_constraints(Size::new(max_size.width, flex_height));
                     let sizing = child.sizing();
                     self.child_rects.as_mut()[i].size = sizing.into();
-                    remaining_height = remaining_height.saturating_sub(sizing.height);
                     max_child_width = max_child_width.max(sizing.width);
                 } else {
                     // Non-flex child already has constraints set, just get final size
@@ -147,11 +143,13 @@ where
             let x_offset = match self.cross_axis_alignment {
                 CrossAxisAlignment::Start => 0,
                 CrossAxisAlignment::Center => {
-                    let available_width = max_size.width.saturating_sub(size.width);
+                    // Center within the column's actual width, not the constraint
+                    let available_width = max_child_width.saturating_sub(size.width);
                     (available_width / 2) as i32
                 }
                 CrossAxisAlignment::End => {
-                    let available_width = max_size.width.saturating_sub(size.width);
+                    // Align to the end of the column's actual width, not the constraint
+                    let available_width = max_child_width.saturating_sub(size.width);
                     available_width as i32
                 }
             };
@@ -353,24 +351,21 @@ where
             return;
         }
 
-        // Temporary vectors for tracking flex status
-        let mut is_flex = vec![false; len];
-        let mut flex_count = 0;
         let mut remaining_width = max_size.width;
         let mut max_child_height = 0u32;
 
         // Account for all spacing in remaining width
         let total_spacing: u32 = self.spacing_before.as_ref().iter().sum();
         remaining_width = remaining_width.saturating_sub(total_spacing);
+        
+        // Get flex scores and calculate total flex
+        let flex_scores = self.flex_scores.as_ref();
+        let total_flex: u32 = flex_scores.iter().sum();
 
-        // First pass: determine flex status and set constraints on non-flex children
+        // First pass: set constraints on non-flex children
         for i in 0..len {
             if let Some(child) = self.children.get_dyn_child(i) {
-                let flex = child.flex();
-                is_flex[i] = flex;
-                if flex {
-                    flex_count += 1;
-                } else {
+                if flex_scores[i] == 0 {
                     // Set constraints on non-flex child with remaining available width
                     child.set_constraints(Size::new(remaining_width, max_size.height));
                     let sizing = child.sizing();
@@ -380,22 +375,21 @@ where
             }
         }
 
-        // Calculate width for each flex child
-        let flex_width = if flex_count > 0 {
-            remaining_width / flex_count as u32
-        } else {
-            0
-        };
-
         // Second pass: set constraints on flex children and update cached rects with sizes
         for i in 0..len {
             if let Some(child) = self.children.get_dyn_child(i) {
-                if is_flex[i] {
+                if flex_scores[i] > 0 {
+                    // Calculate width for this flex child based on its flex score
+                    let flex_width = if total_flex > 0 {
+                        (remaining_width * flex_scores[i]) / total_flex
+                    } else {
+                        0
+                    };
+                    
                     // Set constraints on flex child with calculated width
                     child.set_constraints(Size::new(flex_width, max_size.height));
                     let sizing = child.sizing();
                     self.child_rects.as_mut()[i].size = sizing.into();
-                    remaining_width = remaining_width.saturating_sub(sizing.width);
                     max_child_height = max_child_height.max(sizing.height);
                 } else {
                     // Non-flex child already has constraints set, just get final size
