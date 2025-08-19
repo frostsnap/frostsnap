@@ -420,12 +420,14 @@ mod test {
     use super::*;
     use alloc::vec::Vec;
     use bitcoin::secp256k1::Secp256k1;
-    use schnorr_fun::frost::chilldkg::encpedpop;
+    use schnorr_fun::frost::chilldkg::certpedpop;
 
     #[test]
     pub fn bip32_derivation_matches_rust_bitcoin() {
-        let (frost_key, _) = encpedpop::simulate_keygen(
-            &schnorr_fun::new_with_deterministic_nonces::<sha2::Sha256>(),
+        let schnorr = schnorr_fun::new_with_deterministic_nonces::<sha2::Sha256>();
+        let (certified_keygen, _) = certpedpop::simulate_keygen(
+            &schnorr,
+            &schnorr,
             3,
             5,
             5,
@@ -436,6 +438,7 @@ mod test {
             &mut rand::thread_rng(),
         );
 
+        let frost_key = certified_keygen.inner().shared_key().non_zero().unwrap();
         let root_xpub = Xpub::from_rootkey(frost_key);
         let secp = Secp256k1::verification_only();
         let xpub = bitcoin::bip32::Xpub {

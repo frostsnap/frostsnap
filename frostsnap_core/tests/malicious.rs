@@ -1,6 +1,6 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use common::{Env, TEST_ENCRYPTION_KEY};
-use frostsnap_core::coordinator::CoordinatorSend;
+use frostsnap_core::coordinator::{CoordinatorSend, FrostCoordinator};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
     keygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, Keygen,
@@ -27,6 +27,7 @@ fn keygen_maliciously_replace_public_poly() {
     let mut run = Run::generate(1, &mut test_rng);
     let device_set = run.device_set();
     let mut shadow_device = run.devices.values().next().unwrap().clone();
+    let coordinator_keygen_keypair = FrostCoordinator::short_lived_keygen_keypair(&mut test_rng);
 
     let keygen_init = run
         .coordinator
@@ -36,8 +37,10 @@ fn keygen_maliciously_replace_public_poly() {
                 1,
                 "test".into(),
                 KeyPurpose::Test,
+                coordinator_keygen_keypair.public_key(),
                 &mut test_rng,
             ),
+            coordinator_keygen_keypair,
             &mut test_rng,
         )
         .unwrap();

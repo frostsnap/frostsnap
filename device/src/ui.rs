@@ -10,7 +10,7 @@ use frostsnap_comms::Sha256Digest;
 use frostsnap_core::{
     device::{
         restoration::{BackupDisplayPhase, EnterBackupPhase},
-        KeyGenPhase2, SignPhase1,
+        KeyGenPhase3, SignPhase1,
     },
     schnorr_fun::frost::SecretShare,
     SessionHash,
@@ -159,7 +159,7 @@ impl Default for Workflow {
 #[derive(Clone, Debug)]
 pub enum Prompt {
     KeyGen {
-        phase: Box<KeyGenPhase2>,
+        phase: Box<KeyGenPhase3>,
     },
     Signing {
         phase: Box<SignPhase1>,
@@ -201,7 +201,7 @@ pub enum FirmwareUpgradeStatus {
 #[derive(Clone, Debug)]
 pub enum UiEvent {
     KeyGenConfirm {
-        phase: Box<KeyGenPhase2>,
+        phase: Box<KeyGenPhase3>,
     },
     SigningConfirm {
         phase: Box<SignPhase1>,

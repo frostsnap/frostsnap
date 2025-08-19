@@ -14,7 +14,7 @@ use alloc::{
 use core::num::NonZeroU32;
 use frostsnap_macros::Kind;
 use schnorr_fun::binonce;
-use schnorr_fun::frost::{chilldkg::encpedpop, ShareIndex};
+use schnorr_fun::frost::{chilldkg::certpedpop, ShareIndex};
 use schnorr_fun::frost::{SharedKey, SignatureShare};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::fun::Point;
@@ -124,6 +124,10 @@ pub enum DeviceToCoordinatorMessage {
         segments: Vec<NonceStreamSegment>,
     },
     KeyGenResponse(KeyGenResponse),
+    KeyGenProof {
+        keygen_id: KeygenId,
+        vrf_proof: vrf_fun::VrfProof,
+    },
     KeyGenAck(KeyGenAck),
     // KeyGenFinalized,
     SignatureShare {
@@ -158,7 +162,7 @@ pub struct HeldShare {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct KeyGenResponse {
     pub keygen_id: KeygenId,
-    pub input: Box<encpedpop::KeygenInput>,
+    pub input: Box<certpedpop::KeygenInput>,
 }
 
 impl Gist for DeviceToCoordinatorMessage {
