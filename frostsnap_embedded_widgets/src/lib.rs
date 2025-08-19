@@ -70,6 +70,23 @@ pub mod welcome;
 pub mod widget_color;
 pub mod widget_tuple;
 
+// Gray4 font support modules
+pub mod gray4_fonts {
+    pub mod gray4_font;
+    pub mod gray4_text;
+    // Sample Gray4 fonts
+    pub mod noto_sans_24_regular;
+    pub mod noto_sans_24_bold;
+    pub mod noto_sans_mono_21_bold;
+}
+
+// Re-export font modules for convenience
+pub use gray4_fonts::gray4_font;
+pub use gray4_fonts::gray4_text;
+pub use gray4_fonts::noto_sans_24_regular;
+pub use gray4_fonts::noto_sans_24_bold;
+pub use gray4_fonts::noto_sans_mono_21_bold;
+
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
 // pub use page_by_page::PageByPage;

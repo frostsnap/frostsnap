@@ -513,6 +513,29 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
+            "font_demo" => {
+                use $crate::{
+                    gray4_text::Gray4Text,
+                    layout::{Column, MainAxisAlignment},
+                    noto_sans_24_bold::NOTO_SANS_24_BOLD,
+                    noto_sans_24_regular::NOTO_SANS_24_REGULAR,
+                    noto_sans_mono_21_bold::NOTO_SANS_MONO_21_BOLD,
+                    center::Center,
+                };
+
+                // Create Gray4Text widgets directly - no separate style needed!
+                let text_regular = Gray4Text::new("Frostsnap Regular", &NOTO_SANS_24_REGULAR, Rgb565::WHITE);
+                let text_bold = Gray4Text::new("Frostsnap Bold", &NOTO_SANS_24_BOLD, Rgb565::WHITE);
+                let text_mono = Gray4Text::new("Frostsnap Mono", &NOTO_SANS_MONO_21_BOLD, Rgb565::WHITE);
+                
+                let column = Column::new((text_regular, text_bold, text_mono))
+                    .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+                
+                // Center the entire column on screen
+                let widget = Center::new(column);
+
+                $run_macro!(widget);
+            }
             "stack" => {
                 use $crate::{Stack, Alignment, Container, text::Text, palette::PALETTE};
                 use embedded_graphics::primitives::{Rectangle, PrimitiveStyle};
@@ -550,7 +573,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, stack", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, font_demo, stack", $demo);
             }
         }
     };
