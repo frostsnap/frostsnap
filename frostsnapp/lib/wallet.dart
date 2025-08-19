@@ -564,7 +564,7 @@ class WalletDrawer extends StatelessWidget {
   static const allShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.all(outerRadius),
   );
-  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 4);
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 8);
 
   @override
   Widget build(BuildContext context) {
@@ -603,7 +603,10 @@ class WalletDrawer extends StatelessWidget {
           ),
           NavigationDrawerDestination(
             icon: Icon(
-              Icons.add_rounded,
+              controller.selected == null
+                  ? Icons.more_horiz_rounded
+                  : Icons.add_rounded,
+              // Icons.more_horiz_rounded,
               color: controller.selected == null
                   ? null
                   : theme.colorScheme.primary,
@@ -626,7 +629,7 @@ class WalletDrawer extends StatelessWidget {
               spacing: 2,
               children: [
                 Card.filled(
-                  color: theme.colorScheme.surface,
+                  color: theme.colorScheme.surfaceContainerLowest,
                   margin: EdgeInsets.zero,
                   clipBehavior: Clip.hardEdge,
                   shape: topShape,
@@ -652,7 +655,7 @@ class WalletDrawer extends StatelessWidget {
                   ),
                 ),
                 Card.filled(
-                  color: theme.colorScheme.surface,
+                  color: theme.colorScheme.surfaceContainerLowest,
                   margin: EdgeInsets.zero,
                   clipBehavior: Clip.hardEdge,
                   shape: bottomShape,
@@ -675,7 +678,6 @@ class WalletDrawer extends StatelessWidget {
         ]);
 
         final drawer = NavigationDrawer(
-          tilePadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           onDestinationSelected: (index) {
             if (index < controller.wallets.length) {
               controller.selectedIndex = index;
