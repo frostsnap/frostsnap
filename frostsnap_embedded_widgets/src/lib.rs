@@ -51,7 +51,13 @@ pub mod firmware_upgrade;
 pub mod fps;
 pub mod keygen_check;
 pub mod layout;
+pub mod mnemonic_backup;
+pub mod mut_text;
+pub mod p2pkh_address_display;
+pub mod p2sh_address_display;
 pub mod p2tr_address_display;
+pub mod p2wpkh_address_display;
+pub mod p2wsh_address_display;
 pub mod padding;
 pub mod prelude;
 pub mod scroll_bar;
@@ -66,9 +72,11 @@ pub mod switcher;
 pub mod text;
 pub mod translate;
 pub mod vec_framebuffer;
+pub mod verify_address;
 pub mod welcome;
 pub mod widget_color;
 pub mod widget_tuple;
+pub mod wipe_device;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -103,6 +111,7 @@ pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};
 pub use fps::Fps;
 pub use icons::IconWidget;
 pub use keygen_check::*;
+pub use mut_text::*;
 pub use padding::*;
 pub use progress::{ProgressBar, ProgressIndicator};
 pub use progress_bars::*;
@@ -114,13 +123,16 @@ pub use swipe_up_chevron::*;
 pub use switcher::Switcher;
 pub use text::*;
 pub use translate::*;
+pub use verify_address::VerifyAddress;
 pub use welcome::*;
+pub use wipe_device::WipeDevice;
 
 // Font re-exports
 use u8g2_fonts::fonts;
 pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
 pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
 pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+pub const FONT_TINY: fonts::u8g2_font_profont10_mf = fonts::u8g2_font_profont10_mf;
 
 /// Sizing information for a widget
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -159,7 +171,7 @@ pub trait DynWidget {
     /// Whether this widget wants to expand to fill available space.
     /// This is an intrinsic property that doesn't depend on constraints.
     fn flex(&self) -> bool {
-        false // Default: most widgets are not flexible
+        false  // Default: most widgets are not flexible
     }
 
     /// Handle touch events. Returns true if the touch was handled.
@@ -189,6 +201,7 @@ pub trait AnyDynWidget: core::any::Any + DynWidget {}
 
 /// Blanket implementation for any type that implements both Any and DynWidget
 impl<T: core::any::Any + DynWidget> AnyDynWidget for T {}
+
 
 /// A trait for drawable widgets that can handle user interactions
 pub trait Widget: DynWidget {

@@ -29,10 +29,28 @@ where
     W: Widget<Color = Rgb565>,
 {
     pub fn new(hold_duration_ms: u32, widget: W) -> Self {
+        Self::new_with_colors(
+            hold_duration_ms, 
+            widget, 
+            PALETTE.confirm_progress,  // border color
+            PALETTE.tertiary_container, // button fill
+            PALETTE.confirm_progress    // button outline
+        )
+    }
+
+    pub fn new_with_colors(
+        hold_duration_ms: u32, 
+        widget: W, 
+        border_color: Rgb565, 
+        button_fill_color: Rgb565,
+        button_outline_color: Rgb565
+    ) -> Self {
         const BORDER_WIDTH: u32 = 10;
 
         // Create the circle button wrapped in a fader (starts visible by default)
-        let button = CircleButton::new();
+        let mut button = CircleButton::new();
+        // Set custom pressed colors
+        button.set_pressed_colors(button_fill_color, button_outline_color);
         let faded_button = Fader::new(button);
 
         // Wrap the widget in Expanded so it takes up available space
@@ -50,7 +68,7 @@ where
         let border = HoldToConfirmBorder::new(
             content,
             BORDER_WIDTH,
-            PALETTE.confirm_progress,
+            border_color,
             PALETTE.background,
         );
 
@@ -71,12 +89,27 @@ where
     /// Fade in the button
     pub fn fade_in_button(&mut self) {
         if self.button_fader_mut().is_faded_out() {
-            self.button_fader_mut().start_fade_in(
-                300, // 800ms fade duration
-                20,  // 50ms redraw interval
-                PALETTE.background,
+            let fader = self.button_fader_mut();
+            // Use ease-out for smoother appearance
+            fader.set_animation_speed(crate::animation_speed::AnimationSpeed::EaseOut);
+            fader.start_fade_in(
+                250,  // 250ms fade duration (slightly faster)
+                40,   // 40ms redraw interval (fewer redraws for better performance)
+                PALETTE.background
             );
         }
+    }
+
+    pub fn reset(&mut self) {
+        // Reset border progress
+        self.content.set_progress(Frac::ZERO);
+
+        // Reset the button (second element in tuple, inside the Fader)
+        self.content.child.child.child.children.1.child.reset();
+
+        // Reset state
+        self.last_update = None;
+        self.completed = false;
     }
 
     pub fn button_mut(&mut self) -> &mut CircleButton {
@@ -102,7 +135,7 @@ where
     }
 
     pub fn is_completed(&self) -> bool {
-        self.button().state() == CircleButtonState::ShowingCheckmark
+        self.button().checkmark().is_complete()
     }
 
     fn is_holding(&self) -> bool {
@@ -115,7 +148,7 @@ where
 
         // Early exit if not holding and no progress
         if !holding && current_progress == Frac::ZERO {
-            self.last_update = None; // Clear last_update when fully released
+            self.last_update = None;  // Clear last_update when fully released
             return;
         }
 
@@ -136,8 +169,7 @@ where
 
                     // Start fading out the border only
                     self.content.start_fade_out(500);
-                    self.button_mut()
-                        .set_state(CircleButtonState::ShowingCheckmark);
+                    self.button_mut().set_state(CircleButtonState::ShowingCheckmark);
                 }
             } else if !holding && current_progress > Frac::ZERO && !self.completed {
                 let decrement = Frac::from_ratio(elapsed_ms, 1000);

@@ -186,6 +186,28 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
+            "mnemonic_backup" => {
+                use $crate::mnemonic_backup::MnemonicBackupDisplay;
+                use embedded_graphics::prelude::*;
+
+                let share_index = 42;
+                let wallet_name = "My Wallet".to_string();
+                let device_name = "Guardian-1".to_string();
+                let threshold = 3;
+                let total_shares = 5;
+
+                // Create the backup display with lowercase words and additional info
+                let widget = MnemonicBackupDisplay::new(
+                    TEST_WORD_INDICES,
+                    share_index,
+                    wallet_name,
+                    device_name,
+                    threshold,
+                    total_shares
+                );
+
+                $run_macro!(widget);
+            }
             "fade_in_fade_out" => {
                 use $crate::{fader::Fader, text::Text, palette::PALETTE};
 
@@ -203,7 +225,8 @@ macro_rules! demo_widget {
                 use $crate::DeviceNameScreen;
 
                 // Create device name screen with a long name to test
-                let mut device_name_screen = DeviceNameScreen::new("Frank L".into());
+                let device_name_screen = DeviceNameScreen::new("Frank Zappppper".into());
+                // device_name_screen.set_edit_mode(true); // Method doesn't exist
 
                 $run_macro!(device_name_screen);
             }
@@ -244,32 +267,50 @@ macro_rules! demo_widget {
                 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
                 use core::str::FromStr;
 
-                // Create dummy transaction data with different address types
-                // Segwit v0 address (starts with bc1q)
-                // let segwit_address = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
-                //     .unwrap()
-                //     .assume_checked();
-
-                // Taproot address (starts with bc1p)
+                // First recipient - Taproot address (P2TR - 62 chars, starts with bc1p)
                 let taproot_address = bitcoin::Address::from_str("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297")
                     .unwrap()
                     .assume_checked();
 
-                // Legacy P2PKH address (starts with 1)
-                // let legacy_address = bitcoin::Address::from_str("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
-                //     .unwrap()
-                //     .assume_checked();
+                // Second recipient - P2WSH address (62 chars, starts with bc1q...1)
+                let p2wsh_address = bitcoin::Address::from_str("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3")
+                    .unwrap()
+                    .assume_checked();
+
+                // Third recipient - P2WPKH address (42 chars, starts with bc1q)
+                let p2wpkh_address = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+                    .unwrap()
+                    .assume_checked();
+
+                // Fourth recipient - P2SH address (34 chars, starts with 3)
+                let p2sh_address = bitcoin::Address::from_str("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy")
+                    .unwrap()
+                    .assume_checked();
+
+                // Fifth recipient - P2PKH address (34 chars, starts with 1)
+                let p2pkh_address = bitcoin::Address::from_str("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+                    .unwrap()
+                    .assume_checked();
+
+                // Sixth recipient - Special address to trigger fallback demo
+                // Using a burn address that we detect to show "Address format not recognised"
+                let fallback_demo_address = bitcoin::Address::from_str("1111111111111111111114oLvT2")
+                    .unwrap()
+                    .assume_checked();
 
                 let prompt = PromptSignBitcoinTx {
                     foreign_recipients: $crate::alloc::vec![
                         (taproot_address, bitcoin::Amount::from_sat(500_001)), // 0.00500001 BTC
-                        // (segwit_address, bitcoin::Amount::from_sat(150_000)), // 0.0015 BTC
-                        // (legacy_address, bitcoin::Amount::from_sat(50_000)), // 0.0005 BTC
+                        (p2wsh_address, bitcoin::Amount::from_sat(1_250_000)), // 0.0125 BTC
+                        (p2wpkh_address, bitcoin::Amount::from_sat(75_000)), // 0.00075 BTC
+                        (p2sh_address, bitcoin::Amount::from_sat(50_000)), // 0.0005 BTC
+                        (p2pkh_address, bitcoin::Amount::from_sat(25_000)), // 0.00025 BTC
+                        (fallback_demo_address, bitcoin::Amount::from_sat(1_000)), // 0.00001 BTC - triggers fallback
                     ],
                     fee: bitcoin::Amount::from_sat(125_000), // 0.00125 BTC (high fee for demo)
                 };
 
-                // Create the sign prompt widget
+                // Create the sign transaction widget
                 let widget = SignPrompt::new(prompt);
 
                 $run_macro!(widget);
@@ -361,10 +402,10 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "firmware_upgrade_progress" | "firmware_upgrade_download" => {
-                use $crate::{ firmware_upgrade::FirmwareUpgradeProgress, Padding };
+                use $crate::firmware_upgrade::FirmwareUpgradeProgress;
 
                 // Show downloading state at 65% progress
-                let widget = Padding::symmetric(20, 0, FirmwareUpgradeProgress::downloading(0.65)) ;
+                let widget = FirmwareUpgradeProgress::downloading(0.65);
                 $run_macro!(widget);
             }
             "firmware_upgrade_erase" => {
@@ -458,8 +499,9 @@ macro_rules! demo_widget {
                     0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
                 ];
                 let size_bytes = 1_234_567; // ~1.2 MB
+                let version = "v2.1.0"; // Example version
 
-                let widget = FirmwareUpgradeConfirm::new(firmware_digest, size_bytes);
+                let widget = FirmwareUpgradeConfirm::new(firmware_digest, version, size_bytes);
 
                 $run_macro!(widget);
             }
@@ -513,6 +555,16 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
+            "verify_address" => {
+                use $crate::verify_address::VerifyAddress;
+
+                // Use a sample taproot address for demo
+                let taproot_address = "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297";
+
+                let widget = VerifyAddress::new(taproot_address, 0);
+
+                $run_macro!(widget);
+            }
             "stack" => {
                 use $crate::{Stack, Alignment, Container, text::Text, palette::PALETTE};
                 use embedded_graphics::primitives::{Rectangle, PrimitiveStyle};
@@ -549,8 +601,24 @@ macro_rules! demo_widget {
                 let widget = Center::new(stack);
                 $run_macro!(widget);
             }
+            "standby" => {
+                use $crate::standby::Standby;
+
+                // Create standby screen with sample wallet and device names
+                let widget = Standby::new("My Wallet", "Guardian-1");
+
+                $run_macro!(widget);
+            }
+            "wipe_device" => {
+                use $crate::wipe_device::WipeDevice;
+
+                // Create wipe device widget with warning and confirmation pages
+                let widget = WipeDevice::new();
+
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, stack", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, standby, wipe_device, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, mnemonic_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, keygen_check_new, sign_prompt, sign_transaction, address_fallback, verify_address, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, firmware_demo, stack", $demo);
             }
         }
     };
