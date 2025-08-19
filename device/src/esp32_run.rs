@@ -503,7 +503,7 @@ where
                                     ui.clear_busy_task();
                                     ui.clear_workflow();
                                 }
-                                DeviceToUserMessage::CheckKeyGen { phase } => {
+                                DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                                     ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen {
                                         phase,
                                     }));

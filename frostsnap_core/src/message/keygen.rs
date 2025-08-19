@@ -3,9 +3,13 @@ use super::*;
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum Keygen {
     Begin(Begin),
+    CertifyPlease {
+        keygen_id: KeygenId,
+        agg_input: certpedpop::AggKeygenInput,
+    },
     Check {
         keygen_id: KeygenId,
-        agg_input: encpedpop::AggKeygenInput,
+        certificate: certpedpop::Certificate<vrf_fun::VrfProof>,
     },
     /// Actually save key to device.
     Finalize {
@@ -26,6 +30,7 @@ pub struct Begin {
     pub threshold: u16,
     pub key_name: String,
     pub purpose: KeyPurpose,
+    pub coordinator_public_key: Point,
 }
 
 impl From<Begin> for Keygen {
@@ -46,6 +51,7 @@ impl Begin {
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
+        coordinator_public_key: Point,
         keygen_id: KeygenId,
     ) -> Self {
         let device_to_share_index: BTreeMap<_, _> = devices
@@ -65,6 +71,7 @@ impl Begin {
             key_name,
             purpose,
             keygen_id,
+            coordinator_public_key,
         }
     }
     pub fn new(
@@ -72,6 +79,7 @@ impl Begin {
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
+        coordinator_public_key: Point,
         rng: &mut impl rand_core::RngCore, // for the keygen id
     ) -> Self {
         let mut id = [0u8; 16];
@@ -82,6 +90,7 @@ impl Begin {
             threshold,
             key_name,
             purpose,
+            coordinator_public_key,
             KeygenId::from_bytes(id),
         )
     }

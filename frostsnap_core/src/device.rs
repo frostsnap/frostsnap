@@ -16,8 +16,8 @@ use alloc::{
     vec::Vec,
 };
 use core::num::NonZeroU32;
-use schnorr_fun::frost::chilldkg::encpedpop::{self};
-use schnorr_fun::frost::{PairedSecretShare, SecretShare, ShareIndex};
+use schnorr_fun::frost::chilldkg::certpedpop::{self};
+use schnorr_fun::frost::{PairedSecretShare, SecretShare, ShareIndex, SharedKey};
 use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{frost, fun::prelude::*};
 use sha2::Sha256;
@@ -32,18 +32,9 @@ pub struct FrostSigner<S = MemoryNonceSlot> {
     nonce_slots: device_nonces::AbSlots<S>,
     mutations: VecDeque<Mutation>,
     tmp_keygen_phase1: BTreeMap<KeygenId, KeyGenPhase1>,
-    tmp_keygen_pending_finalize: BTreeMap<KeygenId, (SessionHash, KeyGenPhase3)>,
+    tmp_keygen_phase2: BTreeMap<KeygenId, KeyGenPhase2>,
+    tmp_keygen_pending_finalize: BTreeMap<KeygenId, (SessionHash, KeyGenPhase4)>,
     restoration: restoration::State,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct KeyGenPhase3 {
-    key_name: String,
-    key_purpose: KeyPurpose,
-    access_structure_ref: AccessStructureRef,
-    access_structure_kind: AccessStructureKind,
-    threshold: u16,
-    encrypted_secret_share: EncryptedSecretShare,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -136,25 +127,46 @@ impl EncryptedSecretShare {
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenPhase1 {
     pub device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
-    pub input_state: encpedpop::Contributor,
+    pub input_state: certpedpop::Contributor,
     pub threshold: u16,
     pub key_name: String,
     pub key_purpose: KeyPurpose,
+    pub coordinator_public_key: Point,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenPhase2 {
     pub keygen_id: KeygenId,
-    secret_share: PairedSecretShare,
-    agg_input: encpedpop::AggKeygenInput,
+    pub device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
+    share_receiver: certpedpop::SecretShareReceiver,
+    agg_input: certpedpop::AggKeygenInput,
     key_name: String,
     key_purpose: KeyPurpose,
+    pub coordinator_public_key: Point,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyGenPhase3 {
+    pub keygen_id: KeygenId,
+    session_hash: SessionHash,
+    key_name: String,
+    key_purpose: KeyPurpose,
+    t_of_n: (u16, u16),
+    shared_key: SharedKey,
+    secret_share: PairedSecretShare,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyGenPhase4 {
+    key_name: String,
+    key_purpose: KeyPurpose,
+    access_structure_ref: AccessStructureRef,
+    access_structure_kind: AccessStructureKind,
+    encrypted_secret_share: EncryptedSecretShare,
+    threshold: u16,
 }
 
 impl KeyGenPhase2 {
-    pub fn session_hash(&self) -> SessionHash {
-        SessionHash::from_agg_input(&self.agg_input)
-    }
     pub fn key_name(&self) -> &str {
         self.key_name.as_str()
     }
@@ -163,6 +175,18 @@ impl KeyGenPhase2 {
             self.agg_input.shared_key().threshold().try_into().unwrap(),
             self.agg_input.encryption_keys().count().try_into().unwrap(),
         )
+    }
+}
+
+impl KeyGenPhase3 {
+    pub fn key_name(&self) -> &str {
+        self.key_name.as_str()
+    }
+    pub fn t_of_n(&self) -> (u16, u16) {
+        self.t_of_n
+    }
+    pub fn session_hash(&self) -> SessionHash {
+        self.session_hash
     }
 }
 
@@ -188,6 +212,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             nonce_slots,
             mutations: Default::default(),
             tmp_keygen_phase1: Default::default(),
+            tmp_keygen_phase2: Default::default(),
             tmp_keygen_pending_finalize: Default::default(),
             restoration: Default::default(),
         }
@@ -335,6 +360,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     threshold,
                     key_name,
                     purpose: key_purpose,
+                    coordinator_public_key,
                 }) => {
                     if !device_to_share_index.contains_key(&self.device_id()) {
                         return Ok(vec![]);
@@ -360,7 +386,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                                 )
                             })?;
 
-                    let (input_state, keygen_input) = encpedpop::Contributor::gen_keygen_input(
+                    let (input_state, keygen_input) = certpedpop::Contributor::gen_keygen_input(
                         &schnorr,
                         threshold as u32,
                         &share_receivers_enckeys,
@@ -375,6 +401,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             threshold,
                             key_name: key_name.clone(),
                             key_purpose,
+                            coordinator_public_key,
                         },
                     );
                     Ok(vec![DeviceSend::ToCoordinator(Box::new(
@@ -384,19 +411,21 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         }),
                     ))])
                 }
-                self::Keygen::Check {
+                self::Keygen::CertifyPlease {
                     keygen_id,
                     agg_input,
                 } => {
+                    let cert_scheme =
+                        schnorr_fun::frost::chilldkg::certpedpop::vrf_cert::VrfCertifier;
                     let phase1 = self.tmp_keygen_phase1.remove(&keygen_id).ok_or_else(|| {
                         Error::signer_invalid_message(
                             &message,
                             "no keygen state for provided keygen_id",
                         )
                     })?;
-                    phase1
+                    let contributor_vrf_proof = phase1
                         .input_state
-                        .verify_agg_input(&agg_input)
+                        .verify_agg_input(&cert_scheme, &agg_input, self.keypair())
                         .map_err(|e| Error::signer_invalid_message(&message, e))?;
 
                     let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
@@ -407,28 +436,88 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         .get(&self.device_id())
                         .expect("already checked");
 
-                    let secret_share = encpedpop::receive_secret_share(
-                        &schnorr,
-                        (*my_index).into(),
-                        &self.keypair,
-                        &agg_input,
-                    )
-                    .map_err(|e| Error::signer_invalid_message(&message, e))?
-                    .non_zero()
-                    .ok_or_else(|| {
+                    let (share_receiver, receiver_vrf_proof) =
+                        certpedpop::SecretShareReceiver::receive_secret_share(
+                            &schnorr,
+                            &cert_scheme,
+                            (*my_index).into(),
+                            &self.keypair,
+                            &agg_input,
+                        )
+                        .map_err(|e| Error::signer_invalid_message(&message, e))?;
+
+                    // since we're both a contributor and receiver we get this proof in two ways
+                    debug_assert_eq!(contributor_vrf_proof, receiver_vrf_proof);
+
+                    self.tmp_keygen_phase2.insert(
+                        keygen_id,
+                        KeyGenPhase2 {
+                            keygen_id,
+                            device_to_share_index: phase1.device_to_share_index,
+                            share_receiver,
+                            agg_input,
+                            key_name: phase1.key_name.clone(),
+                            key_purpose: phase1.key_purpose,
+                            coordinator_public_key: phase1.coordinator_public_key,
+                        },
+                    );
+                    Ok(vec![DeviceSend::ToCoordinator(Box::new(
+                        DeviceToCoordinatorMessage::KeyGenProof {
+                            keygen_id,
+                            vrf_proof: receiver_vrf_proof,
+                        },
+                    ))])
+                }
+                self::Keygen::Check {
+                    keygen_id,
+                    certificate,
+                } => {
+                    let cert_scheme =
+                        schnorr_fun::frost::chilldkg::certpedpop::vrf_cert::VrfCertifier;
+                    let phase2 = self.tmp_keygen_phase2.remove(&keygen_id).ok_or_else(|| {
+                        Error::signer_invalid_message(
+                            &message,
+                            "no keygen state for provided keygen_id",
+                        )
+                    })?;
+
+                    let contributor_keys = &phase2
+                        .device_to_share_index
+                        .keys()
+                        .map(|k| k.pubkey())
+                        .chain(core::iter::once(phase2.coordinator_public_key))
+                        .collect::<Vec<_>>();
+
+                    let (certified_keygen, secret_share) = phase2
+                        .clone()
+                        .share_receiver
+                        .finalize(&cert_scheme, certificate, contributor_keys)
+                        .map_err(|e| Error::signer_invalid_message(&message, e))?;
+
+                    let secret_share = secret_share.non_zero().ok_or_else(|| {
                         Error::signer_invalid_message(&message, "keygen produced a zero shared key")
                     })?;
 
-                    let phase2 = KeyGenPhase2 {
+                    let session_hash = SessionHash::from_certified_keygen(&certified_keygen);
+
+                    let phase3 = KeyGenPhase3 {
                         keygen_id,
+                        key_name: phase2.clone().key_name,
+                        key_purpose: phase2.key_purpose,
+                        t_of_n: phase2.t_of_n(),
+                        shared_key: certified_keygen
+                            .inner()
+                            .shared_key()
+                            .non_zero()
+                            .expect("already checked"),
                         secret_share,
-                        agg_input,
-                        key_name: phase1.key_name.clone(),
-                        key_purpose: phase1.key_purpose,
+                        session_hash,
                     };
+
                     Ok(vec![DeviceSend::ToUser(Box::new(
                         DeviceToUserMessage::CheckKeyGen {
-                            phase: Box::new(phase2),
+                            session_hash,
+                            phase: Box::new(phase3),
                         },
                     ))])
                 }
@@ -566,17 +655,16 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
     pub fn keygen_ack(
         &mut self,
-        phase2: KeyGenPhase2,
+        phase2: KeyGenPhase3,
         symm_key_gen: &mut impl DeviceSecretDerivation,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<KeyGenAck, ActionError> {
         let secret_share = phase2.secret_share;
-        let agg_input = phase2.agg_input;
         let key_name = phase2.key_name;
         let rootkey = secret_share.public_key();
         let key_id = KeyId::from_rootkey(rootkey);
         let root_shared_key =
-            Xpub::from_rootkey(agg_input.shared_key().non_zero().expect("already checked"));
+            Xpub::from_rootkey(phase2.shared_key.non_zero().expect("already checked"));
         let app_shared_key = root_shared_key.rootkey_to_master_appkey();
         let access_structure_id =
             AccessStructureId::from_app_poly(app_shared_key.key.point_polynomial());
@@ -591,7 +679,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             &root_shared_key.key,
         );
 
-        let session_hash = SessionHash::from_agg_input(&agg_input);
         let threshold = app_shared_key
             .key
             .threshold()
@@ -614,9 +701,8 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         self.tmp_keygen_pending_finalize.insert(
             phase2.keygen_id,
             (
-                session_hash,
-                KeyGenPhase3 {
-                    // session_hash,
+                phase2.session_hash,
+                KeyGenPhase4 {
                     key_name,
                     key_purpose: phase2.key_purpose,
                     access_structure_ref,
@@ -628,7 +714,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         );
 
         Ok(KeyGenAck {
-            ack_session_hash: session_hash,
+            ack_session_hash: phase2.session_hash,
             keygen_id: phase2.keygen_id,
         })
     }
@@ -723,7 +809,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         ))])
     }
 
-    fn save_complete_share(&mut self, phase: KeyGenPhase3) {
+    fn save_complete_share(&mut self, phase: KeyGenPhase4) {
         self.mutate(Mutation::NewKey {
             key_id: phase.access_structure_ref.key_id,
             key_name: phase.key_name,
