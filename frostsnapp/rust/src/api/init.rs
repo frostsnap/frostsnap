@@ -1,6 +1,5 @@
 use super::{
-    backup_manager::BackupManager, coordinator::Coordinator, log::LogLevel, port::FfiSerial,
-    settings::Settings,
+    backup_manager::BackupManager, coordinator::Coordinator, log::LogLevel, settings::Settings,
 };
 use crate::{
     coordinator::FfiCoordinator,
@@ -62,25 +61,31 @@ impl super::Api {
         Ok(())
     }
 
+    // Android-specific function that returns FfiSerial
     pub fn load_host_handles_serial(
         &self,
         app_dir: String,
-    ) -> Result<(Coordinator, AppCtx, FfiSerial)> {
+    ) -> Result<(Coordinator, AppCtx, super::port::FfiSerial)> {
+        use super::port::FfiSerial;
         let app_dir = PathBuf::from_str(&app_dir)?;
         let ffi_serial = FfiSerial::default();
         let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
-        let (coord, app_state) = _load(app_dir, usb_manager)?;
+        let (coord, app_state) = load_internal(app_dir, usb_manager)?;
         Ok((coord, app_state, ffi_serial))
     }
 
+    // Desktop function using DesktopSerial
     pub fn load(&self, app_dir: String) -> anyhow::Result<(Coordinator, AppCtx)> {
         let app_dir = PathBuf::from_str(&app_dir)?;
         let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
-        _load(app_dir, usb_manager)
+        load_internal(app_dir, usb_manager)
     }
 }
 
-fn _load(app_dir: PathBuf, usb_serial_manager: UsbSerialManager) -> Result<(Coordinator, AppCtx)> {
+fn load_internal(
+    app_dir: PathBuf,
+    usb_serial_manager: UsbSerialManager,
+) -> Result<(Coordinator, AppCtx)> {
     let db_file = app_dir.join("frostsnap.sqlite");
     event!(
         Level::INFO,
