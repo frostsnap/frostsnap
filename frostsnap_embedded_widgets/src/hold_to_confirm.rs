@@ -39,7 +39,7 @@ where
             .push(widget)
             .flex(1)
             .push(faded_button)
-            .with_main_axis_alignment(MainAxisAlignment::Center);
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
 
         // Center the column, then put it in an expanded container to fill available space
         let centered = Center::new(column);

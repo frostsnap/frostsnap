@@ -3,7 +3,6 @@
 use embedded_graphics_simulator::{
     OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
-use frostsnap_embedded_widgets::DynWidget;
 use std::cell::RefCell;
 use std::io::{self, BufRead};
 use std::rc::Rc;

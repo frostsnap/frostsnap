@@ -1,6 +1,10 @@
-use super::{CrossAxisAlignment, MainAxisAlignment};
+use super::{CrossAxisAlignment, MainAxisAlignment, MainAxisSize};
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{widget_tuple::{AssociatedArray, WidgetTuple}, Instant, Widget};
+use crate::{
+    widget_tuple::{AssociatedArray, WidgetTuple},
+    Instant, Widget,
+};
+use alloc::vec::Vec;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -26,6 +30,7 @@ pub struct Column<T: AssociatedArray> {
     pub children: T,
     pub cross_axis_alignment: CrossAxisAlignment,
     pub main_axis_alignment: MainAxisAlignment,
+    pub main_axis_size: MainAxisSize,
     pub(crate) child_rects: T::Array<Rectangle>,
     pub(crate) debug_borders: bool,
     pub(crate) sizing: Option<crate::Sizing>,
@@ -42,7 +47,6 @@ impl Column<()> {
     }
 }
 
-
 impl<T: AssociatedArray> Column<T> {
     pub fn with_cross_axis_alignment(mut self, alignment: CrossAxisAlignment) -> Self {
         self.cross_axis_alignment = alignment;
@@ -51,6 +55,17 @@ impl<T: AssociatedArray> Column<T> {
 
     pub fn with_main_axis_alignment(mut self, alignment: MainAxisAlignment) -> Self {
         self.main_axis_alignment = alignment;
+        // Start alignment uses Min size by default, all others use Max
+        if matches!(alignment, MainAxisAlignment::Start) {
+            self.main_axis_size = MainAxisSize::Min;
+        } else {
+            self.main_axis_size = MainAxisSize::Max;
+        }
+        self
+    }
+
+    pub fn with_main_axis_size(mut self, size: MainAxisSize) -> Self {
+        self.main_axis_size = size;
         self
     }
 
@@ -70,11 +85,11 @@ impl<T: AssociatedArray> Column<T> {
             children,
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_alignment: MainAxisAlignment::Start,
+            main_axis_size: MainAxisSize::Min, // Start alignment defaults to Min
             debug_borders: false,
             sizing: None,
         }
     }
-
 }
 
 impl<T: WidgetTuple> Column<T> {
@@ -87,7 +102,7 @@ impl<T: WidgetTuple> Column<T> {
         let old_spacing = self.spacing_before.as_ref();
         new_spacing.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_spacing);
         new_spacing.as_mut()[T::TUPLE_LEN] = 0; // Default gap is 0
-        
+
         let mut new_flex = new_children.create_array_with(0);
         let old_flex = self.flex_scores.as_ref();
         new_flex.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_flex);
@@ -100,12 +115,12 @@ impl<T: WidgetTuple> Column<T> {
             children: new_children,
             cross_axis_alignment: self.cross_axis_alignment,
             main_axis_alignment: self.main_axis_alignment,
+            main_axis_size: self.main_axis_size,
             debug_borders: self.debug_borders,
             sizing: None,
         }
     }
 
-    
     /// Set a gap before the last added widget
     pub fn gap(mut self, gap: u32) -> Self {
         let len = T::TUPLE_LEN;
@@ -114,7 +129,7 @@ impl<T: WidgetTuple> Column<T> {
         }
         self
     }
-    
+
     /// Set the flex score for the last added widget
     pub fn flex(mut self, score: u32) -> Self {
         let len = T::TUPLE_LEN;
@@ -123,10 +138,244 @@ impl<T: WidgetTuple> Column<T> {
         }
         self
     }
-    
 }
 
-// Macro to implement Widget for Column with tuples of different sizes  
+// Generic implementation for any type with AssociatedArray
+impl<T> crate::DynWidget for Column<T>
+where
+    T: AssociatedArray,
+{
+    fn set_constraints(&mut self, max_size: Size) {
+        let len = self.children.len();
+
+        if len == 0 {
+            self.sizing = Some(crate::Sizing {
+                width: 0,
+                height: 0,
+            });
+            return;
+        }
+
+        let mut remaining_height = max_size.height;
+        let mut max_child_width = 0u32;
+
+        // Account for all spacing in remaining height
+        let total_spacing: u32 = self.spacing_before.as_ref().iter().sum();
+        remaining_height = remaining_height.saturating_sub(total_spacing);
+
+        // Get flex scores and calculate total flex
+        let flex_scores = self.flex_scores.as_ref();
+        let total_flex: u32 = flex_scores.iter().sum();
+
+        // First pass: set constraints on non-flex children
+        for i in 0..len {
+            if flex_scores[i] == 0 {
+                if let Some(child) = self.children.get_dyn_child(i) {
+                    // Set constraints on non-flex child with remaining available height
+                    child.set_constraints(Size::new(max_size.width, remaining_height));
+                    let sizing = child.sizing();
+                    remaining_height = remaining_height.saturating_sub(sizing.height);
+                    max_child_width = max_child_width.max(sizing.width);
+                    self.child_rects.as_mut()[i].size = sizing.into();
+                }
+            }
+        }
+
+        let total_flex_height = remaining_height;
+
+        // Second pass: set constraints on flex children and update cached rects with sizes
+        for i in 0..len {
+            if flex_scores[i] > 0 {
+                if let Some(child) = self.children.get_dyn_child(i) {
+                    // Calculate height for this flex child based on its flex score
+                    let flex_height = (total_flex_height * flex_scores[i]) / total_flex;
+                    // Set constraints on flex child with calculated height
+                    child.set_constraints(Size::new(max_size.width, flex_height));
+                    let sizing = child.sizing();
+                    remaining_height = remaining_height.saturating_sub(sizing.height);
+                    max_child_width = max_child_width.max(sizing.width);
+                    self.child_rects.as_mut()[i].size = sizing.into();
+                }
+            }
+        }
+
+        // Now compute positions based on alignment
+        let (mut y_offset, spacing) = match self.main_axis_alignment {
+            MainAxisAlignment::Start => (0u32, 0u32),
+            MainAxisAlignment::Center => (remaining_height / 2, 0),
+            MainAxisAlignment::End => (remaining_height, 0),
+            MainAxisAlignment::SpaceBetween => {
+                if len > 1 {
+                    (0, remaining_height / (len as u32 - 1))
+                } else {
+                    (0, 0)
+                }
+            }
+            MainAxisAlignment::SpaceAround => {
+                let spacing = remaining_height / (len as u32);
+                (spacing / 2, spacing)
+            }
+            MainAxisAlignment::SpaceEvenly => {
+                let spacing = remaining_height / (len as u32 + 1);
+                (spacing, spacing)
+            }
+        };
+
+        // Third pass: Set positions for all children
+        let spacing_before = self.spacing_before.as_ref();
+        let child_rects = self.child_rects.as_mut();
+
+        for i in 0..len {
+            // Add spacing BEFORE this child
+            y_offset = y_offset.saturating_add(spacing_before[i]);
+
+            let size = child_rects[i].size;
+
+            let x_offset = match self.cross_axis_alignment {
+                CrossAxisAlignment::Start => 0,
+                CrossAxisAlignment::Center => {
+                    // Center within the column's actual width, not the constraint
+                    let available_width = max_child_width.saturating_sub(size.width);
+                    (available_width / 2) as i32
+                }
+                CrossAxisAlignment::End => {
+                    // Align to the end of the column's actual width, not the constraint
+                    let available_width = max_child_width.saturating_sub(size.width);
+                    available_width as i32
+                }
+            };
+            child_rects[i].top_left = Point::new(x_offset, y_offset as i32);
+            // Add the child height and alignment spacing
+            y_offset = y_offset.saturating_add(size.height).saturating_add(spacing);
+        }
+
+        // Compute and store sizing based on MainAxisSize
+        let height = match self.main_axis_size {
+            MainAxisSize::Min => y_offset,        // Only as tall as needed
+            MainAxisSize::Max => max_size.height, // Take full available height
+        };
+
+        self.sizing = Some(crate::Sizing {
+            width: max_child_width,
+            height,
+        });
+    }
+
+    fn sizing(&self) -> crate::Sizing {
+        self.sizing
+            .expect("set_constraints must be called before sizing")
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        let child_rects = self.child_rects.as_ref();
+        let len = self.children.len();
+
+        for i in 0..len {
+            if let Some(child) = self.children.get_dyn_child(i) {
+                let area = child_rects[i];
+                if area.contains(point) || is_release {
+                    let relative_point =
+                        Point::new(point.x - area.top_left.x, point.y - area.top_left.y);
+                    if let Some(mut key_touch) = child.handle_touch(relative_point, current_time, is_release) {
+                        // Translate the KeyTouch rectangle back to parent coordinates
+                        key_touch.translate(area.top_left);
+                        return Some(key_touch);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, is_release: bool) {
+        let len = self.children.len();
+        for i in 0..len {
+            if let Some(child) = self.children.get_dyn_child(i) {
+                child.handle_vertical_drag(start_y, current_y, is_release);
+            }
+        }
+    }
+
+    fn force_full_redraw(&mut self) {
+        let len = self.children.len();
+        for i in 0..len {
+            if let Some(child) = self.children.get_dyn_child(i) {
+                child.force_full_redraw();
+            }
+        }
+    }
+}
+
+// Widget implementation for Column<Vec<W>>
+impl<W, C> Widget for Column<Vec<W>>
+where
+    W: Widget<Color = C>,
+    C: crate::WidgetColor,
+{
+    type Color = C;
+
+    fn draw<D>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        self.sizing.unwrap();
+
+        // Draw each child in its pre-computed rectangle
+        for (i, child) in self.children.iter_mut().enumerate() {
+            child.draw(&mut target.clone().crop(self.child_rects[i]), current_time)?;
+
+            // Draw debug border if enabled
+            if self.debug_borders {
+                super::draw_debug_rect(target, self.child_rects[i])?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// Widget implementation for Column<[W; N]>
+impl<W, C, const N: usize> Widget for Column<[W; N]>
+where
+    W: Widget<Color = C>,
+    C: crate::WidgetColor,
+{
+    type Color = C;
+
+    fn draw<D>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        self.sizing.unwrap();
+
+        // Draw each child in its pre-computed rectangle
+        for (i, child) in self.children.iter_mut().enumerate() {
+            child.draw(&mut target.clone().crop(self.child_rects[i]), current_time)?;
+
+            // Draw debug border if enabled
+            if self.debug_borders {
+                super::draw_debug_rect(target, self.child_rects[i])?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// Macro to implement Widget for Column with tuples of different sizes
 macro_rules! impl_column_for_tuple {
     ($len:literal, $($t:ident),+) => {
         impl<$($t: Widget<Color = C>),+, C: crate::WidgetColor> Widget for Column<($($t,)+)> {
@@ -155,36 +404,7 @@ macro_rules! impl_column_for_tuple {
 
                         // Draw debug border if enabled
                         if self.debug_borders {
-                            use embedded_graphics::primitives::PrimitiveStyle;
-                            use embedded_graphics::pixelcolor::{Rgb565, Gray4, Gray2};
-                            use embedded_graphics::pixelcolor::raw::RawData;
-
-                            let rect = self.child_rects[child_index];
-
-                            if let Some(debug_color) = match C::Raw::BITS_PER_PIXEL {
-                                16 => {
-                                    // Assume Rgb565 for 16-bit
-                                    Some(unsafe {
-                                        *(&Rgb565::WHITE as *const Rgb565 as *const C)
-                                    })
-                                },
-                                4 => {
-                                    // Assume Gray4 for 4-bit
-                                    Some(unsafe {
-                                        *(&Gray4::WHITE as *const Gray4 as *const C)
-                                    })
-                                },
-                                2 => {
-                                    // Assume Gray2 for 2-bit
-                                    Some(unsafe {
-                                        *(&Gray2::WHITE as *const Gray2 as *const C)
-                                    })
-                                },
-                                _ => None,
-                            } {
-                                rect.into_styled(PrimitiveStyle::with_stroke(debug_color, 1))
-                                    .draw(target)?;
-                            }
+                            super::draw_debug_rect(target, self.child_rects[child_index])?;
                         }
 
                         child_index += 1;

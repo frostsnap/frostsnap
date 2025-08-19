@@ -9,7 +9,7 @@ macro_rules! demo_widget {
             MainAxisAlignment, CrossAxisAlignment, Widget,
             HoldToConfirm, center::Center, Padding, SizedBox,
             FONT_SMALL, FONT_MED, FONT_LARGE, Instant,
-            Alignment
+            prelude::*,
         };
         use embedded_graphics::{
             prelude::*,
@@ -552,7 +552,7 @@ macro_rules! demo_widget {
             "array_column" => {
                 use $crate::{text::Text, Column, palette::PALETTE};
                 use embedded_graphics::prelude::*;
-                
+
                 // Create a column from a fixed-size array
                 let texts = [
                     Text::new("First", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
@@ -561,11 +561,21 @@ macro_rules! demo_widget {
                     Text::new("Fourth", U8g2TextStyle::new(FONT_MED, PALETTE.tertiary)),
                     Text::new("Fifth", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
                 ];
-                
+
                 let widget = Column::new(texts)
                     .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center);
-                    
+
+                $run_macro!(widget);
+            }
+            "word_selector" => {
+                use $crate::bip39::WordSelector;
+                use frostsnap_backup::bip39_words::words_with_prefix;
+                
+                // Get all words starting with "CAR" (BIP39 words are uppercase)
+                let words = words_with_prefix("CAR");
+                let widget = WordSelector::new(words, "CAR");
+                
                 $run_macro!(widget);
             }
             "vec_column" => {
@@ -576,7 +586,7 @@ macro_rules! demo_widget {
                 // Interactive demo that adds text widgets on touch
                 struct VecColumnDemo {
                     texts: Vec<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>,
-                    switcher: Switcher<Column<Vec<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>>>,
+                    switcher: Switcher<Align<Column<Vec<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>>>>,
                     touch_count: usize,
                 }
 
@@ -590,8 +600,11 @@ macro_rules! demo_widget {
                         ));
 
                         // Create initial column
-                        let column = Column::new(texts.clone())
-                            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+                        let column = Align::align(
+                            Column::new(texts.clone())
+                                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly),
+                            Alignment::TopCenter,
+                        );
 
                         Self {
                             texts,
@@ -621,8 +634,10 @@ macro_rules! demo_widget {
                         ));
 
                         // Create NEW column with the updated vec (do not mutate existing!)
-                        let new_column = Column::new(self.texts.clone())
-                            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+                        let new_column = Align::align(
+                            Column::new(self.texts.clone())
+                                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly),
+                            Alignment::TopCenter);
 
                         // Switch to the new column
                         self.switcher.switch_to(new_column);
@@ -674,7 +689,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, stack, array_column, vec_column", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: bip39_entry, bip39_t9, hold_confirm, checkmark, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, slide_in_old, progress, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, firmware_upgrade, stack, array_column, vec_column, word_selector", $demo);
             }
         }
     };

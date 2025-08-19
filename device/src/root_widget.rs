@@ -43,10 +43,6 @@ impl DynWidget for RootWidget {
         self.page_switcher.sizing()
     }
 
-    fn flex(&self) -> bool {
-        self.page_switcher.flex()
-    }
-
     fn handle_touch(
         &mut self,
         point: Point,

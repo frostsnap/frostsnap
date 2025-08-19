@@ -29,7 +29,7 @@ impl DeviceName {
         let name_string = name.into();
         let char_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.primary);
         let text = TextWidget::new(name_string, char_style);
-        let aligned_text = Align::new(text, Some(HorizontalAlignment::Center), None);
+        let aligned_text = Align::new(text).horizontal(HorizontalAlignment::Center);
         let text_widget = Switcher::new(aligned_text);
 
         Self { text_widget }
@@ -45,7 +45,7 @@ impl DeviceName {
         let name_string = name.into();
         let char_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.primary);
         let text = TextWidget::new(name_string, char_style);
-        let aligned_text = Align::new(text, Some(HorizontalAlignment::Center), None);
+        let aligned_text = Align::new(text).horizontal(HorizontalAlignment::Center);
         self.text_widget.switch_to(aligned_text);
     }
 }

@@ -166,3 +166,37 @@ impl_widget_tuple!(
 impl_last_widget_tuple!(
     20, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20
 );
+
+/// Implementation of AssociatedArray for Vec<W> to enable dynamic collections
+impl<W: crate::DynWidget> AssociatedArray for alloc::vec::Vec<W> {
+    type Array<T> = alloc::vec::Vec<T>;
+
+    fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
+        alloc::vec![value; self.len()]
+    }
+
+    fn get_dyn_child(&mut self, index: usize) -> Option<&mut dyn crate::DynWidget> {
+        self.get_mut(index).map(|w| w as &mut dyn crate::DynWidget)
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+/// Implementation of AssociatedArray for fixed-size arrays
+impl<W: crate::DynWidget, const N: usize> AssociatedArray for [W; N] {
+    type Array<T> = [T; N];
+
+    fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
+        [value; N]
+    }
+
+    fn get_dyn_child(&mut self, index: usize) -> Option<&mut dyn crate::DynWidget> {
+        self.get_mut(index).map(|w| w as &mut dyn crate::DynWidget)
+    }
+
+    fn len(&self) -> usize {
+        N
+    }
+}

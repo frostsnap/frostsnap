@@ -1,5 +1,6 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{alignment::Alignment, widget_tuple::{AssociatedArray, WidgetTuple}, Instant, Widget};
+use alloc::vec::Vec;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -253,3 +254,185 @@ impl_stack_for_tuple!(
 impl_stack_for_tuple!(
     20, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20
 );
+
+
+// Generic DynWidget implementation for Stack
+impl<T> crate::DynWidget for Stack<T>
+where
+    T: AssociatedArray,
+{
+    fn set_constraints(&mut self, max_size: Size) {
+        let len = self.children.len();
+
+        if len == 0 {
+            self.sizing = Some(crate::Sizing {
+                width: 0,
+                height: 0,
+            });
+            return;
+        }
+
+        let mut max_width = 0u32;
+        let mut max_height = 0u32;
+
+        for i in 0..len {
+            if let Some(child) = self.children.get_dyn_child(i) {
+                // Set constraints on each child with full available size
+                child.set_constraints(max_size);
+                let sizing = child.sizing();
+
+                // Calculate position based on whether it's positioned or not
+                let position = if self.is_positioned.as_ref()[i] {
+                    let pos = self.positions.as_ref()[i];
+                    // Check if this is an alignment-encoded position (negative values)
+                    if pos.x < 0 || pos.y < 0 {
+                        // Decode alignment from the encoded position
+                        let alignment = match (pos.x, pos.y) {
+                            (-1, -1) => crate::Alignment::TopLeft,
+                            (-2, -1) => crate::Alignment::TopCenter,
+                            (-3, -1) => crate::Alignment::TopRight,
+                            (-1, -2) => crate::Alignment::CenterLeft,
+                            (-2, -2) => crate::Alignment::Center,
+                            (-3, -2) => crate::Alignment::CenterRight,
+                            (-1, -3) => crate::Alignment::BottomLeft,
+                            (-2, -3) => crate::Alignment::BottomCenter,
+                            (-3, -3) => crate::Alignment::BottomRight,
+                            _ => crate::Alignment::TopLeft, // Default fallback
+                        };
+
+                        // Use the alignment helper methods
+                        alignment.offset(max_size, sizing.into())
+                    } else {
+                        // Use the absolute position
+                        pos
+                    }
+                } else {
+                    // Use the alignment helper methods
+                    self.alignment.offset(max_size, sizing.into())
+                };
+
+                // Store the child's rectangle
+                self.child_rects.as_mut()[i] = Rectangle::new(position, sizing.into());
+
+                // Track maximum dimensions for the stack's sizing
+                let right = (position.x as u32).saturating_add(sizing.width);
+                let bottom = (position.y as u32).saturating_add(sizing.height);
+                max_width = max_width.max(right);
+                max_height = max_height.max(bottom);
+            }
+        }
+
+        // Stack's size is the bounding box of all children
+        self.sizing = Some(crate::Sizing {
+            width: max_width.min(max_size.width),
+            height: max_height.min(max_size.height),
+        });
+    }
+
+    fn sizing(&self) -> crate::Sizing {
+        self.sizing
+            .expect("set_constraints must be called before sizing")
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        let child_rects = self.child_rects.as_ref();
+        let len = self.children.len();
+
+        // Handle touches in reverse order (top-most children first)
+        // Check from last to first since later children are drawn on top
+        for i in (0..len).rev() {
+            if let Some(child) = self.children.get_dyn_child(i) {
+                let area = child_rects[i];
+                if area.contains(point) || is_release {
+                    let relative_point =
+                        Point::new(point.x - area.top_left.x, point.y - area.top_left.y);
+                    if let Some(mut key_touch) = child.handle_touch(relative_point, current_time, is_release) {
+                        // Translate the KeyTouch rectangle back to parent coordinates
+                        key_touch.translate(area.top_left);
+                        return Some(key_touch);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, is_release: bool) {
+        let len = self.children.len();
+        for i in 0..len {
+            if let Some(child) = self.children.get_dyn_child(i) {
+                child.handle_vertical_drag(start_y, current_y, is_release);
+            }
+        }
+    }
+
+    fn force_full_redraw(&mut self) {
+        let len = self.children.len();
+        for i in 0..len {
+            if let Some(child) = self.children.get_dyn_child(i) {
+                child.force_full_redraw();
+            }
+        }
+    }
+}
+
+// Widget implementation for Stack<Vec<W>>
+impl<W, C> Widget for Stack<Vec<W>>
+where
+    W: Widget<Color = C>,
+    C: crate::WidgetColor,
+{
+    type Color = C;
+
+    fn draw<D>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        self.sizing.unwrap();
+
+        // Draw each child in its pre-computed rectangle
+        // For stacks, we draw in order (bottom to top)
+        for (i, child) in self.children.iter_mut().enumerate() {
+            child.draw(&mut target.clone().crop(self.child_rects[i]), current_time)?;
+        }
+
+        Ok(())
+    }
+}
+
+// Widget implementation for Stack<[W; N]>
+impl<W, C, const N: usize> Widget for Stack<[W; N]>
+where
+    W: Widget<Color = C>,
+    C: crate::WidgetColor,
+{
+    type Color = C;
+
+    fn draw<D>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        self.sizing.unwrap();
+
+        // Draw each child in its pre-computed rectangle
+        // For stacks, we draw in order (bottom to top)
+        for (i, child) in self.children.iter_mut().enumerate() {
+            child.draw(&mut target.clone().crop(self.child_rects[i]), current_time)?;
+        }
+
+        Ok(())
+    }
+}

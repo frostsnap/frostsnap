@@ -6,7 +6,7 @@ use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
     Keyboard(char),
-    WordSelector(usize),
+    WordSelector(&'static str),
     EditWord(usize),
     NavBack,
     NavForward,

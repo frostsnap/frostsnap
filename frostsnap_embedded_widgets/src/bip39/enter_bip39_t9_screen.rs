@@ -1,4 +1,5 @@
 use super::{Bip39InputPreview, EnteredWords, T9Keyboard, WordSelector};
+use crate::OneTimeClearHack;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{DynWidget, Key, KeyTouch, Widget};
 use alloc::{string::String, vec, vec::Vec};
@@ -10,7 +11,7 @@ pub const MAX_WORD_SELECTOR_WORDS: usize = 6;
 #[derive(Debug)]
 pub struct EnterBip39T9Screen {
     t9_keyboard: T9Keyboard,
-    word_selector: Option<WordSelector>,
+    word_selector: Option<OneTimeClearHack<WordSelector>>,
     entered_words: Option<EnteredWords>,
     bip39_input: Bip39InputPreview,
     touches: Vec<KeyTouch>,
@@ -92,7 +93,7 @@ impl EnterBip39T9Screen {
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Full-screen word selector
-            word_selector.draw(target);
+            word_selector.draw(target, current_time);
         } else {
             // Normal keyboard and input preview
             let _ = self
@@ -141,25 +142,20 @@ impl EnterBip39T9Screen {
                             // This is a committed character from T9
                             self.push_letter_and_autocomplete(c);
                         }
-                        Key::WordSelector(index) => {
-                            // Handle word selector index
-                            if let Some(ref word_selector) = self.word_selector {
-                                if let Some(word) = word_selector.get_word_by_index(index) {
-                                    self.bip39_input.autocomplete_word(word);
-                                    self.update_valid_keys();
+                        Key::WordSelector(word) => {
+                            self.bip39_input.autocomplete_word(word);
+                            self.update_valid_keys();
 
-                                    // If we now have all 25 words entered, show EnteredWords view
-                                    if self.bip39_input.word_count() == FROSTSNAP_BACKUP_WORDS {
-                                        self.clear_touches();
-                                        let framebuffer = self.bip39_input.get_framebuffer();
-                                        let words_ref = self.bip39_input.get_words_ref();
-                                        let mut entered_words =
-                                            EnteredWords::new(framebuffer, self.size, words_ref);
-                                        entered_words
-                                            .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
-                                        self.entered_words = Some(entered_words);
-                                    }
-                                }
+                            // If we now have all 25 words entered, show EnteredWords view
+                            if self.bip39_input.word_count() == FROSTSNAP_BACKUP_WORDS {
+                                self.clear_touches();
+                                let framebuffer = self.bip39_input.get_framebuffer();
+                                let words_ref = self.bip39_input.get_words_ref();
+                                let mut entered_words =
+                                    EnteredWords::new(framebuffer, self.size, words_ref);
+                                entered_words
+                                    .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
+                                self.entered_words = Some(entered_words);
                             }
                         }
                         Key::EditWord(word_index) => {
@@ -203,9 +199,9 @@ impl EnterBip39T9Screen {
             let key_touch = if let Some(ref entered_words) = self.entered_words {
                 // EnteredWords is full-screen
                 entered_words.handle_touch(point)
-            } else if let Some(ref word_selector) = self.word_selector {
+            } else if let Some(ref mut word_selector) = self.word_selector {
                 // Word selector is full-screen
-                word_selector.handle_touch(point)
+                word_selector.handle_touch(point, current_time, lift_up)
             } else {
                 // Normal mode: check input preview first, then keyboard
                 if let Some(key_touch) = self.bip39_input.handle_touch(point, current_time, lift_up)
@@ -276,11 +272,10 @@ impl EnterBip39T9Screen {
                     self.keyboard_rect.size.height + self.bip39_input.area.size.height,
                 );
 
-                self.word_selector = Some(WordSelector::new(
-                    full_screen_size,
-                    matching_words,
-                    current_word.clone(),
-                ));
+                let word_selector = WordSelector::new(matching_words, &current_word);
+                let mut word_selector_with_clear = OneTimeClearHack::new(word_selector);
+                word_selector_with_clear.set_constraints(full_screen_size);
+                self.word_selector = Some(word_selector_with_clear);
                 // Cancel all touches before switching to word selector
                 self.clear_touches();
             } else {
@@ -369,25 +364,20 @@ impl crate::DynWidget for EnterBip39T9Screen {
                             // This is a committed character from T9
                             self.push_letter_and_autocomplete(c);
                         }
-                        Key::WordSelector(index) => {
-                            // Handle word selector index
-                            if let Some(ref word_selector) = self.word_selector {
-                                if let Some(word) = word_selector.get_word_by_index(index) {
-                                    self.bip39_input.autocomplete_word(word);
-                                    self.update_valid_keys();
+                        Key::WordSelector(word) => {
+                            self.bip39_input.autocomplete_word(word);
+                            self.update_valid_keys();
 
-                                    // If we now have all 25 words entered, show EnteredWords view
-                                    if self.bip39_input.word_count() == FROSTSNAP_BACKUP_WORDS {
-                                        self.clear_touches();
-                                        let framebuffer = self.bip39_input.get_framebuffer();
-                                        let words_ref = self.bip39_input.get_words_ref();
-                                        let mut entered_words =
-                                            EnteredWords::new(framebuffer, self.size, words_ref);
-                                        entered_words
-                                            .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
-                                        self.entered_words = Some(entered_words);
-                                    }
-                                }
+                            // If we now have all 25 words entered, show EnteredWords view
+                            if self.bip39_input.word_count() == FROSTSNAP_BACKUP_WORDS {
+                                self.clear_touches();
+                                let framebuffer = self.bip39_input.get_framebuffer();
+                                let words_ref = self.bip39_input.get_words_ref();
+                                let mut entered_words =
+                                    EnteredWords::new(framebuffer, self.size, words_ref);
+                                entered_words
+                                    .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
+                                self.entered_words = Some(entered_words);
                             }
                         }
                         Key::EditWord(word_index) => {
@@ -431,9 +421,9 @@ impl crate::DynWidget for EnterBip39T9Screen {
             let key_touch = if let Some(ref entered_words) = self.entered_words {
                 // EnteredWords is full-screen
                 entered_words.handle_touch(point)
-            } else if let Some(ref word_selector) = self.word_selector {
+            } else if let Some(ref mut word_selector) = self.word_selector {
                 // Word selector is full-screen
-                word_selector.handle_touch(point)
+                word_selector.handle_touch(point, current_time, lift_up)
             } else {
                 // Normal mode: check input preview first, then keyboard
                 if let Some(key_touch) = self.bip39_input.handle_touch(point, current_time, lift_up)
@@ -544,7 +534,7 @@ impl Widget for EnterBip39T9Screen {
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Full-screen word selector
-            word_selector.draw(target);
+            word_selector.draw(target, current_time);
         } else {
             // Normal keyboard and input preview
             self.t9_keyboard

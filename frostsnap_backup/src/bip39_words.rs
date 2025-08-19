@@ -363,13 +363,45 @@ pub static BIP39_WORDS: [&str; 2048] = [
     "ZOO",
 ];
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
-    extern crate alloc;
     use super::*;
-    use alloc::{string::String, vec::Vec};
     use secp256kfun::hex;
     use sha2::{digest::Digest, Sha256};
+    use std::string::String;
+    use std::vec::Vec;
+
+    #[test]
+    fn find_max_prefix_matches() {
+        let mut curr_count = 0;
+        let mut curr_prefix = "";
+        let mut max = 0;
+        let mut max_is_a_word = 0;
+        // Count occurrences of each 3-letter prefix
+        for word in &BIP39_WORDS {
+            let prefix = &word[..3];
+            if prefix != curr_prefix {
+                if curr_count > max {
+                    max = curr_count;
+                }
+                if is_valid_bip39_word(curr_prefix) {
+                    if curr_count > max_is_a_word {
+                        max_is_a_word = curr_count;
+                    }
+                }
+
+                curr_prefix = prefix;
+                curr_count = 0;
+            }
+            curr_count += 1;
+        }
+
+        assert_eq!(max, 13, "most popular 3 letter prefix");
+        assert_eq!(
+            max_is_a_word, 8,
+            "most popular 3 letter prefix where it's a word"
+        );
+    }
 
     #[test]
     fn test_bip39_wordlist_hash() {

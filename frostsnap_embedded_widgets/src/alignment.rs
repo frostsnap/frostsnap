@@ -74,7 +74,9 @@ impl HorizontalAlignment {
     pub fn x_offset(&self, container_width: u32, child_width: u32) -> i32 {
         match self {
             HorizontalAlignment::Left => 0,
-            HorizontalAlignment::Center => ((container_width.saturating_sub(child_width)) / 2) as i32,
+            HorizontalAlignment::Center => {
+                ((container_width.saturating_sub(child_width)) / 2) as i32
+            }
             HorizontalAlignment::Right => (container_width.saturating_sub(child_width)) as i32,
         }
     }
@@ -92,7 +94,9 @@ impl VerticalAlignment {
     pub fn y_offset(&self, container_height: u32, child_height: u32) -> i32 {
         match self {
             VerticalAlignment::Top => 0,
-            VerticalAlignment::Center => ((container_height.saturating_sub(child_height)) / 2) as i32,
+            VerticalAlignment::Center => {
+                ((container_height.saturating_sub(child_height)) / 2) as i32
+            }
             VerticalAlignment::Bottom => (container_height.saturating_sub(child_height)) as i32,
         }
     }
@@ -102,40 +106,46 @@ impl VerticalAlignment {
 #[derive(PartialEq)]
 pub struct Align<W> {
     pub child: W,
-    pub horizontal: Option<HorizontalAlignment>,
-    pub vertical: Option<VerticalAlignment>,
+    pub horizontal: HorizontalAlignment,
+    pub vertical: VerticalAlignment,
+    /// If true, the widget expands to fill available space on the horizontal axis
+    pub expand_horizontal: bool,
+    /// If true, the widget expands to fill available space on the vertical axis
+    pub expand_vertical: bool,
     constraints: Option<Size>,
     child_rect: Rectangle,
 }
 
 impl<W> Align<W> {
-    /// Create an Align widget with optional horizontal and vertical alignment
-    /// If None is provided for an axis, the child will shrink-wrap on that axis
-    pub fn new(
-        child: W,
-        horizontal: Option<HorizontalAlignment>,
-        vertical: Option<VerticalAlignment>,
-    ) -> Self {
+    /// Create an Align widget with default top-left alignment that shrink-wraps
+    pub fn new(child: W) -> Self {
         Self {
             child,
-            horizontal,
-            vertical,
+            horizontal: HorizontalAlignment::Left,
+            vertical: VerticalAlignment::Top,
+            expand_horizontal: false,
+            expand_vertical: false,
             constraints: None,
             child_rect: Rectangle::zero(),
         }
     }
 
-    /// Create an Align widget that centers on both axes (equivalent to Center widget)
-    pub fn center(child: W) -> Self {
-        Self::new(
-            child,
-            Some(HorizontalAlignment::Center),
-            Some(VerticalAlignment::Center),
-        )
+    /// Set horizontal alignment (consumes self for chaining)
+    pub fn horizontal(mut self, alignment: HorizontalAlignment) -> Self {
+        self.horizontal = alignment;
+        self.expand_horizontal = true;
+        self
+    }
+
+    /// Set vertical alignment (consumes self for chaining)
+    pub fn vertical(mut self, alignment: VerticalAlignment) -> Self {
+        self.vertical = alignment;
+        self.expand_vertical = true;
+        self
     }
 
     /// Create an Align widget with a combined alignment
-    pub fn with_alignment(child: W, alignment: Alignment) -> Self {
+    pub fn align(child: W, alignment: Alignment) -> Self {
         let (horizontal, vertical) = match alignment {
             Alignment::TopLeft => (HorizontalAlignment::Left, VerticalAlignment::Top),
             Alignment::TopCenter => (HorizontalAlignment::Center, VerticalAlignment::Top),
@@ -147,7 +157,15 @@ impl<W> Align<W> {
             Alignment::BottomCenter => (HorizontalAlignment::Center, VerticalAlignment::Bottom),
             Alignment::BottomRight => (HorizontalAlignment::Right, VerticalAlignment::Bottom),
         };
-        Self::new(child, Some(horizontal), Some(vertical))
+        Self {
+            child,
+            horizontal,
+            vertical,
+            expand_horizontal: true,
+            expand_vertical: true,
+            constraints: None,
+            child_rect: Rectangle::zero(),
+        }
     }
 }
 
@@ -159,17 +177,17 @@ impl<W: Widget> crate::DynWidget for Align<W> {
         let child_size: Size = self.child.sizing().into();
 
         // Calculate position based on alignment settings
-        let x_offset = if let Some(h_align) = self.horizontal {
-            h_align.x_offset(max_size.width, child_size.width)
+        let x_offset = if self.expand_horizontal {
+            self.horizontal.x_offset(max_size.width, child_size.width)
         } else {
-            // No horizontal alignment - position at left (shrink-wrap behavior)
+            // Not expanding - position at left (shrink-wrap behavior)
             0
         };
 
-        let y_offset = if let Some(v_align) = self.vertical {
-            v_align.y_offset(max_size.height, child_size.height)
+        let y_offset = if self.expand_vertical {
+            self.vertical.y_offset(max_size.height, child_size.height)
         } else {
-            // No vertical alignment - position at top (shrink-wrap behavior)
+            // Not expanding - position at top (shrink-wrap behavior)
             0
         };
 
@@ -180,15 +198,15 @@ impl<W: Widget> crate::DynWidget for Align<W> {
         let constraints = self.constraints.unwrap();
         let child_sizing = self.child.sizing();
 
-        // If alignment is set on an axis, use full available space on that axis
+        // If expanding on an axis, use full available space on that axis
         // Otherwise, shrink-wrap to child size
         crate::Sizing {
-            width: if self.horizontal.is_some() {
+            width: if self.expand_horizontal {
                 constraints.width
             } else {
                 child_sizing.width
             },
-            height: if self.vertical.is_some() {
+            height: if self.expand_vertical {
                 constraints.height
             } else {
                 child_sizing.height
@@ -209,8 +227,14 @@ impl<W: Widget> crate::DynWidget for Align<W> {
                 point.x - self.child_rect.top_left.x,
                 point.y - self.child_rect.top_left.y,
             );
-            self.child
-                .handle_touch(translated_point, current_time, is_release)
+            if let Some(mut key_touch) = self.child
+                .handle_touch(translated_point, current_time, is_release) {
+                // Translate the KeyTouch rectangle back to parent coordinates
+                key_touch.translate(self.child_rect.top_left);
+                Some(key_touch)
+            } else {
+                None
+            }
         } else {
             None
         }

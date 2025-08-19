@@ -155,8 +155,14 @@ impl<W: Widget> crate::DynWidget for Container<W> {
             point.x - self.border_width as i32,
             point.y - self.border_width as i32,
         );
-        self.child
-            .handle_touch(child_point, current_time, is_release)
+        if let Some(mut key_touch) = self.child
+            .handle_touch(child_point, current_time, is_release) {
+            // Translate the KeyTouch rectangle back to parent coordinates
+            key_touch.translate(Point::new(self.border_width as i32, self.border_width as i32));
+            Some(key_touch)
+        } else {
+            None
+        }
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {

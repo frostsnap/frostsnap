@@ -1,7 +1,6 @@
 mod column;
 mod row;
 mod stack;
-mod vec_column;
 
 pub use column::Column;
 pub use row::Row;
@@ -36,4 +35,53 @@ pub enum MainAxisAlignment {
     /// Place children with equal spacing between and around them
     /// Example with 3 children: --space--[Child1]--space--[Child2]--space--[Child3]--space--
     SpaceEvenly,
+}
+
+/// Controls how much space the widget should take in its main axis
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MainAxisSize {
+    /// Take up as much space as possible in the main axis
+    Max,
+    /// Take up only as much space as needed by the children
+    Min,
+}
+
+/// Helper function to draw debug borders around rectangles
+/// Automatically determines the appropriate WHITE color based on the color type's bit depth
+pub(crate) fn draw_debug_rect<D, C>(
+    target: &mut D,
+    rect: embedded_graphics::primitives::Rectangle,
+) -> Result<(), D::Error>
+where
+    D: embedded_graphics::draw_target::DrawTarget<Color = C>,
+    C: crate::WidgetColor,
+{
+    use embedded_graphics::pixelcolor::raw::RawData;
+    use embedded_graphics::pixelcolor::{Gray2, Gray4, Rgb565};
+    use embedded_graphics::primitives::{PrimitiveStyle, Primitive};
+    use embedded_graphics::Drawable;
+    use embedded_graphics::prelude::{GrayColor, RgbColor};
+
+    let debug_color = match C::Raw::BITS_PER_PIXEL {
+        16 => {
+            // Assume Rgb565 for 16-bit
+            Some(unsafe { *(&Rgb565::WHITE as *const Rgb565 as *const C) })
+        }
+        4 => {
+            // Assume Gray4 for 4-bit
+            Some(unsafe { *(&Gray4::WHITE as *const Gray4 as *const C) })
+        }
+        2 => {
+            // Assume Gray2 for 2-bit
+            Some(unsafe { *(&Gray2::WHITE as *const Gray2 as *const C) })
+        }
+        _ => None,
+    };
+
+    if let Some(color) = debug_color {
+        rect.into_styled(PrimitiveStyle::with_stroke(color, 1))
+            .draw(target)?;
+    }
+
+    Ok(())
 }
