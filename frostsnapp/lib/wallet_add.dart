@@ -9,9 +9,25 @@ import 'package:frostsnap/wallet_create.dart';
 
 enum AddType { newWallet, recoverWalletWithDevice, recoverWalletWithBackup }
 
+enum VerticalButtonGroupPosition { top, bottom, middle, single }
+
 class WalletAddColumn extends StatelessWidget {
   static const iconSize = 24.0;
-  static const cardMargin = EdgeInsets.fromLTRB(16, 4, 16, 12);
+  static const cardMargin = EdgeInsets.fromLTRB(16, 4, 16, 4);
+  static const cardBorder = BorderRadius.all(Radius.circular(28));
+  static const cardBorderTop = BorderRadius.only(
+    topLeft: Radius.circular(28),
+    topRight: Radius.circular(28),
+    bottomLeft: Radius.circular(8),
+    bottomRight: Radius.circular(8),
+  );
+  static const cardBorderBottom = BorderRadius.only(
+    topLeft: Radius.circular(8),
+    topRight: Radius.circular(8),
+    bottomLeft: Radius.circular(28),
+    bottomRight: Radius.circular(28),
+  );
+  static const cardBorderMiddle = BorderRadius.all(Radius.circular(8));
   static const contentPadding = EdgeInsets.symmetric(horizontal: 16);
 
   final bool showNewToFrostsnap;
@@ -28,8 +44,8 @@ class WalletAddColumn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (showNewToFrostsnap) _buildTitle(context, text: 'New to Frostsnap?'),
-        _buildCard(
+        if (showNewToFrostsnap) buildTitle(context, text: 'New to Frostsnap?'),
+        buildCard(
           context,
           action: () => onPressed(AddType.newWallet),
           emphasize: true,
@@ -41,13 +57,13 @@ class WalletAddColumn extends StatelessWidget {
           triggerMode: TooltipTriggerMode.tap,
           message:
               'Depending on your wallet’s setup, you may need to add more keys to finish recovery.',
-          child: _buildTitle(
+          child: buildTitle(
             context,
             showInfoIcon: true,
             text: 'Start wallet recovery',
           ),
         ),
-        _buildCard(
+        buildCard(
           context,
           action: () => onPressed(AddType.recoverWalletWithDevice),
           icon: ImageIcon(
@@ -56,19 +72,21 @@ class WalletAddColumn extends StatelessWidget {
           ),
           title: 'Existing key',
           subtitle: 'Restore with a Frostsnap device',
+          groupPosition: VerticalButtonGroupPosition.top,
         ),
-        _buildCard(
+        buildCard(
           context,
           action: () => onPressed(AddType.recoverWalletWithBackup),
           icon: Icon(Icons.description_outlined, size: iconSize),
           title: 'Physical backup',
           subtitle: 'Restore with a recorded key backup',
+          groupPosition: VerticalButtonGroupPosition.bottom,
         ),
       ],
     );
   }
 
-  Widget _buildTitle(
+  static Widget buildTitle(
     BuildContext context, {
     required String text,
     String? subText,
@@ -77,16 +95,27 @@ class WalletAddColumn extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     return ListTile(
+      dense: true,
       contentPadding: EdgeInsets.symmetric(horizontal: 16),
       title: Text.rich(
         TextSpan(
           text: text,
           children: showInfoIcon
               ? [
-                  TextSpan(text: '  '),
-                  WidgetSpan(child: Icon(Icons.info_outline_rounded, size: 20)),
+                  TextSpan(text: ' '),
+                  WidgetSpan(
+                    child: Icon(
+                      Icons.info_outline_rounded,
+                      size: 16,
+                      color: theme.colorScheme.secondary,
+                    ),
+                  ),
                 ]
               : null,
+          style: TextStyle(
+            color: theme.colorScheme.secondary,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       subtitle: subText == null ? null : Text(subText),
@@ -95,20 +124,21 @@ class WalletAddColumn extends StatelessWidget {
     );
   }
 
-  Widget _buildCard(
+  static Widget buildCard(
     BuildContext context, {
     required Widget icon,
     required String title,
     required String subtitle,
+    VerticalButtonGroupPosition? groupPosition,
     String? subsubtitle,
     bool emphasize = false,
     Function()? action,
   }) {
     final theme = Theme.of(context);
-    final emphasisColor = theme.colorScheme.primaryContainer;
-    final onEmphasisColor = theme.colorScheme.onPrimaryContainer;
-    final Color? color = null;
-    final Color? onColor = null;
+    final Color? emphasisColor = theme.colorScheme.primary;
+    final Color? onEmphasisColor = theme.colorScheme.onPrimary;
+    final Color? color = theme.colorScheme.primaryContainer;
+    final Color? onColor = theme.colorScheme.onPrimaryContainer;
 
     final listTile = ListTile(
       textColor: emphasize ? onEmphasisColor : onColor,
@@ -138,23 +168,31 @@ class WalletAddColumn extends StatelessWidget {
       ),
     );
 
-    return emphasize
-        ? Card(
-            color: emphasize ? emphasisColor : color,
-            clipBehavior: Clip.hardEdge,
-            margin: cardMargin,
-            child: listTile,
-          )
-        : Card.outlined(
-            color: emphasize ? emphasisColor : color,
-            clipBehavior: Clip.hardEdge,
-            margin: cardMargin,
-            child: listTile,
-          );
+    return Card(
+      color: emphasize ? emphasisColor : color,
+      shape: RoundedRectangleBorder(
+        borderRadius: switch (groupPosition) {
+          null => cardBorder,
+          VerticalButtonGroupPosition.top => cardBorderTop,
+          VerticalButtonGroupPosition.bottom => cardBorderBottom,
+          VerticalButtonGroupPosition.middle => cardBorderMiddle,
+          VerticalButtonGroupPosition.single => cardBorder,
+        },
+      ),
+      clipBehavior: Clip.hardEdge,
+      margin:
+          (groupPosition == VerticalButtonGroupPosition.top ||
+              groupPosition == VerticalButtonGroupPosition.middle)
+          ? cardMargin.copyWith(bottom: 0)
+          : cardMargin,
+      child: listTile,
+    );
   }
 
   static void showWalletCreateDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
+    final backupManager = FrostsnapContext.of(context)!.backupManager;
+
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
       barrierDismissible: false,
@@ -163,10 +201,9 @@ class WalletAddColumn extends StatelessWidget {
 
     if (!context.mounted || asRef == null) return;
     final accessStructure = coord.getAccessStructure(asRef: asRef)!;
-    final backupManager = FrostsnapContext.of(context)!.backupManager;
-
-    homeCtx.openNewlyCreatedWallet(asRef.keyId);
     showWalletCreatedDialog(context, accessStructure);
+    homeCtx.openNewlyCreatedWallet(asRef.keyId);
+
     // Delay this to avoid race condition.
     await Future.delayed(
       Duration(seconds: 1),

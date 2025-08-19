@@ -71,14 +71,17 @@ class WalletHome extends StatelessWidget {
       constraints: BoxConstraints(maxWidth: 460),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 36,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 12,
         children: [
-          Image(
-            color: theme.colorScheme.outline,
-            height: 32 * 3,
-            alignment: Alignment.center,
-            image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: Image(
+              color: theme.colorScheme.outline,
+              height: 48,
+              alignment: Alignment.center,
+              image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
+            ),
           ),
           WalletAddColumn(onPressed: makeOnPressed(context)),
         ],
@@ -109,6 +112,7 @@ class WalletHome extends StatelessWidget {
     final homeCtx = HomeContext.of(context)!;
     final walletListController = homeCtx.walletListController;
     final scaffoldKey = homeCtx.scaffoldKey;
+    final theme = Theme.of(context);
 
     final body = ListenableBuilder(
       listenable: walletListController,
@@ -157,31 +161,36 @@ class WalletHome extends StatelessWidget {
       scaffoldKey: scaffoldKey,
       isRounded: isNarrowDisplay,
     );
-    if (isNarrowDisplay) {
-      return Scaffold(
-        key: scaffoldKey,
-        extendBody: true,
-        resizeToAvoidBottomInset: true,
-        drawer: drawer,
-        body: body,
-        bottomNavigationBar: bottomBar,
-      );
-    } else {
-      return Row(
-        children: [
-          drawer,
-          Flexible(
-            child: Scaffold(
-              key: scaffoldKey,
-              extendBody: true,
-              resizeToAvoidBottomInset: false,
-              body: body,
-              bottomNavigationBar: bottomBar,
-            ),
-          ),
-        ],
-      );
-    }
+
+    final scaffold = Scaffold(
+      key: scaffoldKey,
+      extendBody: true,
+      resizeToAvoidBottomInset: true,
+      drawer: isNarrowDisplay ? drawer : null,
+      body: body,
+      bottomNavigationBar: bottomBar,
+    );
+
+    final constrainedScaffold = Container(
+      color: theme.colorScheme.surface,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 840),
+          child: scaffold,
+        ),
+      ),
+    );
+
+    return Row(
+      children: [
+        AnimatedSize(
+          duration: Durations.medium4,
+          curve: Curves.easeInOutCubicEmphasized,
+          child: isNarrowDisplay ? SizedBox(height: double.infinity) : drawer,
+        ),
+        Flexible(child: constrainedScaffold),
+      ],
+    );
   }
 }
 
@@ -540,8 +549,8 @@ class WalletDrawer extends StatelessWidget {
     );
   }
 
-  static const outerRadius = Radius.circular(16.0);
-  static const innerRadius = Radius.circular(2.0);
+  static const outerRadius = Radius.circular(28.0);
+  static const innerRadius = Radius.circular(8.0);
   static const topShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.only(
       topLeft: outerRadius,
@@ -564,7 +573,7 @@ class WalletDrawer extends StatelessWidget {
   static const allShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.all(outerRadius),
   );
-  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 8);
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 6);
 
   @override
   Widget build(BuildContext context) {
@@ -606,7 +615,6 @@ class WalletDrawer extends StatelessWidget {
               controller.selected == null
                   ? Icons.more_horiz_rounded
                   : Icons.add_rounded,
-              // Icons.more_horiz_rounded,
               color: controller.selected == null
                   ? null
                   : theme.colorScheme.primary,
@@ -619,11 +627,7 @@ class WalletDrawer extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 28, vertical: 4),
-            child: Divider(),
-          ),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               spacing: 2,
