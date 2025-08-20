@@ -1,11 +1,9 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{alignment::Alignment, widget_tuple::{AssociatedArray, WidgetTuple}, Instant, Widget};
 use alloc::vec::Vec;
-use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::PixelColor,
     prelude::*,
     primitives::Rectangle,
 };

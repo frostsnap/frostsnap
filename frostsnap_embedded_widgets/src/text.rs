@@ -1,7 +1,6 @@
 use super::Widget;
 use crate::{super_draw_target::SuperDrawTarget, Instant};
 use alloc::string::String;
-use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Dimensions, Point, Size},

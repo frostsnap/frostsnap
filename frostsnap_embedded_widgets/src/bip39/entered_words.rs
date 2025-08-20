@@ -1,5 +1,5 @@
 use crate::palette::PALETTE;
-use crate::{Key, KeyTouch, FONT_SMALL};
+use crate::{Key, KeyTouch};
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use embedded_graphics::{
@@ -10,9 +10,7 @@ use embedded_graphics::{
     },
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
-    text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
-use u8g2_fonts::U8g2TextStyle;
 
 use super::{
     bip39_input_preview::{
@@ -209,25 +207,6 @@ impl EnteredWords {
         );
         self.scroll_bar
             .draw(&mut target.clone().crop(scrollbar_area));
-
-        // Draw "tap to edit" hint text in the middle of the scrollable area
-        if self.first_draw || self.needs_redraw {
-            let hint_text = "tap to edit";
-            // Position it in the center of the scrollable area
-            let hint_x = bounds.size.width as i32 / 2 - 40;
-            let hint_y = (bounds.size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32) / 2;
-
-            let _ = Text::with_text_style(
-                hint_text,
-                Point::new(hint_x, hint_y),
-                U8g2TextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
-                TextStyleBuilder::new()
-                    .alignment(Alignment::Left)
-                    .baseline(Baseline::Middle)
-                    .build(),
-            )
-            .draw(target);
-        }
 
         self.needs_redraw = false;
         self.first_draw = false;

@@ -1,6 +1,5 @@
 use super::Widget;
 use crate::{super_draw_target::SuperDrawTarget, DynWidget};
-use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
     prelude::*,
@@ -81,6 +80,18 @@ impl<W: Widget> Container<W> {
     pub fn with_fill(mut self, color: W::Color) -> Self {
         self.fill_color = Some(color);
         self
+    }
+    
+    /// Get the current fill color
+    pub fn fill_color(&self) -> Option<W::Color> {
+        self.fill_color
+    }
+    
+    /// Set the fill color (mutable reference)
+    pub fn set_fill_color(&mut self, color: Option<W::Color>) {
+        self.fill_color = color;
+        self.border_needs_redraw = true;
+        self.child.force_full_redraw();
     }
 
     /// Set the corner radius for rounded borders

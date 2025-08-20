@@ -89,8 +89,17 @@ impl EnterBip39ShareScreen {
             entered_words.update_button_state();
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
-            // Full-screen word selector
-            word_selector.draw(target, current_time);
+            // Draw input preview at top
+            let input_display_rect = Rectangle::new(
+                Point::zero(),
+                Size::new(target.bounding_box().size.width, 60),
+            );
+            let _ = self
+                .bip39_input
+                .draw(&mut target.clone().crop(input_display_rect), current_time);
+
+            // Draw word selector in keyboard area
+            word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time);
         } else {
             // Normal keyboard and input preview
             let _ = self
@@ -145,8 +154,7 @@ impl EnterBip39ShareScreen {
                                 let words_ref = self.bip39_input.get_words_ref();
                                 let mut entered_words =
                                     EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words
-                                    .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
+                                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
                                 self.entered_words = Some(entered_words);
                             }
                         }
@@ -214,8 +222,19 @@ impl EnterBip39ShareScreen {
                 // EnteredWords is full-screen, handle its touches directly
                 entered_words.handle_touch(point)
             } else if let Some(ref mut word_selector) = self.word_selector {
-                // Word selector is full-screen, handle its touches directly
-                word_selector.handle_touch(point, current_time, lift_up)
+                // Word selector is in keyboard area, input preview is visible
+                if self.keyboard_rect.contains(point) {
+                    let translated_point = point - self.keyboard_rect.top_left;
+                    word_selector
+                        .handle_touch(translated_point, current_time, lift_up)
+                        .map(|mut key_touch| {
+                            key_touch.translate(self.keyboard_rect.top_left);
+                            key_touch
+                        })
+                } else {
+                    // Check input preview area
+                    self.bip39_input.handle_touch(point, current_time, lift_up)
+                }
             } else {
                 // Normal mode: check input preview first, then keyboard
                 if let Some(key_touch) = self.bip39_input.handle_touch(point, current_time, lift_up)
@@ -299,14 +318,10 @@ impl EnterBip39ShareScreen {
             // Only show word selector if there are 2-6 matching words (not 1)
             if matching_words.len() > 1 && matching_words.len() <= MAX_WORD_SELECTOR_WORDS {
                 // Create word selector with the matching words
-                let full_screen_size = Size::new(
-                    self.keyboard_rect.size.width,
-                    self.keyboard_rect.size.height + self.bip39_input.area.size.height, // Add input preview height
-                );
-
+                // Use only the keyboard area size since input preview stays visible
                 let word_selector = WordSelector::new(matching_words, &current_word);
                 let mut word_selector_with_clear = OneTimeClearHack::new(word_selector);
-                word_selector_with_clear.set_constraints(full_screen_size);
+                word_selector_with_clear.set_constraints(self.keyboard_rect.size);
                 self.word_selector = Some(word_selector_with_clear);
                 // Cancel all touches before switching to word selector
                 self.clear_touches();
@@ -423,8 +438,17 @@ impl Widget for EnterBip39ShareScreen {
             entered_words.update_button_state();
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
-            // Full-screen word selector
-            word_selector.draw(target, current_time);
+            // Draw input preview at top
+            let input_display_rect = Rectangle::new(
+                Point::zero(),
+                Size::new(target.bounding_box().size.width, 60),
+            );
+            let _ = self
+                .bip39_input
+                .draw(&mut target.clone().crop(input_display_rect), current_time);
+
+            // Draw word selector in keyboard area
+            word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time);
         } else {
             // Normal keyboard and input preview
             self.alphabetic_keyboard
@@ -494,8 +518,7 @@ impl crate::DynWidget for EnterBip39ShareScreen {
                                 let words_ref = self.bip39_input.get_words_ref();
                                 let mut entered_words =
                                     EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words
-                                    .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
+                                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
                                 self.entered_words = Some(entered_words);
                             }
                         }
@@ -564,8 +587,19 @@ impl crate::DynWidget for EnterBip39ShareScreen {
                 // EnteredWords is full-screen, handle its touches directly
                 entered_words.handle_touch(point)
             } else if let Some(ref mut word_selector) = self.word_selector {
-                // Word selector is full-screen, handle its touches directly
-                word_selector.handle_touch(point, current_time, lift_up)
+                // Word selector is in keyboard area, input preview is visible
+                if self.keyboard_rect.contains(point) {
+                    let translated_point = point - self.keyboard_rect.top_left;
+                    word_selector
+                        .handle_touch(translated_point, current_time, lift_up)
+                        .map(|mut key_touch| {
+                            key_touch.translate(self.keyboard_rect.top_left);
+                            key_touch
+                        })
+                } else {
+                    // Check input preview area
+                    self.bip39_input.handle_touch(point, current_time, lift_up)
+                }
             } else {
                 // Normal mode: check input preview first, then keyboard
                 if let Some(key_touch) = self.bip39_input.handle_touch(point, current_time, lift_up)

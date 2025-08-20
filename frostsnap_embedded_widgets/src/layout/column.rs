@@ -5,11 +5,9 @@ use crate::{
     Instant, Widget,
 };
 use alloc::vec::Vec;
-use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::PixelColor,
     prelude::*,
     primitives::Rectangle,
 };
@@ -88,6 +86,24 @@ impl<T: AssociatedArray> Column<T> {
             main_axis_size: MainAxisSize::Min, // Start alignment defaults to Min
             debug_borders: false,
             sizing: None,
+        }
+    }
+    
+    /// Set the gap before a specific child (in pixels)
+    pub fn set_gap(&mut self, child_index: usize, gap: u32) {
+        if child_index < self.spacing_before.as_ref().len() {
+            self.spacing_before.as_mut()[child_index] = gap;
+        }
+    }
+    
+    /// Set the same gap before all children except the first
+    pub fn set_uniform_gap(&mut self, gap: u32) {
+        let spacing = self.spacing_before.as_mut();
+        if !spacing.is_empty() {
+            spacing[0] = 0; // No gap before first child
+            for space in spacing.iter_mut().skip(1) {
+                *space = gap;
+            }
         }
     }
 }

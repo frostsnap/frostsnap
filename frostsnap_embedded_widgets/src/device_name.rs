@@ -1,17 +1,10 @@
 use super::{Column, Text as TextWidget, Widget};
-use crate::super_draw_target::SuperDrawTarget;
 use crate::{
     alignment::{Align, HorizontalAlignment},
-    bitmap::EncodedImage, image::Image, palette::PALETTE, vec_framebuffer::VecFramebuffer,
-    Instant, Switcher,
+    bitmap::EncodedImage, image::Image, palette::PALETTE, vec_framebuffer::VecFramebuffer, Switcher,
 };
 use alloc::string::String;
-use embedded_graphics::text::Alignment;
-use embedded_graphics::{
-    draw_target::DrawTarget,
-    geometry::{Point, Size},
-    pixelcolor::{BinaryColor, Rgb565},
-};
+use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
 use u8g2_fonts::U8g2TextStyle;
 
 /// A widget for displaying device name with optional edit mode cursor

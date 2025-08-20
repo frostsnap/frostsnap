@@ -1,8 +1,8 @@
 #![no_std]
-#![allow(unused)]
 #![allow(clippy::type_complexity)]
+
 #[cfg(feature = "std")]
-#[macro_use]
+#[allow(unused)]
 extern crate std;
 
 #[macro_use]
@@ -92,8 +92,8 @@ pub use cursor::*;
 pub use fader::*;
 pub use hold_to_confirm::HoldToConfirm;
 pub use hold_to_confirm_border::HoldToConfirmBorder;
-pub use one_time_clear_hack::OneTimeClearHack;
 pub use layout::{Column, CrossAxisAlignment, MainAxisAlignment, MainAxisSize, Row, Stack};
+pub use one_time_clear_hack::OneTimeClearHack;
 pub use rat::{Frac, Rat};
 // pub use hold_to_confirm_button::*;
 pub use bobbing_carat::BobbingCarat;
@@ -199,6 +199,23 @@ pub trait Widget: DynWidget {
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Self::Color>;
+}
+
+// Implement Widget for () to allow empty containers
+impl Widget for () {
+    type Color = embedded_graphics::pixelcolor::Rgb565;
+
+    fn draw<D>(
+        &mut self,
+        _target: &mut super_draw_target::SuperDrawTarget<D, Self::Color>,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        // Empty widget draws nothing
+        Ok(())
+    }
 }
 
 // Implement Widget for Box<T> where T: Widget

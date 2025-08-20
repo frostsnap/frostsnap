@@ -1,7 +1,6 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{bobbing_carat::BobbingCarat, text::Text, Column, Widget, FONT_SMALL};
-use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::{pixelcolor::PixelColor, prelude::*};
+use embedded_graphics::prelude::*;
 use u8g2_fonts::U8g2TextStyle;
 
 pub struct SwipeUpChevron<C: crate::WidgetColor> {

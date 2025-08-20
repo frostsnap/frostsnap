@@ -247,7 +247,7 @@ where
             let translated_target = target.clone().translate(offset);
 
             // Wrap it in TranslatorDrawTarget for pixel tracking
-            let mut translator = TranslatorDrawTarget {
+            let translator = TranslatorDrawTarget {
                 inner: translated_target,
                 current_bitmap: &mut self.current_bitmap,
                 previous_bitmap: &mut self.previous_bitmap,

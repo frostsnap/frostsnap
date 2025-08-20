@@ -1,6 +1,6 @@
 use crate::{palette::PALETTE, text::Text, Column, MainAxisAlignment, Row};
 use alloc::{
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 use embedded_graphics::pixelcolor::Rgb565;

@@ -1,8 +1,6 @@
-use crate::super_draw_target::SuperDrawTarget;
 use crate::MainAxisAlignment;
 use crate::{
-    palette::PALETTE, Center, Column, Container, HoldToConfirm, Padding, ProgressIndicator,
-    SizedBox, Text, FONT_MED, FONT_SMALL,
+    palette::PALETTE, Center, Column, Container, HoldToConfirm, Padding, ProgressIndicator, Text, FONT_MED, FONT_SMALL,
 };
 use alloc::{boxed::Box, format};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, text::Alignment};

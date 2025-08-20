@@ -73,7 +73,6 @@ where
             self.button_fader_mut().start_fade_in(
                 300, // 800ms fade duration
                 20,  // 50ms redraw interval
-                PALETTE.background,
             );
         }
     }

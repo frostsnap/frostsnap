@@ -1,12 +1,13 @@
 use super::{CrossAxisAlignment, MainAxisAlignment, MainAxisSize};
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{widget_tuple::{AssociatedArray, WidgetTuple}, Instant, Widget};
+use crate::{
+    widget_tuple::{AssociatedArray, WidgetTuple},
+    Instant, Widget,
+};
 use alloc::vec::Vec;
-use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::PixelColor,
     prelude::*,
     primitives::Rectangle,
 };
@@ -55,64 +56,47 @@ impl<T: AssociatedArray> Row<T> {
             children,
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_alignment: MainAxisAlignment::Start,
-            main_axis_size: MainAxisSize::Min,  // Start alignment defaults to Min
+            main_axis_size: MainAxisSize::Min, // Start alignment defaults to Min
             debug_borders: false,
             sizing: None,
         }
     }
-}
 
-impl<T: WidgetTuple> Row<T> {
-    /// Add a widget to the row
-    pub fn push<W: crate::DynWidget>(self, widget: W) -> Row<T::Add<W>> 
-    where
-        T: WidgetTuple
-    {
-        let new_children = self.children.add(widget);
-
-        // Copy over existing values and add new ones
-        let mut new_spacing = new_children.create_array_with(0);
-        let old_spacing = self.spacing_before.as_ref();
-        new_spacing.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_spacing);
-        new_spacing.as_mut()[T::TUPLE_LEN] = 0; // Default gap is 0
-        
-        let mut new_flex = new_children.create_array_with(0);
-        let old_flex = self.flex_scores.as_ref();
-        new_flex.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_flex);
-        new_flex.as_mut()[T::TUPLE_LEN] = 0; // Default flex is 0 (not flexible)
-
-        Row {
-            child_rects: new_children.create_array_with(Rectangle::zero()),
-            spacing_before: new_spacing,
-            flex_scores: new_flex,
-            children: new_children,
-            cross_axis_alignment: self.cross_axis_alignment,
-            main_axis_alignment: self.main_axis_alignment,
-            main_axis_size: self.main_axis_size,
-            debug_borders: self.debug_borders,
-            sizing: None,
+    /// Set the gap before a specific child (in pixels)
+    pub fn set_gap(&mut self, child_index: usize, gap: u32) {
+        if child_index < self.spacing_before.as_ref().len() {
+            self.spacing_before.as_mut()[child_index] = gap;
         }
     }
 
-    
+    /// Set the same gap before all children except the first
+    pub fn set_uniform_gap(&mut self, gap: u32) {
+        let spacing = self.spacing_before.as_mut();
+        if !spacing.is_empty() {
+            spacing[0] = 0; // No gap before first child
+            for space in spacing.iter_mut().skip(1) {
+                *space = gap;
+            }
+        }
+    }
+
     /// Set a gap before the last added widget
     pub fn gap(mut self, gap: u32) -> Self {
-        let len = T::TUPLE_LEN;
+        let len = T::len(&self.children);
         if len > 0 {
             self.spacing_before.as_mut()[len - 1] = gap;
         }
         self
     }
-    
+
     /// Set the flex score for the last added widget
     pub fn flex(mut self, score: u32) -> Self {
-        let len = T::TUPLE_LEN;
+        let len = T::len(&self.children);
         if len > 0 {
             self.flex_scores.as_mut()[len - 1] = score;
         }
         self
     }
-    
 
     pub fn with_cross_axis_alignment(mut self, alignment: CrossAxisAlignment) -> Self {
         self.cross_axis_alignment = alignment;
@@ -129,7 +113,7 @@ impl<T: WidgetTuple> Row<T> {
         }
         self
     }
-    
+
     pub fn with_main_axis_size(mut self, size: MainAxisSize) -> Self {
         self.main_axis_size = size;
         self
@@ -138,6 +122,39 @@ impl<T: WidgetTuple> Row<T> {
     pub fn with_debug_borders(mut self, enabled: bool) -> Self {
         self.debug_borders = enabled;
         self
+    }
+}
+
+impl<T: WidgetTuple> Row<T> {
+    /// Add a widget to the row
+    pub fn push<W: crate::DynWidget>(self, widget: W) -> Row<T::Add<W>>
+    where
+        T: WidgetTuple,
+    {
+        let new_children = self.children.add(widget);
+
+        // Copy over existing values and add new ones
+        let mut new_spacing = new_children.create_array_with(0);
+        let old_spacing = self.spacing_before.as_ref();
+        new_spacing.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_spacing);
+        new_spacing.as_mut()[T::TUPLE_LEN] = 0; // Default gap is 0
+
+        let mut new_flex = new_children.create_array_with(0);
+        let old_flex = self.flex_scores.as_ref();
+        new_flex.as_mut()[..T::TUPLE_LEN].copy_from_slice(old_flex);
+        new_flex.as_mut()[T::TUPLE_LEN] = 0; // Default flex is 0 (not flexible)
+
+        Row {
+            child_rects: new_children.create_array_with(Rectangle::zero()),
+            spacing_before: new_spacing,
+            flex_scores: new_flex,
+            children: new_children,
+            cross_axis_alignment: self.cross_axis_alignment,
+            main_axis_alignment: self.main_axis_alignment,
+            main_axis_size: self.main_axis_size,
+            debug_borders: self.debug_borders,
+            sizing: None,
+        }
     }
 }
 
@@ -210,7 +227,6 @@ impl_row_for_tuple!(
 impl_row_for_tuple!(
     20, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20
 );
-
 
 // Generic DynWidget implementation for Row
 impl<T> crate::DynWidget for Row<T>
@@ -321,10 +337,10 @@ where
 
         // Compute and store sizing based on MainAxisSize
         let width = match self.main_axis_size {
-            MainAxisSize::Min => x_offset,  // Only as wide as needed
-            MainAxisSize::Max => max_size.width,  // Take full available width
+            MainAxisSize::Min => x_offset,       // Only as wide as needed
+            MainAxisSize::Max => max_size.width, // Take full available width
         };
-        
+
         self.sizing = Some(crate::Sizing {
             width,
             height: max_child_height,
@@ -351,7 +367,9 @@ where
                 if area.contains(point) || is_release {
                     let relative_point =
                         Point::new(point.x - area.top_left.x, point.y - area.top_left.y);
-                    if let Some(mut key_touch) = child.handle_touch(relative_point, current_time, is_release) {
+                    if let Some(mut key_touch) =
+                        child.handle_touch(relative_point, current_time, is_release)
+                    {
                         // Translate the KeyTouch rectangle back to parent coordinates
                         key_touch.translate(area.top_left);
                         return Some(key_touch);

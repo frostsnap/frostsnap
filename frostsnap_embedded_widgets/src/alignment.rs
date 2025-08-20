@@ -108,23 +108,17 @@ pub struct Align<W> {
     pub child: W,
     pub horizontal: HorizontalAlignment,
     pub vertical: VerticalAlignment,
-    /// If true, the widget expands to fill available space on the horizontal axis
-    pub expand_horizontal: bool,
-    /// If true, the widget expands to fill available space on the vertical axis
-    pub expand_vertical: bool,
     constraints: Option<Size>,
     child_rect: Rectangle,
 }
 
 impl<W> Align<W> {
-    /// Create an Align widget with default top-left alignment that shrink-wraps
+    /// Create an Align widget that expands to fill available space
     pub fn new(child: W) -> Self {
         Self {
             child,
-            horizontal: HorizontalAlignment::Left,
-            vertical: VerticalAlignment::Top,
-            expand_horizontal: false,
-            expand_vertical: false,
+            horizontal: HorizontalAlignment::Center,
+            vertical: VerticalAlignment::Center,
             constraints: None,
             child_rect: Rectangle::zero(),
         }
@@ -133,19 +127,17 @@ impl<W> Align<W> {
     /// Set horizontal alignment (consumes self for chaining)
     pub fn horizontal(mut self, alignment: HorizontalAlignment) -> Self {
         self.horizontal = alignment;
-        self.expand_horizontal = true;
         self
     }
 
     /// Set vertical alignment (consumes self for chaining)
     pub fn vertical(mut self, alignment: VerticalAlignment) -> Self {
         self.vertical = alignment;
-        self.expand_vertical = true;
         self
     }
 
-    /// Create an Align widget with a combined alignment
-    pub fn align(child: W, alignment: Alignment) -> Self {
+    /// Set alignment using the combined Alignment enum
+    pub fn alignment(mut self, alignment: Alignment) -> Self {
         let (horizontal, vertical) = match alignment {
             Alignment::TopLeft => (HorizontalAlignment::Left, VerticalAlignment::Top),
             Alignment::TopCenter => (HorizontalAlignment::Center, VerticalAlignment::Top),
@@ -157,15 +149,9 @@ impl<W> Align<W> {
             Alignment::BottomCenter => (HorizontalAlignment::Center, VerticalAlignment::Bottom),
             Alignment::BottomRight => (HorizontalAlignment::Right, VerticalAlignment::Bottom),
         };
-        Self {
-            child,
-            horizontal,
-            vertical,
-            expand_horizontal: true,
-            expand_vertical: true,
-            constraints: None,
-            child_rect: Rectangle::zero(),
-        }
+        self.horizontal = horizontal;
+        self.vertical = vertical;
+        self
     }
 }
 
@@ -177,40 +163,19 @@ impl<W: Widget> crate::DynWidget for Align<W> {
         let child_size: Size = self.child.sizing().into();
 
         // Calculate position based on alignment settings
-        let x_offset = if self.expand_horizontal {
-            self.horizontal.x_offset(max_size.width, child_size.width)
-        } else {
-            // Not expanding - position at left (shrink-wrap behavior)
-            0
-        };
-
-        let y_offset = if self.expand_vertical {
-            self.vertical.y_offset(max_size.height, child_size.height)
-        } else {
-            // Not expanding - position at top (shrink-wrap behavior)
-            0
-        };
+        let x_offset = self.horizontal.x_offset(max_size.width, child_size.width);
+        let y_offset = self.vertical.y_offset(max_size.height, child_size.height);
 
         self.child_rect = Rectangle::new(Point::new(x_offset, y_offset), child_size);
     }
 
     fn sizing(&self) -> crate::Sizing {
         let constraints = self.constraints.unwrap();
-        let child_sizing = self.child.sizing();
 
-        // If expanding on an axis, use full available space on that axis
-        // Otherwise, shrink-wrap to child size
+        // Always expand to fill available space (like Flutter's Align)
         crate::Sizing {
-            width: if self.expand_horizontal {
-                constraints.width
-            } else {
-                child_sizing.width
-            },
-            height: if self.expand_vertical {
-                constraints.height
-            } else {
-                child_sizing.height
-            },
+            width: constraints.width,
+            height: constraints.height,
         }
     }
 

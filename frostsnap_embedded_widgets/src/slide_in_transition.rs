@@ -94,7 +94,7 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
             let mut old_fader = mem::replace(old, new_fader);
             // we don't want to write over self.old unless the current one has actually been drawn
             if old_fader.is_visible() {
-                old_fader.instant_fade(self.bg_color);
+                old_fader.instant_fade();
                 self.old = Some(old_fader);
             }
         } else {
@@ -176,7 +176,7 @@ impl<T: Widget<Color = Rgb565>> Widget for SlideInTransition<T> {
 
         if let Some(ref mut current) = self.current {
             if current.is_faded_out() {
-                current.start_fade_in(self.transition_duration_ms, 10, self.bg_color);
+                current.start_fade_in(self.transition_duration_ms, 10);
             }
 
             current.draw(target, current_time)?;

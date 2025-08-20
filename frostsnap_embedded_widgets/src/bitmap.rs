@@ -1,5 +1,5 @@
 use crate::vec_framebuffer::VecFramebuffer;
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use embedded_graphics::{pixelcolor::BinaryColor, prelude::*};
 

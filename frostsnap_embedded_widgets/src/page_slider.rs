@@ -131,7 +131,7 @@ where
 
         // Instantly fade out the chevron when starting a transition
         if let Some(ref mut chevron) = &mut self.stack.children.1 {
-            chevron.instant_fade(PALETTE.background);
+            chevron.instant_fade();
         }
 
         // Calculate target index
@@ -254,7 +254,7 @@ where
                 let current_widget = self.stack.children.0.current_widget_mut();
 
                 if self.list.can_go_next(self.current_index, current_widget) {
-                    chevron.start_fade_in(400, 20, PALETTE.background);
+                    chevron.start_fade_in(400, 20);
                 }
             }
         }

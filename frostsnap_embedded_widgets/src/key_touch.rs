@@ -55,14 +55,14 @@ impl KeyTouch {
         }
         self.let_go = Some(current_time);
         // Start fade out animation
-        self.widget.start_fade(500, 50, PALETTE.background);
+        self.widget.start_fade(500, 50);
         Some(self.key)
     }
 
     pub fn cancel(&mut self) {
         self.cancel = true;
         // Immediately fade to background for cancel
-        self.widget.start_fade(100, 50, PALETTE.background);
+        self.widget.instant_fade();
     }
 
     pub fn has_been_let_go(&self) -> bool {

@@ -1,7 +1,6 @@
 use super::Widget;
 use crate::{super_draw_target::SuperDrawTarget, Instant};
 use core::ops::{Deref, DerefMut};
-use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -16,6 +15,8 @@ pub struct Padding<W: Widget> {
     pub bottom: u32,
     pub left: u32,
     pub right: u32,
+    sizing: Option<crate::Sizing>,
+    child_rect: Option<Rectangle>,
 }
 
 impl<W: Widget> Padding<W> {
@@ -27,6 +28,8 @@ impl<W: Widget> Padding<W> {
             bottom: padding,
             left: padding,
             right: padding,
+            sizing: None,
+            child_rect: None,
         }
     }
 
@@ -38,6 +41,8 @@ impl<W: Widget> Padding<W> {
             bottom: vertical,
             left: horizontal,
             right: horizontal,
+            sizing: None,
+            child_rect: None,
         }
     }
 
@@ -60,6 +65,8 @@ impl<W: Widget> Padding<W> {
             bottom,
             left,
             right,
+            sizing: None,
+            child_rect: None,
         }
     }
 }
@@ -101,6 +108,8 @@ impl<W: Widget> PaddingBuilder<W> {
             bottom: self.bottom,
             left: self.left,
             right: self.right,
+            sizing: None,
+            child_rect: None,
         }
     }
 }
@@ -112,14 +121,23 @@ impl<W: Widget> crate::DynWidget for Padding<W> {
         let padded_height = max_size.height.saturating_sub(self.top + self.bottom);
         self.child
             .set_constraints(Size::new(padded_width, padded_height));
+        
+        // Get child sizing and compute our own sizing
+        let child_sizing = self.child.sizing();
+        self.sizing = Some(crate::Sizing {
+            width: child_sizing.width + self.left + self.right,
+            height: child_sizing.height + self.top + self.bottom,
+        });
+        
+        // Cache the child rectangle
+        self.child_rect = Some(Rectangle::new(
+            Point::new(self.left as i32, self.top as i32),
+            Size::new(child_sizing.width, child_sizing.height),
+        ));
     }
 
     fn sizing(&self) -> crate::Sizing {
-        let child_sizing = self.child.sizing();
-        crate::Sizing {
-            width: child_sizing.width + self.left + self.right,
-            height: child_sizing.height + self.top + self.bottom,
-        }
+        self.sizing.expect("set_constraints must be called before sizing")
     }
 
     fn handle_touch(
@@ -128,13 +146,15 @@ impl<W: Widget> crate::DynWidget for Padding<W> {
         current_time: Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        // Child has no size hint - check if touch is within padded area
-        if point.x >= self.left as i32 && point.y >= self.top as i32 {
-            // Adjust the touch point by padding offsets
-            let adjusted_point = Point::new(point.x - self.left as i32, point.y - self.top as i32);
-            return self
-                .child
-                .handle_touch(adjusted_point, current_time, is_release);
+        if let Some(child_rect) = self.child_rect {
+            if child_rect.contains(point) || is_release {
+                let child_point = point - child_rect.top_left;
+                
+                if let Some(mut key_touch) = self.child.handle_touch(child_point, current_time, is_release) {
+                    key_touch.translate(child_rect.top_left);
+                    return Some(key_touch);
+                }
+            }
         }
 
         None
@@ -165,15 +185,11 @@ impl<W: Widget> Widget for Padding<W> {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        // SuperDrawTarget doesn't expose bounding_box directly, so we work with relative coordinates
-        // The padding creates an offset from the current drawing area
-        let padded_area = Rectangle::new(
-            Point::new(self.left as i32, self.top as i32),
-            self.sizing().into(),
-        );
+        // Use the cached child rectangle
+        let child_rect = self.child_rect.expect("set_constraints must be called before draw");
 
-        // Draw the child in the padded area
-        let mut cropped_target = target.clone().crop(padded_area);
+        // Draw the child in the cached rectangle
+        let mut cropped_target = target.clone().crop(child_rect);
         self.child.draw(&mut cropped_target, current_time)?;
 
         Ok(())

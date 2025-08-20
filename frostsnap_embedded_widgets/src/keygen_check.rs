@@ -1,10 +1,8 @@
 use super::{Column, Container, HoldToConfirm, Padding, Row, Text, Widget};
-use crate::super_draw_target::SuperDrawTarget;
-use crate::{palette::PALETTE, Instant, MainAxisAlignment};
+use crate::{palette::PALETTE, MainAxisAlignment};
 use alloc::format;
 use embedded_graphics::{
-    draw_target::DrawTarget,
-    geometry::{Point, Size},
+    geometry::Size,
     pixelcolor::Rgb565,
 };
 use u8g2_fonts::U8g2TextStyle;

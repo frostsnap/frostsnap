@@ -1,6 +1,6 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{
-    palette::PALETTE, Column, Frac, SizedBox, Switcher, Text as TextWidget, Widget, FONT_SMALL,
+    palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, FONT_SMALL,
 };
 use alloc::format;
 use embedded_graphics::{

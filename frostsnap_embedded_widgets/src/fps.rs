@@ -1,6 +1,6 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{
-    Container, palette::PALETTE, string_buffer::StringBuffer, DynWidget, Instant,
+    Container, string_buffer::StringBuffer, DynWidget, Instant,
     Switcher, Text as TextWidget, Widget,
 };
 use core::fmt::Write;
@@ -8,7 +8,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::{Rgb565, RgbColor},
-    text::Alignment,
 };
 
 // Constants for FPS text dimensions - "FPS: 999" is max 8 chars

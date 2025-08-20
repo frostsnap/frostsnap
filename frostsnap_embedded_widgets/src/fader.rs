@@ -15,17 +15,15 @@ use embedded_graphics::{
 enum FadeState {
     /// Not fading, widget draws normally
     Idle,
-    /// Currently fading out to a color
+    /// Currently fading out
     FadingOut {
         start_time: Option<crate::Instant>,
         duration_ms: u64,
-        target_color: Rgb565,
     },
-    /// Currently fading in from a color
+    /// Currently fading in
     FadingIn {
         start_time: Option<crate::Instant>,
         duration_ms: u64,
-        from_color: Rgb565,
     },
     /// Faded out completely (for new_faded_out)
     FadedOut,
@@ -71,29 +69,26 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
         self.animation_speed = speed;
     }
 
-    /// Start fading to the target color over the specified duration
-    pub fn start_fade(&mut self, duration_ms: u64, redraw_interval_ms: u64, target_color: Rgb565) {
+    /// Start fading out over the specified duration
+    pub fn start_fade(&mut self, duration_ms: u64, redraw_interval_ms: u64) {
         // We'll set the actual start time on first draw to avoid timing issues
         self.state = FadeState::FadingOut {
             start_time: None, // Will be set on first draw
             duration_ms,
-            target_color,
         };
         self.redraw_interval_ms = redraw_interval_ms;
         self.last_redraw_time = None;
     }
 
-    /// Start fading in from the specified color
+    /// Start fading in over the specified duration
     pub fn start_fade_in(
         &mut self,
         duration_ms: u64,
         redraw_interval_ms: u64,
-        fade_from_color: Rgb565,
     ) {
         self.state = FadeState::FadingIn {
             start_time: None, // Will be set on first draw
             duration_ms,
-            from_color: fade_from_color,
         };
         self.redraw_interval_ms = redraw_interval_ms;
         self.last_redraw_time = None;
@@ -104,8 +99,8 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
         self.state = FadeState::Idle;
     }
 
-    pub fn instant_fade(&mut self, background_color: Rgb565) {
-        self.start_fade(0, 0, background_color);
+    pub fn instant_fade(&mut self) {
+        self.start_fade(0, 0);
     }
 
     /// Check if fading is complete
@@ -261,17 +256,15 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
             FadeState::Idle => self.child.draw(target, current_time),
             state => {
                 // Extract common fields based on state
-                let (start_time, duration_ms, target_color, is_fade_in) = match state {
+                let (start_time, duration_ms, is_fade_in) = match state {
                     FadeState::FadingOut {
                         start_time,
                         duration_ms,
-                        target_color,
-                    } => (start_time, *duration_ms, *target_color, false),
+                    } => (start_time, *duration_ms, false),
                     FadeState::FadingIn {
                         start_time,
                         duration_ms,
-                        from_color,
-                    } => (start_time, *duration_ms, *from_color, true),
+                    } => (start_time, *duration_ms, true),
                     _ => unreachable!(),
                 };
 

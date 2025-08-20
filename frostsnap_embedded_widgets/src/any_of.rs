@@ -1,11 +1,9 @@
-use crate::super_draw_target::SuperDrawTarget;
 use crate::{AnyDynWidget, DynWidget, Instant, Widget};
 use alloc::boxed::Box;
 use core::any::{Any, TypeId};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::PixelColor,
 };
 
 /// A widget that can be any one of the types in the tuple T

@@ -384,11 +384,10 @@ mod tests {
                 if curr_count > max {
                     max = curr_count;
                 }
-                if is_valid_bip39_word(curr_prefix) {
-                    if curr_count > max_is_a_word {
+                if is_valid_bip39_word(curr_prefix)
+                    && curr_count > max_is_a_word {
                         max_is_a_word = curr_count;
                     }
-                }
 
                 curr_prefix = prefix;
                 curr_count = 0;

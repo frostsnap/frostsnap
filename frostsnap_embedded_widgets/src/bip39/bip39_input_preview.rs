@@ -3,7 +3,7 @@ use crate::cursor::Cursor;
 use crate::palette::PALETTE;
 use crate::progress_bars::ProgressBars;
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{icons, Key, KeyTouch, Widget, FONT_LARGE};
+use crate::{icons, DynWidget, Key, KeyTouch, Widget, FONT_LARGE};
 use alloc::{
     borrow::Cow,
     boxed::Box,
@@ -170,7 +170,8 @@ impl Bip39InputPreview {
         );
 
         // 25 words for Frostsnap backup
-        let progress = ProgressBars::new(FROSTSNAP_BACKUP_WORDS);
+        let mut progress = ProgressBars::new(FROSTSNAP_BACKUP_WORDS);
+        progress.set_constraints(progress_rect.size);
         let framebuf = Bip39Framebuf::new();
 
         Self {
@@ -288,7 +289,7 @@ impl Bip39InputPreview {
     pub fn force_redraw(&mut self) {
         self.init_draw = false;
         self.framebuf.redraw = true;
-        self.progress.redraw = true;
+        self.progress.force_full_redraw();
     }
 
     /// Set the current word being edited
@@ -423,7 +424,7 @@ impl Widget for Bip39InputPreview {
 
         // Always draw progress bars (they have their own redraw logic)
         self.progress
-            .draw(&mut target.clone().crop(self.progress_rect))?;
+            .draw(&mut target.clone().crop(self.progress_rect), current_time)?;
 
         Ok(())
     }

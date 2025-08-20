@@ -70,6 +70,11 @@ where
     pub fn background_color(&self) -> C {
         self.background_color
     }
+
+    pub fn with_background_color(mut self, background_color: C) -> Self {
+        self.background_color = background_color;
+        self
+    }
 }
 
 impl<D, C> Clone for SuperDrawTarget<D, C>

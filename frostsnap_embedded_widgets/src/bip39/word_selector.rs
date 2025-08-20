@@ -1,80 +1,80 @@
 use crate::{
-    alignment::{Align, HorizontalAlignment, VerticalAlignment}, center::Center, container::Container, 
-    icons::IconWidget, palette::PALETTE, prelude::*, text::Text, touch_listener::TouchListener, 
-    Column, CrossAxisAlignment, DynWidget, Instant, Key, KeyTouch, MainAxisAlignment, Padding, Row, 
-    Sizing, Widget, FONT_LARGE,
+    container::Container,
+    palette::PALETTE,
+    text::Text,
+    touch_listener::TouchListener,
+    Column, DynWidget, Key, MainAxisAlignment, Padding, Row, Widget, FONT_MED,
 };
 use alloc::{string::String, vec::Vec};
-use embedded_graphics::{geometry::Point, pixelcolor::Rgb565, prelude::*};
-use embedded_iconoir::{
-    prelude::IconoirNewIcon, size32px::navigation::NavArrowLeft, Icon as IconoirIcon,
-};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use frostsnap_macros::Widget;
 use u8g2_fonts::U8g2TextStyle;
 
 // Type aliases to simplify the complex type
 type StyledText = Text<U8g2TextStyle<Rgb565>>;
-type WordRow = Padding<Align<Row<(StyledText, StyledText)>>>;
 
-/// A word widget that displays a BIP39 word with prefix highlighting
+/// A button widget that displays a BIP39 word with prefix highlighting
 #[derive(Widget)]
-pub struct WordTouch {
+pub struct WordButton {
     word: &'static str,
-    index: usize,
     #[widget_delegate]
-    inner: WordRow,
+    inner: Container<Padding<Row<(StyledText, StyledText)>>>,
 }
 
-impl WordTouch {
-    fn new(word: &'static str, index: usize, prefix: &str) -> TouchListener<Self> {
+impl WordButton {
+    fn new(word: &'static str, prefix: &str) -> TouchListener<Self> {
         // Split the word into prefix and suffix
         let suffix = &word[prefix.len()..];
 
-        // Create two text widgets - prefix in primary color, suffix in tertiary
+        // Create two text widgets - prefix in secondary color, suffix in primary
         let prefix_text = Text::new(
             String::from(prefix),
-            U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background),
+            U8g2TextStyle::new(FONT_MED, PALETTE.text_secondary),
         );
 
         let suffix_text = Text::new(
             String::from(suffix),
-            U8g2TextStyle::new(FONT_LARGE, PALETTE.tertiary),
+            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
         );
 
-        // Put them in a row with padding
-        let word_row = Padding::all(
-            5,
-            Align::new(Row::new((prefix_text, suffix_text)).with_main_axis_size(MainAxisSize::Min))
-                .vertical(VerticalAlignment::Center),
-        );
+        // Create a row with the text elements, centered vertically
+        let word_row = Row::new((prefix_text, suffix_text))
+            .with_main_axis_alignment(MainAxisAlignment::Center);
 
-        let word_touch = Self {
+        let word_row = Padding::only(word_row).top(15).bottom(8).build();
+        // Wrap in a Container with fixed width, rounded corners, and button styling
+        // Width of 110px should fit most BIP39 words comfortably
+        // Using surface_variant as the button background color (Material Design elevated button)
+        let container = Container::new(word_row)
+            .with_width(110)
+            .with_fill(PALETTE.surface)
+            .with_corner_radius(Size::new(8, 8));
+
+        let word_button = Self {
             word,
-            index,
-            inner: word_row,
+            inner: container,
         };
 
-        TouchListener::new(word_touch, |_, _, is_release, child| {
-            if !is_release {
-                Some(Key::WordSelector(child.word))
-            } else {
+        // Return a TouchListener that can inspect the child to get the word
+        TouchListener::new(word_button, |_, _, is_release, child| {
+            if is_release {
                 None
+            } else {
+                Some(Key::WordSelector(child.word))
             }
         })
     }
 }
 
-type WordColumn = Column<Vec<TouchListener<WordTouch>>>;
-type BackspaceButton = TouchListener<Container<Align<IconWidget<IconoirIcon<Rgb565, NavArrowLeft>>>>>;
-type SecondColumn = Column<(BackspaceButton, WordColumn)>;
+type WordColumn = Column<Vec<TouchListener<WordButton>>>;
 
 /// A widget that displays BIP39 words in two columns for selection
 #[derive(Widget)]
 pub struct WordSelector {
     words: &'static [&'static str],
-    // Two columns: left with words, right with backspace and words
+    // Two columns of words
     #[widget_delegate]
-    columns: Row<(WordColumn, SecondColumn)>,
+    columns: Row<(WordColumn, WordColumn)>,
 }
 
 impl WordSelector {
@@ -84,62 +84,25 @@ impl WordSelector {
         let mut right_words = Vec::new();
 
         for (i, &word) in words.iter().enumerate() {
-            // Create a WordTouch widget for each word
-            let word_touch = WordTouch::new(word, i, prefix);
+            // Create a WordButton widget for each word
+            let word_button = WordButton::new(word, prefix);
 
             if i % 2 == 0 {
-                left_words.push(word_touch);
+                left_words.push(word_button);
             } else {
-                right_words.push(word_touch);
+                right_words.push(word_button);
             }
         }
 
-        // Create left column with flex for each word
-        let mut left_column = Column::new(left_words).with_main_axis_size(MainAxisSize::Max);
-
-        // Create right words column with flex for each word
-        let mut right_words_column =
-            Column::new(right_words).with_main_axis_size(MainAxisSize::Max);
-
-        // Make each word flex(1) in its column
-        for i in 0..left_column.children.len() {
-            left_column.flex_scores[i] = 1;
-        }
-        for i in 0..right_words_column.children.len() {
-            right_words_column.flex_scores[i] = 1;
-        }
-
-        // Create backspace button sized to match the input preview backspace
-        // The input preview has height 60px, backspace takes 60-4=56px height
-        // and width is 1/4 of total width
-        let backspace_icon = IconWidget::new(NavArrowLeft::new(PALETTE.error));
-        
-        // Align the icon to the left center within the container
-        let aligned_icon = Align::new(backspace_icon)
-            .horizontal(HorizontalAlignment::Left)
-            .vertical(VerticalAlignment::Center);
-
-        // Wrap in Container to control size
-        // Container will be 60x56 to match the input preview proportions
-        let backspace_container = Container::with_size(aligned_icon, Size::new(60, 56));
-
-        let backspace_button = TouchListener::new(backspace_container, |_, _, is_release, _| {
-            if !is_release {
-                Some(Key::Keyboard('⌫'))
-            } else {
-                None
-            }
-        });
-
-        // Create the second column with backspace button at top and words below
-        let mut second_column = Column::new((backspace_button, right_words_column))
-            .with_cross_axis_alignment(CrossAxisAlignment::End);
-        // Make the words take up the remaining space after the backspace button
-        second_column.flex_scores[1] = 1;
+        // Create columns with flex for each word
+        let left_column =
+            Column::new(left_words).with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        let right_column =
+            Column::new(right_words).with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
         // Create a row with the two columns
-        let columns = Row::new((left_column, second_column))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
+        let columns = Row::new((left_column, right_column))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
         Self { words, columns }
     }

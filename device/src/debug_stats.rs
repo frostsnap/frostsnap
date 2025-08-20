@@ -18,8 +18,10 @@ use frostsnap_embedded_widgets::SizedBox;
 use frostsnap_embedded_widgets::Widget;
 #[cfg(feature = "debug_mem")]
 use frostsnap_embedded_widgets::{
-    mut_text::MutText, prelude::*, string_buffer::StringBuffer, DynWidget, Instant, FONT_SMALL,
+    prelude::*, string_buffer::StringBuffer, text::Text, DynWidget, Instant, Switcher, FONT_SMALL,
 };
+#[cfg(feature = "debug_mem")]
+use alloc::string::ToString;
 #[cfg(feature = "debug_mem")]
 use u8g2_fonts::U8g2TextStyle;
 
@@ -52,17 +54,17 @@ pub fn create_debug_stats() -> impl Widget<Color = Rgb565> {
     }
 }
 
-// Constants for MutText dimensions - "Mem: 262144" needs more space
+// Constants for memory text dimensions - "Mem: 262144" needs more space
 #[cfg(feature = "debug_mem")]
 const MEM_MAX_CHARS: usize = 15; // Increased for full byte count
 
 #[cfg(feature = "debug_mem")]
-type MemMutText = MutText<U8g2TextStyle<Rgb565>>;
+type MemText = Text<U8g2TextStyle<Rgb565>>;
 
 /// Memory usage indicator component that polls esp_alloc directly
 #[cfg(feature = "debug_mem")]
 pub struct MemoryIndicator {
-    display: MemMutText,
+    display: Switcher<MemText>,
     last_used: usize,
     last_draw_time: Option<Instant>,
 }
@@ -72,7 +74,8 @@ impl MemoryIndicator {
     fn new() -> Self {
         // Use Cyan color directly for Rgb565 text
         let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
-        let display = MutText::new("Mem: 0", text_style, MEM_MAX_CHARS);
+        let initial_text = Text::new("Mem: 0".to_string(), text_style);
+        let display = Switcher::new(initial_text);
 
         Self {
             display,
@@ -142,8 +145,8 @@ impl Widget for MemoryIndicator {
 
                 // Create a new text widget with the updated text
                 let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
-                let text_widget = frostsnap_embedded_widgets::Text::new(buf.as_str(), text_style);
-                self.display.set_text(text_widget);
+                let text_widget = Text::new(buf.as_str().to_string(), text_style);
+                self.display.switch_to(text_widget);
             }
         }
 

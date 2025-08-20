@@ -5,12 +5,17 @@ pub trait AssociatedArray {
 
     /// Create an array filled with a specific value, sized according to self
     fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T>;
-    
+
     /// Get a child widget as a dyn DynWidget reference by index
     fn get_dyn_child(&mut self, index: usize) -> Option<&mut dyn crate::DynWidget>;
-    
+
     /// Get the number of children
     fn len(&self) -> usize;
+
+    /// Is the array empty
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Trait to get tuple length at compile time and support tuple building
@@ -28,7 +33,12 @@ pub trait WidgetTuple: AssociatedArray {
 // We implement DynWidget for it to make everything work
 impl crate::DynWidget for () {
     fn set_constraints(&mut self, _max_size: embedded_graphics::geometry::Size) {}
-    fn sizing(&self) -> crate::Sizing { crate::Sizing { width: 0, height: 0 } }
+    fn sizing(&self) -> crate::Sizing {
+        crate::Sizing {
+            width: 0,
+            height: 0,
+        }
+    }
 }
 
 // Implementation of AssociatedArray for empty tuple
@@ -38,11 +48,11 @@ impl AssociatedArray for () {
     fn create_array_with<T: Copy>(&self, _value: T) -> Self::Array<T> {
         []
     }
-    
+
     fn get_dyn_child(&mut self, _index: usize) -> Option<&mut dyn crate::DynWidget> {
         None
     }
-    
+
     fn len(&self) -> usize {
         0
     }
@@ -67,7 +77,7 @@ macro_rules! impl_widget_tuple {
             fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
                 [value; $len]
             }
-            
+
             fn get_dyn_child(&mut self, index: usize) -> Option<&mut dyn crate::DynWidget> {
                 #[allow(non_snake_case)]
                 let ($(ref mut $t,)+) = self;
@@ -80,12 +90,12 @@ macro_rules! impl_widget_tuple {
                 )+
                 None
             }
-            
+
             fn len(&self) -> usize {
                 $len
             }
         }
-        
+
         impl<$($t: crate::DynWidget),+> WidgetTuple for ($($t,)+) {
             const TUPLE_LEN: usize = $len;
             type Add<W: crate::DynWidget> = ($($t,)+ W);
@@ -108,7 +118,7 @@ macro_rules! impl_last_widget_tuple {
             fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
                 [value; $len]
             }
-            
+
             fn get_dyn_child(&mut self, index: usize) -> Option<&mut dyn crate::DynWidget> {
                 #[allow(non_snake_case)]
                 let ($(ref mut $t,)+) = self;
@@ -121,12 +131,12 @@ macro_rules! impl_last_widget_tuple {
                 )+
                 None
             }
-            
+
             fn len(&self) -> usize {
                 $len
             }
         }
-        
+
         impl<$($t: crate::DynWidget),+> WidgetTuple for ($($t,)+) {
             const TUPLE_LEN: usize = $len;
             // Can't add more widgets, so Add type is Self

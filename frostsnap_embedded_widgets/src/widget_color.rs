@@ -1,4 +1,4 @@
-use crate::{Frac, Rat};
+use crate::Frac;
 use embedded_graphics::pixelcolor::{
     BinaryColor, Gray2, Gray4, GrayColor, PixelColor, Rgb565, RgbColor,
 };

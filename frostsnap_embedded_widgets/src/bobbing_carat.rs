@@ -1,10 +1,8 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{image::Image, translate::Translate, Instant, Widget};
-use embedded_graphics::pixelcolor::Rgb565;
+use crate::{image::Image, translate::Translate, Widget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::PixelColor,
 };
 use embedded_iconoir::{prelude::IconoirNewIcon, size24px::navigation::NavArrowUp};
 

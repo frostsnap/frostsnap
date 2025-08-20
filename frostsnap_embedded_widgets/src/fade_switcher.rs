@@ -31,7 +31,7 @@ where
         bg_color: Rgb565,
     ) -> Self {
         let mut child = Fader::new_faded_out(initial);
-        child.start_fade_in(fade_duration_ms as _, fade_redraw_interval_ms, bg_color);
+        child.start_fade_in(fade_duration_ms as _, fade_redraw_interval_ms);
         Self {
             current: child,
             prev: None,
@@ -61,7 +61,6 @@ where
             prev_fader.start_fade(
                 self.fade_duration_ms as u64,
                 self.fade_redraw_interval_ms,
-                self.bg_color,
             );
             self.prev = Some(prev_fader);
         }
@@ -142,7 +141,6 @@ where
                 self.current.start_fade_in(
                     self.fade_duration_ms as u64,
                     self.fade_redraw_interval_ms,
-                    self.bg_color,
                 );
                 self.prev = None;
             }

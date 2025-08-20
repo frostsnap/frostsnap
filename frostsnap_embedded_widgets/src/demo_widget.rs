@@ -195,7 +195,7 @@ macro_rules! demo_widget {
                 // Create a fader starting faded out
                 let mut fader = Fader::new_faded_out(text);
                 // Start the fade-in immediately
-                fader.start_fade_in(1000, 50, PALETTE.background);
+                fader.start_fade_in(1000, 50);
 
                 $run_macro!(fader);
             }
@@ -600,11 +600,10 @@ macro_rules! demo_widget {
                         ));
 
                         // Create initial column
-                        let column = Align::align(
+                        let column = Align::new(
                             Column::new(texts.clone())
-                                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly),
-                            Alignment::TopCenter,
-                        );
+                                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+                        ).alignment(Alignment::TopCenter);
 
                         Self {
                             texts,
@@ -634,10 +633,10 @@ macro_rules! demo_widget {
                         ));
 
                         // Create NEW column with the updated vec (do not mutate existing!)
-                        let new_column = Align::align(
+                        let new_column = Align::new(
                             Column::new(self.texts.clone())
-                                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly),
-                            Alignment::TopCenter);
+                                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+                        ).alignment(Alignment::TopCenter);
 
                         // Switch to the new column
                         self.switcher.switch_to(new_column);

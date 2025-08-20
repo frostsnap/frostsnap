@@ -3,7 +3,6 @@ use crate::{
     compressed_point::CompressedPoint, super_draw_target::SuperDrawTarget, Frac, Instant, Rat,
 };
 use alloc::vec::Vec;
-use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
