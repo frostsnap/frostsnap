@@ -83,7 +83,11 @@ where
         // The event log gets the reset of the sectors
         let mut mutation_log = MutationLog::new(share_partition, nvs_partition);
 
-        let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
+        // Since this call is made upon startup there is some risk of side-channel attacks, and so
+        // we choose to use the less important fixed-entropy HMAC rather than the extremely important
+        // share-encryption HMAC for this device keypair.
+        let device_keypair = header.device_keypair(&mut hmac_keys.fixed_entropy);
+        let mut signer = FrostSigner::new(device_keypair, nonce_slots);
 
         let mut name = None;
 
