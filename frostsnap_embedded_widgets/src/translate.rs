@@ -78,6 +78,8 @@ where
 
     /// Animate from an offset to the rest position (entrance animation)
     pub fn animate_from(&mut self, from: Point, duration: u64) {
+        // Initialize current_offset to the starting position to prevent flash at final position
+        self.current_offset = from;
         self.translation_direction = TranslationDirection::Animating {
             offset: from,
             duration,
@@ -88,6 +90,8 @@ where
 
     /// Animate from rest position to an offset (exit animation)
     pub fn animate_to(&mut self, to: Point, duration: u64) {
+        // Start from rest position (zero) when animating to an offset
+        self.current_offset = Point::zero();
         self.translation_direction = TranslationDirection::Animating {
             offset: to,
             duration,
