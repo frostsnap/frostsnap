@@ -1,4 +1,3 @@
-// use core::num::NonZeroU8;
 use esp_hal::efuse::{self as hal_efuse, Efuse};
 use esp_hal::hmac::{self, Hmac};
 use esp_hal::peripherals::EFUSE;
@@ -251,7 +250,7 @@ impl<'a> EfuseHmacKey<'a> {
 
     pub fn hash(
         &mut self,
-        domain_separator: &'static str,
+        domain_separator: &str,
         input: &[u8],
     ) -> Result<[u8; 32], esp_hal::hmac::Error> {
         let mut hmac = self.hmac.borrow_mut();
@@ -286,7 +285,7 @@ impl<'a> EfuseHmacKey<'a> {
     }
 }
 
-impl frostsnap_core::device::DeviceSymmetricKeyGen for EfuseHmacKey<'_> {
+impl frostsnap_core::device::DeviceHmacKeys for EfuseHmacKey<'_> {
     fn get_share_encryption_key(
         &mut self,
         access_structure_ref: AccessStructureRef,
@@ -307,5 +306,9 @@ impl frostsnap_core::device::DeviceSymmetricKeyGen for EfuseHmacKey<'_> {
         let output = self.hash("share-encryption", &src).unwrap();
 
         frostsnap_core::SymmetricKey(output)
+    }
+
+    fn derive_nonce_seed(&mut self, domain: &str, input: &[u8; 32]) -> [u8; 32] {
+        self.hash(domain, input).unwrap()
     }
 }
