@@ -16,7 +16,25 @@ use crate::{
     SignSessionId, Versioned, NONCE_BATCH_SIZE,
 };
 
-type ChaChaSeed = [u8; 32];
+#[derive(bincode::Encode, bincode::Decode, Copy, Clone, Debug, PartialEq)]
+pub struct ChaChaSeed([u8; 32]);
+
+impl ChaChaSeed {
+    pub fn new(rng: &mut impl RngCore) -> Self {
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        Self(seed)
+    }
+
+    /// Only for deserialization or when we ratchet up
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct SecretNonceSlot {
@@ -48,8 +66,7 @@ pub trait NonceStreamSlot {
     }
 
     fn initialize(&mut self, stream_id: NonceStreamId, last_used: u32, rng: &mut impl RngCore) {
-        let mut ratchet_prg_seed = ChaChaSeed::default();
-        rng.fill_bytes(&mut ratchet_prg_seed[..]);
+        let ratchet_prg_seed = ChaChaSeed::new(rng);
         let value = SecretNonceSlot {
             index: 0,
             nonce_stream_id: stream_id,
@@ -271,7 +288,6 @@ impl SecretNonceSlot {
     fn iter_secret_nonces(&self) -> impl Iterator<Item = (u32, binonce::SecretNonce, ChaChaSeed)> {
         let mut prg_seed = self.ratchet_prg_seed;
         let mut index = self.index;
-
         core::iter::from_fn(move || {
             if index == u32::MAX {
                 return None;
@@ -280,18 +296,17 @@ impl SecretNonceSlot {
             let current_index = index;
             chacha_nonce[0..core::mem::size_of_val(&current_index)]
                 .copy_from_slice(current_index.to_le_bytes().as_ref());
-            let mut chacha = ChaCha20::new(&prg_seed.into(), &chacha_nonce.into());
+            let mut chacha = ChaCha20::new(prg_seed.as_bytes().into(), &chacha_nonce.into());
             let mut next_seed = [0u8; 32];
             chacha.apply_keystream(&mut next_seed);
             let mut secret_nonce_bytes = [0u8; 64];
             chacha.apply_keystream(&mut secret_nonce_bytes);
             let secret_nonce = binonce::SecretNonce::from_bytes(secret_nonce_bytes)
                 .expect("computationally unreachable");
-
-            prg_seed = next_seed;
+            let next_prg_seed = ChaChaSeed::from_bytes(next_seed);
+            prg_seed = next_prg_seed;
             index += 1;
-
-            Some((current_index, secret_nonce, next_seed))
+            Some((current_index, secret_nonce, next_prg_seed))
         })
     }
 
