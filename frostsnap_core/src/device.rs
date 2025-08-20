@@ -96,7 +96,7 @@ impl EncryptedSecretShare {
         secret_share: SecretShare,
         access_structure_ref: AccessStructureRef,
         coord_contrib: CoordShareDecryptionContrib,
-        symm_keygen: &mut impl DeviceSymmetricKeyGen,
+        symm_keygen: &mut impl DeviceHmacKeys,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let share_image = secret_share.share_image();
@@ -116,7 +116,7 @@ impl EncryptedSecretShare {
         &self,
         access_structure_ref: AccessStructureRef,
         coord_contrib: CoordShareDecryptionContrib,
-        symm_keygen: &mut impl DeviceSymmetricKeyGen,
+        symm_keygen: &mut impl DeviceHmacKeys,
     ) -> Option<SecretShare> {
         let encryption_key = symm_keygen.get_share_encryption_key(
             access_structure_ref,
@@ -291,6 +291,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         &mut self,
         message: CoordinatorToDeviceMessage,
         rng: &mut impl rand_core::RngCore,
+        device_hmac: &mut impl DeviceHmacKeys,
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match message.clone() {
@@ -312,7 +313,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         .nonce_slots
                         .get_or_create(coord_stream_state.stream_id, rng);
                     if let Some(segment) =
-                        slot.reconcile_coord_nonce_stream_state(coord_stream_state)
+                        slot.reconcile_coord_nonce_stream_state(coord_stream_state, device_hmac)
                     {
                         segments.push(segment);
                     }
@@ -566,7 +567,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn keygen_ack(
         &mut self,
         phase2: KeyGenPhase2,
-        symm_key_gen: &mut impl DeviceSymmetricKeyGen,
+        symm_key_gen: &mut impl DeviceHmacKeys,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<KeyGenAck, ActionError> {
         let secret_share = phase2.secret_share;
@@ -635,7 +636,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn sign_ack(
         &mut self,
         phase: SignPhase1,
-        symm_keygen: &mut impl DeviceSymmetricKeyGen,
+        symm_keygen: &mut impl DeviceHmacKeys,
     ) -> Result<Vec<DeviceSend>, ActionError> {
         let SignPhase1 {
             group_sign_req:
@@ -705,7 +706,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
         let (signature_shares, replenish_nonces) = self
             .nonce_slots
-            .sign_guaranteeing_nonces_destroyed(session_id, coord_nonce_state, sign_sessions)
+            .sign_guaranteeing_nonces_destroyed(
+                session_id,
+                coord_nonce_state,
+                sign_sessions,
+                symm_keygen,
+            )
             .expect("nonce stream already checked to exist");
 
         Ok(vec![DeviceSend::ToCoordinator(Box::new(
@@ -798,13 +804,15 @@ pub enum Mutation {
     Restoration(restoration::RestorationMutation),
 }
 
-pub trait DeviceSymmetricKeyGen {
+pub trait DeviceHmacKeys {
     fn get_share_encryption_key(
         &mut self,
         access_structure_ref: AccessStructureRef,
         party_index: ShareIndex,
         coord_key: CoordShareDecryptionContrib,
     ) -> SymmetricKey;
+
+    fn derive_nonce_seed(&mut self, domain: &str, input: &[u8; 32]) -> [u8; 32];
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
