@@ -57,7 +57,7 @@ pub const PALETTE: MaterialDarkPalette565 = MaterialDarkPalette565 {
 
     background: Rgb565::new(1, 2, 2),
     on_background: Rgb565::new(28, 57, 28),
-    surface: Rgb565::new(2, 4, 2),
+    surface: Rgb565::new(2, 6, 5),
     on_surface: Rgb565::new(28, 57, 28),
     surface_variant: Rgb565::new(6, 16, 10),
     on_surface_variant: Rgb565::new(25, 54, 27),
