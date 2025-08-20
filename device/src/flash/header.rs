@@ -3,6 +3,8 @@ use frostsnap_comms::{HasMagicBytes, MagicBytes, MAGIC_BYTES_LEN};
 use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
 use frostsnap_embedded::{AbSlot, FlashPartition};
 
+use crate::efuse::EfuseHmacKey;
+
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct HeaderMagicBytes;
 impl HasMagicBytes for HeaderMagicBytes {
@@ -17,28 +19,38 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn device_keypair(&self) -> KeyPair {
+    pub fn device_keypair(&self, hmac: &mut EfuseHmacKey) -> KeyPair {
         KeyPair::new(match self.body {
-            HeaderBody::V0 { secret_key } => secret_key,
+            HeaderBody::V0 { static_hmac_seed } => {
+                let secret_scalar_bytes = hmac
+                    .hash("frostsnap-device-keypair", &static_hmac_seed)
+                    .unwrap();
+                Scalar::from_slice_mod_order(&secret_scalar_bytes)
+                    .expect("just got 32 bytes from fixed entropy hash")
+                    .non_zero()
+                    .expect("built using random bytes")
+            }
         })
     }
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub enum HeaderBody {
-    V0 { secret_key: Scalar },
+    V0 { static_hmac_seed: [u8; 32] },
 }
 
 impl Header {
-    pub fn new(secret_key: Scalar) -> Self {
+    pub fn new(static_hmac_seed: [u8; 32]) -> Self {
         Header {
             magic_bytes: Default::default(),
-            body: HeaderBody::V0 { secret_key },
+            body: HeaderBody::V0 { static_hmac_seed },
         }
     }
 
     pub fn init(rng: &mut impl rand_core::RngCore) -> Self {
-        Header::new(Scalar::random(rng))
+        let mut static_hmac_seed = [0u8; 32];
+        rng.fill_bytes(&mut static_hmac_seed);
+        Header::new(static_hmac_seed)
     }
 }
 
@@ -65,12 +77,5 @@ impl<'a, S: NorFlash> FlashHeader<'a, S> {
         let header = Header::init(rng);
         self.write_header(&header);
         header
-    }
-
-    pub fn read_or_init(&self, rng: &mut impl rand_core::RngCore) -> Header {
-        match self.read_header() {
-            Some(header) => header,
-            None => self.init(rng),
-        }
     }
 }
