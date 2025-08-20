@@ -19,6 +19,7 @@ use embedded_graphics::{
 const UNDERLINE_DISTANCE: i32 = 2;
 
 /// A text widget optimized for Gray4 fonts with anti-aliased rendering
+#[derive(Clone)]
 pub struct Gray4Text {
     text: String,
     font: &'static Gray4Font,
@@ -27,6 +28,7 @@ pub struct Gray4Text {
     alignment: Alignment,
     underline_color: Option<Rgb565>,
     cached_size: Size,
+    drawn: bool,
 }
 
 impl Gray4Text {
@@ -45,6 +47,7 @@ impl Gray4Text {
             alignment: Alignment::Left,
             underline_color: None,
             cached_size,
+            drawn: false,
         }
     }
     
@@ -65,6 +68,11 @@ impl Gray4Text {
         self.underline_color = Some(color);
         self.cached_size.height += UNDERLINE_DISTANCE as u32 + 1;
         self
+    }
+    
+    /// Get the text content
+    pub fn text(&self) -> &str {
+        &self.text
     }
     
     /// Measure text dimensions
@@ -118,6 +126,7 @@ impl Gray4Text {
         &self,
         position: Point,
         glyph: &GlyphInfo,
+        color_cache: &[Option<Rgb565>; 16],
         target: &mut SuperDrawTarget<D, Rgb565>,
     ) -> Result<(), D::Error>
     where
@@ -131,48 +140,45 @@ impl Gray4Text {
         for y in 0..glyph.height {
             let row_y = draw_y + y as i32;
             
-            // Extract the entire row of Gray4 values from packed data
-            let mut row_values = Vec::with_capacity(glyph.width as usize);
-            for x in 0..glyph.width {
+            // Process row directly without intermediate Vec allocation
+            let mut x = 0u8;
+            while x < glyph.width {
+                // Get the value at current position
                 let value = self.font.get_pixel(glyph, x as u32, y as u32);
-                row_values.push(value);
-            }
-            
-            // Render the row by finding runs of same values
-            let mut x = 0;
-            while x < row_values.len() {
-                let start_x = x;
-                let value = row_values[x];
                 
-                // Find run of same value
-                while x < row_values.len() && row_values[x] == value {
+                if value == 0 {
+                    // Skip transparent pixels
+                    x += 1;
+                    continue;
+                }
+                
+                // Find the run length of same value
+                let start_x = x;
+                x += 1;
+                while x < glyph.width {
+                    let next_value = self.font.get_pixel(glyph, x as u32, y as u32);
+                    if next_value != value {
+                        break;
+                    }
                     x += 1;
                 }
                 
-                // Draw the run
-                if value > 0 {
-                    let color = self.blend_color(value);
-                    let run_length = x - start_x;
-                    
-                    // Use fill_contiguous for runs of 3+ pixels
-                    if run_length >= 3 {
-                        let area = Rectangle::new(
-                            Point::new(draw_x + start_x as i32, row_y),
-                            Size::new(run_length as u32, 1)
-                        );
-                        // Create an iterator of the same color repeated
-                        let colors = core::iter::repeat(color).take(run_length);
-                        target.fill_contiguous(&area, colors)?;
-                    } else {
-                        // For short runs, just draw pixels
-                        for px in start_x..x {
-                            target.draw_iter(core::iter::once(Pixel(
-                                Point::new(draw_x + px as i32, row_y),
-                                color
-                            )))?;
-                        }
-                    }
-                }
+                // Get color from cache (should always be cached at this point)
+                let color = color_cache[value as usize].unwrap_or_else(|| {
+                    // Fallback in case we missed caching it
+                    self.blend_color(value)
+                });
+                
+                let run_length = (x - start_x) as usize;
+                
+                // Always use fill_contiguous for better batching
+                let area = Rectangle::new(
+                    Point::new(draw_x + start_x as i32, row_y),
+                    Size::new(run_length as u32, 1)
+                );
+                // Create an iterator of the same color repeated
+                let colors = core::iter::repeat(color).take(run_length);
+                target.fill_contiguous(&area, colors)?;
             }
         }
         
@@ -190,6 +196,12 @@ impl Gray4Text {
     where
         D: DrawTarget<Color = Rgb565>,
     {
+        // Pre-calculate all 16 possible blended colors for this text
+        let mut color_cache = [None; 16];
+        for i in 0..16 {
+            color_cache[i] = Some(self.blend_color(i as u8));
+        }
+        
         let y_offset = match baseline {
             Baseline::Top => 0,
             Baseline::Bottom => -(self.font.line_height as i32),
@@ -202,8 +214,8 @@ impl Gray4Text {
         
         for ch in text.chars() {
             if let Some(glyph) = self.font.get_glyph(ch) {
-                // Use the optimized renderer
-                self.draw_glyph_optimized(Point::new(x, y), glyph, target)?;
+                // Use the optimized renderer with the pre-calculated color cache
+                self.draw_glyph_optimized(Point::new(x, y), glyph, &color_cache, target)?;
                 x += glyph.x_advance as i32;
             } else if ch == ' ' {
                 x += (self.font.line_height / 4) as i32;
@@ -224,6 +236,23 @@ impl DynWidget for Gray4Text {
     fn sizing(&self) -> Sizing {
         self.cached_size.into()
     }
+    
+    fn handle_touch(
+        &mut self,
+        _point: Point,
+        _current_time: Instant,
+        _is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        None
+    }
+    
+    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {
+        // No drag handling needed
+    }
+    
+    fn force_full_redraw(&mut self) {
+        self.drawn = false;
+    }
 }
 
 impl Widget for Gray4Text {
@@ -237,36 +266,40 @@ impl Widget for Gray4Text {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        // Calculate position based on alignment
-        let position = match self.alignment {
-            Alignment::Left => Point::zero(),
-            Alignment::Center => {
-                Point::new(-(self.cached_size.width as i32) / 2, 0)
-            }
-            Alignment::Right => {
-                Point::new(-(self.cached_size.width as i32), 0)
-            }
-        };
-        
-        // Use the OPTIMIZED rendering path!
-        self.draw_string_optimized(&self.text, position, self.baseline, target)?;
-        
-        // Draw underline if enabled
-        if let Some(underline_color) = self.underline_color {
-            let bbox_width = self.cached_size.width as i32;
-            let underline_y = match self.baseline {
-                Baseline::Top => self.font.line_height as i32 + UNDERLINE_DISTANCE,
-                Baseline::Bottom => UNDERLINE_DISTANCE,
-                Baseline::Middle => (self.font.line_height as i32) / 2 + UNDERLINE_DISTANCE,
-                Baseline::Alphabetic => self.font.baseline as i32 + UNDERLINE_DISTANCE,
+        if !self.drawn {
+            // Calculate position based on alignment
+            let position = match self.alignment {
+                Alignment::Left => Point::zero(),
+                Alignment::Center => {
+                    Point::new(-(self.cached_size.width as i32) / 2, 0)
+                }
+                Alignment::Right => {
+                    Point::new(-(self.cached_size.width as i32), 0)
+                }
             };
             
-            Line::new(
-                Point::new(position.x, underline_y),
-                Point::new(position.x + bbox_width, underline_y),
-            )
-            .into_styled(PrimitiveStyle::with_stroke(underline_color, 1))
-            .draw(target)?;
+            // Use the OPTIMIZED rendering path!
+            self.draw_string_optimized(&self.text, position, self.baseline, target)?;
+            
+            // Draw underline if enabled
+            if let Some(underline_color) = self.underline_color {
+                let bbox_width = self.cached_size.width as i32;
+                let underline_y = match self.baseline {
+                    Baseline::Top => self.font.line_height as i32 + UNDERLINE_DISTANCE,
+                    Baseline::Bottom => UNDERLINE_DISTANCE,
+                    Baseline::Middle => (self.font.line_height as i32) / 2 + UNDERLINE_DISTANCE,
+                    Baseline::Alphabetic => self.font.baseline as i32 + UNDERLINE_DISTANCE,
+                };
+                
+                Line::new(
+                    Point::new(position.x, underline_y),
+                    Point::new(position.x + bbox_width, underline_y),
+                )
+                .into_styled(PrimitiveStyle::with_stroke(underline_color, 1))
+                .draw(target)?;
+            }
+            
+            self.drawn = true;
         }
         
         Ok(())
