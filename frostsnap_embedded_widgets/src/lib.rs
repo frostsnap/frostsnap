@@ -48,6 +48,7 @@ pub mod device_name;
 pub mod expanded;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
+pub mod font_demo;
 pub mod fps;
 pub mod keygen_check;
 pub mod layout;

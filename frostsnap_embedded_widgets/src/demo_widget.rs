@@ -514,26 +514,8 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "font_demo" => {
-                use $crate::{
-                    gray4_text::Gray4Text,
-                    layout::{Column, MainAxisAlignment},
-                    noto_sans_24_bold::NOTO_SANS_24_BOLD,
-                    noto_sans_24_regular::NOTO_SANS_24_REGULAR,
-                    noto_sans_mono_21_bold::NOTO_SANS_MONO_21_BOLD,
-                    center::Center,
-                };
-
-                // Create Gray4Text widgets directly - no separate style needed!
-                let text_regular = Gray4Text::new("Frostsnap Regular", &NOTO_SANS_24_REGULAR, Rgb565::WHITE);
-                let text_bold = Gray4Text::new("Frostsnap Bold", &NOTO_SANS_24_BOLD, Rgb565::WHITE);
-                let text_mono = Gray4Text::new("Frostsnap Mono", &NOTO_SANS_MONO_21_BOLD, Rgb565::WHITE);
-                
-                let column = Column::new((text_regular, text_bold, text_mono))
-                    .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
-                
-                // Center the entire column on screen
-                let widget = Center::new(column);
-
+                use $crate::font_demo::FontDemo;
+                let widget = FontDemo::new();
                 $run_macro!(widget);
             }
             "stack" => {
