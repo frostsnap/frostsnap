@@ -8,7 +8,6 @@ use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    prelude::*,
     primitives::Rectangle,
 };
 
@@ -256,8 +255,8 @@ where
         let total_flex: u32 = flex_scores.iter().sum();
 
         // First pass: set constraints on non-flex children
-        for i in 0..len {
-            if flex_scores[i] == 0 {
+        for (i, &flex_score) in flex_scores.iter().enumerate() {
+            if flex_score == 0 {
                 if let Some(child) = self.children.get_dyn_child(i) {
                     // Set constraints on non-flex child with remaining available width
                     child.set_constraints(Size::new(remaining_width, max_size.height));
@@ -272,11 +271,11 @@ where
         let total_flex_width = remaining_width;
 
         // Second pass: set constraints on flex children and update cached rects with sizes
-        for i in 0..len {
-            if flex_scores[i] > 0 {
+        for (i, &flex_score) in flex_scores.iter().enumerate().take(len) {
+            if flex_score > 0 {
                 if let Some(child) = self.children.get_dyn_child(i) {
                     // Calculate width for this flex child based on its flex score
-                    let flex_width = (total_flex_width * flex_scores[i]) / total_flex;
+                    let flex_width = (total_flex_width * flex_score) / total_flex;
                     // Set constraints on flex child with calculated width
                     child.set_constraints(Size::new(flex_width, max_size.height));
                     let sizing = child.sizing();
@@ -352,6 +351,7 @@ where
             .expect("set_constraints must be called before sizing")
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn handle_touch(
         &mut self,
         point: Point,
@@ -362,8 +362,8 @@ where
         let len = self.children.len();
 
         for i in 0..len {
+            let area = child_rects[i];
             if let Some(child) = self.children.get_dyn_child(i) {
-                let area = child_rects[i];
                 if area.contains(point) || is_release {
                     let relative_point =
                         Point::new(point.x - area.top_left.x, point.y - area.top_left.y);
@@ -380,6 +380,7 @@ where
         None
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, is_release: bool) {
         let len = self.children.len();
         for i in 0..len {
@@ -389,6 +390,7 @@ where
         }
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn force_full_redraw(&mut self) {
         let len = self.children.len();
         for i in 0..len {

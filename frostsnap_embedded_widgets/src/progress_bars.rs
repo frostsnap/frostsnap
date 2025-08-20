@@ -1,4 +1,4 @@
-use crate::{container::Container, layout::Row, palette::PALETTE, MainAxisAlignment, Widget};
+use crate::{container::Container, layout::Row, palette::PALETTE, MainAxisAlignment};
 use alloc::vec::Vec;
 use embedded_graphics::prelude::*;
 use frostsnap_macros::Widget;

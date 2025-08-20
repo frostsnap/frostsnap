@@ -1,4 +1,6 @@
 #[cfg(feature = "debug_mem")]
+use alloc::string::ToString;
+#[cfg(feature = "debug_mem")]
 use core::fmt::Write;
 use embedded_graphics::pixelcolor::Rgb565;
 #[cfg(not(any(feature = "debug_fps", feature = "debug_mem")))]
@@ -20,8 +22,6 @@ use frostsnap_embedded_widgets::Widget;
 use frostsnap_embedded_widgets::{
     prelude::*, string_buffer::StringBuffer, text::Text, DynWidget, Instant, Switcher, FONT_SMALL,
 };
-#[cfg(feature = "debug_mem")]
-use alloc::string::ToString;
 #[cfg(feature = "debug_mem")]
 use u8g2_fonts::U8g2TextStyle;
 

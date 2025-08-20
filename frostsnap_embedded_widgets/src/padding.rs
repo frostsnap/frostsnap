@@ -121,14 +121,14 @@ impl<W: Widget> crate::DynWidget for Padding<W> {
         let padded_height = max_size.height.saturating_sub(self.top + self.bottom);
         self.child
             .set_constraints(Size::new(padded_width, padded_height));
-        
+
         // Get child sizing and compute our own sizing
         let child_sizing = self.child.sizing();
         self.sizing = Some(crate::Sizing {
             width: child_sizing.width + self.left + self.right,
             height: child_sizing.height + self.top + self.bottom,
         });
-        
+
         // Cache the child rectangle
         self.child_rect = Some(Rectangle::new(
             Point::new(self.left as i32, self.top as i32),
@@ -137,7 +137,8 @@ impl<W: Widget> crate::DynWidget for Padding<W> {
     }
 
     fn sizing(&self) -> crate::Sizing {
-        self.sizing.expect("set_constraints must be called before sizing")
+        self.sizing
+            .expect("set_constraints must be called before sizing")
     }
 
     fn handle_touch(
@@ -149,8 +150,11 @@ impl<W: Widget> crate::DynWidget for Padding<W> {
         if let Some(child_rect) = self.child_rect {
             if child_rect.contains(point) || is_release {
                 let child_point = point - child_rect.top_left;
-                
-                if let Some(mut key_touch) = self.child.handle_touch(child_point, current_time, is_release) {
+
+                if let Some(mut key_touch) =
+                    self.child
+                        .handle_touch(child_point, current_time, is_release)
+                {
                     key_touch.translate(child_rect.top_left);
                     return Some(key_touch);
                 }
@@ -186,7 +190,9 @@ impl<W: Widget> Widget for Padding<W> {
         D: DrawTarget<Color = Self::Color>,
     {
         // Use the cached child rectangle
-        let child_rect = self.child_rect.expect("set_constraints must be called before draw");
+        let child_rect = self
+            .child_rect
+            .expect("set_constraints must be called before draw");
 
         // Draw the child in the cached rectangle
         let mut cropped_target = target.clone().crop(child_rect);

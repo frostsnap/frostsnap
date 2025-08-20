@@ -1,4 +1,6 @@
-use crate::{DynWidget, Instant, KeyTouch, Sizing, SuperDrawTarget, Widget, palette::PALETTE, WidgetColor};
+use crate::{
+    palette::PALETTE, DynWidget, Instant, KeyTouch, Sizing, SuperDrawTarget, Widget, WidgetColor,
+};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -19,11 +21,11 @@ impl<W> OneTimeClearHack<W> {
             needs_clear: true,
         }
     }
-    
+
     pub fn inner(&self) -> &W {
         &self.child
     }
-    
+
     pub fn inner_mut(&mut self) -> &mut W {
         &mut self.child
     }
@@ -51,7 +53,8 @@ where
     }
 
     fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, is_release: bool) {
-        self.child.handle_vertical_drag(start_y, current_y, is_release);
+        self.child
+            .handle_vertical_drag(start_y, current_y, is_release);
     }
 
     fn force_full_redraw(&mut self) {
@@ -80,7 +83,7 @@ where
             target.clear(PALETTE.background.into())?;
             self.needs_clear = false;
         }
-        
+
         // Draw the child
         self.child.draw(target, current_time)
     }

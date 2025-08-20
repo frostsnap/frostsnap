@@ -1,7 +1,7 @@
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{
-    Container, string_buffer::StringBuffer, DynWidget, Instant,
-    Switcher, Text as TextWidget, Widget,
+    string_buffer::StringBuffer, Container, DynWidget, Instant, Switcher, Text as TextWidget,
+    Widget,
 };
 use core::fmt::Write;
 use embedded_graphics::{

@@ -1,4 +1,4 @@
-use crate::{widget_color::ColorInterpolate, Frac};
+use crate::Frac;
 use alloc::rc::Rc;
 use core::cell::{RefCell, RefMut};
 use embedded_graphics::prelude::*;

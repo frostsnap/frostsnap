@@ -1,9 +1,6 @@
 use crate::{
-    container::Container,
-    palette::PALETTE,
-    text::Text,
-    touch_listener::TouchListener,
-    Column, DynWidget, Key, MainAxisAlignment, Padding, Row, Widget, FONT_MED,
+    container::Container, palette::PALETTE, text::Text, touch_listener::TouchListener, Column, Key,
+    MainAxisAlignment, Padding, Row, FONT_MED,
 };
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};

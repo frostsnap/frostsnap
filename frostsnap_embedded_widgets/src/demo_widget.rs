@@ -571,11 +571,11 @@ macro_rules! demo_widget {
             "word_selector" => {
                 use $crate::bip39::WordSelector;
                 use frostsnap_backup::bip39_words::words_with_prefix;
-                
+
                 // Get all words starting with "CAR" (BIP39 words are uppercase)
                 let words = words_with_prefix("CAR");
                 let widget = WordSelector::new(words, "CAR");
-                
+
                 $run_macro!(widget);
             }
             "vec_column" => {

@@ -33,7 +33,8 @@ where
     }
 
     fn sizing(&self) -> Sizing {
-        self.sizing.expect("set_constraints must be called before sizing")
+        self.sizing
+            .expect("set_constraints must be called before sizing")
     }
 
     fn handle_touch(
@@ -54,7 +55,8 @@ where
     }
 
     fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, is_release: bool) {
-        self.child.handle_vertical_drag(start_y, current_y, is_release);
+        self.child
+            .handle_vertical_drag(start_y, current_y, is_release);
     }
 
     fn force_full_redraw(&mut self) {

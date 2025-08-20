@@ -5,7 +5,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Dimensions, Point, Size},
     pixelcolor::BinaryColor,
-    prelude::*,
     primitives::Rectangle,
     Pixel,
 };

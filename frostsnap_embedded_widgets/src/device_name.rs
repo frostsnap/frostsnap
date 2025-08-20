@@ -1,7 +1,11 @@
-use super::{Column, Text as TextWidget, Widget};
+use super::{Column, Text as TextWidget};
 use crate::{
     alignment::{Align, HorizontalAlignment},
-    bitmap::EncodedImage, image::Image, palette::PALETTE, vec_framebuffer::VecFramebuffer, Switcher,
+    bitmap::EncodedImage,
+    image::Image,
+    palette::PALETTE,
+    vec_framebuffer::VecFramebuffer,
+    Switcher,
 };
 use alloc::string::String;
 use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};

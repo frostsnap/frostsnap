@@ -1,6 +1,5 @@
 use super::{compressed_point::CompressedPoint, pixel_recorder::PixelRecorder, rat::Frac, Widget};
 use crate::fader::FadingDrawTarget;
-use crate::prelude::*;
 use crate::super_draw_target::SuperDrawTarget;
 use alloc::vec::Vec;
 use embedded_graphics::{

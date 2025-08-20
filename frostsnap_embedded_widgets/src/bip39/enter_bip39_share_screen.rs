@@ -55,7 +55,7 @@ impl EnterBip39ShareScreen {
         &mut self,
         target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
-    ) {
+    ) -> Result<(), D::Error> {
         if self.mnemonic_complete {
             // Only draw if we just transitioned to complete state
             if self.needs_redraw {
@@ -99,7 +99,7 @@ impl EnterBip39ShareScreen {
                 .draw(&mut target.clone().crop(input_display_rect), current_time);
 
             // Draw word selector in keyboard area
-            word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time);
+            word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else {
             // Normal keyboard and input preview
             let _ = self
@@ -124,6 +124,8 @@ impl EnterBip39ShareScreen {
 
         // Then remove finished ones
         self.touches.retain(|touch| !touch.is_finished());
+
+        Ok(())
     }
 
     pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
@@ -448,7 +450,7 @@ impl Widget for EnterBip39ShareScreen {
                 .draw(&mut target.clone().crop(input_display_rect), current_time);
 
             // Draw word selector in keyboard area
-            word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time);
+            word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else {
             // Normal keyboard and input preview
             self.alphabetic_keyboard

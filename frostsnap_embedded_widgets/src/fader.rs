@@ -81,11 +81,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     }
 
     /// Start fading in over the specified duration
-    pub fn start_fade_in(
-        &mut self,
-        duration_ms: u64,
-        redraw_interval_ms: u64,
-    ) {
+    pub fn start_fade_in(&mut self, duration_ms: u64, redraw_interval_ms: u64) {
         self.state = FadeState::FadingIn {
             start_time: None, // Will be set on first draw
             duration_ms,

@@ -2,7 +2,6 @@
 #![allow(clippy::type_complexity)]
 
 #[cfg(feature = "std")]
-#[allow(unused)]
 extern crate std;
 
 #[macro_use]

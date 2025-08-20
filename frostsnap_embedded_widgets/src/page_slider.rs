@@ -8,7 +8,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
-    prelude::*,
 };
 
 const ANIMATION_DURATION_MS: u64 = 500;

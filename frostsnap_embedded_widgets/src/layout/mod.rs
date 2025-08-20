@@ -58,9 +58,9 @@ where
 {
     use embedded_graphics::pixelcolor::raw::RawData;
     use embedded_graphics::pixelcolor::{Gray2, Gray4, Rgb565};
-    use embedded_graphics::primitives::{PrimitiveStyle, Primitive};
-    use embedded_graphics::Drawable;
     use embedded_graphics::prelude::{GrayColor, RgbColor};
+    use embedded_graphics::primitives::{Primitive, PrimitiveStyle};
+    use embedded_graphics::Drawable;
 
     let debug_color = match C::Raw::BITS_PER_PIXEL {
         16 => {

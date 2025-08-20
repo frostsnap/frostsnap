@@ -79,14 +79,16 @@ macro_rules! impl_widget_tuple {
             }
 
             fn get_dyn_child(&mut self, index: usize) -> Option<&mut dyn crate::DynWidget> {
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, unused_assignments, unused_mut)]
                 let ($(ref mut $t,)+) = self;
+                #[allow(unused_mut, unused_assignments)]
                 let mut i = 0;
                 $(
                     if i == index {
                         return Some($t as &mut dyn crate::DynWidget);
                     }
-                    i += 1;
+                    #[allow(unused_assignments)]
+                    { i += 1; }
                 )+
                 None
             }
@@ -120,14 +122,16 @@ macro_rules! impl_last_widget_tuple {
             }
 
             fn get_dyn_child(&mut self, index: usize) -> Option<&mut dyn crate::DynWidget> {
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, unused_assignments, unused_mut)]
                 let ($(ref mut $t,)+) = self;
+                #[allow(unused_mut, unused_assignments)]
                 let mut i = 0;
                 $(
                     if i == index {
                         return Some($t as &mut dyn crate::DynWidget);
                     }
-                    i += 1;
+                    #[allow(unused_assignments)]
+                    { i += 1; }
                 )+
                 None
             }

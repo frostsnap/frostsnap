@@ -54,8 +54,10 @@ impl<W: Widget> crate::DynWidget for Center<W> {
                 point.x - self.child_rect.top_left.x,
                 point.y - self.child_rect.top_left.y,
             );
-            if let Some(mut key_touch) = self.child
-                .handle_touch(translated_point, current_time, is_release) {
+            if let Some(mut key_touch) =
+                self.child
+                    .handle_touch(translated_point, current_time, is_release)
+            {
                 // Translate the KeyTouch rectangle back to parent coordinates
                 key_touch.translate(self.child_rect.top_left);
                 Some(key_touch)

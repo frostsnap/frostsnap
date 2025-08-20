@@ -8,7 +8,6 @@ use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    prelude::*,
     primitives::Rectangle,
 };
 
@@ -88,14 +87,14 @@ impl<T: AssociatedArray> Column<T> {
             sizing: None,
         }
     }
-    
+
     /// Set the gap before a specific child (in pixels)
     pub fn set_gap(&mut self, child_index: usize, gap: u32) {
         if child_index < self.spacing_before.as_ref().len() {
             self.spacing_before.as_mut()[child_index] = gap;
         }
     }
-    
+
     /// Set the same gap before all children except the first
     pub fn set_uniform_gap(&mut self, gap: u32) {
         let spacing = self.spacing_before.as_mut();
@@ -184,8 +183,8 @@ where
         let total_flex: u32 = flex_scores.iter().sum();
 
         // First pass: set constraints on non-flex children
-        for i in 0..len {
-            if flex_scores[i] == 0 {
+        for (i, &flex_score) in flex_scores.iter().enumerate() {
+            if flex_score == 0 {
                 if let Some(child) = self.children.get_dyn_child(i) {
                     // Set constraints on non-flex child with remaining available height
                     child.set_constraints(Size::new(max_size.width, remaining_height));
@@ -200,11 +199,11 @@ where
         let total_flex_height = remaining_height;
 
         // Second pass: set constraints on flex children and update cached rects with sizes
-        for i in 0..len {
-            if flex_scores[i] > 0 {
+        for (i, &flex_score) in flex_scores.iter().enumerate() {
+            if flex_score > 0 {
                 if let Some(child) = self.children.get_dyn_child(i) {
                     // Calculate height for this flex child based on its flex score
-                    let flex_height = (total_flex_height * flex_scores[i]) / total_flex;
+                    let flex_height = (total_flex_height * flex_score) / total_flex;
                     // Set constraints on flex child with calculated height
                     child.set_constraints(Size::new(max_size.width, flex_height));
                     let sizing = child.sizing();
@@ -282,6 +281,7 @@ where
             .expect("set_constraints must be called before sizing")
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn handle_touch(
         &mut self,
         point: Point,
@@ -297,7 +297,9 @@ where
                 if area.contains(point) || is_release {
                     let relative_point =
                         Point::new(point.x - area.top_left.x, point.y - area.top_left.y);
-                    if let Some(mut key_touch) = child.handle_touch(relative_point, current_time, is_release) {
+                    if let Some(mut key_touch) =
+                        child.handle_touch(relative_point, current_time, is_release)
+                    {
                         // Translate the KeyTouch rectangle back to parent coordinates
                         key_touch.translate(area.top_left);
                         return Some(key_touch);
@@ -308,6 +310,7 @@ where
         None
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, is_release: bool) {
         let len = self.children.len();
         for i in 0..len {
@@ -317,6 +320,7 @@ where
         }
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn force_full_redraw(&mut self) {
         let len = self.children.len();
         for i in 0..len {

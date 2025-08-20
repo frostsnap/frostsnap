@@ -1,7 +1,5 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{
-    palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, FONT_SMALL,
-};
+use crate::{palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, FONT_SMALL};
 use alloc::format;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -196,7 +194,8 @@ impl ProgressIndicator {
 
         let column = Column::builder()
             .push(progress_bar)
-            .push(text_switcher).gap(8);
+            .push(text_switcher)
+            .gap(8);
 
         Self {
             column,

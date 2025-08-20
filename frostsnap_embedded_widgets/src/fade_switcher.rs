@@ -15,7 +15,6 @@ where
     prev: Option<Fader<T>>,
     fade_duration_ms: u32,
     fade_redraw_interval_ms: u64,
-    bg_color: Rgb565,
     constraints: Option<Size>,
 }
 
@@ -28,7 +27,7 @@ where
         initial: T,
         fade_duration_ms: u32,
         fade_redraw_interval_ms: u64,
-        bg_color: Rgb565,
+        _bg_color: Rgb565,
     ) -> Self {
         let mut child = Fader::new_faded_out(initial);
         child.start_fade_in(fade_duration_ms as _, fade_redraw_interval_ms);
@@ -37,7 +36,6 @@ where
             prev: None,
             fade_duration_ms,
             fade_redraw_interval_ms,
-            bg_color,
             constraints: None,
         }
     }
@@ -58,10 +56,7 @@ where
         let mut prev_fader = core::mem::replace(&mut self.current, new_fader);
         if self.prev.is_none() {
             // we only care about fading out the old widget if it was ever drawn. An existing `self.prev` means it wasn't.
-            prev_fader.start_fade(
-                self.fade_duration_ms as u64,
-                self.fade_redraw_interval_ms,
-            );
+            prev_fader.start_fade(self.fade_duration_ms as u64, self.fade_redraw_interval_ms);
             self.prev = Some(prev_fader);
         }
     }
@@ -138,10 +133,8 @@ where
 
             // Remove it once fully faded
             if prev.is_faded_out() && self.current.is_faded_out() {
-                self.current.start_fade_in(
-                    self.fade_duration_ms as u64,
-                    self.fade_redraw_interval_ms,
-                );
+                self.current
+                    .start_fade_in(self.fade_duration_ms as u64, self.fade_redraw_interval_ms);
                 self.prev = None;
             }
         }

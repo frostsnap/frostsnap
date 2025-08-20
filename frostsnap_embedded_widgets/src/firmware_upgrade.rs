@@ -1,6 +1,7 @@
 use crate::MainAxisAlignment;
 use crate::{
-    palette::PALETTE, Center, Column, Container, HoldToConfirm, Padding, ProgressIndicator, Text, FONT_MED, FONT_SMALL,
+    palette::PALETTE, Center, Column, Container, HoldToConfirm, Padding, ProgressIndicator, Text,
+    FONT_MED, FONT_SMALL,
 };
 use alloc::{boxed::Box, format};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, text::Alignment};
@@ -135,8 +136,10 @@ impl FirmwareUpgradeConfirm {
         // Create main column with title, container, and size
         let content = Column::builder()
             .push(title)
-            .push(hash_container).gap(8)
-            .push(size).gap(8);
+            .push(hash_container)
+            .gap(8)
+            .push(size)
+            .gap(8);
 
         // Create hold to confirm with 1 second hold time
         let hold_to_confirm = HoldToConfirm::new(1000, content);

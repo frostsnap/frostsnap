@@ -1,8 +1,5 @@
 use crate::{palette::PALETTE, text::Text, Column, MainAxisAlignment, Row};
-use alloc::{
-    string::String,
-    vec::Vec,
-};
+use alloc::{string::String, vec::Vec};
 use embedded_graphics::pixelcolor::Rgb565;
 use u8g2_fonts::U8g2TextStyle;
 

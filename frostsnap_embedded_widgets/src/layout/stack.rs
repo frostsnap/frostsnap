@@ -1,10 +1,13 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{alignment::Alignment, widget_tuple::{AssociatedArray, WidgetTuple}, Instant, Widget};
+use crate::{
+    alignment::Alignment,
+    widget_tuple::{AssociatedArray, WidgetTuple},
+    Instant, Widget,
+};
 use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    prelude::*,
     primitives::Rectangle,
 };
 
@@ -21,12 +24,6 @@ impl<W> Positioned<W> {
             position: Point::new(x, y),
         }
     }
-}
-
-/// A widget that can be either positioned or non-positioned in a Stack
-pub enum StackChild<W> {
-    NonPositioned(W),
-    Positioned(Positioned<W>),
 }
 
 /// A stack widget that layers its children on top of each other
@@ -84,11 +81,10 @@ impl<T: AssociatedArray> Stack<T> {
 }
 
 impl<T: WidgetTuple> Stack<T> {
-
     /// Add a non-positioned widget to the stack
     pub fn push<W: crate::DynWidget>(self, widget: W) -> Stack<T::Add<W>>
     where
-        T: WidgetTuple
+        T: WidgetTuple,
     {
         let new_children = self.children.add(widget);
 
@@ -115,7 +111,7 @@ impl<T: WidgetTuple> Stack<T> {
     /// Add a positioned widget to the stack at a specific location
     pub fn push_positioned<W: crate::DynWidget>(self, widget: W, x: i32, y: i32) -> Stack<T::Add<W>>
     where
-        T: WidgetTuple
+        T: WidgetTuple,
     {
         let new_children = self.children.add(widget);
 
@@ -142,9 +138,13 @@ impl<T: WidgetTuple> Stack<T> {
 
     /// Add a widget with alignment-based positioning
     /// The widget will be positioned according to the alignment within the Stack's bounds
-    pub fn push_aligned<W: crate::DynWidget>(self, widget: W, alignment: Alignment) -> Stack<T::Add<W>>
+    pub fn push_aligned<W: crate::DynWidget>(
+        self,
+        widget: W,
+        alignment: Alignment,
+    ) -> Stack<T::Add<W>>
     where
-        T: WidgetTuple
+        T: WidgetTuple,
     {
         let new_children = self.children.add(widget);
 
@@ -253,7 +253,6 @@ impl_stack_for_tuple!(
     20, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20
 );
 
-
 // Generic DynWidget implementation for Stack
 impl<T> crate::DynWidget for Stack<T>
 where
@@ -349,7 +348,9 @@ where
                 if area.contains(point) || is_release {
                     let relative_point =
                         Point::new(point.x - area.top_left.x, point.y - area.top_left.y);
-                    if let Some(mut key_touch) = child.handle_touch(relative_point, current_time, is_release) {
+                    if let Some(mut key_touch) =
+                        child.handle_touch(relative_point, current_time, is_release)
+                    {
                         // Translate the KeyTouch rectangle back to parent coordinates
                         key_touch.translate(area.top_left);
                         return Some(key_touch);
@@ -360,6 +361,7 @@ where
         None
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn handle_vertical_drag(&mut self, start_y: Option<u32>, current_y: u32, is_release: bool) {
         let len = self.children.len();
         for i in 0..len {
@@ -369,6 +371,7 @@ where
         }
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn force_full_redraw(&mut self) {
         let len = self.children.len();
         for i in 0..len {

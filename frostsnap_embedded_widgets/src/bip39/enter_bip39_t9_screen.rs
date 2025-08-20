@@ -1,6 +1,6 @@
 use super::{Bip39InputPreview, EnteredWords, T9Keyboard, WordSelector};
-use crate::OneTimeClearHack;
 use crate::super_draw_target::SuperDrawTarget;
+use crate::OneTimeClearHack;
 use crate::{DynWidget, Key, KeyTouch, Widget};
 use alloc::{string::String, vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
@@ -55,7 +55,7 @@ impl EnterBip39T9Screen {
         &mut self,
         target: &mut SuperDrawTarget<D, Rgb565>,
         current_time: crate::Instant,
-    ) {
+    ) -> Result<(), D::Error> {
         // Check for T9 timeout and commit any pending character
         if let Some(ch) = self.t9_keyboard.check_timeout(current_time) {
             self.push_letter_and_autocomplete(ch);
@@ -93,7 +93,7 @@ impl EnterBip39T9Screen {
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Full-screen word selector
-            word_selector.draw(target, current_time);
+            word_selector.draw(target, current_time)?;
         } else {
             // Normal keyboard and input preview
             let _ = self
@@ -120,6 +120,8 @@ impl EnterBip39T9Screen {
 
         // Remove finished touches
         self.touches.retain(|touch| !touch.is_finished());
+
+        Ok(())
     }
 
     pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
@@ -153,8 +155,7 @@ impl EnterBip39T9Screen {
                                 let words_ref = self.bip39_input.get_words_ref();
                                 let mut entered_words =
                                     EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words
-                                    .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
+                                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
                                 self.entered_words = Some(entered_words);
                             }
                         }
@@ -375,8 +376,7 @@ impl crate::DynWidget for EnterBip39T9Screen {
                                 let words_ref = self.bip39_input.get_words_ref();
                                 let mut entered_words =
                                     EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words
-                                    .scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
+                                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
                                 self.entered_words = Some(entered_words);
                             }
                         }
@@ -534,7 +534,7 @@ impl Widget for EnterBip39T9Screen {
             entered_words.draw(target);
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Full-screen word selector
-            word_selector.draw(target, current_time);
+            word_selector.draw(target, current_time)?;
         } else {
             // Normal keyboard and input preview
             self.t9_keyboard

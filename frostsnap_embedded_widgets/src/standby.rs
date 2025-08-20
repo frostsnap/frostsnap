@@ -1,4 +1,4 @@
-use super::{Column, Text, Widget};
+use super::{Column, Text};
 use crate::{
     bitmap::EncodedImage, image::Image, palette::PALETTE, vec_framebuffer::VecFramebuffer, Center,
 };

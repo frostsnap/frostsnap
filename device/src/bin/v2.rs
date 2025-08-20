@@ -262,6 +262,7 @@ impl embedded_hal::digital::ErrorType for NoCs {
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST, SW>
 where
     DT: DrawTarget<Color = Rgb565>,
+    SW: DynWidget,
 {
     display: frostsnap_embedded_widgets::SuperDrawTarget<DT, embedded_graphics::pixelcolor::Rgb565>,
     /// Stack composing root_widget with debug stats overlay

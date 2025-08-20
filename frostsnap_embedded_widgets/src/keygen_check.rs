@@ -1,10 +1,7 @@
-use super::{Column, Container, HoldToConfirm, Padding, Row, Text, Widget};
+use super::{Column, Container, HoldToConfirm, Padding, Row, Text};
 use crate::{palette::PALETTE, MainAxisAlignment};
 use alloc::format;
-use embedded_graphics::{
-    geometry::Size,
-    pixelcolor::Rgb565,
-};
+use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
 use u8g2_fonts::U8g2TextStyle;
 
 type CodeText = Text<U8g2TextStyle<Rgb565>>;
