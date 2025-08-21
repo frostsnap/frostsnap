@@ -44,34 +44,40 @@ class WalletAddColumn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (showNewToFrostsnap)
-          buildTitle(context, text: 'Create Frostsnap Wallet'),
+        if (showNewToFrostsnap) buildTitle(context, text: 'Create wallet'),
         buildCard(
           context,
           action: () => onPressed(AddType.newWallet),
           emphasize: true,
+          isThreeLine: true,
           icon: Icon(Icons.add_rounded, size: iconSize),
-          title: 'Create a new wallet',
+          title: 'Create a multi-sig wallet',
           subtitle: 'Set up a secure wallet using multiple Frostsnap devices',
         ),
-        buildTitle(context, text: 'Recover Frostsnap Wallet'),
+        buildTitle(
+          context,
+          text: 'Restore wallet',
+          subText: 'Select how you\'d like to provide the first key',
+        ),
         buildCard(
           context,
           action: () => onPressed(AddType.recoverWalletWithDevice),
+          isThreeLine: true,
           icon: ImageIcon(
             AssetImage('assets/icons/device2.png'),
             size: iconSize,
           ),
-          title: 'Existing key',
-          subtitle: 'Restore from a Frostsnap device',
+          title: 'Existing device',
+          subtitle: 'Connect a Frostsnap device that already holds a key',
           groupPosition: VerticalButtonGroupPosition.top,
         ),
         buildCard(
           context,
           action: () => onPressed(AddType.recoverWalletWithBackup),
+          isThreeLine: true,
           icon: Icon(Icons.description_outlined, size: iconSize),
-          title: 'Physical backup',
-          subtitle: 'Restore from a recorded key backup',
+          title: 'Load backup',
+          subtitle: 'Use a blank Frostsnap device to load in a physical backup',
           groupPosition: VerticalButtonGroupPosition.bottom,
         ),
       ],
@@ -112,7 +118,9 @@ class WalletAddColumn extends StatelessWidget {
       ),
       subtitle: subText == null ? null : Text(subText),
       trailing: trailing,
-      subtitleTextStyle: theme.textTheme.labelSmall,
+      subtitleTextStyle: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.secondary,
+      ),
     );
   }
 
@@ -124,6 +132,7 @@ class WalletAddColumn extends StatelessWidget {
     VerticalButtonGroupPosition? groupPosition,
     String? subsubtitle,
     bool emphasize = false,
+    bool? isThreeLine,
     Function()? action,
   }) {
     final theme = Theme.of(context);
@@ -140,6 +149,7 @@ class WalletAddColumn extends StatelessWidget {
       leading: icon,
       trailing: Icon(Icons.chevron_right_rounded),
       title: Text(title),
+      isThreeLine: isThreeLine,
       subtitle: Text.rich(
         TextSpan(
           text: subtitle,
@@ -160,7 +170,7 @@ class WalletAddColumn extends StatelessWidget {
       ),
     );
 
-    return Card(
+    return Card.filled(
       color: emphasize ? emphasisColor : color,
       shape: RoundedRectangleBorder(
         borderRadius: switch (groupPosition) {
