@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 final monospaceTextStyle = GoogleFonts.notoSansMono();
 final blurFilter = ImageFilter.blur(sigmaX: 21, sigmaY: 21);
 const seedColor = Color(0xFF1595B2);
+const double iconSize = 20.0;
 
 Color tintSurfaceContainer(
   BuildContext context, {
@@ -113,27 +114,6 @@ String spacedHex(String input, {int groupSize = 4, int? groupsPerLine}) {
     }
   }
   return result.toString();
-}
-
-WidgetSpan buildTag(BuildContext context, {required String text}) {
-  final theme = Theme.of(context);
-  return WidgetSpan(
-    alignment: PlaceholderAlignment.middle,
-    child: Card.filled(
-      color: theme.colorScheme.surfaceContainerLowest.withAlpha(128),
-      margin: const EdgeInsets.all(12.0),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
-        child: Text(
-          text,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.error,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
