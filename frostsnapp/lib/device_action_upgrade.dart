@@ -209,19 +209,18 @@ class DeviceActionUpgradeController with ChangeNotifier {
           content: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 560, minWidth: 280),
             child: success
-                ? Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(text: 'Upgraded device(s) to firmware '),
-                        TextSpan(
-                          text: coord.upgradeFirmwareDigest() ?? '',
-                          style: monospaceTextStyle,
-                        ),
-                      ],
+                ? Card(
+                    margin: EdgeInsets.zero,
+                    child: ListTile(
+                      title: Text('Upgraded to Latest Firmware'),
+                      subtitle: Text(
+                        coord.upgradeFirmwareDigest() ?? '',
+                        style: monospaceTextStyle,
+                      ),
                     ),
                   )
                 : Text(
-                    'Either a device got disconnected mid-upgrade, or you encountered a bug!',
+                    'Either a device was disconnected mid-upgrade, or you have encountered a bug!',
                   ),
           ),
           actions: [

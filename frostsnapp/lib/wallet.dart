@@ -76,11 +76,12 @@ class WalletHome extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: Image(
-              color: theme.colorScheme.outline,
-              height: 48,
-              alignment: Alignment.center,
-              image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
+            child: Center(
+              child: Image(
+                color: theme.colorScheme.primary,
+                height: 75,
+                image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
+              ),
             ),
           ),
           WalletAddColumn(onPressed: makeOnPressed(context)),
@@ -584,24 +585,15 @@ class WalletDrawer extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         List<Widget> children = [
-          SizedBox(
-            height: 64,
+          Container(
             width: 360,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                spacing: 12,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Image(
-                      color: theme.colorScheme.primary,
-                      image: AssetImage('assets/frostsnap-logo-trimmed.png'),
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.all(25),
+              child: Image(
+                color: theme.colorScheme.primary,
+                image: AssetImage('assets/frostsnap-logo-trimmed.png'),
+                fit: BoxFit
+                    .fitWidth, // This will scale to fit the available width
               ),
             ),
           ),
@@ -650,7 +642,20 @@ class WalletDrawer extends StatelessWidget {
                       stream: GlobalStreams.deviceListSubject,
                       builder: (context, snapshot) {
                         final n = snapshot.data?.state.devices.length;
-                        return n == null ? SizedBox.shrink() : Text('$n');
+                        return n == null
+                            ? SizedBox.shrink()
+                            : CircleAvatar(
+                                radius: 12,
+                                backgroundColor: theme.colorScheme.primary,
+                                child: Text(
+                                  '$n',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              );
                       },
                     ),
                     title: Text('Connected Devices'),

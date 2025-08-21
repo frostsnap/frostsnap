@@ -139,7 +139,6 @@ WidgetSpan buildTag(BuildContext context, {required String text}) {
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
   static const headerPadding = EdgeInsets.fromLTRB(20, 12, 20, 16);
   static const animationDuration = Durations.short3;
-
   final Widget? title;
   final Color? backgroundColor;
   final ScrollController? scrollController;
@@ -202,12 +201,6 @@ class _TopBarState extends State<TopBar> {
               child: widget.title ?? const SizedBox.shrink(),
             ),
           ),
-          // Expanded(
-          //   child: Text(
-          //     widget.titleText ?? '',
-          //     style: theme.textTheme.titleLarge,
-          //   ),
-          // ),
         ],
       ),
     );

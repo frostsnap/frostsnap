@@ -44,25 +44,17 @@ class WalletAddColumn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (showNewToFrostsnap) buildTitle(context, text: 'New to Frostsnap?'),
+        if (showNewToFrostsnap)
+          buildTitle(context, text: 'Create Frostsnap Wallet'),
         buildCard(
           context,
           action: () => onPressed(AddType.newWallet),
           emphasize: true,
           icon: Icon(Icons.add_rounded, size: iconSize),
           title: 'Create a new wallet',
-          subtitle: 'Set up a secure wallet with new Frostsnap devices',
+          subtitle: 'Set up a secure wallet using multiple Frostsnap devices',
         ),
-        Tooltip(
-          triggerMode: TooltipTriggerMode.tap,
-          message:
-              'Depending on your wallet’s setup, you may need to add more keys to finish recovery.',
-          child: buildTitle(
-            context,
-            showInfoIcon: true,
-            text: 'Start wallet recovery',
-          ),
-        ),
+        buildTitle(context, text: 'Recover Frostsnap Wallet'),
         buildCard(
           context,
           action: () => onPressed(AddType.recoverWalletWithDevice),
@@ -71,7 +63,7 @@ class WalletAddColumn extends StatelessWidget {
             size: iconSize,
           ),
           title: 'Existing key',
-          subtitle: 'Restore with a Frostsnap device',
+          subtitle: 'Restore from a Frostsnap device',
           groupPosition: VerticalButtonGroupPosition.top,
         ),
         buildCard(
@@ -79,7 +71,7 @@ class WalletAddColumn extends StatelessWidget {
           action: () => onPressed(AddType.recoverWalletWithBackup),
           icon: Icon(Icons.description_outlined, size: iconSize),
           title: 'Physical backup',
-          subtitle: 'Restore with a recorded key backup',
+          subtitle: 'Restore from a recorded key backup',
           groupPosition: VerticalButtonGroupPosition.bottom,
         ),
       ],

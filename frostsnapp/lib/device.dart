@@ -137,9 +137,15 @@ class _DeviceDetailsState extends State<DeviceDetails> {
             children: [
               ListTile(
                 leading: Icon(Icons.warning_rounded),
-                title: Text('This will wipe the key from the device.'),
-                subtitle: Text(
-                  'The device will be rendered blank.\nThis action can not be reverted, and the only way to restore this key is through loading of a backup.',
+                title: Text(
+                  'This will wipe the key from the device.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'The device will be rendered blank.\nThis action can not be reverted, and the only way to restore this key is by loading its backup.',
+                  ),
                 ),
                 isThreeLine: true,
                 textColor: theme.colorScheme.onErrorContainer,
@@ -238,7 +244,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Wallet'),
         subtitle: Text(
-          wallet?.keyName() ?? 'Wallet not recovered',
+          wallet?.keyName() ?? 'Available for recovery',
           style: monospaceTextStyle.copyWith(
             color: hasWallet ? null : theme.disabledColor,
           ),
@@ -277,7 +283,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       ListTile(
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Erase device'),
-        subtitle: Text('Delete all keys'),
+        subtitle: Text('Delete everything from this device'),
         leading: Icon(Icons.delete_forever_rounded),
         trailing: TextButton(
           onPressed: () => showEraseDialog(context, device.id),

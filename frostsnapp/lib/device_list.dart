@@ -376,7 +376,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
           device.name == null
               ? '~'
               : walletName == null
-              ? 'Not recovered'
+              ? 'Wallet available for recovery'
               : walletName,
           style: TextStyle(
             color: hasKey && hasWallet ? null : theme.disabledColor,
@@ -388,7 +388,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
           spacing: 8,
           children: [
             if (needsUpgrade)
-              Icon(Icons.warning_rounded, color: theme.colorScheme.primary),
+              Icon(Icons.system_update_alt, color: theme.colorScheme.primary),
             Icon(Icons.chevron_right),
           ],
         ),
@@ -443,7 +443,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
                           title: Text(
                             'Upgrade $count device${count > 1 ? 's' : ''}',
                           ),
-                          leading: Icon(Icons.warning_rounded),
+                          leading: Icon(Icons.system_update_alt),
                           trailing: Icon(Icons.chevron_right_rounded),
                           contentPadding: EdgeInsets.symmetric(horizontal: 24),
                           textColor: theme.colorScheme.primary,
