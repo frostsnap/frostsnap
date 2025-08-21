@@ -103,6 +103,8 @@ fn main() -> ! {
         config.cpu_clock = CpuClock::max();
         config
     });
+    #[cfg(feature = "stack_guard")]
+    frostsnap_device::stack_guard::enable_stack_guard(peripherals.ASSIST_DEBUG);
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     let timer0 = timg0.timer0;
