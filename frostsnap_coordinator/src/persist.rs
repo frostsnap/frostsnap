@@ -71,11 +71,12 @@ impl<T> Persisted<T> {
         Multi((self, other))
     }
 
-    pub fn new<C>(db: &mut C, params: T::InitParams) -> Result<Self>
+    pub fn new<C>(db: &mut C, params: T::LoadParams) -> Result<Self>
     where
         T: Persist<C>,
     {
-        Ok(Persisted(T::initialize(db, params)?))
+        T::migrate(db)?;
+        Ok(Persisted(T::load(db, params)?))
     }
 }
 
@@ -140,8 +141,11 @@ impl<T> Deref for Persisted<T> {
 
 pub trait Persist<C> {
     type Update;
-    type InitParams;
-    fn initialize(conn: &mut C, params: Self::InitParams) -> Result<Self>
+    type LoadParams;
+
+    fn migrate(conn: &mut C) -> Result<()>;
+
+    fn load(conn: &mut C, params: Self::LoadParams) -> Result<Self>
     where
         Self: Sized;
     fn persist_update(conn: &mut C, update: Self::Update) -> Result<()>;

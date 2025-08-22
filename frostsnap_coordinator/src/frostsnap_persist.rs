@@ -6,6 +6,7 @@ use crate::{
     persist::{BincodeWrapper, Persist, TakeStaged},
 };
 use anyhow::Context;
+use bdk_chain::rusqlite_impl::migrate_schema;
 use frostsnap_core::{
     coordinator::{self, restoration::RestorationMutation},
     DeviceId,
@@ -16,9 +17,28 @@ use tracing::{event, Level};
 
 impl Persist<rusqlite::Connection> for FrostCoordinator {
     type Update = VecDeque<coordinator::Mutation>;
-    type InitParams = ();
+    type LoadParams = ();
 
-    fn initialize(conn: &mut rusqlite::Connection, _: Self::InitParams) -> anyhow::Result<Self>
+    fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
+        const SCHEMA_NAME: &str = "frostsnap_coordinator";
+        const MIGRATIONS: &[&str] = &[
+            // Version 0
+            "CREATE TABLE IF NOT EXISTS fs_coordinator_mutations (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               mutation BLOB NOT NULL,
+               tied_to_key TEXT,
+               tied_to_restoration TEXT,
+               version INTEGER NOT NULL
+             )",
+        ];
+
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, _: Self::LoadParams) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
@@ -101,19 +121,22 @@ impl TakeStaged<VecDeque<coordinator::Mutation>> for FrostCoordinator {
 
 impl Persist<rusqlite::Connection> for Option<ActiveSignSession> {
     type Update = Self;
-    type InitParams = ();
+    type LoadParams = ();
 
-    fn initialize(
-        conn: &mut rusqlite::Connection,
-        _params: Self::InitParams,
-    ) -> anyhow::Result<Self> {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_signing_session_state (
-            state BLOB
-        )",
-            [],
-        )?;
+    fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
+        const SCHEMA_NAME: &str = "frostsnap_active_sign_session";
+        const MIGRATIONS: &[&str] = &[
+            // Version 0
+            "CREATE TABLE IF NOT EXISTS fs_signing_session_state ( state BLOB )",
+        ];
 
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, _params: Self::LoadParams) -> anyhow::Result<Self> {
         let signing_session_state =
             conn.query_row("SELECT state FROM fs_signing_session_state", [], |row| {
                 Ok(row.get::<_, BincodeWrapper<ActiveSignSession>>(0)?.0)
@@ -180,12 +203,25 @@ impl TakeStaged<VecDeque<(DeviceId, String)>> for DeviceNames {
 
 impl Persist<rusqlite::Connection> for DeviceNames {
     type Update = VecDeque<(DeviceId, String)>;
-    type InitParams = ();
+    type LoadParams = ();
 
-    fn initialize(
-        conn: &mut rusqlite::Connection,
-        _params: Self::InitParams,
-    ) -> anyhow::Result<Self>
+    fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
+        const SCHEMA_NAME: &str = "frostsnap_device_names";
+        const MIGRATIONS: &[&str] = &[
+            // Version 0
+            "CREATE TABLE IF NOT EXISTS fs_devices ( \
+                id BLOB PRIMARY KEY, \
+                name TEXT NOT NULL \
+            )",
+        ];
+
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, _params: Self::LoadParams) -> anyhow::Result<Self>
     where
         Self: Sized,
     {

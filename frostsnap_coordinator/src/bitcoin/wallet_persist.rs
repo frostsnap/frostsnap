@@ -11,21 +11,25 @@ use bdk_chain::{
 
 impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
     type Update = WalletIndexedTxGraphChangeSet;
-    type InitParams = ();
+    type LoadParams = ();
 
-    fn initialize(conn: &mut rusqlite::Connection, _: Self::InitParams) -> anyhow::Result<Self> {
+    fn migrate(conn: &mut rusqlite::Connection) -> Result<()> {
         let db_tx = conn.transaction()?;
 
-        // Migrations happen here.
         bdk_chain::tx_graph::ChangeSet::<ConfirmationBlockTime>::init_sqlite_tables(&db_tx)?;
         bdk_chain::indexer::keychain_txout::ChangeSet::init_sqlite_tables(&db_tx)?;
 
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, _: Self::LoadParams) -> anyhow::Result<Self> {
+        let db_tx = conn.transaction()?;
         let mut indexed_tx_graph = Self::default();
         indexed_tx_graph.apply_changeset(WalletIndexedTxGraphChangeSet {
             tx_graph: bdk_chain::tx_graph::ChangeSet::from_sqlite(&db_tx)?,
             indexer: bdk_chain::indexer::keychain_txout::ChangeSet::from_sqlite(&db_tx)?,
         });
-
         db_tx.commit()?;
         Ok(indexed_tx_graph)
     }
@@ -42,14 +46,18 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
 }
 
 impl Persist<rusqlite::Connection> for local_chain::LocalChain {
-    type InitParams = BlockHash;
+    type LoadParams = BlockHash;
     type Update = local_chain::ChangeSet;
 
-    fn initialize(conn: &mut rusqlite::Connection, block_hash: Self::InitParams) -> Result<Self> {
+    fn migrate(conn: &mut rusqlite::Connection) -> Result<()> {
         let db_tx = conn.transaction()?;
-
-        // Migrations happen here.
         bdk_chain::local_chain::ChangeSet::init_sqlite_tables(&db_tx)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, block_hash: Self::LoadParams) -> Result<Self> {
+        let db_tx = conn.transaction()?;
 
         let mut changeset = bdk_chain::local_chain::ChangeSet::from_sqlite(&db_tx)?;
         if let btree_map::Entry::Vacant(entry) = changeset.blocks.entry(0) {

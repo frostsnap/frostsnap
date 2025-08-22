@@ -1,4 +1,5 @@
 use crate::persist::{Persist, ToStringWrapper};
+use bdk_chain::rusqlite_impl::migrate_schema;
 use frostsnap_core::{AccessStructureId, AccessStructureRef, DeviceId, Gist, KeyId};
 use rusqlite::params;
 use std::collections::BTreeMap;
@@ -152,22 +153,28 @@ impl Gist for Mutation {
 
 impl Persist<rusqlite::Connection> for BackupState {
     type Update = Vec<Mutation>;
-    type InitParams = ();
+    type LoadParams = ();
 
-    fn initialize(conn: &mut rusqlite::Connection, _: ()) -> anyhow::Result<Self> {
-        conn.execute(
-            r#"
-            CREATE TABLE IF NOT EXISTS backup_runs (
-                key_id TEXT NOT NULL,
-                access_structure_id TEXT NOT NULL,
-                device_id TEXT NOT NULL,
-                timestamp INTEGER,
-                PRIMARY KEY (key_id, access_structure_id, device_id)
-            )
-            "#,
-            [],
-        )?;
+    fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
+        const SCHEMA_NAME: &str = "frostsnap_backup_state";
+        const MIGRATIONS: &[&str] = &[
+            // Version 0
+            "CREATE TABLE IF NOT EXISTS backup_runs ( \
+                key_id TEXT NOT NULL, \
+                access_structure_id TEXT NOT NULL, \
+                device_id TEXT NOT NULL, \
+                timestamp INTEGER, \
+                PRIMARY KEY (key_id, access_structure_id, device_id) \
+            )",
+        ];
 
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, _: ()) -> anyhow::Result<Self> {
         let mut stmt = conn.prepare(
             r#"
             SELECT key_id, access_structure_id, device_id, timestamp
