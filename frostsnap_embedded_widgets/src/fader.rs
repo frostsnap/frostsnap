@@ -70,8 +70,25 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     }
 
     /// Start fading out over the specified duration
+    /// This function is monotonic - it can only make fades happen faster, never slower
     pub fn start_fade(&mut self, duration_ms: u64, redraw_interval_ms: u64) {
-        // We'll set the actual start time on first draw to avoid timing issues
+        // If already faded out, do nothing
+        if matches!(self.state, FadeState::FadedOut) {
+            return;
+        }
+        
+        // Check if we're already fading out with a start time
+        if let FadeState::FadingOut { start_time: Some(_), duration_ms: current_duration } = &mut self.state {
+            if duration_ms < *current_duration {
+                // Update to shorter duration, keeping the same start time
+                *current_duration = duration_ms;
+                self.redraw_interval_ms = redraw_interval_ms;
+            }
+            // Either updated to shorter duration or keeping existing (if new would be longer)
+            return;
+        }
+        
+        // Starting a new fade out (or switching from fade in/idle to fade out)
         self.state = FadeState::FadingOut {
             start_time: None, // Will be set on first draw
             duration_ms,
@@ -81,7 +98,25 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     }
 
     /// Start fading in over the specified duration
+    /// This function is monotonic - it can only make fades happen faster, never slower
     pub fn start_fade_in(&mut self, duration_ms: u64, redraw_interval_ms: u64) {
+        // If already fully visible (Idle state), do nothing
+        if matches!(self.state, FadeState::Idle) {
+            return;
+        }
+        
+        // Check if we're already fading in with a start time
+        if let FadeState::FadingIn { start_time: Some(_), duration_ms: current_duration } = &mut self.state {
+            if duration_ms < *current_duration {
+                // Update to shorter duration, keeping the same start time
+                *current_duration = duration_ms;
+                self.redraw_interval_ms = redraw_interval_ms;
+            }
+            // Either updated to shorter duration or keeping existing (if new would be longer)
+            return;
+        }
+        
+        // Starting a new fade in (or switching from fade out/idle to fade in)
         self.state = FadeState::FadingIn {
             start_time: None, // Will be set on first draw
             duration_ms,

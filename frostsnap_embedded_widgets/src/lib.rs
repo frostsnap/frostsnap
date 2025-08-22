@@ -2,6 +2,7 @@
 #![allow(clippy::type_complexity)]
 
 #[cfg(feature = "std")]
+#[macro_use]
 extern crate std;
 
 #[macro_use]
@@ -58,7 +59,7 @@ pub mod sign_prompt;
 pub mod sized_box;
 pub mod slide_in_transition;
 pub mod standby;
-pub mod string_buffer;
+pub mod string_fixed;
 mod super_draw_target;
 pub mod swipe_up_chevron;
 pub mod switcher;

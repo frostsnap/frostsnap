@@ -3,7 +3,9 @@ use core::marker::PhantomData;
 
 use embedded_graphics::{geometry::Size, image::Image, pixelcolor::Rgb565, prelude::*};
 use embedded_iconoir::{
-    icons::size24px::actions::Check, prelude::IconoirNewIcon, size32px::navigation::NavArrowLeft,
+    icons::size24px::actions::Check,
+    prelude::{IconoirIcon, IconoirNewIcon},
+    size32px::navigation::NavArrowLeft,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,5 +104,12 @@ impl<I: embedded_graphics::image::ImageDrawable<Color = Rgb565>> crate::Widget f
             self.needs_redraw = false;
         }
         Ok(())
+    }
+}
+
+impl<I: IconoirIcon> IconWidget<embedded_iconoir::Icon<Rgb565, I>> {
+    pub fn set_color(&mut self, color: Rgb565) {
+        self.icon.set_color(color);
+        self.needs_redraw = true;
     }
 }

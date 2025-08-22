@@ -78,6 +78,13 @@ impl<T: AssociatedArray> Row<T> {
             }
         }
     }
+    
+    /// Set all children to have the same flex score
+    pub fn set_all_flex(&mut self, flex: u32) {
+        for score in self.flex_scores.as_mut() {
+            *score = flex;
+        }
+    }
 
     /// Set a gap before the last added widget
     pub fn gap(mut self, gap: u32) -> Self {

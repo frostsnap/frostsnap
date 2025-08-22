@@ -1,6 +1,7 @@
 use crate::{
     palette::PALETTE, DynWidget, Instant, KeyTouch, Sizing, SuperDrawTarget, Widget, WidgetColor,
 };
+use core::ops::{Deref, DerefMut};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -27,6 +28,20 @@ impl<W> OneTimeClearHack<W> {
     }
 
     pub fn inner_mut(&mut self) -> &mut W {
+        &mut self.child
+    }
+}
+
+impl<W> Deref for OneTimeClearHack<W> {
+    type Target = W;
+
+    fn deref(&self) -> &Self::Target {
+        &self.child
+    }
+}
+
+impl<W> DerefMut for OneTimeClearHack<W> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.child
     }
 }

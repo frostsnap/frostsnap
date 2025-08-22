@@ -12,26 +12,38 @@ const FONT_SIZE: Size = Size::new(16, 24);
 
 #[derive(Debug)]
 pub struct Cursor {
-    visible: bool,
     last_toggle: Option<crate::Instant>,
-    pub position: Point,
+    last_draw_rect: Option<Rectangle>,
+    rect: Rectangle,
+    enabled: bool,
 }
 
 impl Cursor {
     pub fn new(position: Point) -> Self {
         Self {
-            visible: true,
             last_toggle: None,
-            position,
+            rect: Rectangle {
+                top_left: position,
+                size: Size::new(FONT_SIZE.width - 4, 2),
+            },
+            last_draw_rect: None,
+            enabled: true,
         }
     }
 
     pub fn set_position(&mut self, new_position: Point) {
-        if self.position != new_position {
-            self.position = new_position;
-            self.visible = true;
+        self.rect.top_left = new_position;
+        self.last_toggle = None;
+    }
+
+    pub fn enabled(&mut self, enabled: bool) {
+        if enabled == self.enabled {
+            return;
+        }
+        if !enabled {
             self.last_toggle = None;
         }
+        self.enabled = enabled;
     }
 }
 
@@ -41,11 +53,7 @@ impl crate::DynWidget for Cursor {
     }
 
     fn sizing(&self) -> crate::Sizing {
-        // Cursor is just a small underline with fixed size
-        crate::Sizing {
-            width: FONT_SIZE.width - 4,
-            height: FONT_SIZE.height,
-        }
+        self.rect.size.into()
     }
 }
 
@@ -60,38 +68,37 @@ impl Widget for Cursor {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        // Update visibility based on time
-        let cursor_rect = Rectangle::new(
-            Point::new(
-                self.position.x,
-                self.position.y + FONT_SIZE.height as i32 - 4,
-            ),
-            Size::new(FONT_SIZE.width - 4, 2),
-        );
-
-        if let Some(last_toggle) = self.last_toggle {
-            // Check if 600ms has passed since last toggle
-            if current_time.saturating_duration_since(last_toggle) >= 600 {
-                self.visible = !self.visible;
-                self.last_toggle = Some(current_time);
-
-                // Draw or clear based on new visibility state
-                if self.visible {
-                    cursor_rect
-                        .into_styled(PrimitiveStyle::with_fill(PALETTE.primary))
-                        .draw(target)?;
-                } else {
-                    cursor_rect
-                        .into_styled(PrimitiveStyle::with_fill(PALETTE.background))
-                        .draw(target)?;
-                }
+        if let Some(last_draw_rect) = self.last_draw_rect {
+            if self.rect != last_draw_rect || !self.enabled {
+                last_draw_rect
+                    .into_styled(PrimitiveStyle::with_fill(PALETTE.background))
+                    .draw(target)?;
+                self.last_draw_rect = None;
             }
-        } else {
-            // First time - draw cursor
+        }
+
+        if !self.enabled {
+            return Ok(());
+        }
+
+        let toggle_time = match self.last_toggle {
+            Some(last_toggle) => current_time.saturating_duration_since(last_toggle) >= 600,
+            None => true,
+        };
+
+        if toggle_time {
+            if let Some(last_draw_rect) = self.last_draw_rect.take() {
+                last_draw_rect
+                    .into_styled(PrimitiveStyle::with_fill(PALETTE.background))
+                    .draw(target)?;
+            } else {
+                self.rect
+                    .into_styled(PrimitiveStyle::with_fill(PALETTE.primary))
+                    .draw(target)?;
+                self.last_draw_rect = Some(self.rect);
+            }
+
             self.last_toggle = Some(current_time);
-            cursor_rect
-                .into_styled(PrimitiveStyle::with_fill(PALETTE.primary))
-                .draw(target)?;
         }
 
         Ok(())

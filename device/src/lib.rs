@@ -12,7 +12,7 @@ extern crate alloc;
 
 pub mod debug_stats;
 pub mod device_config;
-pub mod display_utils;
+pub mod display_init;
 pub mod efuse;
 pub mod esp32_run;
 pub mod flash;

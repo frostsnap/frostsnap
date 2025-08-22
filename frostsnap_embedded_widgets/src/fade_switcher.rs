@@ -61,6 +61,17 @@ where
         }
     }
 
+    pub fn instant_switch_to(&mut self, widget: T) {
+        self.switch_to(widget);
+        if let Some(prev) = &mut self.prev {
+            prev.instant_fade();
+        }
+    }
+
+    pub fn instant_fade(&mut self) {
+        self.current.instant_fade();
+    }
+
     /// Get a reference to the current widget
     pub fn current(&self) -> &T {
         &self.current.child

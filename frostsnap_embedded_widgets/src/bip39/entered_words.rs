@@ -13,24 +13,21 @@ use embedded_graphics::{
 };
 
 use super::{
-    bip39_input_preview::{
-        Bip39Words, Fb, FB_WIDTH, FONT_SIZE, TOP_PADDING, TOTAL_WORDS, VERTICAL_PAD,
-    },
-    submit_backup_button::{SubmitBackupButton, SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_WIDTH},
+    backup_status_bar::{BackupStatusBar, BackupStatus, STATUS_BAR_HEIGHT},
+    bip39_input_preview::{Fb, FB_WIDTH, FONT_SIZE, TOP_PADDING, TOTAL_WORDS, VERTICAL_PAD},
+    ViewState,
 };
 use crate::scroll_bar::{ScrollBar, SCROLLBAR_WIDTH};
 
 const WORD_LIST_LEFT_PAD: i32 = 4; // Left padding for word list
 
-#[derive(Debug)]
 pub struct EnteredWords {
     framebuffer: Rc<RefCell<Fb>>,
-    words: Rc<RefCell<Bip39Words>>,
+    view_state: ViewState,
     scroll_position: i32,
     visible_size: Size,
     needs_redraw: bool,
-    submit_button: SubmitBackupButton,
-    button_needs_redraw: bool,
+    status_bar: BackupStatusBar,
     scroll_bar: ScrollBar,
     first_draw: bool,
 }
@@ -38,26 +35,37 @@ pub struct EnteredWords {
 impl EnteredWords {
     /// Calculate the actual content height based on n_completed
     fn calculate_content_height(&self) -> u32 {
-        let n_completed = self.words.borrow().n_completed();
-        // Show up to n_completed + 1 words (the one being edited)
-        let visible_words = (n_completed + 1).min(TOTAL_WORDS);
-        TOP_PADDING + (visible_words as u32 * (FONT_SIZE.height + VERTICAL_PAD))
+        // Show all rows up to and including the one being edited
+        // view_state.row is the row currently being edited (0 = share index, 1+ = words)
+        let visible_rows = (self.view_state.row + 1).min(TOTAL_WORDS + 1); // +1 to include current row
+        TOP_PADDING + (visible_rows as u32 * (FONT_SIZE.height + VERTICAL_PAD))
     }
 
-    pub fn new(
-        framebuffer: Rc<RefCell<Fb>>,
-        visible_size: Size,
-        words: Rc<RefCell<Bip39Words>>,
-    ) -> Self {
-        // Create submit button (full screen width)
-        let button_rect = Rectangle::new(
-            Point::zero(),
-            Size::new(visible_size.width, SUBMIT_BUTTON_HEIGHT),
-        );
+    pub fn new(framebuffer: Rc<RefCell<Fb>>, visible_size: Size, view_state: ViewState) -> Self {
+        // Get status based on view_state
+        use super::bip39_model::MainViewState;
 
-        // Get the submit button state from words
-        let button_state = words.borrow().get_submit_button_state();
-        let submit_button = SubmitBackupButton::new(button_rect, button_state);
+        let status = match &view_state.main_view {
+            MainViewState::AllWordsEntered { words: _ } => {
+                // TODO: Actually validate checksum
+                // For now, assume it's valid if all words are entered
+                BackupStatus::Valid
+            }
+            _ => {
+                // row 0 is share index, so completed words = row - 1 when row > 0
+                let completed_words = if view_state.row > 0 {
+                    view_state.row - 1
+                } else {
+                    0
+                };
+                BackupStatus::Incomplete {
+                    words_entered: completed_words,
+                }
+            }
+        };
+        let mut status_bar = BackupStatusBar::new(status);
+        use crate::DynWidget;
+        status_bar.set_constraints(Size::new(visible_size.width, STATUS_BAR_HEIGHT));
 
         // Use a fixed thumb size for now
         let thumb_size = crate::Frac::from_ratio(1, 4); // 25% of scrollbar height
@@ -65,24 +73,22 @@ impl EnteredWords {
 
         Self {
             framebuffer: framebuffer.clone(),
-            words: words.clone(),
+            view_state,
             scroll_position: 0,
             visible_size,
             needs_redraw: true,
-            submit_button,
-            button_needs_redraw: true, // Draw button on first frame
+            status_bar,
             scroll_bar,
             first_draw: true,
         }
     }
 
     pub fn scroll_to_word_at_top(&mut self, word_index: usize) {
-        // Get the actual number of visible words
-        let n_completed = self.words.borrow().n_completed();
-        let visible_words = (n_completed + 1).min(TOTAL_WORDS);
+        // Get the actual number of visible rows up to and including current
+        let visible_rows = (self.view_state.row + 1).min(TOTAL_WORDS + 1);
 
         // Clamp the word index to what's actually visible
-        let clamped_word_index = word_index.min(visible_words.saturating_sub(1));
+        let clamped_word_index = word_index.min(visible_rows.saturating_sub(1));
 
         let row_height = FONT_SIZE.height + VERTICAL_PAD;
 
@@ -93,7 +99,7 @@ impl EnteredWords {
         let content_height = self.calculate_content_height();
 
         // Calculate max scroll based on dynamic content
-        let scrollable_height = self.visible_size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32;
+        let scrollable_height = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
         let max_scroll = (content_height as i32)
             .saturating_sub(scrollable_height)
             .max(0);
@@ -110,6 +116,7 @@ impl EnteredWords {
     pub fn draw<D: DrawTarget<Color = Rgb565>>(
         &mut self,
         target: &mut crate::SuperDrawTarget<D, Rgb565>,
+        current_time: crate::Instant,
     ) {
         if !self.needs_redraw {
             return;
@@ -142,7 +149,7 @@ impl EnteredWords {
 
         // Draw words framebuffer in scrollable area only
         if self.scroll_position < content_height as i32 {
-            let scrollable_height = (self.visible_size.height - SUBMIT_BUTTON_HEIGHT) as i32;
+            let scrollable_height = (self.visible_size.height - STATUS_BAR_HEIGHT) as i32;
             let skip_pixels = (self.scroll_position.max(0) as usize) * FB_WIDTH as usize;
             let words_visible_height =
                 (content_height as i32 - self.scroll_position).min(scrollable_height) as usize;
@@ -171,24 +178,16 @@ impl EnteredWords {
             } // fb borrow is dropped here
         }
 
-        // Calculate button position
-        let button_y = bounds.size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32;
+        // Calculate status bar position
+        let status_y = bounds.size.height as i32 - STATUS_BAR_HEIGHT as i32;
 
-        // Draw submit button at fixed position at bottom of screen (full width)
-        let button_rect = Rectangle::new(
-            Point::new(0, button_y),
-            Size::new(SUBMIT_BUTTON_WIDTH, SUBMIT_BUTTON_HEIGHT),
+        // Draw status bar at fixed position at bottom of screen (full width)
+        use crate::Widget;
+        let status_area = Rectangle::new(
+            Point::new(0, status_y),
+            Size::new(bounds.size.width, STATUS_BAR_HEIGHT),
         );
-
-        // Only draw the button if it needs redrawing
-        if self.button_needs_redraw {
-            let mut button_target = target.clone().crop(button_rect);
-            let _ = self.submit_button.draw(
-                &mut button_target,
-                Rectangle::new(Point::zero(), button_rect.size),
-            );
-            self.button_needs_redraw = false;
-        }
+        let _ = self.status_bar.draw(&mut target.clone().crop(status_area), current_time);
 
         // Draw scroll bar
         const SCROLLBAR_MARGIN: u32 = 0; // No margin from right edge
@@ -197,7 +196,7 @@ impl EnteredWords {
 
         let scrollbar_x = bounds.size.width as i32 - (SCROLLBAR_WIDTH + SCROLLBAR_MARGIN) as i32;
         let scrollbar_y = SCROLLBAR_TOP_MARGIN as i32;
-        let scrollbar_height = (bounds.size.height - SUBMIT_BUTTON_HEIGHT)
+        let scrollbar_height = (bounds.size.height - STATUS_BAR_HEIGHT)
             - SCROLLBAR_TOP_MARGIN
             - SCROLLBAR_BOTTOM_MARGIN;
 
@@ -212,27 +211,11 @@ impl EnteredWords {
         self.first_draw = false;
     }
 
-    pub fn update_button_state(&mut self) {
-        // Check if button state needs updating
-        let new_state = self.words.borrow().get_submit_button_state();
-        if self.submit_button.update_state(new_state) {
-            self.button_needs_redraw = true;
-        }
-    }
-
     pub fn handle_touch(&self, point: Point) -> Option<KeyTouch> {
-        // Check submit button first (fixed at bottom, full width)
-        let button_y = self.visible_size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32;
-        if point.y >= button_y {
-            let button_point = Point::new(point.x, point.y - button_y);
-            if self.submit_button.handle_touch(button_point) {
-                let rect = Rectangle::new(
-                    Point::new(0, button_y),
-                    Size::new(self.visible_size.width, SUBMIT_BUTTON_HEIGHT),
-                );
-                return Some(KeyTouch::new(Key::Submit, rect));
-            }
-            return None; // Button area but not a valid touch
+        // Status bar is not interactive, so skip checking it
+        let status_y = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
+        if point.y >= status_y {
+            return None; // Touch is in status bar area
         }
 
         // Check if touch is within the content area
@@ -251,23 +234,22 @@ impl EnteredWords {
                 return None; // Touch is in the top padding area
             };
 
-            // Get the number of visible words
-            let n_completed = self.words.borrow().n_completed();
-            let visible_words = (n_completed + 1).min(TOTAL_WORDS);
+            // Get the number of visible rows up to and including current
+            let visible_rows = (self.view_state.row + 1).min(TOTAL_WORDS + 1);
 
-            if word_index < visible_words {
-                // Check if this word can be edited (should always be true for visible words)
-                let can_edit = self.words.borrow().can_edit_at(word_index);
+            if word_index < visible_rows {
+                // Check if this row can be edited - only completed rows and current row
+                let can_edit = word_index <= self.view_state.row;
 
                 if can_edit {
                     // Create a rectangle for the touched word (includes padding)
                     // Add TOP_PADDING since words are offset in the framebuffer
                     let y = TOP_PADDING as i32 + (word_index as i32 * row_height)
                         - self.scroll_position;
-                    let button_y = self.visible_size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32;
+                    let status_y = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
 
-                    // Clip the rectangle height if it would extend into the button area
-                    let max_height = (button_y - y).max(0) as u32;
+                    // Clip the rectangle height if it would extend into the status area
+                    let max_height = (status_y - y).max(0) as u32;
                     let rect_height = (FONT_SIZE.height + VERTICAL_PAD).min(max_height);
 
                     // Only return a touch if the rectangle has some height
@@ -307,8 +289,8 @@ impl EnteredWords {
         // Get dynamic content height
         let content_height = self.calculate_content_height();
 
-        // Scrollable area is screen height minus button height
-        let scrollable_height = self.visible_size.height as i32 - SUBMIT_BUTTON_HEIGHT as i32;
+        // Scrollable area is screen height minus status bar height
+        let scrollable_height = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
         let max_scroll = (content_height as i32)
             .saturating_sub(scrollable_height)
             .max(0);

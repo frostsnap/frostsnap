@@ -57,8 +57,8 @@ macro_rules! demo_widget {
                 let widget = $crate::bip39::EnterBip39ShareScreen::new($screen_size);
                 $run_macro!(widget);
             }
-            "bip39_t9" => {
-                let widget = $crate::bip39::EnterBip39T9Screen::new($screen_size);
+            "numeric_keyboard" => {
+                let widget = $crate::bip39::NumericKeyboard::new();
                 $run_macro!(widget);
             }
             "confirm_touch" | "hold_confirm" | "hold_checkmark" | "hold_to_confirm" => {

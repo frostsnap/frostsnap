@@ -105,6 +105,13 @@ impl<T: AssociatedArray> Column<T> {
             }
         }
     }
+    
+    /// Set all children to have the same flex score
+    pub fn set_all_flex(&mut self, flex: u32) {
+        for score in self.flex_scores.as_mut() {
+            *score = flex;
+        }
+    }
 }
 
 impl<T: WidgetTuple> Column<T> {

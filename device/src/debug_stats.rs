@@ -1,7 +1,3 @@
-#[cfg(feature = "debug_mem")]
-use alloc::string::ToString;
-#[cfg(feature = "debug_mem")]
-use core::fmt::Write;
 use embedded_graphics::pixelcolor::Rgb565;
 #[cfg(not(any(feature = "debug_fps", feature = "debug_mem")))]
 use embedded_graphics::prelude::Size;
@@ -20,7 +16,7 @@ use frostsnap_embedded_widgets::SizedBox;
 use frostsnap_embedded_widgets::Widget;
 #[cfg(feature = "debug_mem")]
 use frostsnap_embedded_widgets::{
-    prelude::*, string_buffer::StringBuffer, text::Text, DynWidget, Instant, Switcher, FONT_SMALL,
+    prelude::*, string_fixed::StringFixed, text::Text, DynWidget, Instant, Switcher, FONT_SMALL,
 };
 #[cfg(feature = "debug_mem")]
 use u8g2_fonts::U8g2TextStyle;
@@ -32,8 +28,11 @@ pub fn create_debug_stats() -> impl Widget<Color = Rgb565> {
         let fps = Fps::new(500);
         let memory = MemoryIndicator::new();
 
-        Row::new((fps, memory))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceAround)
+        Row::builder()
+            .push(fps)
+            .push(memory)
+            .gap(10)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
     }
 
@@ -54,18 +53,16 @@ pub fn create_debug_stats() -> impl Widget<Color = Rgb565> {
     }
 }
 
-// Constants for memory text dimensions - "Mem: 262144" needs more space
 #[cfg(feature = "debug_mem")]
-const MEM_MAX_CHARS: usize = 15; // Increased for full byte count
+const MEM_TEXT_SIZE: usize = 13; // Size for "U:123456 F:123456"
 
 #[cfg(feature = "debug_mem")]
-type MemText = Text<U8g2TextStyle<Rgb565>>;
+type MemText = Text<U8g2TextStyle<Rgb565>, StringFixed<MEM_TEXT_SIZE>>;
 
 /// Memory usage indicator component that polls esp_alloc directly
 #[cfg(feature = "debug_mem")]
 pub struct MemoryIndicator {
-    display: Switcher<MemText>,
-    last_used: usize,
+    display: Container<Switcher<MemText>>,
     last_draw_time: Option<Instant>,
 }
 
@@ -73,13 +70,13 @@ pub struct MemoryIndicator {
 impl MemoryIndicator {
     fn new() -> Self {
         // Use Cyan color directly for Rgb565 text
+
         let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
-        let initial_text = Text::new("Mem: 0".to_string(), text_style);
-        let display = Switcher::new(initial_text);
+        let initial_text = Text::new_with(StringFixed::from_str("XXXXXXXXXXXX"), text_style);
+        let display = Container::new(Switcher::new(initial_text));
 
         Self {
             display,
-            last_used: 0,
             last_draw_time: None,
         }
     }
@@ -131,23 +128,19 @@ impl Widget for MemoryIndicator {
         if should_update {
             self.last_draw_time = Some(current_time);
 
-            // Get heap stats from esp_alloc
-            // Note: The exact API might vary, using a simple approach for now
-            let used = 0; // TODO: Get actual heap usage from esp_alloc
+            // Get heap used and free from esp_alloc
+            let used = esp_alloc::HEAP.used();
+            let free = esp_alloc::HEAP.free();
 
-            // Only update if value changed
-            if used != self.last_used {
-                self.last_used = used;
+            // Format the memory stats into StringBuffer
+            use core::fmt::Write;
+            let mut buf = StringFixed::<MEM_TEXT_SIZE>::new();
+            let _ = write!(&mut buf, "{}/{}", used, free);
 
-                // Format the memory usage
-                let mut buf = StringBuffer::<MEM_MAX_CHARS>::new();
-                let _ = write!(&mut buf, "Mem: {}", used);
-
-                // Create a new text widget with the updated text
-                let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
-                let text_widget = Text::new(buf.as_str().to_string(), text_style);
-                self.display.switch_to(text_widget);
-            }
+            // Create a new text widget with the updated text
+            let text_style = U8g2TextStyle::new(FONT_SMALL, Rgb565::CYAN);
+            let text_widget = Text::new_with(buf, text_style);
+            self.display.child.switch_to(text_widget);
         }
 
         // Always draw the display (it handles its own dirty tracking)

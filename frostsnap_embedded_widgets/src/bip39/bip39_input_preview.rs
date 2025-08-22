@@ -1,10 +1,17 @@
-use super::bip39_model::{FramebufferMutation, ViewState};
+use super::bip39_model::{FramebufferMutation, MainViewState, ViewState};
 use crate::cursor::Cursor;
 use crate::palette::PALETTE;
 use crate::progress_bars::ProgressBars;
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{icons, DynWidget, Key, KeyTouch, Widget, FONT_LARGE};
-use alloc::{boxed::Box, rc::Rc, string::ToString};
+use crate::text::Text as TextWidget;
+use crate::{
+    icons, Align, Alignment as WidgetAlignment, Container, DynWidget, FadeSwitcher, Key, KeyTouch,
+    Widget, FONT_LARGE, FONT_MED,
+};
+use alloc::{
+    rc::Rc,
+    string::{String, ToString},
+};
 use core::cell::RefCell;
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
@@ -20,6 +27,9 @@ use embedded_graphics::{
 };
 use frostsnap_backup::bip39_words::FROSTSNAP_BACKUP_WORDS;
 use u8g2_fonts::U8g2TextStyle;
+
+// Type alias for the placeholder text widget
+type PlaceholderText = Container<Align<TextWidget<U8g2TextStyle<Rgb565>>>>;
 
 // Constants for vertical BIP39 word display
 pub(super) const TOTAL_WORDS: usize = FROSTSNAP_BACKUP_WORDS;
@@ -44,7 +54,6 @@ pub(super) type Fb = Framebuffer<
     { buffer_size::<Gray2>(FB_WIDTH as usize, FB_HEIGHT as usize) },
 >;
 
-#[derive(Debug)]
 pub struct Bip39InputPreview {
     pub(super) area: Rectangle,
     preview_rect: Rectangle,
@@ -54,6 +63,9 @@ pub struct Bip39InputPreview {
     framebuf: Bip39Framebuf,
     init_draw: bool,
     cursor: Cursor,
+    hint_switcher: FadeSwitcher<PlaceholderText>,
+    placeholder_text: Option<PlaceholderText>,
+    current_view_state: Option<ViewState>,
 }
 
 impl Bip39InputPreview {
@@ -87,6 +99,26 @@ impl Bip39InputPreview {
         progress.set_constraints(progress_rect.size);
         let framebuf = Bip39Framebuf::new();
 
+        // Initialize hint switcher with empty text in a fixed-size container
+        // Offset by index chars + space to align with text entry area
+        let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as u32;
+        let text_area_size = Size::new(
+            preview_rect.size.width.saturating_sub(text_offset),
+            preview_rect.size.height,
+        );
+
+        let hint_text = TextWidget::new("", U8g2TextStyle::new(FONT_MED, PALETTE.text_disabled))
+            .with_alignment(Alignment::Center);
+        let aligned_text = Align::new(hint_text).alignment(WidgetAlignment::Center);
+        let mut hint_container = Container::with_size(
+            aligned_text,
+            text_area_size, // Size of actual text entry area
+        );
+        hint_container.set_constraints(text_area_size);
+        // Use FadeSwitcher with 300ms fade-in, 0ms fade-out
+        let mut hint_switcher = FadeSwitcher::new(hint_container, 300, 0, PALETTE.background);
+        hint_switcher.set_constraints(text_area_size);
+
         Self {
             area,
             preview_rect,
@@ -96,6 +128,9 @@ impl Bip39InputPreview {
             framebuf,
             init_draw: false,
             cursor: Cursor::new(Point::zero()), // Will update position in draw
+            hint_switcher,
+            placeholder_text: None,
+            current_view_state: None,
         }
     }
 
@@ -127,16 +162,73 @@ impl Bip39InputPreview {
         self.framebuf.fast_forward_scrolling();
     }
 
+    pub fn is_scrolling(&self) -> bool {
+        self.framebuf.is_scrolling()
+    }
+
     pub fn update_from_view_state(&mut self, view_state: &ViewState) {
+        // Store the current view state
+        self.current_view_state = Some(view_state.clone());
         // Update cursor position based on view state
         let x = ((INDEX_CHARS + SPACE_BETWEEN) + view_state.cursor_pos) * FONT_SIZE.width as usize;
-        // Fixed Y position - cursor always appears at the same vertical position
-        let y = self.preview_rect.size.height as i32 / 2 - FONT_SIZE.height as i32 / 2;
+        // Fixed Y position - cursor appears at bottom of text (centered vertically, then add font height)
+        let y = self.preview_rect.size.height as i32 / 2 - FONT_SIZE.height as i32 / 2
+            + FONT_SIZE.height as i32
+            - 2;
         self.cursor.set_position(Point::new(x as i32, y));
+
+        // Enable cursor when there's text but row isn't complete (not in word selection)
+        let cursor_enabled = match &view_state.main_view {
+            MainViewState::EnterShareIndex { current } => !current.is_empty(),
+            MainViewState::EnterWord { .. } => view_state.cursor_pos > 0,
+            MainViewState::WordSelect { .. } => false, // No cursor during word selection
+            MainViewState::AllWordsEntered { .. } => false, // No cursor when all words entered
+        };
+        self.cursor.enabled(cursor_enabled);
 
         // Update scroll position to show the current row
         self.framebuf
             .update_scroll_position_for_row(view_state.row, false);
+
+        if self.is_scrolling() {
+            self.hint_switcher.instant_fade();
+        }
+
+        // Update placeholder text based on whether the current row is empty
+        let hint_text = match &view_state.main_view {
+            MainViewState::EnterShareIndex { current } if current.is_empty() => {
+                Some(String::from("enter\nkey index"))
+            }
+            MainViewState::EnterWord { .. } if view_state.cursor_pos == 0 => {
+                // view_state.row is 0 for share index, 1 for word 1, etc.
+                Some(format!("enter\nword {}", view_state.row))
+            }
+            MainViewState::AllWordsEntered { .. } => {
+                self.hint_switcher.instant_fade();
+                None
+            }
+            _ => {
+                self.hint_switcher.instant_fade();
+                None
+            }
+        };
+
+        self.placeholder_text = hint_text.map(|text| {
+            // Calculate text area size (same as in new())
+            let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as u32;
+            let text_area_size = Size::new(
+                self.preview_rect.size.width.saturating_sub(text_offset),
+                self.preview_rect.size.height,
+            );
+
+            let text_widget =
+                TextWidget::new(text, U8g2TextStyle::new(FONT_MED, PALETTE.surface_variant))
+                    .with_alignment(Alignment::Center);
+            let aligned = Align::new(text_widget).alignment(WidgetAlignment::Center);
+            let mut container = Container::with_size(aligned, text_area_size);
+            container.set_constraints(text_area_size);
+            container
+        });
     }
 
     fn draw_cursor<D: DrawTarget<Color = Rgb565>>(
@@ -168,8 +260,16 @@ impl crate::DynWidget for Bip39InputPreview {
         if self.backspace_rect.contains(point) {
             Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
         } else if self.preview_rect.contains(point) {
-            // Tap on the text preview area triggers the entered words view
-            Some(KeyTouch::new(Key::ShowEnteredWords, self.preview_rect))
+            // Only allow showing entered words if the current state permits it
+            if let Some(ref view_state) = self.current_view_state {
+                if view_state.can_show_entered_words() {
+                    Some(KeyTouch::new(Key::ShowEnteredWords, self.preview_rect))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -210,11 +310,37 @@ impl Widget for Bip39InputPreview {
             self.init_draw = true;
         }
 
-        // Always draw the framebuffer (it has its own redraw logic)
+        let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as i32;
+        let hint_rect = Rectangle::new(
+            Point::new(
+                self.preview_rect.top_left.x + text_offset,
+                self.preview_rect.top_left.y,
+            ),
+            Size::new(
+                self.preview_rect
+                    .size
+                    .width
+                    .saturating_sub(text_offset as u32),
+                self.preview_rect.size.height,
+            ),
+        );
+
+        // Draw hint text overlay only when not scrolling
+        if !self.is_scrolling() {
+            // Switch to placeholder text if we have one, otherwise empty container
+            if let Some(placeholder) = self.placeholder_text.take() {
+                self.hint_switcher.switch_to(placeholder);
+            }
+        }
+
+        // Draw hint text offset to alin with actual text entry area
+        self.hint_switcher
+            .draw(&mut target.clone().crop(hint_rect), current_time)?;
+
         self.framebuf
             .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
 
-        // Draw cursor if editing
+        // Draw cursor when enabled (text entered but row not complete)
         let _ = self.draw_cursor(&mut target.clone().crop(self.preview_rect), current_time);
 
         // Always draw progress bars (they have their own redraw logic)
@@ -225,7 +351,6 @@ impl Widget for Bip39InputPreview {
     }
 }
 
-#[derive(Debug)]
 pub struct Bip39Framebuf {
     framebuffer: Rc<RefCell<Fb>>,
     current_position: u32, // Current vertical scroll position
@@ -239,7 +364,7 @@ pub struct Bip39Framebuf {
 impl Bip39Framebuf {
     pub fn new() -> Self {
         let fb = Rc::new(RefCell::new(Fb::new()));
-        
+
         // Clear the framebuffer
         let _ = fb.borrow_mut().clear(Gray2::BLACK);
 
@@ -352,7 +477,7 @@ impl Bip39Framebuf {
         // Calculate position to center the row in the viewport
         let row_height = FONT_SIZE.height + VERTICAL_PAD;
         let row_position = TOP_PADDING + (row as u32 * row_height);
-        
+
         // To center the row vertically: we want the row to appear at viewport_height/2
         // The row's center is at row_position + row_height/2
         // So scroll position should be: (row_position + row_height/2) - viewport_height/2
@@ -376,6 +501,11 @@ impl Bip39Framebuf {
         self.redraw = self.current_position != self.target_position;
         self.current_position = self.target_position;
         self.animation_start_time = None;
+    }
+
+    /// Check if the framebuffer is currently scrolling
+    pub fn is_scrolling(&self) -> bool {
+        self.current_position != self.target_position
     }
 }
 

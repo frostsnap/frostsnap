@@ -52,12 +52,12 @@ impl ProgressBars {
             if i < new_progress {
                 // This bar should be "on" - set to green
                 if container.fill_color() != Some(PALETTE.tertiary) {
-                    container.set_fill_color(Some(PALETTE.tertiary));
+                    container.set_fill(PALETTE.tertiary);
                 }
             } else {
                 // This bar should be "off" - set to gray
                 if container.fill_color() != Some(PALETTE.surface_variant) {
-                    container.set_fill_color(Some(PALETTE.surface_variant));
+                    container.set_fill(PALETTE.surface_variant);
                 }
             }
         }

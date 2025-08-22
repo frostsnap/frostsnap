@@ -10,7 +10,7 @@ pub enum Key {
     EditWord(usize),
     NavBack,
     NavForward,
-    Submit,
+    ShowEnteredWords,
 }
 
 pub struct KeyTouch {
@@ -55,7 +55,7 @@ impl KeyTouch {
         }
         self.let_go = Some(current_time);
         // Start fade out animation
-        self.widget.start_fade(500, 50);
+        self.widget.start_fade(500, 10);
         Some(self.key)
     }
 

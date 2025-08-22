@@ -19,8 +19,8 @@ const UNDERLINE_DISTANCE: i32 = 2;
 
 /// A simple text widget that renders text at a specific position
 #[derive(Clone)]
-pub struct Text<S: CharacterStyle> {
-    text: String,
+pub struct Text<S: CharacterStyle, T = String> {
+    text: T,
     character_style: S,
     text_style: TextStyle,
     underline_color: Option<<S as CharacterStyle>::Color>,
@@ -28,18 +28,18 @@ pub struct Text<S: CharacterStyle> {
     cached_size: Size,
 }
 
-impl<S, C> Text<S>
+impl<S, C> Text<S, String>
 where
     C: PixelColor,
     S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {
-    pub fn new<T: Into<String>>(text: T, character_style: S) -> Self {
+    pub fn new<U: Into<String>>(text: U, character_style: S) -> Self {
+        let text = text.into();
         let text_style = TextStyleBuilder::new().baseline(Baseline::Top).build();
-        let text_string = text.into();
 
         // Calculate size once during creation
         let text_obj = EgText::with_text_style(
-            &text_string,
+            text.as_ref(),
             Point::zero(),
             character_style.clone(),
             text_style,
@@ -48,7 +48,37 @@ where
         let cached_size = bbox.size;
 
         Self {
-            text: text_string,
+            text,
+            character_style,
+            text_style,
+            underline_color: None,
+            drawn: false,
+            cached_size,
+        }
+    }
+}
+
+impl<S, C, T> Text<S, T>
+where
+    T: AsRef<str>,
+    C: PixelColor,
+    S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
+{
+    pub fn new_with(text: T, character_style: S) -> Self {
+        let text_style = TextStyleBuilder::new().baseline(Baseline::Top).build();
+
+        // Calculate size once during creation
+        let text_obj = EgText::with_text_style(
+            text.as_ref(),
+            Point::zero(),
+            character_style.clone(),
+            text_style,
+        );
+        let bbox = text_obj.bounding_box();
+        let cached_size = bbox.size;
+
+        Self {
+            text,
             character_style,
             text_style,
             underline_color: None,
@@ -58,13 +88,13 @@ where
     }
 
     pub fn text(&self) -> &str {
-        &self.text
+        self.text.as_ref()
     }
 
     /// Create the EgText object at the given position
     fn create_eg_text(&self) -> EgText<'_, S> {
         EgText::with_text_style(
-            &self.text,
+            self.text.as_ref(),
             Point::zero(),
             self.character_style.clone(),
             self.text_style,
@@ -88,10 +118,23 @@ where
         self.cached_size.height += UNDERLINE_DISTANCE as u32 + 1;
         self
     }
+    
+    pub fn set_character_style(&mut self, character_style: S) {
+        self.character_style = character_style;
+        // Recalculate size with new character style
+        let text_obj = self.create_eg_text();
+        let bbox = text_obj.bounding_box();
+        self.cached_size = bbox.size;
+        if self.underline_color.is_some() {
+            self.cached_size.height += UNDERLINE_DISTANCE as u32 + 1;
+        }
+        self.drawn = false;
+    }
 }
 
-impl<S, C> crate::DynWidget for Text<S>
+impl<S, C, T> crate::DynWidget for Text<S, T>
 where
+    T: AsRef<str> + Clone,
     C: PixelColor,
     S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {
@@ -121,8 +164,9 @@ where
     }
 }
 
-impl<S, C> Widget for Text<S>
+impl<S, C, T> Widget for Text<S, T>
 where
+    T: AsRef<str> + Clone,
     C: crate::WidgetColor,
     S: CharacterStyle<Color = C> + TextRenderer<Color = C> + Clone,
 {

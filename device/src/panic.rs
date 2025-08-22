@@ -1,106 +1,86 @@
-/// A fixed length string that doesn't require allocations.
+use crate::init_display;
+use embedded_graphics::{prelude::*, text::Alignment};
+use frostsnap_embedded_widgets::string_fixed::StringFixed;
+
+const FONT_WIDTH: u32 = 6;
+
+/// Unified panic handler for Frostsnap devices
 ///
-/// Useful in panic handlers. If more text is written than it can fit it just silently overflows.
-pub struct PanicBuffer<const N: usize> {
-    buffer: [u8; N],
-    buf_len: usize,
-}
-
-impl<const N: usize> Default for PanicBuffer<N> {
-    fn default() -> Self {
-        Self {
-            buffer: [0u8; N],
-            buf_len: 0,
-        }
-    }
-}
-
-impl<const N: usize> PanicBuffer<N> {
-    pub fn as_str(&self) -> &str {
-        match core::str::from_utf8(&self.buffer[..self.buf_len]) {
-            Ok(string) => string,
-            Err(_) => "failed to render panic",
-        }
-    }
-
-    fn head(&mut self) -> &mut [u8] {
-        &mut self.buffer[self.buf_len..]
-    }
-}
-
-impl<const N: usize> core::fmt::Write for PanicBuffer<N> {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let len = self.head().len().min(s.len());
-        self.head()[..len].copy_from_slice(&s.as_bytes()[..len]);
-        self.buf_len += len;
-        Ok(())
-    }
-
-    fn write_char(&mut self, c: char) -> core::fmt::Result {
-        let head = self.head();
-        if !head.is_empty() {
-            head[0] = c as u8;
-            self.buf_len += 1;
-        }
-        Ok(())
-    }
-}
-
-/// Display an error message on the screen with a red header
-pub fn error_print<DT>(display: &mut DT, error: impl AsRef<str>)
-where
-    DT: embedded_graphics::draw_target::DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>
-        + embedded_graphics::prelude::OriginDimensions,
-{
-    use embedded_graphics::{
-        geometry::{Point, Size},
-        pixelcolor::Rgb565,
-        prelude::*,
-        primitives::{PrimitiveStyleBuilder, Rectangle},
-        text::{Alignment, Text},
+/// This function handles panics by displaying the panic information on the screen
+/// with a green background and white text.
+pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
+    use core::fmt::Write;
+    use embedded_graphics::pixelcolor::Rgb565;
+    use esp_hal::{
+        delay::Delay,
+        gpio::{Level, Output},
+        peripherals::Peripherals,
     };
-    use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
-    use frostsnap_embedded_widgets::palette::PALETTE;
 
-    let y = 25;
-    let header_area = Rectangle::new(Point::zero(), Size::new(display.size().width, y));
-    let _ = header_area
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(PALETTE.error)
-                .build(),
-        )
-        .draw(display);
+    let peripherals = unsafe { Peripherals::steal() };
 
-    let error_header_text = "Oh no, panic!";
-    let _ = Text::with_alignment(
-        error_header_text,
-        Point::new((display.size().width / 2) as i32, 17),
-        embedded_graphics::mono_font::MonoTextStyle::new(
-            &embedded_graphics::mono_font::ascii::FONT_9X15,
-            Rgb565::WHITE,
-        ),
-        Alignment::Center,
+    let mut bl = Output::new(peripherals.GPIO1, Level::Low);
+
+    let mut delay = Delay::new();
+
+    let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
+
+    let _ = display.clear(Rgb565::CSS_DARK_BLUE);
+
+    // Draw red ERROR header
+    use embedded_graphics::mono_font::{ascii::FONT_10X20, MonoTextStyle};
+    use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle};
+    use embedded_graphics::text::{Text, TextStyle};
+
+    let error_rect = Rectangle::new(Point::new(0, 0), Size::new(240, 40));
+    let _ = error_rect
+        .into_styled(PrimitiveStyleBuilder::new().fill_color(Rgb565::RED).build())
+        .draw(&mut display);
+
+    let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+    let _ = Text::with_text_style(
+        "ERROR",
+        Point::new(95, 25), // Centered horizontally
+        text_style,
+        TextStyle::default(),
     )
-    .draw(display);
+    .draw(&mut display);
 
-    let textbox_style = TextBoxStyleBuilder::new()
-        .alignment(HorizontalAlignment::Justified)
-        .build();
+    let mut panic_buf = StringFixed::<512>::with_wrap((240 / FONT_WIDTH) as usize);
 
-    let body_area = Rectangle::new(
-        Point::new(10, y as i32 + 5),
-        Size::new(display.size().width - 20, display.size().height - y - 10),
-    );
+    let _ = match info.location() {
+        Some(location) => write!(
+            &mut panic_buf,
+            "{}:{} {}",
+            location.file().split('/').next_back().unwrap_or(""),
+            location.line(),
+            info
+        ),
+        None => write!(&mut panic_buf, "{}", info),
+    };
 
-    let _ = TextBox::with_textbox_style(
-        error.as_ref(),
-        body_area,
+    // Draw panic text
+    let _ = embedded_graphics::text::Text::with_alignment(
+        panic_buf.as_str(),
+        embedded_graphics::geometry::Point::new(0, 50), // Move panic text below header
         embedded_graphics::mono_font::MonoTextStyle::new(
             &embedded_graphics::mono_font::ascii::FONT_6X10,
-            PALETTE.on_background,
+            Rgb565::CSS_WHITE,
         ),
-        textbox_style,
+        Alignment::Left,
     )
-    .draw(display);
+    .draw(&mut display);
+
+    // Draw contact info at bottom
+    let contact_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_WHITE);
+    let _ = Text::with_text_style(
+        "Contact\nsupport@frostsnap.com",
+        Point::new(120, 240), // Centered horizontally
+        contact_style,
+        TextStyle::with_alignment(Alignment::Center),
+    )
+    .draw(&mut display);
+
+    bl.set_high();
+    loop {}
 }

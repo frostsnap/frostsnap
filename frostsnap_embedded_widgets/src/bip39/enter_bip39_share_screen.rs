@@ -1,22 +1,22 @@
-use super::{AlphabeticKeyboard, Bip39InputPreview, EnteredWords, WordSelector};
+use super::{
+    AlphabeticKeyboard, Bip39InputPreview, Bip39Model, EnteredWords, MainViewState,
+    NumericKeyboard, WordSelector,
+};
 use crate::super_draw_target::SuperDrawTarget;
 use crate::OneTimeClearHack;
 use crate::{DynWidget, Key, KeyTouch, Widget};
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
-use frostsnap_backup::bip39_words::{self, FROSTSNAP_BACKUP_WORDS};
 
-pub const MAX_WORD_SELECTOR_WORDS: usize = 8;
-
-#[derive(Debug)]
 pub struct EnterBip39ShareScreen {
+    model: Bip39Model,
+    numeric_keyboard: Option<OneTimeClearHack<NumericKeyboard>>,
     alphabetic_keyboard: AlphabeticKeyboard,
     word_selector: Option<OneTimeClearHack<WordSelector>>,
     entered_words: Option<EnteredWords>,
     bip39_input: Bip39InputPreview,
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
-    mnemonic_complete: bool,
     needs_redraw: bool,
     size: Size,
 }
@@ -33,262 +33,29 @@ impl EnterBip39ShareScreen {
 
         let alphabetic_keyboard = AlphabeticKeyboard::new(keyboard_rect.size.height);
         let bip39_input = Bip39InputPreview::new(input_display_rect);
+        let model = Bip39Model::new();
 
         let mut screen = Self {
+            model,
+            numeric_keyboard: None,
             alphabetic_keyboard,
             word_selector: None,
             entered_words: None,
             bip39_input,
             touches: vec![],
             keyboard_rect,
-            mnemonic_complete: false,
             needs_redraw: true,
             size: area,
         };
 
-        // Initialize valid keys for empty input
-        screen.update_valid_keys();
+        screen.update_from_model();
         screen
     }
 
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(
-        &mut self,
-        target: &mut SuperDrawTarget<D, Rgb565>,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        if self.mnemonic_complete {
-            // Only draw if we just transitioned to complete state
-            if self.needs_redraw {
-                // Draw green checkmark in the center
-                use crate::icons::Icon;
-                use crate::palette::PALETTE;
-                use embedded_graphics::primitives::PrimitiveStyleBuilder;
-                use embedded_iconoir::size48px::actions::Check;
-
-                // Clear background
-                let bounds = target.bounding_box();
-                let _ = bounds
-                    .into_styled(
-                        PrimitiveStyleBuilder::new()
-                            .fill_color(PALETTE.background)
-                            .build(),
-                    )
-                    .draw(target);
-
-                // Draw large green checkmark in center
-                Icon::<Check>::default()
-                    .with_color(PALETTE.tertiary)
-                    .with_center(bounds.center())
-                    .draw(target);
-
-                self.needs_redraw = false;
-            }
-        } else if let Some(ref mut entered_words) = self.entered_words {
-            // Full-screen entered words view
-            // Update button state before drawing
-            entered_words.update_button_state();
-            entered_words.draw(target);
-        } else if let Some(ref mut word_selector) = self.word_selector {
-            // Draw input preview at top
-            let input_display_rect = Rectangle::new(
-                Point::zero(),
-                Size::new(target.bounding_box().size.width, 60),
-            );
-            let _ = self
-                .bip39_input
-                .draw(&mut target.clone().crop(input_display_rect), current_time);
-
-            // Draw word selector in keyboard area
-            word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
-        } else {
-            // Normal keyboard and input preview
-            let _ = self
-                .alphabetic_keyboard
-                .draw(&mut target.clone().crop(self.keyboard_rect), current_time);
-
-            // Draw BIP39 input preview
-            let input_display_rect = Rectangle::new(
-                Point::zero(),
-                Size::new(target.bounding_box().size.width, 60),
-            );
-            let _ = self
-                .bip39_input
-                .draw(&mut target.clone().crop(input_display_rect), current_time);
-        }
-
-        // Draw touches and clean up
-        // First draw all touches
-        for touch in &mut self.touches {
-            touch.draw(target, current_time);
-        }
-
-        // Then remove finished ones
-        self.touches.retain(|touch| !touch.is_finished());
-
-        Ok(())
-    }
-
-    pub fn handle_touch(&mut self, point: Point, current_time: crate::Instant, lift_up: bool) {
-        if lift_up {
-            // Otherwise process normal key release
-            // Find the last non-cancelled touch
-            if let Some(active_touch) = self.touches.iter_mut().rev().find(|t| !t.has_been_let_go())
-            {
-                if let Some(key) = active_touch.let_go(current_time) {
-                    match key {
-                        Key::Keyboard('⌫') => {
-                            // Backspace
-                            self.bip39_input.backspace();
-                            self.update_valid_keys();
-                        }
-                        Key::Keyboard(c) if c.is_alphabetic() => {
-                            self.push_letter_and_autocomplete(c);
-                        }
-                        Key::WordSelector(word) => {
-                            // Use unified autocomplete method
-                            self.bip39_input.autocomplete_word(word);
-                            self.update_valid_keys();
-
-                            // If we now have all 25 words entered, show EnteredWords view
-                            if self.bip39_input.word_count() == FROSTSNAP_BACKUP_WORDS {
-                                self.clear_touches();
-                                let framebuffer = self.bip39_input.get_framebuffer();
-                                let words_ref = self.bip39_input.get_words_ref();
-                                let mut entered_words =
-                                    EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
-                                self.entered_words = Some(entered_words);
-                            }
-                        }
-                        Key::EditWord(word_index) => {
-                            // If EditWord(0) is from input preview tap, show entered words view
-                            // Otherwise, it's from EnteredWords view, so edit specific word
-                            if word_index == 0 && self.entered_words.is_none() {
-                                self.clear_touches();
-
-                                // Show EnteredWords view, scrolled to show current word at bottom
-                                let framebuffer = self.bip39_input.get_framebuffer();
-                                let current_word_index = self.bip39_input.get_current_word_index();
-                                let words_ref = self.bip39_input.get_words_ref();
-                                let mut entered_words =
-                                    EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words.scroll_to_word_at_top(current_word_index);
-                                self.entered_words = Some(entered_words);
-                            } else if self.entered_words.is_some() {
-                                // Exit EnteredWords view and start editing the selected word
-                                // Only allow if the word can be edited
-                                if self.bip39_input.can_edit_word_at_index(word_index) {
-                                    self.entered_words = None;
-                                    self.clear_touches();
-                                    self.bip39_input.set_editing_word(word_index);
-                                    self.update_valid_keys();
-                                    self.bip39_input.force_redraw();
-                                }
-                            }
-                        }
-                        Key::NavBack => {
-                            // Go back to previous word
-                            let current_index = self.bip39_input.get_current_word_index();
-                            if current_index > 0 {
-                                self.bip39_input.set_editing_word(current_index - 1);
-                                self.update_valid_keys();
-                                self.bip39_input.force_redraw();
-                            }
-                        }
-                        Key::NavForward => {
-                            // Go forward to next word
-                            let current_index = self.bip39_input.get_current_word_index();
-                            let next_index = current_index + 1;
-                            if next_index < FROSTSNAP_BACKUP_WORDS
-                                && self.bip39_input.can_edit_word_at_index(next_index)
-                            {
-                                self.bip39_input.set_editing_word(next_index);
-                                self.update_valid_keys();
-                                self.bip39_input.force_redraw();
-                            }
-                        }
-                        Key::Submit => {
-                            // User pressed submit button - close entered words view and mark as complete
-                            self.entered_words = None;
-                            self.clear_touches();
-                            self.mnemonic_complete = true;
-                            self.needs_redraw = true;
-                        }
-                        _ => {} // Ignore other keyboard characters
-                    }
-                }
-            }
-        } else {
-            // Handle touch for different modes
-            let key_touch = if let Some(ref entered_words) = self.entered_words {
-                // EnteredWords is full-screen, handle its touches directly
-                entered_words.handle_touch(point)
-            } else if let Some(ref mut word_selector) = self.word_selector {
-                // Word selector is in keyboard area, input preview is visible
-                if self.keyboard_rect.contains(point) {
-                    let translated_point = point - self.keyboard_rect.top_left;
-                    word_selector
-                        .handle_touch(translated_point, current_time, lift_up)
-                        .map(|mut key_touch| {
-                            key_touch.translate(self.keyboard_rect.top_left);
-                            key_touch
-                        })
-                } else {
-                    // Check input preview area
-                    self.bip39_input.handle_touch(point, current_time, lift_up)
-                }
-            } else {
-                // Normal mode: check input preview first, then keyboard
-                if let Some(key_touch) = self.bip39_input.handle_touch(point, current_time, lift_up)
-                {
-                    Some(key_touch)
-                } else if self.keyboard_rect.contains(point) {
-                    let translated_point = point - self.keyboard_rect.top_left;
-                    self.alphabetic_keyboard
-                        .handle_touch(translated_point, current_time, lift_up)
-                        .map(|mut key_touch| {
-                            key_touch.translate(self.keyboard_rect.top_left);
-                            key_touch
-                        })
-                } else {
-                    None
-                }
-            };
-
-            if let Some(key_touch) = key_touch {
-                // Fast forward any ongoing scrolling animation immediately
-                // This ensures the UI is responsive to new input
-                if matches!(key_touch.key, Key::Keyboard(_)) {
-                    self.bip39_input.fast_forward_scrolling();
-                }
-
-                if let Some(last) = self.touches.last_mut() {
-                    if last.key == key_touch.key {
-                        self.touches.pop();
-                    } else {
-                        last.cancel();
-                    }
-                }
-                self.touches.push(key_touch);
-            } else {
-                // No valid key was touched - cancel all active touches
-                // This can happen when keyboard state changes and a key becomes invalid
-                for touch in &mut self.touches {
-                    if !touch.is_finished() {
-                        touch.cancel();
-                    }
-                }
-            }
-        }
-    }
-
     pub fn is_finished(&self) -> bool {
-        self.mnemonic_complete
+        matches!(self.model.view_state().main_view, MainViewState::AllWordsEntered { .. })
     }
 
-    pub fn get_mnemonic(&self) -> String {
-        self.bip39_input.get_mnemonic()
-    }
 
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
         // scrolling cancels the touch
@@ -306,93 +73,83 @@ impl EnterBip39ShareScreen {
         }
     }
 
-    fn clear_touches(&mut self) {
-        self.touches.clear();
+    fn cancel_all_touches(&mut self) {
+        for touch in &mut self.touches {
+            touch.cancel();
+        }
     }
 
-    fn update_valid_keys(&mut self) {
-        let current_word = self.bip39_input.current_word();
+    fn update_from_model(&mut self) {
+        let view_state = self.model.view_state();
 
-        // Check if we should show the word selector when we have a partial word
-        if !current_word.is_empty() {
-            let matching_words = bip39_words::words_with_prefix(&current_word);
+        // Update the input preview based on view state
+        self.bip39_input.update_from_view_state(&view_state);
 
-            // Only show word selector if there are 2-6 matching words (not 1)
-            if matching_words.len() > 1 && matching_words.len() <= MAX_WORD_SELECTOR_WORDS {
-                // Create word selector with the matching words
-                // Use only the keyboard area size since input preview stays visible
-                let word_selector = WordSelector::new(matching_words, &current_word);
-                let mut word_selector_with_clear = OneTimeClearHack::new(word_selector);
-                word_selector_with_clear.set_constraints(self.keyboard_rect.size);
-                self.word_selector = Some(word_selector_with_clear);
-                // Cancel all touches before switching to word selector
-                self.clear_touches();
-            } else {
-                // Clear word selector if we shouldn't show it
-                if self.word_selector.is_some() {
-                    // Cancel all touches before switching back to keyboard
-                    self.clear_touches();
-                    // Force redraw of input preview (including progress bar)
-                    self.bip39_input.force_redraw();
+        // Update progress - use total completed rows (share index + words)
+        let completed_rows = self.model.num_completed_rows();
+        self.bip39_input.update_progress(completed_rows);
+        // Update keyboard/UI based on main view state
+        match view_state.main_view {
+            MainViewState::AllWordsEntered { .. } => {
+                // Show the EnteredWords view - same as when user taps ShowEnteredWords
+                if self.entered_words.is_none() {
+                    let framebuffer = self.bip39_input.get_framebuffer();
+                    let entered_words = EnteredWords::new(
+                        framebuffer,
+                        self.size,
+                        view_state.clone()
+                    );
+                    self.entered_words = Some(entered_words);
                 }
+                
+                // Hide keyboards and word selector
+                self.numeric_keyboard = None;
                 self.word_selector = None;
+                self.cancel_all_touches();
             }
-        } else {
-            // Clear word selector
-            if self.word_selector.is_some() {
-                // Cancel all touches before switching back to keyboard
-                for touch in &mut self.touches {
-                    touch.cancel();
+            MainViewState::EnterShareIndex { ref current } => {
+                // Show numeric keyboard
+                if self.numeric_keyboard.is_none() {
+                    let numeric_keyboard = NumericKeyboard::new();
+                    let mut numeric_keyboard_with_clear = OneTimeClearHack::new(numeric_keyboard);
+                    numeric_keyboard_with_clear.set_constraints(self.keyboard_rect.size);
+                    self.numeric_keyboard = Some(numeric_keyboard_with_clear);
                 }
-                self.touches.clear();
-                // Force redraw of input preview (including progress bar)
-                self.bip39_input.force_redraw();
+
+                if let Some(numeric_keyboard) = &mut self.numeric_keyboard {
+                    numeric_keyboard.set_bottom_buttons_enabled(!current.is_empty());
+                }
             }
-            self.word_selector = None;
-        }
+            MainViewState::EnterWord { valid_letters } => {
+                if self.numeric_keyboard.is_some() || self.word_selector.is_some() {
+                    self.numeric_keyboard = None;
+                    self.word_selector = None;
+                    self.cancel_all_touches();
+                }
 
-        // Always update keyboard valid keys (even if word selector is showing)
-        let current = self.bip39_input.current_word();
-        let valid_letters = bip39_words::get_valid_next_letters(&current);
-        self.alphabetic_keyboard.set_valid_keys(valid_letters);
+                // Update alphabetic keyboard
+                self.alphabetic_keyboard.set_valid_keys(valid_letters);
+                let word_index = view_state.row - 1; // -1 because row 0 is share index
+                self.alphabetic_keyboard.set_current_word_index(word_index);
+            }
+            MainViewState::WordSelect {
+                ref current,
+                possible_words,
+            } => {
+                // Show word selector if not already showing
+                if self.word_selector.is_none() {
+                    let word_selector = WordSelector::new(possible_words, current);
+                    let mut word_selector_with_clear = OneTimeClearHack::new(word_selector);
+                    word_selector_with_clear.set_constraints(self.keyboard_rect.size);
+                    self.word_selector = Some(word_selector_with_clear);
+                    self.cancel_all_touches();
+                }
 
-        // Update the current word index on the keyboard
-        let current_index = self.bip39_input.get_current_word_index();
-        self.alphabetic_keyboard
-            .set_current_word_index(current_index);
-    }
-
-    fn push_letter_and_autocomplete(&mut self, letter: char) {
-        self.bip39_input.push_letter(letter);
-
-        // Special case: if we just typed Q, automatically add U
-        if letter.to_uppercase().next().unwrap_or(letter) == 'Q' {
-            self.bip39_input.push_letter('U');
-        }
-
-        let current = self.bip39_input.current_word();
-        let words_with_prefix = bip39_words::words_with_prefix(&current);
-
-        if words_with_prefix.len() == 1 {
-            self.bip39_input.autocomplete_word(words_with_prefix[0]);
-
-            // If we now have all 25 words entered, show EnteredWords view
-            if self.bip39_input.word_count() == FROSTSNAP_BACKUP_WORDS {
-                self.clear_touches();
-                // Calculate full screen size
-                let screen_size = Size::new(
-                    self.keyboard_rect.size.width,
-                    self.keyboard_rect.size.height + self.bip39_input.area.size.height,
-                );
-                let framebuffer = self.bip39_input.get_framebuffer();
-                let words_ref = self.bip39_input.get_words_ref();
-                let mut entered_words = EnteredWords::new(framebuffer, screen_size, words_ref);
-                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
-                self.entered_words = Some(entered_words);
+                // Still update alphabetic keyboard for consistency
+                let word_index = view_state.row - 1; // -1 because row 0 is share index
+                self.alphabetic_keyboard.set_current_word_index(word_index);
             }
         }
-
-        self.update_valid_keys();
     }
 }
 
@@ -407,44 +164,30 @@ impl Widget for EnterBip39ShareScreen {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        if self.mnemonic_complete {
-            // Only draw if we just transitioned to complete state
-            if self.needs_redraw {
-                // Draw green checkmark in the center
-                use crate::icons::Icon;
-                use crate::palette::PALETTE;
-                use embedded_graphics::primitives::PrimitiveStyleBuilder;
-                use embedded_iconoir::size48px::actions::Check;
+        // Draw touches and clean up
+        // First draw all touches
+        for touch in &mut self.touches {
+            touch.draw(target, current_time);
+        }
 
-                // Clear background
-                let bounds = target.bounding_box();
-                bounds
-                    .into_styled(
-                        PrimitiveStyleBuilder::new()
-                            .fill_color(PALETTE.background)
-                            .build(),
-                    )
-                    .draw(target)?;
+        // Then remove finished ones
+        self.touches.retain(|touch| !touch.is_finished());
 
-                // Draw large green checkmark in center
-                Icon::<Check>::default()
-                    .with_color(PALETTE.tertiary)
-                    .with_center(bounds.center())
-                    .draw(target);
+        let input_display_rect = Rectangle::new(
+            Point::zero(),
+            Size::new(target.bounding_box().size.width, 60),
+        );
 
-                self.needs_redraw = false;
-            }
-        } else if let Some(ref mut entered_words) = self.entered_words {
+        if let Some(ref mut entered_words) = self.entered_words {
             // Full-screen entered words view
-            // Update button state before drawing
-            entered_words.update_button_state();
-            entered_words.draw(target);
+            entered_words.draw(target, current_time);
+        } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
+            self.bip39_input
+                .draw(&mut target.clone().crop(input_display_rect), current_time)?;
+            // Draw BIP39 input preview
+            numeric_keyboard.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Draw input preview at top
-            let input_display_rect = Rectangle::new(
-                Point::zero(),
-                Size::new(target.bounding_box().size.width, 60),
-            );
             let _ = self
                 .bip39_input
                 .draw(&mut target.clone().crop(input_display_rect), current_time);
@@ -464,15 +207,6 @@ impl Widget for EnterBip39ShareScreen {
             self.bip39_input
                 .draw(&mut target.clone().crop(input_display_rect), current_time)?;
         }
-
-        // Draw touches and clean up
-        // First draw all touches
-        for touch in &mut self.touches {
-            touch.draw(target, current_time);
-        }
-
-        // Then remove finished ones
-        self.touches.retain(|touch| !touch.is_finished());
 
         Ok(())
     }
@@ -501,93 +235,101 @@ impl crate::DynWidget for EnterBip39ShareScreen {
                 if let Some(key) = active_touch.let_go(current_time) {
                     match key {
                         Key::Keyboard('⌫') => {
-                            // Backspace
-                            self.bip39_input.backspace();
-                            self.update_valid_keys();
+                            // Just pass to model, let it handle
+                            let mutations = self.model.backspace();
+                            self.bip39_input.apply_mutations(&mutations);
+                            self.update_from_model();
                         }
-                        Key::Keyboard(c) if c.is_alphabetic() => {
-                            self.push_letter_and_autocomplete(c);
+                        Key::Keyboard('✓') => {
+                            // Get current state to know what to complete
+                            let view_state = self.model.view_state();
+                            if let MainViewState::EnterShareIndex { current } = view_state.main_view
+                            {
+                                let mutations = self.model.complete_row(&current);
+                                self.bip39_input.apply_mutations(&mutations);
+                                self.update_from_model();
+                            }
+                        }
+                        Key::Keyboard(c) if c.is_alphabetic() || c.is_numeric() => {
+                            // Just pass character to model
+                            let mutations = self.model.add_character(c);
+                            self.bip39_input.apply_mutations(&mutations);
+                            self.update_from_model();
+
+                            // Check if we're complete
+                            if self.model.is_complete() {
+                                // TODO: Create EnteredWords view when needed
+                                // For now just mark as complete
+                                self.needs_redraw = true;
+                            }
                         }
                         Key::WordSelector(word) => {
-                            // Use unified autocomplete method
-                            self.bip39_input.autocomplete_word(word);
-                            self.update_valid_keys();
+                            // Complete the current row with selected word
+                            let mutations = self.model.complete_row(word);
+                            self.bip39_input.apply_mutations(&mutations);
+                            self.update_from_model();
 
-                            // If we now have all 25 words entered, show EnteredWords view
-                            if self.bip39_input.word_count() == FROSTSNAP_BACKUP_WORDS {
-                                self.clear_touches();
-                                let framebuffer = self.bip39_input.get_framebuffer();
-                                let words_ref = self.bip39_input.get_words_ref();
-                                let mut entered_words =
-                                    EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words.scroll_to_word_at_top(FROSTSNAP_BACKUP_WORDS - 1);
-                                self.entered_words = Some(entered_words);
+                            // Check if we're complete
+                            if self.model.is_complete() {
+                                // TODO: Show EnteredWords view
+                                self.needs_redraw = true;
                             }
+                        }
+                        Key::ShowEnteredWords => {
+                            // Only show EnteredWords if we're at the start of a new word
+                            let view_state = self.model.view_state();
+                            if view_state.can_show_entered_words() {
+                                let framebuffer = self.bip39_input.get_framebuffer();
+                                let current_row = view_state.row;
+                                let mut entered_words =
+                                    EnteredWords::new(framebuffer, self.size, view_state);
+                                // Scroll to show current word
+                                if current_row > 0 {
+                                    entered_words.scroll_to_word_at_top(current_row - 1);
+                                }
+                                self.entered_words = Some(entered_words);
+                                // Cancel all touches when switching views
+                                self.cancel_all_touches();
+                            }
+                            // Otherwise ignore the touch
                         }
                         Key::EditWord(word_index) => {
-                            // If EditWord(0) is from input preview tap, show entered words view
-                            // Otherwise, it's from EnteredWords view, so edit specific word
-                            if word_index == 0 && self.entered_words.is_none() {
-                                self.clear_touches();
+                            // word_index from EnteredWords is actually the row index (0 = share index, 1+ = words)
+                            let mutations = self.model.edit_row(word_index);
+                            self.bip39_input.apply_mutations(&mutations);
+                            self.bip39_input.force_redraw();
+                            self.update_from_model();
 
-                                // Show EnteredWords view, scrolled to show current word at bottom
-                                let framebuffer = self.bip39_input.get_framebuffer();
-                                let current_word_index = self.bip39_input.get_current_word_index();
-                                let words_ref = self.bip39_input.get_words_ref();
-                                let mut entered_words =
-                                    EnteredWords::new(framebuffer, self.size, words_ref);
-                                entered_words.scroll_to_word_at_top(current_word_index);
-                                self.entered_words = Some(entered_words);
-                            } else if self.entered_words.is_some() {
-                                // Exit EnteredWords view and start editing the selected word
-                                // Only allow if the word can be edited
-                                if self.bip39_input.can_edit_word_at_index(word_index) {
-                                    self.entered_words = None;
-                                    self.clear_touches();
-                                    self.bip39_input.set_editing_word(word_index);
-                                    self.update_valid_keys();
-                                    self.bip39_input.force_redraw();
-                                }
+                            // Exit EnteredWords view if we're in it
+                            if self.entered_words.is_some() {
+                                self.entered_words = None;
+                                // Cancel all touches when switching views
+                                self.cancel_all_touches();
                             }
                         }
-                        Key::NavBack => {
-                            // Go back to previous word
-                            let current_index = self.bip39_input.get_current_word_index();
-                            if current_index > 0 {
-                                self.bip39_input.set_editing_word(current_index - 1);
-                                self.update_valid_keys();
-                                self.bip39_input.force_redraw();
-                            }
-                        }
-                        Key::NavForward => {
-                            // Go forward to next word
-                            let current_index = self.bip39_input.get_current_word_index();
-                            let next_index = current_index + 1;
-                            if next_index < FROSTSNAP_BACKUP_WORDS
-                                && self.bip39_input.can_edit_word_at_index(next_index)
-                            {
-                                self.bip39_input.set_editing_word(next_index);
-                                self.update_valid_keys();
-                                self.bip39_input.force_redraw();
-                            }
-                        }
-                        Key::Submit => {
-                            // User pressed submit button - close entered words view and mark as complete
-                            self.entered_words = None;
-                            self.clear_touches();
-                            self.mnemonic_complete = true;
-                            self.needs_redraw = true;
-                        }
-                        _ => {} // Ignore other keyboard characters
+                        _ => {} // Ignore other keys
                     }
                 }
             }
-            None
         } else {
             // Handle touch for different modes
             let key_touch = if let Some(ref entered_words) = self.entered_words {
                 // EnteredWords is full-screen, handle its touches directly
                 entered_words.handle_touch(point)
+            } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
+                // Numeric keyboard is in keyboard area for share index entry
+                if self.keyboard_rect.contains(point) {
+                    let translated_point = point - self.keyboard_rect.top_left;
+                    numeric_keyboard
+                        .handle_touch(translated_point, current_time, lift_up)
+                        .map(|mut key_touch| {
+                            key_touch.translate(self.keyboard_rect.top_left);
+                            key_touch
+                        })
+                } else {
+                    // Check input preview area
+                    self.bip39_input.handle_touch(point, current_time, lift_up)
+                }
             } else if let Some(ref mut word_selector) = self.word_selector {
                 // Word selector is in keyboard area, input preview is visible
                 if self.keyboard_rect.contains(point) {
@@ -635,18 +377,9 @@ impl crate::DynWidget for EnterBip39ShareScreen {
                     }
                 }
                 self.touches.push(key_touch);
-                None
-            } else {
-                // No valid key was touched - cancel all active touches
-                // This can happen when keyboard state changes and a key becomes invalid
-                for touch in &mut self.touches {
-                    if !touch.is_finished() {
-                        touch.cancel();
-                    }
-                }
-                None
             }
         }
+        None
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {

@@ -7,7 +7,7 @@ use embedded_graphics::{
 
 /// A widget that listens for touch events and converts them to KeyTouch events
 pub struct TouchListener<W> {
-    child: W,
+    pub child: W,
     on_touch: fn(Point, Instant, bool, &mut W) -> Option<Key>,
     sizing: Option<Sizing>,
 }

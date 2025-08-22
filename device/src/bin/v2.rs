@@ -6,7 +6,6 @@
 extern crate alloc;
 use alloc::{boxed::Box, string::ToString};
 use cst816s::{TouchGesture, CST816S};
-use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_hal as hal;
 use esp_hal::{
@@ -19,13 +18,8 @@ use esp_hal::{
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
-    peripherals::Peripherals,
     prelude::*,
     rng::Trng,
-    spi::{
-        master::{Config as spiConfig, Spi},
-        SpiMode,
-    },
     timer::{
         self,
         timg::{Timer, TimerGroup},
@@ -35,11 +29,11 @@ use esp_hal::{
     Blocking,
 };
 use frostsnap_comms::Downstream;
+use frostsnap_embedded_widgets::palette::PALETTE;
 use frostsnap_device::{
     debug_stats::create_debug_stats,
-    display_utils::PALETTE,
     efuse::{self, EfuseHmacKeys},
-    esp32_run,
+    esp32_run, init_display,
     io::SerialInterface,
     root_widget::RootWidget,
     touch_calibration::{x_based_adjustment, y_based_adjustment},
@@ -51,7 +45,7 @@ use frostsnap_embedded_widgets::{
     keygen_check::KeygenCheck, sign_prompt::SignPrompt, Alignment, DeviceNameScreen, DynWidget,
     FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Stack, Standby, Welcome, Widget,
 };
-use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
+use mipidsi::error::Error;
 
 // # Pin Configuration
 //
@@ -63,34 +57,6 @@ use mipidsi::{error::Error, models::ST7789, options::ColorInversion};
 //
 // GPIO0: Upstream detection
 // GPIO10: Downstream detection
-
-macro_rules! init_display {
-    (peripherals: $peripherals:ident, delay: $delay:expr) => {{
-        let spi = Spi::new_with_config(
-            $peripherals.SPI2,
-            spiConfig {
-                frequency: 80.MHz(),
-                mode: SpiMode::Mode2,
-                ..spiConfig::default()
-            },
-        )
-        .with_sck($peripherals.GPIO8)
-        .with_mosi($peripherals.GPIO7);
-
-        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-        let di = SPIInterface::new(spi_device, Output::new($peripherals.GPIO9, Level::Low));
-
-        let display = mipidsi::Builder::new(ST7789, di)
-            .display_size(240, 280)
-            .display_offset(0, 20) // 240*280 panel
-            .invert_colors(ColorInversion::Inverted)
-            .reset_pin(Output::new($peripherals.GPIO6, Level::Low))
-            .init($delay)
-            .unwrap();
-
-        display
-    }};
-}
 
 #[entry]
 fn main() -> ! {
@@ -240,23 +206,6 @@ fn main() -> ! {
         hmac_keys,
     };
     run.run()
-}
-
-/// Dummy CS pin for our display
-struct NoCs;
-
-impl embedded_hal::digital::OutputPin for NoCs {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl embedded_hal::digital::ErrorType for NoCs {
-    type Error = core::convert::Infallible;
 }
 
 pub struct FrostyUi<'t, T, DT, I2C, PINT, RST, SW>
@@ -592,28 +541,5 @@ where
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    use core::fmt::Write;
-    // XXX: Don't try and remove this steal. This is the only way to get the peripherals after start
-    // up.
-    let peripherals = unsafe { Peripherals::steal() };
-    let mut bl = Output::new(peripherals.GPIO1, Level::Low);
-
-    let mut delay = Delay::new();
-    let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
-
-    let _ = match info.location() {
-        Some(location) => write!(
-            &mut panic_buf,
-            "{}:{} {}",
-            location.file().split('/').next_back().unwrap_or(""),
-            location.line(),
-            info
-        ),
-        None => write!(&mut panic_buf, "{info}"),
-    };
-
-    let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
-    frostsnap_device::display_utils::error_print(&mut display, panic_buf.as_str());
-    bl.set_high();
-    loop {}
+    frostsnap_device::panic::handle_panic(info)
 }

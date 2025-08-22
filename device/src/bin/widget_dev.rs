@@ -3,28 +3,21 @@
 
 extern crate alloc;
 use cst816s::{TouchGesture, CST816S};
-use display_interface_spi::SPIInterface;
 use esp_hal::{
     delay::Delay,
     entry,
     gpio::{Input, Level, Output, Pull},
     i2c::master::{Config as i2cConfig, I2c},
-    peripherals::Peripherals,
     prelude::*,
-    spi::{
-        master::{Config as spiConfig, Spi},
-        SpiMode,
-    },
     timer::timg::TimerGroup,
 };
-use frostsnap_device::debug_stats::create_debug_stats;
-use frostsnap_device::touch_calibration::adjust_touch_point;
-use mipidsi::{models::ST7789, options::ColorInversion};
+use frostsnap_device::{
+    debug_stats::create_debug_stats, init_display, touch_calibration::adjust_touch_point,
+};
 
 // Screen constants
 const SCREEN_WIDTH: u32 = 240;
 const SCREEN_HEIGHT: u32 = 280;
-const SCREEN_OFFSET_Y: u16 = 20; // ST7789 Y offset for 240x280 panel
 
 // Widget demo selection
 const DEMO: &str = "bip39_entry";
@@ -46,26 +39,8 @@ fn main() -> ! {
     // Initialize backlight
     let mut bl = Output::new(peripherals.GPIO1, Level::Low);
 
-    // Initialize SPI for the display
-    let spi = Spi::new_with_config(
-        peripherals.SPI2,
-        spiConfig {
-            frequency: 80.MHz(),
-            mode: SpiMode::Mode2,
-            ..spiConfig::default()
-        },
-    )
-    .with_sck(peripherals.GPIO8)
-    .with_mosi(peripherals.GPIO7);
-    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-    let di = SPIInterface::new(spi_device, Output::new(peripherals.GPIO9, Level::Low));
-    let display_inner = mipidsi::Builder::new(ST7789, di)
-        .display_size(SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16)
-        .display_offset(0, SCREEN_OFFSET_Y)
-        .invert_colors(ColorInversion::Inverted)
-        .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
-        .init(&mut delay)
-        .unwrap();
+    // Initialize the display using the macro
+    let display_inner = init_display!(peripherals: peripherals, delay: &mut delay);
 
     let mut display = frostsnap_embedded_widgets::SuperDrawTarget::new(
         display_inner,
@@ -102,7 +77,7 @@ fn main() -> ! {
             // Create UI stack with widget and debug stats overlay
             let mut ui_stack = Stack::builder()
                 .push(widget)
-                .push_aligned(create_debug_stats(), Alignment::TopLeft);
+                .push_aligned(create_debug_stats(), Alignment::TopCenter);
 
             // Set constraints on the stack
             ui_stack.set_constraints(Size::new(240, 280));
@@ -184,66 +159,7 @@ fn main() -> ! {
     frostsnap_embedded_widgets::demo_widget!(DEMO, screen_size, run_widget);
 }
 
-/// Dummy CS pin for the display
-struct NoCs;
-
-impl embedded_hal::digital::OutputPin for NoCs {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl embedded_hal::digital::ErrorType for NoCs {
-    type Error = core::convert::Infallible;
-}
-
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    use core::fmt::Write;
-    let peripherals = unsafe { Peripherals::steal() };
-
-    let mut bl = Output::new(peripherals.GPIO1, Level::Low);
-
-    let mut delay = Delay::new();
-    let mut panic_buf = frostsnap_device::panic::PanicBuffer::<512>::default();
-
-    let _ = match info.location() {
-        Some(location) => write!(
-            &mut panic_buf,
-            "{}:{} {}",
-            location.file().split('/').next_back().unwrap_or(""),
-            location.line(),
-            info
-        ),
-        None => write!(&mut panic_buf, "{}", info),
-    };
-
-    let spi = Spi::new_with_config(
-        peripherals.SPI2,
-        spiConfig {
-            frequency: 80.MHz(),
-            mode: SpiMode::Mode2,
-            ..spiConfig::default()
-        },
-    )
-    .with_sck(peripherals.GPIO8)
-    .with_mosi(peripherals.GPIO7);
-    let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-
-    let di = SPIInterface::new(spi_device, Output::new(peripherals.GPIO9, Level::Low));
-    let mut display = mipidsi::Builder::new(ST7789, di)
-        .display_size(SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16)
-        .display_offset(0, SCREEN_OFFSET_Y)
-        .invert_colors(ColorInversion::Inverted)
-        .reset_pin(Output::new(peripherals.GPIO6, Level::Low))
-        .init(&mut delay)
-        .unwrap();
-    frostsnap_device::panic::error_print(&mut display, panic_buf.as_str());
-    bl.set_high();
-
-    loop {}
+    frostsnap_device::panic::handle_panic(info)
 }

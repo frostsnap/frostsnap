@@ -1,19 +1,20 @@
 mod alphabetic_keyboard;
+mod backup_status_bar;
 mod bip39_backup_display;
 mod bip39_input_preview;
+mod bip39_model;
 mod enter_bip39_share_screen;
-mod enter_bip39_t9_screen;
 mod entered_words;
-mod submit_backup_button;
+mod numeric_keyboard;
 mod t9_keyboard;
 mod word_selector;
 
 pub use alphabetic_keyboard::AlphabeticKeyboard;
 pub use bip39_backup_display::{AllWordsPage, Bip39BackupDisplay};
 pub use bip39_input_preview::Bip39InputPreview;
+pub use bip39_model::{Bip39Model, FramebufferMutation, MainViewState, ViewState};
 pub use enter_bip39_share_screen::EnterBip39ShareScreen;
-pub use enter_bip39_t9_screen::EnterBip39T9Screen;
 pub use entered_words::EnteredWords;
-pub use submit_backup_button::SubmitBackupButton;
+pub use numeric_keyboard::NumericKeyboard;
 pub use t9_keyboard::T9Keyboard;
 pub use word_selector::WordSelector;

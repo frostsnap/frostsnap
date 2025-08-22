@@ -88,8 +88,8 @@ impl<W: Widget> Container<W> {
     }
 
     /// Set the fill color (mutable reference)
-    pub fn set_fill_color(&mut self, color: Option<W::Color>) {
-        self.fill_color = color;
+    pub fn set_fill(&mut self, color: W::Color) {
+        self.fill_color = Some(color);
         self.border_needs_redraw = true;
         self.child.force_full_redraw();
     }
