@@ -223,13 +223,13 @@ fn find_secure_boot_key() -> Option<[u8; 32]> {
         KEY_PURPOSE_3, KEY_PURPOSE_4, KEY_PURPOSE_5, SECURE_BOOT_KEY_REVOKE0,
         SECURE_BOOT_KEY_REVOKE1, SECURE_BOOT_KEY_REVOKE2,
     };
+    // Key purpose values and their revoke fields (from ESP32-C3 TRM Table 4.3-1 & 4.3-2)
+    let secure_boot_digests = [
+        (9, SECURE_BOOT_KEY_REVOKE0),  // DIGEST0
+        (10, SECURE_BOOT_KEY_REVOKE1), // DIGEST1
+        (11, SECURE_BOOT_KEY_REVOKE2), // DIGEST2
+    ];
 
-    // Key purpose values for secure boot digests (from ESP32-C3 Technical Reference Manual Table 4.3-2)
-    const SECURE_BOOT_DIGEST0: u8 = 9;
-    const SECURE_BOOT_DIGEST1: u8 = 10;
-    const SECURE_BOOT_DIGEST2: u8 = 11;
-
-    // Arrays of key purpose fields, key data fields, and revoke fields
     let key_purpose_fields = [
         KEY_PURPOSE_0,
         KEY_PURPOSE_1,
@@ -239,36 +239,18 @@ fn find_secure_boot_key() -> Option<[u8; 32]> {
         KEY_PURPOSE_5,
     ];
     let key_data_fields = [KEY0, KEY1, KEY2, KEY3, KEY4, KEY5];
-    let key_revoke_fields = [
-        SECURE_BOOT_KEY_REVOKE0,
-        SECURE_BOOT_KEY_REVOKE1,
-        SECURE_BOOT_KEY_REVOKE2,
-    ];
 
     // Search through all key blocks
     for (i, &purpose_field) in key_purpose_fields.iter().enumerate() {
         let purpose: u8 = Efuse::read_field_le(purpose_field);
 
-        // Check if this is a secure boot digest key
-        if purpose == SECURE_BOOT_DIGEST0
-            || purpose == SECURE_BOOT_DIGEST1
-            || purpose == SECURE_BOOT_DIGEST2
+        // Find matching secure boot digest revoke field
+        if let Some((_, revoke_field)) = secure_boot_digests
+            .iter()
+            .find(|(purpose_val, _)| *purpose_val == purpose)
         {
-            // Determine which secure boot digest this is
-            let digest_type = match purpose {
-                SECURE_BOOT_DIGEST0 => 0,
-                SECURE_BOOT_DIGEST1 => 1,
-                SECURE_BOOT_DIGEST2 => 2,
-                _ => unreachable!(),
-            };
-
-            // Check if this key is revoked (only first 3 keys have revoke bits)
-            let is_revoked = if digest_type < 3 {
-                Efuse::read_bit(key_revoke_fields[digest_type as usize])
-            } else {
-                false
-            };
-
+            // Check if this key is revoked
+            let is_revoked = Efuse::read_bit(*revoke_field);
             if !is_revoked {
                 // Read the key data (32 bytes)
                 let key_data: [u8; 32] = Efuse::read_field_le(key_data_fields[i]);
@@ -292,13 +274,16 @@ pub fn verify_secure_boot<S>(
 where
     S: ReadNorFlash + embedded_storage::nor_flash::NorFlash,
 {
-    // Find signature block in app partition
     let mut signature_block = vec![0x00; SECTOR_SIZE];
     let mut signature_found = false;
     let mut signature_sector_index = 0u32;
 
+    // Find signature block in app partition using magic bytes (magic byte, secure boot v2, padding)
     for i in 0..app_partition.n_sectors() {
-        // Read the sector using FlashPartition's read_sector method
+        // Note: with 1280K firmware, 320 sectors, each has a 1 in 2^(8*4) chance of a false
+        // positive with these magic bytes. So 320/2^(8*4) ~ 1 in 13.4m firmware updates will
+        // fail to pass signature verification upon upgrading; and in that incredibly improbably
+        // situation: we as the vendor would be the first notice first and not release it.
         match app_partition.read_sector(i) {
             Ok(sector_data) => {
                 // Check for signature block magic bytes: 0xE7, 0x02, 0x00, 0x00
@@ -322,7 +307,7 @@ where
     // Parse signature block structure
     let parsed_block = SignatureBlock::from_bytes(&signature_block);
 
-    // Step 1: Verify CRC32 checksum
+    // Verify CRC32 checksum
     const CRC: Crc<u32> = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
     // CRC32 is calculated over first 1196 bytes
     let calculated_crc = CRC.checksum(&signature_block[0..1196]);
@@ -331,7 +316,7 @@ where
         panic!("CRC32 verification failed!");
     }
 
-    // Step 2: CRITICAL SECURITY CHECK - Verify public key digest against eFuse FIRST
+    // CRITICAL SECURITY CHECK - Verify public key digest against eFuse FIRST
     // Find the secure boot key digest from eFuse by checking KEY_PURPOSE fields
     let efuse_key_digest = match find_secure_boot_key() {
         Some(key_digest) => key_digest,
@@ -349,18 +334,12 @@ where
         panic!("Firmware signed with untrusted key! Public key digest mismatch.");
     }
 
-    // Step 3: Verify image digest (SHA-256 of application data before signature block)
+    // Verify image digest (SHA-256 of application data before signature block)
     // Calculate how many sectors contain application data (before signature block)
-    let signature_sector = signature_sector_index;
-
-    // Start SHA256 digest calculation
     let mut hasher = sha.start::<Sha256>();
-
-    // Read and hash the application data in chunks
-    for sector in 0..signature_sector {
+    for sector in 0..signature_sector_index {
         match app_partition.read_sector(sector) {
             Ok(sector_data) => {
-                // Update the hash with the sector data
                 let mut remaining = sector_data.as_slice();
                 while !remaining.is_empty() {
                     remaining = block!(hasher.update(remaining)).unwrap();
@@ -375,20 +354,16 @@ where
         }
     }
 
-    // Finalize the hash calculation
-    let mut calculated_digest = [0u8; 32]; // SHA256 produces 32 bytes
+    let mut calculated_digest = [0u8; 32];
     block!(hasher.finish(&mut calculated_digest)).unwrap();
 
-    let stored_digest = &parsed_block.image_digest;
-
-    if calculated_digest != *stored_digest {
+    if calculated_digest != parsed_block.image_digest {
         panic!("Image digest verification failed!");
     }
 
-    // Step 4: Verify RSA-PSS signature using hardware RSA peripheral
-
+    // Verify RSA-PSS signature using hardware RSA peripheral
     match verify_rsa_pss_signature(rsa, &parsed_block, &parsed_block.image_digest, sha) {
-        Ok(true) => {}
+        Ok(true) => { /* Firmware signature verified successfully */ }
         Ok(false) => panic!("RSA-PSS signature verification failed! Invalid signature."),
         Err(_) => panic!("RSA-PSS signature verification error"),
     }
