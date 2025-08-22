@@ -1,63 +1,120 @@
 use crate::palette::PALETTE;
-use crate::{Center, Container, Text, FONT_MED};
+use crate::{any_of::AnyOf, Center, Column, Container, Text, FONT_MED, FONT_SMALL};
 use alloc::string::ToString;
-use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use frostsnap_backup::bip39_words::FROSTSNAP_BACKUP_WORDS;
 use u8g2_fonts::U8g2TextStyle;
 
-pub const STATUS_BAR_HEIGHT: u32 = 40;
+pub const STATUS_BAR_HEIGHT: u32 = 55;
+const CORNER_RADIUS: Size = Size::new(40, 5);
 
 #[derive(Debug, Clone)]
 pub enum BackupStatus {
     Incomplete { words_entered: usize },
-    #[allow(dead_code)]
     InvalidChecksum,
     Valid,
 }
 
+// Widget for incomplete status
+type IncompleteWidget =
+    Container<Center<Column<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>>>;
+
+// Widget for invalid checksum status
+type InvalidChecksumWidget =
+    Container<Center<Column<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>>>;
+
+// Widget for valid status
+type ValidWidget = Container<Center<Text<U8g2TextStyle<Rgb565>>>>;
+
 #[derive(frostsnap_macros::Widget)]
 pub struct BackupStatusBar {
-    container: Container<Center<Text<U8g2TextStyle<Rgb565>>>>,
+    widget: AnyOf<(IncompleteWidget, InvalidChecksumWidget, ValidWidget)>,
 }
 
 impl BackupStatusBar {
     pub fn new(status: BackupStatus) -> Self {
-        Self::from_status(status)
-    }
-
-    fn from_status(status: BackupStatus) -> Self {
-        // Get background color and text based on status
-        let (bg_color, text, text_color) = match status {
+        match status {
             BackupStatus::Incomplete { words_entered } => {
                 let text = if words_entered == 0 {
                     "Enter backup words".to_string()
                 } else {
                     format!("{}/{} words entered", words_entered, FROSTSNAP_BACKUP_WORDS)
                 };
-                (PALETTE.surface_variant, text, PALETTE.on_surface_variant)
+
+                let main_text = Text::new(
+                    text,
+                    U8g2TextStyle::new(FONT_MED, PALETTE.on_surface_variant),
+                )
+                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                let hint_text = Text::new(
+                    "tap word to edit",
+                    U8g2TextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
+                )
+                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                use crate::layout::MainAxisAlignment;
+                let column = Column::new((main_text, hint_text))
+                    .with_main_axis_alignment(MainAxisAlignment::Center);
+
+                let center = Center::new(column);
+                let mut container = Container::new(center)
+                    .with_corner_radius(CORNER_RADIUS)
+                    .with_border(PALETTE.outline, 2);
+                container.set_fill(PALETTE.surface_variant);
+
+                Self {
+                    widget: AnyOf::new(container),
+                }
             }
             BackupStatus::InvalidChecksum => {
-                (PALETTE.error, "Invalid checksum - check words".to_string(), PALETTE.on_error)
+                // Create column with two text elements
+                let invalid_text = Text::new(
+                    "Invalid backup",
+                    U8g2TextStyle::new(FONT_MED, PALETTE.on_error),
+                )
+                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                let tap_text = Text::new(
+                    "tap word to edit",
+                    U8g2TextStyle::new(FONT_SMALL, PALETTE.on_error),
+                )
+                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                use crate::layout::MainAxisAlignment;
+                let column = Column::new((invalid_text, tap_text))
+                    .with_main_axis_alignment(MainAxisAlignment::Center);
+
+                let center = Center::new(column);
+                let mut container = Container::new(center)
+                    .with_corner_radius(CORNER_RADIUS)
+                    .with_border(PALETTE.outline, 2);
+                container.set_fill(PALETTE.error);
+
+                Self {
+                    widget: AnyOf::new(container),
+                }
             }
             BackupStatus::Valid => {
-                (PALETTE.tertiary_container, "Backup valid ✓".to_string(), PALETTE.on_tertiary_container)
+                let text_style = U8g2TextStyle::new(FONT_MED, PALETTE.on_tertiary_container);
+                let text_widget = Text::new("Backup valid", text_style)
+                    .with_alignment(embedded_graphics::text::Alignment::Center);
+                let center = Center::new(text_widget);
+                let mut container = Container::new(center)
+                    .with_corner_radius(CORNER_RADIUS)
+                    .with_border(PALETTE.outline, 2);
+                container.set_fill(PALETTE.tertiary_container);
+
+                Self {
+                    widget: AnyOf::new(container),
+                }
             }
-        };
-
-        // Create text widget with FONT_MED
-        let text_style = U8g2TextStyle::new(FONT_MED, text_color);
-        let text_widget = Text::new(text, text_style)
-            .with_alignment(embedded_graphics::text::Alignment::Center);
-
-        // Create center widget
-        let center = Center::new(text_widget);
-
-        // Create container with fill and fixed height
-        let mut container = Container::new(center)
-            .with_height(STATUS_BAR_HEIGHT);
-        container.set_fill(bg_color);
-
-        Self { container }
+        }
     }
-
 }
+
+
+
+
+
+

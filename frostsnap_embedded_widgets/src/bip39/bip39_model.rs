@@ -57,7 +57,7 @@ pub enum MainViewState {
         possible_words: &'static [&'static str],
     },
     AllWordsEntered {
-        words: Box<[&'static str; FROSTSNAP_BACKUP_WORDS]>,
+        success: Option<()>,
     },
 }
 
@@ -225,8 +225,7 @@ impl Bip39Model {
 
         // Update the model based on which row we're completing
         if row == 0 {
-            // Share index - just confirm what we already have
-            // The completion passed should match our current share_index
+            self.share_index = completion.to_string();
             self.share_index_confirmed = true;
         } else {
             // Word - store as Borrowed if it's a valid BIP39 word, otherwise Owned
@@ -244,31 +243,23 @@ impl Bip39Model {
     pub fn edit_row(&mut self, row: usize) -> Vec<FramebufferMutation> {
         let mut mutations = Vec::new();
 
-        if row == 0 {
-            // Clear share index
-            let len = self.share_index.len();
-            for i in 0..len {
-                mutations.push(FramebufferMutation::DelCharacter {
-                    row: 0,
-                    pos: len - 1 - i,
-                });
-            }
+        let to_delete = if row == 0 {
+            let to_delete = self.share_index.len();
             self.share_index.clear();
             self.share_index_confirmed = false;
+            to_delete
         } else {
             let word_idx = row - 1;
-            if word_idx < FROSTSNAP_BACKUP_WORDS {
-                // Clear word
-                let len = self.words[word_idx].len();
-                for i in 0..len {
-                    mutations.push(FramebufferMutation::DelCharacter {
-                        row,
-                        pos: len - 1 - i,
-                    });
-                }
-                // Set to empty Owned string to mark as being edited
-                self.words[word_idx] = Cow::Owned(String::new());
-            }
+            let to_delete = self.words[word_idx].len();
+            self.words[word_idx] = Cow::Owned(String::new());
+            to_delete
+        };
+
+        for i in 0..to_delete {
+            mutations.push(FramebufferMutation::DelCharacter {
+                row,
+                pos: to_delete - 1 - i,
+            });
         }
 
         mutations
@@ -286,13 +277,17 @@ impl Bip39Model {
                     current: self.share_index.clone(),
                 },
             }
-        } else if let Some(words) = self.get_words_as_static() {
-            // All words are entered, show the EnteredWords view
+        } else if let Some(_words) = self.get_words_as_static() {
+            // All words are entered, try to create ShareBackup
+            let _share_index = self.share_index.parse::<u32>().expect("must be int");
+            // TODO: Actually validate the share backup here
+            let success = None; // For now, always indicate failure
+
             ViewState {
                 row: FROSTSNAP_BACKUP_WORDS, // Last word row
                 cursor_pos: 0,
                 completed_rows,
-                main_view: MainViewState::AllWordsEntered { words },
+                main_view: MainViewState::AllWordsEntered { success },
             }
         } else {
             // Find first incomplete word

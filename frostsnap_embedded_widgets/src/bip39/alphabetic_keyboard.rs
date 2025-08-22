@@ -48,13 +48,13 @@ pub struct AlphabeticKeyboard {
 }
 
 impl AlphabeticKeyboard {
-    pub fn new(visible_height: u32) -> Self {
+    pub fn new() -> Self {
         let mut keyboard = Self {
             framebuffer: Box::new(Fb::new()),
             scroll_position: 0,
             needs_redraw: true,
             enabled_keys: ValidLetters::default(),
-            visible_height,
+            visible_height: 0, // Will be set in set_constraints
             current_word_index: 0,
         };
 
@@ -140,8 +140,8 @@ impl AlphabeticKeyboard {
 }
 
 impl crate::DynWidget for AlphabeticKeyboard {
-    fn set_constraints(&mut self, _max_size: Size) {
-        // AlphabeticKeyboard has fixed size based on framebuffer
+    fn set_constraints(&mut self, max_size: Size) {
+        self.visible_height = max_size.height;
     }
 
     fn sizing(&self) -> crate::Sizing {

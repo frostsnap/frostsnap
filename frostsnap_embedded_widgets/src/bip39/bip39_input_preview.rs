@@ -69,58 +69,29 @@ pub struct Bip39InputPreview {
 }
 
 impl Bip39InputPreview {
-    pub fn new(area: Rectangle) -> Self {
-        let progress_height = 4;
-        let backspace_width = area.size.width / 4;
-        let backspace_rect = Rectangle::new(
-            Point::new(area.size.width as i32 - backspace_width as i32, 0),
-            Size {
-                width: backspace_width,
-                height: area.size.height - progress_height,
-            },
-        );
-
-        // Preview rect should use full available height
-        let preview_rect = Rectangle::new(
-            Point::new(PREVIEW_LEFT_PAD, 0),
-            Size {
-                width: FB_WIDTH, // Must match framebuffer width exactly
-                height: area.size.height - progress_height,
-            },
-        );
-
-        let progress_rect = Rectangle::new(
-            Point::new(0, area.size.height as i32 - progress_height as i32),
-            Size::new(area.size.width, progress_height),
-        );
+    pub fn new() -> Self {
+        // Initialize with zero-sized rectangles - will be set in set_constraints
+        let backspace_rect = Rectangle::zero();
+        let preview_rect = Rectangle::zero();
+        let progress_rect = Rectangle::zero();
 
         // 26 segments: 1 for share index + 25 words for Frostsnap backup
-        let mut progress = ProgressBars::new(FROSTSNAP_BACKUP_WORDS + 1);
-        progress.set_constraints(progress_rect.size);
+        let progress = ProgressBars::new(FROSTSNAP_BACKUP_WORDS + 1);
         let framebuf = Bip39Framebuf::new();
 
-        // Initialize hint switcher with empty text in a fixed-size container
-        // Offset by index chars + space to align with text entry area
-        let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as u32;
-        let text_area_size = Size::new(
-            preview_rect.size.width.saturating_sub(text_offset),
-            preview_rect.size.height,
-        );
-
+        // Initialize hint switcher with minimal default size - will be updated in set_constraints
         let hint_text = TextWidget::new("", U8g2TextStyle::new(FONT_MED, PALETTE.text_disabled))
             .with_alignment(Alignment::Center);
         let aligned_text = Align::new(hint_text).alignment(WidgetAlignment::Center);
-        let mut hint_container = Container::with_size(
+        let hint_container = Container::with_size(
             aligned_text,
-            text_area_size, // Size of actual text entry area
+            Size::zero(), // Will be updated in set_constraints
         );
-        hint_container.set_constraints(text_area_size);
         // Use FadeSwitcher with 300ms fade-in, 0ms fade-out
-        let mut hint_switcher = FadeSwitcher::new(hint_container, 300, 0, PALETTE.background);
-        hint_switcher.set_constraints(text_area_size);
+        let hint_switcher = FadeSwitcher::new(hint_container, 300, 0, PALETTE.background);
 
         Self {
-            area,
+            area: Rectangle::zero(),
             preview_rect,
             backspace_rect,
             progress_rect,
@@ -243,8 +214,42 @@ impl Bip39InputPreview {
 }
 
 impl crate::DynWidget for Bip39InputPreview {
-    fn set_constraints(&mut self, _max_size: Size) {
-        // Bip39InputPreview has fixed size based on its area
+    fn set_constraints(&mut self, max_size: Size) {
+        let progress_height = 4;
+        let backspace_width = max_size.width / 4;
+
+        self.backspace_rect = Rectangle::new(
+            Point::new(max_size.width as i32 - backspace_width as i32, 0),
+            Size {
+                width: backspace_width,
+                height: max_size.height - progress_height,
+            },
+        );
+
+        self.preview_rect = Rectangle::new(
+            Point::new(PREVIEW_LEFT_PAD, 0),
+            Size {
+                width: FB_WIDTH, // Must match framebuffer width exactly
+                height: max_size.height - progress_height,
+            },
+        );
+
+        self.progress_rect = Rectangle::new(
+            Point::new(0, max_size.height as i32 - progress_height as i32),
+            Size::new(max_size.width, progress_height),
+        );
+
+        // Calculate text area size for hint switcher
+        let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as u32;
+        let text_area_size = Size::new(
+            self.preview_rect.size.width.saturating_sub(text_offset),
+            self.preview_rect.size.height,
+        );
+
+        self.progress.set_constraints(self.progress_rect.size);
+        self.framebuf.set_constraints(self.preview_rect.size);
+        self.hint_switcher.set_constraints(text_area_size);
+        self.area = Rectangle::new(Point::zero(), max_size);
     }
 
     fn sizing(&self) -> crate::Sizing {
@@ -467,9 +472,8 @@ impl Bip39Framebuf {
                     let _ = char_frame.clear(Gray2::BLACK);
                 }
             }
+            self.redraw = true;
         }
-
-        self.redraw = true;
     }
 
     // Update scroll position for a specific row
@@ -547,16 +551,12 @@ impl Widget for Bip39Framebuf {
         // Check if this is the first draw
         let is_first_draw = self.current_time.is_none();
 
-        // Update viewport height if it changed
-        if self.viewport_height != bb.size.height {
-            self.viewport_height = bb.size.height;
-            // Recalculate target position with new viewport
-            // For now, just keep position at 0 since we don't track current word
-            self.target_position = 0;
-            if is_first_draw {
-                self.current_position = 0;
-            }
-        }
+        // Assert that viewport height matches what was set in set_constraints
+        assert_eq!(
+            self.viewport_height, bb.size.height,
+            "Viewport height mismatch: expected {} from set_constraints, got {} in draw",
+            self.viewport_height, bb.size.height
+        );
 
         // On first draw, jump to target position
         if is_first_draw {

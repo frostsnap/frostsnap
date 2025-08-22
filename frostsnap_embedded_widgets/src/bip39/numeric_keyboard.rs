@@ -204,6 +204,7 @@ impl NumericKeyboard {
         // 4 5 6
         // 7 8 9
         // _ 0 ✓
+        let gap = 5;
 
         let mut row1 = Row::new((
             NumericButton::new('1', true),
@@ -211,7 +212,7 @@ impl NumericKeyboard {
             NumericButton::new('3', true),
         ));
         row1.set_all_flex(1);
-        row1.set_uniform_gap(10);
+        row1.set_uniform_gap(gap);
 
         let mut row2 = Row::new((
             NumericButton::new('4', true),
@@ -219,7 +220,7 @@ impl NumericKeyboard {
             NumericButton::new('6', true),
         ));
         row2.set_all_flex(1);
-        row2.set_uniform_gap(10);
+        row2.set_uniform_gap(gap);
 
         let mut row3 = Row::new((
             NumericButton::new('7', true),
@@ -227,7 +228,7 @@ impl NumericKeyboard {
             NumericButton::new('9', true),
         ));
         row3.set_all_flex(1);
-        row3.set_uniform_gap(10);
+        row3.set_uniform_gap(gap);
 
         // Bottom row with empty space, 0, and checkmark
         // Start with 0 and checkmark disabled (no digits entered yet)
@@ -238,14 +239,14 @@ impl NumericKeyboard {
             CheckmarkButton::new(false),    // Initially disabled
         ));
         row4.set_all_flex(1);
-        row4.set_uniform_gap(10);
+        row4.set_uniform_gap(gap);
 
         // Create the column with all rows
         let mut keyboard = Column::new((row1, row2, row3, row4));
         keyboard.set_all_flex(1);
-        keyboard.set_uniform_gap(10);
+        keyboard.set_uniform_gap(gap);
 
-        let keyboard = Padding::all(10, keyboard);
+        let keyboard = Padding::all(gap, keyboard);
 
         Self { keyboard }
     }

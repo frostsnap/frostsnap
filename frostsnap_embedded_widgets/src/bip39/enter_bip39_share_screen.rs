@@ -22,20 +22,12 @@ pub struct EnterBip39ShareScreen {
 }
 
 impl EnterBip39ShareScreen {
-    pub fn new(area: Size) -> Self {
-        let preview_height = 60;
-        let keyboard_rect = Rectangle::new(
-            Point::new(0, preview_height),
-            Size::new(area.width, area.height - preview_height as u32),
-        );
-        let input_display_rect =
-            Rectangle::new(Point::zero(), Size::new(area.width, preview_height as u32));
-
-        let alphabetic_keyboard = AlphabeticKeyboard::new(keyboard_rect.size.height);
-        let bip39_input = Bip39InputPreview::new(input_display_rect);
+    pub fn new() -> Self {
         let model = Bip39Model::new();
+        let alphabetic_keyboard = AlphabeticKeyboard::new();
+        let bip39_input = Bip39InputPreview::new();
 
-        let mut screen = Self {
+        Self {
             model,
             numeric_keyboard: None,
             alphabetic_keyboard,
@@ -43,19 +35,33 @@ impl EnterBip39ShareScreen {
             entered_words: None,
             bip39_input,
             touches: vec![],
-            keyboard_rect,
+            keyboard_rect: Rectangle::zero(),
             needs_redraw: true,
-            size: area,
-        };
-
-        screen.update_from_model();
-        screen
+            size: Size::zero(),
+        }
     }
 
     pub fn is_finished(&self) -> bool {
-        matches!(self.model.view_state().main_view, MainViewState::AllWordsEntered { .. })
+        matches!(
+            self.model.view_state().main_view,
+            MainViewState::AllWordsEntered { .. }
+        )
     }
 
+    /// Testing method to pre-fill with 24 "EGG" words for quick testing
+    pub fn prefill_test_words(&mut self) {
+        // First complete the share index
+        let mutations = self.model.complete_row("1");
+        self.bip39_input.apply_mutations(&mutations);
+
+        // Then complete 24 "EGG" words
+        for _ in 0..24 {
+            let mutations = self.model.complete_row("EGG");
+            self.bip39_input.apply_mutations(&mutations);
+        }
+
+        self.update_from_model();
+    }
 
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
         // scrolling cancels the touch
@@ -94,14 +100,11 @@ impl EnterBip39ShareScreen {
                 // Show the EnteredWords view - same as when user taps ShowEnteredWords
                 if self.entered_words.is_none() {
                     let framebuffer = self.bip39_input.get_framebuffer();
-                    let entered_words = EnteredWords::new(
-                        framebuffer,
-                        self.size,
-                        view_state.clone()
-                    );
+                    let entered_words =
+                        EnteredWords::new(framebuffer, self.size, view_state.clone());
                     self.entered_words = Some(entered_words);
                 }
-                
+
                 // Hide keyboards and word selector
                 self.numeric_keyboard = None;
                 self.word_selector = None;
@@ -213,8 +216,30 @@ impl Widget for EnterBip39ShareScreen {
 }
 
 impl crate::DynWidget for EnterBip39ShareScreen {
-    fn set_constraints(&mut self, _max_size: Size) {
-        // EnterBip39ShareScreen has fixed size based on its area
+    fn set_constraints(&mut self, max_size: Size) {
+        self.size = max_size;
+        
+        // Calculate keyboard rect
+        let preview_height = 60;
+        self.keyboard_rect = Rectangle::new(
+            Point::new(0, preview_height),
+            Size::new(max_size.width, max_size.height - preview_height as u32),
+        );
+        
+        // Update children constraints
+        self.bip39_input.set_constraints(Size::new(max_size.width, preview_height as u32));
+        self.alphabetic_keyboard.set_constraints(self.keyboard_rect.size);
+        
+        // Update numeric keyboard and word selector if they exist
+        if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
+            numeric_keyboard.set_constraints(self.keyboard_rect.size);
+        }
+        if let Some(ref mut word_selector) = self.word_selector {
+            word_selector.set_constraints(self.keyboard_rect.size);
+        }
+        
+        // Update from model to ensure proper initial scroll position
+        self.update_from_model();
     }
 
     fn sizing(&self) -> crate::Sizing {

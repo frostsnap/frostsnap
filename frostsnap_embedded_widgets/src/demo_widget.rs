@@ -54,7 +54,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "bip39_entry" => {
-                let widget = $crate::bip39::EnterBip39ShareScreen::new($screen_size);
+                let widget = $crate::bip39::EnterBip39ShareScreen::new();
                 $run_macro!(widget);
             }
             "numeric_keyboard" => {

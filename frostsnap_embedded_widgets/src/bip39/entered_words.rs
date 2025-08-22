@@ -46,10 +46,11 @@ impl EnteredWords {
         use super::bip39_model::MainViewState;
 
         let status = match &view_state.main_view {
-            MainViewState::AllWordsEntered { words: _ } => {
-                // TODO: Actually validate checksum
-                // For now, assume it's valid if all words are entered
-                BackupStatus::Valid
+            MainViewState::AllWordsEntered { success } => {
+                match success {
+                    Some(_) => BackupStatus::Valid,
+                    None => BackupStatus::InvalidChecksum,
+                }
             }
             _ => {
                 // row 0 is share index, so completed words = row - 1 when row > 0
