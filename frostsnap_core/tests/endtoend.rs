@@ -208,7 +208,7 @@ impl common::Env for TestEnv {
         rng: &mut impl RngCore,
     ) {
         match message {
-            DeviceToUserMessage::FinalizeKeyGen => {}
+            DeviceToUserMessage::FinalizeKeyGen { .. } => {}
             DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                 self.keygen_checks.insert(from, phase.session_hash());
                 let ack = run

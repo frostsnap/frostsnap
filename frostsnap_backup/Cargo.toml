@@ -1,0 +1,14 @@
+[package]
+name = "frostsnap_backup"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+std = []
+default = ["std"]
+
+[dependencies]
+secp256kfun = { workspace = true, default-features = false, features = ["alloc"] }
+sha2 = { workspace = true, default-features = false }
+
+[dev-dependencies]

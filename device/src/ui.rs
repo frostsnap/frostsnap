@@ -1,7 +1,4 @@
-use crate::graphics::{
-    animation::AnimationState,
-    widgets::{EnterShareIndexScreen, EnterShareScreen},
-};
+// Imports removed - legacy screens are not used in stateless Workflow
 use alloc::{
     boxed::Box,
     string::{String, ToString},
@@ -13,16 +10,11 @@ use frostsnap_core::{
         KeyGenPhase2, SignPhase1,
     },
     schnorr_fun::frost::SecretShare,
-    SessionHash,
 };
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
     fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
-
-    fn set_device_name(&mut self, name: Option<impl Into<String>>);
-
-    fn get_device_name(&self) -> Option<&str>;
 
     fn set_workflow(&mut self, workflow: Workflow);
 
@@ -32,86 +24,42 @@ pub trait UserInteraction {
 
     fn clear_busy_task(&mut self);
 
-    fn clear_workflow(&mut self) {
-        self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
-            completed_task: None,
-        }));
-    }
+    fn clear_workflow(&mut self) {}
 
     fn take_workflow(&mut self) -> Workflow;
 
     fn poll(&mut self) -> Option<UiEvent>;
 
-    fn debug<S: ToString>(&mut self, debug: S) {
-        self.set_workflow(Workflow::Debug(debug.to_string()));
+    fn debug<S: ToString>(&mut self, _debug: S) {
+        // Debug functionality is now handled by RootWidget's debug_text field
+        // This is a no-op for now, but implementations can use this to set debug text
     }
 
-    fn cancel(&mut self) {
-        let workflow = self.take_workflow();
-        let new_workflow = match workflow {
-            Workflow::UserPrompt {
-                prompt: Prompt::NewName { old_name, new_name },
-                ..
-            } => Workflow::NamingDevice { old_name, new_name },
-            Workflow::NamingDevice { .. }
-            | Workflow::DisplayBackup { .. }
-            | Workflow::UserPrompt { .. }
-            | Workflow::DisplayAddress { .. }
-            | Workflow::EnteringBackup { .. }
-            | Workflow::FirmwareUpgrade(_)
-            | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
-                completed_task: None,
-            }),
-            Workflow::None | Workflow::Debug(_) => workflow,
-        };
-        self.set_workflow(new_workflow);
-    }
+    fn cancel(&mut self) {}
 }
 
+// These will be used when implementing HoldToConfirm widgets
+#[allow(dead_code)]
 const HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(600);
+#[allow(dead_code)]
 const LONG_HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(6000);
-
-#[derive(Clone, Debug)]
-pub enum WaitingFor {
-    /// Waiting for the coord to say "Hey, finalize!"
-    WaitingForKeyGenFinalize {
-        key_name: String,
-        t_of_n: (u16, u16),
-        session_hash: SessionHash,
-    },
-    /// Looking for upstream device
-    LookingForUpstream { jtag: bool },
-    /// Waiting for the announce ack
-    CoordinatorAnnounceAck,
-    /// Waiting to be told to do something
-    CoordinatorInstruction { completed_task: Option<UiEvent> },
-    /// Waiting for the coordinator to respond to a message its sent
-    CoordinatorResponse(WaitingResponse),
-}
-
-#[derive(Clone, Debug)]
-pub enum WaitingResponse {
-    KeyGen,
-}
 
 #[derive(Debug)]
 pub enum Workflow {
     None,
-    WaitingFor(WaitingFor),
-    UserPrompt {
-        prompt: Prompt,
-        animation: AnimationState,
+    Standby {
+        name: String,
+        key_name: String,
     },
-    Debug(String),
+    UserPrompt(Prompt),
     NamingDevice {
-        old_name: Option<String>,
         new_name: String,
     },
     DisplayBackup {
         key_name: String,
         backup: String,
     },
-    EnteringBackup(EnteringBackupStage),
+    EnteringBackup(EnterBackupPhase),
     DisplayAddress {
         address: String,
         bip32_path: String,
@@ -123,32 +71,26 @@ pub enum Workflow {
 impl Workflow {
     #[must_use]
     pub fn prompt(prompt: Prompt) -> Self {
-        let hold_duration = match prompt {
-            Prompt::WipeDevice => LONG_HOLD_TO_CONFIRM_TIME_MS,
-            _ => HOLD_TO_CONFIRM_TIME_MS,
-        };
-        Self::UserPrompt {
-            prompt,
-            animation: AnimationState::new(hold_duration),
-        }
+        Self::UserPrompt(prompt)
     }
 }
 
-#[derive(Debug)]
-pub enum EnteringBackupStage {
-    //HACK So the creator of the workflow doesn't have to construct the screen
-    Init {
-        phase: EnterBackupPhase,
-    },
-    ShareIndex {
-        phase: EnterBackupPhase,
-        screen: EnterShareIndexScreen,
-    },
-    Share {
-        phase: EnterBackupPhase,
-        screen: EnterShareScreen,
-    },
-}
+// No longer needed - backup entry stages are handled directly in WidgetTree
+// #[derive(Debug)]
+// pub enum EnteringBackupStage {
+//     //HACK So the creator of the workflow doesn't have to construct the screen
+//     Init {
+//         phase: EnterBackupPhase,
+//     },
+//     ShareIndex {
+//         phase: EnterBackupPhase,
+//         screen: EnterShareIndexScreen,
+//     },
+//     Share {
+//         phase: EnterBackupPhase,
+//         screen: EnterShareScreen,
+//     },
+// }
 
 impl Default for Workflow {
     fn default() -> Self {

@@ -1,24 +1,23 @@
 import 'fetch.just'
 
-default_board := "v2"
-ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_embedded_widgets -p frostsnap_backup"
 
 alias erase := erase-device
 
-flash BOARD=default_board +ARGS="":
-    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,factory {{ARGS}}
+flash +args="":
+    cd device && cargo run --release {{args}} --bin v2 -- --erase-parts otadata,factory
 
 erase-device +ARGS="nvs":
     cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
 
-build-device BOARD=default_board +ARGS="":
-    cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
+build-device +args="":
+    cd device && cargo build --release {{args}} --bin v2
 
 build +ARGS="":
    (cd frostsnapp; just build {{ARGS}})
 
-save-image BOARD=default_board +ARGS="":
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
+save-image +ARGS="":
+    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/v2 target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
 
 test-ordinary +ARGS="":
     cargo test {{ARGS}} {{ordinary_crates}}
@@ -60,8 +59,9 @@ fix-rust:
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
 
+gen-firmware: build-device save-image
 
-run +ARGS="": build-device save-image
+run +ARGS="": gen-firmware
     (cd frostsnapp; BUNDLE_FIRMWARE=1 flutter run {{ARGS}})
 
 fetch-riscv VERSION="2024.09.03-nightly":
@@ -75,3 +75,9 @@ lint: lint-ordinary lint-device lint-app
 
 install-cargo-bins:
     just frostsnapp/install-cargo-bins
+
+simulate +ARGS="":
+    (cd frostsnap_embedded_widgets && cargo run --bin simulate -- {{ARGS}})
+
+widget_dev +args="":
+    cd device && cargo run --bin widget_dev --release {{args}}
