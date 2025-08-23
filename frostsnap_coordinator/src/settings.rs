@@ -2,7 +2,6 @@ use crate::{
     bitcoin::chain_sync::{default_backup_electrum_server, default_electrum_server},
     persist::Persist,
 };
-use anyhow::Context as _;
 use bdk_chain::{bitcoin, rusqlite_impl::migrate_schema};
 use core::str::FromStr;
 use rusqlite::params;
@@ -104,14 +103,6 @@ impl Persist<rusqlite::Connection> for Settings {
     where
         Self: Sized,
     {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_app_global_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-             )",
-            [],
-        )
-        .context("creating fs_app_global_settings")?;
         let mut settings = Settings::default();
 
         {

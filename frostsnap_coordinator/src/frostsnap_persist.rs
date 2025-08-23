@@ -43,17 +43,6 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
         Self: Sized,
     {
         let mut coordinator = FrostCoordinator::new();
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_coordinator_mutations (
-               id INTEGER PRIMARY KEY AUTOINCREMENT,
-               mutation BLOB NOT NULL,
-               tied_to_key TEXT,
-               tied_to_restoration TEXT,
-               version INTEGER NOT NULL
-             )",
-            [],
-        )?;
-
         let mut stmt =
             conn.prepare("SELECT mutation, version FROM fs_coordinator_mutations ORDER BY id")?;
 
@@ -225,14 +214,6 @@ impl Persist<rusqlite::Connection> for DeviceNames {
     where
         Self: Sized,
     {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_devices (
-            id BLOB PRIMARY KEY,
-            name TEXT NOT NULL
-        )",
-            [],
-        )?;
-
         let mut stmt = conn.prepare("SELECT id, name FROM fs_devices")?;
         let mut device_names = DeviceNames::default();
 
