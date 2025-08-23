@@ -5,10 +5,12 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-default = ["v2", "read_protect_hmac_key"]
+default = ["v2", "read_protect_hmac_key", "stack_guard"]
 v2 = ["dep:display-interface-spi", "dep:mipidsi"]
 mem_debug = []
 read_protect_hmac_key = []
+# turns on the esp32c3 hardware stack guard
+stack_guard = []
 
 [dependencies]
 frostsnap_core = { workspace = true }
