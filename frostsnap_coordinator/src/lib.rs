@@ -12,7 +12,7 @@ pub mod wait_for_recovery_share;
 mod wait_for_to_user_message;
 pub use wait_for_to_user_message::*;
 
-#[cfg(target_os = "android")]
+#[cfg(not(target_os = "windows"))]
 pub mod cdc_acm_usb;
 
 pub use frostsnap_comms;
