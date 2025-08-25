@@ -2,8 +2,7 @@ use crate::{
     bitcoin::chain_sync::{default_backup_electrum_server, default_electrum_server},
     persist::Persist,
 };
-use anyhow::Context as _;
-use bdk_chain::bitcoin;
+use bdk_chain::{bitcoin, rusqlite_impl::migrate_schema};
 use core::str::FromStr;
 use rusqlite::params;
 use std::collections::BTreeMap;
@@ -82,20 +81,28 @@ pub enum Mutation {
 
 impl Persist<rusqlite::Connection> for Settings {
     type Update = Vec<Mutation>;
-    type InitParams = ();
+    type LoadParams = ();
 
-    fn initialize(conn: &mut rusqlite::Connection, _: Self::InitParams) -> anyhow::Result<Self>
+    fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
+        const SCHEMA_NAME: &str = "frostsnap_settings";
+        const MIGRATIONS: &[&str] = &[
+            // Version 0
+            "CREATE TABLE IF NOT EXISTS fs_app_global_settings ( \
+                key TEXT PRIMARY KEY, \
+                value TEXT \
+            )",
+        ];
+
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, _: Self::LoadParams) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_app_global_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-             )",
-            [],
-        )
-        .context("creating fs_app_global_settings")?;
         let mut settings = Settings::default();
 
         {
