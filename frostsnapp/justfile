@@ -12,8 +12,10 @@ gen +ARGS="":
 build TARGET="linux" +ARGS="": maybe-gen
     BUNDLE_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
 
-run +ARGS="":
-    just ../run {{ARGS}}
+run +ARGS="": maybe-gen
+    just ../build-device
+    just ../save-image
+    BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
 
 maybe-gen:
     #!/bin/sh
