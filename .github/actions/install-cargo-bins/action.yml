@@ -32,8 +32,8 @@ runs:
       if: steps.cache-rust-bins.outputs.cache-hit != 'true'
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Install libudev for espflash
-      if: steps.cache-rust-bins.outputs.cache-hit != 'true'
+    - name: Install libudev for espflash (Linux)
+      if: steps.cache-rust-bins.outputs.cache-hit != 'true' && runner.os == 'Linux'
       run: |
         sudo apt-get update
         sudo apt-get install -y libudev-dev

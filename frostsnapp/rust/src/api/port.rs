@@ -2,12 +2,9 @@ use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::PortDesc;
-use frostsnap_coordinator::{cdc_acm_usb::CdcAcmSerial, PortOpenError, Serial, SerialPort};
-use std::os::fd::OwnedFd;
-use std::os::unix::io::FromRawFd;
+use frostsnap_coordinator::{PortOpenError, Serial, SerialPort};
 pub use std::sync::mpsc::SyncSender;
-pub use std::sync::{Arc, Mutex, RwLock}; // For Unix-like systems (Android is Linux-based) // For read/write traits
-
+pub use std::sync::{Arc, Mutex, RwLock};
 use tracing::{event, Level};
 
 #[frb(mirror(PortDesc))]
@@ -17,13 +14,19 @@ pub struct _PortDesc {
     pub pid: u16,
 }
 
-// ========== stuff below here is only used on android
-
 #[derive(Debug)]
 #[frb(opaque)]
 pub struct PortOpen {
     pub id: String,
     ready: SyncSender<Result<i32, PortOpenError>>,
+}
+
+#[allow(dead_code)] // only used on android
+#[derive(Clone, Default)]
+#[frb(opaque)]
+pub struct FfiSerial {
+    pub(crate) available_ports: Arc<Mutex<Vec<PortDesc>>>,
+    pub(crate) open_requests: Arc<Mutex<Option<StreamSink<PortOpen>>>>,
 }
 
 impl PortOpen {
@@ -32,16 +35,8 @@ impl PortOpen {
             Some(err) => Err(frostsnap_coordinator::PortOpenError::Other(err.into())),
             None => Ok(fd),
         };
-
         let _ = self.ready.send(result);
     }
-}
-
-#[derive(Clone, Default)]
-#[frb(opaque)]
-pub struct FfiSerial {
-    pub(crate) available_ports: Arc<Mutex<Vec<PortDesc>>>,
-    pub(crate) open_requests: Arc<Mutex<Option<StreamSink<PortOpen>>>>,
 }
 
 impl FfiSerial {
@@ -57,14 +52,16 @@ impl FfiSerial {
     }
 }
 
+// ========== Android implementation
+
 impl Serial for FfiSerial {
     fn available_ports(&self) -> Vec<PortDesc> {
         self.available_ports.lock().unwrap().clone()
     }
 
+    #[allow(unreachable_code)]
     fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
         let (tx, rx) = std::sync::mpsc::sync_channel(0);
-
         loop {
             let open_requests = self.open_requests.lock().unwrap();
             match &*open_requests {
@@ -83,23 +80,29 @@ impl Serial for FfiSerial {
                 }
             }
         }
-
         let raw_fd = rx.recv().map_err(|e| PortOpenError::Other(Box::new(e)))??;
         if raw_fd < 0 {
             return Err(PortOpenError::Other(
-                anyhow!("OS failed to open UBS device {id}:  FD was < 0").into(),
+                anyhow!("OS failed to open UBS device {id}: FD was < 0").into(),
             ));
         }
 
-        let fd =
+        #[cfg(not(target_os = "windows"))]
+        {
+            use frostsnap_coordinator::cdc_acm_usb::CdcAcmSerial;
+            use std::os::fd::FromRawFd;
+            use std::os::fd::OwnedFd;
+
             // SAFETY: on the host side (e.g. android) we've dup'd and detached this file
             // descriptor. we're the only owner of it at the moment so it's fine for us to turn it
             // into an `OwnedFd` which will close it when it's dropped.
-            unsafe { OwnedFd::from_raw_fd(raw_fd) };
+            let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
+            let cdc_acm = CdcAcmSerial::new_auto(fd, id.to_string(), baud_rate)
+                .map_err(|e| PortOpenError::Other(e.into()))?;
+            Ok(Box::new(cdc_acm))
+        }
 
-        let cdc_acm = CdcAcmSerial::new_auto(fd, id.to_string(), baud_rate)
-            .map_err(|e| PortOpenError::Other(e.into()))?;
-
-        Ok(Box::new(cdc_acm))
+        #[cfg(target_os = "windows")]
+        panic!("Ffi Serial not available on windows");
     }
 }

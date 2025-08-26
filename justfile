@@ -61,8 +61,8 @@ fix-rust:
     cargo fmt --all
 
 
-run +ARGS="": build-device save-image
-    (cd frostsnapp; BUNDLE_FIRMWARE=1 flutter run {{ARGS}})
+run +ARGS="":
+    just frostsnapp/run
 
 fetch-riscv VERSION="2024.09.03-nightly":
     #!/bin/sh
