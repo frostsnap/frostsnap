@@ -87,9 +87,8 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(title: Text('Settings')),
       body: Center(
         child: Container(
-          constraints: BoxConstraints(maxWidth: 600),
+          constraints: BoxConstraints(maxWidth: 580),
           child: ListView(
-            padding: const EdgeInsets.all(16.0),
             children: [
               if (walletCtx != null)
                 SettingsCategory(
@@ -120,7 +119,11 @@ class SettingsPage extends StatelessWidget {
                       bodyBuilder: (context) {
                         final frostKey = walletCtx.wallet.frostKey();
                         if (frostKey != null) {
+                          final backupManager = FrostsnapContext.of(
+                            context,
+                          )!.backupManager;
                           return BackupChecklist(
+                            backupManager: backupManager,
                             accessStructure: frostKey.accessStructures()[0],
                           );
                         }
@@ -287,66 +290,75 @@ class SettingsCategory extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleLarge,
-          textAlign: TextAlign.center,
-        ),
-        SizedBox(height: 8.0),
-        ...items.map((item) {
-          if (item.builder != null) {
-            return item.builder!.call(context, item.title, item.icon);
-          } else {
-            return ListTile(
-              leading: Icon(item.icon),
-              title: item.title,
-              trailing: Icon(Icons.chevron_right),
-              onTap: () async {
-                final walletContext = WalletContext.of(context);
-                final keyContext = KeyContext.of(context);
-                await Navigator.push(
-                  context,
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) {
-                      Widget body =
-                          item.bodyBuilder?.call(context) ?? SizedBox();
-                      if (walletContext != null) {
-                        body = walletContext.wrap(body);
-                      } else if (keyContext != null) {
-                        body = keyContext.wrap(body);
-                      }
-                      return Scaffold(
-                        appBar: AppBar(title: item.title),
-                        body: body,
-                      );
-                    },
-                    transitionsBuilder:
-                        (context, animation, secondaryAnimation, child) {
-                          const begin = Offset(1.0, 0.0);
-                          const end = Offset.zero;
-                          const curve = Curves.ease;
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          ListTile(
+            title: Text(
+              title,
+              style: TextStyle(
+                color: theme.colorScheme.secondary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            dense: true,
+          ),
+          ...items.map((item) {
+            if (item.builder != null) {
+              return item.builder!.call(context, item.title, item.icon);
+            } else {
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                leading: Icon(item.icon),
+                title: item.title,
+                trailing: Icon(Icons.chevron_right),
+                onTap: () async {
+                  final walletContext = WalletContext.of(context);
+                  final keyContext = KeyContext.of(context);
+                  await Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) {
+                        Widget body =
+                            item.bodyBuilder?.call(context) ?? SizedBox();
+                        if (walletContext != null) {
+                          body = walletContext.wrap(body);
+                        } else if (keyContext != null) {
+                          body = keyContext.wrap(body);
+                        }
+                        return Scaffold(
+                          appBar: AppBar(title: item.title),
+                          body: body,
+                        );
+                      },
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                            const begin = Offset(1.0, 0.0);
+                            const end = Offset.zero;
+                            const curve = Curves.ease;
 
-                          var tween = Tween(
-                            begin: begin,
-                            end: end,
-                          ).chain(CurveTween(curve: curve));
+                            var tween = Tween(
+                              begin: begin,
+                              end: end,
+                            ).chain(CurveTween(curve: curve));
 
-                          return SlideTransition(
-                            position: animation.drive(tween),
-                            child: child,
-                          );
-                        },
-                  ),
-                );
-                item.onClose?.call();
-              },
-            );
-          }
-        }),
-      ],
+                            return SlideTransition(
+                              position: animation.drive(tween),
+                              child: child,
+                            );
+                          },
+                    ),
+                  );
+                  item.onClose?.call();
+                },
+              );
+            }
+          }),
+        ],
+      ),
     );
   }
 }

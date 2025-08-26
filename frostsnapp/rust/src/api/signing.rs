@@ -413,6 +413,7 @@ impl Coordinator {
         txs.collect()
     }
 
+    #[frb(sync)]
     pub fn request_device_sign(
         &self,
         device_id: DeviceId,
