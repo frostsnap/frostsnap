@@ -238,8 +238,10 @@ class WalletCreateController extends ChangeNotifier {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 12,
             children: [
-              const Text(
-                'Confirm that this code is shown on all devices',
+              Text(
+                sessionHash == null
+                    ? 'Finalizing wallet'
+                    : 'Confirm that this code is shown on all devices',
                 textAlign: TextAlign.center,
               ),
               Card.filled(

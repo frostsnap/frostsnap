@@ -9,7 +9,8 @@ use super::*;
 pub enum DeviceToUserMessage {
     FinalizeKeyGen,
     CheckKeyGen {
-        phase: Box<KeyGenPhase2>,
+        session_hash: SessionHash,
+        phase: Box<KeyGenPhase3>,
     },
     SignatureRequest {
         phase: Box<SignPhase1>,

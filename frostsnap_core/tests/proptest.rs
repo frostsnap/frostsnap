@@ -12,7 +12,7 @@ use frostsnap_core::{
     coordinator::{
         CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
     },
-    device::{DeviceToUserMessage, KeyGenPhase2, KeyPurpose, SignPhase1},
+    device::{DeviceToUserMessage, KeyGenPhase3, KeyPurpose, SignPhase1},
     message::keygen,
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
@@ -167,13 +167,16 @@ impl ReferenceStateMachine for RefState {
                 .no_shrink();
             let keygen_id = array::uniform::<_, 16>(0..=u8::MAX)/* testing colliding keygen ids is not of interest */ .no_shrink();
 
+            let coordinator_keygen_keypair =
+                state.run_start.coordinator_keygen_keypair.public_key();
             let keygen_trans = (keygen_id, devices_and_threshold, name)
-                .prop_map(|(keygen_id, (devices, threshold), key_name)| {
+                .prop_map(move |(keygen_id, (devices, threshold), key_name)| {
                     Transition::CStartKeygen(keygen::Begin::new_with_id(
                         devices,
                         threshold as u16,
                         key_name,
                         KeyPurpose::Test,
+                        coordinator_keygen_keypair,
                         KeygenId::from_bytes(keygen_id),
                     ))
                 })
@@ -494,7 +497,7 @@ struct HappyPathTest {
 
 #[derive(Default, Debug)]
 pub struct ProptestEnv {
-    device_keygen_acks: BTreeMap<KeygenId, BTreeMap<DeviceId, KeyGenPhase2>>,
+    device_keygen_acks: BTreeMap<KeygenId, BTreeMap<DeviceId, KeyGenPhase3>>,
     sign_reqs: BTreeMap<SignSessionId, BTreeMap<DeviceId, SignPhase1>>,
     coordinator_keygen_acks: BTreeSet<KeygenId>,
     finished_signatures: BTreeSet<SignSessionId>,
@@ -603,7 +606,10 @@ impl StateMachineTest for HappyPathTest {
         } = &mut state;
         match transition {
             Transition::CStartKeygen(do_keygen) => {
-                let do_keygen = run.coordinator.begin_keygen(do_keygen, rng).unwrap();
+                let do_keygen = run
+                    .coordinator
+                    .begin_keygen(do_keygen, run.coordinator_keygen_keypair, rng)
+                    .unwrap();
                 run.extend(do_keygen);
             }
             Transition::DKeygenAck {
