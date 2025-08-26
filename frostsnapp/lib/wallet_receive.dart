@@ -262,7 +262,22 @@ class _ReceiverPageState extends State<ReceivePage> {
     fullscreenDialogController = FullscreenActionDialogController(
       title: 'Verify address on device',
       body: _dialogBodyBuilder,
-      dismissButton: _dismissButtonBuilder,
+      actionButtons: [
+        OutlinedButton(
+          child: Text('Cancel'),
+          onPressed: () {
+            verificationSuccess = false;
+            Navigator.pop(context);
+          },
+        ),
+        OutlinedButton(
+          onPressed: () {
+            verificationSuccess = true;
+            Navigator.pop(context);
+          },
+          child: Text('Sender has correct address'),
+        ),
+      ],
       onDismissed: () {
         if (verificationSuccess) {
           focus = ReceivePageFocus.awaitTx;
@@ -468,23 +483,16 @@ class _ReceiverPageState extends State<ReceivePage> {
                       final displayingDevices = targetDevices.intersection(
                         connectedDevices,
                       );
-                      for (var deviceId in displayingDevices) {
-                        fullscreenDialogController.addActionNeeded(
-                          context,
-                          deviceId,
-                        );
-                      }
+
+                      fullscreenDialogController.batchAddActionNeeded(
+                        context,
+                        displayingDevices,
+                      );
 
                       // collect the list first because we're going to mutate it
-                      fullscreenDialogController.actionsNeeded
-                          .toList()
-                          .whereNot(
-                            (deviceId) => displayingDevices.contains(deviceId),
-                          )
-                          .forEach(
-                            (deviceId) => fullscreenDialogController
-                                .removeActionNeeded(deviceId),
-                          );
+                      fullscreenDialogController.clearAllExcept(
+                        displayingDevices,
+                      );
 
                       return Column(
                         mainAxisSize: MainAxisSize.min,
@@ -720,79 +728,69 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   Widget _dialogBodyBuilder(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, // left-align all rows
-        children: [
-          Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // align icon & text top
-            children: const [
-              Icon(Icons.send),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  "Give the address you have scanned/copied to the sender.",
-                  softWrap: true,
-                ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 8,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          spacing: 12,
+          children: const [
+            Flexible(flex: 1, child: Icon(Icons.send)),
+            Flexible(
+              flex: 3,
+              child: Text(
+                "Give the address you have scanned/copied to the sender.",
+                softWrap: true,
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // align icon & text top
-            children: [
-              Icon(Icons.visibility),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text:
-                            "Confirm they have the same address as shown on the device's screen.\nMake sure the two ",
-                      ),
-                      TextSpan(
-                        text: "highlighted",
-                        style: TextStyle(color: theme.colorScheme.primary),
-                      ),
-                      TextSpan(text: " chunks are present."),
-                    ],
-                  ),
-                  softWrap: true,
+            ),
+          ],
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          spacing: 12,
+          children: [
+            Flexible(flex: 1, child: Icon(Icons.visibility)),
+            Expanded(
+              flex: 3,
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text:
+                          "Confirm they have the same address as shown on the device's screen.\nMake sure the two ",
+                    ),
+                    TextSpan(
+                      text: "highlighted",
+                      style: TextStyle(color: theme.colorScheme.primary),
+                    ),
+                    TextSpan(text: " chunks are present."),
+                  ],
                 ),
+                softWrap: true,
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // align icon & text top
-            children: const [
-              Icon(Icons.block),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  "Do not send the bitcoin if it doesn't match.",
-                  softWrap: true,
-                ),
+            ),
+          ],
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          spacing: 12,
+          children: const [
+            Flexible(flex: 1, child: Icon(Icons.block)),
+            Expanded(
+              flex: 3,
+              child: Text(
+                "Do not send the bitcoin if it doesn't match.",
+                softWrap: true,
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dismissButtonBuilder(BuildContext ctx) {
-    return OutlinedButton(
-      onPressed: () {
-        verificationSuccess = true;
-        Navigator.pop(ctx);
-      },
-      child: Text("The sender has the correct address"),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

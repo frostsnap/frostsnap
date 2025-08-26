@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/keygen.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/sign_message.dart';
@@ -18,13 +16,15 @@ import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:frostsnap/wallet_create.dart';
+import 'package:frostsnap/wallet_add.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
 import 'package:frostsnap/wallet_receive.dart';
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:rxdart/rxdart.dart';
+
+import 'maybe_fullscreen_dialog.dart';
 
 class Wallet {
   final SuperWallet superWallet;
@@ -61,73 +61,47 @@ class Wallet {
 }
 
 class WalletHome extends StatelessWidget {
+  static const noWalletBodyCenterKey = Key('noWalletCenter');
+
   const WalletHome({super.key});
 
   Widget buildNoWalletBody(BuildContext context) {
     final theme = Theme.of(context);
-    final homeCtx = HomeContext.of(context)!;
+    final column = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: 460),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 12,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: Center(
+              child: Image(
+                color: theme.colorScheme.primary,
+                height: 75,
+                image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
+              ),
+            ),
+          ),
+          WalletAddColumn(onPressed: makeOnPressed(context)),
+        ],
+      ),
+    );
     return CustomScrollView(
       slivers: [
-        SliverAppBar(pinned: true),
+        SliverAppBar(pinned: true, forceMaterialTransparency: true),
         SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 20.0,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10.0),
-                  child: SvgPicture.asset(
-                    'assets/frostsnap-logo.svg',
-                    fit: BoxFit.fitWidth,
-                    height: 100,
-                    colorFilter: ColorFilter.mode(
-                      theme.colorScheme.primary,
-                      BlendMode.srcATop,
-                    ),
-                  ),
+          hasScrollBody: true,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Center(child: column),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(10.0),
-                  child: Text(
-                    'Let\'s Get Started',
-                    style: theme.textTheme.headlineLarge,
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final asRef =
-                        await MaybeFullscreenDialog.show<AccessStructureRef>(
-                          context: context,
-                          barrierDismissible: false,
-                          child: WalletCreatePage(),
-                        );
-                    if (context.mounted && asRef != null) {
-                      homeCtx.openNewlyCreatedWallet(asRef.keyId);
-                      showWalletCreatedDialog(context, asRef);
-                    }
-                  },
-                  icon: Icon(Icons.add_circle),
-                  label: Text('Create Wallet'),
-                ),
-                TextButton.icon(
-                  onPressed: () async {
-                    final restorationId = await startWalletRecoveryFlowDialog(
-                      context,
-                    );
-                    if (restorationId != null) {
-                      homeCtx.walletListController.selectRecoveringWallet(
-                        restorationId,
-                      );
-                    }
-                  },
-                  icon: Icon(Icons.history),
-                  label: Text('Restore Wallet'),
-                ),
-                SizedBox(height: 100.0),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ],
@@ -139,6 +113,7 @@ class WalletHome extends StatelessWidget {
     final homeCtx = HomeContext.of(context)!;
     final walletListController = homeCtx.walletListController;
     final scaffoldKey = homeCtx.scaffoldKey;
+    final theme = Theme.of(context);
 
     final body = ListenableBuilder(
       listenable: walletListController,
@@ -170,12 +145,13 @@ class WalletHome extends StatelessWidget {
     final bottomBar = ListenableBuilder(
       listenable: walletListController,
       builder: (context, _) {
+        final bar = WalletBottomBar();
         return switch (walletListController.selected) {
           WalletItemKey item => item.tryWrapInWalletContext(
             context: context,
-            child: WalletBottomBar(),
+            child: bar,
           ),
-          _ => BottomAppBar(color: Colors.transparent),
+          _ => bar,
         };
       },
     );
@@ -186,31 +162,36 @@ class WalletHome extends StatelessWidget {
       scaffoldKey: scaffoldKey,
       isRounded: isNarrowDisplay,
     );
-    if (isNarrowDisplay) {
-      return Scaffold(
-        key: scaffoldKey,
-        extendBody: true,
-        resizeToAvoidBottomInset: true,
-        drawer: drawer,
-        body: body,
-        bottomNavigationBar: bottomBar,
-      );
-    } else {
-      return Row(
-        children: [
-          drawer,
-          Flexible(
-            child: Scaffold(
-              key: scaffoldKey,
-              extendBody: true,
-              resizeToAvoidBottomInset: false,
-              body: body,
-              bottomNavigationBar: bottomBar,
-            ),
-          ),
-        ],
-      );
-    }
+
+    final scaffold = Scaffold(
+      key: scaffoldKey,
+      extendBody: true,
+      resizeToAvoidBottomInset: true,
+      drawer: isNarrowDisplay ? drawer : null,
+      body: body,
+      bottomNavigationBar: bottomBar,
+    );
+
+    final constrainedScaffold = Container(
+      color: theme.colorScheme.surface,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 840),
+          child: scaffold,
+        ),
+      ),
+    );
+
+    return Row(
+      children: [
+        AnimatedSize(
+          duration: Durations.medium4,
+          curve: Curves.easeInOutCubicEmphasized,
+          child: isNarrowDisplay ? SizedBox(height: double.infinity) : drawer,
+        ),
+        Flexible(child: constrainedScaffold),
+      ],
+    );
   }
 }
 
@@ -401,13 +382,13 @@ class _TxListState extends State<TxList> {
             appBarMenu,
           ],
         ),
-        if (frostKey != null) BackupWarningBanner(frostKey: frostKey),
         PinnedHeaderSliver(
           child: UpdatingBalance(
             txStream: walletCtx.txStream,
             atTopNotifier: atTopNotifier,
             scrolledUnderElevation: scrolledUnderElevation,
             expandedHeight: 144.0,
+            frostKey: frostKey,
           ),
         ),
         StreamBuilder(
@@ -555,7 +536,7 @@ class WalletDrawer extends StatelessWidget {
 
   Widget buildWalletDestination(BuildContext context, WalletItem item) {
     return NavigationDrawerDestination(
-      icon: item.icon ?? SizedBox.shrink(),
+      icon: item.icon ?? Icon(Icons.wallet_rounded),
       label: Text.rich(
         TextSpan(
           text: item.name,
@@ -569,6 +550,32 @@ class WalletDrawer extends StatelessWidget {
     );
   }
 
+  static const outerRadius = Radius.circular(28.0);
+  static const innerRadius = Radius.circular(8.0);
+  static const topShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.only(
+      topLeft: outerRadius,
+      topRight: outerRadius,
+      bottomLeft: innerRadius,
+      bottomRight: innerRadius,
+    ),
+  );
+  static const bottomShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.only(
+      topLeft: innerRadius,
+      topRight: innerRadius,
+      bottomLeft: outerRadius,
+      bottomRight: outerRadius,
+    ),
+  );
+  static const midShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(innerRadius),
+  );
+  static const allShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(outerRadius),
+  );
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 6);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -578,134 +585,128 @@ class WalletDrawer extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         List<Widget> children = [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10.0,
-              vertical: 5.0,
-            ),
-            child: SvgPicture.asset(
-              'assets/frostsnap-logo.svg',
-              // width: logoWidth,
-              fit: BoxFit.fitWidth,
-              height: 100,
-              colorFilter: ColorFilter.mode(
-                theme.colorScheme.primary,
-                BlendMode.srcATop,
+          Container(
+            width: 360,
+            child: Padding(
+              padding: const EdgeInsets.all(25),
+              child: Image(
+                color: theme.colorScheme.primary,
+                image: AssetImage('assets/frostsnap-logo-trimmed.png'),
+                fit: BoxFit
+                    .fitWidth, // This will scale to fit the available width
               ),
             ),
           ),
         ];
-        if (controller.wallets.isEmpty) {
-          children.add(
-            NavigationDrawerDestination(
-              enabled: false,
-              icon: SizedBox(),
-              label: Text('Let\'s Get Started'),
-            ),
-          );
-        } else {
-          children.addAll([
-            ...controller.wallets.map(
-              (item) => buildWalletDestination(context, item),
-            ),
-            NavigationDrawerDestination(
-              icon: SizedBox.shrink(),
-              //label: SizedBox.shrink(),
-              label: SizedBox(width: 224, child: Divider()),
-              enabled: false,
-            ),
-          ]);
-        }
-
-        final List<(void Function(), bool, IconData, String)>
-        actionableDestinations = [
-          (
-            () async {
-              final asRef =
-                  await MaybeFullscreenDialog.show<AccessStructureRef>(
-                    context: context,
-                    barrierDismissible: false,
-                    child: WalletCreatePage(),
-                  );
-              if (context.mounted && asRef != null) {
-                homeCtx.openNewlyCreatedWallet(asRef.keyId);
-                showWalletCreatedDialog(context, asRef);
-              }
-            },
-            true,
-            Icons.add_circle,
-            'Create Wallet',
-          ),
-          (
-            () async {
-              final restorationId = await startWalletRecoveryFlowDialog(
-                context,
-              );
-              if (restorationId != null) {
-                controller.selectRecoveringWallet(restorationId);
-              }
-            },
-            false,
-            Icons.update,
-            'Restore Wallet',
-          ),
-          (
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => DeviceSettingsPage()),
-            ),
-            false,
-            Icons.devices,
-            'Devices',
-          ),
-          (
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => SettingsPage()),
-            ),
-            false,
-            Icons.settings,
-            'Settings',
-          ),
-        ];
         children.addAll([
-          ...actionableDestinations.map((elem) {
-            final (onPressed, isFilled, iconData, textData) = elem;
-            final label = Text(textData);
-            final icon = Icon(iconData);
-            return NavigationDrawerDestination(
-              enabled: false,
-              icon: SizedBox.shrink(),
-              label: isFilled
-                  ? FilledButton.icon(
-                      onPressed: onPressed,
-                      icon: icon,
-                      label: label,
-                    )
-                  : TextButton.icon(
-                      onPressed: onPressed,
-                      icon: icon,
-                      label: label,
+          ...controller.wallets.map(
+            (item) => buildWalletDestination(context, item),
+          ),
+          NavigationDrawerDestination(
+            icon: Icon(
+              controller.selected == null
+                  ? Icons.more_horiz_rounded
+                  : Icons.add_rounded,
+              color: controller.selected == null
+                  ? null
+                  : theme.colorScheme.primary,
+            ),
+            label: Text(
+              'Create or Restore Wallet',
+              style: controller.selected == null
+                  ? null
+                  : TextStyle(color: theme.colorScheme.primary),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 2,
+              children: [
+                Card.filled(
+                  color: theme.colorScheme.surfaceContainerLowest,
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.hardEdge,
+                  shape: topShape,
+                  child: ListTile(
+                    onTap: () async => await MaybeFullscreenDialog.show(
+                      context: context,
+                      barrierDismissible: true,
+                      child: homeCtx.wrap(DeviceListPage()),
                     ),
-            );
-          }),
+                    dense: true,
+                    contentPadding: tilePadding,
+                    leading: Icon(Icons.devices_rounded),
+                    trailing: StreamBuilder(
+                      stream: GlobalStreams.deviceListSubject,
+                      builder: (context, snapshot) {
+                        final n = snapshot.data?.state.devices.length;
+                        return n == null
+                            ? SizedBox.shrink()
+                            : CircleAvatar(
+                                radius: 12,
+                                backgroundColor: theme.colorScheme.primary,
+                                child: Text(
+                                  '$n',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              );
+                      },
+                    ),
+                    title: Text('Connected Devices'),
+                    textColor: theme.colorScheme.secondary,
+                    iconColor: theme.colorScheme.secondary,
+                  ),
+                ),
+                Card.filled(
+                  color: theme.colorScheme.surfaceContainerLowest,
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.hardEdge,
+                  shape: bottomShape,
+                  child: ListTile(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => SettingsPage()),
+                    ),
+                    dense: true,
+                    contentPadding: tilePadding,
+                    leading: Icon(Icons.settings_rounded),
+                    title: Text('Settings'),
+                    textColor: theme.colorScheme.secondary,
+                    iconColor: theme.colorScheme.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ]);
 
         final drawer = NavigationDrawer(
           onDestinationSelected: (index) {
-            controller.selectedIndex = index;
+            if (index < controller.wallets.length) {
+              controller.selectedIndex = index;
+            } else {
+              controller.selectedIndex = null;
+            }
             scaffoldKey.currentState?.closeDrawer();
           },
-          selectedIndex: controller.selectedIndex,
+          selectedIndex: controller.selectedIndex ?? controller.wallets.length,
           children: children,
         );
 
-        return isRounded
+        final maybeContainedDrawer = isRounded
             ? drawer
             : Container(
                 color: theme.colorScheme.surfaceContainerLow,
                 child: drawer,
               );
+
+        return maybeContainedDrawer;
       },
     );
   }
@@ -783,13 +784,15 @@ class WalletBottomBar extends StatelessWidget {
 class UpdatingBalance extends StatefulWidget {
   final ValueNotifier<bool> atTopNotifier;
   final Stream<TxState> txStream;
+  final FrostKey? frostKey;
   final double? scrolledUnderElevation;
   final double expandedHeight;
 
   const UpdatingBalance({
     super.key,
-    required this.txStream,
     required this.atTopNotifier,
+    required this.txStream,
+    this.frostKey,
     this.scrolledUnderElevation,
     this.expandedHeight = 180.0,
   });
@@ -834,6 +837,8 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
 
   @override
   Widget build(BuildContext context) {
+    final frostKey = widget.frostKey;
+
     final theme = Theme.of(context);
     final balanceTextStyle = theme.textTheme.headlineLarge;
     final pendingBalanceTextStyle = theme.textTheme.bodyLarge?.copyWith(
@@ -907,6 +912,11 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
               ),
             ),
           ),
+          if (frostKey != null)
+            Align(
+              alignment: Alignment.topLeft,
+              child: BackupWarningBanner(frostKey: frostKey, shrink: !atTop),
+            ),
         ],
       ),
     );
@@ -1028,8 +1038,13 @@ Uri getBlockExplorer(BitcoinNetwork network) {
 
 class BackupWarningBanner extends StatelessWidget {
   final FrostKey frostKey;
+  final bool shrink;
 
-  const BackupWarningBanner({required this.frostKey, super.key});
+  const BackupWarningBanner({
+    super.key,
+    required this.frostKey,
+    required this.shrink,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1037,34 +1052,49 @@ class BackupWarningBanner extends StatelessWidget {
     final backupStream = walletCtx.backupStream;
     final theme = Theme.of(context);
 
+    final button = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: IconButton(
+        onPressed: () => onTap(context, walletCtx),
+        icon: Icon(Icons.warning_rounded),
+        style: IconButton.styleFrom(foregroundColor: theme.colorScheme.error),
+        tooltip: 'This wallet has unfinished backups!',
+      ),
+    );
+
     final banner = ListTile(
       dense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 16),
       onTap: () => onTap(context, walletCtx),
-      tileColor: theme.colorScheme.errorContainer,
-      iconColor: theme.colorScheme.onErrorContainer,
-      textColor: theme.colorScheme.onErrorContainer,
+      iconColor: theme.colorScheme.error,
+      textColor: theme.colorScheme.error,
       leading: Icon(Icons.warning_rounded),
       trailing: Icon(Icons.chevron_right),
       title: Text('This wallet has unfinished backups!'),
     );
+
+    final widget = shrink ? button : banner;
+
     final streamedBanner = StreamBuilder<BackupRun>(
       stream: backupStream,
       builder: (context, snapshot) {
         final backupRun = snapshot.data;
         final hideBanner = backupRun == null || isBackupDone(backupRun);
-        return hideBanner ? SizedBox.shrink() : banner;
+        return hideBanner ? SizedBox.shrink() : widget;
       },
     );
 
-    return SliverToBoxAdapter(child: streamedBanner);
+    return streamedBanner;
   }
 
   onTap(BuildContext context, WalletContext walletContext) {
+    final backupManager = FrostsnapContext.of(context)!.backupManager;
     showBottomSheetOrDialog(
       context,
       title: Text('Backup Checklist'),
       builder: (context, scrollController) => walletContext.wrap(
         BackupChecklist(
+          backupManager: backupManager,
           scrollController: scrollController,
           accessStructure: frostKey.accessStructures()[0],
           showAppBar: false,
