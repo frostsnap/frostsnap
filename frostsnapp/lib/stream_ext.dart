@@ -62,3 +62,8 @@ extension StreamCompletionFuture<T> on Stream<T> {
     return completer.future;
   }
 }
+
+Future<T> select<T>(Iterable<Future<T>> futures, {Function? catchError}) async {
+  var res = Stream<T>.fromFutures(futures).first;
+  return await (catchError == null ? res : res.catchError(catchError));
+}

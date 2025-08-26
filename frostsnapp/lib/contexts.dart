@@ -222,7 +222,7 @@ class HomeContext extends InheritedWidget {
     child: child,
   );
 
-  openNewlyCreatedWallet(KeyId id) {
+  void openNewlyCreatedWallet(KeyId id) {
     walletListController.selectWallet(id);
     scaffoldKey.currentState?.closeDrawer();
     confettiController.play();
