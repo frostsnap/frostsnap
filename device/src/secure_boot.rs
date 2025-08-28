@@ -1,7 +1,7 @@
 extern crate alloc;
 use alloc::{vec, vec::Vec};
 use crc::Crc;
-use embedded_storage::nor_flash::ReadNorFlash;
+use embedded_storage::nor_flash::{NorFlashErrorKind, ReadNorFlash};
 use esp_hal::efuse::Efuse;
 use esp_hal::rsa::{operand_sizes::Op3072, Rsa, RsaModularExponentiation};
 use esp_hal::sha::{Sha, Sha256};
@@ -10,6 +10,18 @@ use frostsnap_embedded::FlashPartition;
 use nb::block;
 
 const SECTOR_SIZE: usize = 4096;
+
+#[derive(Debug)]
+pub enum SecureBootError<'a> {
+    MissingSignature,
+    ChecksumInvalid,
+    EfuseError,
+    PublicKeyInvalid,
+    ReadImageError(u32, NorFlashErrorKind),
+    ImageHashInvalid,
+    SignatureInvalid,
+    SignatureError(&'a str),
+}
 
 #[derive(Debug)]
 struct SignatureBlock {
@@ -266,11 +278,11 @@ pub fn is_secure_boot_enabled() -> bool {
     find_secure_boot_key().is_some()
 }
 
-pub fn verify_secure_boot<S>(
+pub fn verify_secure_boot<'a, S>(
     app_partition: &FlashPartition<S>,
     rsa: &mut Rsa<'_, Blocking>,
     sha: &mut Sha,
-) -> Result<(), &'static str>
+) -> Result<(), SecureBootError<'a>>
 where
     S: ReadNorFlash + embedded_storage::nor_flash::NorFlash,
 {
@@ -301,7 +313,7 @@ where
     }
 
     if !signature_found {
-        panic!("No signature block found in app partition!");
+        return Err(SecureBootError::MissingSignature);
     }
 
     // Parse signature block structure
@@ -313,14 +325,14 @@ where
     let calculated_crc = CRC.checksum(&signature_block[0..1196]);
     let stored_crc = u32::from_le_bytes(parsed_block.crc32);
     if calculated_crc != stored_crc {
-        panic!("CRC32 verification failed!");
+        return Err(SecureBootError::ChecksumInvalid);
     }
 
-    // CRITICAL SECURITY CHECK - Verify public key digest against eFuse FIRST
+    // Verify public key digest against eFuse FIRST
     // Find the secure boot key digest from eFuse by checking KEY_PURPOSE fields
     let efuse_key_digest = match find_secure_boot_key() {
         Some(key_digest) => key_digest,
-        None => panic!("No valid secure boot key found in eFuse!"),
+        None => return Err(SecureBootError::EfuseError),
     };
 
     // Calculate SHA-256 of public key material from signature block (bytes 36-812)
@@ -329,9 +341,8 @@ where
 
     let calculated_key_digest = compute_sha256_hardware(sha, public_key_data);
 
-    // FAIL-SECURE: If public key doesn't match eFuse, immediately panic
     if calculated_key_digest != efuse_key_digest {
-        panic!("Firmware signed with untrusted key! Public key digest mismatch.");
+        return Err(SecureBootError::PublicKeyInvalid);
     }
 
     // Verify image digest (SHA-256 of application data before signature block)
@@ -346,10 +357,8 @@ where
                 }
             }
             Err(e) => {
-                panic!(
-                    "Failed to read flash sector {} for image digest verification: {:?}",
-                    sector, e
-                );
+                // "Failed to read flash sector {} for image digest verification: {:?}", sector, e
+                return Err(SecureBootError::ReadImageError(sector, e));
             }
         }
     }
@@ -358,14 +367,14 @@ where
     block!(hasher.finish(&mut calculated_digest)).unwrap();
 
     if calculated_digest != parsed_block.image_digest {
-        panic!("Image digest verification failed!");
+        return Err(SecureBootError::ImageHashInvalid);
     }
 
     // Verify RSA-PSS signature using hardware RSA peripheral
     match verify_rsa_pss_signature(rsa, &parsed_block, &parsed_block.image_digest, sha) {
         Ok(true) => { /* Firmware signature verified successfully */ }
-        Ok(false) => panic!("RSA-PSS signature verification failed! Invalid signature."),
-        Err(_) => panic!("RSA-PSS signature verification error"),
+        Ok(false) => return Err(SecureBootError::SignatureInvalid),
+        Err(e) => return Err(SecureBootError::SignatureError(e)),
     }
 
     // If we reach here, ALL security checks have passed
