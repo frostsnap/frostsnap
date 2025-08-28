@@ -1,7 +1,7 @@
 import 'fetch.just'
 
 default_board := "dev"
-ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_factory"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_factory -p frost_backup"
 
 alias erase := erase-device
 
@@ -88,7 +88,7 @@ fix-rust:
 
 
 run +ARGS="":
-    just frostsnapp/run
+    just frostsnapp/run {{ARGS}}
 
 # Run the app with bundled firmware
 run-secure +ARGS="":
@@ -105,3 +105,6 @@ lint: lint-ordinary lint-device lint-app
 
 install-cargo-bins:
     just frostsnapp/install-cargo-bins
+
+backup +ARGS="":
+    cargo run --release --bin frost_backup -- {{ARGS}}

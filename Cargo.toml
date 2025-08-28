@@ -8,12 +8,15 @@ members = [
     "frostsnapp/rust",
     "frostsnap_embedded",
     "frostsnap_factory",
+    "frost_backup",
 ]
 resolver = "2"
 
 [patch.crates-io]
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3831f3656e76c2f1680e573e04511d1077f7e9f0" }
-secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3831f3656e76c2f1680e573e04511d1077f7e9f0" }
+schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
+secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
+sigma_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
+vrf_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
 
 
 [workspace.dependencies]
@@ -32,11 +35,15 @@ frostsnap_coordinator = { path = "frostsnap_coordinator" }
 frostsnap_device = { path = "device" }
 frostsnap_embedded = { path = "frostsnap_embedded", default-features = false }
 frostsnap_macros = { path = "macros", default-features = false }
+frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
 tracing = { version = "0.1", default-features = false }
 rusqlite = { version = "0.31.0", features = ["bundled"] }
+proptest = "=1.6.0"
 rand_chacha = { version = "0.3", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 bitcoin = { version = "0.32", features = ["serde"], default-features = false }
+secp256kfun = { version = "0.11", default-features = false }
+schnorr_fun = { version = "0.11", default-features = false }
 bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
 rand = "0.8"
