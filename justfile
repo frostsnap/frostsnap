@@ -10,6 +10,7 @@ flash BOARD=default_board +ARGS="":
 
 flash-secure:
     just build-device
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x12000 device/blank-otadata.bin
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x20000 target/riscv32imc-unknown-none-elf/release/firmware.bin
 
 flash-secure-new +ARGS="":
