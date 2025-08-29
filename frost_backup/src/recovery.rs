@@ -1,5 +1,5 @@
 use crate::ShareBackup;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use schnorr_fun::{
     frost::{Fingerprint, SecretShare, ShareImage, ShareIndex, SharedKey},
@@ -11,34 +11,20 @@ use schnorr_fun::{
 pub struct RecoveredSecret {
     /// The recovered secret scalar
     pub secret: Scalar<Secret, Zero>,
-    /// The shares that were used for recovery
-    pub shares_used: Vec<ShareBackup>,
+    /// The shares that were compatible with the recovered shared_key
+    pub compatible_shares: Vec<ShareBackup>,
     /// The shared key reconstructed from the shares
     pub shared_key: SharedKey<Normal, Zero>,
 }
 
 /// Recovers the original secret from a threshold number of shares.
 ///
-/// # Arguments
-/// * `shares` - A slice of at least `threshold` shares
-/// * `fingerprint` - The fingerprint that was used when generating the shares
-///
-/// # Returns
-/// * `Ok(RecoveredSecret)` - The recovered secret, shares used, and shared key
-/// * `Err(&'static str)` - Error message if recovery fails
-///
-/// # Example
-/// ```no_run
-/// # use frost_backup::{ShareBackup, recovery::recover_secret, FINGERPRINT};
-/// # let share1: ShareBackup = unimplemented!();
-/// # let share2: ShareBackup = unimplemented!();
-/// let shares = vec![share1, share2];
-/// let recovered = recover_secret(&shares, FINGERPRINT).expect("Failed to recover secret");
-/// println!("Recovered secret from {} shares", recovered.shares_used.len());
-/// ```
+/// The shares must have been generated with the same fingerprint. Note that all
+/// shares must be compatible with each other for this to succeed (or you put in
+/// a NONE fingerprint).
 pub fn recover_secret(
     shares: &[ShareBackup],
-    fingerprint: schnorr_fun::frost::Fingerprint,
+    fingerprint: Fingerprint,
 ) -> Result<RecoveredSecret, &'static str> {
     if shares.is_empty() {
         return Err("No shares provided");
@@ -68,7 +54,7 @@ pub fn recover_secret(
 
     Ok(RecoveredSecret {
         secret: reconstructed,
-        shares_used: shares.to_vec(),
+        compatible_shares: shares.to_vec(),
         shared_key,
     })
 }
@@ -89,10 +75,10 @@ pub fn recover_secret(
 ///
 /// # Example
 /// ```no_run
-/// # use frost_backup::{ShareBackup, recovery::recover_secret_fuzzy, FINGERPRINT};
+/// # use frost_backup::{ShareBackup, recovery::recover_secret_fuzzy, Fingerprint};
 /// # let mixed_shares: Vec<ShareBackup> = vec![];
-/// if let Some(recovered) = recover_secret_fuzzy(&mixed_shares, FINGERPRINT) {
-///     println!("Recovered secret using {} shares", recovered.shares_used.len());
+/// if let Some(recovered) = recover_secret_fuzzy(&mixed_shares, Fingerprint::default(), None) {
+///     println!("Recovered secret using {} shares", recovered.compatible_shares.len());
 /// }
 /// ```
 pub fn recover_secret_fuzzy(
@@ -131,7 +117,7 @@ pub fn recover_secret_fuzzy(
 
     Some(RecoveredSecret {
         secret: reconstructed,
-        shares_used: compatible_shares,
+        compatible_shares,
         shared_key,
     })
 }
@@ -156,7 +142,7 @@ pub fn find_valid_subset(
     images: &[ShareImage],
     fingerprint: Fingerprint,
     known_threshold: Option<usize>,
-) -> Option<(Vec<ShareImage>, SharedKey<Normal, Zero>)> {
+) -> Option<(BTreeSet<ShareImage>, SharedKey<Normal, Zero>)> {
     if images.len() < 2 {
         // Can't verify fingerprint with less than 2 shares
         return None;

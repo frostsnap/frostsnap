@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 secret_scalar,
                 threshold,
                 number_of_shares,
-                frost_backup::FINGERPRINT,
+                frost_backup::Fingerprint::default(),
                 &mut rng,
             );
 
@@ -256,9 +256,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("⚠️  Warning: Skipping fingerprint check - accepting any valid {}-of-{} polynomial", 
                     threshold.unwrap(), shares.len());
                 // Use 0-bit fingerprint (no checking)
-                schnorr_fun::frost::Fingerprint::none()
+                schnorr_fun::frost::Fingerprint::NONE
             } else {
-                frost_backup::FINGERPRINT
+                frost_backup::Fingerprint::default()
             };
 
             let recovered = recovery::recover_secret_fuzzy(&shares, fingerprint, threshold)
@@ -271,7 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Show which share indices were used
             let used_indices: Vec<String> = recovered
-                .shares_used
+                .compatible_shares
                 .iter()
                 .map(|idx| format!("#{}", idx))
                 .collect();

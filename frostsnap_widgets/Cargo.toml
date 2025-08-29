@@ -1,0 +1,28 @@
+[package]
+name = "frostsnap_widgets"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+embedded-graphics = "0.8.1"
+u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
+embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px", "96px"] }
+embedded-text = "0.7.0"
+micromath = "0.2"
+frost_backup = { workspace = true, features = [ "bincode" ] }
+frostsnap_core = { workspace = true }
+frostsnap_macros = { path = "../macros" }
+bincode = { workspace = true }
+bitcoin = { workspace = true }
+
+# Only needed for memory debug on ESP32
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+esp-alloc = "0.5.0"
+
+
+[dev-dependencies]
+proptest = "=1.6.0"
