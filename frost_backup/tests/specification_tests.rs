@@ -109,7 +109,7 @@ fn test_specification_2_of_3() {
 
         // Test that this combination recovers the correct secret
         let selected_shares: Vec<ShareBackup> = combo.iter().map(|&i| shares[i].clone()).collect();
-        let recovered = recovery::recover_secret(&selected_shares, FINGERPRINT)
+        let recovered = recovery::recover_secret(&selected_shares, Fingerprint::default())
             .expect("Recovery should succeed");
         assert_eq!(
             recovered.secret, expected_secret,
@@ -165,7 +165,7 @@ fn test_specification_3_of_5() {
 
         // Test that this combination recovers the correct secret
         let selected_shares: Vec<ShareBackup> = combo.iter().map(|&i| shares[i].clone()).collect();
-        let recovered = recovery::recover_secret(&selected_shares, FINGERPRINT)
+        let recovered = recovery::recover_secret(&selected_shares, Fingerprint::default())
             .expect("Recovery should succeed");
         assert_eq!(
             recovered.secret,

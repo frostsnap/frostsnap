@@ -5,3 +5,4 @@ tmp/
 target/
 .vscode
 /riscv
+.dir-locals.el

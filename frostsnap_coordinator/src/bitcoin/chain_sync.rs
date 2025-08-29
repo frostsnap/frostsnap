@@ -195,7 +195,6 @@ pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str 
         bitcoin::Network::Testnet4 => "ssl://blackie.c3-soft.com:57010",
         bitcoin::Network::Regtest => "tcp://localhost:60401",
         bitcoin::Network::Signet => "tcp://electrum.frostsn.app:60001",
-        _ => panic!("Unknown network"),
     }
 }
 
@@ -206,7 +205,6 @@ pub const fn default_backup_electrum_server(network: bitcoin::Network) -> &'stat
         bitcoin::Network::Testnet4 => "ssl://mempool.space:40002",
         bitcoin::Network::Signet => "tcp://signet-electrumx.wakiyamap.dev:50001",
         bitcoin::Network::Regtest => "tcp://127.0.0.1:51001",
-        _ => panic!("Unknown network"),
     }
 }
 

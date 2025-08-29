@@ -1,3 +1,4 @@
+use crate::hex;
 use bitcoin::{
     bip32::*,
     hashes::{sha512, Hash, HashEngine, Hmac, HmacEngine},
@@ -386,12 +387,19 @@ impl<T: TweakableKey> Xpub<T> {
 }
 
 /// Xpub to do bip32 deriviation without all the nonsense.
-#[derive(
-    Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash, bincode::Encode, bincode::Decode, Debug,
-)]
+#[derive(Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash, bincode::Encode, bincode::Decode)]
 pub struct Xpub<T> {
     pub key: T,
     pub chaincode: [u8; 32],
+}
+
+impl<T: core::fmt::Debug> core::fmt::Debug for Xpub<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Xpub")
+            .field("key", &self.key)
+            .field("chaincode", &hex::encode(&self.chaincode))
+            .finish()
+    }
 }
 
 impl Xpub<SharedKey> {

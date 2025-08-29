@@ -17,9 +17,6 @@ pub use error::*;
 pub use schnorr_fun::frost::Fingerprint;
 pub use share_backup::*;
 
-/// The default fingerprint used for share generation in production
-pub const FINGERPRINT: Fingerprint = schnorr_fun::frost::FROST_V0_FINGERPRINT;
-
 /// Generate an xpriv from a secret scalar
 ///
 /// This creates an xpriv with the standard initial values that can be used

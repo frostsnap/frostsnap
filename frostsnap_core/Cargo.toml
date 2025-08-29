@@ -7,9 +7,10 @@ edition = "2021"
 
 [dependencies]
 rand_core = { version = "0.6", default-features = false }
-schnorr_fun = {version = "0.11", features = ["bincode", "serde","alloc", "share_backup", "libsecp_compat_0_29"], default-features = false}
+schnorr_fun = { workspace = true, features = ["bincode", "serde","alloc", "share_backup", "libsecp_compat_0_29"] }
 rand_chacha = { workspace = true }
 frostsnap_macros = { workspace = true }
+frost_backup = { workspace = true, default-features = false }
 sha2.workspace = true
 chacha20 = { version = "0.9", default-features = false }
 cipher = { version = "0.4", features = [ "rand_core" ], default-features = false }

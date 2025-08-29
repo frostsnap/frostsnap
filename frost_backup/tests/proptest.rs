@@ -161,7 +161,7 @@ proptest! {
         all_images.shuffle(&mut rng);
 
         // Try to discover the valid shares
-        let result = recovery::find_valid_subset(&all_images, FINGERPRINT, None);
+        let result = recovery::find_valid_subset(&all_images, Fingerprint::default(), None);
 
         // Should always find exactly the 3 valid shares
         prop_assert!(result.is_some(), "Should find valid shares among noise");

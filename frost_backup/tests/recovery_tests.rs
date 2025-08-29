@@ -243,7 +243,7 @@ fn test_recover_secret_fuzzy() {
     assert!(result.is_some());
 
     let recovered = result.unwrap();
-    assert_eq!(recovered.shares_used.len(), 2); // Should use exactly threshold shares
+    assert_eq!(recovered.compatible_shares.len(), 2); // Should use exactly threshold shares
 
     // The recovered secret should match one of the originals
     assert!(
@@ -253,7 +253,7 @@ fn test_recover_secret_fuzzy() {
 
     // Verify the shared key matches the shares used
     let share_images: Vec<_> = recovered
-        .shares_used
+        .compatible_shares
         .iter()
         .map(|s| s.share_image())
         .collect();
