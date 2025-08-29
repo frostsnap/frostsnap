@@ -62,7 +62,7 @@ fix-rust:
 
 
 run +ARGS="":
-    just frostsnapp/run
+    just frostsnapp/run {{ARGS}}
 
 fetch-riscv VERSION="2024.09.03-nightly":
     #!/bin/sh
@@ -75,3 +75,6 @@ lint: lint-ordinary lint-device lint-app
 
 install-cargo-bins:
     just frostsnapp/install-cargo-bins
+
+backup +ARGS="":
+    cargo run --release --bin frost_backup -- {{ARGS}}
