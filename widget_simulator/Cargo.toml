@@ -1,0 +1,14 @@
+[package]
+name = "widget_simulator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+frostsnap_widgets = { workspace = true }
+frostsnap_core.workspace = true
+embedded-graphics.workspace = true
+embedded-graphics-simulator = "0.6.0"
+rand.workspace = true
+bitcoin.workspace = true
+u8g2-fonts.workspace = true
+frost_backup.workspace = true

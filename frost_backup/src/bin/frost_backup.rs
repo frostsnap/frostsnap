@@ -271,7 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Show which share indices were used
             let used_indices: Vec<String> = recovered
-                .shares_used
+                .compatible_shares
                 .iter()
                 .map(|idx| format!("#{}", idx))
                 .collect();

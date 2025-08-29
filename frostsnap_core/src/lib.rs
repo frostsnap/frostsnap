@@ -451,3 +451,6 @@ impl_fromstr_deserialize! {
 pub enum AccessStructureKind {
     Master,
 }
+
+/// The default fingerprint used for share generation in production
+pub const FINGERPRINT: schnorr_fun::frost::Fingerprint = schnorr_fun::frost::FROST_V0_FINGERPRINT;
