@@ -1,4 +1,4 @@
-use crate::{Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN};
+use crate::{CaseColor, Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN};
 use alloc::{string::String, vec::Vec};
 use frostsnap_core::{
     schnorr_fun::{
@@ -58,8 +58,6 @@ pub struct FactoryDownstream;
 pub enum DeviceFactorySend {
     InitEntropyOk,
     ReceivedDsKey,
-    PresentGenuineCertificate(Certificate),
-    SignedChallenge { signature: [u8; 384] },
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
@@ -69,8 +67,6 @@ pub enum FactorySend {
     InitEntropy([u8; 32]),
     SetEsp32DsKey(Esp32DsKey),
     SetGenuineCertificate(Certificate),
-    RequestCertificate,
-    Challenge(Vec<u8>),
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
@@ -84,7 +80,7 @@ pub struct Certificate {
     pub rsa_key: Vec<u8>,
     pub serial_number: u32,
     pub timestamp: u64,
-    pub case_color: String,
+    pub case_color: CaseColor,
     pub signature: Signature,
     pub factory_key: Point<EvenY>,
 }
@@ -94,8 +90,6 @@ impl Gist for DeviceFactorySend {
         match self {
             DeviceFactorySend::InitEntropyOk => "InitEntropyOk",
             DeviceFactorySend::ReceivedDsKey => "SetDs",
-            DeviceFactorySend::PresentGenuineCertificate(_) => "SavedGenuineCertificate",
-            DeviceFactorySend::SignedChallenge { .. } => "SignedChallenge",
         }
         .into()
     }
@@ -108,8 +102,6 @@ impl Gist for FactorySend {
             FactorySend::SetEsp32DsKey { .. } => "SetEsp32DsKey",
             FactorySend::InitEntropy(_) => "InitEntropy",
             FactorySend::SetGenuineCertificate(_) => "GenuineCertificate",
-            FactorySend::RequestCertificate => "RequestCertificate",
-            FactorySend::Challenge(_) => "Challenge",
         }
         .into()
     }

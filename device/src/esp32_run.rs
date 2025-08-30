@@ -1,15 +1,16 @@
 use crate::{
+    ds,
     efuse::EfuseHmacKeys,
-    flash::{FlashHeader, Mutation, MutationLog},
+    flash::{FactoryData, FlashHeader, Mutation, MutationLog},
     io::SerialInterface,
     ota,
     partitions::PartitionExt,
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
 use core::cell::RefCell;
-use esp_hal::{gpio, sha::Sha, timer};
+use esp_hal::{gpio, peripherals::DS, sha::Sha, timer};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
@@ -31,6 +32,7 @@ pub struct Run<'a, Rng, Ui, T, DownstreamDetectPin> {
     pub downstream_detect: gpio::Input<'a, DownstreamDetectPin>,
     pub sha256: Sha<'a>,
     pub hmac_keys: EfuseHmacKeys<'a>,
+    pub ds: DS,
 }
 
 impl<Rng, Ui, T, DownstreamDetectPin> Run<'_, Rng, Ui, T, DownstreamDetectPin>
@@ -50,6 +52,7 @@ where
             downstream_detect,
             mut sha256,
             mut hmac_keys,
+            ds,
         } = self;
 
         ui.set_busy_task(ui::BusyTask::Loading);
@@ -66,6 +69,8 @@ where
                 header_flash.init(&mut rng)
             }
         };
+
+        let factory_data = { FactoryData::read(partitions.factory_data).ok() };
 
         let share_partition = nvs_partition.split_off_front(2);
 
@@ -266,6 +271,9 @@ where
                             .expect("failed to write magic bytes");
                         upstream_connection.send_announcement(DeviceSendBody::Announce {
                             firmware_digest: active_firmware_digest,
+                            genuine_cert: factory_data
+                                .clone()
+                                .map(|factory_data| Box::new(factory_data.certificate())),
                         });
                         upstream_connection.send_to_coordinator([match &name {
                             Some(name) => DeviceSendBody::SetName { name: name.into() },
@@ -441,6 +449,22 @@ where
                         },
                         CoordinatorSendBody::DataWipe => {
                             ui.set_workflow(ui::Workflow::prompt(ui::Prompt::WipeDevice))
+                        }
+                        CoordinatorSendBody::Challenge(challenge) => {
+                            // can only respond if we have factory data
+                            if let Some(ref factory_data) = factory_data {
+                                let signature = ds::standard_rsa_sign(
+                                    &ds,
+                                    factory_data.encrypted_params(),
+                                    challenge.as_ref(),
+                                );
+                                let signature = ds::ds_words_to_bytes(&signature);
+                                upstream_connection.send_to_coordinator([
+                                    DeviceSendBody::SignedChallenge {
+                                        signature: Box::new(signature),
+                                    },
+                                ]);
+                            }
                         }
                     }
                 }

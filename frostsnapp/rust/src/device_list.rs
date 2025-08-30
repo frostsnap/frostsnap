@@ -121,6 +121,7 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
+            DeviceChange::GenuineDevice { .. } => { /* not displayed in app yet */ }
         }
     }
 

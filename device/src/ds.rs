@@ -4,7 +4,7 @@ use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
 use sha2::Digest;
 
-pub fn standard_rsa_sign(ds: DS, encrypted_params: Vec<u8>, message: &[u8]) -> [u32; 96] {
+pub fn standard_rsa_sign(ds: &DS, encrypted_params: Vec<u8>, message: &[u8]) -> [u32; 96] {
     // Calculate message digest and apply padding
     let message_digest = sha2::Sha256::digest(message);
     let padded_message = pad_message_for_rsa(&message_digest);
@@ -22,7 +22,7 @@ pub fn ds_words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
 }
 
 pub fn private_exponentiation(
-    ds: DS,
+    ds: &DS,
     encrypted_params: Vec<u8>,
     mut challenge: [u8; 384],
 ) -> [u32; 96] {
