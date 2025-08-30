@@ -11,17 +11,19 @@ use ui::UserInteraction;
 extern crate alloc;
 
 pub mod device_config;
+pub mod display_init;
 pub mod efuse;
 pub mod esp32_run;
 pub mod flash;
-#[cfg(feature = "v2")]
-pub mod graphics;
 pub mod io;
 pub mod ota;
 pub mod panic;
 pub mod partitions;
+pub mod root_widget;
 pub mod stack_guard;
+pub mod touch_calibration;
 pub mod ui;
+pub mod widget_tree;
 
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
@@ -112,7 +114,7 @@ pub enum UpstreamConnectionState {
     EstablishedAndCoordAck,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub enum DownstreamConnectionState {
     Disconnected,
     Connected,
