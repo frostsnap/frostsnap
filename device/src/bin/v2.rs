@@ -173,7 +173,6 @@ fn main() -> ! {
         hal_rng,
         &mut jtag,
         &timer0,
-        ds,
     );
 
     let mut display = graphics::Graphics::new(display);
@@ -240,6 +239,7 @@ fn main() -> ! {
         downstream_detect,
         sha256,
         hmac_keys,
+        ds,
     };
     run.run();
     unreachable!("run will never stop!");

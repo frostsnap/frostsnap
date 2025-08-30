@@ -3,6 +3,7 @@ use aes::cipher::{block_padding::NoPadding, KeyIvInit};
 use aes::Aes256;
 use cbc::Encryptor;
 use frostsnap_comms::factory::{pad_message_for_rsa, Esp32DsKey, DS_KEY_SIZE_BITS};
+use frostsnap_core::sha2::{Digest, Sha256};
 use hmac::{Hmac, Mac};
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
@@ -10,7 +11,6 @@ use rand::{CryptoRng, RngCore};
 use rsa::traits::PublicKeyParts as _;
 use rsa::BigUint;
 use rsa::{traits::PrivateKeyParts as _, RsaPrivateKey};
-use sha2::{Digest, Sha256};
 use std::error::Error;
 
 use std::fmt;
@@ -18,7 +18,7 @@ use std::fmt;
 const DS_NUM_WORDS: usize = DS_KEY_SIZE_BITS / 32;
 
 pub fn standard_rsa_sign(priv_key: &RsaPrivateKey, message: &[u8]) -> Vec<u8> {
-    let message_digest: [u8; 32] = sha2::Sha256::digest(message).into();
+    let message_digest: [u8; 32] = Sha256::digest(message).into();
     let padded_message = pad_message_for_rsa(&message_digest);
 
     raw_exponent_rsa_sign(padded_message.into(), priv_key)

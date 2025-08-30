@@ -1458,8 +1458,10 @@ dependencies = [
  "nusb",
  "rand",
  "rand_core",
+ "rsa",
  "rusqlite",
  "serialport",
+ "sha2",
  "tokio",
  "tokio-rustls",
  "tokio-util",
@@ -1555,7 +1557,6 @@ dependencies = [
  "rand",
  "rsa",
  "rusqlite",
- "sha2",
  "tracing",
  "tracing-subscriber",
 ]
