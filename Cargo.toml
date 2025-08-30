@@ -7,12 +7,17 @@ members = [
     "frostsnap_comms",
     "frostsnapp/rust",
     "frostsnap_embedded",
+    "frost_backup",
+    "frostsnap_widgets", "widget_simulator",
+    "cst816s",
 ]
 resolver = "2"
 
 [patch.crates-io]
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3831f3656e76c2f1680e573e04511d1077f7e9f0" }
-secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3831f3656e76c2f1680e573e04511d1077f7e9f0" }
+schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3991c2a068e34670099bfbe3794fe8bca7cabecf" }
+secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3991c2a068e34670099bfbe3794fe8bca7cabecf" }
+sigma_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3991c2a068e34670099bfbe3794fe8bca7cabecf" }
+vrf_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "3991c2a068e34670099bfbe3794fe8bca7cabecf" }
 
 
 [workspace.dependencies]
@@ -30,17 +35,27 @@ frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
 frostsnap_device = { path = "device" }
 frostsnap_embedded = { path = "frostsnap_embedded", default-features = false }
+frostsnap_widgets = { path = "frostsnap_widgets", default-features = false }
 frostsnap_macros = { path = "macros", default-features = false }
+frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
+frostsnap_cst816s = { path = "cst816s", default-features = false }
 tracing = { version = "0.1", default-features = false }
 rusqlite = { version = "0.31.0", features = ["bundled"] }
+proptest = "=1.6.0"
 rand_chacha = { version = "0.3", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 bitcoin = { version = "0.32", features = ["serde"], default-features = false }
+secp256kfun = { version = "0.11", default-features = false }
+schnorr_fun = { version = "0.11", default-features = false }
 bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
 rand = "0.8"
 futures = "0.3.31"
+
+# embedded
 embedded-storage = "0.3.1"
+embedded-graphics = "0.8"
+u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 
 [profile.dev]
 # Rust debug is too slow.

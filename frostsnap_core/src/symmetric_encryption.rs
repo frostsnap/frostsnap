@@ -1,15 +1,26 @@
+use crate::hex;
 use chacha20poly1305::{
     aead::{AeadInPlace, KeyInit},
     ChaCha20Poly1305,
 };
 use core::marker::PhantomData;
 
-#[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Copy, bincode::Encode, bincode::Decode, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Ciphertext<const N: usize, T> {
     data: [u8; N],
     nonce: [u8; 12],
     ty: PhantomData<T>,
     tag: [u8; 16],
+}
+
+impl<const N: usize, T> core::fmt::Debug for Ciphertext<N, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Ciphertext")
+            .field("data", &hex::encode(&self.data))
+            .field("nonce", &hex::encode(&self.nonce))
+            .field("tag", &hex::encode(&self.tag))
+            .finish()
+    }
 }
 
 impl<const N: usize, T: bincode::Encode + bincode::Decode<()>> Ciphertext<N, T> {

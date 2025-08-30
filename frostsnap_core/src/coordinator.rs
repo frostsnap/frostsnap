@@ -449,7 +449,8 @@ impl FrostCoordinator {
                             })];
 
                         if input_aggregator.is_finished() {
-                            let agg_input = input_aggregator.clone().finish().unwrap();
+                            let mut agg_input = input_aggregator.clone().finish().unwrap();
+                            agg_input.grind_fingerprint::<Sha256>(crate::FINGERPRINT);
                             let session_hash = SessionHash::from_agg_input(&agg_input);
                             outgoing.push(CoordinatorSend::ToDevice {
                                 destinations: device_to_share_index.keys().cloned().collect(),
@@ -472,9 +473,9 @@ impl FrostCoordinator {
                             let new_state = KeyGenState::WaitingForAcks {
                                 agg_input: agg_input.clone(),
                                 device_to_share_index: device_to_share_index
-                                    .into_iter()
-                                    .map(|(device, share_index)| {
-                                        (device, ShareIndex::from(share_index))
+                                    .iter()
+                                    .map(|(device_id, index)| {
+                                        (*device_id, ShareIndex::from(*index))
                                     })
                                     .collect(),
                                 acks: Default::default(),
@@ -656,8 +657,17 @@ impl FrostCoordinator {
         begin_keygen: keygen::Begin,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SendBeginKeygen, ActionError> {
+        let device_to_share_index = begin_keygen.device_to_share_index();
+
+        // Assert no duplicates in devices list
+        assert_eq!(
+            device_to_share_index.len(),
+            begin_keygen.devices.len(),
+            "duplicate devices in keygen"
+        );
+
         let keygen::Begin {
-            device_to_share_index,
+            devices: _,
             threshold,
             key_name,
             purpose,
@@ -1143,8 +1153,9 @@ impl FrostCoordinator {
         let _ = self.pending_keygens.remove(&keygen_id);
     }
 
-    pub fn cancel_all_keygens(&mut self) {
-        self.pending_keygens.clear()
+    pub fn clear_tmp_data(&mut self) {
+        self.pending_keygens.clear();
+        self.restoration.clear_tmp_data();
     }
 
     pub fn knows_about_share(
@@ -1286,14 +1297,14 @@ pub enum KeyGenState {
     },
     WaitingForAcks {
         agg_input: encpedpop::AggKeygenInput,
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
         acks: BTreeSet<DeviceId>,
         pending_key_name: String,
         purpose: KeyPurpose,
     },
     NeedsFinalize {
         root_shared_key: SharedKey,
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
         pending_key_name: String,
         purpose: KeyPurpose,
     },
@@ -1342,7 +1353,7 @@ impl CoordAccessStructure {
         AccessStructureId::from_app_poly(self.app_shared_key.key.point_polynomial())
     }
 
-    pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, Scalar<Public, NonZero>> {
+    pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, ShareIndex> {
         self.device_to_share_index.clone()
     }
 }
@@ -1546,7 +1557,7 @@ impl IntoIterator for SendBeginKeygen {
 
     fn into_iter(self) -> Self::IntoIter {
         core::iter::once(CoordinatorSend::ToDevice {
-            destinations: self.0.device_to_share_index.keys().cloned().collect(),
+            destinations: self.0.devices.iter().cloned().collect(),
             message: self.0.into(),
         })
     }

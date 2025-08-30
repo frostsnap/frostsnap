@@ -1,0 +1,34 @@
+[package]
+name = "frost_backup"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+schnorr_fun = { workspace = true, features = ["alloc"] }
+sha2 = { workspace = true, default-features = false }
+rand_core = { workspace = true }
+
+# optional
+rand = { workspace = true, optional = true }
+clap = { version = "4", optional = true, features = ["derive"] }
+bitcoin = { workspace = true, optional = true }
+bincode = { workspace = true, optional = true }
+
+[features]
+cli = ["clap", "std", "rand", "bitcoin"]
+std = ["schnorr_fun/std", "sha2/std", "bitcoin?/std"]
+default = ["cli"]
+bincode = [ "dep:bincode", "schnorr_fun/bincode" ]
+
+[[bin]]
+name = "frost_backup"
+required-features = ["cli" ]
+
+[dev-dependencies]
+proptest = { workspace = true }
+secp256kfun = { workspace = true, features = ["proptest"] }
+rand = { workspace = true }
+miniscript = { version = "12.3" }
+frostsnap_core = { workspace = true }
+frostsnap_coordinator = { workspace = true }
+bitcoin = { workspace = true }
