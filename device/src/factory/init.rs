@@ -1,4 +1,5 @@
 use crate::ds::{ds_words_to_bytes, standard_rsa_sign};
+use crate::factory::screen_test;
 use crate::flash::FactoryData;
 use core::cell::RefCell;
 use cst816s::CST816S;
@@ -15,8 +16,6 @@ use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
-
-mod screen_test;
 
 use crate::{
     efuse::{self, EfuseHmacKeys},
