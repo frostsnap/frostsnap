@@ -2,16 +2,16 @@
 #![no_main]
 
 extern crate alloc;
-use cst816s::{TouchGesture, CST816S};
 use esp_hal::{
     delay::Delay,
     entry,
-    gpio::{Input, Level, Output, Pull},
+    gpio::{Io, Level, Output},
     i2c::master::{Config as i2cConfig, I2c},
     prelude::*,
     timer::timg::TimerGroup,
 };
-use frostsnap_device::{init_display, touch_calibration::adjust_touch_point};
+use frostsnap_cst816s::{interrupt::TouchReceiver, CST816S};
+use frostsnap_device::{init_display, touch_handler};
 use frostsnap_widgets::debug::{EnabledDebug, OverlayDebug};
 
 // Screen constants
@@ -36,6 +36,9 @@ fn main() -> ! {
 
     let mut delay = Delay::new();
 
+    // Set up GPIO for interrupt handling
+    let mut io = Io::new(peripherals.IO_MUX);
+
     // Initialize backlight
     let mut bl = Output::new(peripherals.GPIO1, Level::Low);
 
@@ -57,12 +60,13 @@ fn main() -> ! {
     )
     .with_sda(peripherals.GPIO4)
     .with_scl(peripherals.GPIO5);
-    let mut capsense = CST816S::new(
-        i2c,
-        Input::new(peripherals.GPIO2, Pull::Down),
-        Output::new(peripherals.GPIO3, Level::Low),
-    );
+
+    let mut capsense = CST816S::new_esp32(i2c, peripherals.GPIO2, peripherals.GPIO3);
     capsense.setup(&mut delay).unwrap();
+
+    // Register the capsense instance with the interrupt handler
+    let mut touch_receiver: TouchReceiver =
+        frostsnap_cst816s::interrupt::register(capsense, &mut io);
 
     // Turn on backlight
     bl.set_high();
@@ -98,59 +102,14 @@ fn main() -> ! {
                 let now_ms =
                     frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().to_millis());
 
-                // Check for touch events
-                if let Some(touch_event) = capsense.read_one_touch_event(true) {
-                    let touch_point = adjust_touch_point(Point::new(touch_event.x, touch_event.y));
-                    let lift_up = touch_event.action == 1;
-                    let gesture = touch_event.gesture;
-
-                    let is_vertical_drag =
-                        matches!(gesture, TouchGesture::SlideUp | TouchGesture::SlideDown);
-                    let is_horizontal_swipe =
-                        matches!(gesture, TouchGesture::SlideLeft | TouchGesture::SlideRight);
-
-                    // Handle horizontal swipes to switch between widgets
-                    if is_horizontal_swipe && lift_up {
-                        match gesture {
-                            TouchGesture::SlideLeft => {
-                                // Swipe left: show debug log
-                                if current_widget_index == 0 {
-                                    current_widget_index = 1;
-                                    widget_with_debug.show_logs();
-                                }
-                            }
-                            TouchGesture::SlideRight => {
-                                // Swipe right: show main widget
-                                if current_widget_index == 1 {
-                                    current_widget_index = 0;
-                                    widget_with_debug.show_main();
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    // Handle vertical drag for widgets that support it
-                    if is_vertical_drag {
-                        widget_with_debug.handle_vertical_drag(
-                            last_touch.map(|point| point.y as u32),
-                            touch_point.y as u32,
-                            lift_up,
-                        );
-                    }
-
-                    if !is_vertical_drag || lift_up {
-                        // Always handle touch events (for both press and release)
-                        // This is important so that lift_up is processed after drag
-                        widget_with_debug.handle_touch(touch_point, now_ms, lift_up);
-                    }
-                    // Store last touch for drag calculations
-                    if lift_up {
-                        last_touch = None;
-                    } else {
-                        last_touch = Some(touch_point);
-                    }
-                }
+                // Process all pending touch events
+                touch_handler::process_all_touch_events(
+                    &mut touch_receiver,
+                    &mut widget_with_debug,
+                    &mut last_touch,
+                    &mut current_widget_index,
+                    now_ms,
+                );
 
                 // Only redraw if at least 10ms has passed since last redraw
                 let elapsed_ms = (now - last_redraw_time).to_millis();

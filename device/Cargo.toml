@@ -38,7 +38,7 @@ mipidsi = { version = "0.8.0", features = ["batch"] }
 embedded-graphics = "0.8.1"
 u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 rand_chacha = { workspace = true }
-cst816s = { git = "https://github.com/fxweidinger/cst816s", rev = "82f88186e94a94126b962d30b4c0129fd3c1c5f8" }
+frostsnap_cst816s = { workspace = true }
 embedded-hal = { version = "1.0" }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }
 fugit = "0.3.7"
