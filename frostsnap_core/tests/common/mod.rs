@@ -83,12 +83,9 @@ impl DeviceHmacKeys for TestDeviceKeyGen {
         TEST_ENCRYPTION_KEY
     }
 
-    fn derive_nonce_seed(&mut self, domain: &str, input: &[u8; 32]) -> [u8; 32] {
+    fn derive_prng_seed(&mut self, input: &[u8; 32]) -> [u8; 32] {
         let mut engine = HmacEngine::<sha256::Hash>::new(&TEST_ENCRYPTION_KEY.0);
-
-        engine.input(domain.as_bytes());
         engine.input(input);
-
         let hmac_result = Hmac::<sha256::Hash>::from_engine(engine);
 
         *hmac_result.as_byte_array()

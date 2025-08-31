@@ -21,9 +21,9 @@ pub struct Header {
 impl Header {
     pub fn device_keypair(&self, hmac: &mut EfuseHmacKey) -> KeyPair {
         KeyPair::new(match self.body {
-            HeaderBody::V0 { static_hmac_seed } => {
+            HeaderBody::V0 { device_id_seed } => {
                 let secret_scalar_bytes = hmac
-                    .hash("frostsnap-device-keypair", &static_hmac_seed)
+                    .hash("frostsnap-device-keypair", &device_id_seed)
                     .unwrap();
                 Scalar::from_slice_mod_order(&secret_scalar_bytes)
                     .expect("just got 32 bytes from fixed entropy hash")
@@ -36,21 +36,21 @@ impl Header {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub enum HeaderBody {
-    V0 { static_hmac_seed: [u8; 32] },
+    V0 { device_id_seed: [u8; 32] },
 }
 
 impl Header {
-    pub fn new(static_hmac_seed: [u8; 32]) -> Self {
+    pub fn new(device_id_seed: [u8; 32]) -> Self {
         Header {
             magic_bytes: Default::default(),
-            body: HeaderBody::V0 { static_hmac_seed },
+            body: HeaderBody::V0 { device_id_seed },
         }
     }
 
     pub fn init(rng: &mut impl rand_core::RngCore) -> Self {
-        let mut static_hmac_seed = [0u8; 32];
-        rng.fill_bytes(&mut static_hmac_seed);
-        Header::new(static_hmac_seed)
+        let mut device_id_seed = [0u8; 32];
+        rng.fill_bytes(&mut device_id_seed);
+        Header::new(device_id_seed)
     }
 }
 

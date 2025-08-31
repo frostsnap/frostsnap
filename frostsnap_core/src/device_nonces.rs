@@ -293,7 +293,6 @@ impl SecretNonceSlot {
     ) -> impl Iterator<Item = (u32, binonce::SecretNonce, [u8; 32])> + 'a {
         let mut seed_material = self.ratchet_prg_seed_material;
         let mut index = self.index;
-        let stream_id = self.nonce_stream_id;
 
         core::iter::from_fn(move || {
             if index == u32::MAX {
@@ -303,8 +302,7 @@ impl SecretNonceSlot {
             let current_index = index;
 
             // Derive actual nonce seed from material AND eFuse HMAC
-            let domain = format!("frostsnap-nonce-{}-{}", stream_id, current_index);
-            let actual_seed_bytes = device_hmac.derive_nonce_seed(&domain, &seed_material);
+            let actual_seed_bytes = device_hmac.derive_prng_seed(&seed_material);
             let actual_seed = ChaChaSeed::from_bytes(actual_seed_bytes);
 
             let mut chacha_nonce = [0u8; 12];

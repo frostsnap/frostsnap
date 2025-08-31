@@ -812,7 +812,7 @@ pub trait DeviceHmacKeys {
         coord_key: CoordShareDecryptionContrib,
     ) -> SymmetricKey;
 
-    fn derive_nonce_seed(&mut self, domain: &str, input: &[u8; 32]) -> [u8; 32];
+    fn derive_prng_seed(&mut self, input: &[u8; 32]) -> [u8; 32];
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

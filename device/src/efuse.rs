@@ -308,7 +308,7 @@ impl frostsnap_core::device::DeviceHmacKeys for EfuseHmacKey<'_> {
         frostsnap_core::SymmetricKey(output)
     }
 
-    fn derive_nonce_seed(&mut self, domain: &str, input: &[u8; 32]) -> [u8; 32] {
-        self.hash(domain, input).unwrap()
+    fn derive_prng_seed(&mut self, input: &[u8; 32]) -> [u8; 32] {
+        self.hash("nonce-generation", input).unwrap()
     }
 }
