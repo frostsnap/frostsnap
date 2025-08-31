@@ -234,6 +234,7 @@ Future<T?> showFullscreenActionDialog<T>(
     backgroundColor: Colors.transparent,
     blurCompactBackground: true,
     animationDuration: Durations.medium4,
+    animationIsFade: true,
     child: PopScope(
       canPop: controller.onDismissed != null,
       onPopInvokedWithResult: (didPop, result) {

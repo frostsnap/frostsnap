@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sliver_tools/sliver_tools.dart';
 
 final monospaceTextStyle = GoogleFonts.notoSansMono();
 final blurFilter = ImageFilter.blur(sigmaX: 21, sigmaY: 21);
@@ -116,18 +117,64 @@ String spacedHex(String input, {int groupSize = 4, int? groupsPerLine}) {
   return result.toString();
 }
 
+class TopBarSliver extends StatelessWidget {
+  final Widget? title;
+  final Widget? leading;
+  final bool showCloseOnCompact;
+  final bool automaticallyImplyLeadingOnCompact;
+
+  TopBarSliver({
+    super.key,
+    this.title,
+    this.leading,
+    this.showCloseOnCompact = true,
+    this.automaticallyImplyLeadingOnCompact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final windowSize = WindowSizeContext.of(context);
+    final isFullscreen = windowSize == WindowSizeClass.compact;
+
+    final closeButton = IconButton(
+      onPressed: () => Navigator.pop(context, null),
+      icon: Icon(Icons.close_rounded),
+      tooltip: 'Close',
+      style: IconButton.styleFrom(
+        backgroundColor: theme.colorScheme.surfaceContainerHigh,
+      ),
+    );
+
+    return isFullscreen
+        ? SliverAppBar.large(
+            pinned: true,
+            title: title,
+            automaticallyImplyLeading: automaticallyImplyLeadingOnCompact,
+            leading: leading,
+            actionsPadding: EdgeInsets.symmetric(horizontal: 8),
+            actions: [if (showCloseOnCompact) closeButton],
+          )
+        : SliverPinnedHeader(
+            child: TopBar(title: title, leadingButton: leading),
+          );
+  }
+}
+
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
   static const headerPadding = EdgeInsets.fromLTRB(20, 12, 20, 16);
   static const animationDuration = Durations.short3;
   final Widget? title;
   final Color? backgroundColor;
   final ScrollController? scrollController;
+  final Widget? leadingButton;
 
   const TopBar({
     super.key,
     this.title,
     this.backgroundColor,
     this.scrollController,
+    this.leadingButton,
   });
 
   @override
@@ -159,28 +206,28 @@ class _TopBarState extends State<TopBar> {
       ),
     );
 
+    final leadingButton = widget.leadingButton;
+
     final headline = Padding(
       padding: TopBar.headerPadding,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         spacing: 20,
         children: [
-          if (isDialog)
-            IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: Icon(Icons.close),
-              iconSize: 24,
-              padding: EdgeInsets.zero,
-              style: IconButton.styleFrom(
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              ),
-            ),
+          if (leadingButton != null) leadingButton,
           Expanded(
             child: DefaultTextStyle(
               style: theme.textTheme.titleLarge!,
               child: widget.title ?? const SizedBox.shrink(),
             ),
           ),
+          if (isDialog)
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: Icon(Icons.close),
+              style: IconButton.styleFrom(
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              ),
+            ),
         ],
       ),
     );
