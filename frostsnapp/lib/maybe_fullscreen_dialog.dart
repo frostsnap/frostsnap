@@ -66,20 +66,39 @@ class MaybeFullscreenDialog extends StatefulWidget {
     bool barrierDismissible = false,
     bool blurCompactBackground = false,
     Duration? animationDuration,
+    bool animationIsFade = false,
     Color? backgroundColor,
     Widget? child,
   }) {
-    return showDialog(
+    return showGeneralDialog(
       context: context,
       barrierDismissible: barrierDismissible,
-      useSafeArea: false,
-      animationStyle: AnimationStyle(duration: animationDuration),
-      builder: (context) => MaybeFullscreenDialog(
-        blurCompactBackground: blurCompactBackground,
-        backgroundColor:
-            backgroundColor ?? Theme.of(context).colorScheme.surface,
-        child: child,
-      ),
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          MaybeFullscreenDialog(
+            blurCompactBackground: blurCompactBackground,
+            backgroundColor:
+                backgroundColor ?? Theme.of(context).colorScheme.surface,
+            child: child,
+          ),
+      transitionDuration: Durations.medium2,
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        if (animationIsFade)
+          return FadeTransition(opacity: animation, child: child);
+
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubicEmphasized,
+        );
+
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(curvedAnimation),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
     );
   }
 

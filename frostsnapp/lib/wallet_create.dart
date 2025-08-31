@@ -233,7 +233,7 @@ class WalletCreateController extends ChangeNotifier {
           _form.threshold! > 0 &&
           _form.threshold! <= _form.selectedDevices.length,
   };
-  bool get canGoBack => _step.index > 0;
+  bool get canGoBack => _step.index != 0;
 
   bool setNetwork(BitcoinNetwork network) {
     if (_asRef != null) return false;
@@ -242,8 +242,12 @@ class WalletCreateController extends ChangeNotifier {
     return true;
   }
 
+  bool _isAnimationForward = true;
+  bool get isAnimationForward => _isAnimationForward;
+
   /// Does additional checks (maybe) and tries to populate the _form.
   Future<bool> _handleNext(BuildContext context) async {
+    _isAnimationForward = true;
     if (!canGoNext) return false;
     switch (_step) {
       case WalletCreateStep.name:
@@ -360,6 +364,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   bool _handleBack(BuildContext context) {
+    _isAnimationForward = false;
     switch (_step) {
       case _:
         return true;
@@ -377,6 +382,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   String? get backText => switch (_step) {
+    WalletCreateStep.name => 'Close',
     _ => null,
   };
 
@@ -813,18 +819,38 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         ? ''
         : ' (${network.name()})';
 
-    final titleText = '${_controller.title}$appBarTrailingText';
-    final header = isFullscreen
-        ? SliverAppBar.large(title: Text(titleText), pinned: true)
-        : SliverPinnedHeader(child: TopBar(title: Text(titleText)));
+    final header = TopBarSliver(
+      title: Text('${_controller.title}$appBarTrailingText'),
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back_rounded),
+        onPressed: () => goBackOrClose(context),
+        tooltip: 'Back',
+      ),
+    );
 
-    return Column(
+    final column = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Flexible(
           child: AnimatedSwitcher(
-            duration: Durations.short4,
+            duration: Durations.medium4,
+            reverseDuration: Duration.zero,
+            transitionBuilder: (child, animation) {
+              final curvedAnimation = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeInOutCubicEmphasized,
+              );
+              return SlideTransition(
+                position: Tween<Offset>(
+                  begin: _controller.isAnimationForward
+                      ? const Offset(1, 0)
+                      : const Offset(-1, 0),
+                  end: Offset.zero,
+                ).animate(curvedAnimation),
+                child: FadeTransition(opacity: animation, child: child),
+              );
+            },
             child: CustomScrollView(
               key: ValueKey<WalletCreateStep>(_controller.step),
               physics: ClampingScrollPhysics(),
@@ -864,39 +890,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
               child: SafeArea(
                 top: false,
-                child: Row(
-                  mainAxisSize: MainAxisSize.max,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Flexible(
-                      child: TextButton(
-                        onPressed: _controller.canGoBack
-                            ? () => _controller.back(context)
-                            : null,
-                        child: Text(
-                          _controller.backText ?? 'Back',
-                          softWrap: false,
-                          overflow: TextOverflow.fade,
-                        ),
-                      ),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: _controller.canGoNext
+                        ? () => _controller.next(context)
+                        : null,
+                    child: Text(
+                      _controller.nextText ?? 'Next',
+                      softWrap: false,
+                      overflow: TextOverflow.fade,
                     ),
-                    Expanded(
-                      flex: 2,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: FilledButton(
-                          onPressed: _controller.canGoNext
-                              ? () => _controller.next(context)
-                              : null,
-                          child: Text(
-                            _controller.nextText ?? 'Next',
-                            softWrap: false,
-                            overflow: TextOverflow.fade,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -904,6 +909,28 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         ),
       ],
     );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        print('didPop=$didPop, result=$result');
+        if (didPop) return;
+        goBackOrClose(context);
+      },
+      child: column,
+    );
+  }
+
+  void goBackOrClose(BuildContext context) {
+    if (_controller.canGoBack) {
+      _controller.back(context);
+    } else {
+      Navigator.pop(context, null);
+    }
+  }
+
+  void close(BuildContext context) {
+    Navigator.pop(context, null);
   }
 
   bool _isAdvancedOptionsHidden = true;

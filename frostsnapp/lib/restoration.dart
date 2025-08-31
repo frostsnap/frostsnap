@@ -15,7 +15,6 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_add.dart';
-import 'package:sliver_tools/sliver_tools.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
   final RestoringKey restoringKey;
@@ -356,8 +355,27 @@ class WalletRecoveryFlow extends StatefulWidget {
   State<WalletRecoveryFlow> createState() => _WalletRecoveryFlowState();
 }
 
+class _RecoveryFlowPrevState {
+  String currentStep = 'start';
+  RecoverShare? candidate;
+  ShareCompatibility? compatibility;
+  ConnectedDevice? blankDevice;
+  RestorationId? restorationId;
+  String? error;
+
+  _RecoveryFlowPrevState({
+    required this.currentStep,
+    required this.candidate,
+    required this.compatibility,
+    required this.blankDevice,
+    required this.restorationId,
+    required this.error,
+  });
+}
+
 class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   late final MethodChoiceKind kind;
+
   String currentStep = 'start';
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
@@ -367,6 +385,40 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   BitcoinNetwork? bitcoinNetwork;
   int? threshold;
   String? error;
+
+  // For back gesture.
+  final prevStates = List<_RecoveryFlowPrevState>.empty(growable: true);
+  bool isAnimationForward = true;
+  void pushPrevState() {
+    isAnimationForward = true;
+    prevStates.add(
+      _RecoveryFlowPrevState(
+        currentStep: currentStep,
+        candidate: candidate,
+        compatibility: compatibility,
+        blankDevice: blankDevice,
+        restorationId: restorationId,
+        error: error,
+      ),
+    );
+  }
+
+  bool tryPopPrevState(BuildContext context) {
+    if (prevStates.isNotEmpty) {
+      setState(() {
+        isAnimationForward = false;
+        final prevState = prevStates.removeLast();
+        currentStep = prevState.currentStep;
+        candidate = prevState.candidate;
+        compatibility = prevState.compatibility;
+        blankDevice = prevState.blankDevice;
+        restorationId = prevState.restorationId;
+        error = prevState.error;
+      });
+      return true;
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -402,6 +454,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onCandidateDetected: (detectedShare, compatibility) {
             if (mounted) {
               setState(() {
+                pushPrevState();
                 candidate = detectedShare;
                 this.compatibility = compatibility;
                 currentStep = 'candidate_ready';
@@ -422,6 +475,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _PlugInBlankView(
           onBlankDeviceConnected: (device) {
             setState(() {
+              pushPrevState();
               blankDevice = device;
               currentStep = 'enter_device_name';
             });
@@ -433,7 +487,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _EnterDeviceNameView(
           deviceId: blankDevice!.id,
           onDeviceName: (name) {
-            setState(() => currentStep = 'enter_backup');
+            setState(() {
+              pushPrevState();
+              currentStep = 'enter_backup';
+            });
           },
         );
       case 'enter_backup':
@@ -467,16 +524,19 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                     restorationId: restorationId!,
                   );
                   setState(() {
+                    pushPrevState();
                     currentStep = "physical_backup_success";
                   });
                 } else {
                   setState(() {
+                    pushPrevState();
                     currentStep = "physical_backup_fail";
                   });
                 }
               }
             } catch (e) {
               setState(() {
+                pushPrevState();
                 currentStep = "physical_backup_fail";
                 error = e.toString();
               });
@@ -484,6 +544,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
           onError: (e) {
             setState(() {
+              pushPrevState();
               currentStep = "physical_backup_fail";
               error = e.toString();
             });
@@ -492,8 +553,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         break;
       case 'enter_restoration_details':
         child = _EnterWalletNameView(
+          initialWalletName: walletName,
+          initialBitcoinNetwork: bitcoinNetwork,
           onWalletNameEntered: (walletName, bitcoinNetwork) {
             setState(() {
+              pushPrevState();
               this.walletName = walletName;
               this.bitcoinNetwork = bitcoinNetwork;
               currentStep = 'enter_threshold';
@@ -506,8 +570,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _EnterThresholdView(
           walletName: walletName!,
           network: bitcoinNetwork!,
+          initialThreshold: threshold,
           onThresholdEntered: (threshold) {
             setState(() {
+              pushPrevState();
               this.threshold = threshold;
               currentStep = 'wait_physical_backup_device';
             });
@@ -528,6 +594,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           compatibility: compatibility,
           onRetry: () {
             setState(() {
+              pushPrevState();
               currentStep = 'enter_backup';
               error = null;
             });
@@ -541,15 +608,20 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _ChooseMethodView(
           kind: kind,
           onDeviceChosen: () {
-            setState(() => currentStep = 'wait_device');
+            setState(() {
+              pushPrevState();
+              currentStep = 'wait_device';
+            });
           },
           onPhysicalBackupChosen: () {
             setState(() {
               switch (kind) {
                 case MethodChoiceKind.startRecovery:
+                  pushPrevState();
                   currentStep = "enter_restoration_details";
                   break;
                 default:
+                  pushPrevState();
                   currentStep = 'wait_physical_backup_device';
               }
             });
@@ -558,12 +630,37 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     }
 
     final switcher = AnimatedSwitcher(
-      duration: const Duration(milliseconds: 400),
+      duration: Durations.medium4,
+      reverseDuration: Duration.zero,
+      transitionBuilder: (child, animation) {
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubicEmphasized,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: isAnimationForward
+                ? const Offset(1, 0)
+                : const Offset(-1, 0),
+            end: Offset.zero,
+          ).animate(curvedAnimation),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
       child: Padding(
         key: ValueKey(currentStep),
         padding: const EdgeInsets.all(16.0),
         child: child,
       ),
+    );
+
+    final scopedSwitcher = PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        goBackOrClose(context);
+      },
+      child: switcher,
     );
 
     if (widget.isDialog) {
@@ -582,23 +679,29 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       );
     } else {
       final windowSize = WindowSizeContext.of(context);
-      final isFullscreen = windowSize == WindowSizeClass.compact;
-      final title = Text(child.titleText);
-
-      final header = isFullscreen
-          ? SliverAppBar.large(title: title, pinned: true)
-          : SliverPinnedHeader(child: TopBar(title: title));
+      final header = TopBarSliver(
+        title: Text(child.titleText),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded),
+          onPressed: () => goBackOrClose(context),
+          tooltip: 'Back',
+        ),
+      );
       return ConstrainedBox(
         constraints: BoxConstraints(minHeight: 360),
         child: CustomScrollView(
           shrinkWrap: windowSize != WindowSizeClass.compact,
           slivers: [
             header,
-            SliverToBoxAdapter(child: switcher),
+            SliverToBoxAdapter(child: scopedSwitcher),
           ],
         ),
       );
     }
+  }
+
+  void goBackOrClose(BuildContext) {
+    if (!tryPopPrevState(context)) Navigator.pop(context);
   }
 }
 
@@ -912,9 +1015,15 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
 }
 
 class _EnterWalletNameView extends StatefulWidget with _TitledWidget {
+  final String? initialWalletName;
+  final BitcoinNetwork? initialBitcoinNetwork;
   final Function(String walletName, BitcoinNetwork network) onWalletNameEntered;
 
-  const _EnterWalletNameView({required this.onWalletNameEntered});
+  const _EnterWalletNameView({
+    required this.onWalletNameEntered,
+    this.initialWalletName,
+    this.initialBitcoinNetwork,
+  });
 
   @override
   State<_EnterWalletNameView> createState() => _EnterWalletNameViewState();
@@ -933,6 +1042,14 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
   void initState() {
     super.initState();
     _walletNameController.addListener(_updateButtonState);
+    final initialWalletName = widget.initialWalletName;
+    if (initialWalletName != null) {
+      _walletNameController.text = initialWalletName;
+    }
+    final initialBitcoinNetwork = widget.initialBitcoinNetwork;
+    if (initialBitcoinNetwork != null) {
+      bitcoinNetwork = initialBitcoinNetwork;
+    }
   }
 
   void _updateButtonState() {
@@ -1015,11 +1132,13 @@ class _EnterThresholdView extends StatefulWidget with _TitledWidget {
   final String walletName;
   final BitcoinNetwork network;
   final Function(int threshold) onThresholdEntered;
+  final int? initialThreshold;
 
   const _EnterThresholdView({
     required this.walletName,
     required this.onThresholdEntered,
     required this.network,
+    this.initialThreshold,
   });
 
   @override
@@ -1032,6 +1151,15 @@ class _EnterThresholdView extends StatefulWidget with _TitledWidget {
 class _EnterThresholdViewState extends State<_EnterThresholdView> {
   final _formKey = GlobalKey<FormState>();
   int _threshold = 2; // Default value
+
+  @override
+  void initState() {
+    super.initState();
+    final initialThreshold = widget.initialThreshold;
+    if (initialThreshold != null) {
+      _threshold = initialThreshold;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

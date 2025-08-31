@@ -188,7 +188,7 @@ class WalletHome extends StatelessWidget {
         AnimatedSize(
           duration: Durations.medium4,
           curve: Curves.easeInOutCubicEmphasized,
-          child: isNarrowDisplay ? SizedBox(height: double.infinity) : drawer,
+          child: isNarrowDisplay ? const SizedBox.shrink() : drawer,
         ),
         Flexible(child: scaffold),
       ],
