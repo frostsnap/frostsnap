@@ -213,8 +213,19 @@ pub fn firmware_size(partition: &EspFlashPartition) -> Result<u32, FirmwareSizeE
         current_pos = segment_data_end;
     }
 
-    // calculate firmware end with padding (following espflash logic)
-    let mut firmware_end = (max_data_end + 15) & !15; // 16-byte alignment
+    // Calculate firmware end with padding (following ESP-IDF bootloader logic)
+    // The bootloader's process_checksum function handles padding after all segments
+
+    // First: segments are already processed, max_data_end is the end of all segment data
+    let unpadded_length = max_data_end;
+
+    // Add space for checksum byte
+    let length_with_checksum = unpadded_length + 1;
+
+    // Pad to next full 16 byte block (matching bootloader's logic)
+    let padded_length = (length_with_checksum + 15) & !15;
+
+    let mut firmware_end = padded_length;
 
     // Add digest if present (following espflash logic)
     if header.append_digest == 1 {
