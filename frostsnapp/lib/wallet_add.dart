@@ -237,6 +237,17 @@ class WalletAddColumn extends StatelessWidget {
     if (restorationId == null) return;
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
   }
+
+  static void showAddKeyDialog(
+    BuildContext context,
+    AccessStructureRef accessStructureRef,
+  ) async {
+    await MaybeFullscreenDialog.show<RestorationId>(
+      context: context,
+      child: WalletRecoveryFlow(existing: accessStructureRef, isDialog: false),
+    );
+    await coord.cancelProtocol();
+  }
 }
 
 Function(AddType) makeOnPressed(BuildContext context) {
