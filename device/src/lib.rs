@@ -13,7 +13,7 @@ extern crate alloc;
 pub mod device_config;
 pub mod efuse;
 pub mod esp32_run;
-pub mod firmware;
+pub mod firmware_size;
 pub mod flash;
 #[cfg(feature = "v2")]
 pub mod graphics;

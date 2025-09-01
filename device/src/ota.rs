@@ -424,7 +424,7 @@ impl FirmwareUpgradeMode<'_> {
             let partition = &ota.ota_partitions()[*ota_slot];
             let firmware_size = partition.firmware_size().unwrap();
             assert_eq!(*size, firmware_size);
-            let digest = partition.sha256_digest(sha, firmware_size);
+            let digest = partition.sha256_digest(sha, Some(firmware_size));
             if digest != *expected_digest {
                 panic!(
                     "upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",
