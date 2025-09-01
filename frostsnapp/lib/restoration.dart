@@ -56,29 +56,29 @@ class WalletRecoveryPage extends StatelessWidget {
         ),
       },
       backgroundColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.secondaryContainer,
+        null => theme.colorScheme.primaryContainer,
         RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.tertiaryContainer,
+          theme.colorScheme.secondaryContainer,
         RestorationProblem_InvalidShares() => theme.colorScheme.errorContainer,
       },
       textColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.onSecondaryContainer,
+        null => theme.colorScheme.onPrimaryContainer,
         RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.onTertiaryContainer,
+          theme.colorScheme.onSecondaryContainer,
         RestorationProblem_InvalidShares() =>
           theme.colorScheme.onErrorContainer,
       },
       variantTextColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.onSecondaryContainer,
+        null => theme.colorScheme.onPrimaryContainer,
         RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.onTertiaryContainer,
+          theme.colorScheme.onSecondaryContainer,
         RestorationProblem_InvalidShares() =>
           theme.colorScheme.onErrorContainer,
       },
       iconColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.onSecondaryContainer,
+        null => theme.colorScheme.onPrimaryContainer,
         RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.onTertiaryContainer,
+          theme.colorScheme.onSecondaryContainer,
         RestorationProblem_InvalidShares() =>
           theme.colorScheme.onErrorContainer,
       },
@@ -93,7 +93,7 @@ class WalletRecoveryPage extends StatelessWidget {
             foregroundColor: switch (restoringKey.problem) {
               null => theme.colorScheme.onPrimaryContainer,
               RestorationProblem_NotEnoughShares() =>
-                theme.colorScheme.onTertiaryContainer,
+                theme.colorScheme.onSecondaryContainer,
               RestorationProblem_InvalidShares() =>
                 theme.colorScheme.onErrorContainer,
             },
@@ -160,7 +160,7 @@ class WalletRecoveryPage extends StatelessWidget {
       children: restoringKey.sharesObtained.map((share) {
         final deleteButton = IconButton(
           icon: const Icon(Icons.delete),
-          tooltip: 'Remove share',
+          tooltip: 'Remove key',
           onPressed: () async {
             await coord.deleteRestorationShare(
               restorationId: restoringKey.restorationId,
@@ -222,7 +222,7 @@ class WalletRecoveryPage extends StatelessWidget {
               children: [
                 Flexible(
                   child: Tooltip(
-                    message: "the key number",
+                    message: "The key number",
                     child: Text(
                       "#${share.index}",
                       style: TextStyle(
@@ -971,13 +971,6 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
             'This device already has data on it. To load a physical backup, it must be erased. Erasing will permanently delete all keys on “${name}”.',
           ),
           actions: [
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.error,
-              ),
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel'),
-            ),
             FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: theme.colorScheme.error,
@@ -1328,7 +1321,7 @@ class _PlugInPromptView extends StatefulWidget with _TitledWidget {
   });
 
   @override
-  String get titleText => 'Restore with existing key';
+  String get titleText => 'Restore with existing device';
 
   @override
   State<_PlugInPromptView> createState() => _PlugInPromptViewState();
