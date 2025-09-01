@@ -1,16 +1,14 @@
+[build]
+target = "riscv32imc-unknown-none-elf"
+rustflags = ["-C", "link-arg=-Tlinkall.x"]
+
 [target.riscv32imc-unknown-none-elf]
 runner = "espflash flash --baud 921600 --partition-table partitions.csv"
 
-[build]
-rustflags = [
-  "-C", "link-arg=-Tlinkall.x"
-  # Required to obtain backtraces (e.g. when using the "esp-backtrace" crate.)
-  # NOTE: May negatively impact performance of produced code
-  # LL: I turned this off because I got rid of esp-backtrace crate
-  # "-C", "force-frame-pointers",
-]
-target = "riscv32imc-unknown-none-elf"
-
+[profile.release]
+debug = 0
+strip = "symbols"
+panic = "abort"
 
 [unstable]
 build-std = ["alloc", "core"]

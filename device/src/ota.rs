@@ -51,7 +51,7 @@ struct EspOtadataSlot {
     reserved: [u8; 24],
     seq_crc: u32,
     /// defined by us
-    our_metadata: OtaMetadata,
+    pub our_metadata: OtaMetadata,
 }
 
 impl<'a> OtaPartitions<'a> {
@@ -99,6 +99,10 @@ impl<'a> OtaPartitions<'a> {
         }
 
         best_partition
+    }
+
+    pub fn active_slot_metadata(&self) -> Option<OtaMetadata> {
+        self.current_slot().map(|(_, slot)| slot.our_metadata)
     }
 
     /// Write to the otadata parition to indicate that a different partition should be the main one.
@@ -413,22 +417,24 @@ impl FirmwareUpgradeMode<'_> {
             ota_slot,
             expected_digest,
             ota,
+            size,
             ..
         } = &self
         {
             let partition = &ota.ota_partitions()[*ota_slot];
-            let digest = partition.sha256_digest(sha);
-            if digest == *expected_digest {
-                ota.switch_partition(*ota_slot, OtaMetadata::default());
-            } else {
+            let firmware_size = partition.firmware_size().unwrap();
+            assert_eq!(*size, firmware_size);
+            let digest = partition.sha256_digest(sha, Some(firmware_size));
+            if digest != *expected_digest {
                 panic!(
                     "upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",
                     expected_digest
                 );
             }
+            ota.switch_partition(*ota_slot, OtaMetadata {});
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct OtaMetadata {/* it's empty for now but this is where I would put signatures on the firmware etc */}
+pub struct OtaMetadata {}

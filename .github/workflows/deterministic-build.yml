@@ -1,0 +1,41 @@
+name: Deterministic Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  deterministic-build-device:
+    name: Deterministic Build Device Firmware
+    runs-on: ubuntu-latest
+    # This job is allowed to fail and won't block PRs
+    continue-on-error: true
+    strategy:
+      matrix:
+        board: ["v2"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@just
+      - uses: ./.github/actions/setup-nix
+      - uses: ./.github/actions/fetch-cargo-deps
+      - uses: "./.github/actions/install-cargo-bins"
+      - uses: "./.github/actions/cache-rust-target"
+        with:
+          key: "build-device-firmware-deterministic-v2"
+          path: "/var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release"
+      - name: Build Firmware Deterministically
+        run: |
+          chmod +x device/deterministic-build.sh
+          just build-deterministic
+      - name: Display Build Info
+        run: |
+          echo "Build complete"
+          echo "Size: $(stat -c%s /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin) bytes"
+          echo "SHA256: $(sha256sum /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin)"
+      - uses: "./.github/actions/upload-artifact"
+        with:
+          name: frostsnap-deterministic-${{ github.sha }}.bin
+          path: /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin
