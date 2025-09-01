@@ -67,8 +67,13 @@ class WalletHome extends StatelessWidget {
 
   Widget buildNoWalletBody(BuildContext context) {
     final theme = Theme.of(context);
+    final sizeClass = WindowSizeContext.of(context);
+    final alignTop =
+        sizeClass == WindowSizeClass.compact ||
+        sizeClass == WindowSizeClass.medium;
     return Align(
-      alignment: Alignment(0, -0.25),
+      key: Key('no-wallet-body'),
+      alignment: alignTop ? Alignment.topCenter : Alignment(0, -0.25),
       child: SingleChildScrollView(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: 460),
@@ -97,33 +102,6 @@ class WalletHome extends StatelessWidget {
     final walletListController = homeCtx.walletListController;
     final scaffoldKey = homeCtx.scaffoldKey;
 
-    final body = ListenableBuilder(
-      listenable: walletListController,
-      builder: (context, _) {
-        if (!walletListController.gotInitialData) {
-          return Center(child: CircularProgressIndicator());
-        }
-
-        final selected = walletListController.selected;
-        if (selected == null) {
-          return buildNoWalletBody(context);
-        }
-
-        return switch (selected) {
-          WalletItemKey item => item.tryWrapInWalletContext(
-            context: context,
-            child: TxList(key: Key(item.frostKey.keyId().toHex())),
-          ),
-          WalletItemRestoration item => WalletRecoveryPage(
-            key: Key(item.restoringKey.restorationId.toHex()),
-            restoringKey: item.restoringKey,
-            onWalletRecovered: (accessStructureRef) {
-              walletListController.selectWallet(accessStructureRef.keyId);
-            },
-          ),
-        };
-      },
-    );
     final bottomBar = ListenableBuilder(
       listenable: walletListController,
       builder: (context, _) {
@@ -145,16 +123,64 @@ class WalletHome extends StatelessWidget {
       isRounded: isNarrowDisplay,
     );
 
-    final scaffold = Scaffold(
-      key: scaffoldKey,
-      extendBody: true,
-      resizeToAvoidBottomInset: true,
-      drawer: isNarrowDisplay ? drawer : null,
-      appBar: walletListController.selectedIndex == null
-          ? AppBar(forceMaterialTransparency: true)
-          : null,
-      body: body,
-      bottomNavigationBar: bottomBar,
+    final scaffold = ListenableBuilder(
+      listenable: walletListController,
+      builder: (context, _) {
+        final Widget body;
+        if (!walletListController.gotInitialData) {
+          body = Center(child: CircularProgressIndicator());
+        } else {
+          final selected = walletListController.selected;
+          if (selected == null) {
+            body = buildNoWalletBody(context);
+          } else {
+            body = switch (selected) {
+              WalletItemKey item => item.tryWrapInWalletContext(
+                key: Key('wrapped-${item.frostKey.keyId().toHex()}'),
+                context: context,
+                child: TxList(key: Key(item.frostKey.keyId().toHex())),
+              ),
+              WalletItemRestoration item => WalletRecoveryPage(
+                key: Key(item.restoringKey.restorationId.toHex()),
+                restoringKey: item.restoringKey,
+                onWalletRecovered: (accessStructureRef) {
+                  walletListController.selectWallet(accessStructureRef.keyId);
+                },
+              ),
+            };
+          }
+        }
+
+        return Scaffold(
+          key: scaffoldKey,
+          extendBody: true,
+          resizeToAvoidBottomInset: true,
+          drawer: isNarrowDisplay ? drawer : null,
+          appBar: walletListController.selected == null
+              ? AppBar(forceMaterialTransparency: true)
+              : null,
+          body: AnimatedSwitcher(
+            duration: Durations.long1,
+            reverseDuration: Duration.zero,
+            switchInCurve: Curves.easeInOutCubicEmphasized,
+            transitionBuilder: (child, animation) => SlideTransition(
+              position: Tween<Offset>(
+                begin: Offset(1, 0),
+                end: Offset(0, 0),
+              ).animate(animation),
+              child: FadeTransition(
+                opacity: CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.linear,
+                ),
+                child: child,
+              ),
+            ),
+            child: body,
+          ),
+          bottomNavigationBar: bottomBar,
+        );
+      },
     );
 
     return Row(
@@ -162,7 +188,7 @@ class WalletHome extends StatelessWidget {
         AnimatedSize(
           duration: Durations.medium4,
           curve: Curves.easeInOutCubicEmphasized,
-          child: isNarrowDisplay ? SizedBox(height: double.infinity) : drawer,
+          child: isNarrowDisplay ? const SizedBox.shrink() : drawer,
         ),
         Flexible(child: scaffold),
       ],

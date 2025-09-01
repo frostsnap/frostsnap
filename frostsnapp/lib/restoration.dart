@@ -1,14 +1,20 @@
 import 'dart:async';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_add.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
   final RestoringKey restoringKey;
@@ -23,216 +29,291 @@ class WalletRecoveryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final progressDescription = switch (restoringKey.problem) {
-      null => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle, color: theme.colorScheme.primary),
-          SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              'You have enough keys to restore the wallet. You can continue recovering more keys if you have more backups available, or add them later under settings.',
-              softWrap: true,
-            ),
-          ),
-        ],
-      ),
-      RestorationProblem_NotEnoughShares(:final needMore) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.pending_rounded),
-          SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              needMore == 1
-                  ? '1 more key needed'
-                  : '$needMore more keys needed',
-              softWrap: true,
-            ),
-          ),
-        ],
-      ),
-      RestorationProblem_InvalidShares() => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.warning, color: theme.colorScheme.error),
-          SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              "Remove incompatible shares before continuing",
-              softWrap: true,
-            ),
-          ),
-        ],
-      ),
-    };
+    final homeCtx = HomeContext.of(context)!;
 
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          pinned: true,
-          title: Text("Restoring Wallet “${restoringKey.name}”"),
-          // Optionally add more configuration like flexibleSpace, actions, etc.
+    final progressActionCard = MaterialDialogCard(
+      iconData: switch (restoringKey.problem) {
+        null => Icons.check_circle_outline_rounded,
+        RestorationProblem_NotEnoughShares() => Icons.info_rounded,
+        RestorationProblem_InvalidShares() => Icons.running_with_errors_rounded,
+      },
+      title: switch (restoringKey.problem) {
+        null => Text('Ready to restore'),
+        RestorationProblem_NotEnoughShares() => Text('Not enough shares'),
+        RestorationProblem_InvalidShares() => Text('Some shares are invalid'),
+      },
+      content: switch (restoringKey.problem) {
+        null => Text(
+          'You have enough keys to restore the wallet. You can add more keys later under settings if needed.',
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 20),
-                Text(
-                  "At least ${restoringKey.threshold} keys are needed to restore this wallet.",
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Keys restored:',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 10),
-                // Wrap the list in a Column; using ListView here would require shrinkWrap/physics adjustments.
-                Column(
-                  children: restoringKey.sharesObtained.map((share) {
-                    final deleteButton = IconButton(
-                      icon: const Icon(Icons.delete),
-                      tooltip: 'Remove share',
-                      onPressed: () async {
-                        await coord.deleteRestorationShare(
-                          restorationId: restoringKey.restorationId,
-                          deviceId: share.deviceId,
-                        );
-                      },
+        RestorationProblem_NotEnoughShares(:final needMore) => Text(
+          needMore == 1
+              ? '1 more key to restore wallet.'
+              : '$needMore more keys needed to restore wallet.',
+        ),
+        RestorationProblem_InvalidShares() => Text(
+          'Remove incompatible shares before continuing.',
+        ),
+      },
+      backgroundColor: switch (restoringKey.problem) {
+        null => theme.colorScheme.primaryContainer,
+        RestorationProblem_NotEnoughShares() =>
+          theme.colorScheme.secondaryContainer,
+        RestorationProblem_InvalidShares() => theme.colorScheme.errorContainer,
+      },
+      textColor: switch (restoringKey.problem) {
+        null => theme.colorScheme.onPrimaryContainer,
+        RestorationProblem_NotEnoughShares() =>
+          theme.colorScheme.onSecondaryContainer,
+        RestorationProblem_InvalidShares() =>
+          theme.colorScheme.onErrorContainer,
+      },
+      variantTextColor: switch (restoringKey.problem) {
+        null => theme.colorScheme.onPrimaryContainer,
+        RestorationProblem_NotEnoughShares() =>
+          theme.colorScheme.onSecondaryContainer,
+        RestorationProblem_InvalidShares() =>
+          theme.colorScheme.onErrorContainer,
+      },
+      iconColor: switch (restoringKey.problem) {
+        null => theme.colorScheme.onPrimaryContainer,
+        RestorationProblem_NotEnoughShares() =>
+          theme.colorScheme.onSecondaryContainer,
+        RestorationProblem_InvalidShares() =>
+          theme.colorScheme.onErrorContainer,
+      },
+      actions: [
+        TextButton.icon(
+          icon: const Icon(Icons.close_rounded),
+          label: const Text('Cancel'),
+          onPressed: () {
+            coord.cancelRestoration(restorationId: restoringKey.restorationId);
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: switch (restoringKey.problem) {
+              null => theme.colorScheme.onPrimaryContainer,
+              RestorationProblem_NotEnoughShares() =>
+                theme.colorScheme.onSecondaryContainer,
+              RestorationProblem_InvalidShares() =>
+                theme.colorScheme.onErrorContainer,
+            },
+          ),
+        ),
+        FilledButton.icon(
+          icon: const Icon(Icons.check_rounded),
+          label: const Text('Restore'),
+          onPressed: restoringKey.problem == null
+              ? () async {
+                  try {
+                    final accessStructureRef = await coord.finishRestoring(
+                      restorationId: restoringKey.restorationId,
                     );
-                    final deviceName =
-                        coord.getDeviceName(id: share.deviceId) ?? '<empty>';
-                    return Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: ListTile(
-                        leading: Icon(Icons.key),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min, // keep row compact
-                          children: [
-                            ...switch (share.validity) {
-                              RestorationShareValidity.valid => [
-                                Tooltip(
-                                  message: "Valid key",
-                                  child: Icon(
-                                    Icons.check_circle,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                  ),
-                                ),
-                              ],
-                              RestorationShareValidity.unknown => [
-                                deleteButton,
-                                const SizedBox(width: 8),
-                                Tooltip(
-                                  message: "Validity to be determined",
-                                  child: Icon(
-                                    Icons.pending_rounded,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                  ),
-                                ),
-                              ],
-                              RestorationShareValidity.invalid => [
-                                deleteButton,
-                                const SizedBox(width: 8),
-                                Tooltip(
-                                  message:
-                                      "This share is incompatible with the other shares",
-                                  child: Icon(
-                                    Icons.warning,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                ),
-                              ],
-                            },
-                            // delete button
-                          ],
-                        ),
-                        title: Row(
-                          children: [
-                            Tooltip(
-                              message: "the key number",
-                              child: Text(
-                                "#${share.index}",
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: 10),
-                            Text(deviceName),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 10),
-                Center(child: progressDescription),
-                const SizedBox(height: 10),
-                Center(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Restore another key'),
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    onPressed: () {
-                      continueWalletRecoveryFlowDialog(
+                    onWalletRecovered(accessStructureRef);
+                  } catch (e) {
+                    if (context.mounted) {
+                      showErrorSnackbarBottom(
                         context,
-                        restorationId: restoringKey.restorationId,
+                        "failed to recover wallet: $e",
                       );
-                    },
+                    }
+                  }
+                }
+              : null,
+        ),
+      ],
+    );
+
+    final appBar = SliverAppBar.medium(
+      pinned: true,
+      title: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: restoringKey.name),
+            WidgetSpan(
+              child: Card.filled(
+                color: theme.colorScheme.primaryContainer.withAlpha(80),
+                margin: EdgeInsets.only(left: 12, bottom: 2),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    'Wallet in Restoration',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    TextButton.icon(
-                      icon: const Icon(Icons.cancel),
-                      label: const Text('Cancel'),
-                      onPressed: () {
-                        coord.cancelRestoration(
-                          restorationId: restoringKey.restorationId,
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.check_circle),
-                      label: const Text('Restore'),
-                      onPressed: restoringKey.problem == null
-                          ? () async {
-                              try {
-                                final accessStructureRef = await coord
-                                    .finishRestoring(
-                                      restorationId: restoringKey.restorationId,
-                                    );
-                                onWalletRecovered(accessStructureRef);
-                              } catch (e) {
-                                if (context.mounted) {
-                                  showErrorSnackbarBottom(
-                                    context,
-                                    "failed to recover wallet: $e",
-                                  );
-                                }
-                              }
-                            }
-                          : null,
+              ),
+            ),
+          ],
+        ),
+        overflow: TextOverflow.fade,
+        softWrap: false,
+      ),
+    );
+
+    var devicesColumn = Column(
+      spacing: 8,
+      children: restoringKey.sharesObtained.map((share) {
+        final deleteButton = IconButton(
+          icon: const Icon(Icons.delete),
+          tooltip: 'Remove key',
+          onPressed: () async {
+            await coord.deleteRestorationShare(
+              restorationId: restoringKey.restorationId,
+              deviceId: share.deviceId,
+            );
+            homeCtx.walletListController.selectRecoveringWallet(
+              restoringKey.restorationId,
+            );
+          },
+        );
+        final deviceName = coord.getDeviceName(id: share.deviceId) ?? '<empty>';
+        return Card.filled(
+          color: theme.colorScheme.surfaceContainerHigh,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(24)),
+          ),
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            contentPadding: EdgeInsets.symmetric(horizontal: 16),
+            leading: Icon(Icons.key),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: [
+                ...switch (share.validity) {
+                  RestorationShareValidity.valid => [
+                    Tooltip(
+                      message: "Valid key",
+                      child: Icon(
+                        Icons.check_circle,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ],
-                ),
+                  RestorationShareValidity.unknown => [
+                    Tooltip(
+                      message: "Validity to be determined",
+                      child: Icon(
+                        Icons.pending_rounded,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                  RestorationShareValidity.invalid => [
+                    Tooltip(
+                      message: "This key is incompatible with the other keys",
+                      child: Icon(
+                        Icons.warning,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                },
+                deleteButton,
               ],
+            ),
+            title: Row(
+              spacing: 8,
+              children: [
+                Flexible(
+                  child: Tooltip(
+                    message: "The key number",
+                    child: Text(
+                      "#${share.index}",
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                Flexible(child: Text(deviceName, style: monospaceTextStyle)),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+
+    final usableHeight =
+        MediaQuery.of(context).size.height -
+        MediaQuery.of(context).padding.top -
+        MediaQuery.of(context).padding.bottom;
+
+    final sizeClass = WindowSizeContext.of(context);
+    final alignTop =
+        sizeClass == WindowSizeClass.compact ||
+        sizeClass == WindowSizeClass.medium ||
+        sizeClass == WindowSizeClass.expanded;
+    return CustomScrollView(
+      slivers: [
+        appBar,
+        SliverToBoxAdapter(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 560,
+              minHeight: alignTop ? 0.0 : usableHeight * 2 / 3,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Align(
+                alignment: AlignmentDirectional.center,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: alignTop ? double.infinity : 600,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Text(
+                          "You need ${restoringKey.threshold} or more keys to restore this wallet.",
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Text('Keys added so far:'),
+                      ),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: 600),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              devicesColumn,
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: AlignmentDirectional.centerEnd,
+                                child: TextButton.icon(
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add another key'),
+                                  onPressed: () {
+                                    continueWalletRecoveryFlowDialog(
+                                      context,
+                                      restorationId: restoringKey.restorationId,
+                                    );
+                                  },
+                                ),
+                              ),
+                              SizedBox(height: 16),
+                              progressActionCard,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -274,8 +355,27 @@ class WalletRecoveryFlow extends StatefulWidget {
   State<WalletRecoveryFlow> createState() => _WalletRecoveryFlowState();
 }
 
+class _RecoveryFlowPrevState {
+  String currentStep = 'start';
+  RecoverShare? candidate;
+  ShareCompatibility? compatibility;
+  ConnectedDevice? blankDevice;
+  RestorationId? restorationId;
+  String? error;
+
+  _RecoveryFlowPrevState({
+    required this.currentStep,
+    required this.candidate,
+    required this.compatibility,
+    required this.blankDevice,
+    required this.restorationId,
+    required this.error,
+  });
+}
+
 class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   late final MethodChoiceKind kind;
+
   String currentStep = 'start';
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
@@ -285,6 +385,40 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   BitcoinNetwork? bitcoinNetwork;
   int? threshold;
   String? error;
+
+  // For back gesture.
+  final prevStates = List<_RecoveryFlowPrevState>.empty(growable: true);
+  bool isAnimationForward = true;
+  void pushPrevState() {
+    isAnimationForward = true;
+    prevStates.add(
+      _RecoveryFlowPrevState(
+        currentStep: currentStep,
+        candidate: candidate,
+        compatibility: compatibility,
+        blankDevice: blankDevice,
+        restorationId: restorationId,
+        error: error,
+      ),
+    );
+  }
+
+  bool tryPopPrevState(BuildContext context) {
+    if (prevStates.isNotEmpty) {
+      setState(() {
+        isAnimationForward = false;
+        final prevState = prevStates.removeLast();
+        currentStep = prevState.currentStep;
+        candidate = prevState.candidate;
+        compatibility = prevState.compatibility;
+        blankDevice = prevState.blankDevice;
+        restorationId = prevState.restorationId;
+        error = prevState.error;
+      });
+      return true;
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -310,7 +444,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
   @override
   Widget build(BuildContext context) {
-    Widget child;
+    _TitledWidget child;
 
     switch (currentStep) {
       case 'wait_device':
@@ -320,6 +454,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onCandidateDetected: (detectedShare, compatibility) {
             if (mounted) {
               setState(() {
+                pushPrevState();
                 candidate = detectedShare;
                 this.compatibility = compatibility;
                 currentStep = 'candidate_ready';
@@ -340,6 +475,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _PlugInBlankView(
           onBlankDeviceConnected: (device) {
             setState(() {
+              pushPrevState();
               blankDevice = device;
               currentStep = 'enter_device_name';
             });
@@ -351,7 +487,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _EnterDeviceNameView(
           deviceId: blankDevice!.id,
           onDeviceName: (name) {
-            setState(() => currentStep = 'enter_backup');
+            setState(() {
+              pushPrevState();
+              currentStep = 'enter_backup';
+            });
           },
         );
       case 'enter_backup':
@@ -385,16 +524,19 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                     restorationId: restorationId!,
                   );
                   setState(() {
+                    pushPrevState();
                     currentStep = "physical_backup_success";
                   });
                 } else {
                   setState(() {
+                    pushPrevState();
                     currentStep = "physical_backup_fail";
                   });
                 }
               }
             } catch (e) {
               setState(() {
+                pushPrevState();
                 currentStep = "physical_backup_fail";
                 error = e.toString();
               });
@@ -402,6 +544,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
           onError: (e) {
             setState(() {
+              pushPrevState();
               currentStep = "physical_backup_fail";
               error = e.toString();
             });
@@ -410,8 +553,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         break;
       case 'enter_restoration_details':
         child = _EnterWalletNameView(
+          initialWalletName: walletName,
+          initialBitcoinNetwork: bitcoinNetwork,
           onWalletNameEntered: (walletName, bitcoinNetwork) {
             setState(() {
+              pushPrevState();
               this.walletName = walletName;
               this.bitcoinNetwork = bitcoinNetwork;
               currentStep = 'enter_threshold';
@@ -424,8 +570,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _EnterThresholdView(
           walletName: walletName!,
           network: bitcoinNetwork!,
+          initialThreshold: threshold,
           onThresholdEntered: (threshold) {
             setState(() {
+              pushPrevState();
               this.threshold = threshold;
               currentStep = 'wait_physical_backup_device';
             });
@@ -446,6 +594,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           compatibility: compatibility,
           onRetry: () {
             setState(() {
+              pushPrevState();
               currentStep = 'enter_backup';
               error = null;
             });
@@ -459,15 +608,20 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _ChooseMethodView(
           kind: kind,
           onDeviceChosen: () {
-            setState(() => currentStep = 'wait_device');
+            setState(() {
+              pushPrevState();
+              currentStep = 'wait_device';
+            });
           },
           onPhysicalBackupChosen: () {
             setState(() {
               switch (kind) {
                 case MethodChoiceKind.startRecovery:
+                  pushPrevState();
                   currentStep = "enter_restoration_details";
                   break;
                 default:
+                  pushPrevState();
                   currentStep = 'wait_physical_backup_device';
               }
             });
@@ -476,39 +630,162 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     }
 
     final switcher = AnimatedSwitcher(
-      duration: const Duration(milliseconds: 400),
+      duration: Durations.medium4,
+      reverseDuration: Duration.zero,
+      transitionBuilder: (child, animation) {
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubicEmphasized,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: isAnimationForward
+                ? const Offset(1, 0)
+                : const Offset(-1, 0),
+            end: Offset.zero,
+          ).animate(curvedAnimation),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
       child: Padding(
         key: ValueKey(currentStep),
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(16.0),
         child: child,
       ),
     );
 
+    final scopedSwitcher = PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        goBackOrClose(context);
+      },
+      child: switcher,
+    );
+
     if (widget.isDialog) {
+      // TODO: This branch can be removed at some point.
       return Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(
-            minWidth: 500, // Choose a suitable fixed width
-            maxWidth: 500,
+            minWidth: 480, // Choose a suitable fixed width
+            maxWidth: 480,
             minHeight:
-                320, // Ensure this is large enough for your tallest content
+                360, // Ensure this is large enough for your tallest content
           ),
           child: switcher,
         ),
       );
     } else {
+      final windowSize = WindowSizeContext.of(context);
+      final header = TopBarSliver(
+        title: Text(child.titleText),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded),
+          onPressed: () => goBackOrClose(context),
+          tooltip: 'Back',
+        ),
+      );
       return ConstrainedBox(
         constraints: BoxConstraints(minHeight: 360),
-        child: switcher,
+        child: CustomScrollView(
+          shrinkWrap: windowSize != WindowSizeClass.compact,
+          slivers: [
+            header,
+            SliverToBoxAdapter(child: scopedSwitcher),
+          ],
+        ),
       );
     }
+  }
+
+  void goBackOrClose(BuildContext) {
+    if (!tryPopPrevState(context)) Navigator.pop(context);
   }
 }
 
 enum MethodChoiceKind { startRecovery, continueRecovery, addToWallet }
 
-class _ChooseMethodView extends StatelessWidget {
+mixin _TitledWidget on Widget {
+  String get titleText;
+}
+
+class MaterialDialogCard extends StatelessWidget {
+  final IconData? iconData;
+  final Widget title;
+  final Widget content;
+  final List<Widget> actions;
+  final MainAxisAlignment actionsAlignment;
+  final Color? backgroundColor;
+  final Color? textColor;
+  final Color? variantTextColor;
+  final Color? iconColor;
+
+  const MaterialDialogCard({
+    super.key,
+    this.iconData,
+    required this.title,
+    required this.content,
+    required this.actions,
+    this.actionsAlignment = MainAxisAlignment.end,
+    this.backgroundColor,
+    this.textColor,
+    this.variantTextColor,
+    this.iconColor,
+  });
+
+  static const borderRadius = BorderRadius.all(Radius.circular(24));
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: backgroundColor ?? theme.colorScheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: borderRadius),
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 16,
+          children: [
+            if (iconData != null)
+              Icon(
+                iconData,
+                color: iconColor ?? theme.colorScheme.secondary,
+                size: 24,
+              ),
+            DefaultTextStyle(
+              style: theme.textTheme.headlineSmall!.copyWith(
+                color: textColor ?? theme.colorScheme.onSurface,
+              ),
+              textAlign: TextAlign.center,
+              child: title,
+            ),
+            DefaultTextStyle(
+              style: theme.textTheme.bodyLarge!.copyWith(
+                color: variantTextColor ?? theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.start,
+              child: content,
+            ),
+            Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Row(
+                mainAxisAlignment: actionsAlignment,
+                spacing: 8,
+                children: actions.map((w) => Flexible(child: w)).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChooseMethodView extends StatelessWidget with _TitledWidget {
   final VoidCallback? onDeviceChosen;
   final VoidCallback? onPhysicalBackupChosen;
   final MethodChoiceKind kind;
@@ -520,25 +797,31 @@ class _ChooseMethodView extends StatelessWidget {
   });
 
   @override
+  String get titleText => switch (kind) {
+    MethodChoiceKind.startRecovery => 'Add the first key',
+    MethodChoiceKind.continueRecovery => 'Add another key',
+    MethodChoiceKind.addToWallet => 'Add another key',
+  };
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final String title;
     final String subtitle;
 
     switch (kind) {
       case MethodChoiceKind.startRecovery:
-        title = "Start restoring wallet";
-        subtitle = 'What kind of key will you start restoring the wallet from?';
+        // subtitle = 'What kind of key will you start restoring the wallet from?';
+        subtitle =
+            'Select how you’d like to provide the first key for this wallet.';
         break;
       case MethodChoiceKind.continueRecovery:
-        title = 'Continue wallet Restoration';
-        subtitle = 'Where is the next key coming from?';
+        // subtitle = 'Where is the next key coming from?';
+        subtitle =
+            'Select how you’d like to provide the next key for this wallet.';
         break;
 
       case MethodChoiceKind.addToWallet:
-        title = "Add key to wallet";
         subtitle =
-            "⚠ For now, Frostsnap only supports adding keys that were originally part of the wallet when it was created";
+            'Select how you’d like to provide the key for this wallet.\n\n⚠ For now, Frostsnap only supports adding keys that were originally part of the wallet when it was created';
         break;
     }
 
@@ -546,96 +829,131 @@ class _ChooseMethodView extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          title,
-          style: theme.textTheme.titleLarge,
-          textAlign: TextAlign.center,
+        WalletAddColumn.buildTitle(context, text: subtitle),
+
+        WalletAddColumn.buildCard(
+          context,
+          action: onDeviceChosen,
+          icon: ImageIcon(
+            AssetImage('assets/icons/device2.png'),
+            size: WalletAddColumn.iconSize,
+          ),
+          title: 'Use existing device',
+          subtitle: 'Connect a Frostsnap device that already has a key.',
+          groupPosition: VerticalButtonGroupPosition.top,
         ),
-        const SizedBox(height: 10),
-        Text(
-          subtitle,
-          style: theme.textTheme.titleMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 20),
-        Card(
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        WalletAddColumn.buildCard(
+          context,
+          action: onPhysicalBackupChosen,
+          icon: Icon(
+            Icons.description_outlined,
+            size: WalletAddColumn.iconSize,
           ),
-          clipBehavior: Clip.hardEdge,
-          child: ListTile(
-            minTileHeight: 80,
-            leading: const ImageIcon(
-              AssetImage('assets/icons/device2.png'),
-              size: 30.0,
-            ),
-            title: const Text('Existing key'),
-            subtitle: const Text(
-              "I have a Frostsnap device with a key for the wallet.",
-            ),
-            onTap: onDeviceChosen,
-          ),
-        ),
-        const SizedBox(height: 15),
-        Card(
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          clipBehavior: Clip.hardEdge,
-          child: ListTile(
-            minTileHeight: 80,
-            leading: const Icon(Icons.description_outlined, size: 30),
-            title: const Text('Physical backup'),
-            subtitle: const Text('I have a physically recorded key backup.'),
-            onTap: onPhysicalBackupChosen,
-          ),
+          title: 'Load from backup',
+          subtitle: 'Use a blank Frostsnap device with your physical backup.',
+          groupPosition: VerticalButtonGroupPosition.bottom,
         ),
       ],
     );
   }
 }
 
-class _PlugInBlankView extends StatefulWidget {
+class _PlugInBlankView extends StatefulWidget with _TitledWidget {
   final Function(ConnectedDevice)? onBlankDeviceConnected;
 
   const _PlugInBlankView({this.onBlankDeviceConnected});
 
   @override
   State<_PlugInBlankView> createState() => _PlugInBlankViewState();
+
+  @override
+  String get titleText => 'Insert blank device';
 }
 
 class _PlugInBlankViewState extends State<_PlugInBlankView> {
   StreamSubscription? _subscription;
   ConnectedDevice? _connectedDevice;
 
+  late final FullscreenActionDialogController<void> _eraseController;
+
   @override
   void initState() {
     super.initState();
-    _subscription = GlobalStreams.deviceListSubject.listen((update) {
+    _subscription = GlobalStreams.deviceListSubject.listen((update) async {
       ConnectedDevice? connectedDevice;
-
       for (final candidate in update.state.devices) {
         connectedDevice = candidate;
         if (connectedDevice.name == null) {
           break;
         }
       }
-
       setState(() {
         _connectedDevice = connectedDevice;
       });
-
       if (connectedDevice != null && connectedDevice.name == null) {
         widget.onBlankDeviceConnected?.call(connectedDevice);
       }
+
+      // For erase fullscreen action controller.
+      if (connectedDevice != null) {
+        final device = update.state.devices.firstWhereOrNull(
+          (device) => deviceIdEquals(device.id, connectedDevice!.id),
+        );
+        if (device?.name == null) {
+          await _eraseController.clearAllActionsNeeded();
+        }
+      } else {
+        await _eraseController.clearAllActionsNeeded();
+      }
     });
+    _eraseController = FullscreenActionDialogController(
+      title: 'Erase Device',
+      body: (context) {
+        final theme = Theme.of(context);
+        return Card.filled(
+          margin: EdgeInsets.zero,
+          color: theme.colorScheme.errorContainer,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.warning_rounded),
+                title: Text('This will wipe the key from the device.'),
+                subtitle: Text(
+                  'The device will be rendered blank.\nThis action can not be reverted, and the only way to restore this key is through loading of a backup.',
+                ),
+                isThreeLine: true,
+                textColor: theme.colorScheme.onErrorContainer,
+                iconColor: theme.colorScheme.onErrorContainer,
+                contentPadding: EdgeInsets.symmetric(horizontal: 16),
+              ),
+            ],
+          ),
+        );
+      },
+      actionButtons: [
+        OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
+        DeviceActionHint(),
+      ],
+      onDismissed: _onCancel,
+    );
+  }
+
+  void _onCancel() async {
+    final id = _connectedDevice?.id;
+    if (id != null) await coord.sendCancel(id: id);
+    await _eraseController.clearAllActionsNeeded();
+  }
+
+  void showEraseDialog(BuildContext context, DeviceId id) async {
+    _eraseController.addActionNeeded(context, id);
+    await coord.wipeDeviceData(deviceId: id);
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _eraseController.dispose();
     super.dispose();
   }
 
@@ -646,34 +964,38 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
     if (_connectedDevice != null && _connectedDevice!.name != null) {
       var name = _connectedDevice!.name!;
       children = [
-        Icon(Icons.cancel, color: theme.colorScheme.error, size: 48),
-        SizedBox(height: 16),
-        Text(
-          "The device “$name” you've plugged in is not blank.\nYou must erase the device before loading a physical backup onto it.",
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium,
+        MaterialDialogCard(
+          iconData: Icons.warning_rounded,
+          title: Text('Device not blank'),
+          content: Text(
+            'This device already has data on it. To load a physical backup, it must be erased. Erasing will permanently delete all keys on “${name}”.',
+          ),
+          actions: [
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              icon: Icon(Icons.delete),
+              label: Text("Erase “$name”"),
+              onPressed: () {
+                showEraseDialog(context, _connectedDevice!.id);
+              },
+            ),
+          ],
         ),
-        SizedBox(height: 16),
-        ElevatedButton.icon(
-          icon: Icon(Icons.delete),
-          label: Text("Erase “$name”"),
-          onPressed: () {
-            coord.wipeDeviceData(deviceId: _connectedDevice!.id);
-          },
-        ),
-        SizedBox(height: 16),
       ];
     } else {
       children = [
-        Icon(Icons.usb, size: 48),
-        SizedBox(height: 16),
-        Text(
-          'Plug in a blank Frostsnap device to restore the physical backup onto.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium,
+        MaterialDialogCard(
+          iconData: Icons.usb_rounded,
+          title: Text('Waiting for device'),
+          content: Text(
+            'Plug in a blank Frostsnap device. This device will be used to load your key from backup.',
+          ),
+          actions: [CircularProgressIndicator()],
+          actionsAlignment: MainAxisAlignment.center,
         ),
-        SizedBox(height: 16),
-        CircularProgressIndicator(),
       ];
     }
     return Column(
@@ -685,13 +1007,22 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
   }
 }
 
-class _EnterWalletNameView extends StatefulWidget {
+class _EnterWalletNameView extends StatefulWidget with _TitledWidget {
+  final String? initialWalletName;
+  final BitcoinNetwork? initialBitcoinNetwork;
   final Function(String walletName, BitcoinNetwork network) onWalletNameEntered;
 
-  const _EnterWalletNameView({required this.onWalletNameEntered});
+  const _EnterWalletNameView({
+    required this.onWalletNameEntered,
+    this.initialWalletName,
+    this.initialBitcoinNetwork,
+  });
 
   @override
   State<_EnterWalletNameView> createState() => _EnterWalletNameViewState();
+
+  @override
+  String get titleText => 'Wallet name';
 }
 
 class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
@@ -704,6 +1035,14 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
   void initState() {
     super.initState();
     _walletNameController.addListener(_updateButtonState);
+    final initialWalletName = widget.initialWalletName;
+    if (initialWalletName != null) {
+      _walletNameController.text = initialWalletName;
+    }
+    final initialBitcoinNetwork = widget.initialBitcoinNetwork;
+    if (initialBitcoinNetwork != null) {
+      bitcoinNetwork = initialBitcoinNetwork;
+    }
   }
 
   void _updateButtonState() {
@@ -739,15 +1078,8 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            "Enter Wallet Name",
-            style: theme.textTheme.titleLarge,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "Enter the same name that is recorded on the physical backup. If it has been lost or damaged you may enter another name.",
+            "Enter the wallet name from your physical backup.\nIf it’s missing or unreadable, choose another name — this won’t affect your wallet’s security.",
             style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           TextFormField(
@@ -776,10 +1108,12 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
             ),
           ],
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.arrow_forward),
-            label: const Text('Continue'),
-            onPressed: _isButtonEnabled ? _submitForm : null,
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: FilledButton(
+              child: const Text('Continue'),
+              onPressed: _isButtonEnabled ? _submitForm : null,
+            ),
           ),
         ],
       ),
@@ -787,24 +1121,38 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
   }
 }
 
-class _EnterThresholdView extends StatefulWidget {
+class _EnterThresholdView extends StatefulWidget with _TitledWidget {
   final String walletName;
   final BitcoinNetwork network;
   final Function(int threshold) onThresholdEntered;
+  final int? initialThreshold;
 
   const _EnterThresholdView({
     required this.walletName,
     required this.onThresholdEntered,
     required this.network,
+    this.initialThreshold,
   });
 
   @override
   State<_EnterThresholdView> createState() => _EnterThresholdViewState();
+
+  @override
+  String get titleText => 'Wallet Threshold';
 }
 
 class _EnterThresholdViewState extends State<_EnterThresholdView> {
   final _formKey = GlobalKey<FormState>();
   int _threshold = 2; // Default value
+
+  @override
+  void initState() {
+    super.initState();
+    final initialThreshold = widget.initialThreshold;
+    if (initialThreshold != null) {
+      _threshold = initialThreshold;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -817,15 +1165,8 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            "Enter Wallet Threshold",
-            style: theme.textTheme.titleLarge,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "Enter the threshold that's recorded on the backup.",
+            "Enter the threshold from your backup.\nThis is the number of keys needed to use your wallet.",
             style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           DropdownButtonFormField<int>(
@@ -858,14 +1199,16 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
             },
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.arrow_forward),
-            label: const Text('Begin restoring'),
-            onPressed: () async {
-              if (_formKey.currentState!.validate()) {
-                widget.onThresholdEntered(_threshold);
-              }
-            },
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: FilledButton(
+              child: const Text('Begin restoring'),
+              onPressed: () async {
+                if (_formKey.currentState!.validate()) {
+                  widget.onThresholdEntered(_threshold);
+                }
+              },
+            ),
           ),
         ],
       ),
@@ -873,7 +1216,7 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
   }
 }
 
-class _EnterDeviceNameView extends StatelessWidget {
+class _EnterDeviceNameView extends StatelessWidget with _TitledWidget {
   final Function(String)? onDeviceName;
   final DeviceId deviceId;
   const _EnterDeviceNameView({required this.deviceId, this.onDeviceName});
@@ -886,20 +1229,14 @@ class _EnterDeviceNameView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          "Name This Device",
-          style: theme.textTheme.titleLarge,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        Text(
           "If in doubt you can use the name written on the backup or make up a new one. You can always rename it later.",
           style: theme.textTheme.bodyMedium,
-          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
         DeviceNameField(
           id: deviceId,
           mode: DeviceNameMode.rename,
+          buttonText: 'Confirm on device',
           onNamed: (name) {
             onDeviceName?.call(name);
           },
@@ -907,9 +1244,12 @@ class _EnterDeviceNameView extends StatelessWidget {
       ],
     );
   }
+
+  @override
+  String get titleText => 'Device name';
 }
 
-class _EnterBackupView extends StatefulWidget {
+class _EnterBackupView extends StatefulWidget with _TitledWidget {
   final Stream<EnterPhysicalBackupState> stream;
   final Function(PhysicalBackupPhase)? onFinished;
   final Function(String)? onError;
@@ -918,6 +1258,9 @@ class _EnterBackupView extends StatefulWidget {
 
   @override
   State<_EnterBackupView> createState() => _EnterBackupViewState();
+
+  @override
+  String get titleText => 'Enter backup on device';
 }
 
 class _EnterBackupViewState extends State<_EnterBackupView> {
@@ -951,21 +1294,21 @@ class _EnterBackupViewState extends State<_EnterBackupView> {
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: const [
-        Icon(Icons.keyboard, size: 48, color: Colors.grey),
-        SizedBox(height: 16),
-        Text(
-          'Enter the backup on the device',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18),
+        MaterialDialogCard(
+          iconData: Icons.keyboard_rounded,
+          title: Text('Waiting for backup'),
+          content: Text(
+            'Use your Frostsnap device to enter the physical backup. The app will continue once it’s complete.',
+          ),
+          actions: [CircularProgressIndicator()],
+          actionsAlignment: MainAxisAlignment.center,
         ),
-        SizedBox(height: 16),
-        CircularProgressIndicator(),
       ],
     );
   }
 }
 
-class _PlugInPromptView extends StatefulWidget {
+class _PlugInPromptView extends StatefulWidget with _TitledWidget {
   final RestorationId? continuing;
   final AccessStructureRef? existing;
   final void Function(RecoverShare candidate, ShareCompatibility compatibility)
@@ -976,6 +1319,9 @@ class _PlugInPromptView extends StatefulWidget {
     this.existing,
     required this.onCandidateDetected,
   });
+
+  @override
+  String get titleText => 'Restore with existing device';
 
   @override
   State<_PlugInPromptView> createState() => _PlugInPromptViewState();
@@ -1050,46 +1396,33 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
     // Build the widget to display based on the error state.
     Widget displayWidget;
     if (alreadyGot != null) {
-      displayWidget = Column(
+      displayWidget = MaterialDialogCard(
         key: const ValueKey('warning-already-got'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Big warning icon
-          Icon(
-            Icons.warning_amber,
-            size: 80, // Big size for emphasis
-            color: theme.colorScheme.error,
-          ),
-          SizedBox(height: 16),
-          // Warning text for the alreadyGot error case
-          Text(
-            "The connected device “${coord.getDeviceName(id: alreadyGot!.heldBy)}” is already part of the wallet “${alreadyGot!.heldShare.keyName}”",
-            style: theme.textTheme.bodyLarge,
-            textAlign: TextAlign.center,
-          ),
-        ],
+        backgroundColor: theme.colorScheme.surfaceContainerLow,
+        iconData: Icons.warning_amber,
+        title: Text('Key already part of wallet'),
+        content: Text(
+          "The connected device “${coord.getDeviceName(id: alreadyGot!.heldBy)}” is already part of the wallet “${alreadyGot!.heldShare.keyName}”.",
+
+          textAlign: TextAlign.center,
+        ),
+        actions: [],
       );
     } else if (blankDeviceInserted) {
-      displayWidget = Column(
+      displayWidget = MaterialDialogCard(
         key: const ValueKey('warning-blank'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Big warning icon
-          Icon(Icons.warning_amber, size: 80, color: theme.colorScheme.error),
-          SizedBox(height: 16),
-          // Warning text for the blank device error case
-          Text(
-            "The device you plugged in has no key on it",
-            style: theme.textTheme.bodyLarge,
-            textAlign: TextAlign.center,
-          ),
-        ],
+        backgroundColor: theme.colorScheme.surfaceContainerLow,
+        iconData: Icons.warning_amber_rounded,
+        title: Text('Empty Device'),
+        content: Text(
+          'The device you plugged in has no key on it.',
+          textAlign: TextAlign.center,
+        ),
+        actions: [],
       );
     } else {
       // No error: show the spinner centered within the space.
-      displayWidget = Center(
-        child: CircularProgressIndicator(key: const ValueKey('spinner')),
-      );
+      displayWidget = CircularProgressIndicator();
     }
 
     final String prompt;
@@ -1098,12 +1431,12 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
       final name = coord
           .getRestorationState(restorationId: widget.continuing!)!
           .keyName;
-      prompt = 'Plug in a Frostsnap to continue recovering "$name"';
+      prompt = 'Plug in a Frostsnap to continue restoring "$name".';
     } else if (widget.existing != null) {
       final name = coord.getFrostKey(keyId: widget.existing!.keyId)!.keyName();
-      prompt = 'Plug in a Frostsnap to add it to "$name"';
+      prompt = 'Plug in a Frostsnap to add it to "$name".';
     } else {
-      prompt = 'Plug in your Frostsnap device\nto begin wallet restoration';
+      prompt = 'Plug in your Frostsnap device\nto begin wallet restoration.';
     }
 
     return Column(
@@ -1111,29 +1444,25 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.usb, size: 48, color: Colors.grey),
-        SizedBox(height: 16),
-        Text(
-          prompt,
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18),
-        ),
-        SizedBox(height: 16),
-        // Fix the overall vertical space for the AnimatedSwitcher.
-        // Adjust the height value as needed.
-        SizedBox(
-          height: 150,
-          child: AnimatedSwitcher(
-            duration: Duration(milliseconds: 200),
-            child: displayWidget,
-          ),
+        MaterialDialogCard(
+          iconData: Icons.usb_rounded,
+          title: Text('Waiting for device'),
+          content: Text(prompt, textAlign: TextAlign.center),
+          actions: [
+            AnimatedSize(
+              duration: Durations.short4,
+              curve: Curves.easeInOutCubicEmphasized,
+              child: displayWidget,
+            ),
+          ],
+          actionsAlignment: MainAxisAlignment.center,
         ),
       ],
     );
   }
 }
 
-class _CandidateReadyView extends StatelessWidget {
+class _CandidateReadyView extends StatelessWidget with _TitledWidget {
   final RecoverShare candidate;
   final ShareCompatibility compatibility;
   final RestorationId? continuing;
@@ -1147,12 +1476,17 @@ class _CandidateReadyView extends StatelessWidget {
   });
 
   @override
+  String get titleText => 'Restore with existing key';
+
+  @override
   Widget build(BuildContext context) {
     final deviceName = coord.getDeviceName(id: candidate.heldBy) ?? '<empty>';
 
-    Widget icon;
+    IconData icon;
+    String title;
     String message;
     String buttonText;
+    bool buttonFilled;
     VoidCallback buttonAction;
 
     switch (compatibility) {
@@ -1162,18 +1496,20 @@ class _CandidateReadyView extends StatelessWidget {
           // name for the wallet than devices you later try to add to the wallet.
           // We just carry on with the cosmetic SNAFU.
           ShareCompatibility_NameMismatch():
-        icon = const Icon(Icons.check_circle, size: 48, color: Colors.green);
+        icon = Icons.check_circle;
+        title = 'Key ready';
 
         if (continuing != null || existing != null) {
           message =
-              'The key "$deviceName" can be added to "${candidate.heldShare.keyName}"!';
-          buttonText = 'Add key to ${candidate.heldShare.keyName}';
+              'Key \'$deviceName\' is ready to be added to wallet \'${candidate.heldShare.keyName}\'.';
+          buttonText = 'Add to wallet';
         } else {
           message =
-              'The key "$deviceName" is part of a wallet called "${candidate.heldShare.keyName}"!';
+              'Key \'$deviceName\' is part of a wallet called \'${candidate.heldShare.keyName}\'.';
           buttonText = 'Start restoring';
         }
 
+        buttonFilled = true;
         buttonAction = () async {
           try {
             RestorationId? restorationId;
@@ -1206,52 +1542,50 @@ class _CandidateReadyView extends StatelessWidget {
         break;
 
       case ShareCompatibility_AlreadyGotIt():
-        icon = const Icon(Icons.info, size: 48, color: Colors.blue);
-        message = 'You’ve already recovered "$deviceName".';
+        icon = Icons.info_rounded;
+        title = 'Key already restored';
+        message = 'You’ve already restored "$deviceName".';
         buttonText = 'Close';
+        buttonFilled = false;
         buttonAction = () => Navigator.pop(context);
         break;
 
       case ShareCompatibility_Incompatible():
-        icon = const Icon(Icons.error, size: 48, color: Colors.red);
+        icon = Icons.error_rounded;
+        title = 'Key cannot be used';
         message =
-            'This key "$deviceName" is part of a different wallet called "${candidate.heldShare.keyName}"';
+            'This key "$deviceName" is part of a different wallet called "${candidate.heldShare.keyName}".';
         buttonText = 'Close';
+        buttonFilled = false;
         buttonAction = () => Navigator.pop(context);
         break;
 
       case ShareCompatibility_ConflictsWith(:final deviceId, :final index):
-        icon = const Icon(Icons.error, size: 48, color: Colors.red);
+        icon = Icons.error_rounded;
+        title = 'Backup does not match';
         message =
             "You have already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Consider removing that key from the restoration first.";
         buttonText = 'Close';
+        buttonFilled = false;
         buttonAction = () => Navigator.pop(context);
         break;
     }
 
-    return Column(
+    return MaterialDialogCard(
       key: const ValueKey('candidateReady'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        icon,
-        const SizedBox(height: 16),
-        Text(
-          message,
-          style: Theme.of(context).textTheme.headlineMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.arrow_forward),
-          label: Text(buttonText),
-          onPressed: buttonAction,
-        ),
+      iconData: icon,
+      title: Text(title),
+      content: Text(message, textAlign: TextAlign.center),
+      actions: [
+        buttonFilled
+            ? FilledButton(child: Text(buttonText), onPressed: buttonAction)
+            : TextButton(child: Text(buttonText), onPressed: buttonAction),
       ],
     );
   }
 }
 
-class _PhysicalBackupSuccessView extends StatelessWidget {
+class _PhysicalBackupSuccessView extends StatelessWidget with _TitledWidget {
   final VoidCallback onClose;
   final String deviceName;
 
@@ -1283,9 +1617,12 @@ class _PhysicalBackupSuccessView extends StatelessWidget {
       ],
     );
   }
+
+  @override
+  String get titleText => '';
 }
 
-class _PhysicalBackupFailView extends StatelessWidget {
+class _PhysicalBackupFailView extends StatelessWidget with _TitledWidget {
   final String? errorMessage;
   final ShareCompatibility? compatibility;
   final VoidCallback onRetry;
@@ -1300,8 +1637,6 @@ class _PhysicalBackupFailView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     final String compatMessage = switch (compatibility) {
       ShareCompatibility_ConflictsWith(:final deviceId, :final index) =>
         "You have already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Are you sure that this backup is for this wallet?",
@@ -1309,55 +1644,37 @@ class _PhysicalBackupFailView extends StatelessWidget {
     };
 
     final String message = errorMessage ?? compatMessage;
-    return Column(
+    return MaterialDialogCard(
       key: const ValueKey('physicalBackupFail'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.error, size: 48, color: theme.colorScheme.error),
-        const SizedBox(height: 16),
-        Text(
-          'Failed to restore physical backup.',
-          style: theme.textTheme.headlineMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          message,
-          style: theme.textTheme.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 24),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              onPressed: onRetry,
-            ),
-            const SizedBox(width: 16),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.close),
-              label: const Text('Close'),
-              onPressed: onClose,
-            ),
-          ],
-        ),
+      iconData: Icons.error_rounded,
+      title: Text('Couldn\'t load backup'),
+      content: Text(message, textAlign: TextAlign.center),
+
+      actions: [
+        TextButton(child: const Text('Close'), onPressed: onClose),
+        FilledButton(child: const Text('Retry'), onPressed: onRetry),
       ],
     );
   }
+
+  @override
+  String get titleText => '';
 }
 
 void continueWalletRecoveryFlowDialog(
   BuildContext context, {
   required RestorationId restorationId,
 }) async {
-  await showDialog(
+  final homeCtx = HomeContext.of(context);
+  await MaybeFullscreenDialog.show(
     context: context,
-    builder: (context) => WalletRecoveryFlow(continuing: restorationId),
+    barrierDismissible: true,
+    child: WalletRecoveryFlow(continuing: restorationId, isDialog: false),
   );
   await coord.cancelProtocol();
-  final homeCtx = HomeContext.of(context);
-  if (homeCtx == null) return;
+  if (homeCtx == null) {
+    print('NO HOME CONTEXT!');
+    return;
+  }
   homeCtx.walletListController.selectRecoveringWallet(restorationId);
 }

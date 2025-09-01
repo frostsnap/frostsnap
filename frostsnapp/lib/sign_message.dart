@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/theme.dart';
 import 'hex.dart';
 
 class SignMessagePage extends StatelessWidget {
