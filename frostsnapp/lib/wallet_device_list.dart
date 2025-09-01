@@ -34,7 +34,7 @@ class _SliverDeviceListState extends State<SliverDeviceList> {
     _state = coord.deviceListState();
     final onDeviceListChange = widget.onDeviceListChange;
     if (onDeviceListChange != null) onDeviceListChange(_state);
-    _stateSub = GlobalStreams.deviceListUpdateStream.listen(_deviceListOnData);
+    _stateSub = GlobalStreams.deviceListSubject.listen(_deviceListOnData);
   }
 
   @override
@@ -69,13 +69,13 @@ class _SliverDeviceListState extends State<SliverDeviceList> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return SliverAnimatedList(
-      key: _listKey,
-      itemBuilder: _buildItem,
-      initialItemCount: _state.devices.length,
-    );
-  }
+  Widget build(BuildContext context) => _state.devices.isEmpty
+      ? SliverToBoxAdapter(child: widget.noDeviceWidget)
+      : SliverAnimatedList(
+          key: _listKey,
+          itemBuilder: _buildItem,
+          initialItemCount: _state.devices.length,
+        );
 
   Widget _buildItem(
     BuildContext context,

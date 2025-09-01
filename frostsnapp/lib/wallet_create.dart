@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
-import 'package:frostsnap/device_settings.dart';
+import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/settings.dart';
@@ -18,150 +17,8 @@ import 'package:frostsnap/theme.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
+import 'maybe_fullscreen_dialog.dart';
 import 'wallet_device_list.dart';
-
-enum WindowSizeClass {
-  compact(maxWidth: 600),
-  medium(maxWidth: 840),
-  expanded(maxWidth: 1200);
-
-  const WindowSizeClass({required this.maxWidth});
-
-  static WindowSizeClass fromWidth(double width) {
-    if (width < 600) {
-      return WindowSizeClass.compact;
-    }
-    if (width < 840) {
-      return WindowSizeClass.medium;
-    }
-    return WindowSizeClass.expanded;
-  }
-
-  /// Max width (exclusive).
-  final double maxWidth;
-}
-
-class WindowSizeContext extends InheritedWidget {
-  // final Size windowSize;
-  final WindowSizeClass windowSizeClass;
-
-  const WindowSizeContext({
-    super.key,
-    required this.windowSizeClass,
-    required super.child,
-  });
-
-  static WindowSizeClass of(BuildContext context) {
-    Size size(BuildContext context) {
-      final view = View.of(context);
-      return view.physicalSize / view.devicePixelRatio;
-    }
-
-    return context
-            .dependOnInheritedWidgetOfExactType<WindowSizeContext>()
-            ?.windowSizeClass ??
-        WindowSizeClass.fromWidth(size(context).width);
-  }
-
-  @override
-  bool updateShouldNotify(covariant InheritedWidget oldWidget) {
-    return false;
-  }
-}
-
-class MaybeFullscreenDialog extends StatefulWidget {
-  final Widget? child;
-  final Color? backgroundColor;
-  const MaybeFullscreenDialog({super.key, this.child, this.backgroundColor});
-
-  static Future<T?> show<T>({
-    required BuildContext context,
-    bool barrierDismissible = false,
-    Color? backgroundColor,
-    Widget? child,
-  }) {
-    return showDialog(
-      context: context,
-      barrierDismissible: barrierDismissible,
-      useSafeArea: false,
-      builder: (context) => MaybeFullscreenDialog(
-        backgroundColor:
-            backgroundColor ?? Theme.of(context).colorScheme.surface,
-        child: child,
-      ),
-    );
-  }
-
-  @override
-  State<MaybeFullscreenDialog> createState() => _MaybeFullscreenDialogState();
-}
-
-class _MaybeFullscreenDialogState extends State<MaybeFullscreenDialog>
-    with WidgetsBindingObserver {
-  late final ValueNotifier<WindowSizeClass> _sizeClass;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _sizeClass = ValueNotifier(
-      WindowSizeClass.fromWidth(getWindowSize().width),
-    );
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _sizeClass.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    _sizeClass.value = WindowSizeClass.fromWidth(getWindowSize().width);
-  }
-
-  Size getWindowSize() {
-    final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    return view.physicalSize / view.devicePixelRatio;
-  }
-
-  final boxKey = GlobalKey();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder(
-      valueListenable: _sizeClass,
-      child: ConstrainedBox(
-        key: boxKey,
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: widget.child,
-      ),
-      builder: (context, sizeClass, child) => WindowSizeContext(
-        windowSizeClass: _sizeClass.value,
-        child: BackdropFilter(
-          filter: switch (sizeClass) {
-            WindowSizeClass.compact => ImageFilter.blur(),
-            _ => blurFilter,
-          },
-          child: switch (_sizeClass.value) {
-            WindowSizeClass.compact => Dialog.fullscreen(
-              backgroundColor: widget.backgroundColor,
-              child: child,
-            ),
-            WindowSizeClass.medium || WindowSizeClass.expanded => Dialog(
-              insetPadding: EdgeInsets.zero,
-              clipBehavior: Clip.hardEdge,
-              backgroundColor: widget.backgroundColor,
-              child: child,
-            ),
-          },
-        ),
-      ),
-    );
-  }
-}
 
 class WalletCreateException implements Exception {
   final String message;
@@ -235,7 +92,7 @@ class WalletCreateController extends ChangeNotifier {
 
           final sessionHash = state.sessionHash;
           return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.center,
             spacing: 12,
             children: [
               const Text(
@@ -243,41 +100,58 @@ class WalletCreateController extends ChangeNotifier {
                 textAlign: TextAlign.center,
               ),
               Card.filled(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: AnimatedCrossFade(
-                      firstChild: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: CircularProgressIndicator(),
-                      ),
-                      secondChild: Text(
-                        keygenChecksum,
-                        style: theme.textTheme.headlineLarge?.copyWith(
-                          fontFamily: monospaceTextStyle.fontFamily,
-                        ),
-                      ),
-                      crossFadeState: sessionHash == null
-                          ? CrossFadeState.showFirst
-                          : CrossFadeState.showSecond,
-                      duration: Durations.medium1,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: AnimatedCrossFade(
+                    firstChild: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(),
                     ),
+                    secondChild: Text(
+                      keygenChecksum,
+                      style: theme.textTheme.headlineLarge?.copyWith(
+                        fontFamily: monospaceTextStyle.fontFamily,
+                      ),
+                    ),
+                    crossFadeState: sessionHash == null
+                        ? CrossFadeState.showFirst
+                        : CrossFadeState.showSecond,
+                    duration: Durations.medium1,
                   ),
                 ),
-              ),
-              LargeCircularProgressIndicator(
-                size: 70,
-                progress: state.sessionAcks.length,
-                total: state.devices.length,
               ),
             ],
           );
         },
       ),
-      dismissButton: (context) => OutlinedButton(
-        onPressed: () async => await coord.cancelProtocol(),
-        child: Text('Cancel'),
-      ),
+      actionButtons: [
+        OutlinedButton(onPressed: _onCancel, child: Text('Cancel')),
+        ListenableBuilder(
+          listenable: this,
+          builder: (context, _) {
+            final theme = Theme.of(context);
+            final state = _keygenState;
+            if (state == null) return const SizedBox();
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 12,
+              children: [
+                Text(
+                  'Confirm on device',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                LargeCircularProgressIndicator(
+                  size: 36,
+                  progress: state.sessionAcks.length,
+                  total: state.devices.length,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -297,6 +171,10 @@ class WalletCreateController extends ChangeNotifier {
     if (hasListeners) super.notifyListeners();
   }
 
+  void _onCancel() async {
+    await coord.cancelProtocol();
+  }
+
   Future<void> resetDeviceNames(Iterable<ConnectedDevice> devices) async {
     for (final device in devices) {
       final id = device.id;
@@ -308,7 +186,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   Future<void> resetKeygenState(Iterable<ConnectedDevice> devices) async {
-    _keygenController.clearAllActionsNeeded();
+    await _keygenController.clearAllActionsNeeded();
     _keygenState = null;
     await resetDeviceNames(_deviceList.devices);
     notifyListeners();
@@ -396,7 +274,6 @@ class WalletCreateController extends ChangeNotifier {
 
           for (final id in state.sessionAcks) {
             await _keygenController.removeActionNeeded(id);
-            if (!context.mounted) return false;
           }
 
           if (state.aborted != null) {
@@ -457,11 +334,13 @@ class WalletCreateController extends ChangeNotifier {
                   },
                 ) ??
                 false;
-            if (keygenCodeMatches && context.mounted) {
+            if (!keygenCodeMatches) return false;
+            try {
               _asRef = await coord.finalizeKeygen(keygenId: state.keygenId);
-              return true;
+            } catch (Exception) {
+              return false;
             }
-            break;
+            return true;
           }
         }
         throw StateError('Unreachable: keygen completions handled');
@@ -512,31 +391,20 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.threshold => 'Generate keys',
   };
 
-  InlineSpan get title => switch (_step) {
-    WalletCreateStep.name => TextSpan(text: 'Name wallet'),
-    WalletCreateStep.deviceCount => TextSpan(text: 'Pick devices'),
-    WalletCreateStep.deviceNames => TextSpan(text: 'Name devices'),
-    WalletCreateStep.threshold => TextSpan(text: 'Choose threshold'),
+  String get title => switch (_step) {
+    WalletCreateStep.name => 'Name wallet',
+    WalletCreateStep.deviceCount => 'Pick devices',
+    WalletCreateStep.deviceNames => 'Name devices',
+    WalletCreateStep.threshold => 'Choose threshold',
   };
 
-  TextSpan get subtitle => switch (_step) {
-    WalletCreateStep.name => TextSpan(text: 'Choose a name for this wallet'),
-    WalletCreateStep.deviceCount => TextSpan(
-      children: [
-        TextSpan(text: 'Connect devices to become keys for '),
-        TextSpan(
-          text: _form.name ?? '',
-          style: TextStyle(fontStyle: FontStyle.italic),
-        ),
-      ],
-    ),
-    WalletCreateStep.deviceNames => TextSpan(
-      text: 'Each device needs a name to idenitfy it.',
-    ),
-    WalletCreateStep.threshold => TextSpan(
-      text:
-          'Decide how many devices will be required to sign transactions or to make changes to this wallet',
-    ),
+  String get subtitle => switch (_step) {
+    WalletCreateStep.name => 'Choose a name for this wallet',
+    WalletCreateStep.deviceCount =>
+      'Connect devices to become keys for "${form.name ?? ''}"',
+    WalletCreateStep.deviceNames => 'Each device needs a name to idenitfy it',
+    WalletCreateStep.threshold =>
+      'Decide how many devices will be required to sign transactions or to make changes to this wallet',
   };
 
   void setDeviceName(DeviceId id, String name) async {
@@ -562,9 +430,10 @@ class WalletCreatePage extends StatefulWidget {
 }
 
 class _WalletCreatePageState extends State<WalletCreatePage> {
-  static const topSectionPadding = EdgeInsets.fromLTRB(20, 36, 20, 36);
-  static const sectionPadding = EdgeInsets.fromLTRB(20, 20, 20, 28);
+  static const topSectionPadding = EdgeInsets.fromLTRB(16, 0, 16, 16);
+  static const sectionPadding = EdgeInsets.fromLTRB(16, 16, 16, 24);
   late WalletCreateController _controller;
+  final _upgradeController = DeviceActionUpgradeController();
 
   @override
   void initState() {
@@ -579,6 +448,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     for (final c in _nameControllers.values) {
       c.dispose();
     }
+    _upgradeController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -603,6 +473,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   Widget buildDevicesBody(BuildContext context) {
     final theme = Theme.of(context);
+    final parentCtx = context;
     return MultiSliver(
       children: [
         SliverDeviceList(
@@ -622,7 +493,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     context,
                     text: 'Old firmware',
                     subText: "Upgrade to continue",
-                    icon: Icons.warning,
+                    icon: Icons.system_update_alt_rounded,
                     color: Colors.orange,
                   )
                 : buildDeviceTrailingInfo(
@@ -631,13 +502,46 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     icon: Icons.check_circle_rounded,
                     color: Colors.green,
                   ),
+            onPressed: device.needsFirmwareUpgrade()
+                ? () async => await _upgradeController.run(parentCtx)
+                : null,
           ),
         ),
+
+        if (_controller.devicesNeedUpgrade)
+          SliverToBoxAdapter(
+            child: Card.outlined(
+              margin: EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    title: Text(
+                      'One or more devices require a firmware update before continuing.',
+                    ),
+                    leading: Icon(
+                      Icons.system_update_alt_rounded,
+                      color: Colors.orange,
+                    ),
+                    trailing: TextButton(
+                      onPressed: () async =>
+                          await _upgradeController.run(context),
+                      child: Text('Start Upgrade'),
+                    ),
+                    onTap: () async => await _upgradeController.run(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
         SliverToBoxAdapter(
           child: AnimatedGradientBorder(
             stretchAlongAxis: true,
             borderSize: 1.0,
-            glowSize: 5.0,
+            glowSize: 4.0,
             animationTime: 6,
             borderRadius: BorderRadius.circular(12.0),
             gradientColors: [
@@ -646,55 +550,17 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               theme.colorScheme.secondary,
               theme.colorScheme.tertiary,
             ],
-            child: Card.outlined(
+            child: Card(
               margin: EdgeInsets.zero,
               child: ListTile(
+                dense: true,
                 title: Text('Plug in devices to include them in this wallet.'),
+                contentPadding: EdgeInsets.symmetric(horizontal: 16),
                 leading: Icon(Icons.info_rounded),
               ),
             ),
           ),
         ),
-        if (_controller.devicesNeedUpgrade)
-          SliverToBoxAdapter(
-            child: Card.outlined(
-              margin: EdgeInsets.symmetric(vertical: 16),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: 12,
-                  children: [
-                    Row(
-                      spacing: 12,
-                      children: [
-                        Icon(
-                          Icons.warning_rounded,
-                          size: 32,
-                          color: Colors.orange,
-                        ),
-                        Expanded(
-                          child: Text(
-                            'One or more devices require a firmware update before continuing.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed: () async =>
-                          await FirmwareUpgradeDialog.show(context),
-                      label: Text('Start upgrade'),
-                      icon: Icon(Icons.system_update_alt_rounded),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -823,12 +689,22 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
     return Card.filled(
       margin: EdgeInsets.symmetric(vertical: 4),
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      color: Theme.of(context).colorScheme.surface,
       clipBehavior: Clip.hardEdge,
       child: ListTile(
         leading: Icon(Icons.key),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12),
         title: TextField(
-          decoration: InputDecoration(hintText: 'Enter device name'),
+          decoration: InputDecoration(
+            hintText: 'Enter device name',
+            border: OutlineInputBorder(
+              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+            ),
+            suffixIcon: Icon(Icons.edit_rounded),
+            filled: true,
+          ),
+          style: monospaceTextStyle,
           controller: textController,
           onChanged: isPart
               ? (name) => _controller.setDeviceName(device.id, name)
@@ -903,6 +779,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   Widget buildDisconnectedWarningCard(BuildContext context) => Card.outlined(
     margin: EdgeInsets.symmetric(vertical: 16),
     child: ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 16),
       leading: Icon(Icons.warning_rounded),
       title: Text(
         'One or more devices have been disconnected. Reconnect to continue.',
@@ -928,78 +806,61 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final theme = Theme.of(context);
     final mediaQuery = MediaQuery.of(context);
     final windowSize = WindowSizeContext.of(context);
+    final isFullscreen = windowSize == WindowSizeClass.compact;
 
     final network = _controller.form.network;
     final appBarTrailingText = network.isMainnet()
         ? ''
         : ' (${network.name()})';
 
+    final titleText = '${_controller.title}$appBarTrailingText';
+    final header = isFullscreen
+        ? SliverAppBar.large(title: Text(titleText), pinned: true)
+        : SliverPinnedHeader(child: TopBar(title: Text(titleText)));
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Flexible(
-          child: AnimatedSize(
-            duration: Durations.medium1,
-            curve: Curves.easeInOutCubicEmphasized,
-            child: AnimatedSwitcher(
-              duration: Durations.short4,
-              child: CustomScrollView(
-                key: ValueKey<WalletCreateStep>(_controller.step),
-                physics: ClampingScrollPhysics(),
-                shrinkWrap: windowSize != WindowSizeClass.compact,
-                slivers: [
-                  SliverAppBar(
-                    title: Text(
-                      'Create Wallet$appBarTrailingText',
+          child: AnimatedSwitcher(
+            duration: Durations.short4,
+            child: CustomScrollView(
+              key: ValueKey<WalletCreateStep>(_controller.step),
+              physics: ClampingScrollPhysics(),
+              shrinkWrap: windowSize != WindowSizeClass.compact,
+              slivers: [
+                header,
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: topSectionPadding.copyWith(
+                      top: isFullscreen ? null : 8,
+                    ),
+                    child: Text(
+                      _controller.subtitle,
                       style: theme.textTheme.titleMedium,
                     ),
-                    leading: IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close),
-                    ),
-                    pinned: true,
                   ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: topSectionPadding,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 12,
-                        children: [
-                          Text.rich(
-                            _controller.title,
-                            style: theme.textTheme.headlineLarge,
-                          ),
-                          Text.rich(
-                            _controller.subtitle,
-                            style: theme.textTheme.bodyLarge,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: sectionPadding,
-                    sliver: buildBody(context),
-                  ),
-                  SliverPadding(padding: EdgeInsets.only(bottom: 32)),
-                ],
-              ),
+                ),
+                SliverPadding(
+                  padding: sectionPadding,
+                  sliver: buildBody(context),
+                ),
+                SliverPadding(padding: EdgeInsets.only(bottom: 32)),
+              ],
             ),
           ),
         ),
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Divider(height: 0),
             if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
                 false)
               buildAdvancedOptions(context),
-            Divider(height: 0),
             Padding(
               padding: EdgeInsets.all(
-                20,
+                16,
               ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
               child: SafeArea(
                 top: false,
@@ -1047,21 +908,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   bool _isAdvancedOptionsHidden = true;
   StatefulBuilder buildAdvancedOptions(BuildContext context) {
-    const titlePadding = EdgeInsets.fromLTRB(0, 20, 0, 12);
     final theme = Theme.of(context);
     return StatefulBuilder(
       builder: (context, setState) {
         final mayHide = Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12,
           children: [
-            Padding(
-              padding: titlePadding,
-              child: Text(
-                'Network',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+            Text(
+              'Network',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             SegmentedButton<String>(
@@ -1087,14 +945,24 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 );
               },
             ),
+            SizedBox(height: 8),
           ],
         );
         return Padding(
-          padding: EdgeInsets.all(20),
+          padding: EdgeInsets.symmetric(horizontal: 16).copyWith(top: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              AnimatedCrossFade(
+                firstChild: SizedBox(),
+                secondChild: mayHide,
+                crossFadeState: _isAdvancedOptionsHidden
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
+                duration: Durations.medium2,
+                sizeCurve: Curves.easeInOutCubicEmphasized,
+              ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 spacing: 8,
@@ -1126,15 +994,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     ),
                   ),
                 ],
-              ),
-              AnimatedCrossFade(
-                firstChild: SizedBox(),
-                secondChild: mayHide,
-                crossFadeState: _isAdvancedOptionsHidden
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
-                duration: Durations.medium2,
-                sizeCurve: Curves.easeInOutCubicEmphasized,
               ),
             ],
           ),

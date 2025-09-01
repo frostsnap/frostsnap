@@ -166,6 +166,7 @@ impl Coordinator {
         Ok(())
     }
 
+    #[frb(sync)]
     pub fn access_structures_involving_device(
         &self,
         device_id: DeviceId,
@@ -180,6 +181,20 @@ impl Coordinator {
                     .map(|access_structure| access_structure.access_structure_ref())
                     .collect::<Vec<_>>()
             })
+            .collect()
+    }
+
+    #[frb(sync)]
+    pub fn frost_keys_involving_device(&self, device_id: DeviceId) -> Vec<FrostKey> {
+        self.0
+            .frost_keys()
+            .into_iter()
+            .filter(|coord_frost_key| {
+                coord_frost_key
+                    .access_structures()
+                    .any(|coord_access_structure| coord_access_structure.contains_device(device_id))
+            })
+            .map(FrostKey::from)
             .collect()
     }
 
