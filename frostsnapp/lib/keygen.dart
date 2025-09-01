@@ -101,7 +101,7 @@ void showWalletCreatedDialog(
                         backupManager: backupManager,
                         accessStructure: accessStructure,
                         scrollController: scrollController,
-                        showAppBar: true,
+                        showAppBar: false,
                       ),
                     );
                   },
