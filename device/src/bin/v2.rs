@@ -187,7 +187,11 @@ fn main() -> ! {
     // TODO: maybe re-key the rng based on entropy from touces etc
     let rng = hmac_keys.fixed_entropy.mix_in_rng(&mut first_rng);
 
-    let root_widget = RootWidget::new(WidgetTree::default(), 300, PALETTE.background);
+    let root_widget = RootWidget::new(
+        WidgetTree::default(),
+        0, /* 0 =  disable fading for now */
+        PALETTE.background,
+    );
 
     // Create root widget with debug overlay
     let debug_config = EnabledDebug {
