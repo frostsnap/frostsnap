@@ -13,9 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RISCV_VERSION: "2024.09.03-nightly"
-    strategy:
-      matrix:
-        board: ["v2"]
     defaults:
       run:
         working-directory: ./device
