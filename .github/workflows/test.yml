@@ -11,27 +11,41 @@ jobs:
   build-device-firmware:
     name: Build Device Firmware
     runs-on: ubuntu-latest
+    env:
+      RISCV_VERSION: "2024.09.03-nightly"
     strategy:
       matrix:
         board: ["v2"]
+    defaults:
+      run:
+        working-directory: ./device
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@just
-      - uses: ./.github/actions/setup-nix
       - uses: ./.github/actions/fetch-cargo-deps
       - uses: "./.github/actions/install-cargo-bins"
+      - name: Setup | RISCV GCC
+        run: just fetch-riscv ${{env.RISCV_VERSION}}
+      - name: Add RISC-V GCC to PATH
+        run: echo "PATH=$PATH:${GITHUB_WORKSPACE}/riscv/bin" >> $GITHUB_ENV
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: riscv32imc-unknown-none-elf
+          components: rustfmt, clippy
+
       - uses: "./.github/actions/cache-rust-target"
         with:
-          key: "build-device-firmware-deterministic-v2"
-          path: "/var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release"
-      - name: Build Firmware
-        run: |
-          chmod +x device/deterministic-build.sh
-          just build-deterministic
+          key: "build-device-firmware-v0"
+          path: "target/riscv32imc-unknown-none-elf/release"
+
+      - run: just lint-device --release --locked
+      - run: just build-device ${{ matrix.board }} --locked
+      - run: just save-image ${{ matrix.board }}
       - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-${{ github.sha }}.bin
-          path: /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin
+          path: target/riscv32imc-unknown-none-elf/release/firmware.bin
 
   test-ordinary-libs:
     name: Test ordinary libraries
