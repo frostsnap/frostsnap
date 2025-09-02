@@ -1,17 +1,24 @@
 use alloc::vec::Vec;
-use esp_hal::peripherals::DS;
+use esp_hal::{peripherals::DS, sha::Sha};
 use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
-use sha2::Digest;
+use nb::block;
 
-pub fn standard_rsa_sign(ds: &DS, encrypted_params: Vec<u8>, message: &[u8]) -> [u32; 96] {
-    // Calculate message digest and apply padding
-    let message_digest = sha2::Sha256::digest(message);
-    let padded_message = pad_message_for_rsa(&message_digest);
+pub fn sign(ds: &DS, encrypted_params: Vec<u8>, message: &[u8], sha256: &mut Sha<'_>) -> [u32; 96] {
+    // Calculate message digest using hardware SHA and apply padding
+    let mut digest = [0u8; 32];
+    let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
+    let mut remaining = message;
+    while !remaining.is_empty() {
+        remaining = block!(hasher.update(remaining)).expect("infallible");
+    }
+    block!(hasher.finish(&mut digest)).unwrap();
+
+    let padded_message = pad_message_for_rsa(&digest);
     private_exponentiation(ds, encrypted_params, padded_message)
 }
 
-pub fn ds_words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
+pub fn words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
     let mut result = [0u8; 384];
     for (i, &word) in words.iter().rev().enumerate() {
         let bytes = word.to_be_bytes();
