@@ -462,12 +462,13 @@ where
                         CoordinatorSendBody::Challenge(challenge) => {
                             // can only respond if we have factory data
                             if let Some(ref factory_data) = factory_data {
-                                let signature = ds::standard_rsa_sign(
+                                let signature = ds::sign(
                                     &ds,
                                     factory_data.encrypted_params(),
                                     challenge.as_ref(),
+                                    &mut sha256,
                                 );
-                                let signature = ds::ds_words_to_bytes(&signature);
+                                let signature = ds::words_to_bytes(&signature);
                                 upstream_connection.send_to_coordinator([
                                     DeviceSendBody::SignedChallenge {
                                         signature: Box::new(signature),

@@ -269,47 +269,11 @@ impl<'a> EfuseHmacKeys<'a> {
             efuse.set_efuse_key(Self::DS_KEYID as u8, ds_hmac_key)?;
 
             efuse.write_key_purposes(&key_configs)?;
-
-            Self::validate_key_write(hmac, Self::ENCRYPTION_KEYID, &share_encryption_key)?;
-            Self::validate_key_write(hmac, Self::FIXED_ENTROPY_KEYID, &fixed_entropy_key)?;
         }
         Ok(EfuseHmacKeys {
             share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
             fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
         })
-    }
-
-    fn validate_key_write(
-        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
-        key_id: esp_hal::hmac::KeyId,
-        expected_key: &[u8; 32],
-    ) -> Result<(), EfuseError> {
-        use hmac::Mac as _;
-
-        // Test data for validation
-        let domain_sep = "factory-test";
-        let test_input = [42u8; 33];
-
-        // output from hardware HMAC
-        let mut hw_hmac = EfuseHmacKey::new(hmac, key_id);
-        let hw_output = hw_hmac
-            .hash(domain_sep, &test_input)
-            .map_err(|_| EfuseError::ValidationFailed)?;
-
-        // expected output using software HMAC
-        type HmacSha256 = hmac::Hmac<sha2::Sha256>;
-        let mut sw_mac =
-            HmacSha256::new_from_slice(expected_key).map_err(|_| EfuseError::ValidationFailed)?;
-        sw_mac.update(&[domain_sep.len() as u8]);
-        sw_mac.update(domain_sep.as_bytes());
-        sw_mac.update(&test_input);
-        let expected_output = sw_mac.finalize().into_bytes();
-
-        if expected_output.as_slice() != hw_output.as_slice() {
-            return Err(EfuseError::ValidationFailed);
-        }
-
-        Ok(())
     }
 
     /// Load existing HMAC keys from eFuse memory
