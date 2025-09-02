@@ -1,42 +1,48 @@
-use rusqlite::{params, Connection, Result as SqlResult};
+use mysql::prelude::*;
+use mysql::{Pool, PooledConn};
 use std::time::SystemTime;
 
 pub struct Database {
-    conn: Connection,
+    pool: Pool,
 }
 
 impl Database {
-    pub fn new() -> SqlResult<Self> {
-        let conn = Connection::open("factory.db")?;
+    pub fn new(db_connection: String) -> Result<Self, Box<dyn std::error::Error>> {
+        let opts = mysql::Opts::from_url(&db_connection)?;
+        let pool = Pool::new(opts)?;
+        let mut conn = pool.get_conn()?;
 
-        conn.execute(
+        conn.query_drop(
             "CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                operator TEXT NOT NULL,
-                factory_completed_at INTEGER NOT NULL,
-                case_color TEXT NOT NULL,
-                serial_number TEXT UNIQUE NOT NULL,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                operator VARCHAR(255) NOT NULL,
+                factory_completed_at BIGINT NOT NULL,
+                case_color VARCHAR(50) NOT NULL,
+                serial_number VARCHAR(255) UNIQUE NOT NULL,
                 genuine_verified BOOLEAN DEFAULT FALSE,
-                status TEXT CHECK(status IN ('factory_complete', 'genuine_verified', 'failed')),
-                failure_reason TEXT
+                status ENUM('factory_complete', 'genuine_verified', 'failed'),
+                failure_reason TEXT,
+                batch_note TEXT
             )",
-            [],
         )?;
 
-        conn.execute(
+        conn.query_drop(
             "CREATE TABLE IF NOT EXISTS serial_counter (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                current_serial INTEGER NOT NULL DEFAULT 1000000
+                id INT PRIMARY KEY,
+                current_serial INT NOT NULL DEFAULT 220825000,
+                CHECK (id = 1)
             )",
-            [],
         )?;
 
-        conn.execute(
-            "INSERT OR IGNORE INTO serial_counter (id, current_serial) VALUES (1, 1000000)",
-            [],
+        conn.query_drop(
+            "INSERT IGNORE INTO serial_counter (id, current_serial) VALUES (1, 220825000)",
         )?;
 
-        Ok(Database { conn })
+        Ok(Database { pool })
+    }
+
+    fn get_conn(&self) -> mysql::Result<PooledConn> {
+        self.pool.get_conn()
     }
 
     /// Mark a device as factory complete - should only happen once per serial
@@ -45,27 +51,33 @@ impl Database {
         serial_number: &str,
         color: &str,
         operator: &str,
-    ) -> SqlResult<()> {
+        batch_note: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let timestamp = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
 
-        self.conn.execute(
-            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status) 
-             VALUES (?1, ?2, ?3, ?4, 'factory_complete')",
-            params![serial_number, color, operator, timestamp],
+        let mut conn = self.get_conn()?;
+        conn.exec_drop(
+            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, batch_note) 
+             VALUES (?, ?, ?, ?, 'factory_complete', ?)",
+            (serial_number, color, operator, timestamp, batch_note),
         )?;
 
         Ok(())
     }
 
     /// Mark a device as genuine verified - can happen multiple times
-    pub fn mark_genuine_verified(&self, serial_number: &str) -> SqlResult<()> {
-        self.conn.execute(
+    pub fn mark_genuine_verified(
+        &self,
+        serial_number: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut conn = self.get_conn()?;
+        conn.exec_drop(
             "UPDATE devices SET genuine_verified = TRUE, status = 'genuine_verified' 
-             WHERE serial_number = ?1",
-            params![serial_number],
+             WHERE serial_number = ?",
+            (serial_number,),
         )?;
 
         Ok(())
@@ -78,61 +90,49 @@ impl Database {
         color: &str,
         operator: &str,
         reason: &str,
-    ) -> SqlResult<()> {
+        batch_note: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let timestamp = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
 
+        let mut conn = self.get_conn()?;
+
         // Try insert first, then update if it fails due to constraint
-        match self.conn.execute(
-            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, failure_reason) 
-             VALUES (?1, ?2, ?3, ?4, 'failed', ?5)",
-            params![serial_number, color, operator, timestamp, reason],
+        match conn.exec_drop(
+            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, failure_reason, batch_note) 
+             VALUES (?, ?, ?, ?, 'failed', ?, ?)",
+            (serial_number, color, operator, timestamp, reason, batch_note),
         ) {
             Ok(_) => Ok(()),
             Err(_) => {
                 // Device exists, update it
-                self.conn.execute(
-                    "UPDATE devices SET status = 'failed', failure_reason = ?2 WHERE serial_number = ?1",
-                    params![serial_number, reason],
+                conn.exec_drop(
+                    "UPDATE devices SET status = 'failed', failure_reason = ? WHERE serial_number = ?",
+                    (reason, serial_number),
                 )?;
                 Ok(())
             }
         }
     }
 
-    // Keep your existing serial methods unchanged
-    pub fn get_next_serial(&self) -> SqlResult<u32> {
-        let tx = self.conn.unchecked_transaction()?;
-        let current: u32 = tx.query_row(
-            "SELECT current_serial FROM serial_counter WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )?;
+    pub fn get_next_serial(&self) -> Result<u32, Box<dyn std::error::Error>> {
+        let mut conn = self.get_conn()?;
+        let mut tx = conn.start_transaction(mysql::TxOpts::default())?;
+
+        let current: u32 = tx
+            .query_first("SELECT current_serial FROM serial_counter WHERE id = 1")?
+            .ok_or("Serial counter row not found!?")?;
+
         let next = current + 1;
-        tx.execute(
-            "UPDATE serial_counter SET current_serial = ?1 WHERE id = 1",
-            params![next],
+
+        tx.exec_drop(
+            "UPDATE serial_counter SET current_serial = ? WHERE id = 1",
+            (next,),
         )?;
+
         tx.commit()?;
         Ok(next)
-    }
-
-    pub fn get_current_serial(&self) -> SqlResult<u32> {
-        let current: u32 = self.conn.query_row(
-            "SELECT current_serial FROM serial_counter WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )?;
-        Ok(current)
-    }
-
-    pub fn set_serial_counter(&self, value: u32) -> SqlResult<()> {
-        self.conn.execute(
-            "UPDATE serial_counter SET current_serial = ?1 WHERE id = 1",
-            params![value],
-        )?;
-        Ok(())
     }
 }
