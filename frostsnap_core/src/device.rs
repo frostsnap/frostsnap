@@ -96,7 +96,7 @@ impl EncryptedSecretShare {
         secret_share: SecretShare,
         access_structure_ref: AccessStructureRef,
         coord_contrib: CoordShareDecryptionContrib,
-        symm_keygen: &mut impl DeviceHmacKeys,
+        symm_keygen: &mut impl DeviceSecretDerivation,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let share_image = secret_share.share_image();
@@ -116,7 +116,7 @@ impl EncryptedSecretShare {
         &self,
         access_structure_ref: AccessStructureRef,
         coord_contrib: CoordShareDecryptionContrib,
-        symm_keygen: &mut impl DeviceHmacKeys,
+        symm_keygen: &mut impl DeviceSecretDerivation,
     ) -> Option<SecretShare> {
         let encryption_key = symm_keygen.get_share_encryption_key(
             access_structure_ref,
@@ -291,7 +291,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         &mut self,
         message: CoordinatorToDeviceMessage,
         rng: &mut impl rand_core::RngCore,
-        device_hmac: &mut impl DeviceHmacKeys,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match message.clone() {
@@ -567,7 +567,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn keygen_ack(
         &mut self,
         phase2: KeyGenPhase2,
-        symm_key_gen: &mut impl DeviceHmacKeys,
+        symm_key_gen: &mut impl DeviceSecretDerivation,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<KeyGenAck, ActionError> {
         let secret_share = phase2.secret_share;
@@ -636,7 +636,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn sign_ack(
         &mut self,
         phase: SignPhase1,
-        symm_keygen: &mut impl DeviceHmacKeys,
+        symm_keygen: &mut impl DeviceSecretDerivation,
     ) -> Result<Vec<DeviceSend>, ActionError> {
         let SignPhase1 {
             group_sign_req:
@@ -804,7 +804,7 @@ pub enum Mutation {
     Restoration(restoration::RestorationMutation),
 }
 
-pub trait DeviceHmacKeys {
+pub trait DeviceSecretDerivation {
     fn get_share_encryption_key(
         &mut self,
         access_structure_ref: AccessStructureRef,
@@ -812,7 +812,12 @@ pub trait DeviceHmacKeys {
         coord_key: CoordShareDecryptionContrib,
     ) -> SymmetricKey;
 
-    fn derive_prng_seed(&mut self, input: &[u8; 32]) -> [u8; 32];
+    fn derive_nonce_seed(
+        &mut self,
+        nonce_stream_id: crate::nonce_stream::NonceStreamId,
+        index: u32,
+        seed_material: &[u8; 32],
+    ) -> [u8; 32];
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

@@ -285,7 +285,7 @@ impl<'a> EfuseHmacKey<'a> {
     }
 }
 
-impl frostsnap_core::device::DeviceHmacKeys for EfuseHmacKey<'_> {
+impl frostsnap_core::device::DeviceSecretDerivation for EfuseHmacKey<'_> {
     fn get_share_encryption_key(
         &mut self,
         access_structure_ref: AccessStructureRef,
@@ -308,7 +308,17 @@ impl frostsnap_core::device::DeviceHmacKeys for EfuseHmacKey<'_> {
         frostsnap_core::SymmetricKey(output)
     }
 
-    fn derive_prng_seed(&mut self, input: &[u8; 32]) -> [u8; 32] {
-        self.hash("nonce-generation", input).unwrap()
+    fn derive_nonce_seed(
+        &mut self,
+        nonce_stream_id: frostsnap_core::nonce_stream::NonceStreamId,
+        index: u32,
+        seed_material: &[u8; 32],
+    ) -> [u8; 32] {
+        let mut input = [0u8; 52]; // 16 (stream_id) + 4 (index) + 32 (seed_material)
+        input[..16].copy_from_slice(nonce_stream_id.to_bytes().as_slice());
+        input[16..20].copy_from_slice(&index.to_be_bytes());
+        input[20..52].copy_from_slice(seed_material);
+
+        self.hash("nonce-seed", &input).unwrap()
     }
 }

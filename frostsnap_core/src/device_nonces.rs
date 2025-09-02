@@ -1,5 +1,5 @@
 use crate::{
-    device::DeviceHmacKeys,
+    device::DeviceSecretDerivation,
     nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
     SignSessionId, Versioned, NONCE_BATCH_SIZE,
 };
@@ -15,6 +15,10 @@ use schnorr_fun::{
     frost::{NonceKeyPair, PairedSecretShare, PartySignSession, SignatureShare},
     fun::prelude::*,
 };
+
+/// Raw seed material that gets ratcheted forward and stored between uses.
+/// This is passed through HMAC to derive the actual ChaChaSeed.
+pub type RatchetSeedMaterial = [u8; 32];
 
 #[derive(bincode::Encode, bincode::Decode, Copy, Clone, Debug, PartialEq)]
 pub struct ChaChaSeed([u8; 32]);
@@ -40,7 +44,7 @@ impl ChaChaSeed {
 pub struct SecretNonceSlot {
     pub index: u32,
     pub nonce_stream_id: NonceStreamId,
-    pub ratchet_prg_seed_material: [u8; 32],
+    pub ratchet_prg_seed_material: RatchetSeedMaterial,
     /// for clearing slots based on least recently used
     pub last_used: u32,
     pub signing_state: Option<SigningState>,
@@ -66,7 +70,7 @@ pub trait NonceStreamSlot {
     }
 
     fn initialize(&mut self, stream_id: NonceStreamId, last_used: u32, rng: &mut impl RngCore) {
-        let mut ratchet_prg_seed_material = [0u8; 32];
+        let mut ratchet_prg_seed_material: RatchetSeedMaterial = [0u8; 32];
         rng.fill_bytes(&mut ratchet_prg_seed_material);
         let value = SecretNonceSlot {
             index: 0,
@@ -81,7 +85,7 @@ pub trait NonceStreamSlot {
     fn reconcile_coord_nonce_stream_state(
         &mut self,
         state: CoordNonceStreamState,
-        device_hmac: &mut impl DeviceHmacKeys,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> Option<NonceStreamSegment> {
         let value = self.read_slot()?;
         let our_index = value.index;
@@ -104,7 +108,7 @@ pub trait NonceStreamSlot {
         coord_nonce_state: CoordNonceStreamState,
         last_used: u32,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
-        device_hmac: &mut impl DeviceHmacKeys,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> (Vec<SignatureShare>, Option<NonceStreamSegment>) {
         let slot_value = self
             .read_slot()
@@ -133,7 +137,7 @@ pub trait NonceStreamSlot {
                     .iter_secret_nonces(device_hmac)
                     .skip((coord_nonce_state.index - slot_value.index) as usize);
                 let mut signature_shares = vec![];
-                let mut next_prg_state: Option<(u32, [u8; 32])> = None;
+                let mut next_prg_state: Option<(u32, RatchetSeedMaterial)> = None;
 
                 for (secret_share, session) in sessions.into_iter() {
                     let (current_index, secret_nonce, next_seed_material) = nonce_iter
@@ -167,9 +171,14 @@ pub trait NonceStreamSlot {
         self.write_slot(&with_signatures);
 
         // XXX Read the slot back in to be 100% certain it was written
-        let signature_shares = self
-            .read_slot()
-            .expect("guaranteed")
+        let read_back_state = self.read_slot().expect("guaranteed");
+
+        assert_eq!(
+            read_back_state, with_signatures,
+            "signature shares should have been read the same as written"
+        );
+
+        let signature_shares = read_back_state
             .signing_state
             .expect("guaranteed")
             .signature_shares;
@@ -205,7 +214,7 @@ impl<S: NonceStreamSlot> AbSlots<S> {
         session_id: SignSessionId,
         coord_nonce_state: CoordNonceStreamState,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
-        device_hmac: &mut impl DeviceHmacKeys,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> Option<(Vec<SignatureShare>, Option<NonceStreamSegment>)> {
         let last_used = self.last_used + 1;
         let slot = self.get(coord_nonce_state.stream_id)?;
@@ -289,8 +298,8 @@ impl<S: NonceStreamSlot> AbSlots<S> {
 impl SecretNonceSlot {
     fn iter_secret_nonces<'a>(
         &'a self,
-        device_hmac: &'a mut impl DeviceHmacKeys,
-    ) -> impl Iterator<Item = (u32, binonce::SecretNonce, [u8; 32])> + 'a {
+        device_hmac: &'a mut impl DeviceSecretDerivation,
+    ) -> impl Iterator<Item = (u32, binonce::SecretNonce, RatchetSeedMaterial)> + 'a {
         let mut seed_material = self.ratchet_prg_seed_material;
         let mut index = self.index;
 
@@ -302,7 +311,8 @@ impl SecretNonceSlot {
             let current_index = index;
 
             // Derive actual nonce seed from material AND eFuse HMAC
-            let actual_seed_bytes = device_hmac.derive_prng_seed(&seed_material);
+            let actual_seed_bytes =
+                device_hmac.derive_nonce_seed(self.nonce_stream_id, current_index, &seed_material);
             let actual_seed = ChaChaSeed::from_bytes(actual_seed_bytes);
 
             let mut chacha_nonce = [0u8; 12];
@@ -342,7 +352,7 @@ impl SecretNonceSlot {
         &self,
         start: Option<u32>,
         length: usize,
-        device_hmac: &mut impl DeviceHmacKeys,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> NonceStreamSegment {
         let start = start.unwrap_or(self.index);
         if start < self.index {
@@ -369,7 +379,7 @@ impl SecretNonceSlot {
     }
     pub fn iter_pub_nonces<'a>(
         &'a self,
-        device_hmac: &'a mut impl DeviceHmacKeys,
+        device_hmac: &'a mut impl DeviceSecretDerivation,
     ) -> impl Iterator<Item = (u32, binonce::Nonce)> + 'a {
         self.iter_secret_nonces(device_hmac)
             .map(|(index, secret_nonce, _)| {
