@@ -1,12 +1,8 @@
-use crate::{CaseColor, Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN};
-use alloc::{string::String, vec::Vec};
-use frostsnap_core::{
-    schnorr_fun::{
-        fun::{marker::EvenY, Point},
-        Signature,
-    },
-    Gist,
+use crate::{
+    genuine_certificate::Certificate, Direction, HasMagicBytes, MagicBytesVersion, MAGIC_BYTES_LEN,
 };
+use alloc::{string::String, vec::Vec};
+use frostsnap_core::Gist;
 
 pub const DS_KEY_SIZE_BITS: usize = 3072;
 pub const DS_KEY_SIZE_BYTES: usize = DS_KEY_SIZE_BITS / 8;
@@ -73,16 +69,6 @@ pub enum FactorySend {
 pub struct Esp32DsKey {
     pub encrypted_params: Vec<u8>,
     pub ds_hmac_key: [u8; 32],
-}
-
-#[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]
-pub struct Certificate {
-    pub rsa_key: Vec<u8>,
-    pub serial_number: u32,
-    pub timestamp: u64,
-    pub case_color: CaseColor,
-    pub signature: Signature,
-    pub factory_key: Point<EvenY>,
 }
 
 impl Gist for DeviceFactorySend {

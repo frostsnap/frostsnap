@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use frostsnap_comms::CaseColor;
+use frostsnap_comms::genuine_certificate::CaseColor;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

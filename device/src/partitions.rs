@@ -40,6 +40,11 @@ impl<'a> Partitions<'a> {
             };
             assert_eq!(row.offset % FlashStorage::ERASE_SIZE as u32, 0);
             match row.name() {
+                "factory_cert" => {
+                    self_
+                        .factory_data
+                        .set_offset_and_size(row.offset, row.size as u32);
+                }
                 "otadata" => {
                     self_
                         .ota
@@ -60,11 +65,6 @@ impl<'a> Partitions<'a> {
                 }
                 "nvs" => {
                     self_.nvs.set_offset_and_size(row.offset, row.size as u32);
-                }
-                "factory_cert" => {
-                    self_
-                        .factory_data
-                        .set_offset_and_size(row.offset, row.size as u32);
                 }
                 _ => { /*ignore*/ }
             }
