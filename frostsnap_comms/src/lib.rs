@@ -13,8 +13,8 @@ use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
-use factory::Certificate;
 use frostsnap_core::{DeviceId, Gist};
+use genuine_certificate::Certificate;
 
 pub const FACTORY_PUBLIC_KEY: [u8; 32] = [
     0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -51,43 +51,6 @@ pub const BINCODE_CONFIG: bincode::config::Configuration<
     bincode::config::Varint,
     bincode::config::Limit<MAX_MESSAGE_ALLOC_SIZE>,
 > = bincode::config::standard().with_limit::<MAX_MESSAGE_ALLOC_SIZE>();
-
-#[derive(bincode::Encode, bincode::Decode, Debug, Copy, Clone, PartialEq)]
-pub enum CaseColor {
-    Black,
-    Orange,
-    Silver,
-    Blue,
-    Red,
-}
-
-impl core::fmt::Display for CaseColor {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let s = match self {
-            CaseColor::Black => "Black",
-            CaseColor::Orange => "Orange",
-            CaseColor::Silver => "Silver",
-            CaseColor::Blue => "Blue",
-            CaseColor::Red => "Red",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-impl core::str::FromStr for CaseColor {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "black" => Ok(CaseColor::Black),
-            "orange" => Ok(CaseColor::Orange),
-            "silver" => Ok(CaseColor::Silver),
-            "blue" => Ok(CaseColor::Blue),
-            "red" => Ok(CaseColor::Red),
-            _ => Err(format!("Invalid color: {}", s)),
-        }
-    }
-}
 
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(

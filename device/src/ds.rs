@@ -1,10 +1,9 @@
-use alloc::vec::Vec;
 use esp_hal::{peripherals::DS, sha::Sha};
 use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
 use nb::block;
 
-pub fn sign(ds: &DS, encrypted_params: Vec<u8>, message: &[u8], sha256: &mut Sha<'_>) -> [u32; 96] {
+pub fn sign(ds: &DS, encrypted_params: &[u8], message: &[u8], sha256: &mut Sha<'_>) -> [u32; 96] {
     // Calculate message digest using hardware SHA and apply padding
     let mut digest = [0u8; 32];
     let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
@@ -30,7 +29,7 @@ pub fn words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
 
 pub fn private_exponentiation(
     ds: &DS,
-    encrypted_params: Vec<u8>,
+    encrypted_params: &[u8],
     mut challenge: [u8; 384],
 ) -> [u32; 96] {
     challenge.reverse();
