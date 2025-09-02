@@ -155,22 +155,3 @@ where
     let final_rng = hmac_keys.fixed_entropy.mix_in_rng(&mut rng);
     (final_rng, hmac_keys)
 }
-
-pub fn extract_entropy(
-    rng: &mut impl rand_core::RngCore,
-    sha256: &mut esp_hal::sha::Sha<'_>,
-    bytes: usize,
-    mix_in: &[u8],
-) -> impl rand_core::RngCore {
-    pub use frostsnap_core::sha2::digest::FixedOutput;
-    let mut digest = sha256.start::<esp_hal::sha::Sha256>();
-    for _ in 0..(bytes.div_ceil(64)) {
-        let mut entropy = [0u8; 64];
-        rng.fill_bytes(&mut entropy);
-        digest.update(&entropy).expect("infallible");
-    }
-    digest.update(mix_in).expect("infallible");
-
-    let result = digest.finalize_fixed();
-    rand_chacha::ChaCha20Rng::from_seed(result.into())
-}

@@ -1518,14 +1518,12 @@ dependencies = [
  "frostsnap_core",
  "frostsnap_embedded",
  "fugit",
- "hmac",
  "micromath",
  "mipidsi",
  "nb 1.1.0",
  "rand_chacha",
  "rand_core",
  "reed-solomon",
- "sha2",
  "u8g2-fonts",
 ]
 
@@ -2726,9 +2724,9 @@ dependencies = [
 
 [[package]]
 name = "rsa"
-version = "0.9.8"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78928ac1ed176a5ca1d17e578a1825f3d81ca54cf41053a592584b020cfd691b"
+checksum = "47c75d7c5c6b673e58bf54d8544a9f432e3a925b0e80f7cd3602ab5c50c55519"
 dependencies = [
  "const-oid",
  "digest 0.10.7",
