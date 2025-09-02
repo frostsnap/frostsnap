@@ -6,7 +6,7 @@ ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comm
 alias erase := erase-device
 
 flash BOARD=default_board +ARGS="":
-    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,factory {{ARGS}}
+    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata {{ARGS}}
 
 erase-device +ARGS="nvs":
     cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
