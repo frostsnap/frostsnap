@@ -29,7 +29,8 @@ enum FactoryResult {
     SwitchToMain,
     FactoryComplete(String),
     GenuineComplete(String),
-    Failed(String, String),
+    FinishedAndDisconnected,
+    Failed(Option<String>, String), // serial number (if known), reason
 }
 enum AnyConnection {
     Factory(Connection<FactoryDownstream>),
@@ -48,10 +49,15 @@ enum ConnectionState {
         last_wrote: Option<Instant>,
         attempts: usize,
     },
-    BeginInitEntropy,
-    InitEntropy,
+    BeginInitEntropy {
+        provisioned_serial: String,
+    },
+    InitEntropy {
+        provisioned_serial: String,
+    },
     SettingDsKey {
         ds_public_key: RsaPublicKey,
+        provisioned_serial: String,
     },
     FactoryDone {
         serial: String,
@@ -69,6 +75,8 @@ enum ConnectionState {
     GenuineVerified {
         serial: String,
     },
+    // Fully finished
+    AwaitingDisconnection,
 }
 
 impl<T: Direction> Connection<T> {
@@ -99,6 +107,7 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
 
             // Start all new connections as factory - let state machine determine actual type
             if let Ok(port) = desktop_serial.open_device_port(&port_desc.id, 2000) {
+                info!("Device connected: {}", port_desc.id);
                 connections.insert(
                     port_desc.id.clone(),
                     AnyConnection::Factory(Connection::new(
@@ -109,7 +118,6 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                         },
                     )),
                 );
-                info!("New device connected: {}", port_desc.id);
             }
         }
 
@@ -153,7 +161,6 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                         error!("Failed to reopen port {} for main mode", port_id);
                     }
                 }
-
                 FactoryResult::FactoryComplete(serial) => {
                     println!("Device {serial} completed factory setup!");
                     if let Err(e) = factory_state.record_success(&serial) {
@@ -167,7 +174,6 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                         port_id
                     );
                 }
-
                 FactoryResult::GenuineComplete(serial) => {
                     println!("Device {serial} passed genuine verification!");
                     if let Err(e) = factory_state.record_genuine_verified(&serial) {
@@ -177,7 +183,10 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                         );
                     }
                     factory_state.print_progress();
-                    connections.remove(&port_id);
+
+                    // We can't immediately remove the port, or it will reopen and restart process
+                    // we need to wait for a disconnect.
+                    // connections.remove(&port_id);
 
                     // Check if batch is complete
                     if factory_state.is_complete() {
@@ -185,17 +194,18 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                         std::process::exit(0);
                     }
                 }
-
                 FactoryResult::Failed(serial, reason) => {
-                    println!("Device {serial} failed: {reason}");
-                    if serial != "unknown" {
+                    println!("Device {:?} failed: {reason}", serial);
+                    if let Some(serial) = serial {
                         if let Err(e) = factory_state.record_failure(&serial, &reason) {
                             error!("Failed to record failure for {}: {}", serial, e);
                         }
                     }
                     connections.remove(&port_id);
                 }
-
+                FactoryResult::FinishedAndDisconnected => {
+                    connections.remove(&port_id);
+                }
                 FactoryResult::Continue => {
                     // Keep processing this connection
                 }
@@ -221,7 +231,9 @@ fn process_factory_connection(
             if let Ok(supported_features) = connection.port.read_for_magic_bytes() {
                 match supported_features {
                     Some(_) => {
-                        connection.state = ConnectionState::BeginInitEntropy;
+                        let provisioned_serial =
+                            factory_state.db.get_next_serial().unwrap().to_string();
+                        connection.state = ConnectionState::BeginInitEntropy { provisioned_serial };
                     }
                     None => {
                         if last_wrote.is_none()
@@ -235,7 +247,6 @@ fn process_factory_connection(
                                 last_wrote: Some(Instant::now()),
                                 attempts: *attempts + 1,
                             };
-                            println!("Writing FACTORY magic bytes");
                             let _ = connection.port.write_magic_bytes().inspect_err(|_| {
                                 // error!(error = e.to_string(), "failed to write magic bytes");
                             });
@@ -245,7 +256,7 @@ fn process_factory_connection(
             }
             FactoryResult::Continue
         }
-        ConnectionState::BeginInitEntropy => {
+        ConnectionState::BeginInitEntropy { provisioned_serial } => {
             let mut bytes = [0u8; 32];
             rng.fill_bytes(&mut bytes);
             match connection
@@ -253,18 +264,20 @@ fn process_factory_connection(
                 .raw_send(ReceiveSerial::Message(FactorySend::InitEntropy(bytes)))
             {
                 Ok(_) => {
-                    connection.state = ConnectionState::InitEntropy;
+                    connection.state = ConnectionState::InitEntropy {
+                        provisioned_serial: provisioned_serial.clone(),
+                    };
                 }
                 Err(e) => {
                     return FactoryResult::Failed(
-                        "unknown".to_string(),
+                        Some(provisioned_serial.to_string()),
                         format!("Init entropy failed: {}", e),
                     );
                 }
             }
             FactoryResult::Continue
         }
-        ConnectionState::InitEntropy => {
+        ConnectionState::InitEntropy { provisioned_serial } => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(DeviceFactorySend::InitEntropyOk))) => {
                     let (ds_private_key, hmac_key) = ds::generate(rng);
@@ -274,11 +287,14 @@ fn process_factory_connection(
                         FactorySend::SetEsp32DsKey(esp32_ds_key),
                     )) {
                         Ok(_) => {
-                            connection.state = ConnectionState::SettingDsKey { ds_public_key };
+                            connection.state = ConnectionState::SettingDsKey {
+                                ds_public_key,
+                                provisioned_serial: provisioned_serial.clone(),
+                            };
                         }
                         Err(e) => {
                             return FactoryResult::Failed(
-                                "unknown".to_string(),
+                                Some(provisioned_serial.to_string()),
                                 format!("DS key send failed: {}", e),
                             );
                         }
@@ -287,57 +303,49 @@ fn process_factory_connection(
                 Ok(_) => {} // Keep waiting
                 Err(e) => {
                     return FactoryResult::Failed(
-                        "unknown".to_string(),
+                        Some(provisioned_serial.to_string()),
                         format!("Read error: {}", e),
                     );
                 }
             }
             FactoryResult::Continue
         }
-        ConnectionState::SettingDsKey { ds_public_key } => {
+        ConnectionState::SettingDsKey {
+            ds_public_key,
+            provisioned_serial,
+        } => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(DeviceFactorySend::ReceivedDsKey))) => {
-                    match factory_state.db.get_next_serial() {
-                        Ok(device_serial) => {
-                            let rsa_der_bytes = ds_public_key.to_pkcs1_der().unwrap().to_vec();
-                            let schnorr =
-                                schnorr_fun::new_with_synthetic_nonces::<Sha256, ThreadRng>();
+                    let rsa_der_bytes = ds_public_key.to_pkcs1_der().unwrap().to_vec();
+                    let schnorr = schnorr_fun::new_with_synthetic_nonces::<Sha256, ThreadRng>();
 
-                            let timestamp = time::SystemTime::now()
-                                .duration_since(time::UNIX_EPOCH)
-                                .expect("Time went backwards")
-                                .as_secs();
+                    let timestamp = time::SystemTime::now()
+                        .duration_since(time::UNIX_EPOCH)
+                        .expect("Time went backwards")
+                        .as_secs();
 
-                            let genuine_certificate = CertificateVerifier::sign(
-                                schnorr,
-                                rsa_der_bytes,
-                                factory_state.target_color,
-                                factory_state.revision.clone(),
-                                device_serial.to_string(),
-                                timestamp,
-                                factory_state.factory_keypair,
-                            );
+                    let genuine_certificate = CertificateVerifier::sign(
+                        schnorr,
+                        rsa_der_bytes,
+                        factory_state.target_color,
+                        factory_state.revision.clone(),
+                        provisioned_serial.to_string(),
+                        timestamp,
+                        factory_state.factory_keypair,
+                    );
 
-                            match connection.port.raw_send(ReceiveSerial::Message(
-                                FactorySend::SetGenuineCertificate(genuine_certificate),
-                            )) {
-                                Ok(_) => {
-                                    connection.state = ConnectionState::FactoryDone {
-                                        serial: device_serial.to_string(),
-                                    };
-                                }
-                                Err(e) => {
-                                    return FactoryResult::Failed(
-                                        device_serial.to_string(),
-                                        format!("Certificate send failed: {}", e),
-                                    );
-                                }
-                            }
+                    match connection.port.raw_send(ReceiveSerial::Message(
+                        FactorySend::SetGenuineCertificate(genuine_certificate),
+                    )) {
+                        Ok(_) => {
+                            connection.state = ConnectionState::FactoryDone {
+                                serial: provisioned_serial.to_string(),
+                            };
                         }
                         Err(e) => {
                             return FactoryResult::Failed(
-                                "unknown".to_string(),
-                                format!("Serial generation failed: {}", e),
+                                Some(provisioned_serial.to_string()),
+                                format!("Certificate send failed: {}", e),
                             );
                         }
                     }
@@ -345,7 +353,7 @@ fn process_factory_connection(
                 Ok(_) => {} // Keep waiting
                 Err(e) => {
                     return FactoryResult::Failed(
-                        "unknown".to_string(),
+                        Some(provisioned_serial.to_string()),
                         format!("Read error: {}", e),
                     );
                 }
@@ -360,7 +368,12 @@ fn process_factory_connection(
 fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryResult {
     connection.last_activity = Instant::now();
 
-    connection.port.poll_send().unwrap();
+    if let Err(e) = connection.port.poll_send() {
+        // we only care about send failures if we're not waiting for a disconnect (conch keeps going)
+        if !matches!(connection.state, ConnectionState::AwaitingDisconnection) {
+            return FactoryResult::Failed(None, format!("Lost communication with device {}", e));
+        }
+    };
 
     match &connection.state {
         ConnectionState::WaitingForMainMagic { last_wrote } => {
@@ -368,7 +381,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                 Ok(supported_features) => match supported_features {
                     Some(features) => {
                         connection.port.set_conch_enabled(features.conch_enabled);
-                        println!("Read device magic bytes");
+                        // println!("Read device magic bytes");
                         connection.state = ConnectionState::WaitingForAnnounce;
                         FactoryResult::Continue
                     }
@@ -380,7 +393,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                             connection.state = ConnectionState::WaitingForMainMagic {
                                 last_wrote: Some(Instant::now()),
                             };
-                            println!("Writing MAIN magic bytes");
+                            // println!("Writing MAIN magic bytes");
                             let _ = connection.port.write_magic_bytes().inspect_err(|e| {
                                 error!(error = e.to_string(), "failed to write main magic bytes");
                             });
@@ -402,6 +415,12 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                         ..
                     }) = msg.body.decode()
                     {
+                        // first, reply with announce ack
+                        connection.port.queue_send(
+                            CoordinatorSendMessage::to(msg.from, CoordinatorSendBody::AnnounceAck)
+                                .into(),
+                        );
+
                         let factory_key: Point<EvenY> =
                             Point::from_xonly_bytes(frostsnap_comms::FACTORY_PUBLIC_KEY).unwrap();
 
@@ -410,7 +429,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                                 Some(certifcate_body) => certifcate_body,
                                 None => {
                                     return FactoryResult::Failed(
-                                        genuine_cert.unverified_serial_number(),
+                                        Some(genuine_cert.unverified_raw_serial()),
                                         "certificate signature verification failed".to_string(),
                                     );
                                 }
@@ -421,7 +440,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                                 Ok(key) => key,
                                 Err(_) => {
                                     return FactoryResult::Failed(
-                                        certifcate_body.serial_number(),
+                                        Some(certifcate_body.raw_serial()),
                                         "invalid RSA key in certificate".to_string(),
                                     );
                                 }
@@ -438,7 +457,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                             .into(),
                         );
                         connection.state = ConnectionState::ProcessingGenuineCheck {
-                            serial: certifcate_body.serial_number(),
+                            serial: certifcate_body.raw_serial(),
                             ds_public_key,
                             challenge: Box::new(challenge),
                         };
@@ -448,10 +467,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                     // Keep waiting
                 }
                 Err(e) => {
-                    return FactoryResult::Failed(
-                        "unknown".to_string(),
-                        format!("Read error: {}", e),
-                    );
+                    return FactoryResult::Failed(None, format!("Read error: {}", e));
                 }
             }
             FactoryResult::Continue
@@ -474,7 +490,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                             }
                             Err(_) => {
                                 return FactoryResult::Failed(
-                                    serial.clone(),
+                                    Some(serial.clone()),
                                     "Device failed genuine check!".to_string(),
                                 );
                             }
@@ -483,13 +499,26 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                 }
                 Ok(_) => {} // Keep waiting
                 Err(e) => {
-                    return FactoryResult::Failed(serial.clone(), format!("Read error: {}", e));
+                    return FactoryResult::Failed(
+                        Some(serial.clone()),
+                        format!("Read error: {}", e),
+                    );
                 }
             }
             FactoryResult::Continue
         }
         ConnectionState::GenuineVerified { serial } => {
-            FactoryResult::GenuineComplete(serial.clone())
+            let serial = serial.clone();
+            connection.state = ConnectionState::AwaitingDisconnection;
+
+            FactoryResult::GenuineComplete(serial)
+        }
+        ConnectionState::AwaitingDisconnection => {
+            if connection.port.try_read_message().is_ok() {
+                FactoryResult::Continue
+            } else {
+                FactoryResult::FinishedAndDisconnected
+            }
         }
         _ => FactoryResult::Continue,
     }
