@@ -1440,6 +1440,8 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "frostsnap_core",
+ "rand_chacha",
+ "rsa",
  "serde",
 ]
 

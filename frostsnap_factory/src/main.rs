@@ -1,13 +1,15 @@
 use std::collections::HashSet;
 
 use clap::Parser;
-use frostsnap_comms::CaseColor;
+use frostsnap_comms::genuine_certificate::CaseColor;
+use frostsnap_core::schnorr_fun::fun::{marker::EvenY, KeyPair, Scalar};
 pub mod cli;
 pub mod db;
 pub mod ds;
-pub mod genuine_certificate;
 pub mod process;
 pub mod serial_number;
+
+const BOARD_REVISION: &str = "2.7";
 
 pub const USB_VID: u16 = 12346;
 pub const USB_PID: u16 = 4097;
@@ -24,6 +26,8 @@ pub struct FactoryState {
     pub devices_flashed: HashSet<String>, // serial numbers
     pub genuine_checks: HashSet<String>,  //serial numbers
     pub devices_failed: usize,
+    pub revision: String,
+    pub factory_keypair: KeyPair<EvenY>,
     pub db: db::Database,
 }
 
@@ -32,6 +36,8 @@ impl FactoryState {
         color: CaseColor,
         quantity: usize,
         operator: String,
+        revision: String,
+        factory_keypair: KeyPair<EvenY>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let database = db::Database::new()?;
 
@@ -42,6 +48,8 @@ impl FactoryState {
             devices_flashed: Default::default(),
             genuine_checks: Default::default(),
             devices_failed: 0,
+            revision,
+            factory_keypair,
             db: database,
         })
     }
@@ -103,8 +111,7 @@ impl FactoryState {
 
         println!(
             "Factory Tool - {} devices (Operator: {})",
-            self.target_color,
-            self.operator
+            self.target_color, self.operator
         );
         println!(
             "Progress: {}/{} ({:.1}%)",
@@ -129,7 +136,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Starting factory batch:");
             println!("Color: {color}, Quantity: {quantity}, Operator: {operator}");
 
-            let mut factory_state = FactoryState::new(color, quantity, operator)?;
+            let factory_secret = Scalar::from_bytes_mod_order(FACTORY_SECRET_KEY)
+                .non_zero()
+                .unwrap();
+            let factory_keypair = KeyPair::new_xonly(factory_secret);
+
+            let mut factory_state = FactoryState::new(
+                color,
+                quantity,
+                operator,
+                BOARD_REVISION.to_string(),
+                factory_keypair,
+            )?;
 
             process::run_with_state(&mut factory_state);
         }

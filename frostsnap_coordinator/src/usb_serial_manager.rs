@@ -5,8 +5,8 @@ const USB_PID: u16 = 4097;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
-use frostsnap_comms::factory::Certificate;
-use frostsnap_comms::{genuine_certificate, CommsMisc, ReceiveSerial};
+use frostsnap_comms::genuine_certificate::{Certificate, CertificateVerifier};
+use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
     FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -17,7 +17,6 @@ use frostsnap_core::schnorr_fun::fun::marker::EvenY;
 use frostsnap_core::schnorr_fun::fun::Point;
 use frostsnap_core::sha2::{Digest, Sha256};
 use frostsnap_core::{sha2, DeviceId, Gist};
-use rand::rngs::ThreadRng;
 use rand::RngCore;
 use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::RsaPublicKey;
@@ -384,14 +383,14 @@ impl UsbSerialManager {
                                     }))
                                 }
                                 DeviceSendBody::SignedChallenge { signature } => {
-                                    if let Some((device_ds_key, challenge)) =
+                                    if let Some((ds_public_key, challenge)) =
                                         self.challenges.remove(&message.from)
                                     {
                                         let message_digest: [u8; 32] =
                                             sha2::Sha256::digest(challenge).into();
                                         let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
 
-                                        if device_ds_key
+                                        if ds_public_key
                                             .verify(padding, &message_digest, signature.as_ref())
                                             .is_ok()
                                         {
@@ -565,19 +564,17 @@ impl UsbSerialManager {
             let factory_key: Point<EvenY> =
                 Point::from_xonly_bytes(frostsnap_comms::FACTORY_PUBLIC_KEY).unwrap();
 
-            if !genuine_certificate::verify::<ThreadRng>(&certificate, factory_key) {
-                // TODO: we probably should send some message if genuine cert fails to verify
-            } else {
-                match RsaPublicKey::from_pkcs1_der(&certificate.rsa_key) {
+            if let Some(certificate_body) = CertificateVerifier::verify(&certificate, factory_key) {
+                match RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key()) {
                     Err(_) => {
                         // TODO: similarly we probably shouldnt silently ignore invalid rsa keys
                     }
-                    Ok(device_ds_key) => {
+                    Ok(ds_public_key) => {
                         let mut rng = rand::thread_rng();
                         let mut challenge = [0u8; 384];
                         rng.fill_bytes(&mut challenge);
 
-                        self.challenges.insert(from, (device_ds_key, challenge));
+                        self.challenges.insert(from, (ds_public_key, challenge));
                         self.outbox_sender
                             .send(CoordinatorSendMessage::to(
                                 from,
@@ -586,6 +583,8 @@ impl UsbSerialManager {
                             .unwrap();
                     }
                 };
+            } else {
+                // TODO: we probably should send some message if genuine cert fails to verify
             }
         }
 
