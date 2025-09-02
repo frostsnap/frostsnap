@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::time::{self, Instant};
 use tracing::*;
 
-use crate::{ds, serial_number, FactoryState};
+use crate::{ds, FactoryState};
 
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
@@ -297,7 +297,7 @@ fn process_factory_connection(
         ConnectionState::SettingDsKey { ds_public_key } => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(DeviceFactorySend::ReceivedDsKey))) => {
-                    match serial_number::get_next() {
+                    match factory_state.db.get_next_serial() {
                         Ok(device_serial) => {
                             let rsa_der_bytes = ds_public_key.to_pkcs1_der().unwrap().to_vec();
                             let schnorr =

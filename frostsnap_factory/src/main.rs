@@ -1,23 +1,20 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, env};
 
 use clap::Parser;
 use frostsnap_comms::genuine_certificate::CaseColor;
-use frostsnap_core::schnorr_fun::fun::{marker::EvenY, KeyPair, Scalar};
+use frostsnap_core::{
+    hex,
+    schnorr_fun::fun::{marker::EvenY, KeyPair, Scalar},
+};
 pub mod cli;
 pub mod db;
 pub mod ds;
 pub mod process;
-pub mod serial_number;
 
 const BOARD_REVISION: &str = "2.7";
 
 pub const USB_VID: u16 = 12346;
 pub const USB_PID: u16 = 4097;
-
-pub const FACTORY_SECRET_KEY: [u8; 32] = [
-    0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-];
 
 pub struct FactoryState {
     pub target_color: CaseColor,
@@ -29,6 +26,7 @@ pub struct FactoryState {
     pub revision: String,
     pub factory_keypair: KeyPair<EvenY>,
     pub db: db::Database,
+    pub batch_note: Option<String>,
 }
 
 impl FactoryState {
@@ -38,8 +36,10 @@ impl FactoryState {
         operator: String,
         revision: String,
         factory_keypair: KeyPair<EvenY>,
+        db_connection_url: String,
+        batch_note: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let database = db::Database::new()?;
+        let db = db::Database::new(db_connection_url)?;
 
         Ok(FactoryState {
             target_color: color,
@@ -50,7 +50,8 @@ impl FactoryState {
             devices_failed: 0,
             revision,
             factory_keypair,
-            db: database,
+            db,
+            batch_note,
         })
     }
 
@@ -62,6 +63,7 @@ impl FactoryState {
             serial_number,
             &self.target_color.to_string(),
             &self.operator,
+            self.batch_note.as_deref(),
         )?;
         self.devices_flashed.insert(serial_number.to_string());
         Ok(())
@@ -86,6 +88,7 @@ impl FactoryState {
             &self.target_color.to_string(),
             &self.operator,
             reason,
+            self.batch_note.as_deref(),
         )?;
         self.devices_failed += 1;
         Ok(())
@@ -124,6 +127,33 @@ impl FactoryState {
     }
 }
 
+fn load_factory_keypair(
+    path: &std::path::Path,
+) -> Result<KeyPair<EvenY>, Box<dyn std::error::Error>> {
+    let hex_content = std::fs::read_to_string(path)?;
+    let hex_content = hex_content.trim();
+    let hex_content = hex_content.strip_prefix("0x").unwrap_or(hex_content);
+
+    let bytes = hex::decode(hex_content)?;
+    if bytes.len() != 32 {
+        return Err(format!("Expected 32 bytes, got {}", bytes.len()).into());
+    }
+
+    let mut array = [0u8; 32];
+    array.copy_from_slice(&bytes);
+
+    let factory_secret = Scalar::from_bytes_mod_order(array)
+        .non_zero()
+        .ok_or("Invalid secret key: resulted in zero scalar")?;
+    let factory_keypair = KeyPair::new_xonly(factory_secret);
+
+    if factory_keypair.public_key().to_xonly_bytes() != frostsnap_comms::FACTORY_PUBLIC_KEY {
+        return Err("Loaded factory secret does not match expected public key".into());
+    }
+
+    Ok(factory_keypair)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = cli::Args::parse();
 
@@ -132,14 +162,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             color,
             quantity,
             operator,
+            factory_secret,
+            db_connection_url,
+            batch_note,
         } => {
+            let factory_keypair = load_factory_keypair(&factory_secret)?;
+
+            let db_connection_url = db_connection_url
+                .or_else(|| env::var("DATABASE_URL").ok())
+                .ok_or("No database URL provided via --db-connection-url or DATABASE_URL")?;
+
             println!("Starting factory batch:");
             println!("Color: {color}, Quantity: {quantity}, Operator: {operator}");
-
-            let factory_secret = Scalar::from_bytes_mod_order(FACTORY_SECRET_KEY)
-                .non_zero()
-                .unwrap();
-            let factory_keypair = KeyPair::new_xonly(factory_secret);
 
             let mut factory_state = FactoryState::new(
                 color,
@@ -147,6 +181,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 operator,
                 BOARD_REVISION.to_string(),
                 factory_keypair,
+                db_connection_url,
+                batch_note,
             )?;
 
             process::run_with_state(&mut factory_state);
