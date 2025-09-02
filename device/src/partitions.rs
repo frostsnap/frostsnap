@@ -23,15 +23,15 @@ impl<'a> Partitions<'a> {
                 otadata: EspFlashPartition::new(flash, 0, 0, "otadata"),
                 ota_0: EspFlashPartition::new(flash, 0, 0, "ota_0"),
                 ota_1: EspFlashPartition::new(flash, 0, 0, "ota_1"),
-                factory: EspFlashPartition::new(flash, 0, 0, "factory"),
             },
             nvs: EspFlashPartition::new(flash, 0, 0, "nvs"),
-            factory_data: EspFlashPartition::new(flash, 0, 0, "factory_data"),
+            factory_data: EspFlashPartition::new(flash, 0, 0, "factory_cert"),
         }
     }
 
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
-        let table = esp_partition_table::PartitionTable::new(0x8000, 10 * 32);
+        let table = esp_partition_table::PartitionTable::new(0xd000, 10 * 32);
+
         let mut self_ = Self::new(flash);
         for row in table.iter_storage(&mut *flash.borrow_mut(), false) {
             let row = match row {
@@ -58,16 +58,10 @@ impl<'a> Partitions<'a> {
                         .ota_1
                         .set_offset_and_size(row.offset, row.size as u32);
                 }
-                "factory" => {
-                    self_
-                        .ota
-                        .factory
-                        .set_offset_and_size(row.offset, row.size as u32);
-                }
                 "nvs" => {
                     self_.nvs.set_offset_and_size(row.offset, row.size as u32);
                 }
-                "factory_data" => {
+                "factory_cert" => {
                     self_
                         .factory_data
                         .set_offset_and_size(row.offset, row.size as u32);
@@ -80,7 +74,6 @@ impl<'a> Partitions<'a> {
             self_.ota.otadata,
             self_.ota.ota_0,
             self_.ota.ota_1,
-            self_.ota.factory,
             self_.factory_data,
         ] {
             assert!(part.size() > 0, "partition {} must not be empty", part.tag);

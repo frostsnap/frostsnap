@@ -218,8 +218,8 @@ pub struct EfuseHmacKeys<'a> {
 }
 
 impl<'a> EfuseHmacKeys<'a> {
-    const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key0;
-    const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key1;
+    const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key2;
+    const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key3;
     const DS_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key4;
 
     const HMAC_KEYIDS: [esp_hal::hmac::KeyId; 3] = [
