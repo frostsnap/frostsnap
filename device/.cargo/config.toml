@@ -3,7 +3,7 @@ target = "riscv32imc-unknown-none-elf"
 rustflags = ["-C", "link-arg=-Tlinkall.x"]
 
 [target.riscv32imc-unknown-none-elf]
-runner = "espflash flash --baud 921600 --partition-table partitions.csv"
+runner = "espflash flash --baud 921600 --partition-table partitions.csv --bootloader bootloader-dev.bin"
 
 [profile.release]
 debug = 0
