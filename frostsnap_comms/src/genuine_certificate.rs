@@ -33,6 +33,12 @@ impl CertificateBody {
         }
     }
 
+    pub fn raw_serial(&self) -> String {
+        match &self {
+            CertificateBody::Frontier { serial, .. } => serial.clone(),
+        }
+    }
+
     pub fn ds_public_key(&self) -> &Vec<u8> {
         match &self {
             CertificateBody::Frontier { ds_public_key, .. } => ds_public_key,
@@ -54,8 +60,8 @@ pub struct Certificate {
 
 impl Certificate {
     /// Should not be trusted, but useful in logging factory failures
-    pub fn unverified_serial_number(&self) -> String {
-        self.body.serial_number()
+    pub fn unverified_raw_serial(&self) -> String {
+        self.body.raw_serial()
     }
 }
 
@@ -186,11 +192,9 @@ mod test {
             factory_keypair,
         );
 
-        std::dbg!(
-            "Serial number looks like {}",
-            certificate.unverified_serial_number()
-        );
+        let verified_cert =
+            CertificateVerifier::verify(&certificate, factory_keypair.public_key()).unwrap();
 
-        assert!(CertificateVerifier::verify(&certificate, factory_keypair.public_key()).is_some());
+        std::dbg!("Serial number looks like {}", verified_cert.serial_number());
     }
 }
