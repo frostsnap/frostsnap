@@ -172,18 +172,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .or_else(|| env::var("DATABASE_URL").ok())
                 .ok_or("No database URL provided via --db-connection-url or DATABASE_URL")?;
 
-            println!("Starting factory batch:");
-            println!("Color: {color}, Quantity: {quantity}, Operator: {operator}");
-
             let mut factory_state = FactoryState::new(
                 color,
                 quantity,
-                operator,
+                operator.clone(),
                 BOARD_REVISION.to_string(),
                 factory_keypair,
                 db_connection_url,
                 batch_note,
             )?;
+
+            println!("Starting factory batch:");
+            println!("Color: {color}, Quantity: {quantity}, Operator: {operator}");
 
             process::run_with_state(&mut factory_state);
         }
