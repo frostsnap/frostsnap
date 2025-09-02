@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 use esp_storage::FlashStorage;
-use frostsnap_comms::factory::Certificate;
+use frostsnap_comms::genuine_certificate::Certificate;
 use frostsnap_core::Versioned;
 use frostsnap_embedded::FlashPartition;
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
@@ -8,6 +8,12 @@ use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct FactoryData {
     inner: Versioned<FactoryDataContents>,
+}
+
+#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
+pub struct FactoryDataContents {
+    pub ds_encrypted_params: Vec<u8>,
+    pub certificate: Certificate,
 }
 
 impl FactoryData {
@@ -23,7 +29,7 @@ impl FactoryData {
     pub fn init(encrypted_params: Vec<u8>, certificate: Certificate) -> Self {
         Self {
             inner: Versioned::V0(FactoryDataContents {
-                encrypted_params,
+                ds_encrypted_params: encrypted_params,
                 certificate,
             }),
         }
@@ -35,15 +41,9 @@ impl FactoryData {
         }
     }
 
-    pub fn encrypted_params(&self) -> Vec<u8> {
+    pub fn encrypted_params(&self) -> &[u8] {
         match &self.inner {
-            Versioned::V0(contents) => contents.encrypted_params.clone(),
+            Versioned::V0(contents) => &contents.ds_encrypted_params,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
-pub struct FactoryDataContents {
-    pub encrypted_params: Vec<u8>,
-    pub certificate: Certificate,
 }
