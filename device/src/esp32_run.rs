@@ -83,7 +83,12 @@ where
         // The event log gets the reset of the sectors
         let mut mutation_log = MutationLog::new(share_partition, nvs_partition);
 
-        let mut signer = FrostSigner::new(header.device_keypair(), nonce_slots);
+        // Since this keypair is created on startup, this call could prove weak to side-channel
+        // attacks. Because device keypair compromise only affects device identity and keygen share
+        //  encryption (rather than signing keys themselves), we choose to use the less critical
+        // `fixed-entropy` HMAC for this purpose.
+        let device_keypair = header.device_keypair(&mut hmac_keys.fixed_entropy);
+        let mut signer = FrostSigner::new(device_keypair, nonce_slots);
 
         let mut name = None;
 
@@ -417,7 +422,11 @@ where
                         CoordinatorSendBody::Core(core_message) => {
                             outbox.extend(
                                 signer
-                                    .recv_coordinator_message(core_message.clone(), &mut rng)
+                                    .recv_coordinator_message(
+                                        core_message.clone(),
+                                        &mut rng,
+                                        &mut hmac_keys.share_encryption,
+                                    )
                                     .expect("failed to process coordinator message"),
                             );
 

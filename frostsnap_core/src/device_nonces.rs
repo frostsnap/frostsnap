@@ -1,3 +1,8 @@
+use crate::{
+    device::DeviceSecretDerivation,
+    nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
+    SignSessionId, Versioned, NONCE_BATCH_SIZE,
+};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use chacha20::{
@@ -11,18 +16,35 @@ use schnorr_fun::{
     fun::prelude::*,
 };
 
-use crate::{
-    nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
-    SignSessionId, Versioned, NONCE_BATCH_SIZE,
-};
+/// Raw seed material that gets ratcheted forward and stored between uses.
+/// This is passed through HMAC to derive the actual ChaChaSeed.
+pub type RatchetSeedMaterial = [u8; 32];
 
-type ChaChaSeed = [u8; 32];
+#[derive(bincode::Encode, bincode::Decode, Copy, Clone, Debug, PartialEq)]
+pub struct ChaChaSeed([u8; 32]);
+
+impl ChaChaSeed {
+    pub fn new(rng: &mut impl RngCore) -> Self {
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        Self(seed)
+    }
+
+    /// Only for deserialization or when we ratchet up
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct SecretNonceSlot {
     pub index: u32,
     pub nonce_stream_id: NonceStreamId,
-    pub ratchet_prg_seed: ChaChaSeed,
+    pub ratchet_prg_seed_material: RatchetSeedMaterial,
     /// for clearing slots based on least recently used
     pub last_used: u32,
     pub signing_state: Option<SigningState>,
@@ -48,12 +70,12 @@ pub trait NonceStreamSlot {
     }
 
     fn initialize(&mut self, stream_id: NonceStreamId, last_used: u32, rng: &mut impl RngCore) {
-        let mut ratchet_prg_seed = ChaChaSeed::default();
-        rng.fill_bytes(&mut ratchet_prg_seed[..]);
+        let mut ratchet_prg_seed_material: RatchetSeedMaterial = [0u8; 32];
+        rng.fill_bytes(&mut ratchet_prg_seed_material);
         let value = SecretNonceSlot {
             index: 0,
             nonce_stream_id: stream_id,
-            ratchet_prg_seed,
+            ratchet_prg_seed_material,
             last_used,
             signing_state: None,
         };
@@ -63,15 +85,16 @@ pub trait NonceStreamSlot {
     fn reconcile_coord_nonce_stream_state(
         &mut self,
         state: CoordNonceStreamState,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> Option<NonceStreamSegment> {
         let value = self.read_slot()?;
         let our_index = value.index;
         if our_index > state.index || state.remaining < NONCE_BATCH_SIZE {
-            Some(value.nonce_segment(None, NONCE_BATCH_SIZE as usize))
+            Some(value.nonce_segment(None, NONCE_BATCH_SIZE as usize, device_hmac))
         } else if our_index == state.index {
             None
         } else {
-            Some(value.nonce_segment(None, (state.index - our_index) as usize))
+            Some(value.nonce_segment(None, (state.index - our_index) as usize, device_hmac))
         }
     }
 
@@ -85,6 +108,7 @@ pub trait NonceStreamSlot {
         coord_nonce_state: CoordNonceStreamState,
         last_used: u32,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> (Vec<SignatureShare>, Option<NonceStreamSegment>) {
         let slot_value = self
             .read_slot()
@@ -93,7 +117,6 @@ pub trait NonceStreamSlot {
             coord_nonce_state.stream_id, slot_value.nonce_stream_id,
             "wrong stream id"
         );
-
         if coord_nonce_state.index < slot_value.index {
             panic!("trying to sign with old nonce");
         }
@@ -111,18 +134,17 @@ pub trait NonceStreamSlot {
             }
             _ => {
                 let mut nonce_iter = slot_value
-                    .iter_secret_nonces()
+                    .iter_secret_nonces(device_hmac)
                     .skip((coord_nonce_state.index - slot_value.index) as usize);
-
                 let mut signature_shares = vec![];
-                let mut next_prg_state: Option<(u32, ChaChaSeed)> = None;
+                let mut next_prg_state: Option<(u32, RatchetSeedMaterial)> = None;
 
                 for (secret_share, session) in sessions.into_iter() {
-                    let (current_index, secret_nonce, next_seed) = nonce_iter
+                    let (current_index, secret_nonce, next_seed_material) = nonce_iter
                         .next()
                         .expect("tried to sign with nonces out of range");
                     let next_index = current_index + 1;
-                    next_prg_state = Some((next_index, next_seed));
+                    next_prg_state = Some((next_index, next_seed_material));
                     let signature_share = session.sign(&secret_share, secret_nonce);
                     // TODO: verify the signature share as a sanity check
                     signature_shares.push(signature_share);
@@ -132,13 +154,12 @@ pub trait NonceStreamSlot {
                     panic!("sign sessions must not be empty");
                 }
 
-                let (next_index, next_prg_seed) = next_prg_state.unwrap();
-
+                let (next_index, next_prg_seed_material) = next_prg_state.unwrap();
                 SecretNonceSlot {
                     nonce_stream_id: slot_value.nonce_stream_id,
                     index: next_index,
                     last_used,
-                    ratchet_prg_seed: next_prg_seed,
+                    ratchet_prg_seed_material: next_prg_seed_material,
                     signing_state: Some(SigningState {
                         session_id,
                         signature_shares,
@@ -150,16 +171,21 @@ pub trait NonceStreamSlot {
         self.write_slot(&with_signatures);
 
         // XXX Read the slot back in to be 100% certain it was written
-        let signature_shares = self
-            .read_slot()
-            .expect("guaranteed")
+        let read_back_state = self.read_slot().expect("guaranteed");
+
+        assert_eq!(
+            read_back_state, with_signatures,
+            "signature shares should have been read the same as written"
+        );
+
+        let signature_shares = read_back_state
             .signing_state
             .expect("guaranteed")
             .signature_shares;
 
         let implied_coord_nonce_state = coord_nonce_state.after_signing(signature_shares.len());
-        let replenishment = self.reconcile_coord_nonce_stream_state(implied_coord_nonce_state);
-
+        let replenishment =
+            self.reconcile_coord_nonce_stream_state(implied_coord_nonce_state, device_hmac);
         (signature_shares, replenishment)
     }
 }
@@ -188,6 +214,7 @@ impl<S: NonceStreamSlot> AbSlots<S> {
         session_id: SignSessionId,
         coord_nonce_state: CoordNonceStreamState,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
+        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> Option<(Vec<SignatureShare>, Option<NonceStreamSegment>)> {
         let last_used = self.last_used + 1;
         let slot = self.get(coord_nonce_state.stream_id)?;
@@ -196,6 +223,7 @@ impl<S: NonceStreamSlot> AbSlots<S> {
             coord_nonce_state,
             last_used,
             sessions,
+            device_hmac,
         );
         self.last_used = last_used;
         Some(out)
@@ -268,67 +296,79 @@ impl<S: NonceStreamSlot> AbSlots<S> {
 }
 
 impl SecretNonceSlot {
-    fn iter_secret_nonces(&self) -> impl Iterator<Item = (u32, binonce::SecretNonce, ChaChaSeed)> {
-        let mut prg_seed = self.ratchet_prg_seed;
+    fn iter_secret_nonces<'a>(
+        &'a self,
+        device_hmac: &'a mut impl DeviceSecretDerivation,
+    ) -> impl Iterator<Item = (u32, binonce::SecretNonce, RatchetSeedMaterial)> + 'a {
+        let mut seed_material = self.ratchet_prg_seed_material;
         let mut index = self.index;
 
         core::iter::from_fn(move || {
             if index == u32::MAX {
                 return None;
             }
-            let mut chacha_nonce = [0u8; 12];
+
             let current_index = index;
+
+            // Derive actual nonce seed from material AND eFuse HMAC
+            let actual_seed_bytes =
+                device_hmac.derive_nonce_seed(self.nonce_stream_id, current_index, &seed_material);
+            let actual_seed = ChaChaSeed::from_bytes(actual_seed_bytes);
+
+            let mut chacha_nonce = [0u8; 12];
             chacha_nonce[0..core::mem::size_of_val(&current_index)]
                 .copy_from_slice(current_index.to_le_bytes().as_ref());
-            let mut chacha = ChaCha20::new(&prg_seed.into(), &chacha_nonce.into());
-            let mut next_seed = [0u8; 32];
-            chacha.apply_keystream(&mut next_seed);
+            let mut chacha = ChaCha20::new(actual_seed.as_bytes().into(), &chacha_nonce.into());
+
+            // Generate the next seed material (ratchet forward)
+            let mut next_seed_material = [0u8; 32];
+            chacha.apply_keystream(&mut next_seed_material);
+
             let mut secret_nonce_bytes = [0u8; 64];
             chacha.apply_keystream(&mut secret_nonce_bytes);
             let secret_nonce = binonce::SecretNonce::from_bytes(secret_nonce_bytes)
                 .expect("computationally unreachable");
 
-            prg_seed = next_seed;
+            seed_material = next_seed_material;
             index += 1;
 
-            Some((current_index, secret_nonce, next_seed))
+            Some((current_index, secret_nonce, next_seed_material))
         })
     }
 
     pub fn are_nonces_available(&self, index: u32, n: u32) -> Result<(), NoncesUnavailable> {
         let current = self.index;
         let requested = index;
-
         if requested < current {
             return Err(NoncesUnavailable::IndexUsed { current, requested });
         }
-
         if index.saturating_add(n) == u32::MAX {
             return Err(NoncesUnavailable::Overflow);
         }
-
         Ok(())
     }
 
-    pub fn nonce_segment(&self, start: Option<u32>, length: usize) -> NonceStreamSegment {
+    pub fn nonce_segment(
+        &self,
+        start: Option<u32>,
+        length: usize,
+        device_hmac: &mut impl DeviceSecretDerivation,
+    ) -> NonceStreamSegment {
         let start = start.unwrap_or(self.index);
-
         if start < self.index {
             panic!("can't iterate erased nonces");
         }
         let last = start.saturating_add(length.try_into().expect("length not too big"));
-
         if last == u32::MAX {
             panic!("cannot have an index at u32::MAX");
         }
 
         let nonces = self
-            .iter_pub_nonces()
+            .iter_pub_nonces(device_hmac)
             .skip((start - self.index) as _)
             .map(|(_, nonce)| nonce)
             .take(length)
             .collect::<VecDeque<_>>();
-
         assert_eq!(nonces.len(), length, "there weren't enough nonces for that");
 
         NonceStreamSegment {
@@ -337,11 +377,14 @@ impl SecretNonceSlot {
             nonces,
         }
     }
-
-    pub fn iter_pub_nonces(&self) -> impl Iterator<Item = (u32, binonce::Nonce)> {
-        self.iter_secret_nonces().map(|(index, secret_nonce, _)| {
-            (index, NonceKeyPair::from_secret(secret_nonce).public())
-        })
+    pub fn iter_pub_nonces<'a>(
+        &'a self,
+        device_hmac: &'a mut impl DeviceSecretDerivation,
+    ) -> impl Iterator<Item = (u32, binonce::Nonce)> + 'a {
+        self.iter_secret_nonces(device_hmac)
+            .map(|(index, secret_nonce, _)| {
+                (index, NonceKeyPair::from_secret(secret_nonce).public())
+            })
     }
 }
 

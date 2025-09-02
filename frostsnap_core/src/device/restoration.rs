@@ -231,7 +231,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
     pub fn display_backup_ack(
         &mut self,
         phase: BackupDisplayPhase,
-        symm_keygen: &mut impl DeviceSymmetricKeyGen,
+        symm_keygen: &mut impl DeviceSecretDerivation,
     ) -> Result<Vec<DeviceSend>, ActionError> {
         let key_data = self
             .keys
@@ -324,7 +324,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
     pub fn finish_consolidation(
         &mut self,
-        symm_keygen: &mut impl DeviceSymmetricKeyGen,
+        symm_keygen: &mut impl DeviceSecretDerivation,
         phase: ConsolidatePhase,
         rng: &mut impl rand_core::RngCore,
     ) -> impl IntoIterator<Item = DeviceSend> {
