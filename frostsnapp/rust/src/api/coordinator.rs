@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 use tracing::{event, Level};
 
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
-const TEMP_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
 
 #[derive(Clone, Debug)]
 pub struct KeyState {
@@ -149,10 +148,11 @@ impl Coordinator {
         &self,
         id: DeviceId,
         access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
         sink: StreamSink<bool>,
     ) -> Result<()> {
         self.0
-            .request_display_backup(id, access_structure_ref, TEMP_KEY, SinkWrap(sink))?;
+            .request_display_backup(id, access_structure_ref, encryption_key, SinkWrap(sink))?;
         Ok(())
     }
 

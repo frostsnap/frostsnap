@@ -7,6 +7,7 @@ import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -340,7 +341,11 @@ class WalletCreateController extends ChangeNotifier {
                 false;
             if (!keygenCodeMatches) return false;
             try {
-              _asRef = await coord.finalizeKeygen(keygenId: state.keygenId);
+              final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+              _asRef = await coord.finalizeKeygen(
+                keygenId: state.keygenId,
+                encryptionKey: encryptionKey,
+              );
             } catch (Exception) {
               return false;
             }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -104,6 +105,7 @@ class DeviceActionBackupController with ChangeNotifier {
         null;
     if (!connected) return false;
 
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
     await _dialogController.clearAllActionsNeeded();
     final _ = _dialogController.addActionNeeded(context, id)!;
 
@@ -112,6 +114,7 @@ class DeviceActionBackupController with ChangeNotifier {
           .displayBackup(
             id: id,
             accessStructureRef: accessStructure.accessStructureRef(),
+            encryptionKey: encryptionKey,
           )
           .first,
       _cancelButtonController.stream.first.then((_) => false),

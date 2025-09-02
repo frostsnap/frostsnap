@@ -10,6 +10,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/theme.dart';
 
 const satoshisInOneBtc = 100000000;
@@ -715,13 +716,15 @@ class SigningSessionController with ChangeNotifier {
     );
   }
 
-  void maybeRequestDeviceSign() {
+  void maybeRequestDeviceSign() async {
     if (_state != null) {
+      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
       for (final neededFrom in _state!.connectedButNeedRequest) {
         if (_connectedDevices.contains(neededFrom)) {
           coord.requestDeviceSign(
             deviceId: neededFrom,
             sessionId: _state!.sessionId,
+            encryptionKey: encryptionKey,
           );
         }
       }

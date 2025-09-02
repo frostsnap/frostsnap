@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -90,7 +91,12 @@ Future<void> main() async {
       for (var change in update.changes) {
         if (change.kind == DeviceListChangeKind.recoveryMode &&
             change.device.recoveryMode) {
-          coord.exitRecoveryMode(deviceId: change.device.id);
+          SecureKeyProvider.getEncryptionKey().then((encryptionKey) {
+            coord.exitRecoveryMode(
+              deviceId: change.device.id,
+              encryptionKey: encryptionKey,
+            );
+          });
         }
       }
 

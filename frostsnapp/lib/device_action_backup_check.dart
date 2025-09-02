@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -72,6 +73,7 @@ class DeviceActionBackupCheckController with ChangeNotifier {
         null;
     if (!connected) return false;
 
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
     final _ = _dialogController.addActionNeeded(context, id)!;
 
     final (phase, isCancelled) = await select([
@@ -94,6 +96,7 @@ class DeviceActionBackupCheckController with ChangeNotifier {
     final checkOk = coord.checkPhysicalBackup(
       accessStructureRef: accessStructure.accessStructureRef(),
       phase: phase,
+      encryptionKey: encryptionKey,
     );
 
     await _dialogController.removeActionNeeded(id);

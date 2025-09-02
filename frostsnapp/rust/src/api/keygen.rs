@@ -3,7 +3,9 @@ use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::keygen::KeyGenState;
-use frostsnap_core::{device::KeyPurpose, AccessStructureRef, DeviceId, KeygenId, SessionHash};
+use frostsnap_core::{
+    device::KeyPurpose, AccessStructureRef, DeviceId, KeygenId, SessionHash, SymmetricKey,
+};
 
 #[frb(mirror(KeyGenState), unignore)]
 pub struct _KeyGenState {
@@ -37,7 +39,11 @@ impl super::coordinator::Coordinator {
         )
     }
 
-    pub fn finalize_keygen(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
-        self.0.finalize_keygen(keygen_id, crate::TEMP_KEY)
+    pub fn finalize_keygen(
+        &self,
+        keygen_id: KeygenId,
+        encryption_key: SymmetricKey,
+    ) -> Result<AccessStructureRef> {
+        self.0.finalize_keygen(keygen_id, encryption_key)
     }
 }
