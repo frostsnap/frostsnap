@@ -11,7 +11,7 @@ pub mod db;
 pub mod ds;
 pub mod process;
 
-const BOARD_REVISION: &str = "2.7";
+const BOARD_REVISION: &str = "2.7-1625";
 
 pub const USB_VID: u16 = 12346;
 pub const USB_PID: u16 = 4097;
