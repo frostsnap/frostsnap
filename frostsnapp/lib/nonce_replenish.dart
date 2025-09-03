@@ -92,10 +92,6 @@ class NonceReplenishWidget extends StatelessWidget {
                         'Preparing devices',
                         style: theme.textTheme.headlineLarge,
                       ),
-                      Text(
-                        'Preparing devices for future signing sessions.',
-                        style: theme.textTheme.bodyLarge,
-                      ),
                     ],
                   ),
                 ),
@@ -114,7 +110,7 @@ class NonceReplenishWidget extends StatelessWidget {
                             FsProgressIndicator(),
                             SizedBox(height: 20),
                             Text(
-                              'Preparing for future signing..',
+                              'Please wait...',
                               style: theme.textTheme.bodyLarge,
                               textAlign: TextAlign.center,
                             ),
@@ -170,7 +166,7 @@ class NonceReplenishWidget extends StatelessWidget {
                             child: Text(
                               allComplete
                                   ? 'Devices ready.'
-                                  : 'Preparing devices for future signing.',
+                                  : 'Please wait...',
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 fontWeight: allComplete
                                     ? FontWeight.w600
