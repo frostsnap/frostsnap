@@ -10,6 +10,7 @@ use embedded_graphics::{
 };
 use embedded_hal as hal;
 use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
+use esp_hal::time::Duration;
 use esp_hal::{hmac::Hmac, timer, usb_serial_jtag::UsbSerialJtag, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
@@ -83,7 +84,7 @@ where
 
     let mut hmac_keys = if efuses_burnt {
         EfuseHmacKeys::load(hal_hmac).expect("we should have hmac keys!")
-    } else {
+    } else if cfg!(feature = "genuine_device") {
         screen_test::run(display, capsense);
 
         text_display!(
@@ -131,8 +132,8 @@ where
         let mut share_encryption_key = [0u8; 32];
         factory_rng.fill_bytes(&mut share_encryption_key);
 
-        // Burn EFUSES
-        let read_protect = cfg!(feature = "read_protect_hmac_key");
+        // Burn EFUSES, read protect since factory
+        let read_protect = true;
         let _ = EfuseHmacKeys::init_with_keys(
             efuse,
             hal_hmac,
@@ -150,6 +151,57 @@ where
 
         esp_hal::reset::software_reset();
         unreachable!()
+    } else {
+        // Dev device - generate everything locally
+
+        // Warn before irreversibly initializing a dev-device
+        const COUNTDOWN_SECONDS: u32 = 30;
+        for seconds_remaining in (1..=COUNTDOWN_SECONDS).rev() {
+            text_display!(
+                display,
+                &format!(
+                    "WARNING\n\nDev-Device Initialization\nAbout to burn eFuses!\n\n{} seconds remaining...\n\nUnplug now to cancel!",
+                    seconds_remaining
+                )
+            );
+
+            // Wait 1 second
+            let start = timer.now();
+            while timer.now().checked_duration_since(start).unwrap() < Duration::millis(1000) {}
+        }
+
+        text_display!(display, "Dev mode: generating keys locally");
+
+        // Generate keys without external entropy our entropy
+        let mut dev_entropy = [0u8; 32];
+        rng.fill_bytes(&mut dev_entropy);
+        let mut dev_rng = rand_chacha::ChaCha20Rng::from_seed(dev_entropy);
+
+        let mut share_encryption_key = [0u8; 32];
+        dev_rng.fill_bytes(&mut share_encryption_key);
+
+        // MEANINGLESS DS HMAC KEY
+        // Since the DS peripheral is only useful for signing with a key that's provisioned by the
+        // factory to prove genuineness, and dev-boards are not genuine, this key serves no meaningful
+        // security purpose on a non-genuine device.
+        let mut ds_hmac_key = [0u8; 32];
+        dev_rng.fill_bytes(&mut ds_hmac_key);
+
+        // For dev devices, we skip creating factory data since we don't have a certificate, and
+        // encrypted params are meaningless without genuine DS keys to use them with.
+        // The device_keypair or otherwise will handle any signing necessary.
+
+        // Burn efuses with dev keys (no read protection for dev devices)
+        let read_protect = false;
+        EfuseHmacKeys::init_with_keys(
+            efuse,
+            hal_hmac,
+            read_protect,
+            share_encryption_key,
+            dev_entropy,
+            ds_hmac_key,
+        )
+        .expect("Failed to initialize dev HMAC keys")
     };
 
     let final_rng = hmac_keys.fixed_entropy.mix_in_rng(&mut rng);
