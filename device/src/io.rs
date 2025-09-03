@@ -1,15 +1,12 @@
 extern crate alloc;
-use alloc::collections::VecDeque;
 use alloc::format;
-use alloc::vec::Vec;
 use bincode::de::read::Reader;
 use bincode::enc::write::Writer;
 use bincode::error::DecodeError;
 use bincode::error::EncodeError;
 use core::convert::Infallible;
 use core::marker::PhantomData;
-use embedded_hal_nb::serial::{Read, Write};
-use esp_hal::uart::AnyUart;
+use esp_hal::uart::{AnyUart, Uart};
 use esp_hal::Blocking;
 use esp_hal::{prelude::*, timer, uart, usb_serial_jtag::UsbSerialJtag};
 use frostsnap_comms::Direction;
@@ -18,41 +15,49 @@ use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::Upstream;
 use frostsnap_comms::BINCODE_CONFIG;
 
-const RING_BUFFER_SIZE: usize = 256;
+use crate::uart_interrupt::{fill_buffer, UartNum, UartReceiver, UartWriter};
 
 pub struct SerialInterface<'a, T, D> {
     io: SerialIo<'a>,
-    ring_buffer: VecDeque<u8>,
     magic_bytes_progress: usize,
     timer: &'a T,
     direction: PhantomData<D>,
 }
 
 impl<'a, T, D> SerialInterface<'a, T, D> {
-    pub fn new_uart(uart: uart::Uart<'a, Blocking, AnyUart>, timer: &'a T) -> Self {
+    pub fn new_uart(
+        mut uart: Uart<'static, Blocking, AnyUart>,
+        uart_num: UartNum,
+        timer: &'a T,
+    ) -> Self {
+        // Configure UART with standard settings
+        let serial_conf = uart::Config {
+            baudrate: frostsnap_comms::BAUDRATE,
+            rx_fifo_full_threshold: 96,
+            ..Default::default()
+        };
+        uart.apply_config(&serial_conf).unwrap();
+
+        // Register UART for interrupt handling
+        let (writer, consumer) = crate::uart_interrupt::register_uart(uart, uart_num);
+
         Self {
-            io: SerialIo::Uart { uart },
-            ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
+            io: SerialIo::Uart { writer, uart_num, consumer },
             magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
         }
     }
 
-    pub fn clone_buffer_to_vec(&self) -> Vec<u8> {
-        self.ring_buffer.clone().into()
-    }
-
     pub fn is_jtag(&self) -> bool {
-        matches!(self.io, SerialIo::Jtag(_))
+        matches!(self.io, SerialIo::Jtag { .. })
     }
 }
 
 impl<'a, T> SerialInterface<'a, T, Upstream> {
     pub fn new_jtag(jtag: UsbSerialJtag<'a, Blocking>, timer: &'a T) -> Self {
         Self {
-            io: SerialIo::Jtag(jtag),
-            ring_buffer: VecDeque::with_capacity(RING_BUFFER_SIZE),
+            io: SerialIo::Jtag { jtag, peek_byte: None },
             magic_bytes_progress: 0,
             timer,
             direction: PhantomData,
@@ -66,22 +71,20 @@ where
     D: Direction,
 {
     pub fn fill_buffer(&mut self) {
-        while let Ok(c) = self.io.read_byte() {
-            self.ring_buffer.push_back(c);
-            if self.ring_buffer.len() == RING_BUFFER_SIZE {
-                break;
-            }
-        }
+        // Let the SerialIo implementation handle filling its queue
+        self.io.fill_queue();
     }
 
     pub fn find_and_remove_magic_bytes(&mut self) -> bool {
         self.fill_buffer();
-        if self.ring_buffer.is_empty() {
+        // Check if there's any data available
+        if !self.io.has_data() {
             return false;
         }
+        let magic_bytes_progress = self.magic_bytes_progress;
         let (progress, found) = frostsnap_comms::make_progress_on_magic_bytes::<D>(
-            core::iter::from_fn(|| self.ring_buffer.pop_front()),
-            self.magic_bytes_progress,
+            core::iter::from_fn(|| self.io.read_byte()),
+            magic_bytes_progress,
         );
         self.magic_bytes_progress = progress;
         found.is_some()
@@ -105,7 +108,7 @@ where
         ReceiveSerial<D>: bincode::Decode<()>,
     {
         self.fill_buffer();
-        if !self.ring_buffer.is_empty() {
+        if self.io.has_data() {
             Some(bincode::decode_from_reader(self, BINCODE_CONFIG))
         } else {
             None
@@ -151,6 +154,33 @@ where
     pub fn inner_mut(&mut self) -> &mut SerialIo<'a> {
         &mut self.io
     }
+
+    /// Read a single byte, polling if necessary
+    /// This is used by OTA for byte-by-byte protocol handling
+    pub fn read_byte_blocking(&mut self) -> u8 {
+        loop {
+            // First try to get a byte
+            if let Some(byte) = self.io.read_byte() {
+                return byte;
+            }
+
+            // If no byte available, fill the buffer and try again
+            self.fill_buffer();
+        }
+    }
+
+    /// Try to read a byte without blocking
+    pub fn read_byte(&mut self) -> nb::Result<u8, core::convert::Infallible> {
+        // First ensure buffer is filled with any pending bytes
+        self.fill_buffer();
+
+        // Then try to read
+        if let Some(byte) = self.io.read_byte() {
+            Ok(byte)
+        } else {
+            Err(nb::Error::WouldBlock)
+        }
+    }
 }
 
 impl<T, D> Reader for SerialInterface<'_, T, D>
@@ -163,13 +193,11 @@ where
             let start_time = self.timer.now();
 
             *target_byte = loop {
-                // eagerly fill the buffer so we pull bytes from the hardware serial buffer as fast
-                // as possible.
-                self.fill_buffer();
-
-                if let Some(next_byte) = self.ring_buffer.pop_front() {
+                if let Some(next_byte) = self.io.read_byte() {
                     break next_byte;
                 }
+
+                self.fill_buffer();
 
                 if self
                     .timer
@@ -200,42 +228,76 @@ impl<T, D> Writer for SerialInterface<'_, T, D> {
 
 pub enum SerialIo<'a> {
     Uart {
-        uart: uart::Uart<'a, Blocking, AnyUart>,
+        writer: UartWriter,
+        uart_num: UartNum,
+        consumer: UartReceiver,
     },
-    Jtag(UsbSerialJtag<'a, Blocking>),
+    Jtag {
+        jtag: UsbSerialJtag<'a, Blocking>,
+        peek_byte: Option<u8>,
+    },
 }
 
 impl SerialIo<'_> {
+    /// Check if data is available without consuming it
+    pub fn has_data(&self) -> bool {
+        match self {
+            SerialIo::Uart { consumer, .. } => consumer.peek().is_some(),
+            SerialIo::Jtag { peek_byte, .. } => peek_byte.is_some(),
+        }
+    }
+
+    /// Internal method to read a byte from the appropriate source
+    pub fn read_byte(&mut self) -> Option<u8> {
+        match self {
+            SerialIo::Uart { consumer, .. } => consumer.dequeue(),
+            SerialIo::Jtag { jtag, peek_byte } => {
+                // First check if we have a peeked byte
+                if let Some(byte) = peek_byte.take() {
+                    Some(byte)
+                } else {
+                    // Otherwise try to read directly
+                    jtag.read_byte().ok()
+                }
+            }
+        }
+    }
+
     pub fn change_baud(&mut self, baudrate: u32) {
         self.flush();
         match self {
-            SerialIo::Uart { uart } => {
-                uart.apply_config(&uart::Config {
-                    baudrate,
-                    ..uart::Config::default()
-                })
-                .unwrap();
+            SerialIo::Uart { writer, .. } => {
+                writer.change_baud(baudrate);
             }
-            SerialIo::Jtag(_) => { /* no baud rate for USB jtag */ }
+            SerialIo::Jtag { .. } => { /* no baud rate for USB jtag */ }
         }
     }
-    pub fn read_byte(&mut self) -> nb::Result<u8, Infallible> {
+    pub fn fill_queue(&mut self) {
         match self {
-            SerialIo::Jtag(jtag) => jtag.read_byte(),
-            SerialIo::Uart { uart, .. } => uart.read().map_err(|e| match e {
-                nb::Error::Other(_) => unreachable!("we have not set a timeout"),
-                nb::Error::WouldBlock => nb::Error::WouldBlock,
-            }),
+            SerialIo::Uart { uart_num, .. } => {
+                // Fill buffer with any bytes that haven't triggered an interrupt (< threshold)
+                fill_buffer(*uart_num);
+            }
+            SerialIo::Jtag { jtag, peek_byte } => {
+                // For JTAG, fill the peek byte if empty
+                if peek_byte.is_none() {
+                    *peek_byte = jtag.read_byte().ok();
+                }
+            }
         }
     }
 
     pub fn write_byte_nb(&mut self, byte: u8) -> nb::Result<(), Infallible> {
         match self {
-            SerialIo::Jtag(jtag) => jtag.write_byte_nb(byte),
-            SerialIo::Uart { uart, .. } => uart.write(byte).map_err(|e| match e {
-                nb::Error::Other(_) => unreachable!("we have not set a timeout"),
-                nb::Error::WouldBlock => nb::Error::WouldBlock,
-            }),
+            SerialIo::Jtag { jtag, .. } => jtag.write_byte_nb(byte),
+            SerialIo::Uart { writer, .. } => {
+                // write_bytes is blocking, so we need to check if there's space first
+                // For now, use write_bytes and convert the error
+                match writer.write_bytes(&[byte]) {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(nb::Error::WouldBlock), // Assume any error is WouldBlock
+                }
+            }
         }
     }
 
@@ -252,7 +314,7 @@ impl SerialIo<'_> {
                 // there is no reason to call this on uart. It will just block until data is
                 // actually written.
             }
-            SerialIo::Jtag(jtag) => {
+            SerialIo::Jtag { jtag, .. } => {
                 // JTAG actually does need to get flushed sometimes. We don't need to block on it
                 // though so ignore return value.
                 let _ = jtag.flush_tx_nb();
@@ -265,13 +327,13 @@ impl SerialIo<'_> {
     // something before resetting.
     pub fn flush(&mut self) {
         match self {
-            SerialIo::Uart { uart, .. } => {
+            SerialIo::Uart { writer, .. } => {
                 // just waits until evertything has been written
-                while let Err(nb::Error::WouldBlock) = uart.flush() {
+                while let Err(nb::Error::WouldBlock) = writer.flush_tx() {
                     // wait
                 }
             }
-            SerialIo::Jtag(jtag) => {
+            SerialIo::Jtag { jtag, .. } => {
                 // flushes and waits until everything has been written
                 let _ = jtag.flush_tx();
             }

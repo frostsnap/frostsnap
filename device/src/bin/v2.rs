@@ -23,7 +23,7 @@ use esp_hal::{
         self,
         timg::{Timer, TimerGroup},
     },
-    uart::{self, Uart},
+    uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
@@ -138,36 +138,22 @@ fn main() -> ! {
 
     let detect_device_upstream = upstream_detect.is_low();
     let upstream_serial = if detect_device_upstream {
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
+        let uart1 = Uart::new(peripherals.UART1, peripherals.GPIO18, peripherals.GPIO19).unwrap();
         SerialInterface::new_uart(
-            Uart::new_with_config(
-                peripherals.UART1,
-                serial_conf,
-                peripherals.GPIO18,
-                peripherals.GPIO19,
-            )
-            .unwrap(),
+            uart1,
+            frostsnap_device::uart_interrupt::UartNum::Uart1,
             &timer0,
         )
     } else {
         SerialInterface::new_jtag(UsbSerialJtag::new(peripherals.USB_DEVICE), &timer0)
     };
     let downstream_serial: SerialInterface<_, Downstream> = {
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-        let uart = Uart::new_with_config(
-            peripherals.UART0,
-            serial_conf,
-            peripherals.GPIO21,
-            peripherals.GPIO20,
+        let uart0 = Uart::new(peripherals.UART0, peripherals.GPIO21, peripherals.GPIO20).unwrap();
+        SerialInterface::new_uart(
+            uart0,
+            frostsnap_device::uart_interrupt::UartNum::Uart0,
+            &timer0,
         )
-        .unwrap();
-        SerialInterface::new_uart(uart, &timer0)
     };
     let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
@@ -191,7 +177,7 @@ fn main() -> ! {
 
     let root_widget = RootWidget::new(
         WidgetTree::default(),
-        0, /* 0 =  disable fading for now */
+        250, // fade time
         PALETTE.background,
     );
 
@@ -534,7 +520,7 @@ where
         if elapsed_ms >= 5 {
             // Draw the widget tree
             // Draw the UI stack (includes debug stats overlay)
-            let _ = self.widget.draw(&mut self.display, now_ms);
+            self.widget.draw(&mut self.display, now_ms).unwrap();
 
             // Update last redraw time
             self.last_redraw_time = now;
