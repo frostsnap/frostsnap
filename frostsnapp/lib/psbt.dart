@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnap/camera.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -16,6 +16,7 @@ import 'package:frostsnap/src/rust/api/qr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -32,6 +33,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
   String? fileContents;
   Set<DeviceId> selectedDevices = deviceIdSet([]);
   SignedTx? signedTx;
+  final selectorKey = Key('key-selector');
 
   @override
   Widget build(BuildContext context) {
@@ -42,98 +44,129 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     Widget? scanPsbtButton;
 
     if (Platform.isAndroid || Platform.isIOS) {
-      scanPsbtButton = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: ElevatedButton(
-          onPressed: !enoughSelected
-              ? null
-              : () async {
-                  WidgetsFlutterBinding.ensureInitialized();
-                  final cameras = await availableCameras();
+      scanPsbtButton = TextButton.icon(
+        onPressed: !enoughSelected
+            ? null
+            : () async {
+                WidgetsFlutterBinding.ensureInitialized();
+                final cameras = await availableCameras();
+                if (context.mounted) {
+                  final psbtBytes = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) {
+                        return PsbtCameraReader(cameras: cameras);
+                      },
+                    ),
+                  );
                   if (context.mounted) {
-                    final psbtBytes = await Navigator.push(
+                    await runPsbtSigningWorkflow(
                       context,
-                      MaterialPageRoute(
-                        builder: (context) {
-                          return PsbtCameraReader(cameras: cameras);
-                        },
-                      ),
+                      psbtBytes: psbtBytes,
+                      selectedDevices: selectedDevices.toList(),
+                      accessStructureRef: accessStructure.accessStructureRef(),
+                      wallet: widget.wallet,
                     );
-                    if (context.mounted) {
-                      await runPsbtSigningWorkflow(
-                        context,
-                        psbtBytes: psbtBytes,
-                        selectedDevices: selectedDevices.toList(),
-                        accessStructureRef: accessStructure
-                            .accessStructureRef(),
-                        wallet: widget.wallet,
-                      );
-                    }
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                    }
                   }
-                },
-          child: Text("Scan 📷"),
-        ),
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                }
+              },
+        label: Text("Scan"),
+        icon: Icon(Icons.qr_code_scanner),
       );
     } else {
       scanPsbtButton = null;
     }
 
-    final loadPsbtFileButton = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: ElevatedButton(
-        onPressed: !enoughSelected
-            ? null
-            : () async {
-                FilePickerResult? fileResult = await FilePicker.platform
-                    .pickFiles();
-                if (fileResult != null) {
-                  File file = File(fileResult.files.single.path!);
-                  Uint8List psbtBytes = await file.readAsBytes();
-                  if (context.mounted) {
-                    await runPsbtSigningWorkflow(
-                      context,
-                      wallet: widget.wallet,
-                      psbtBytes: psbtBytes,
-                      selectedDevices: selectedDevices.toList(),
-                      accessStructureRef: accessStructure.accessStructureRef(),
-                    );
-                  }
-                } else {
-                  // User canceled the file picker
+    final loadPsbtFileButton = TextButton.icon(
+      onPressed: !enoughSelected
+          ? null
+          : () async {
+              FilePickerResult? fileResult = await FilePicker.platform
+                  .pickFiles();
+              if (fileResult != null) {
+                File file = File(fileResult.files.single.path!);
+                Uint8List psbtBytes = await file.readAsBytes();
+                if (context.mounted) {
+                  await runPsbtSigningWorkflow(
+                    context,
+                    wallet: widget.wallet,
+                    psbtBytes: psbtBytes,
+                    selectedDevices: selectedDevices.toList(),
+                    accessStructureRef: accessStructure.accessStructureRef(),
+                  );
                 }
-              },
-        child: Text("Open File 📂"),
-      ),
+              } else {
+                // User canceled the file picker
+              }
+            },
+      label: Text("Open file"),
+      icon: Icon(Icons.file_open),
     );
 
-    return Scaffold(
-      appBar: FsAppBar(title: const Text('Sign PSBT')),
-      body: Padding(
-        padding: EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with:',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 20.0),
-            ),
-            SigningDeviceSelector(
-              frostKey: frostKey,
-              onChanged: (selected) {
-                setState(() {
-                  selectedDevices = selected;
-                });
-              },
-            ),
-            Text('Load a PSBT:'),
-            scanPsbtButton ?? Container(),
-            loadPsbtFileButton,
-          ],
+    final column = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      spacing: 16,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with.',
+          ),
         ),
+        SigningDeviceSelector(
+          key: selectorKey,
+          initialSet: selectedDevices,
+          frostKey: frostKey,
+          onChanged: (selected) {
+            setState(() {
+              selectedDevices = selected;
+            });
+          },
+        ),
+      ],
+    );
+
+    final scrollView = CustomScrollView(
+      physics: ClampingScrollPhysics(),
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Sign PSBT'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(child: column),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          WindowSizeContext.of(context) == WindowSizeClass.compact
+              ? Expanded(child: scrollView)
+              : scrollView,
+          Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              spacing: 8,
+              children: [
+                if (scanPsbtButton != null) scanPsbtButton,
+                loadPsbtFileButton,
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -157,7 +190,7 @@ Future<void> runPsbtSigningWorkflow(
     );
   } catch (e) {
     if (context.mounted) {
-      showErrorSnackbarTop(context, "Error loading PSBT: $e");
+      showErrorSnackbar(context, "Error loading PSBT: $e");
     }
     return;
   }
@@ -541,7 +574,7 @@ Future<bool> showBroadcastConfirmDialog(
               } catch (e) {
                 if (dialogContext.mounted) {
                   Navigator.pop(dialogContext, false);
-                  showErrorSnackbarTop(dialogContext, "Broadcast error: $e");
+                  showErrorSnackbar(dialogContext, "Broadcast error: $e");
                 }
               }
             },

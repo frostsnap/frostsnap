@@ -33,7 +33,7 @@ Color tintOnSurface(
 Future<T?> showBottomSheetOrDialog<T>(
   BuildContext context, {
   required Widget Function(BuildContext, ScrollController) builder,
-  required Widget title,
+  Widget? title,
   Color? backgroundColor,
 }) {
   final windowSize = WindowSizeContext.of(context);
@@ -121,12 +121,14 @@ class TopBarSliver extends StatelessWidget {
   final Widget? title;
   final Widget? leading;
   final bool showCloseOnCompact;
+  final bool showClose;
   final bool automaticallyImplyLeadingOnCompact;
 
   TopBarSliver({
     super.key,
     this.title,
     this.leading,
+    this.showClose = true,
     this.showCloseOnCompact = true,
     this.automaticallyImplyLeadingOnCompact = false,
   });
@@ -153,21 +155,26 @@ class TopBarSliver extends StatelessWidget {
             automaticallyImplyLeading: automaticallyImplyLeadingOnCompact,
             leading: leading,
             actionsPadding: EdgeInsets.symmetric(horizontal: 8),
-            actions: [if (showCloseOnCompact) closeButton],
+            actions: [if (showCloseOnCompact && showClose) closeButton],
           )
         : SliverPinnedHeader(
-            child: TopBar(title: title, leadingButton: leading),
+            child: TopBar(
+              title: title,
+              leadingButton: leading,
+              showClose: showClose,
+            ),
           );
   }
 }
 
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
-  static const headerPadding = EdgeInsets.fromLTRB(20, 12, 20, 16);
+  static const headerPadding = EdgeInsets.fromLTRB(16, 12, 16, 16);
   static const animationDuration = Durations.short3;
   final Widget? title;
   final Color? backgroundColor;
   final ScrollController? scrollController;
   final Widget? leadingButton;
+  final bool showClose;
 
   const TopBar({
     super.key,
@@ -175,6 +182,7 @@ class TopBar extends StatefulWidget implements PreferredSizeWidget {
     this.backgroundColor,
     this.scrollController,
     this.leadingButton,
+    this.showClose = true,
   });
 
   @override
@@ -220,7 +228,7 @@ class _TopBarState extends State<TopBar> {
               child: widget.title ?? const SizedBox.shrink(),
             ),
           ),
-          if (isDialog)
+          if (isDialog && widget.showClose)
             IconButton(
               onPressed: () => Navigator.pop(context),
               icon: Icon(Icons.close),

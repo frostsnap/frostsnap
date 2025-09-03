@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/image_converter.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
-import 'package:frostsnap/progress_indicator.dart';
 import 'package:frostsnap/src/rust/api/qr.dart';
 
 class PsbtCameraReader extends StatefulWidget {
@@ -20,7 +19,7 @@ class PsbtCameraReader extends StatefulWidget {
 class _PsbtCameraReaderState extends State<PsbtCameraReader> {
   late CameraController controller;
   late Uint8List decodedPsbt;
-  late double progress;
+  double progress = 0.0;
 
   @override
   void initState() {
@@ -74,7 +73,7 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
         })
         .catchError((Object e) {
           if (mounted) {
-            showErrorSnackbarTop(context, "Error scanning QR: $e");
+            showErrorSnackbar(context, "Error scanning QR: $e");
           }
         });
   }
@@ -87,22 +86,28 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
 
   @override
   Widget build(BuildContext context) {
-    if (!controller.value.isInitialized) {
-      return Scaffold(body: Center(child: FsProgressIndicator()));
-    }
+    final preview = controller.value.isInitialized
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(28.0),
+            child: CameraPreview(controller),
+          )
+        : AspectRatio(
+            aspectRatio: 1.5,
+            child: Center(child: CircularProgressIndicator()),
+          );
+    // if (!controller.value.isInitialized) {
+    //   return Scaffold(body: Center(child: FsProgressIndicator()));
+    // }
 
     return Scaffold(
       appBar: FsAppBar(title: const Text('Scan PSBT')),
       body: Padding(
-        padding: EdgeInsets.all(8.0),
+        padding: EdgeInsets.all(16.0),
         child: Column(
+          spacing: 12,
           children: [
-            CameraPreview(controller),
-            Padding(
-              padding: EdgeInsets.all(4.0),
-              child: LinearProgressIndicator(value: progress, minHeight: 8),
-            ),
-            SizedBox(height: 8),
+            preview,
+            LinearProgressIndicator(value: progress),
             Text("${(progress * 100).round()}%"),
           ],
         ),

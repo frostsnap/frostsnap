@@ -121,9 +121,9 @@ class WalletRecoveryPage extends StatelessWidget {
                     onWalletRecovered(accessStructureRef);
                   } catch (e) {
                     if (context.mounted) {
-                      showErrorSnackbarBottom(
+                      showErrorSnackbar(
                         context,
-                        "failed to recover wallet: $e",
+                        "Failed to recover wallet: $e",
                       );
                     }
                   }
@@ -1432,7 +1432,7 @@ class _EnterBackupViewState extends State<_EnterBackupView> {
       key: const ValueKey('EnterBackup'),
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
+      children: [
         MaterialDialogCard(
           iconData: Icons.keyboard_rounded,
           title: Text('Waiting for backup'),
@@ -1676,7 +1676,7 @@ class _CandidateReadyViewState extends State<_CandidateReadyView> {
         setState(() {
           _isEnrolling = false; // Reset on error
         });
-        showErrorSnackbarBottom(context, "Failed to recover key: $e");
+        showErrorSnackbar(context, "Failed to recover key: $e");
       }
     }
   }
@@ -1812,7 +1812,7 @@ class _CandidateReadyViewState extends State<_CandidateReadyView> {
                     }
                   } catch (e) {
                     if (mounted) {
-                      showErrorSnackbarBottom(context, e.toString());
+                      showErrorSnackbar(context, e.toString());
                     }
                   }
                 }();

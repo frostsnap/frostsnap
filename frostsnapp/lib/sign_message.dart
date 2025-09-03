@@ -123,11 +123,13 @@ class _SignMessageFormState extends State<SignMessageForm> {
 class SigningDeviceSelector extends StatefulWidget {
   final FrostKey frostKey;
   final Function(Set<DeviceId>)? onChanged;
+  final Iterable<DeviceId>? initialSet;
 
   const SigningDeviceSelector({
     super.key,
     required this.frostKey,
     this.onChanged,
+    this.initialSet,
   });
 
   @override
@@ -135,11 +137,13 @@ class SigningDeviceSelector extends StatefulWidget {
 }
 
 class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
-  Set<DeviceId> selected = deviceIdSet([]);
+  final Set<DeviceId> selected = deviceIdSet([]);
 
   @override
   void initState() {
     super.initState();
+    final initialSet = widget.initialSet;
+    if (initialSet != null) selected.addAll(initialSet);
   }
 
   @override
@@ -152,12 +156,9 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
     final accessStructure = widget.frostKey.accessStructures()[0];
     final devices = accessStructure.devices();
 
-    return ListView.builder(
-      itemCount: devices.length,
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
-      itemBuilder: (context, index) {
-        final id = devices[index];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: devices.map((id) {
         final name = coord.getDeviceName(id: id);
         onChanged(bool? value) {
           setState(() {
@@ -171,17 +172,15 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
         }
 
         final enoughNonces = coord.noncesAvailable(id: id) >= 1;
-        return Padding(
-          padding: EdgeInsets.all(5),
-          child: CheckboxListTile(
-            title: Text(
-              "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
-            ),
-            value: selected.contains(id),
-            onChanged: enoughNonces ? onChanged : null,
+        return CheckboxListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          title: Text(
+            "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
           ),
+          value: selected.contains(id),
+          onChanged: enoughNonces ? onChanged : null,
         );
-      },
+      }).toList(),
     );
   }
 }
