@@ -23,6 +23,7 @@ pub mod partitions;
 pub mod root_widget;
 pub mod stack_guard;
 pub mod touch_calibration;
+pub mod touch_handler;
 pub mod ui;
 pub mod widget_tree;
 
