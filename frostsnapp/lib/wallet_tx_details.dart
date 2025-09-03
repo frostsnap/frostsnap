@@ -320,7 +320,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     txStateSub = widget.txStates.listen(onTxStateData);
 
     actionDialogController = FullscreenActionDialogController(
-      title: 'Sign transaction with device',
+      title: 'Sign transaction with connected device(s)',
       actionButtons: [
         Builder(
           builder: (context) => OutlinedButton(
@@ -330,7 +330,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         ),
         DeviceActionHint(),
       ],
-      onDismissed: _onCancelSigning,
+      onDismissed: () {},
     );
 
     if (widget.isSigning) {

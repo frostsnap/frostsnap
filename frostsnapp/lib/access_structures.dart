@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/restoration.dart';
-import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/wallet_add.dart';
 
 class AccessStructureListWidget extends StatelessWidget {
   final List<AccessStructure> accessStructures;
@@ -62,12 +61,10 @@ class AccessStructureWidget extends StatelessWidget {
                 ),
               ),
               IconButton.filledTonal(
-                onPressed: () async {
-                  await startAddKeyToAcessStructureDialog(
-                    context,
-                    accessStructure.accessStructureRef(),
-                  );
-                },
+                onPressed: () => WalletAddColumn.showAddKeyDialog(
+                  context,
+                  accessStructure.accessStructureRef(),
+                ),
                 icon: const Icon(Icons.add),
               ),
             ],
@@ -101,16 +98,4 @@ class AccessStructureSummary extends StatelessWidget {
     final nText = n < t ? "?" : n.toString();
     return Text("$t-of-$nText", style: Theme.of(context).textTheme.titleSmall!);
   }
-}
-
-Future<RestorationId?> startAddKeyToAcessStructureDialog(
-  BuildContext context,
-  AccessStructureRef accessStructureRef,
-) async {
-  final restorationId = await showDialog(
-    context: context,
-    builder: (context) => WalletRecoveryFlow(existing: accessStructureRef),
-  );
-  coord.cancelProtocol();
-  return restorationId;
 }
