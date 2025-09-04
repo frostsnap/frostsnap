@@ -14,6 +14,7 @@ import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:glowy_borders/glowy_borders.dart';
@@ -413,7 +414,7 @@ class WalletCreateController extends ChangeNotifier {
       // Normal progression
       nextStep = WalletCreateStep.values.elementAtOrNull(_step.index + 1);
     }
-    
+
     if (nextStep != null) {
       _step = nextStep;
       notifyListeners();
@@ -432,7 +433,7 @@ class WalletCreateController extends ChangeNotifier {
 
   void back(context) {
     if (!_handleBack(context)) return;
-    
+
     // Handle back navigation, skipping nonce step if it was skipped forward
     WalletCreateStep? prevStep;
     if (_step == WalletCreateStep.deviceNames) {
@@ -449,7 +450,7 @@ class WalletCreateController extends ChangeNotifier {
       final prevIndex = _step.index - 1;
       prevStep = WalletCreateStep.values.elementAtOrNull(prevIndex);
     }
-    
+
     if (prevStep != null) {
       _step = prevStep;
       notifyListeners();
@@ -880,7 +881,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   Widget buildNonceReplenish(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     // Use the pre-initialized stream
     final stream = _controller._nonceStream;
     if (stream == null) {
@@ -907,86 +908,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       );
     }
 
-    // Nonces needed - show progress
-    return StreamBuilder<NonceReplenishState>(
-      stream: stream,
-      builder: (context, snapshot) {
-        final state = snapshot.data;
-        
-        Widget content;
-        if (state == null) {
-          content = Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 24),
-              Text('Connecting...', style: theme.textTheme.bodyLarge),
-            ],
-          );
-        } else {
-          final progress = state.receivedFrom.length;
-          final total = state.devices.length;
-          final isComplete = progress == total;
-
-          // Auto-advance when complete
-          if (isComplete && !_controller._hasAutoAdvanced) {
+    // Use the minimal widget from nonce_replenish.dart
+    return SliverToBoxAdapter(
+      child: MinimalNonceReplenishWidget(
+        stream: stream,
+        autoAdvance: true,
+        onComplete: () {
+          if (mounted && !_controller._hasAutoAdvanced) {
             _controller._hasAutoAdvanced = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _controller.next(context);
-              }
-            });
+            _controller.next(context);
           }
-
-          content = Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Preparing devices',
-                style: theme.textTheme.headlineMedium,
-              ),
-              SizedBox(height: 32),
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    height: 120,
-                    child: CircularProgressIndicator(
-                      value: total > 0 ? progress / total : null,
-                      strokeWidth: 8,
-                      backgroundColor: theme.colorScheme.surfaceVariant,
-                    ),
-                  ),
-                  Text(
-                    '$progress of $total',
-                    style: theme.textTheme.headlineSmall,
-                  ),
-                ],
-              ),
-              SizedBox(height: 16),
-              Text(
-                isComplete ? 'Complete!' : 'Please wait...',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: isComplete 
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          );
-        }
-        
-        return SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: content,
-            ),
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 

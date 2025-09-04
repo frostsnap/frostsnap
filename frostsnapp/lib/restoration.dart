@@ -18,7 +18,6 @@ import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_add.dart';
-import 'package:frostsnap/wallet_create.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
   final RestoringKey restoringKey;
@@ -120,8 +119,9 @@ class WalletRecoveryPage extends StatelessWidget {
                         .map((share) => share.deviceId)
                         .toList();
 
-                    final nonceRequest = await coord
-                        .createNonceRequest(devices: devices);
+                    final nonceRequest = await coord.createNonceRequest(
+                      devices: devices,
+                    );
 
                     if (nonceRequest.someNoncesRequested()) {
                       await MaybeFullscreenDialog.show<bool>(
