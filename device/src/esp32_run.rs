@@ -271,9 +271,6 @@ where
                             .expect("failed to write magic bytes");
                         upstream_connection.send_announcement(DeviceSendBody::Announce {
                             firmware_digest: active_firmware_digest,
-                            genuine_cert: factory_data
-                                .clone()
-                                .map(|factory_data| Box::new(factory_data.certificate())),
                         });
                         upstream_connection.send_to_coordinator([match &name {
                             Some(name) => DeviceSendBody::SetName { name: name.into() },
@@ -459,10 +456,12 @@ where
                                     challenge.as_ref(),
                                     &mut sha256,
                                 );
+
                                 let signature = ds::words_to_bytes(&signature);
                                 upstream_connection.send_to_coordinator([
                                     DeviceSendBody::SignedChallenge {
                                         signature: Box::new(signature),
+                                        certificate: Box::new(factory_data.certificate()),
                                     },
                                 ]);
                             }
