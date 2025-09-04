@@ -425,9 +425,10 @@ mod test {
     #[test]
     pub fn bip32_derivation_matches_rust_bitcoin() {
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<sha2::Sha256>();
-        let (certified_keygen, _) = certpedpop::simulate_keygen(
+        let cert_scheme = certpedpop::vrf_cert::VrfCertScheme::<sha2::Sha256>::new("chilldkg-vrf");
+        let output = certpedpop::simulate_keygen(
             &schnorr,
-            &schnorr,
+            cert_scheme,
             3,
             5,
             5,
@@ -438,7 +439,12 @@ mod test {
             &mut rand::thread_rng(),
         );
 
-        let frost_key = certified_keygen.inner().shared_key().non_zero().unwrap();
+        let frost_key = output
+            .certified_keygen
+            .agg_input()
+            .shared_key()
+            .non_zero()
+            .unwrap();
         let root_xpub = Xpub::from_rootkey(frost_key);
         let secp = Secp256k1::verification_only();
         let xpub = bitcoin::bip32::Xpub {

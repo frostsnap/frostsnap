@@ -11,8 +11,8 @@ members = [
 resolver = "2"
 
 [patch.crates-io]
-schnorr_fun = { git = "https://github.com/nickfarrow/secp256kfun", rev = "ce353796b6a1aba8a5caec5c36f84e47c6827f9f" }
-secp256kfun = { git = "https://github.com/nickfarrow/secp256kfun", rev = "ce353796b6a1aba8a5caec5c36f84e47c6827f9f" }
+schnorr_fun = { git = "https://github.com/llfourn/secp256kfun", rev = "09ce7df473e17f8993977f2158b5c8265cd1a33d" }
+secp256kfun = { git = "https://github.com/llfourn/secp256kfun", rev = "09ce7df473e17f8993977f2158b5c8265cd1a33d" }
 
 
 [workspace.dependencies]

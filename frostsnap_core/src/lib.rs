@@ -294,9 +294,9 @@ pub struct SessionHash(pub [u8; 32]);
 
 impl SessionHash {
     pub fn from_certified_keygen(
-        certified_keygen: &certpedpop::CertifiedKeygen<certpedpop::vrf_cert::VrfCertifier>,
+        certified_keygen: &certpedpop::CertifiedKeygen<certpedpop::vrf_cert::CertVrfProof>,
     ) -> Self {
-        Self(certified_keygen.compute_randomness_beacon())
+        Self(certified_keygen.compute_randomness_beacon(sha2::Sha256::default()))
     }
 }
 

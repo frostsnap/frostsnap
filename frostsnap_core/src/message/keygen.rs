@@ -9,7 +9,7 @@ pub enum Keygen {
     },
     Check {
         keygen_id: KeygenId,
-        certificate: certpedpop::Certificate<vrf_fun::VrfProof>,
+        certified_keygen: certpedpop::CertifiedKeygen<certpedpop::vrf_cert::CertVrfProof>,
     },
     /// Actually save key to device.
     Finalize {

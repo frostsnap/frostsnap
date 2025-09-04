@@ -126,7 +126,7 @@ pub enum DeviceToCoordinatorMessage {
     KeyGenResponse(KeyGenResponse),
     KeyGenProof {
         keygen_id: KeygenId,
-        vrf_proof: vrf_fun::VrfProof,
+        vrf_proof: certpedpop::vrf_cert::CertVrfProof,
     },
     KeyGenAck(KeyGenAck),
     // KeyGenFinalized,
