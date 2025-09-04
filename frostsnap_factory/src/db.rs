@@ -1,3 +1,4 @@
+use frostsnap_comms::Sha256Digest;
 use mysql::prelude::*;
 use mysql::{Pool, PooledConn};
 use std::time::SystemTime;
@@ -19,6 +20,8 @@ impl Database {
                 factory_completed_at BIGINT NOT NULL,
                 case_color VARCHAR(50) NOT NULL,
                 serial_number VARCHAR(255) UNIQUE NOT NULL,
+                board_revision VARCHAR(50) NOT NULL,
+                firmware_hash VARCHAR(64),
                 genuine_verified BOOLEAN DEFAULT FALSE,
                 status ENUM('factory_complete', 'genuine_verified', 'failed'),
                 failure_reason TEXT,
@@ -51,34 +54,37 @@ impl Database {
         serial_number: &str,
         color: &str,
         operator: &str,
+        board_revision: &str,
         batch_note: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let timestamp = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-
         let mut conn = self.get_conn()?;
         conn.exec_drop(
-            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, batch_note) 
-             VALUES (?, ?, ?, ?, 'factory_complete', ?)",
-            (serial_number, color, operator, timestamp, batch_note),
+            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, board_revision, batch_note) 
+             VALUES (?, ?, ?, ?, 'factory_complete', ?, ?)",
+            (serial_number, color, operator, timestamp, board_revision, batch_note),
         )?;
-
         Ok(())
     }
 
-    /// Mark a device as genuine verified - can happen multiple times
     pub fn mark_genuine_verified(
         &self,
         serial_number: &str,
+        firmware_digest: Sha256Digest,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut conn = self.get_conn()?;
-        conn.exec_drop(
-            "UPDATE devices SET genuine_verified = TRUE, status = 'genuine_verified' 
+        let result = conn.exec_iter(
+            "UPDATE devices SET firmware_hash = ?, genuine_verified = TRUE, status = 'genuine_verified' 
              WHERE serial_number = ?",
-            (serial_number,),
+            (firmware_digest.to_string(), serial_number),
         )?;
+
+        if result.affected_rows() == 0 {
+            return Err(format!("Serial number {} not found in database", serial_number).into());
+        }
 
         Ok(())
     }
@@ -89,6 +95,7 @@ impl Database {
         serial_number: &str,
         color: &str,
         operator: &str,
+        board_revision: &str,
         reason: &str,
         batch_note: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -101,9 +108,9 @@ impl Database {
 
         // Try insert first, then update if it fails due to constraint
         match conn.exec_drop(
-            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, failure_reason, batch_note) 
-             VALUES (?, ?, ?, ?, 'failed', ?, ?)",
-            (serial_number, color, operator, timestamp, reason, batch_note),
+            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, board_revision, failure_reason, batch_note) 
+             VALUES (?, ?, ?, ?, 'failed', ?, ?, ?)",
+            (serial_number, color, operator, timestamp, board_revision, reason, batch_note),
         ) {
             Ok(_) => Ok(()),
             Err(_) => {

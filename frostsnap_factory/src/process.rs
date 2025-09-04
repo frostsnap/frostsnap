@@ -2,7 +2,7 @@ use frostsnap_comms::factory::{DeviceFactorySend, FactoryDownstream, FactorySend
 use frostsnap_comms::genuine_certificate::CertificateVerifier;
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, DeviceSendBody, Direction, Downstream,
-    ReceiveSerial, MAGIC_BYTES_PERIOD,
+    ReceiveSerial, Sha256Digest, MAGIC_BYTES_PERIOD,
 };
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun;
@@ -29,7 +29,7 @@ enum FactoryResult {
     Continue,
     SwitchToMain,
     FactoryComplete(String),
-    GenuineComplete(String),
+    GenuineComplete(String, Sha256Digest), // serial number, firmware_digest,
     FinishedAndDisconnected,
     Failed(Option<String>, String), // serial number (if known), reason
 }
@@ -69,11 +69,11 @@ enum ConnectionState {
     },
     WaitingForAnnounce,
     ProcessingGenuineCheck {
-        // serial: String,
-        // ds_public_key: RsaPublicKey,
+        firmware_digest: Sha256Digest,
         challenge: Box<[u8; 32]>,
     },
     GenuineVerified {
+        firmware_digest: Sha256Digest,
         serial: String,
     },
     // Fully finished
@@ -175,9 +175,10 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                         port_id
                     );
                 }
-                FactoryResult::GenuineComplete(serial) => {
+                FactoryResult::GenuineComplete(serial, firmware_digest) => {
                     println!("Device {serial} passed genuine verification!");
-                    if let Err(e) = factory_state.record_genuine_verified(&serial) {
+                    if let Err(e) = factory_state.record_genuine_verified(&serial, firmware_digest)
+                    {
                         error!(
                             "Failed to record genuine verification for {}: {}",
                             serial, e
@@ -411,7 +412,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
         ConnectionState::WaitingForAnnounce => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::Announce { .. }) = msg.body.decode() {
+                    if let Ok(DeviceSendBody::Announce { firmware_digest }) = msg.body.decode() {
                         // first, reply with announce ack
                         connection.port.queue_send(
                             CoordinatorSendMessage::to(msg.from, CoordinatorSendBody::AnnounceAck)
@@ -429,6 +430,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                             .into(),
                         );
                         connection.state = ConnectionState::ProcessingGenuineCheck {
+                            firmware_digest,
                             challenge: Box::new(challenge),
                         };
                     }
@@ -442,7 +444,10 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
             }
             FactoryResult::Continue
         }
-        ConnectionState::ProcessingGenuineCheck { challenge } => {
+        ConnectionState::ProcessingGenuineCheck {
+            challenge,
+            firmware_digest,
+        } => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(msg))) => {
                     if let Ok(DeviceSendBody::SignedChallenge {
@@ -481,6 +486,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                         match ds_public_key.verify(padding, &message_digest, signature.as_ref()) {
                             Ok(_) => {
                                 connection.state = ConnectionState::GenuineVerified {
+                                    firmware_digest: *firmware_digest,
                                     serial: serial.to_string(),
                                 };
                             }
@@ -500,11 +506,15 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
             }
             FactoryResult::Continue
         }
-        ConnectionState::GenuineVerified { serial } => {
+        ConnectionState::GenuineVerified {
+            serial,
+            firmware_digest,
+        } => {
             let serial = serial.clone();
+            let firmware_digest = *firmware_digest;
             connection.state = ConnectionState::AwaitingDisconnection;
 
-            FactoryResult::GenuineComplete(serial)
+            FactoryResult::GenuineComplete(serial, firmware_digest)
         }
         ConnectionState::AwaitingDisconnection => {
             if connection.port.try_read_message().is_ok() {
