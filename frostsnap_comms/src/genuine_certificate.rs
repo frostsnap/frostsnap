@@ -29,7 +29,8 @@ pub enum CertificateBody {
 impl CertificateBody {
     pub fn serial_number(&self) -> String {
         match &self {
-            CertificateBody::Frontier { serial, .. } => format!("FS-F{}", serial),
+            // TODO maybe put revision number
+            CertificateBody::Frontier { serial, .. } => format!("FS-F-{}", serial),
         }
     }
 
@@ -72,6 +73,15 @@ pub enum CaseColor {
     Silver,
     Blue,
     Red,
+    Unused0,
+    Unused1,
+    Unused2,
+    Unused3,
+    Unused4,
+    Unused5,
+    Unused6,
+    Unused8,
+    Unused9,
 }
 
 impl core::fmt::Display for CaseColor {
@@ -82,6 +92,7 @@ impl core::fmt::Display for CaseColor {
             CaseColor::Silver => "Silver",
             CaseColor::Blue => "Blue",
             CaseColor::Red => "Red",
+            _ => "Black",
         };
         write!(f, "{}", s)
     }
@@ -105,25 +116,7 @@ impl core::str::FromStr for CaseColor {
 pub struct CertificateVerifier;
 
 impl CertificateVerifier {
-    pub fn verify(certificate: &Certificate, factory_key: Point<EvenY>) -> Option<CertificateBody> {
-        match &certificate.factory_signature {
-            frostsnap_core::Versioned::V0(factory_signature) => {
-                if factory_key != factory_signature.factory_key {
-                    // TODO: return error of UnknownFactoryKey
-                    return None;
-                }
-
-                let certificate_bytes =
-                    bincode::encode_to_vec(&certificate.body, CERTIFICATE_BINCODE_CONFIG).unwrap();
-                let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
-                let schnorr = Schnorr::<Sha256>::verify_only();
-                schnorr
-                    .verify(&factory_key, message, &factory_signature.signature)
-                    .then_some(certificate.body.clone())
-            }
-        }
-    }
-
+    /// Sign a new genuine certificate using the factory keypair
     pub fn sign<NG: NonceGen>(
         schnorr: Schnorr<Sha256, NG>,
         // RSA der bytes
@@ -153,6 +146,26 @@ impl CertificateVerifier {
         Certificate {
             body: certificate_body,
             factory_signature: Versioned::V0(factory_signature),
+        }
+    }
+
+    /// Verify a genuine certificate before accessing the contents
+    pub fn verify(certificate: &Certificate, factory_key: Point<EvenY>) -> Option<CertificateBody> {
+        match &certificate.factory_signature {
+            frostsnap_core::Versioned::V0(factory_signature) => {
+                if factory_key != factory_signature.factory_key {
+                    // TODO: return error of UnknownFactoryKey
+                    return None;
+                }
+
+                let certificate_bytes =
+                    bincode::encode_to_vec(&certificate.body, CERTIFICATE_BINCODE_CONFIG).unwrap();
+                let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
+                let schnorr = Schnorr::<Sha256>::verify_only();
+                schnorr
+                    .verify(&factory_key, message, &factory_signature.signature)
+                    .then_some(certificate.body.clone())
+            }
         }
     }
 }
@@ -186,8 +199,8 @@ mod test {
             schnorr,
             ds_public_key.to_pkcs1_der().unwrap().to_vec(),
             CaseColor::Orange,
-            "2-7".to_string(),
-            "42424242".to_string(),
+            "2.7-1625".to_string(), // BOARD_REVISION
+            "220825002".to_string(),
             1971,
             factory_keypair,
         );
@@ -195,6 +208,6 @@ mod test {
         let verified_cert =
             CertificateVerifier::verify(&certificate, factory_keypair.public_key()).unwrap();
 
-        std::dbg!("Serial number looks like {}", verified_cert.serial_number());
+        std::dbg!(verified_cert.serial_number());
     }
 }
