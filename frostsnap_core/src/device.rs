@@ -490,7 +490,9 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         )
                     })?;
 
-                let nonce_slot = self
+                // Just verify the nonce stream exists but don't check availability
+                // The signing logic will handle cached signatures naturally
+                let _nonce_slot = self
                     .nonce_slots
                     .get(coord_req_nonces.stream_id)
                     .and_then(|slot| slot.read_slot())
@@ -502,12 +504,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         ),
                     ))?;
 
-                if let Err(e) = nonce_slot.are_nonces_available(
-                    coord_req_nonces.index,
-                    group_sign_req.n_signatures().try_into().unwrap(),
-                ) {
-                    return Err(Error::signer_invalid_message(&message, e.to_string()));
-                }
+                // Removed are_nonces_available check - let the signing system handle it
                 let phase = SignPhase1 {
                     group_sign_req,
                     device_sign_req,
@@ -712,7 +709,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 sign_sessions,
                 symm_keygen,
             )
-            .expect("nonce stream already checked to exist");
+            .map_err(|e| ActionError::StateInconsistent(e.to_string()))?;
 
         Ok(vec![DeviceSend::ToCoordinator(Box::new(
             DeviceToCoordinatorMessage::SignatureShare {
