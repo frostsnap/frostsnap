@@ -14,10 +14,10 @@ members = [
 resolver = "2"
 
 [patch.crates-io]
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "2c0f94a906f11d6ee5b9fc977b52e05bd47683f9" }
-secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "2c0f94a906f11d6ee5b9fc977b52e05bd47683f9" }
-sigma_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "2c0f94a906f11d6ee5b9fc977b52e05bd47683f9" }
-vrf_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "2c0f94a906f11d6ee5b9fc977b52e05bd47683f9" }
+schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "c878f20076fb2cf8ef3dbf45af263f4a93467ada" }
+secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "c878f20076fb2cf8ef3dbf45af263f4a93467ada" }
+sigma_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "c878f20076fb2cf8ef3dbf45af263f4a93467ada" }
+vrf_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "c878f20076fb2cf8ef3dbf45af263f4a93467ada" }
 
 
 [workspace.dependencies]

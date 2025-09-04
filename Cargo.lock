@@ -2951,7 +2951,7 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 [[package]]
 name = "schnorr_fun"
 version = "0.11.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=2c0f94a906f11d6ee5b9fc977b52e05bd47683f9#2c0f94a906f11d6ee5b9fc977b52e05bd47683f9"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=c878f20076fb2cf8ef3dbf45af263f4a93467ada#c878f20076fb2cf8ef3dbf45af263f4a93467ada"
 dependencies = [
  "bech32",
  "bincode",
@@ -3065,7 +3065,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun"
 version = "0.11.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=2c0f94a906f11d6ee5b9fc977b52e05bd47683f9#2c0f94a906f11d6ee5b9fc977b52e05bd47683f9"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=c878f20076fb2cf8ef3dbf45af263f4a93467ada#c878f20076fb2cf8ef3dbf45af263f4a93467ada"
 dependencies = [
  "bincode",
  "digest 0.10.7",
@@ -3083,7 +3083,7 @@ dependencies = [
 [[package]]
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=2c0f94a906f11d6ee5b9fc977b52e05bd47683f9#2c0f94a906f11d6ee5b9fc977b52e05bd47683f9"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=c878f20076fb2cf8ef3dbf45af263f4a93467ada#c878f20076fb2cf8ef3dbf45af263f4a93467ada"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3183,7 +3183,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "sigma_fun"
 version = "0.8.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=2c0f94a906f11d6ee5b9fc977b52e05bd47683f9#2c0f94a906f11d6ee5b9fc977b52e05bd47683f9"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=c878f20076fb2cf8ef3dbf45af263f4a93467ada#c878f20076fb2cf8ef3dbf45af263f4a93467ada"
 dependencies = [
  "bincode",
  "curve25519-dalek-ng",
@@ -3713,7 +3713,7 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 [[package]]
 name = "vrf_fun"
 version = "0.11.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=2c0f94a906f11d6ee5b9fc977b52e05bd47683f9#2c0f94a906f11d6ee5b9fc977b52e05bd47683f9"
+source = "git+https://github.com/LLFourn/secp256kfun?rev=c878f20076fb2cf8ef3dbf45af263f4a93467ada#c878f20076fb2cf8ef3dbf45af263f4a93467ada"
 dependencies = [
  "bincode",
  "generic-array 0.14.7",
