@@ -38,9 +38,6 @@ pub const MAGIC_BYTES_PERIOD: u64 = 100;
 
 pub const FIRMWARE_UPGRADE_CHUNK_LEN: u32 = 4096;
 
-/// This value comes from partitions.csv
-pub const FIRMWARE_IMAGE_SIZE: u32 = 0x1af_000;
-
 pub const FIRMWARE_NEXT_CHUNK_READY_SIGNAL: u8 = 0x11;
 
 /// Max memory we should use when deocding a message
