@@ -4,7 +4,6 @@ use alloc::boxed::Box;
 use core::cell::RefCell;
 use esp_storage::FlashStorage;
 use rand_chacha::ChaCha20Rng;
-use rand_core::{RngCore, SeedableRng};
 
 use crate::{
     ds::HardwareRsa,
@@ -131,115 +130,15 @@ impl<'a> Resources<'a> {
     /// Initialize resources for development device
     /// Factory data is optional for dev devices
     pub fn init_dev(
-        mut peripherals: Box<DevicePeripherals<'a>>,
+        peripherals: Box<DevicePeripherals<'a>>,
         flash: &'a RefCell<FlashStorage>,
     ) -> Box<Self> {
         let (partitions, factory_data) = Self::read_flash_data(flash);
 
-        // Move hmac out first since we'll need it either way
-        let hmac = peripherals.hmac.clone();
-
-        // Check if device needs provisioning and handle inline
-        let (rng, hmac_keys) = if !EfuseHmacKeys::has_been_initialized() {
-            // Dev provisioning with warning - inline to avoid lifetime issues
-            use embedded_graphics::{
-                mono_font::{ascii::FONT_10X20, MonoTextStyle},
-                pixelcolor::Rgb565,
-                prelude::*,
-                primitives::Rectangle,
-            };
-            use embedded_text::{
-                alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox,
-            };
-            use esp_hal::{time::Duration, timer::Timer};
-
-            // Warning countdown before burning efuses
-            const COUNTDOWN_SECONDS: u32 = 30;
-            for seconds_remaining in (1..=COUNTDOWN_SECONDS).rev() {
-                let _ = peripherals.display.clear(Rgb565::BLACK);
-                let text = alloc::format!(
-                    "WARNING\n\nDev-Device Initialization\nAbout to burn eFuses!\n\n{} seconds remaining...\n\nUnplug now to cancel!",
-                    seconds_remaining
-                );
-
-                let _ = TextBox::with_textbox_style(
-                    &text,
-                    Rectangle::new(Point::new(0, 20), peripherals.display.size()),
-                    MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-                    TextBoxStyleBuilder::new()
-                        .alignment(HorizontalAlignment::Center)
-                        .build(),
-                )
-                .draw(&mut peripherals.display);
-
-                // Wait 1 second
-                let start = peripherals.timer.now();
-                while peripherals
-                    .timer
-                    .now()
-                    .checked_duration_since(start)
-                    .unwrap()
-                    < Duration::millis(1000)
-                {}
-            }
-
-            // Show provisioning message
-            let _ = peripherals.display.clear(Rgb565::BLACK);
-            let _ = TextBox::with_textbox_style(
-                "Dev mode: generating keys locally",
-                Rectangle::new(Point::new(0, 20), peripherals.display.size()),
-                MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-                TextBoxStyleBuilder::new()
-                    .alignment(HorizontalAlignment::Center)
-                    .build(),
-            )
-            .draw(&mut peripherals.display);
-
-            // Generate entropy for dev device
-            let mut dev_entropy = [0u8; 32];
-            peripherals.initial_rng.fill_bytes(&mut dev_entropy);
-            let mut dev_rng = ChaCha20Rng::from_seed(dev_entropy);
-
-            // Generate share encryption key
-            let mut share_encryption_key = [0u8; 32];
-            dev_rng.fill_bytes(&mut share_encryption_key);
-
-            // Generate DS HMAC key (not used for attestation on dev devices)
-            let mut ds_hmac_key = [0u8; 32];
-            dev_rng.fill_bytes(&mut ds_hmac_key);
-
-            // Initialize efuses WITHOUT read protection (for dev devices)
-            let read_protect = false;
-
-            // Generate fixed entropy key
-            let mut fixed_entropy_key = [0u8; 32];
-            dev_rng.fill_bytes(&mut fixed_entropy_key);
-
-            let mut hmac_keys = EfuseHmacKeys::init_with_keys(
-                &peripherals.efuse,
-                hmac.clone(),
-                read_protect,
-                share_encryption_key,
-                fixed_entropy_key,
-                ds_hmac_key,
-            )
-            .expect("Failed to initialize HMAC keys");
-
-            // Mix in device entropy to create final RNG
-            let final_rng: ChaCha20Rng = hmac_keys
-                .fixed_entropy
-                .mix_in_rng(&mut peripherals.initial_rng);
-
-            (final_rng, hmac_keys)
-        } else {
-            // Device already provisioned, load existing keys
-            let mut hmac_keys =
-                EfuseHmacKeys::load(hmac.clone()).expect("Failed to load HMAC keys from efuses");
-            let rng: ChaCha20Rng = hmac_keys
-                .fixed_entropy
-                .mix_in_rng(&mut peripherals.initial_rng);
-            (rng, hmac_keys)
-        };
+        // Dev devices must be provisioned before reaching this point
+        if !EfuseHmacKeys::has_been_initialized() {
+            panic!("Dev device must be provisioned before initialization!");
+        }
 
         // Destructure peripherals to take what we need
         let DevicePeripherals {
@@ -249,13 +148,21 @@ impl<'a> Resources<'a> {
             capsense,
             sha256,
             ds,
+            hmac,
             uart_upstream,
             uart_downstream,
             jtag,
             upstream_detect,
             downstream_detect,
+            mut initial_rng,
             ..
         } = *peripherals;
+
+        // Load existing keys using the moved hmac
+        let mut hmac_keys =
+            EfuseHmacKeys::load(hmac.clone()).expect("Failed to load HMAC keys from efuses");
+        let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
+
 
         // Create UI with display and capsense (using ui_timer)
         let ui = FrostyUi::new(display, capsense, ui_timer);

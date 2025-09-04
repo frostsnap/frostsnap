@@ -131,6 +131,11 @@ fn extract_entropy(
 }
 
 impl<'a> DevicePeripherals<'a> {
+    /// Check if the device needs factory provisioning
+    pub fn needs_factory_provisioning(&self) -> bool {
+        !crate::efuse::EfuseHmacKeys::has_been_initialized()
+    }
+
     /// Initialize all device peripherals including initial RNG
     pub fn init(peripherals: &'a mut Peripherals) -> Box<Self> {
         // Enable stack guard if feature is enabled
