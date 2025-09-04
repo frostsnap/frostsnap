@@ -1,4 +1,6 @@
 // use core::num::NonZeroU8;
+use alloc::rc::Rc;
+use core::cell::RefCell;
 use esp_hal::efuse::{self as hal_efuse, Efuse};
 use esp_hal::peripherals::EFUSE;
 use frostsnap_core::AccessStructureRef;
@@ -14,13 +16,17 @@ const WR_DIS_KP_OFFSET: u8 = 8;
 const READ_COMMAND: u16 = 0x5AA5;
 const WRITE_COMMAND: u16 = 0x5A5A;
 
-pub struct EfuseController {
-    pub efuse: EFUSE,
+use esp_hal::peripheral::{Peripheral, PeripheralRef};
+
+pub struct EfuseController<'a> {
+    pub efuse: PeripheralRef<'a, EFUSE>,
 }
 
-impl EfuseController {
-    pub fn new(efuse: EFUSE) -> Self {
-        Self { efuse }
+impl<'a> EfuseController<'a> {
+    pub fn new(efuse: impl Peripheral<P = EFUSE> + 'a) -> Self {
+        Self {
+            efuse: efuse.into_ref(),
+        }
     }
 
     /// All key purposes must be written at the same time because efuse Block 0
@@ -112,7 +118,7 @@ impl EfuseController {
 
     /// # Safety
     unsafe fn write_block(&self, data: &[u8; 32], block_number: u8) -> Result<(), EfuseError> {
-        let efuse = &self.efuse;
+        let efuse = &*self.efuse;
         let mut to_burn: [u32; 11] = [0; 11];
 
         if block_number == 0 {
@@ -239,7 +245,7 @@ impl<'a> EfuseHmacKeys<'a> {
 
     pub fn init_with_keys(
         efuse: &EfuseController,
-        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
+        hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
         read_protect: bool,
         share_encryption_key: [u8; 32],
         fixed_entropy_key: [u8; 32],
@@ -272,16 +278,14 @@ impl<'a> EfuseHmacKeys<'a> {
             efuse.write_key_purposes(&key_configs)?;
         }
         Ok(EfuseHmacKeys {
-            share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
+            share_encryption: EfuseHmacKey::new(hmac.clone(), Self::ENCRYPTION_KEYID),
             fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
         })
     }
 
     /// Load existing HMAC keys from eFuse memory
     /// Keys must have been previously initialized
-    pub fn load(
-        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
-    ) -> Result<Self, EfuseError> {
+    pub fn load(hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>) -> Result<Self, EfuseError> {
         // Verify keys have been initialized
         if !Self::has_been_initialized() {
             return Err(EfuseError::EfuseReadError);
@@ -289,7 +293,7 @@ impl<'a> EfuseHmacKeys<'a> {
 
         // Create and return the key handles
         Ok(EfuseHmacKeys {
-            share_encryption: EfuseHmacKey::new(hmac, Self::ENCRYPTION_KEYID),
+            share_encryption: EfuseHmacKey::new(hmac.clone(), Self::ENCRYPTION_KEYID),
             fixed_entropy: EfuseHmacKey::new(hmac, Self::FIXED_ENTROPY_KEYID),
         })
     }
@@ -337,13 +341,13 @@ pub enum EfuseError {
 }
 
 pub struct EfuseHmacKey<'a> {
-    hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
+    hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
     hmac_key_id: esp_hal::hmac::KeyId,
 }
 
 impl<'a> EfuseHmacKey<'a> {
     pub fn new(
-        hmac: &'a core::cell::RefCell<esp_hal::hmac::Hmac<'a>>,
+        hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
         hmac_key_id: esp_hal::hmac::KeyId,
     ) -> Self {
         Self { hmac, hmac_key_id }
@@ -378,7 +382,7 @@ impl<'a> EfuseHmacKey<'a> {
         Ok(output)
     }
 
-    pub fn mix_in_rng(&mut self, rng: &mut impl RngCore) -> impl RngCore {
+    pub fn mix_in_rng(&mut self, rng: &mut impl RngCore) -> rand_chacha::ChaCha20Rng {
         let mut entropy = [0u8; 64];
         rng.fill_bytes(&mut entropy);
         let chacha_seed = self.hash("mix-in-rng", &entropy).expect("entropy hash");

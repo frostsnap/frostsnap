@@ -5,12 +5,12 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-default = ["v2", "stack_guard"]
-v2 = ["dep:display-interface-spi", "dep:mipidsi"]
+default = ["stack_guard"]
 mem_debug = []
-genuine_device = []
 # turns on the esp32c3 hardware stack guard
 stack_guard = []
+# FIXME: remove this feature when v2.rs is deleted (only used in legacy factory code)
+genuine_device = []
 
 [dependencies]
 frostsnap_core = { workspace = true }
@@ -28,9 +28,9 @@ embedded-storage.workspace = true
 esp-storage = { version = "0.4.0", features = ["esp32c3", "nor-flash", "bytewise-read"] }
 esp-partition-table = "0.1"
 bincode = { workspace = true }
-display-interface = { version = "0.5.0", optional = true }
-display-interface-spi = { version = "0.5.0", optional = true }
-mipidsi = { version = "0.8.0", features = ["batch"], optional = true }
+display-interface = { version = "0.5.0" }
+display-interface-spi = { version = "0.5.0" }
+mipidsi = { version = "0.8.0", features = ["batch"] }
 embedded-graphics = "0.8.1"
 embedded-text = "0.7.0"
 u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
@@ -44,5 +44,9 @@ micromath = "*"
 reed-solomon = "0.2.1"
 
 [[bin]]
-name = "v2"
-required-features = ["v2"]
+name = "dev"
+path = "src/bin/dev.rs"
+
+[[bin]]
+name = "frontier"
+path = "src/bin/frontier.rs"

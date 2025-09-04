@@ -1,5 +1,6 @@
 use crate::factory::screen_test;
 use crate::flash::FactoryData;
+use alloc::rc::Rc;
 use core::cell::RefCell;
 use cst816s::CST816S;
 use embedded_graphics::{
@@ -63,7 +64,7 @@ pub fn run_factory<'a, S, I2C, PINT, RST, T>(
     display: &mut S,
     capsense: &mut CST816S<I2C, PINT, RST>,
     efuse: &efuse::EfuseController,
-    hal_hmac: &'a core::cell::RefCell<Hmac<'a>>,
+    hal_hmac: Rc<RefCell<Hmac<'a>>>,
     mut rng: impl rand_core::RngCore, // take ownership to stop caller from accidentally using it again
     jtag: &mut UsbSerialJtag<'a, Blocking>,
     timer: &'a T,
@@ -83,7 +84,7 @@ where
     let efuses_burnt = EfuseHmacKeys::has_been_initialized();
 
     let mut hmac_keys = if efuses_burnt {
-        EfuseHmacKeys::load(hal_hmac).expect("we should have hmac keys!")
+        EfuseHmacKeys::load(hal_hmac.clone()).expect("we should have hmac keys!")
     } else if cfg!(feature = "genuine_device") {
         screen_test::run(display, capsense);
 
@@ -136,7 +137,7 @@ where
         let read_protect = true;
         let _ = EfuseHmacKeys::init_with_keys(
             efuse,
-            hal_hmac,
+            hal_hmac.clone(),
             read_protect,
             share_encryption_key,
             factory_entropy,
@@ -195,7 +196,7 @@ where
         let read_protect = false;
         EfuseHmacKeys::init_with_keys(
             efuse,
-            hal_hmac,
+            hal_hmac.clone(),
             read_protect,
             share_encryption_key,
             dev_entropy,
