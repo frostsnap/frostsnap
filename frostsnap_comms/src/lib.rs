@@ -216,7 +216,7 @@ pub enum CoordinatorSendBody {
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
     DataWipe,
-    Challenge(Box<[u8; 384]>),
+    Challenge(Box<[u8; 32]>),
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
@@ -396,7 +396,6 @@ pub enum DeviceSendBody {
     },
     Announce {
         firmware_digest: Sha256Digest,
-        genuine_cert: Option<Box<Certificate>>,
     },
     SetName {
         name: String,
@@ -407,6 +406,7 @@ pub enum DeviceSendBody {
     Misc(CommsMisc),
     SignedChallenge {
         signature: Box<[u8; 384]>,
+        certificate: Box<Certificate>,
     },
 }
 
@@ -429,16 +429,9 @@ impl Gist for CommsMisc {
 #[derive(Encode, Decode, Debug, Clone, PartialEq)]
 pub enum WireDeviceSendBody {
     _Core,
-    Debug {
-        message: String,
-    },
-    Announce {
-        firmware_digest: Sha256Digest,
-        genuine_cert: Option<Box<Certificate>>,
-    },
-    SetName {
-        name: String,
-    },
+    Debug { message: String },
+    Announce { firmware_digest: Sha256Digest },
+    SetName { name: String },
     DisconnectDownstream,
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
@@ -479,13 +472,9 @@ impl WireDeviceSendBody {
                 ));
             }
             WireDeviceSendBody::Debug { message } => DeviceSendBody::Debug { message },
-            WireDeviceSendBody::Announce {
-                firmware_digest,
-                genuine_cert,
-            } => DeviceSendBody::Announce {
-                firmware_digest,
-                genuine_cert,
-            },
+            WireDeviceSendBody::Announce { firmware_digest } => {
+                DeviceSendBody::Announce { firmware_digest }
+            }
             WireDeviceSendBody::SetName { name } => DeviceSendBody::SetName { name },
             WireDeviceSendBody::DisconnectDownstream => DeviceSendBody::DisconnectDownstream,
             WireDeviceSendBody::NeedName => DeviceSendBody::NeedName,
