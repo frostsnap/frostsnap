@@ -8,8 +8,9 @@ use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun;
 use frostsnap_core::schnorr_fun::fun::marker::EvenY;
 use frostsnap_core::schnorr_fun::fun::Point;
+use frostsnap_core::sha2;
 use frostsnap_core::sha2::Sha256;
-use frostsnap_core::{sha2, sha2::Digest};
+use hmac::digest::Digest;
 use rand::rngs::ThreadRng;
 use rand::{CryptoRng, RngCore};
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
@@ -68,9 +69,9 @@ enum ConnectionState {
     },
     WaitingForAnnounce,
     ProcessingGenuineCheck {
-        serial: String,
-        ds_public_key: RsaPublicKey,
-        challenge: Box<[u8; 384]>,
+        // serial: String,
+        // ds_public_key: RsaPublicKey,
+        challenge: Box<[u8; 32]>,
     },
     GenuineVerified {
         serial: String,
@@ -410,43 +411,14 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
         ConnectionState::WaitingForAnnounce => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::Announce {
-                        genuine_cert: Some(genuine_cert),
-                        ..
-                    }) = msg.body.decode()
-                    {
+                    if let Ok(DeviceSendBody::Announce { .. }) = msg.body.decode() {
                         // first, reply with announce ack
                         connection.port.queue_send(
                             CoordinatorSendMessage::to(msg.from, CoordinatorSendBody::AnnounceAck)
                                 .into(),
                         );
 
-                        let factory_key: Point<EvenY> =
-                            Point::from_xonly_bytes(frostsnap_comms::FACTORY_PUBLIC_KEY).unwrap();
-
-                        let certifcate_body =
-                            match CertificateVerifier::verify(&genuine_cert, factory_key) {
-                                Some(certifcate_body) => certifcate_body,
-                                None => {
-                                    return FactoryResult::Failed(
-                                        Some(genuine_cert.unverified_raw_serial()),
-                                        "certificate signature verification failed".to_string(),
-                                    );
-                                }
-                            };
-
-                        let ds_public_key =
-                            match RsaPublicKey::from_pkcs1_der(certifcate_body.ds_public_key()) {
-                                Ok(key) => key,
-                                Err(_) => {
-                                    return FactoryResult::Failed(
-                                        Some(certifcate_body.raw_serial()),
-                                        "invalid RSA key in certificate".to_string(),
-                                    );
-                                }
-                            };
-
-                        let mut challenge = [0u8; 384];
+                        let mut challenge = [0u8; 32];
                         rand::thread_rng().fill_bytes(&mut challenge);
 
                         connection.port.queue_send(
@@ -457,8 +429,6 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                             .into(),
                         );
                         connection.state = ConnectionState::ProcessingGenuineCheck {
-                            serial: certifcate_body.raw_serial(),
-                            ds_public_key,
                             challenge: Box::new(challenge),
                         };
                     }
@@ -472,16 +442,42 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
             }
             FactoryResult::Continue
         }
-        ConnectionState::ProcessingGenuineCheck {
-            serial,
-            ds_public_key,
-            challenge,
-        } => {
+        ConnectionState::ProcessingGenuineCheck { challenge } => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::SignedChallenge { signature }) = msg.body.decode() {
-                        let message_digest: [u8; 32] = sha2::Sha256::digest(**challenge).into();
+                    if let Ok(DeviceSendBody::SignedChallenge {
+                        signature,
+                        certificate,
+                    }) = msg.body.decode()
+                    {
+                        let factory_key: Point<EvenY> =
+                            Point::from_xonly_bytes(frostsnap_comms::FACTORY_PUBLIC_KEY).unwrap();
+
+                        let certificate_body =
+                            match CertificateVerifier::verify(&certificate, factory_key) {
+                                Some(certificate_body) => certificate_body,
+                                None => {
+                                    return FactoryResult::Failed(
+                                        Some(certificate.unverified_raw_serial()),
+                                        "genuine check failed to verify!".to_string(),
+                                    )
+                                }
+                            };
+                        let serial = certificate_body.raw_serial();
+
+                        let ds_public_key =
+                            match RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key()) {
+                                Ok(key) => key,
+                                Err(_) => {
+                                    return FactoryResult::Failed(
+                                        Some(certificate_body.raw_serial()),
+                                        "invalid RSA key in certificate".to_string(),
+                                    );
+                                }
+                            };
                         let padding = rsa::Pkcs1v15Sign::new::<sha2::Sha256>();
+                        let message_digest: [u8; 32] =
+                            sha2::Sha256::digest(challenge.as_ref()).into();
                         match ds_public_key.verify(padding, &message_digest, signature.as_ref()) {
                             Ok(_) => {
                                 connection.state = ConnectionState::GenuineVerified {
@@ -491,7 +487,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                             Err(_) => {
                                 return FactoryResult::Failed(
                                     Some(serial.clone()),
-                                    "Device failed genuine check!".to_string(),
+                                    "Device failed genuine check {}!".to_string(),
                                 );
                             }
                         }
@@ -499,10 +495,7 @@ fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryRe
                 }
                 Ok(_) => {} // Keep waiting
                 Err(e) => {
-                    return FactoryResult::Failed(
-                        Some(serial.clone()),
-                        format!("Read error: {}", e),
-                    );
+                    return FactoryResult::Failed(None, format!("Read error: {}", e));
                 }
             }
             FactoryResult::Continue

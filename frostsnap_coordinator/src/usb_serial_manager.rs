@@ -5,7 +5,7 @@ const USB_PID: u16 = 4097;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
-use frostsnap_comms::genuine_certificate::{Certificate, CertificateVerifier};
+use frostsnap_comms::genuine_certificate::CertificateVerifier;
 use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
@@ -15,11 +15,11 @@ use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
 use frostsnap_core::schnorr_fun::fun::marker::EvenY;
 use frostsnap_core::schnorr_fun::fun::Point;
-use frostsnap_core::sha2::{Digest, Sha256};
+use frostsnap_core::sha2::Sha256;
 use frostsnap_core::{sha2, DeviceId, Gist};
-use rand::RngCore;
 use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::RsaPublicKey;
+use sha2::Digest;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -55,7 +55,7 @@ pub struct UsbSerialManager {
     /// The firmware binary provided to devices who are doing an upgrade
     firmware_bin: Option<FirmwareBin>,
     /// Ongoing genuine check challenges to devices
-    challenges: HashMap<DeviceId, (RsaPublicKey, [u8; 384])>,
+    challenges: HashMap<DeviceId, [u8; 32]>,
 }
 
 pub struct DevicePort {
@@ -338,15 +338,11 @@ impl UsbSerialManager {
                                         });
                                     }
                                 }
-                                DeviceSendBody::Announce {
-                                    firmware_digest,
-                                    genuine_cert,
-                                } => {
+                                DeviceSendBody::Announce { firmware_digest } => {
                                     self.handle_announce(
                                         &port_name,
                                         message.from,
                                         firmware_digest,
-                                        genuine_cert,
                                         &mut device_changes,
                                     );
                                 }
@@ -382,22 +378,49 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Misc(inner),
                                     }))
                                 }
-                                DeviceSendBody::SignedChallenge { signature } => {
-                                    if let Some((ds_public_key, challenge)) =
-                                        self.challenges.remove(&message.from)
-                                    {
-                                        let message_digest: [u8; 32] =
-                                            sha2::Sha256::digest(challenge).into();
-                                        let padding = rsa::Pkcs1v15Sign::new::<Sha256>();
+                                DeviceSendBody::SignedChallenge {
+                                    signature,
+                                    certificate,
+                                } => {
+                                    if let Some(challenge) = self.challenges.remove(&message.from) {
+                                        let factory_key: Point<EvenY> = Point::from_xonly_bytes(
+                                            frostsnap_comms::FACTORY_PUBLIC_KEY,
+                                        )
+                                        .unwrap();
 
-                                        if ds_public_key
-                                            .verify(padding, &message_digest, signature.as_ref())
-                                            .is_ok()
-                                        {
-                                            device_changes.push(DeviceChange::GenuineDevice {
-                                                id: message.from,
-                                            })
-                                        } // TODO: probably want to note if a device fails genuine
+                                        if let Some(certificate_body) = CertificateVerifier::verify(
+                                            certificate.as_ref(),
+                                            factory_key,
+                                        ) {
+                                            match RsaPublicKey::from_pkcs1_der(
+                                                certificate_body.ds_public_key(),
+                                            ) {
+                                                Err(_) => {
+                                                    // TODO: similarly we probably shouldnt silently ignore invalid rsa keys
+                                                }
+                                                Ok(ds_public_key) => {
+                                                    let padding =
+                                                        rsa::Pkcs1v15Sign::new::<Sha256>();
+                                                    let message_digest: [u8; 32] =
+                                                        sha2::Sha256::digest(challenge).into();
+
+                                                    if ds_public_key
+                                                        .verify(
+                                                            padding,
+                                                            &message_digest,
+                                                            signature.as_ref(),
+                                                        )
+                                                        .is_ok()
+                                                    {
+                                                        device_changes.push(
+                                                            DeviceChange::GenuineDevice {
+                                                                id: message.from,
+                                                            },
+                                                        )
+                                                    } // TODO: probably want to note if a device fails genuine
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -527,7 +550,6 @@ impl UsbSerialManager {
         port_name: &str,
         from: DeviceId,
         firmware_digest: Sha256Digest,
-        genuine_cert: Option<Box<Certificate>>,
         device_changes: &mut Vec<DeviceChange>,
     ) {
         match self.device_ports.insert(
@@ -558,35 +580,6 @@ impl UsbSerialManager {
                 CoordinatorSendBody::AnnounceAck,
             ))
             .unwrap();
-
-        if let Some(certificate) = genuine_cert {
-            // first we must verify this certificate against the factory key
-            let factory_key: Point<EvenY> =
-                Point::from_xonly_bytes(frostsnap_comms::FACTORY_PUBLIC_KEY).unwrap();
-
-            if let Some(certificate_body) = CertificateVerifier::verify(&certificate, factory_key) {
-                match RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key()) {
-                    Err(_) => {
-                        // TODO: similarly we probably shouldnt silently ignore invalid rsa keys
-                    }
-                    Ok(ds_public_key) => {
-                        let mut rng = rand::thread_rng();
-                        let mut challenge = [0u8; 384];
-                        rng.fill_bytes(&mut challenge);
-
-                        self.challenges.insert(from, (ds_public_key, challenge));
-                        self.outbox_sender
-                            .send(CoordinatorSendMessage::to(
-                                from,
-                                CoordinatorSendBody::Challenge(Box::new(challenge)),
-                            ))
-                            .unwrap();
-                    }
-                };
-            } else {
-                // TODO: we probably should send some message if genuine cert fails to verify
-            }
-        }
 
         self.reverse_device_ports
             .entry(port_name.to_string())
