@@ -9,8 +9,8 @@ use esp_hal::sha::Sha;
 use esp_hal::time::Duration;
 use esp_hal::timer;
 use frostsnap_comms::{
-    CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
-    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
+    CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
+    FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use nb::block;
 
@@ -34,7 +34,6 @@ const CRC: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::Algorithm {
 });
 
 const SECTOR_SIZE: u32 = 4096;
-const SECTORS_PER_IMAGE: u32 = FIRMWARE_IMAGE_SIZE / SECTOR_SIZE;
 /// We switch the baudrate during OTA update to make it faster
 const OTA_UPDATE_BAUD: u32 = 921_600;
 
@@ -155,10 +154,9 @@ impl<'a> OtaPartitions<'a> {
     ) -> FirmwareUpgradeMode<'_> {
         let slot = self.next_slot();
         let partition = &self.ota_partitions()[slot];
-        assert_eq!(
-            partition.size(),
-            FIRMWARE_IMAGE_SIZE,
-            "partition size should be the same as FIRMWARE_IMAGE_SIZE"
+        assert!(
+            size <= partition.size(),
+            "new firmware size should fit inside the partition"
         );
         assert!(
             partition.size() % FIRMWARE_UPGRADE_CHUNK_LEN == 0,
@@ -226,6 +224,7 @@ impl FirmwareUpgradeMode<'_> {
                     }
                     State::Erase { seq } => {
                         let mut finished = false;
+                        let last_sector_index = partition.n_sectors() - 1;
                         /// So we erase multiple sectors poll (otherwise it's slow).
                         const ERASE_CHUNK_SIZE: usize = 32;
                         for _ in 0..ERASE_CHUNK_SIZE {
@@ -240,7 +239,7 @@ impl FirmwareUpgradeMode<'_> {
                                 partition.erase_sector(*seq).expect("must erase sector");
                             }
                             *seq += 1;
-                            if *seq == SECTORS_PER_IMAGE {
+                            if *seq == last_sector_index {
                                 finished = true;
                                 break;
                             }
@@ -248,7 +247,7 @@ impl FirmwareUpgradeMode<'_> {
 
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
-                                progress: *seq as f32 / SECTORS_PER_IMAGE as f32,
+                                progress: *seq as f32 / last_sector_index as f32,
                             },
                         ));
 

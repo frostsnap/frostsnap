@@ -9,7 +9,7 @@ use frostsnap_comms::genuine_certificate::{Certificate, CertificateVerifier};
 use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
-    FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
+    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
@@ -889,19 +889,6 @@ impl FirmwareBin {
         use frostsnap_core::sha2::digest::Digest;
         let mut state = sha2::Sha256::default();
         state.update(self.bin);
-        Sha256Digest(state.finalize().into())
-    }
-
-    #[allow(dead_code)]
-    fn padded_digest(&self) -> Sha256Digest {
-        use frostsnap_core::sha2::digest::Digest;
-        let mut state = sha2::Sha256::default();
-        state.update(self.bin);
-        let mut len = self.bin.len();
-        while len < FIRMWARE_IMAGE_SIZE as usize {
-            len += 1;
-            state.update([0xff]);
-        }
         Sha256Digest(state.finalize().into())
     }
 }
