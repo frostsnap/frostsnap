@@ -1,7 +1,7 @@
 use std::{collections::HashSet, env};
 
 use clap::Parser;
-use frostsnap_comms::genuine_certificate::CaseColor;
+use frostsnap_comms::{genuine_certificate::CaseColor, Sha256Digest};
 use frostsnap_core::{
     hex,
     schnorr_fun::fun::{marker::EvenY, KeyPair, Scalar},
@@ -63,6 +63,7 @@ impl FactoryState {
             serial_number,
             &self.target_color.to_string(),
             &self.operator,
+            &self.revision,
             self.batch_note.as_deref(),
         )?;
         self.devices_flashed.insert(serial_number.to_string());
@@ -72,8 +73,10 @@ impl FactoryState {
     pub fn record_genuine_verified(
         &mut self,
         serial_number: &str,
+        firmware_digest: Sha256Digest,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.db.mark_genuine_verified(serial_number)?;
+        self.db
+            .mark_genuine_verified(serial_number, firmware_digest)?;
         self.genuine_checks.insert(serial_number.to_string());
         Ok(())
     }
@@ -87,6 +90,7 @@ impl FactoryState {
             serial_number,
             &self.target_color.to_string(),
             &self.operator,
+            &self.revision,
             reason,
             self.batch_note.as_deref(),
         )?;
