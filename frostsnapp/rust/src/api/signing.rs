@@ -14,7 +14,8 @@ pub use frostsnap_core::coordinator::ActiveSignSession;
 pub use frostsnap_core::coordinator::{SignSessionProgress, StartSign};
 use frostsnap_core::MasterAppkey;
 use frostsnap_core::{
-    message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, WireSignTask,
+    message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
+    WireSignTask,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -418,9 +419,10 @@ impl Coordinator {
         &self,
         device_id: DeviceId,
         session_id: SignSessionId,
+        encryption_key: SymmetricKey,
     ) -> Result<()> {
         self.0
-            .request_device_sign(device_id, session_id, crate::TEMP_KEY)
+            .request_device_sign(device_id, session_id, encryption_key)
     }
 
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> Result<()> {

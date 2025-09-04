@@ -7,6 +7,7 @@ import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -105,8 +106,11 @@ class WalletRecoveryPage extends StatelessWidget {
           onPressed: restoringKey.problem == null
               ? () async {
                   try {
+                    final encryptionKey =
+                        await SecureKeyProvider.getEncryptionKey();
                     final accessStructureRef = await coord.finishRestoring(
                       restorationId: restoringKey.restorationId,
+                      encryptionKey: encryptionKey,
                     );
                     onWalletRecovered(accessStructureRef);
                   } catch (e) {
@@ -502,9 +506,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onFinished: (backupPhase) async {
             try {
               if (kind == MethodChoiceKind.addToWallet) {
+                final encryptionKey =
+                    await SecureKeyProvider.getEncryptionKey();
                 await coord.tellDeviceToConsolidatePhysicalBackup(
                   accessStructureRef: widget.existing!,
                   phase: backupPhase,
+                  encryptionKey: encryptionKey,
                 );
               } else {
                 restorationId ??= await coord.startRestoringWallet(
@@ -1338,7 +1345,7 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
 
     _subscription = coord.waitForRecoveryShare().listen((
       waitForRecoverShareState,
-    ) {
+    ) async {
       ShareCompatibility? compatibility;
       RecoverShare? last;
       alreadyGot = null;
@@ -1353,9 +1360,11 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
               recoverShare: detectedShare,
             );
           } else if (widget.existing != null) {
+            final encryptionKey = await SecureKeyProvider.getEncryptionKey();
             compatibility = coord.checkRecoverShareCompatible(
               accessStructureRef: widget.existing!,
               recoverShare: detectedShare,
+              encryptionKey: encryptionKey,
             );
           } else {
             compatibility = ShareCompatibility.compatible();
@@ -1519,9 +1528,11 @@ class _CandidateReadyView extends StatelessWidget with _TitledWidget {
                 recoverShare: candidate,
               );
             } else if (existing != null) {
+              final encryptionKey = await SecureKeyProvider.getEncryptionKey();
               await coord.recoverShare(
                 accessStructureRef: existing!,
                 recoverShare: candidate,
+                encryptionKey: encryptionKey,
               );
             } else {
               restorationId = await coord.startRestoringWalletFromDeviceShare(

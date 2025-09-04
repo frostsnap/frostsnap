@@ -9,6 +9,7 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -286,8 +287,13 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       context,
       data.connectedButNeedRequest,
     );
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
     data.connectedButNeedRequest.forEach(
-      (id) => coord.requestDeviceSign(deviceId: id, sessionId: data.sessionId),
+      (id) => coord.requestDeviceSign(
+        deviceId: id,
+        sessionId: data.sessionId,
+        encryptionKey: encryptionKey,
+      ),
     );
     await actionDialogController.batchRemoveActionNeeded(data.gotShares);
   }

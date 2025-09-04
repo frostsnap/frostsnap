@@ -33,6 +33,13 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             Log.e("configureFlutterEngine", "Error REGISTERING CdcAcmPlugin: ${e.message}", e)
         }
+        
+        try {
+            flutterEngine.plugins.add(SecureKeyManager())
+            Log.i("configureFlutterEngine", "SecureKeyManager successfully registered with FlutterEngine.")
+        } catch (e: Exception) {
+            Log.e("configureFlutterEngine", "Error REGISTERING SecureKeyManager: ${e.message}", e)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

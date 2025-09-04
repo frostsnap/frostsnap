@@ -19,7 +19,7 @@ use frostsnap_coordinator::frostsnap_core;
 
 pub use frostsnap_core::{
     message::EncodedSignature, AccessStructureId, AccessStructureRef, DeviceId, KeyId, KeygenId,
-    MasterAppkey, RestorationId, SessionHash, SignSessionId,
+    MasterAppkey, RestorationId, SessionHash, SignSessionId, SymmetricKey,
 };
 
 #[frb(mirror(KeygenId))]
@@ -54,6 +54,9 @@ pub struct _AccessStructureRef {
 
 #[frb(mirror(RestorationId))]
 pub struct _RestorattionId([u8; 16]);
+
+#[frb(mirror(SymmetricKey))]
+pub struct _SymmetricKey(pub [u8; 32]);
 
 pub struct Api {}
 

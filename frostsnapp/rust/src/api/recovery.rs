@@ -8,7 +8,9 @@ pub use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RecoverShareError, RecoveringAccessStructure,
     RestorationProblem, RestorationShare, RestorationShareValidity, RestorationState,
 };
-use frostsnap_core::{device::KeyPurpose, AccessStructureRef, DeviceId, RestorationId};
+use frostsnap_core::{
+    device::KeyPurpose, AccessStructureRef, DeviceId, RestorationId, SymmetricKey,
+};
 
 pub use frostsnap_core::{message::HeldShare, schnorr_fun::frost::ShareImage};
 use std::collections::HashSet;
@@ -89,8 +91,12 @@ impl super::coordinator::Coordinator {
         }
     }
 
-    pub fn finish_restoring(&self, restoration_id: RestorationId) -> Result<AccessStructureRef> {
-        self.0.finish_restoring(restoration_id, crate::TEMP_KEY)
+    pub fn finish_restoring(
+        &self,
+        restoration_id: RestorationId,
+        encryption_key: SymmetricKey,
+    ) -> Result<AccessStructureRef> {
+        self.0.finish_restoring(restoration_id, encryption_key)
     }
 
     #[frb(sync)]
@@ -107,11 +113,12 @@ impl super::coordinator::Coordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         recover_share: &RecoverShare,
+        encryption_key: SymmetricKey,
     ) -> ShareCompatibility {
         let res = self.0.inner().check_recover_share_compatible_with_key(
             access_structure_ref,
             recover_share,
-            crate::TEMP_KEY,
+            encryption_key,
         );
 
         match res {
@@ -133,9 +140,10 @@ impl super::coordinator::Coordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         recover_share: &RecoverShare,
+        encryption_key: SymmetricKey,
     ) -> Result<()> {
         self.0
-            .recover_share(access_structure_ref, recover_share, crate::TEMP_KEY)
+            .recover_share(access_structure_ref, recover_share, encryption_key)
     }
 
     pub fn tell_device_to_enter_physical_backup(
@@ -162,11 +170,12 @@ impl super::coordinator::Coordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         phase: &PhysicalBackupPhase,
+        encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
         self.0.tell_device_to_consolidate_physical_backup(
             access_structure_ref,
             *phase,
-            crate::TEMP_KEY,
+            encryption_key,
         )?;
         Ok(())
     }
@@ -176,15 +185,16 @@ impl super::coordinator::Coordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         phase: &PhysicalBackupPhase,
+        encryption_key: SymmetricKey,
     ) -> bool {
         self.0
             .inner()
-            .check_physical_backup(access_structure_ref, *phase, crate::TEMP_KEY)
+            .check_physical_backup(access_structure_ref, *phase, encryption_key)
             .is_ok()
     }
 
-    pub fn exit_recovery_mode(&self, device_id: DeviceId) {
-        self.0.exit_recovery_mode(device_id, crate::TEMP_KEY);
+    pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
+        self.0.exit_recovery_mode(device_id, encryption_key);
     }
 
     pub fn delete_restoration_share(

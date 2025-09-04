@@ -6,6 +6,7 @@ import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -215,10 +216,15 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       })
       .firstWhere((signatures) => signatures.isNotEmpty);
 
-  stream.forEach((signingState) {
+  stream.forEach((signingState) async {
     sessionId = signingState.sessionId;
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
     for (final deviceId in signingState.connectedButNeedRequest) {
-      coord.requestDeviceSign(deviceId: deviceId, sessionId: sessionId!);
+      coord.requestDeviceSign(
+        deviceId: deviceId,
+        sessionId: sessionId!,
+        encryptionKey: encryptionKey,
+      );
     }
   });
 
