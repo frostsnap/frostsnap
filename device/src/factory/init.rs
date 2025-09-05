@@ -2,26 +2,21 @@ use crate::factory::screen_test;
 use crate::flash::VersionedFactoryData;
 use crate::peripherals::DevicePeripherals;
 use alloc::boxed::Box;
-use alloc::rc::Rc;
 use core::cell::RefCell;
-use cst816s::CST816S;
 use embedded_graphics::{
     mono_font::{ascii::*, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
     primitives::*,
 };
-use embedded_hal as hal;
 use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
-use esp_hal::time::Duration;
-use esp_hal::{hmac::Hmac, timer, usb_serial_jtag::UsbSerialJtag, Blocking};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
 
 use crate::{
-    efuse::{self, EfuseHmacKeys, EfuseKeyWriter},
+    efuse::EfuseKeyWriter,
     io::SerialInterface,
 };
 
@@ -74,7 +69,6 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
     let DevicePeripherals {
         mut display,
         efuse,
-        hmac,
         mut initial_rng,
         timer,
         ..
@@ -167,7 +161,6 @@ pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>, config:
         mut display,
         mut capsense,
         efuse,
-        hmac,
         mut jtag,
         timer,
         ..

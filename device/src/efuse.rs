@@ -64,7 +64,7 @@ impl<'a> EfuseController<'a> {
         hmac_upstream_keys.sort_by_key(|(idx, _)| *idx);
 
         // Assign keys based on order (lower index = share_encryption, higher = fixed_entropy)
-        let share_encryption = hmac_upstream_keys.get(0).map(|(_, id)| *id);
+        let share_encryption = hmac_upstream_keys.first().map(|(_, id)| *id);
         let fixed_entropy = hmac_upstream_keys.get(1).map(|(_, id)| *id);
 
         DiscoveredEfuses {

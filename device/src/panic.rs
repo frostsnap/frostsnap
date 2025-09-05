@@ -129,5 +129,7 @@ pub fn handle_panic(info: &PanicInfo) -> ! {
     let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
     crate::graphics::error_print(&mut display, panic_buf.as_str());
     bl.set_high();
-    loop {}
+    loop {
+        core::hint::spin_loop();
+    }
 }
