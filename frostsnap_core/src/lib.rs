@@ -7,6 +7,7 @@ extern crate std;
 pub mod coord_nonces;
 pub mod device_nonces;
 mod macros;
+mod map_ext;
 mod master_appkey;
 pub mod message;
 pub mod nonce_stream;

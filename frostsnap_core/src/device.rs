@@ -434,7 +434,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         .expect("already checked");
 
                     //XXX: We check the fingerprint so that a (mildly) malicious
-                    // coordiantor cannot create key generations without the
+                    // coordinator cannot create key generations without the
                     // fingerprint.
                     if !agg_input
                         .shared_key()
@@ -500,31 +500,25 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     let cert_scheme = certpedpop::vrf_cert::VrfCertScheme::<Sha256>::new(
                         crate::message::keygen::VRF_CERT_SCHEME_ID,
                     );
-                    let contributor_keys: Vec<_> = phase2
-                        .device_to_share_index
-                        .keys()
-                        .map(|device_id| device_id.pubkey())
-                        .chain(core::iter::once(phase2.coordinator_public_key))
-                        .collect();
 
                     let mut certifier = certpedpop::Certifier::new(
                         cert_scheme,
                         phase2.agg_input.clone(),
-                        &contributor_keys,
+                        &[phase2.coordinator_public_key],
                     );
 
                     // Add all certificates to the certifier
                     for (pubkey, cert) in certificate {
-                        certifier.receive_certificate(pubkey, cert).map_err(|_| {
-                            Error::signer_invalid_message(&message, "Invalid certificate received")
+                        certifier.receive_certificate(pubkey, cert).map_err(|e| {
+                            Error::signer_invalid_message(&message, format!("Invalid certificate received: {e}"))
                         })?;
                     }
 
                     // Verify we have all certificates and create the certified keygen
-                    let certified_keygen = certifier.finish().map_err(|_| {
+                    let certified_keygen = certifier.finish().map_err(|e| {
                         Error::signer_invalid_message(
                             &message,
-                            "Missing certificates or verification failed",
+                            format!("Missing certificates or verification failed: {e}"),
                         )
                     })?;
 
@@ -539,7 +533,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             .agg_input()
                             .shared_key()
                             .non_zero()
-                            .expect("already checked"),
+                            .expect("we contributed to coefficient -- can't be zero"),
                         secret_share: phase2.paired_secret_share,
                         session_hash,
                     };
@@ -685,16 +679,15 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
     pub fn keygen_ack(
         &mut self,
-        phase2: KeyGenPhase3,
+        phase: KeyGenPhase3,
         symm_key_gen: &mut impl DeviceSecretDerivation,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<KeyGenAck, ActionError> {
-        let secret_share = phase2.secret_share;
-        let key_name = phase2.key_name;
+        let secret_share = phase.secret_share;
+        let key_name = phase.key_name;
         let rootkey = secret_share.public_key();
         let key_id = KeyId::from_rootkey(rootkey);
-        let root_shared_key =
-            Xpub::from_rootkey(phase2.shared_key.non_zero().expect("already checked"));
+        let root_shared_key = Xpub::from_rootkey(phase.shared_key);
         let app_shared_key = root_shared_key.rootkey_to_master_appkey();
         let access_structure_id =
             AccessStructureId::from_app_poly(app_shared_key.key.point_polynomial());
@@ -729,12 +722,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         );
 
         self.tmp_keygen_pending_finalize.insert(
-            phase2.keygen_id,
+            phase.keygen_id,
             (
-                phase2.session_hash,
+                phase.session_hash,
                 KeyGenPhase4 {
                     key_name,
-                    key_purpose: phase2.key_purpose,
+                    key_purpose: phase.key_purpose,
                     access_structure_ref,
                     access_structure_kind: AccessStructureKind::Master,
                     threshold,
@@ -744,8 +737,8 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         );
 
         Ok(KeyGenAck {
-            ack_session_hash: phase2.session_hash,
-            keygen_id: phase2.keygen_id,
+            ack_session_hash: phase.session_hash,
+            keygen_id: phase.keygen_id,
         })
     }
 
