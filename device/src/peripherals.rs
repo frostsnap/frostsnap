@@ -15,7 +15,7 @@ use esp_hal::{
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
-    peripherals::{Peripherals, DS, TIMG0, TIMG1},
+    peripherals::{Peripherals, DS, RSA, TIMG0, TIMG1},
     prelude::*,
     spi::{
         master::{Config as SpiConfig, Spi},
@@ -101,8 +101,11 @@ pub struct DevicePeripherals<'a> {
     /// HMAC hardware module (Rc for shared ownership)
     pub hmac: Rc<RefCell<Hmac<'a>>>,
 
-    /// Digital Signature peripheral (reference)
+    /// Digital Signature peripheral
     pub ds: &'a mut DS,
+
+    /// RSA hardware accelerator
+    pub rsa: &'a mut RSA,
 
     /// eFuse controller
     pub efuse: EfuseController<'a>,
@@ -281,6 +284,7 @@ impl<'a> DevicePeripherals<'a> {
             ds: &mut peripherals.DS,
             efuse,
             initial_rng,
+            rsa: &mut peripherals.RSA,
         })
     }
 }

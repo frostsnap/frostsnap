@@ -29,7 +29,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let Resources {
         ref mut rng,
         ref mut hmac_keys,
-        ref mut hardware_rsa,
+        ds: ref mut hardware_rsa,
         ref certificate,
         ref mut nvs,
         ota: ref mut ota_partitions,
@@ -41,6 +41,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
         ref mut jtag,
         ref mut upstream_detect,
         ref mut downstream_detect,
+        rsa: _,
     } = resources;
 
     // Read device header and keypair from NVS

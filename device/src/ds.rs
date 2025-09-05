@@ -4,14 +4,14 @@ use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
 use nb::block;
 
-/// Hardware RSA implementation using ESP32's Digital Signature peripheral
-pub struct HardwareRsa<'a> {
+/// Hardware DS signing implementation using ESP32's Digital Signature peripheral
+pub struct HardwareDs<'a> {
     ds: &'a DS,
     encrypted_params: Vec<u8>,
 }
 
-impl<'a> HardwareRsa<'a> {
-    /// Create a new HardwareRsa instance
+impl<'a> HardwareDs<'a> {
+    /// Create a new HardwareDs instance
     pub fn new(ds: &'a DS, encrypted_params: Vec<u8>) -> Self {
         Self {
             ds,
@@ -19,7 +19,7 @@ impl<'a> HardwareRsa<'a> {
         }
     }
 
-    /// Sign a message using the hardware RSA implementation
+    /// Sign a message using the hardware DS peripheral
     pub fn sign(&mut self, message: &[u8], sha256: &mut Sha<'_>) -> [u32; 96] {
         // Calculate message digest using hardware SHA and apply padding
         let mut digest = [0u8; 32];

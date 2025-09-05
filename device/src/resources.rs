@@ -6,7 +6,7 @@ use esp_storage::FlashStorage;
 use rand_chacha::ChaCha20Rng;
 
 use crate::{
-    ds::HardwareRsa,
+    ds::HardwareDs,
     efuse::EfuseHmacKeys,
     flash::VersionedFactoryData,
     ota::OtaPartitions,
@@ -17,6 +17,7 @@ use crate::{
 use esp_hal::{
     gpio::{AnyPin, Input},
     peripherals::TIMG0,
+    rsa::Rsa,
     sha::Sha,
     timer::timg::{Timer, Timer0},
     uart::Uart,
@@ -32,8 +33,11 @@ pub struct Resources<'a> {
     /// HMAC keys from efuses
     pub hmac_keys: EfuseHmacKeys<'a>,
 
-    /// Hardware RSA for attestation (None for dev devices)
-    pub hardware_rsa: Option<HardwareRsa<'a>>,
+    /// Hardware Ds for attestation (None for dev devices)
+    pub ds: Option<HardwareDs<'a>>,
+
+    /// RSA hardware accelerator
+    pub rsa: Rsa<'a, Blocking>,
 
     /// Factory certificate (for production devices)
     pub certificate: Option<frostsnap_comms::genuine_certificate::Certificate>,
@@ -82,6 +86,7 @@ impl<'a> Resources<'a> {
             capsense,
             sha256,
             ds,
+            rsa,
             hmac,
             efuse,
             uart_upstream,
@@ -103,12 +108,11 @@ impl<'a> Resources<'a> {
 
         // Extract factory data
         let factory = factory_data.into_factory_data();
-        
-        // Create HardwareRsa for production devices
-        let hardware_rsa = Some(HardwareRsa::new(
-            ds,
-            factory.ds_encrypted_params.clone(),
-        ));
+
+        // Create HardwareDs for production devices
+        let ds = Some(HardwareDs::new(ds, factory.ds_encrypted_params.clone()));
+
+        let rsa = Rsa::new(rsa);
 
         // Extract certificate from factory data
         let certificate = Some(factory.certificate);
@@ -116,7 +120,8 @@ impl<'a> Resources<'a> {
         Box::new(Self {
             rng,
             hmac_keys,
-            hardware_rsa,
+            ds,
+            rsa,
             certificate,
             nvs: partitions.nvs,
             ota: partitions.ota,
@@ -152,6 +157,7 @@ impl<'a> Resources<'a> {
             capsense,
             sha256,
             ds,
+            rsa,
             hmac,
             efuse,
             uart_upstream,
@@ -171,14 +177,11 @@ impl<'a> Resources<'a> {
         // Create UI with display and capsense (using ui_timer)
         let ui = FrostyUi::new(display, capsense, ui_timer);
 
-        // Create HardwareRsa if factory data is present (dev devices might have it)
-        let (hardware_rsa, certificate) = if let Some(factory_data) = factory_data {
+        // Create HardwareDs if factory data is present (dev devices might have it)
+        let (ds, certificate) = if let Some(factory_data) = factory_data {
             let factory = factory_data.into_factory_data();
             (
-                Some(HardwareRsa::new(
-                    ds,
-                    factory.ds_encrypted_params,
-                )),
+                Some(HardwareDs::new(ds, factory.ds_encrypted_params)),
                 Some(factory.certificate),
             )
         } else {
@@ -186,11 +189,14 @@ impl<'a> Resources<'a> {
             (None, None)
         };
 
+        let rsa = Rsa::new(rsa);
+
         Box::new(Self {
             rng,
             hmac_keys,
-            hardware_rsa,
+            ds,
             certificate,
+            rsa,
             nvs: partitions.nvs,
             ota: partitions.ota,
             ui,
