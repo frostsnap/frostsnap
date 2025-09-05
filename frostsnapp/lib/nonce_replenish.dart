@@ -6,12 +6,14 @@ import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 class MinimalNonceReplenishWidget extends StatelessWidget {
   final Stream<NonceReplenishState> stream;
   final VoidCallback? onComplete;
+  final VoidCallback? onAbort;
   final bool autoAdvance;
 
   const MinimalNonceReplenishWidget({
     super.key,
     required this.stream,
     this.onComplete,
+    this.onAbort,
     this.autoAdvance = false,
   });
 
@@ -35,6 +37,13 @@ class MinimalNonceReplenishWidget extends StatelessWidget {
             ],
           );
         } else {
+          // Handle abort (device disconnection)
+          if (state.abort && onAbort != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              onAbort!();
+            });
+          }
+
           final progress = state.receivedFrom.length;
           final total = state.devices.length;
           final isComplete = progress == total;

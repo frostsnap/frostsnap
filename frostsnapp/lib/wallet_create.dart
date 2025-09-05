@@ -919,6 +919,15 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             _controller.next(context);
           }
         },
+        onAbort: () {
+          // Device disconnected - go back to device selection
+          if (mounted) {
+            coord.cancelProtocol();
+            _controller._nonceStream = null;
+            _controller._step = WalletCreateStep.deviceCount;
+            _controller.notifyListeners();
+          }
+        },
       ),
     );
   }
