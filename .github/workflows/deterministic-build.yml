@@ -30,9 +30,9 @@ jobs:
       - name: Display Build Info
         run: |
           echo "Build complete"
-          echo "Size: $(stat -c%s /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/frontier-firmware.bin) bytes"
-          echo "SHA256: $(sha256sum /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/frontier-firmware.bin)"
+          echo "Size: $(stat -c%s /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin) bytes"
+          echo "SHA256: $(sha256sum /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin)"
       - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-frontier-deterministic-${{ github.sha }}.bin
-          path: /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/frontier-firmware.bin
+          path: /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/firmware.bin

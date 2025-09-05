@@ -21,7 +21,8 @@ build +ARGS="":
    (cd frostsnapp; just build {{ARGS}})
 
 save-image BOARD=default_board +ARGS="":
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/{{BOARD}}-firmware.bin {{ARGS}}
+    # Regardless of the specified BOARD, we always save the firmware as `firmware.bin` for streamlined bundling within the app.
+    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
 
 test-ordinary +ARGS="":
     cargo test {{ARGS}} {{ordinary_crates}}

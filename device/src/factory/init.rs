@@ -15,10 +15,7 @@ use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
 
-use crate::{
-    efuse::EfuseKeyWriter,
-    io::SerialInterface,
-};
+use crate::{efuse::EfuseKeyWriter, io::SerialInterface};
 
 /// Configuration for device provisioning
 pub struct ProvisioningConfig {
@@ -155,7 +152,10 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
 
 /// Run factory provisioning for a device that needs provisioning
 /// This function never returns - it resets the device after provisioning
-pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>, config: ProvisioningConfig) -> ! {
+pub fn run_factory_provisioning(
+    peripherals: Box<DevicePeripherals<'_>>,
+    config: ProvisioningConfig,
+) -> ! {
     // Destructure what we need
     let DevicePeripherals {
         mut display,
@@ -212,14 +212,14 @@ pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>, config:
         .factory_data
         .erase_and_write_this::<{ frostsnap_embedded::WRITE_BUF_SIZE }>(&factory_data)
         .unwrap();
-    drop(factory_data);
 
     // Verify it was written successfully
-    let _read_factory_data = bincode::decode_from_reader::<VersionedFactoryData, _, _>(
+    let read_factory_data = bincode::decode_from_reader::<VersionedFactoryData, _, _>(
         partitions.factory_data.bincode_reader(),
         ABWRITE_BINCODE_CONFIG,
     )
     .expect("we should have been able to read the factory data back out!");
+    assert_eq!(factory_data, read_factory_data);
 
     // Generate share encryption key
     let mut factory_rng = rand_chacha::ChaCha20Rng::from_seed(factory_entropy);

@@ -8,7 +8,7 @@ fn main() {
     if env::var("BUNDLE_FIRMWARE").is_ok() {
         println!("cargo:rustc-cfg=bundle_firmware");
         let source_path =
-            Path::new("../../target/riscv32imc-unknown-none-elf/release/frontier-firmware.bin");
+            Path::new("../../target/riscv32imc-unknown-none-elf/release/firmware.bin");
         let out_dir = env::var("OUT_DIR").unwrap();
         let dest_path = Path::new(&out_dir).join("firmware.bin");
 

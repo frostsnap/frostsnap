@@ -45,7 +45,7 @@ jobs:
       - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-${{ matrix.board }}-${{ github.sha }}.bin
-          path: target/riscv32imc-unknown-none-elf/release/${{ matrix.board }}-firmware.bin
+          path: target/riscv32imc-unknown-none-elf/release/firmware.bin
 
   test-ordinary-libs:
     name: Test ordinary libraries
