@@ -209,12 +209,23 @@ impl Run {
         nonce_slots: usize,
     ) -> Self {
         let coordinator_keygen_keypair = FrostCoordinator::short_lived_keygen_keypair(rng);
+        let mut coordinator = FrostCoordinator::new();
+        coordinator.keygen_fingerprint = schnorr_fun::frost::Fingerprint {
+            bits_per_coeff: 4,
+            max_bits_total: 8,
+            tag: "test",
+        };
         Self::new(
-            FrostCoordinator::new(),
+            coordinator,
             coordinator_keygen_keypair,
             (0..n_devices)
                 .map(|_| {
-                    let signer = FrostSigner::new_random(rng, nonce_slots);
+                    let mut signer = FrostSigner::new_random(rng, nonce_slots);
+                    signer.keygen_fingerprint = schnorr_fun::frost::Fingerprint {
+                        bits_per_coeff: 4,
+                        max_bits_total: 8,
+                        tag: "test",
+                    };
                     (signer.device_id(), signer)
                 })
                 .collect(),

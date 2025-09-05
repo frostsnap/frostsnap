@@ -1333,7 +1333,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tracing",
- "vrf_fun",
+ "vrf_fun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d)",
 ]
 
 [[package]]
@@ -2592,12 +2592,12 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 [[package]]
 name = "schnorr_fun"
 version = "0.11.0"
-source = "git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d#09ce7df473e17f8993977f2158b5c8265cd1a33d"
+source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
 dependencies = [
  "bech32",
  "bincode",
- "secp256kfun",
- "vrf_fun",
+ "secp256kfun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
+ "vrf_fun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
 ]
 
 [[package]]
@@ -2682,11 +2682,23 @@ dependencies = [
  "bincode",
  "digest 0.10.7",
  "rand_core",
+ "secp256kfun_arithmetic_macros 0.1.0 (git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d)",
+ "subtle-ng",
+]
+
+[[package]]
+name = "secp256kfun"
+version = "0.11.0"
+source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
+dependencies = [
+ "bincode",
+ "digest 0.10.7",
+ "rand_core",
  "secp256k1 0.27.0",
  "secp256k1 0.28.2",
  "secp256k1 0.29.1",
  "secp256k1 0.30.0",
- "secp256kfun_arithmetic_macros",
+ "secp256kfun_arithmetic_macros 0.1.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
  "serde",
  "subtle-ng",
 ]
@@ -2695,6 +2707,15 @@ dependencies = [
 name = "secp256kfun_arithmetic_macros"
 version = "0.1.0"
 source = "git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d#09ce7df473e17f8993977f2158b5c8265cd1a33d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "secp256kfun_arithmetic_macros"
+version = "0.1.0"
+source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2812,11 +2833,23 @@ version = "0.8.0"
 source = "git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d#09ce7df473e17f8993977f2158b5c8265cd1a33d"
 dependencies = [
  "bincode",
+ "digest 0.10.7",
+ "generic-array",
+ "rand_core",
+ "secp256kfun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d)",
+]
+
+[[package]]
+name = "sigma_fun"
+version = "0.8.0"
+source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
+dependencies = [
+ "bincode",
  "curve25519-dalek-ng",
  "digest 0.10.7",
  "generic-array",
  "rand_core",
- "secp256kfun",
+ "secp256kfun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
  "serde",
 ]
 
@@ -3330,9 +3363,21 @@ dependencies = [
  "bincode",
  "generic-array",
  "rand_chacha",
- "secp256kfun",
+ "secp256kfun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d)",
+ "sigma_fun 0.8.0 (git+https://github.com/llfourn/secp256kfun?rev=09ce7df473e17f8993977f2158b5c8265cd1a33d)",
+]
+
+[[package]]
+name = "vrf_fun"
+version = "0.11.0"
+source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
+dependencies = [
+ "bincode",
+ "generic-array",
+ "rand_chacha",
+ "secp256kfun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
  "serde",
- "sigma_fun",
+ "sigma_fun 0.8.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
 ]
 
 [[package]]

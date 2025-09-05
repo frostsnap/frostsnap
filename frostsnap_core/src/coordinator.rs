@@ -21,8 +21,8 @@ use core::fmt;
 use frostsnap_macros::Kind;
 use schnorr_fun::{
     frost::{
-        self, chilldkg::certpedpop, CoordinatorSignSession, Fingerprint, Frost, ShareIndex,
-        SharedKey, SignatureShare,
+        self, chilldkg::certpedpop, CoordinatorSignSession, Frost, ShareIndex, SharedKey,
+        SignatureShare,
     },
     fun::{prelude::*, KeyPair},
     Schnorr, Signature,
@@ -48,6 +48,7 @@ pub struct FrostCoordinator {
     active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
     restoration: restoration::State,
+    pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
@@ -422,246 +423,314 @@ impl FrostCoordinator {
             }
             DeviceToCoordinatorMessage::KeyGenResponse(response) => {
                 let keygen_id = response.keygen_id;
-                match self.pending_keygens.get_mut(&keygen_id) {
-                    Some(KeyGenState::WaitingForResponses {
-                        input_aggregator,
-                        device_to_share_index,
-                        pending_key_name,
-                        purpose,
-                        contributer,
-                        coordinator_keypair,
-                        ..
-                    }) => {
-                        let device_to_share_index = device_to_share_index.clone();
-                        let vrf_certifier =
-                            certpedpop::vrf_cert::VrfCertScheme::<Sha256>::new("chilldkg-vrf");
-                        let share_index = device_to_share_index.get(&from).ok_or(
-                            Error::coordinator_invalid_message(
-                                message_kind,
-                                "got share from device that was not part of keygen",
-                            ),
-                        )?;
-
-                        input_aggregator
-                            .add_input(
-                                &schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
-                                // we use the share index as the input generator index. The input
-                                // generator at index 0 is the coordinator itself.
-                                (*share_index).into(),
-                                *response.input,
-                            )
-                            .map_err(|e| Error::coordinator_invalid_message(message_kind, e))?;
-
-                        let mut outgoing =
-                            vec![CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
-                                keygen_id,
-                                inner: CoordinatorToUserKeyGenMessage::ReceivedShares { from },
-                            })];
-
-                        if input_aggregator.is_finished() {
-                            let mut agg_input = input_aggregator.clone().finish().unwrap();
-                            agg_input.grind_fingerprint::<Sha256>(Fingerprint {
-                                tag: "frostsnap-v0",
-                                bit_length: 10,
-                            });
-
-                            let contributor_keys: Vec<_> = device_to_share_index
-                                .keys()
-                                .map(|device_id| device_id.pubkey())
-                                .chain(core::iter::once(coordinator_keypair.public_key()))
-                                .collect();
-
-                            let mut certifier = certpedpop::Certifier::new(
-                                vrf_certifier.clone(),
-                                agg_input.clone(),
-                                &contributor_keys,
-                            );
-
-                            // First we calculate our (the coordinator) certificate and add our VRF outputs
-                            let sig = contributer
-                                .clone()
-                                .verify_agg_input(&vrf_certifier, &agg_input, coordinator_keypair)
-                                .unwrap();
-
-                            certifier
-                                .receive_certificate(coordinator_keypair.public_key(), sig.clone())
-                                .expect("must be able to verify our own certificate");
-
-                            outgoing.push(CoordinatorSend::ToDevice {
-                                destinations: device_to_share_index.keys().cloned().collect(),
-                                message: Keygen::CertifyPlease {
-                                    keygen_id,
-                                    agg_input: agg_input.clone(),
-                                }
-                                .into(),
-                            });
-
-                            let new_state = KeyGenState::WaitingForProofs {
-                                keygen_id,
+                use std::collections::hash_map::Entry;
+                match self.pending_keygens.entry(keygen_id) {
+                    Entry::Occupied(mut entry) => {
+                        match entry.get_mut() {
+                            KeyGenState::WaitingForResponses {
+                                input_aggregator,
                                 device_to_share_index,
-                                pending_key_name: pending_key_name.to_string(),
-                                purpose: *purpose,
-                                certifier,
-                                coordinator_keypair: *coordinator_keypair,
-                            };
+                                ..
+                            } => {
+                                let device_to_share_index_cloned = device_to_share_index.clone();
+                                let cert_scheme =
+                                    certpedpop::vrf_cert::VrfCertScheme::<Sha256>::new(
+                                        crate::message::keygen::VRF_CERT_SCHEME_ID,
+                                    );
+                                let share_index = device_to_share_index_cloned.get(&from).ok_or(
+                                    Error::coordinator_invalid_message(
+                                        message_kind,
+                                        "got share from device that was not part of keygen",
+                                    ),
+                                )?;
 
-                            self.pending_keygens.insert(keygen_id, new_state);
+                                input_aggregator
+                                    .add_input(
+                                        &schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
+                                        // we use the share index as the input generator index. The input
+                                        // generator at index 0 is the coordinator itself.
+                                        (*share_index).into(),
+                                        *response.input,
+                                    )
+                                    .map_err(|e| {
+                                        Error::coordinator_invalid_message(message_kind, e)
+                                    })?;
+
+                                let mut outgoing = vec![CoordinatorSend::ToUser(
+                                    CoordinatorToUserMessage::KeyGen {
+                                        keygen_id,
+                                        inner: CoordinatorToUserKeyGenMessage::ReceivedShares {
+                                            from,
+                                        },
+                                    },
+                                )];
+
+                                if input_aggregator.is_finished() {
+                                    // Remove the entry to take ownership
+                                    let state = entry.remove();
+                                    if let KeyGenState::WaitingForResponses {
+                                        input_aggregator,
+                                        device_to_share_index,
+                                        pending_key_name,
+                                        purpose,
+                                        contributer,
+                                        coordinator_keypair,
+                                        ..
+                                    } = state
+                                    {
+                                        let mut agg_input = input_aggregator.finish().unwrap();
+                                        agg_input
+                                            .grind_fingerprint::<Sha256>(self.keygen_fingerprint);
+
+                                        let contributor_keys: Vec<_> = device_to_share_index
+                                            .keys()
+                                            .map(|device_id| device_id.pubkey())
+                                            .chain(core::iter::once(
+                                                coordinator_keypair.public_key(),
+                                            ))
+                                            .collect();
+
+                                        let mut certifier = certpedpop::Certifier::new(
+                                            cert_scheme.clone(),
+                                            agg_input.clone(),
+                                            &contributor_keys,
+                                        );
+
+                                        // First we calculate our (the coordinator) certificate and add our VRF outputs
+                                        let sig = contributer
+                                            .verify_agg_input(
+                                                &cert_scheme,
+                                                &agg_input,
+                                                &coordinator_keypair,
+                                            )
+                                            .expect("will be able to certify agg_input we created");
+
+                                        certifier
+                                            .receive_certificate(
+                                                coordinator_keypair.public_key(),
+                                                sig.clone(),
+                                            )
+                                            .expect("will be able to verify our own certificate");
+
+                                        outgoing.push(CoordinatorSend::ToDevice {
+                                            destinations: device_to_share_index
+                                                .keys()
+                                                .cloned()
+                                                .collect(),
+                                            message: Keygen::CertifyPlease {
+                                                keygen_id,
+                                                agg_input: agg_input.clone(),
+                                            }
+                                            .into(),
+                                        });
+
+                                        // Insert new state
+                                        self.pending_keygens.insert(
+                                            keygen_id,
+                                            KeyGenState::WaitingForCertificates {
+                                                keygen_id,
+                                                device_to_share_index,
+                                                pending_key_name,
+                                                purpose,
+                                                certifier,
+                                                coordinator_keypair,
+                                            },
+                                        );
+                                    }
+                                }
+                                Ok(outgoing)
+                            }
+                            _ => Err(Error::coordinator_invalid_message(
+                                message_kind,
+                                "keygen wasn't in WaitingForResponses state",
+                            )),
                         }
-                        Ok(outgoing)
                     }
-                    _ => Err(Error::coordinator_invalid_message(
+                    Entry::Vacant(_) => Err(Error::coordinator_invalid_message(
                         message_kind,
-                        "keygen wasn't in WaitingForResponses state",
+                        "unknown keygen_id",
                     )),
                 }
             }
-            DeviceToCoordinatorMessage::KeyGenProof {
+            DeviceToCoordinatorMessage::KeyGenCertify {
                 keygen_id,
-                vrf_proof,
+                vrf_cert,
             } => {
                 let mut outgoing = vec![];
+                use std::collections::hash_map::Entry;
 
-                let keygen_state = self.pending_keygens.get_mut(&keygen_id).ok_or(
-                    Error::coordinator_invalid_message(
-                        message_kind,
-                        "Received KeyGenProof for unknown keygen_id",
-                    ),
-                )?;
+                match self.pending_keygens.entry(keygen_id) {
+                    Entry::Occupied(mut entry) => {
+                        match entry.get_mut() {
+                            KeyGenState::WaitingForCertificates {
+                                certifier,
+                                ..
+                            } => {
+                                // Store device output and its certificate
+                                certifier
+                                    .receive_certificate(from.pubkey(), vrf_cert)
+                                    .map_err(|_| {
+                                        Error::coordinator_invalid_message(
+                                            message_kind,
+                                            "Invalid VRF proof received",
+                                        )
+                                    })?;
 
-                if let KeyGenState::WaitingForProofs {
-                    device_to_share_index,
-                    pending_key_name,
-                    purpose,
-                    certifier,
-                    ..
-                } = keygen_state
-                {
-                    // Store device output and its certificate
-                    certifier
-                        .receive_certificate(from.pubkey(), vrf_proof)
-                        .map_err(|_| {
-                            Error::coordinator_invalid_message(
-                                message_kind,
-                                "Invalid VRF proof received",
-                            )
-                        })?;
+                                // contributers are the devices plus one coordinator
+                                if certifier.is_finished() {
+                                    // Remove the entry to take ownership
+                                    let state = entry.remove();
+                                    if let KeyGenState::WaitingForCertificates {
+                                        device_to_share_index,
+                                        pending_key_name,
+                                        purpose,
+                                        certifier,
+                                        ..
+                                    } = state {
+                                        let certified_keygen = certifier
+                                            .finish()
+                                            .expect("just checked is_finished");
 
-                    // contributers are the devices plus one coordinator
-                    if certifier.is_finished() {
-                        let certified_keygen = certifier
-                            .clone()
-                            .finish()
-                            .expect("Certifier should have all required certificates");
+                                        let session_hash = SessionHash::from_certified_keygen(&certified_keygen);
 
-                        let new_state = KeyGenState::WaitingForAcks {
-                            certified_keygen: certified_keygen.clone(),
-                            device_to_share_index: device_to_share_index
-                                .iter_mut()
-                                .map(|(device, share_index)| {
-                                    (*device, ShareIndex::from(*share_index))
-                                })
-                                .collect(),
-                            acks: Default::default(),
-                            pending_key_name: pending_key_name.clone(),
-                            purpose: *purpose,
-                        };
 
-                        let session_hash = SessionHash::from_certified_keygen(&certified_keygen);
+                                        // Extract certificates from the certified keygen
+                                        let certificate = certified_keygen
+                                            .certificate()
+                                            .iter()
+                                            .map(|(pk, cert)| (*pk, cert.clone()))
+                                            .collect();
 
-                        outgoing.push(CoordinatorSend::ToDevice {
-                            destinations: device_to_share_index.keys().cloned().collect(),
-                            message: Keygen::Check {
-                                keygen_id,
-                                certified_keygen,
+                                        outgoing.push(CoordinatorSend::ToDevice {
+                                            destinations: device_to_share_index.keys().cloned().collect(),
+                                            message: Keygen::Check {
+                                                keygen_id,
+                                                certificate,
+                                            }
+                                            .into(),
+                                        });
+
+                                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
+                                            keygen_id,
+                                            inner: CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash },
+                                        }));
+
+                                        // Insert new state
+                                        self.pending_keygens.insert(
+                                            keygen_id,
+                                            KeyGenState::WaitingForAcks {
+                                                certified_keygen,
+                                                device_to_share_index,
+                                                acks: Default::default(),
+                                                pending_key_name,
+                                                purpose,
+                                            }
+                                        );
+                                    }
+                                }
+                                Ok(outgoing)
                             }
-                            .into(),
-                        });
-
-                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
-                            keygen_id,
-                            inner: CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash },
-                        }));
-
-                        self.pending_keygens.insert(keygen_id, new_state);
+                            _ => Err(Error::coordinator_invalid_message(
+                                message_kind,
+                                "received VRF proof for keygen but this keygen wasn't in WaitingForCertificates state",
+                            ))
+                        }
                     }
-                } else {
-                    return Err(Error::coordinator_invalid_message(
+                    Entry::Vacant(_) => Err(Error::coordinator_invalid_message(
                         message_kind,
-                        "received VRF proof for keygen but this keygen wasn't in WaitingForProofs state",
-                    ));
+                        "Received KeyGenCertify for unknown keygen_id",
+                    )),
                 }
-
-                Ok(outgoing)
             }
             DeviceToCoordinatorMessage::KeyGenAck(self::KeyGenAck {
                 keygen_id,
                 ack_session_hash,
             }) => {
                 let mut outgoing = vec![];
-                let mut all_acks_received_state = Option::<KeyGenState>::None;
-                let keygen_state = self.pending_keygens.get_mut(&keygen_id).ok_or(
-                    Error::coordinator_invalid_message(
-                        message_kind,
-                        "Received KeyGenAck for unknown keygen_id",
-                    ),
-                )?;
+                use std::collections::hash_map::Entry;
 
-                if let KeyGenState::WaitingForAcks {
-                    certified_keygen,
-                    device_to_share_index,
-                    acks,
-                    pending_key_name,
-                    purpose,
-                } = keygen_state
-                {
-                    let session_hash = SessionHash::from_certified_keygen(certified_keygen);
-                    if ack_session_hash != session_hash {
-                        return Err(Error::coordinator_invalid_message(
-                            message_kind,
-                            "Device acked wrong keygen session hash",
-                        ));
-                    }
+                match self.pending_keygens.entry(keygen_id) {
+                    Entry::Occupied(mut entry) => {
+                        match entry.get_mut() {
+                            KeyGenState::WaitingForAcks {
+                                certified_keygen,
+                                device_to_share_index,
+                                acks,
+                                ..
+                            } => {
+                                let session_hash = SessionHash::from_certified_keygen(certified_keygen);
+                                if ack_session_hash != session_hash {
+                                    return Err(Error::coordinator_invalid_message(
+                                        message_kind,
+                                        "Device acked wrong keygen session hash",
+                                    ));
+                                }
 
-                    if !device_to_share_index.contains_key(&from) {
-                        return Err(Error::coordinator_invalid_message(
-                            message_kind,
-                            "Received ack from device not a member of keygen",
-                        ));
-                    }
+                                if !device_to_share_index.contains_key(&from) {
+                                    return Err(Error::coordinator_invalid_message(
+                                        message_kind,
+                                        "Received ack from device not a member of keygen",
+                                    ));
+                                }
 
-                    if acks.insert(from) {
-                        let all_acks_received = acks.len() == device_to_share_index.len();
-                        if all_acks_received {
-                            let root_shared_key = certified_keygen
-                                .agg_input()
-                                .shared_key()
-                                .non_zero()
-                                .expect("this should have already been checked");
-                            all_acks_received_state = Some(KeyGenState::NeedsFinalize {
-                                root_shared_key,
-                                device_to_share_index: device_to_share_index.clone(),
-                                pending_key_name: pending_key_name.clone(),
-                                purpose: *purpose,
-                            });
+                                if acks.insert(from) {
+                                    let all_acks_received = acks.len() == device_to_share_index.len();
+                                    if all_acks_received {
+                                        // Remove entry to take ownership and transition state
+                                        let state = entry.remove();
+                                        if let KeyGenState::WaitingForAcks {
+                                            certified_keygen,
+                                            device_to_share_index,
+                                            pending_key_name,
+                                            purpose,
+                                            ..
+                                        } = state {
+                                            // XXX: we don't keep around the certified keygen for anything,
+                                            // although it would make sense for settings where the secret key for
+                                            // the DeviceId is persisted -- this would allow them to recover their
+                                            // secret share from the certified keygen.
+                                            let root_shared_key = certified_keygen
+                                                .agg_input()
+                                                .shared_key()
+                                                .non_zero()
+                                                .expect("this should have already been checked");
+
+                                            self.pending_keygens.insert(
+                                                keygen_id,
+                                                KeyGenState::NeedsFinalize {
+                                                    root_shared_key,
+                                                    device_to_share_index,
+                                                    pending_key_name,
+                                                    purpose,
+                                                }
+                                            );
+                                        }
+                                    }
+                                    outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
+                                        inner: CoordinatorToUserKeyGenMessage::KeyGenAck {
+                                            from,
+                                            all_acks_received,
+                                        },
+                                        keygen_id,
+                                    }));
+                                }
+                            }
+                            _ => {
+                                return Err(Error::coordinator_invalid_message(
+                                    message_kind,
+                                    "received ACK for keygen but this keygen wasn't in WaitingForAcks state",
+                                ))
+                            }
                         }
-                        outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
-                            inner: CoordinatorToUserKeyGenMessage::KeyGenAck {
-                                from,
-                                all_acks_received,
-                            },
-                            keygen_id,
-                        }));
                     }
-                } else {
-                    return Err(Error::coordinator_invalid_message(
-                        message_kind,
-                        "received ACK for keygen but this keygen wasn't in WaitingForAcks state",
-                    ));
+                    Entry::Vacant(_) => {
+                        return Err(Error::coordinator_invalid_message(
+                            message_kind,
+                            "Received KeyGenAck for unknown keygen_id",
+                        ))
+                    }
                 }
 
-                if let Some(new_keygen_state) = all_acks_received_state {
-                    *keygen_state = new_keygen_state;
-                }
                 Ok(outgoing)
             }
             DeviceToCoordinatorMessage::SignatureShare {
@@ -767,11 +836,11 @@ impl FrostCoordinator {
             coordinator_public_key,
         } = &begin_keygen;
 
-        if coordinator_keypair.public_key() != *coordinator_public_key {
-            return Err(ActionError::StateInconsistent(
-                "begin_keygen started with mismatching coord keypair".into(),
-            ));
-        }
+        assert_eq!(
+            coordinator_keypair.public_key(),
+            *coordinator_public_key,
+            "key mismatch with keygen Begin"
+        );
 
         if self.pending_keygens.contains_key(&begin_keygen.keygen_id) {
             return Err(ActionError::StateInconsistent(
@@ -830,24 +899,27 @@ impl FrostCoordinator {
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SendFinalizeKeygen, ActionError> {
         match self.pending_keygens.remove(&keygen_id) {
-            // TODO: We need to send something to devices!
             Some(KeyGenState::NeedsFinalize {
                 root_shared_key,
                 device_to_share_index,
                 pending_key_name,
                 purpose,
             }) => {
-                let as_ref = self.mutate_new_key(
+                let device_to_share_index_converted = device_to_share_index
+                    .iter()
+                    .map(|(device, share_index)| (*device, ShareIndex::from(*share_index)))
+                    .collect();
+                let access_structure_ref = self.mutate_new_key(
                     pending_key_name,
                     root_shared_key,
-                    device_to_share_index.clone(),
+                    device_to_share_index_converted,
                     encryption_key,
                     purpose,
                     rng,
                 );
                 Ok(SendFinalizeKeygen {
                     devices: device_to_share_index.into_keys().collect(),
-                    access_structure_ref: as_ref,
+                    access_structure_ref,
                     keygen_id,
                 })
             }
@@ -1385,7 +1457,7 @@ pub struct FinishedSignSession {
     pub key_id: KeyId,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KeyGenState {
     WaitingForResponses {
         keygen_id: KeygenId,
@@ -1396,7 +1468,7 @@ pub enum KeyGenState {
         contributer: Box<certpedpop::Contributor>,
         coordinator_keypair: KeyPair,
     },
-    WaitingForProofs {
+    WaitingForCertificates {
         keygen_id: KeygenId,
         device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
         pending_key_name: String,
@@ -1406,14 +1478,14 @@ pub enum KeyGenState {
     },
     WaitingForAcks {
         certified_keygen: certpedpop::CertifiedKeygen<certpedpop::vrf_cert::CertVrfProof>,
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
         acks: BTreeSet<DeviceId>,
         pending_key_name: String,
         purpose: KeyPurpose,
     },
     NeedsFinalize {
         root_shared_key: SharedKey,
-        device_to_share_index: BTreeMap<DeviceId, Scalar<Public, NonZero>>,
+        device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
         pending_key_name: String,
         purpose: KeyPurpose,
     },
@@ -1690,87 +1762,5 @@ impl IntoIterator for SendFinalizeKeygen {
             .into(),
             destinations: self.devices.into_iter().collect(),
         })
-    }
-}
-
-// Sha
-impl PartialEq for KeyGenState {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                KeyGenState::WaitingForResponses {
-                    keygen_id: id1,
-                    input_aggregator: ia1,
-                    device_to_share_index: d1,
-                    pending_key_name: n1,
-                    purpose: p1,
-                    contributer: c1,
-                    coordinator_keypair: k1,
-                },
-                KeyGenState::WaitingForResponses {
-                    keygen_id: id2,
-                    input_aggregator: ia2,
-                    device_to_share_index: d2,
-                    pending_key_name: n2,
-                    purpose: p2,
-                    contributer: c2,
-                    coordinator_keypair: k2,
-                },
-            ) => {
-                id1 == id2 && ia1 == ia2 && d1 == d2 && n1 == n2 && p1 == p2 && c1 == c2 && k1 == k2
-            }
-            (
-                KeyGenState::WaitingForProofs {
-                    keygen_id: id1,
-                    device_to_share_index: d1,
-                    pending_key_name: n1,
-                    purpose: p1,
-                    coordinator_keypair: k1,
-                    certifier: _certifier1, // Sha256 doesn't implement PartialEq and irrelevant here
-                },
-                KeyGenState::WaitingForProofs {
-                    keygen_id: id2,
-                    device_to_share_index: d2,
-                    pending_key_name: n2,
-                    purpose: p2,
-                    coordinator_keypair: k2,
-                    certifier: _certifier2,
-                },
-            ) => id1 == id2 && d1 == d2 && n1 == n2 && p1 == p2 && k1 == k2,
-
-            (
-                KeyGenState::WaitingForAcks {
-                    certified_keygen: c1,
-                    device_to_share_index: d1,
-                    acks: a1,
-                    pending_key_name: n1,
-                    purpose: p1,
-                },
-                KeyGenState::WaitingForAcks {
-                    certified_keygen: c2,
-                    device_to_share_index: d2,
-                    acks: a2,
-                    pending_key_name: n2,
-                    purpose: p2,
-                },
-            ) => c1 == c2 && d1 == d2 && a1 == a2 && n1 == n2 && p1 == p2,
-
-            (
-                KeyGenState::NeedsFinalize {
-                    root_shared_key: r1,
-                    device_to_share_index: d1,
-                    pending_key_name: n1,
-                    purpose: p1,
-                },
-                KeyGenState::NeedsFinalize {
-                    root_shared_key: r2,
-                    device_to_share_index: d2,
-                    pending_key_name: n2,
-                    purpose: p2,
-                },
-            ) => r1 == r2 && d1 == d2 && n1 == n2 && p1 == p2,
-
-            _ => false,
-        }
     }
 }

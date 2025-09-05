@@ -296,7 +296,9 @@ impl SessionHash {
     pub fn from_certified_keygen(
         certified_keygen: &certpedpop::CertifiedKeygen<certpedpop::vrf_cert::CertVrfProof>,
     ) -> Self {
-        Self(certified_keygen.compute_randomness_beacon(sha2::Sha256::default()))
+        let hash = sha2::Sha256::default().ds("frost-dkg-security-check");
+        let security_check = certified_keygen.vrf_security_check(hash);
+        Self(security_check)
     }
 }
 

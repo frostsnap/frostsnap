@@ -434,7 +434,8 @@ mod test {
             5,
             schnorr_fun::frost::Fingerprint {
                 tag: "frostsnap-v0",
-                bit_length: 10,
+                bits_per_coeff: 10,
+                max_bits_total: 20,
             },
             &mut rand::thread_rng(),
         );

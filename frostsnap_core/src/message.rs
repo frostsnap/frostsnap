@@ -124,9 +124,9 @@ pub enum DeviceToCoordinatorMessage {
         segments: Vec<NonceStreamSegment>,
     },
     KeyGenResponse(KeyGenResponse),
-    KeyGenProof {
+    KeyGenCertify {
         keygen_id: KeygenId,
-        vrf_proof: certpedpop::vrf_cert::CertVrfProof,
+        vrf_cert: certpedpop::vrf_cert::CertVrfProof,
     },
     KeyGenAck(KeyGenAck),
     // KeyGenFinalized,

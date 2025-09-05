@@ -1,4 +1,8 @@
+use schnorr_fun::frost::chilldkg::certpedpop::vrf_cert;
+
 use super::*;
+
+pub const VRF_CERT_SCHEME_ID: &str = "cert-vrf-v0";
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum Keygen {
@@ -9,7 +13,7 @@ pub enum Keygen {
     },
     Check {
         keygen_id: KeygenId,
-        certified_keygen: certpedpop::CertifiedKeygen<certpedpop::vrf_cert::CertVrfProof>,
+        certificate: BTreeMap<Point, vrf_cert::CertVrfProof>,
     },
     /// Actually save key to device.
     Finalize {
@@ -60,7 +64,7 @@ impl Begin {
             .map(|(index, device_id)| {
                 (
                     *device_id,
-                    NonZeroU32::new(index as u32 + 1).expect("we added one"),
+                    NonZeroU32::new((index + 1) as u32).expect("we added one"),
                 )
             })
             .collect();
