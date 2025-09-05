@@ -9,7 +9,7 @@ extern "C" {
     static _stack_end: u32;
 }
 
-pub fn enable_stack_guard(assist_debug: ASSIST_DEBUG) {
+pub fn enable_stack_guard(assist_debug: &mut ASSIST_DEBUG) {
     let mut da = DebugAssist::new(assist_debug);
     da.set_interrupt_handler(interrupt_handler);
     let stack_top = unsafe { &_stack_start as *const u32 as u32 };
