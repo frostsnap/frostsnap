@@ -104,6 +104,9 @@ pub trait AccessStructureExt {
 
     #[frb(sync)]
     fn short_id(&self) -> String;
+
+    #[frb(sync)]
+    fn get_device_short_share_index(&self, device_id: DeviceId) -> Option<u32>;
 }
 
 impl AccessStructureExt for AccessStructure {
@@ -115,6 +118,14 @@ impl AccessStructureExt for AccessStructure {
     #[frb(sync)]
     fn frb_override_devices(&self) -> Vec<DeviceId> {
         self.devices().collect()
+    }
+
+    #[frb(sync)]
+    fn get_device_short_share_index(&self, device_id: DeviceId) -> Option<u32> {
+        use core::convert::TryFrom;
+        self.device_to_share_indicies()
+            .get(&device_id)
+            .and_then(|share_index| u32::try_from(*share_index).ok())
     }
 }
 

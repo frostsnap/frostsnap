@@ -28,12 +28,9 @@ class DeviceActionBackupCheckController with ChangeNotifier {
       title: 'Check Backup on Device',
       body: (context) {
         final deviceId = activeDeviceId;
-        final deviceIndex = deviceId == null
-            ? 0
-            : 1 +
-                  accessStructure.devices().indexWhere(
-                    (id) => deviceIdEquals(id, deviceId),
-                  );
+        final deviceIndex = accessStructure.getDeviceShortShareIndex(
+          deviceId: deviceId!,
+        )!; // critical that we do not display the wrong value incorrectly
         return Card(
           margin: EdgeInsets.zero,
           child: Padding(

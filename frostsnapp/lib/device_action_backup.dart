@@ -44,12 +44,9 @@ class DeviceActionBackupController with ChangeNotifier {
       title: 'Display Backup on Device',
       body: (context) {
         final deviceId = activeDeviceId;
-        final deviceIndex = deviceId == null
-            ? 0
-            : 1 +
-                  accessStructure.devices().indexWhere(
-                    (id) => deviceIdEquals(id, deviceId),
-                  );
+        final deviceIndex = accessStructure.getDeviceShortShareIndex(
+          deviceId: deviceId!,
+        )!; // critical that we do not display the wrong value here
 
         return Card(
           margin: EdgeInsets.zero,
