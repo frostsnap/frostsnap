@@ -2,7 +2,7 @@
 
 use alloc::{collections::VecDeque, string::ToString};
 use esp_hal::sha;
-use frostsnap_comms::{DeviceSendBody, DeviceSendMessage};
+use frostsnap_comms::{DeviceSendBody, DeviceSendMessage, WireDeviceSendBody};
 use frostsnap_core::DeviceId;
 use rand_core::SeedableRng;
 use ui::UserInteraction;
@@ -11,23 +11,27 @@ use ui::UserInteraction;
 extern crate alloc;
 
 pub mod device_config;
+pub mod display_init;
 pub mod efuse;
 pub mod esp32_run;
 pub mod firmware_size;
 pub mod flash;
-#[cfg(feature = "v2")]
-pub mod graphics;
 pub mod io;
 pub mod ota;
 pub mod panic;
 pub mod partitions;
+pub mod root_widget;
 pub mod stack_guard;
+pub mod touch_calibration;
+pub mod touch_handler;
+pub mod uart_interrupt;
 pub mod ui;
+pub mod widget_tree;
 
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
     state: UpstreamConnectionState,
-    messages: VecDeque<DeviceSendMessage<DeviceSendBody>>,
+    messages: VecDeque<DeviceSendMessage<WireDeviceSendBody>>,
     announcement: Option<DeviceSendMessage<DeviceSendBody>>,
     my_device_id: DeviceId,
 }
@@ -58,10 +62,10 @@ impl UpstreamConnection {
         self.state
     }
 
-    pub fn dequeue_message(&mut self) -> Option<DeviceSendMessage<DeviceSendBody>> {
+    pub fn dequeue_message(&mut self) -> Option<DeviceSendMessage<WireDeviceSendBody>> {
         if self.state >= UpstreamConnectionState::Established {
             if let Some(announcement) = self.announcement.take() {
-                return Some(announcement);
+                return Some(announcement.into());
             }
         }
 
@@ -83,11 +87,17 @@ impl UpstreamConnection {
         &mut self,
         iter: impl IntoIterator<Item = impl Into<DeviceSendBody>>,
     ) {
-        self.messages
-            .extend(iter.into_iter().map(|body| DeviceSendMessage {
+        self.messages.extend(iter.into_iter().map(|body| {
+            DeviceSendMessage {
                 from: self.my_device_id,
                 body: body.into(),
-            }));
+            }
+            .into()
+        }));
+    }
+
+    pub fn forward_to_coordinator(&mut self, message: DeviceSendMessage<WireDeviceSendBody>) {
+        self.messages.push_back(message);
     }
 
     fn send_debug(&mut self, message: impl ToString) {
@@ -113,7 +123,7 @@ pub enum UpstreamConnectionState {
     EstablishedAndCoordAck,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub enum DownstreamConnectionState {
     Disconnected,
     Connected,

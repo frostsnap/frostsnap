@@ -306,7 +306,7 @@ impl Direction for Upstream {
 }
 
 impl HasMagicBytes for Downstream {
-    const VERSION_SIGNAL: MagicBytesVersion = 1;
+    const VERSION_SIGNAL: MagicBytesVersion = 2;
     const MAGIC_BYTES: [u8; MAGIC_BYTES_LEN] = MAGICBYTES_RECV_DOWNSTREAM;
 }
 
@@ -355,7 +355,7 @@ pub struct DeviceSupportedFeatures {
 impl DeviceSupportedFeatures {
     pub fn from_version(version: u8) -> Self {
         DeviceSupportedFeatures {
-            conch_enabled: version >= 1,
+            conch_enabled: version == 1,
         }
     }
 }

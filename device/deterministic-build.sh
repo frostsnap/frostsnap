@@ -16,7 +16,7 @@ rsync -a --exclude='.git' --exclude='**/target/' --exclude='.github' ../ "${BUIL
 cd "${BUILD_DIR}"
 
 # Build in nix environment
-nix develop --command just build-device v2 --locked
+nix develop --command just build-device --locked
 nix develop --command just save-image
 
 echo "Build complete - $(stat -c%s "${BUILD_DIR}/${FIRMWARE_PATH}") bytes"

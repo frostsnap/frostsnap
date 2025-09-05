@@ -321,7 +321,7 @@ impl FirmwareUpgradeMode<'_> {
         };
 
         upstream_io.change_baud(OTA_UPDATE_BAUD);
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(ref mut downstream_io) = downstream_io {
             downstream_io.change_baud(OTA_UPDATE_BAUD);
         }
 
@@ -342,12 +342,13 @@ impl FirmwareUpgradeMode<'_> {
 
         while !finished_writing {
             if downstream_ready {
-                if let Ok(byte) = upstream_io.read_byte() {
+                upstream_io.fill_queue();
+                if let Some(byte) = upstream_io.read_byte() {
                     in_buf[i] = byte;
                     i += 1;
                     byte_count += 1;
                     finished_writing = byte_count == upgrade_size;
-                    if let Some(downstream_io) = downstream_io.as_mut() {
+                    if let Some(ref mut downstream_io) = downstream_io {
                         block!(downstream_io.write_byte_nb(byte)).unwrap();
                     }
 
@@ -382,8 +383,9 @@ impl FirmwareUpgradeMode<'_> {
             }
 
             if !finished_writing {
-                if let Some(downstream_io) = downstream_io.as_mut() {
-                    while let Ok(byte) = downstream_io.read_byte() {
+                if let Some(ref mut downstream_io) = downstream_io {
+                    downstream_io.fill_queue();
+                    while let Some(byte) = downstream_io.read_byte() {
                         assert!(
                             byte == FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
                             "invalid control byte sent by downstream"
@@ -402,14 +404,14 @@ impl FirmwareUpgradeMode<'_> {
 
         ui.poll();
 
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(ref mut downstream_io) = downstream_io {
             downstream_io.flush();
         }
 
         // change it back to the original baudrate but keep in mind that the devices are meant to
         // restart after the upgrade.
         upstream_io.change_baud(BAUDRATE);
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(ref mut downstream_io) = downstream_io {
             downstream_io.change_baud(BAUDRATE);
         }
 
