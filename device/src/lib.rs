@@ -12,18 +12,19 @@ pub mod device_config;
 pub mod ds;
 pub mod efuse;
 pub mod esp32_run;
-
 pub mod factory;
 pub mod firmware_size;
 pub mod flash;
-#[cfg(feature = "v2")]
 pub mod graphics;
 pub mod io;
 pub mod ota;
 pub mod panic;
 pub mod partitions;
+pub mod peripherals;
+pub mod resources;
 pub mod stack_guard;
 pub mod ui;
+pub mod ui_impl;
 
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
