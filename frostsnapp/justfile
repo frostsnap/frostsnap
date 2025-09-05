@@ -17,6 +17,10 @@ run +ARGS="": maybe-gen
     just ../save-image
     BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
 
+run-secure +ARGS="": maybe-gen
+    just ../build-secure
+    BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
+
 maybe-gen:
     #!/bin/sh
     if ! sha256sum --check {{CANARY}} >/dev/null 2>&1 ; then
