@@ -8,7 +8,7 @@ use rand_chacha::ChaCha20Rng;
 use crate::{
     ds::HardwareRsa,
     efuse::EfuseHmacKeys,
-    flash::FactoryData,
+    flash::VersionedFactoryData,
     ota::OtaPartitions,
     partitions::{EspFlashPartition, Partitions},
     peripherals::DevicePeripherals,
@@ -70,7 +70,7 @@ impl<'a> Resources<'a> {
         let factory_data = factory_data.expect("Production device must have factory data");
 
         // Production devices must be provisioned at the factory
-        if !EfuseHmacKeys::has_been_initialized() {
+        if !peripherals.efuse.has_hmac_keys_initialized() {
             panic!("Production device must be provisioned at the factory!");
         }
 
@@ -83,6 +83,7 @@ impl<'a> Resources<'a> {
             sha256,
             ds,
             hmac,
+            efuse,
             uart_upstream,
             uart_downstream,
             jtag,
@@ -93,21 +94,24 @@ impl<'a> Resources<'a> {
         } = *peripherals;
 
         // Load existing keys using the moved hmac
-        let mut hmac_keys =
-            EfuseHmacKeys::load(hmac.clone()).expect("Failed to load HMAC keys from efuses");
+        let mut hmac_keys = EfuseHmacKeys::load(&efuse, hmac.clone())
+            .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
         // Create UI with display and capsense (using ui_timer)
         let ui = FrostyUi::new(display, capsense, ui_timer);
 
+        // Extract factory data
+        let factory = factory_data.into_factory_data();
+        
         // Create HardwareRsa for production devices
         let hardware_rsa = Some(HardwareRsa::new(
             ds,
-            factory_data.encrypted_params().to_vec(),
+            factory.ds_encrypted_params.clone(),
         ));
 
         // Extract certificate from factory data
-        let certificate = Some(factory_data.certificate().clone());
+        let certificate = Some(factory.certificate);
 
         Box::new(Self {
             rng,
@@ -136,7 +140,7 @@ impl<'a> Resources<'a> {
         let (partitions, factory_data) = Self::read_flash_data(flash);
 
         // Dev devices must be provisioned before reaching this point
-        if !EfuseHmacKeys::has_been_initialized() {
+        if !peripherals.efuse.has_hmac_keys_initialized() {
             panic!("Dev device must be provisioned before initialization!");
         }
 
@@ -149,6 +153,7 @@ impl<'a> Resources<'a> {
             sha256,
             ds,
             hmac,
+            efuse,
             uart_upstream,
             uart_downstream,
             jtag,
@@ -159,22 +164,22 @@ impl<'a> Resources<'a> {
         } = *peripherals;
 
         // Load existing keys using the moved hmac
-        let mut hmac_keys =
-            EfuseHmacKeys::load(hmac.clone()).expect("Failed to load HMAC keys from efuses");
+        let mut hmac_keys = EfuseHmacKeys::load(&efuse, hmac.clone())
+            .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
-
 
         // Create UI with display and capsense (using ui_timer)
         let ui = FrostyUi::new(display, capsense, ui_timer);
 
         // Create HardwareRsa if factory data is present (dev devices might have it)
         let (hardware_rsa, certificate) = if let Some(factory_data) = factory_data {
+            let factory = factory_data.into_factory_data();
             (
                 Some(HardwareRsa::new(
                     ds,
-                    factory_data.encrypted_params().to_vec(),
+                    factory.ds_encrypted_params,
                 )),
-                Some(factory_data.certificate().clone()),
+                Some(factory.certificate),
             )
         } else {
             // Dev device without factory data - no hardware RSA
@@ -200,12 +205,14 @@ impl<'a> Resources<'a> {
     }
 
     /// Read flash partitions and data common to both dev and prod
-    fn read_flash_data(flash: &'a RefCell<FlashStorage>) -> (Partitions<'a>, Option<FactoryData>) {
+    fn read_flash_data(
+        flash: &'a RefCell<FlashStorage>,
+    ) -> (Partitions<'a>, Option<VersionedFactoryData>) {
         // Load all partitions
         let partitions = Partitions::load(flash);
 
         // Try to read factory data (may not exist on dev devices)
-        let factory_data = FactoryData::read(partitions.factory_data).ok();
+        let factory_data = VersionedFactoryData::read(partitions.factory_data).ok();
 
         (partitions, factory_data)
     }

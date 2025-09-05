@@ -33,7 +33,10 @@ fn main() -> ! {
     // Check if the device needs factory provisioning
     if device.needs_factory_provisioning() {
         // Run factory provisioning - this will reset the device
-        frostsnap_device::factory::run_factory_provisioning(device);
+        let config = frostsnap_device::factory::init::ProvisioningConfig {
+            read_protect: true, // Production devices should have read protection
+        };
+        frostsnap_device::factory::run_factory_provisioning(device, config);
     } else {
         // Device is already provisioned - proceed with normal boot
         let mut resources = Resources::init_production(device, &flash);

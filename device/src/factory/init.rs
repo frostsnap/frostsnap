@@ -1,5 +1,5 @@
 use crate::factory::screen_test;
-use crate::flash::FactoryData;
+use crate::flash::VersionedFactoryData;
 use crate::peripherals::DevicePeripherals;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
@@ -21,9 +21,15 @@ use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
 
 use crate::{
-    efuse::{self, EfuseHmacKeys},
+    efuse::{self, EfuseHmacKeys, EfuseKeyWriter},
     io::SerialInterface,
 };
+
+/// Configuration for device provisioning
+pub struct ProvisioningConfig {
+    /// Whether to read-protect the efuse keys
+    pub read_protect: bool,
+}
 
 macro_rules! text_display {
     ($display:expr, $text:expr) => {
@@ -61,156 +67,6 @@ macro_rules! read_message {
     };
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn run_factory<'a, S, I2C, PINT, RST, T>(
-    display: &mut S,
-    capsense: &mut CST816S<I2C, PINT, RST>,
-    efuse: &efuse::EfuseController,
-    hal_hmac: Rc<RefCell<Hmac<'a>>>,
-    mut rng: impl rand_core::RngCore, // take ownership to stop caller from accidentally using it again
-    jtag: &mut UsbSerialJtag<'a, Blocking>,
-    timer: &'a T,
-) -> (impl rand_core::RngCore, EfuseHmacKeys<'a>)
-where
-    I2C: hal::i2c::I2c,
-    PINT: hal::digital::InputPin,
-    RST: hal::digital::StatefulOutputPin,
-    S: DrawTarget<Color = Rgb565> + OriginDimensions,
-    T: timer::Timer,
-{
-    let mut upstream = SerialInterface::<T, FactoryUpstream>::new_jtag(jtag, timer);
-    let flash = RefCell::new(FlashStorage::new());
-    let mut partitions = crate::partitions::Partitions::load(&flash);
-
-    // if already configured we skip everything
-    let efuses_burnt = EfuseHmacKeys::has_been_initialized();
-
-    let mut hmac_keys = if efuses_burnt {
-        EfuseHmacKeys::load(hal_hmac.clone()).expect("we should have hmac keys!")
-    } else if cfg!(feature = "genuine_device") {
-        screen_test::run(display, capsense);
-
-        text_display!(
-            display,
-            "Device not configured, waiting for factory magic bytes!"
-        );
-        loop {
-            if upstream.find_and_remove_magic_bytes() {
-                upstream.write_magic_bytes().expect("can write magic bytes");
-                text_display!(display, "Got factory magic bytes");
-                break;
-            }
-        }
-
-        let factory_entropy = read_message!(upstream, FactorySend::InitEntropy);
-
-        text_display!(display, "Got entropy");
-        upstream.send(DeviceFactorySend::InitEntropyOk).unwrap();
-
-        let Esp32DsKey {
-            encrypted_params,
-            ds_hmac_key,
-        } = read_message!(upstream, FactorySend::SetEsp32DsKey);
-        // We don't immediately burn the RSA efuse, we do this after writing the blob
-
-        upstream.send(DeviceFactorySend::ReceivedDsKey).unwrap();
-        text_display!(display, "Received DS key");
-
-        let certificate = read_message!(upstream, FactorySend::SetGenuineCertificate);
-        let factory_data = FactoryData::init(encrypted_params.clone(), certificate.clone());
-
-        let _ = partitions
-            .factory_data
-            .erase_and_write_this::<{ frostsnap_embedded::WRITE_BUF_SIZE }>(&factory_data)
-            .unwrap();
-        drop(factory_data);
-        // double check it was written successfully
-        let _rea_factory_data = bincode::decode_from_reader::<FactoryData, _, _>(
-            partitions.factory_data.bincode_reader(),
-            ABWRITE_BINCODE_CONFIG,
-        )
-        .expect("we should have been able to read the factory data back out!");
-
-        let mut factory_rng = rand_chacha::ChaCha20Rng::from_seed(factory_entropy);
-        let mut share_encryption_key = [0u8; 32];
-        factory_rng.fill_bytes(&mut share_encryption_key);
-
-        // Burn EFUSES, read protect since factory
-        let read_protect = true;
-        let _ = EfuseHmacKeys::init_with_keys(
-            efuse,
-            hal_hmac.clone(),
-            read_protect,
-            share_encryption_key,
-            factory_entropy,
-            ds_hmac_key,
-        )
-        .unwrap();
-
-        text_display!(
-            display,
-            "Saved encrypted params, certificate and burnt efuse!"
-        );
-
-        esp_hal::reset::software_reset();
-        unreachable!()
-    } else {
-        // Dev device - generate everything locally
-
-        // Warn before irreversibly initializing a dev-device
-        const COUNTDOWN_SECONDS: u32 = 30;
-        for seconds_remaining in (1..=COUNTDOWN_SECONDS).rev() {
-            text_display!(
-                display,
-                &format!(
-                    "WARNING\n\nDev-Device Initialization\nAbout to burn eFuses!\n\n{} seconds remaining...\n\nUnplug now to cancel!",
-                    seconds_remaining
-                )
-            );
-
-            // Wait 1 second
-            let start = timer.now();
-            while timer.now().checked_duration_since(start).unwrap() < Duration::millis(1000) {}
-        }
-
-        text_display!(display, "Dev mode: generating keys locally");
-
-        // Generate keys without external entropy our entropy
-        let mut dev_entropy = [0u8; 32];
-        rng.fill_bytes(&mut dev_entropy);
-        let mut dev_rng = rand_chacha::ChaCha20Rng::from_seed(dev_entropy);
-
-        let mut share_encryption_key = [0u8; 32];
-        dev_rng.fill_bytes(&mut share_encryption_key);
-
-        // MEANINGLESS DS HMAC KEY
-        // Since the DS peripheral is only useful for signing with a key that's provisioned by the
-        // factory to prove genuineness, and dev-boards are not genuine, this key serves no meaningful
-        // security purpose on a non-genuine device.
-        let mut ds_hmac_key = [0u8; 32];
-        dev_rng.fill_bytes(&mut ds_hmac_key);
-
-        // For dev devices, we skip creating factory data since we don't have a certificate, and
-        // encrypted params are meaningless without genuine DS keys to use them with.
-        // The device_keypair or otherwise will handle any signing necessary.
-
-        // Burn efuses with dev keys (no read protection for dev devices)
-        let read_protect = false;
-        EfuseHmacKeys::init_with_keys(
-            efuse,
-            hal_hmac.clone(),
-            read_protect,
-            share_encryption_key,
-            dev_entropy,
-            ds_hmac_key,
-        )
-        .expect("Failed to initialize dev HMAC keys")
-    };
-
-    let final_rng = hmac_keys.fixed_entropy.mix_in_rng(&mut rng);
-    (final_rng, hmac_keys)
-}
-
 /// Run dev device provisioning - burns efuses locally without factory communication
 /// This function never returns - it resets the device after provisioning
 pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
@@ -230,9 +86,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         prelude::*,
         primitives::Rectangle,
     };
-    use embedded_text::{
-        alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox,
-    };
+    use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
     use esp_hal::{time::Duration, timer::Timer};
 
     // Warning countdown before burning efuses
@@ -271,34 +125,22 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
     )
     .draw(&mut display);
 
-    // Generate entropy for dev device
-    let mut dev_entropy = [0u8; 32];
-    initial_rng.fill_bytes(&mut dev_entropy);
-    let mut dev_rng = rand_chacha::ChaCha20Rng::from_seed(dev_entropy);
-
     // Generate share encryption key
     let mut share_encryption_key = [0u8; 32];
-    dev_rng.fill_bytes(&mut share_encryption_key);
-
-    // Generate DS HMAC key (not used for attestation on dev devices)
-    let mut ds_hmac_key = [0u8; 32];
-    dev_rng.fill_bytes(&mut ds_hmac_key);
+    initial_rng.fill_bytes(&mut share_encryption_key);
 
     // Generate fixed entropy key
     let mut fixed_entropy_key = [0u8; 32];
-    dev_rng.fill_bytes(&mut fixed_entropy_key);
+    initial_rng.fill_bytes(&mut fixed_entropy_key);
 
     // Initialize efuses WITHOUT read protection (for dev devices)
-    let read_protect = false;
-    EfuseHmacKeys::init_with_keys(
-        &efuse,
-        hmac.clone(),
-        read_protect,
-        share_encryption_key,
-        fixed_entropy_key,
-        ds_hmac_key,
-    )
-    .expect("Failed to initialize dev HMAC keys");
+    // No DS key needed for dev devices
+    EfuseKeyWriter::new(&efuse)
+        .read_protect(false)
+        .add_encryption_key(share_encryption_key)
+        .add_entropy_key(fixed_entropy_key)
+        .write_efuses()
+        .expect("Failed to initialize dev HMAC keys");
 
     // Show completion
     let _ = display.clear(Rgb565::BLACK);
@@ -319,13 +161,13 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
 
 /// Run factory provisioning for a device that needs provisioning
 /// This function never returns - it resets the device after provisioning
-pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
+pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>, config: ProvisioningConfig) -> ! {
     // Destructure what we need
     let DevicePeripherals {
         mut display,
         mut capsense,
         efuse,
-        hmac: hal_hmac,
+        hmac,
         mut jtag,
         timer,
         ..
@@ -333,19 +175,19 @@ pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
 
     // Initialize serial interface for factory communication
     let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(&mut jtag, &timer);
-    
+
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
 
-    // Run screen test  
+    // Run screen test
     screen_test::run(&mut display, &mut capsense);
 
     text_display!(
         &mut display,
         "Device not configured, waiting for factory magic bytes!"
     );
-    
+
     // Wait for factory magic bytes
     loop {
         if upstream.find_and_remove_magic_bytes() {
@@ -370,17 +212,17 @@ pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
 
     // Receive certificate
     let certificate = read_message!(upstream, FactorySend::SetGenuineCertificate);
-    
+
     // Write factory data to flash
-    let factory_data = FactoryData::init(encrypted_params.clone(), certificate.clone());
+    let factory_data = VersionedFactoryData::init(encrypted_params.clone(), certificate.clone());
     partitions
         .factory_data
         .erase_and_write_this::<{ frostsnap_embedded::WRITE_BUF_SIZE }>(&factory_data)
         .unwrap();
     drop(factory_data);
-    
+
     // Verify it was written successfully
-    let _read_factory_data = bincode::decode_from_reader::<FactoryData, _, _>(
+    let _read_factory_data = bincode::decode_from_reader::<VersionedFactoryData, _, _>(
         partitions.factory_data.bincode_reader(),
         ABWRITE_BINCODE_CONFIG,
     )
@@ -391,17 +233,14 @@ pub fn run_factory_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
     let mut share_encryption_key = [0u8; 32];
     factory_rng.fill_bytes(&mut share_encryption_key);
 
-    // Burn EFUSES with read protection
-    let read_protect = true;
-    EfuseHmacKeys::init_with_keys(
-        &efuse,
-        hal_hmac.clone(),
-        read_protect,
-        share_encryption_key,
-        factory_entropy,
-        ds_hmac_key,
-    )
-    .unwrap();
+    // Burn EFUSES with configurable read protection
+    EfuseKeyWriter::new(&efuse)
+        .read_protect(config.read_protect)
+        .add_encryption_key(share_encryption_key)
+        .add_entropy_key(factory_entropy)
+        .add_ds_key(ds_hmac_key)
+        .write_efuses()
+        .unwrap();
 
     text_display!(
         &mut display,

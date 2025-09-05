@@ -133,7 +133,7 @@ fn extract_entropy(
 impl<'a> DevicePeripherals<'a> {
     /// Check if the device needs factory provisioning
     pub fn needs_factory_provisioning(&self) -> bool {
-        !crate::efuse::EfuseHmacKeys::has_been_initialized()
+        !self.efuse.has_hmac_keys_initialized()
     }
 
     /// Initialize all device peripherals including initial RNG

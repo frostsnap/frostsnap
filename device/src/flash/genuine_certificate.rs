@@ -6,21 +6,21 @@ use frostsnap_embedded::FlashPartition;
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct FactoryData {
-    inner: Versioned<FactoryDataContents>,
+pub struct VersionedFactoryData {
+    inner: Versioned<FactoryData>,
 }
 
 #[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
-pub struct FactoryDataContents {
+pub struct FactoryData {
     pub ds_encrypted_params: Vec<u8>,
     pub certificate: Certificate,
 }
 
-impl FactoryData {
+impl VersionedFactoryData {
     pub fn read<'a>(
         partition: FlashPartition<'a, FlashStorage>,
     ) -> Result<Self, bincode::error::DecodeError> {
-        bincode::decode_from_reader::<FactoryData, _, _>(
+        bincode::decode_from_reader::<VersionedFactoryData, _, _>(
             partition.bincode_reader(),
             ABWRITE_BINCODE_CONFIG,
         )
@@ -28,22 +28,16 @@ impl FactoryData {
 
     pub fn init(encrypted_params: Vec<u8>, certificate: Certificate) -> Self {
         Self {
-            inner: Versioned::V0(FactoryDataContents {
+            inner: Versioned::V0(FactoryData {
                 ds_encrypted_params: encrypted_params,
                 certificate,
             }),
         }
     }
 
-    pub fn certificate(&self) -> Certificate {
-        match &self.inner {
-            Versioned::V0(contents) => contents.certificate.clone(),
-        }
-    }
-
-    pub fn encrypted_params(&self) -> &[u8] {
-        match &self.inner {
-            Versioned::V0(contents) => &contents.ds_encrypted_params,
+    pub fn into_factory_data(self) -> FactoryData {
+        match self.inner {
+            Versioned::V0(factory_data) => factory_data,
         }
     }
 }
