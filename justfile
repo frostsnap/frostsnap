@@ -8,12 +8,14 @@ alias erase := erase-device
 flash BOARD=default_board +ARGS="":
     cd device && cargo run --release --bin {{BOARD}} -- --erase-parts otadata,ota_0 {{ARGS}}
 
-flash-secure:
-    just build-device
+# Flash firmware to device already configured for secure boot
+flash-secure BOARD=default_board:
+    just build-secure {{BOARD}}
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x12000 device/blank-otadata.bin
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x20000 target/riscv32imc-unknown-none-elf/release/firmware.bin
 
-flash-secure-new +ARGS="":
+# Initial secure boot setup: bootloader + partitions + firmware + monitor
+flash-secure-new BOARD=default_board +ARGS="":
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x0 device/bootloader.bin {{ARGS}}
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0xD000 device/partitions.bin {{ARGS}}
     just flash-secure
@@ -27,9 +29,12 @@ erase-device +ARGS="nvs":
 
 build-device BOARD=default_board +ARGS="":
     cd device && cargo build --release --bin {{BOARD}} {{ARGS}}
-    ## TODO: Check firmware.bin location for bundling
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
-    espsecure.py sign_data -v 2 -k device/secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
+    just save-image {{BOARD}} "firmware.bin"
+
+build-secure BOARD=default_board +ARGS="":
+    just build-device {{BOARD}} {{ARGS}}
+    just save-image {{BOARD}} "unsigned-firmware.bin"
+    just sign-firmware
 
 build-deterministic:
     cd device && ./deterministic-build.sh
@@ -37,16 +42,14 @@ build-deterministic:
 build +ARGS="":
    (cd frostsnapp; just build {{ARGS}})
 
-save-image BOARD=default_board +ARGS="":
-    # Regardless of the specified BOARD, we always save the firmware as `firmware.bin` for streamlined bundling within the app.
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
+# Regardless of the specified BOARD, we tend to save the firmware as `firmware.bin` for streamlined bundling within the app.
+save-image BOARD=default_board OUTNAME="firmware.bin" +ARGS="":
+    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/{{OUTNAME}} {{ARGS}}
 
-test-secure-boot BOARD=default_board +ARGS="":
-    cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin {{ARGS}}
-    espsecure.py sign_data -v 2 -k device/evil_secure_boot_signing_key.pem -o target/riscv32imc-unknown-none-elf/release/firmware.bin target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin
-    (cd frostsnapp; BUNDLE_FIRMWARE=1 flutter run {{ARGS}})
-    
+# Sign a firmware binary for secure boot
+sign-firmware INPUT="target/riscv32imc-unknown-none-elf/release/unsigned-firmware.bin" OUTPUT="target/riscv32imc-unknown-none-elf/release/firmware.bin":
+    espsecure.py sign_data -v 2 -k device/secure_boot_signing_key.pem -o {{OUTPUT}} {{INPUT}}
+
 test-ordinary +ARGS="":
     cargo test {{ARGS}} {{ordinary_crates}}
 
@@ -90,6 +93,10 @@ fix-rust:
 
 run +ARGS="":
     just frostsnapp/run
+
+# Run the app with bundled firmware
+run-secure +ARGS="":
+    just frostsnapp/run-secure
 
 fetch-riscv VERSION="2024.09.03-nightly":
     #!/bin/sh
