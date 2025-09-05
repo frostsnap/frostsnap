@@ -27,7 +27,6 @@ import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:rxdart/rxdart.dart';
 
-
 class Wallet {
   final SuperWallet superWallet;
   final MasterAppkey masterAppkey;
