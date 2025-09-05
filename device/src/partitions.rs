@@ -89,7 +89,15 @@ pub trait PartitionExt {
     /// * `sha256` - SHA256 hardware peripheral
     /// * `up_to` - Optional byte limit.
     fn sha256_digest(&self, sha256: &mut Sha<'_>, up_to: Option<u32>) -> Sha256Digest;
-    fn firmware_size(&self) -> Result<u32, FirmwareSizeError>;
+
+    /// Calculate firmware size information
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - Firmware content size (without signature blocks)
+    /// - Total size including signature blocks if present
+    fn firmware_size(&self) -> Result<(u32, u32), FirmwareSizeError>;
 }
 
 impl PartitionExt for EspFlashPartition<'_> {
@@ -125,7 +133,7 @@ impl PartitionExt for EspFlashPartition<'_> {
         Sha256Digest(digest)
     }
 
-    fn firmware_size(&self) -> Result<u32, FirmwareSizeError> {
+    fn firmware_size(&self) -> Result<(u32, u32), FirmwareSizeError> {
         crate::firmware_size::firmware_size(self)
     }
 }
