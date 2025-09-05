@@ -1,12 +1,13 @@
 extern crate alloc;
+use crate::partitions::EspFlashPartition;
 use alloc::{vec, vec::Vec};
 use crc::Crc;
-use embedded_storage::nor_flash::{NorFlashErrorKind, ReadNorFlash};
+use embedded_storage::nor_flash::NorFlashErrorKind;
 use esp_hal::efuse::Efuse;
 use esp_hal::rsa::{operand_sizes::Op3072, Rsa, RsaModularExponentiation};
 use esp_hal::sha::{Sha, Sha256};
 use esp_hal::Blocking;
-use frostsnap_embedded::FlashPartition;
+
 use nb::block;
 
 const SECTOR_SIZE: usize = 4096;
@@ -278,43 +279,38 @@ pub fn is_secure_boot_enabled() -> bool {
     find_secure_boot_key().is_some()
 }
 
-pub fn verify_secure_boot<'a, S>(
-    app_partition: &FlashPartition<S>,
-    rsa: &mut Rsa<'_, Blocking>,
-    sha: &mut Sha,
-) -> Result<(), SecureBootError<'a>>
-where
-    S: ReadNorFlash + embedded_storage::nor_flash::NorFlash,
-{
-    let mut signature_block = vec![0x00; SECTOR_SIZE];
-    let mut signature_found = false;
-    let mut signature_sector_index = 0u32;
-
-    // Find signature block in app partition using magic bytes (magic byte, secure boot v2, padding)
-    for i in 0..app_partition.n_sectors() {
-        // Note: with 1280K firmware, 320 sectors, each has a 1 in 2^(8*4) chance of a false
-        // positive with these magic bytes. So 320/2^(8*4) ~ 1 in 13.4m firmware updates will
-        // fail to pass signature verification upon upgrading; and in that incredibly improbably
-        // situation: we as the vendor would be the first notice first and not release it.
-        match app_partition.read_sector(i) {
+pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<(u32, [u8; SECTOR_SIZE])> {
+    let mut signature_block = [0x00; SECTOR_SIZE];
+    // Note: with 1280K firmware, 320 sectors, each has a 1 in 2^(8*4) chance of a false
+    // positive with these magic bytes. So 320/2^(8*4) ~ 1 in 13.4m firmware updates will
+    // fail to pass signature verification upon upgrading; and in that incredibly improbably
+    // situation: we as the vendor would be the first notice first and not release it.
+    for i in 0..partition.n_sectors() {
+        match partition.read_sector(i) {
             Ok(sector_data) => {
                 // Check for signature block magic bytes: 0xE7, 0x02, 0x00, 0x00
-                if sector_data[0..4] == [0xE7, 0x02, 0x00, 0x00] {
-                    signature_found = true;
-                    signature_sector_index = i;
+                if sector_data.len() >= 4 && sector_data[0..4] == [0xE7, 0x02, 0x00, 0x00] {
                     signature_block.copy_from_slice(&sector_data);
-                    break;
+                    return Some((i, signature_block));
                 }
             }
-            Err(_e) => {
+            Err(_) => {
+                // Skip unreadable sectors
                 continue;
             }
         }
     }
 
-    if !signature_found {
-        return Err(SecureBootError::MissingSignature);
-    }
+    None // No signature block found
+}
+
+pub fn verify_secure_boot<'a>(
+    app_partition: &EspFlashPartition,
+    rsa: &mut Rsa<'_, Blocking>,
+    sha: &mut Sha,
+) -> Result<(), SecureBootError<'a>> {
+    let (signature_sector_index, signature_block) =
+        find_signature_sector(app_partition).ok_or(SecureBootError::MissingSignature)?;
 
     // Parse signature block structure
     let parsed_block = SignatureBlock::from_bytes(&signature_block);
