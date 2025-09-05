@@ -1,3 +1,5 @@
+pub use crate::ui_impl::FrostyUi;
+
 use crate::graphics::{
     animation::AnimationState,
     widgets::{EnterShareIndexScreen, EnterShareScreen},
