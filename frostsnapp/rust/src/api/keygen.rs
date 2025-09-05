@@ -31,7 +31,7 @@ impl super::coordinator::Coordinator {
         event_stream: StreamSink<KeyGenState>,
     ) -> Result<()> {
         self.0.generate_new_key(
-            devices.into_iter().collect(),
+            devices,
             threshold,
             key_name,
             KeyPurpose::Bitcoin(network),
