@@ -1,18 +1,19 @@
 import 'fetch.just'
 
-default_board := "v2"
-ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_widgets -p frost_backup"
+device_crates := "-p frostsnap_device -p frostsnap_cst816s --target riscv32imc-unknown-none-elf"
 
 alias erase := erase-device
+alias demo := simulate
 
-flash BOARD=default_board +ARGS="":
-    cd device && cargo run --release --features {{BOARD}} --bin {{BOARD}} -- --erase-parts otadata,factory {{ARGS}}
+flash +args="":
+    cd device && cargo run --release {{args}} --bin v2 -- --erase-parts otadata,factory
 
 erase-device +ARGS="nvs":
     cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
 
-build-device BOARD=default_board +ARGS="":
-    cd device && cargo build --release --features {{BOARD}} --bin {{BOARD}} {{ARGS}}
+build-device +args="":
+    cd device && cargo build --release {{args}} --bin v2
 
 build-deterministic:
     cd device && ./deterministic-build.sh
@@ -20,8 +21,8 @@ build-deterministic:
 build +ARGS="":
    (cd frostsnapp; just build {{ARGS}})
 
-save-image BOARD=default_board +ARGS="":
-    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/{{BOARD}} target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
+save-image +ARGS="":
+    espflash save-image --chip=esp32c3 target/riscv32imc-unknown-none-elf/release/v2 target/riscv32imc-unknown-none-elf/release/firmware.bin {{ARGS}}
 
 test-ordinary +ARGS="":
     cargo test {{ARGS}} {{ordinary_crates}}
@@ -32,14 +33,14 @@ check-ordinary +ARGS="":
     cargo check {{ordinary_crates}} {{ARGS}} --all-features --tests --bins
 
 check-device +ARGS="":
-    cd device && cargo check {{ARGS}} --all-features --bins
+    cargo check {{device_crates}} {{ARGS}} --all-features
 
 lint-ordinary +ARGS="":
     cargo fmt {{ordinary_crates}} -- --check
     cargo clippy {{ordinary_crates}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
 
 lint-device +ARGS="":
-    cd device && cargo clippy {{ARGS}} --all-features --bins -- -Dwarnings
+    cargo clippy {{device_crates}} {{ARGS}} --all-features -- -Dwarnings
 
 dart-format-check-app:
     ( cd frostsnapp; dart format --set-exit-if-changed --output=none  $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*") )
@@ -60,12 +61,13 @@ fix: fix-dart fix-rust
 
 fix-rust:
     cargo clippy --fix --allow-dirty --allow-staged {{ordinary_crates}} --all-features --tests --bins
-    ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
+    cargo clippy --fix --allow-dirty --allow-staged {{device_crates}} --all-features
     cargo fmt --all
 
+gen-firmware: build-device save-image
 
 run +ARGS="":
-    just frostsnapp/run
+    just frostsnapp/run {{ARGS}}
 
 fetch-riscv VERSION="2024.09.03-nightly":
     #!/bin/sh
@@ -78,3 +80,12 @@ lint: lint-ordinary lint-device lint-app
 
 install-cargo-bins:
     just frostsnapp/install-cargo-bins
+
+backup +ARGS="":
+    cargo run --release --bin frost_backup -- {{ARGS}}
+
+simulate +ARGS="":
+    (cd widget_simulator && cargo run -- {{ARGS}}; )
+
+widget_dev +args="":
+    cd device && cargo run --bin widget_dev --release {{args}}

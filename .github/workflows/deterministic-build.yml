@@ -13,9 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     # This job is allowed to fail and won't block PRs
     continue-on-error: true
-    strategy:
-      matrix:
-        board: ["v2"]
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@just

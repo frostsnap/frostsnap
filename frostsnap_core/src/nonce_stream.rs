@@ -1,10 +1,21 @@
 use alloc::collections::VecDeque;
 use schnorr_fun::binonce;
-#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
+#[derive(Clone, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct NonceStreamSegment {
     pub stream_id: NonceStreamId,
     pub nonces: VecDeque<binonce::Nonce>,
     pub index: u32,
+}
+
+impl core::fmt::Debug for NonceStreamSegment {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("NonceStreamSegment")
+            .field("stream_id", &self.stream_id)
+            .field("index", &self.index)
+            .field("first_nonce", &self.nonces.front())
+            .field("nonce_count", &self.nonces.len())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
