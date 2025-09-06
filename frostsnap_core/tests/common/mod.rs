@@ -13,6 +13,7 @@ use frostsnap_core::{
 use frostsnap_core::{AccessStructureRef, MessageResult};
 use rand::RngCore;
 use schnorr_fun::frost::ShareIndex;
+use schnorr_fun::fun::KeyPair;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub const TEST_ENCRYPTION_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
@@ -180,6 +181,7 @@ pub trait Env {
 #[derive(Clone)]
 pub struct Run {
     pub coordinator: FrostCoordinator,
+    pub coordinator_keygen_keypair: KeyPair,
     pub devices: BTreeMap<DeviceId, FrostSigner>,
     pub message_queue: VecDeque<Send>,
     pub transcript: Vec<Send>,
@@ -206,11 +208,24 @@ impl Run {
         rng: &mut impl rand_core::RngCore,
         nonce_slots: usize,
     ) -> Self {
+        let coordinator_keygen_keypair = FrostCoordinator::short_lived_keygen_keypair(rng);
+        let mut coordinator = FrostCoordinator::new();
+        coordinator.keygen_fingerprint = schnorr_fun::frost::Fingerprint {
+            bits_per_coeff: 2,
+            max_bits_total: 6,
+            tag: "test",
+        };
         Self::new(
-            FrostCoordinator::new(),
+            coordinator,
+            coordinator_keygen_keypair,
             (0..n_devices)
                 .map(|_| {
-                    let signer = FrostSigner::new_random(rng, nonce_slots);
+                    let mut signer = FrostSigner::new_random(rng, nonce_slots);
+                    signer.keygen_fingerprint = schnorr_fun::frost::Fingerprint {
+                        bits_per_coeff: 2,
+                        max_bits_total: 6,
+                        tag: "test",
+                    };
                     (signer.device_id(), signer)
                 })
                 .collect(),
@@ -238,8 +253,10 @@ impl Run {
                     threshold,
                     "my new key".to_string(),
                     purpose,
+                    run.coordinator_keygen_keypair.public_key(),
                     rng,
                 ),
+                run.coordinator_keygen_keypair,
                 rng,
             )
             .unwrap();
@@ -273,9 +290,14 @@ impl Run {
         run
     }
 
-    pub fn new(coordinator: FrostCoordinator, devices: BTreeMap<DeviceId, FrostSigner>) -> Self {
+    pub fn new(
+        coordinator: FrostCoordinator,
+        coordinator_keygen_keypair: KeyPair,
+        devices: BTreeMap<DeviceId, FrostSigner>,
+    ) -> Self {
         Self {
             start_coordinator: coordinator.clone(),
+            coordinator_keygen_keypair,
             start_devices: devices.clone(),
             coordinator,
             devices,

@@ -341,7 +341,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             symm_keygen,
             rng,
         );
-        self.save_complete_share(KeyGenPhase3 {
+        self.save_complete_share(KeyGenPhase4 {
             key_name: phase.complete_share.key_name,
             key_purpose: phase.complete_share.purpose,
             access_structure_ref: phase.complete_share.access_structure_ref,

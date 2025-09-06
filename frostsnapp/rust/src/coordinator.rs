@@ -258,6 +258,7 @@ impl FfiCoordinator {
                 for app_message in messages_from_devices {
                     match app_message.body {
                         AppMessageBody::Core(core_message) => {
+                            let core_message = *core_message;
                             let result = coordinator.staged_mutate(&mut *db, |coordinator| {
                                 match coordinator
                                     .recv_device_message(app_message.from, core_message)
@@ -368,11 +369,15 @@ impl FfiCoordinator {
             .map(|device| device.id)
             .collect();
 
+        let coordinator_keygen_keypair =
+            FrostCoordinator::short_lived_keygen_keypair(&mut rand::thread_rng());
+
         let begin_keygen = message::keygen::Begin::new(
             devices,
             threshold,
             key_name,
             purpose,
+            coordinator_keygen_keypair.public_key(),
             &mut rand::thread_rng(),
         );
 
@@ -380,6 +385,7 @@ impl FfiCoordinator {
             sink,
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             currently_connected,
+            coordinator_keygen_keypair,
             begin_keygen,
             &mut rand::thread_rng(),
         );

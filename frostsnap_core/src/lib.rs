@@ -7,6 +7,7 @@ extern crate std;
 pub mod coord_nonces;
 pub mod device_nonces;
 mod macros;
+mod map_ext;
 mod master_appkey;
 pub mod message;
 pub mod nonce_stream;
@@ -16,7 +17,7 @@ pub mod tweak;
 use core::ops::RangeBounds;
 
 use schnorr_fun::{
-    frost::{chilldkg::encpedpop, ShareImage, ShareIndex, SharedKey},
+    frost::{chilldkg::certpedpop, ShareImage, ShareIndex, SharedKey},
     fun::{hash::HashAdd, prelude::*},
 };
 pub use sha2;
@@ -293,13 +294,12 @@ impl_fromstr_deserialize! {
 pub struct SessionHash(pub [u8; 32]);
 
 impl SessionHash {
-    pub fn from_agg_input(agg_input: &encpedpop::AggKeygenInput) -> Self {
-        Self(
-            sha2::Sha256::default()
-                .chain_update(agg_input.cert_bytes())
-                .finalize_fixed()
-                .into(),
-        )
+    pub fn from_certified_keygen(
+        certified_keygen: &certpedpop::CertifiedKeygen<certpedpop::vrf_cert::CertVrfProof>,
+    ) -> Self {
+        let hash = sha2::Sha256::default().ds("frost-dkg-security-check");
+        let security_check = certified_keygen.vrf_security_check(hash);
+        Self(security_check)
     }
 }
 

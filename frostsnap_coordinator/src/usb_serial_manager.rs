@@ -353,7 +353,7 @@ impl UsbSerialManager {
                                 DeviceSendBody::Core(core_msg) => {
                                     device_changes.push(DeviceChange::AppMessage(AppMessage {
                                         from: message.from,
-                                        body: AppMessageBody::Core(core_msg),
+                                        body: AppMessageBody::Core(Box::new(core_msg)),
                                     }));
                                 }
                                 DeviceSendBody::_LegacyAckUpgradeMode => {
@@ -783,7 +783,7 @@ pub struct AppMessage {
 
 #[derive(Debug, Clone)]
 pub enum AppMessageBody {
-    Core(DeviceToCoordinatorMessage),
+    Core(Box<DeviceToCoordinatorMessage>),
     Misc(CommsMisc),
 }
 

@@ -5,6 +5,7 @@ use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator},
     message::keygen,
+    schnorr_fun::fun::KeyPair,
     AccessStructureRef, DeviceId, KeygenId, SessionHash,
 };
 use tracing::{event, Level};
@@ -21,6 +22,7 @@ impl KeyGen {
         keygen_sink: impl Sink<KeyGenState> + 'static,
         coordinator: &mut FrostCoordinator,
         currently_connected: BTreeSet<DeviceId>,
+        coordinator_keypair: KeyPair,
         begin_keygen: keygen::Begin,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
@@ -42,7 +44,7 @@ impl KeyGen {
             self_.abort("A selected device was disconnected".into(), false);
         }
 
-        match coordinator.begin_keygen(begin_keygen, rng) {
+        match coordinator.begin_keygen(begin_keygen, coordinator_keypair, rng) {
             Ok(messages) => {
                 for message in messages {
                     self_.keygen_messages.push(

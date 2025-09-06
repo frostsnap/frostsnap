@@ -1,11 +1,19 @@
+use schnorr_fun::frost::chilldkg::certpedpop::vrf_cert;
+
 use super::*;
+
+pub const VRF_CERT_SCHEME_ID: &str = "cert-vrf-v0";
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum Keygen {
     Begin(Begin),
+    CertifyPlease {
+        keygen_id: KeygenId,
+        agg_input: certpedpop::AggKeygenInput,
+    },
     Check {
         keygen_id: KeygenId,
-        agg_input: encpedpop::AggKeygenInput,
+        certificate: BTreeMap<Point, vrf_cert::CertVrfProof>,
     },
     /// Actually save key to device.
     Finalize {
@@ -26,6 +34,7 @@ pub struct Begin {
     pub threshold: u16,
     pub key_name: String,
     pub purpose: KeyPurpose,
+    pub coordinator_public_key: Point,
 }
 
 impl From<Begin> for Keygen {
@@ -46,6 +55,7 @@ impl Begin {
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
+        coordinator_public_key: Point,
         keygen_id: KeygenId,
     ) -> Self {
         let device_to_share_index: BTreeMap<_, _> = devices
@@ -54,7 +64,7 @@ impl Begin {
             .map(|(index, device_id)| {
                 (
                     *device_id,
-                    NonZeroU32::new(index as u32 + 1).expect("we added one"),
+                    NonZeroU32::new((index + 1) as u32).expect("we added one"),
                 )
             })
             .collect();
@@ -65,6 +75,7 @@ impl Begin {
             key_name,
             purpose,
             keygen_id,
+            coordinator_public_key,
         }
     }
     pub fn new(
@@ -72,6 +83,7 @@ impl Begin {
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
+        coordinator_public_key: Point,
         rng: &mut impl rand_core::RngCore, // for the keygen id
     ) -> Self {
         let mut id = [0u8; 16];
@@ -82,6 +94,7 @@ impl Begin {
             threshold,
             key_name,
             purpose,
+            coordinator_public_key,
             KeygenId::from_bytes(id),
         )
     }
