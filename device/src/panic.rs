@@ -1,4 +1,5 @@
 use crate::init_display;
+use crate::peripherals::NoCs;
 use embedded_graphics::{prelude::*, text::Alignment};
 use frostsnap_widgets::string_ext::StringFixed;
 
@@ -17,9 +18,9 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
         peripherals::Peripherals,
     };
 
-    let peripherals = unsafe { Peripherals::steal() };
+    let mut peripherals = unsafe { Peripherals::steal() };
 
-    let mut bl = Output::new(peripherals.GPIO1, Level::Low);
+    let mut bl = Output::new(&mut peripherals.GPIO1, Level::Low);
 
     let mut delay = Delay::new();
 

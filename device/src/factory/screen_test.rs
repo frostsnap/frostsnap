@@ -1,4 +1,3 @@
-use crate::calibrate_point;
 use cst816s::CST816S;
 use embedded_graphics::{
     mono_font::{iso_8859_1::FONT_10X20, MonoTextStyle},
@@ -8,6 +7,8 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 use embedded_hal as hal;
+
+use crate::touch_calibration::adjust_touch_point;
 
 // Constant for the "lift up" action.
 const ACTION_LIFT_UP: u8 = 1;
@@ -126,7 +127,7 @@ where
                 }
 
                 // Calibrate the touch point.
-                let touch_point = calibrate_point(Point::new(touch_event.x, touch_event.y));
+                let touch_point = adjust_touch_point(Point::new(touch_event.x, touch_event.y));
 
                 // Draw a small red square at the calibrated touch location.
                 let red_square_size = Size::new(2, 2);
@@ -257,7 +258,7 @@ where
                 if touch_event.action != ACTION_LIFT_UP {
                     continue;
                 }
-                let touch_point = calibrate_point(Point::new(touch_event.x, touch_event.y));
+                let touch_point = adjust_touch_point(Point::new(touch_event.x, touch_event.y));
                 if start_again_rect.contains(touch_point) {
                     // "Start Again" tapped: break out to re-run the test.
                     break;

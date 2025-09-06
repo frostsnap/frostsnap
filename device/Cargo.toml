@@ -5,14 +5,13 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-default = ["read_protect_hmac_key", "stack_guard"]
+default = ["stack_guard"]
 mem_debug = []
-read_protect_hmac_key = []
 debug_fps = []
 debug_mem = []
 debug_log = []
 debug = [ "debug_fps", "debug_mem", "debug_log" ]
-prefill-words = [] # the final word is "BODY"
+prefill-words = []
 # turns on the esp32c3 hardware stack guard
 stack_guard = []
 # FIXME: remove this feature when v2.rs is deleted (only used in legacy factory code)
