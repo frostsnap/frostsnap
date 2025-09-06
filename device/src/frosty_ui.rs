@@ -1,8 +1,7 @@
-use alloc::{boxed::Box, format};
-use core::convert::TryInto;
-use cst816s::{TouchGesture, CST816S};
+use alloc::boxed::Box;
 use embedded_graphics::prelude::*;
 use esp_hal::prelude::*;
+use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
 use frostsnap_widgets::Center;
 use frostsnap_widgets::{
@@ -14,12 +13,11 @@ use frostsnap_widgets::{
     Widget, HOLD_TO_CONFIRM_TIME_LONG_MS, HOLD_TO_CONFIRM_TIME_MS,
 };
 
+use crate::touch_handler;
+use crate::ui::FirmwareUpgradeStatus;
 use crate::{
-    root_widget::RootWidget,
-    touch_calibration::adjust_touch_point,
-    ui::{BusyTask, FirmwareUpgradeStatus, Prompt, UiEvent, UserInteraction, Workflow},
-    widget_tree::WidgetTree,
-    DownstreamConnectionState, Instant, UpstreamConnectionState,
+    root_widget::RootWidget, ui::*, widget_tree::WidgetTree, DownstreamConnectionState, Instant,
+    UpstreamConnectionState,
 };
 
 // Type alias for the display to match factory
@@ -42,11 +40,7 @@ pub struct FrostyUi<'a> {
         embedded_graphics::pixelcolor::Rgb565,
     >,
     pub widget: OverlayDebug<RootWidget>,
-    pub capsense: CST816S<
-        esp_hal::i2c::master::I2c<'a, esp_hal::Blocking>,
-        esp_hal::gpio::Input<'a>,
-        esp_hal::gpio::Output<'a>,
-    >,
+    pub touch_receiver: TouchReceiver,
     pub last_touch: Option<Point>,
     pub last_redraw_time: Instant,
     pub downstream_connection_state: DownstreamConnectionState,
@@ -63,11 +57,7 @@ impl<'a> FrostyUi<'a> {
     /// Create a new FrostyUi instance
     pub fn new(
         display: DeviceDisplay<'a>,
-        capsense: CST816S<
-            esp_hal::i2c::master::I2c<'a, esp_hal::Blocking>,
-            esp_hal::gpio::Input<'a>,
-            esp_hal::gpio::Output<'a>,
-        >,
+        touch_receiver: TouchReceiver,
         timer: esp_hal::timer::timg::Timer<
             esp_hal::timer::timg::Timer0<esp_hal::peripherals::TIMG1>,
             esp_hal::Blocking,
@@ -92,7 +82,7 @@ impl<'a> FrostyUi<'a> {
         Self {
             display: frostsnap_widgets::SuperDrawTarget::new(display, PALETTE.background),
             widget: widget_with_debug,
-            capsense,
+            touch_receiver,
             downstream_connection_state: DownstreamConnectionState::Disconnected,
             upstream_connection_state: None,
             last_touch: None,
@@ -105,7 +95,6 @@ impl<'a> FrostyUi<'a> {
 }
 
 impl<'a> UserInteraction for FrostyUi<'a> {
-    #[inline(never)]
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState) {
         if state != self.downstream_connection_state {
             self.downstream_connection_state = state;
@@ -395,63 +384,13 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().to_millis());
 
         // Handle touch input
-
-        if let Some(touch_event) = self.capsense.read_one_touch_event(true) {
-            // Only process if we have valid coordinates
-            // Apply touch calibration adjustments
-            let touch_point = adjust_touch_point(Point::new(touch_event.x, touch_event.y));
-            let lift_up = touch_event.action == 1;
-            let gesture = touch_event.gesture;
-
-            let is_vertical_drag =
-                matches!(gesture, TouchGesture::SlideUp | TouchGesture::SlideDown);
-            let is_horizontal_swipe =
-                matches!(gesture, TouchGesture::SlideLeft | TouchGesture::SlideRight);
-
-            // Handle horizontal swipes to switch between widgets
-            if is_horizontal_swipe && lift_up {
-                match gesture {
-                    TouchGesture::SlideLeft => {
-                        // Swipe left: show debug log (index 1)
-                        if self.current_widget_index == 0 {
-                            self.current_widget_index = 1;
-                            self.widget.show_logs();
-                            frostsnap_widgets::debug::log("Switched to debug log".into());
-                        }
-                    }
-                    TouchGesture::SlideRight => {
-                        // Swipe right: show main widget (index 0)
-                        if self.current_widget_index == 1 {
-                            self.current_widget_index = 0;
-                            self.widget.show_main();
-                            frostsnap_widgets::debug::log("Switched to main widget".into());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            // Handle vertical drag for widgets that support it
-            if is_vertical_drag {
-                self.widget.handle_vertical_drag(
-                    self.last_touch.map(|point| point.y as u32),
-                    touch_point.y as u32,
-                    lift_up,
-                );
-            }
-
-            if !is_vertical_drag || lift_up {
-                // Always handle touch events (for both press and release)
-                // This is important so that lift_up is processed after drag
-                self.widget.handle_touch(touch_point, now_ms, lift_up);
-            }
-            // Store last touch for drag calculations
-            if lift_up {
-                self.last_touch = None;
-            } else {
-                self.last_touch = Some(touch_point);
-            }
-        };
+        touch_handler::process_all_touch_events(
+            &mut self.touch_receiver,
+            &mut self.widget,
+            &mut self.last_touch,
+            &mut self.current_widget_index,
+            now_ms,
+        );
 
         // Only redraw if at least 10ms has passed since last redraw
         let elapsed_ms = (now - self.last_redraw_time).to_millis();

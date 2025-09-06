@@ -1,4 +1,3 @@
-use cst816s::CST816S;
 use embedded_graphics::{
     mono_font::{iso_8859_1::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb565,
@@ -6,7 +5,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::{Baseline, Text},
 };
-use embedded_hal as hal;
+use frostsnap_cst816s::interrupt::TouchReceiver;
 
 use crate::touch_calibration::adjust_touch_point;
 
@@ -61,11 +60,8 @@ where
         .draw(display);
 }
 
-pub fn run<S, I2C, PINT, RST>(display: &mut S, capsense: &mut CST816S<I2C, PINT, RST>)
+pub fn run<S>(display: &mut S, touch_receiver: &mut TouchReceiver)
 where
-    I2C: hal::i2c::I2c,
-    PINT: hal::digital::InputPin,
-    RST: hal::digital::StatefulOutputPin,
     S: DrawTarget<Color = Rgb565> + OriginDimensions,
 {
     let grid_spacing: i32 = 30;
@@ -116,7 +112,7 @@ where
 
         // Main test loop: read touch events and handle targets.
         loop {
-            if let Some(touch_event) = capsense.read_one_touch_event(true) {
+            if let Some(touch_event) = touch_receiver.dequeue() {
                 // Debounce: if the current event is lift-up and the previous event was also lift-up, skip.
                 if touch_event.action == ACTION_LIFT_UP && prev_action == Some(ACTION_LIFT_UP) {
                     continue;
@@ -249,7 +245,7 @@ where
         // For the menu loop, use separate debounce logic.
         let mut prev_menu_action: Option<u8> = None;
         loop {
-            if let Some(touch_event) = capsense.read_one_touch_event(true) {
+            if let Some(touch_event) = touch_receiver.dequeue() {
                 if touch_event.action == ACTION_LIFT_UP && prev_menu_action == Some(ACTION_LIFT_UP)
                 {
                     continue;
