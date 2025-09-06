@@ -4,11 +4,12 @@ use cst816s::{TouchGesture, CST816S};
 use embedded_graphics::prelude::*;
 use esp_hal::prelude::*;
 use frostsnap_widgets::palette::PALETTE;
+use frostsnap_widgets::Center;
 use frostsnap_widgets::{
     backup::{BackupDisplay, EnterShareScreen},
     debug::OverlayDebug,
     keygen_check::KeygenCheck,
-    sign_prompt::SignPrompt,
+    sign_prompt::SignTxPrompt,
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Welcome,
     Widget,
 };
@@ -204,19 +205,39 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 // Get the user prompt from the transaction template
                                 let prompt = tx_template.user_prompt(*network);
 
-                                // Create the SignPrompt widget
-                                let widget = Box::new(SignPrompt::new(prompt));
+                                // Create the SignTxPrompt widget
+                                let widget = Box::new(SignTxPrompt::new(prompt));
 
                                 // Store both widget and phase in the WidgetTree
-                                WidgetTree::SignPrompt {
+                                WidgetTree::SignTxPrompt {
                                     widget,
                                     phase: Some(phase),
                                 }
                             }
-                            _ => {
-                                // TODO: Handle other sign task types (Test, Nostr)
-                                // For now, just show welcome
-                                unimplemented!();
+                            frostsnap_core::SignTask::Test { message } => {
+                                use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
+                                use u8g2_fonts::U8g2TextStyle;
+
+                                // Format the test message for display
+                                let prompt_text = format!("Sign test message:\n\n{}", message);
+
+                                let text_widget = Text::new(
+                                    prompt_text,
+                                    U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+                                )
+                                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                                let hold_to_confirm =
+                                    HoldToConfirm::new(1000, Center::new(text_widget));
+
+                                WidgetTree::SignTestPrompt {
+                                    widget: Box::new(hold_to_confirm),
+                                    phase: Some(phase),
+                                }
+                            }
+                            frostsnap_core::SignTask::Nostr { .. } => {
+                                // Nostr signing not implemented yet
+                                WidgetTree::Welcome(Box::new(Welcome::new()))
                             }
                         }
                     }
@@ -454,12 +475,21 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     }
                 }
             }
-            WidgetTree::SignPrompt {
+            WidgetTree::SignTxPrompt {
                 widget: sign_prompt,
                 phase,
             } => {
                 // Check if confirmed and we still have the phase
                 if sign_prompt.is_confirmed() {
+                    // Take the phase (move it out of the Option)
+                    if let Some(phase_data) = phase.take() {
+                        return Some(UiEvent::SigningConfirm { phase: phase_data });
+                    }
+                }
+            }
+            WidgetTree::SignTestPrompt { widget, phase } => {
+                // Check if confirmed and we still have the phase
+                if widget.is_completed() {
                     // Take the phase (move it out of the Option)
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });

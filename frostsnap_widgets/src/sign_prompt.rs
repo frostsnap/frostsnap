@@ -383,12 +383,12 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
 
 /// High-level widget that manages the complete sign prompt flow using PageSlider
 #[derive(frostsnap_macros::Widget)]
-pub struct SignPrompt {
+pub struct SignTxPrompt {
     #[widget_delegate]
     page_slider: PageSlider<SignPromptPageList, SignPromptPage>,
 }
 
-impl SignPrompt {
+impl SignTxPrompt {
     pub fn new(prompt: PromptSignBitcoinTx) -> Self {
         let page_list = SignPromptPageList::new(prompt);
         let page_slider = PageSlider::new(page_list, 100)

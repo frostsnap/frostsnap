@@ -72,7 +72,7 @@ pub use key_touch::{Key, KeyTouch};
 // pub use page_demo::PageDemo;
 pub use page_slider::PageSlider;
 pub use share_index::ShareIndexWidget;
-pub use sign_prompt::SignPrompt;
+pub use sign_prompt::SignTxPrompt;
 pub use super_draw_target::SuperDrawTarget;
 pub use widget_color::{ColorInterpolate, WidgetColor};
 pub use widget_list::WidgetList;

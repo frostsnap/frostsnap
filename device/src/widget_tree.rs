@@ -7,9 +7,9 @@ use frostsnap_core::device::{
 use frostsnap_widgets::{
     backup::{BackupDisplay, EnterShareScreen},
     keygen_check::KeygenCheck,
-    sign_prompt::SignPrompt,
-    DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm, Standby,
-    Text, Welcome,
+    sign_prompt::SignTxPrompt,
+    Center, DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm,
+    Standby, Text, Welcome,
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -35,8 +35,14 @@ pub enum WidgetTree {
     },
 
     /// Sign transaction prompt screen
-    SignPrompt {
-        widget: Box<SignPrompt>,
+    SignTxPrompt {
+        widget: Box<SignTxPrompt>,
+        phase: Option<Box<SignPhase1>>,
+    },
+
+    /// Sign test message prompt screen
+    SignTestPrompt {
+        widget: Box<HoldToConfirm<Center<Text<U8g2TextStyle<Rgb565>>>>>,
         phase: Option<Box<SignPhase1>>,
     },
 

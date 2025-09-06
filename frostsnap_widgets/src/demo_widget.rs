@@ -256,7 +256,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "sign_prompt" => {
-                use $crate::sign_prompt::SignPrompt;
+                use $crate::sign_prompt::SignTxPrompt;
                 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
                 use core::str::FromStr;
 
@@ -286,7 +286,7 @@ macro_rules! demo_widget {
                 };
 
                 // Create the sign prompt widget
-                let widget = SignPrompt::new(prompt);
+                let widget = SignTxPrompt::new(prompt);
 
                 $run_macro!(widget);
             }
