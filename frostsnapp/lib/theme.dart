@@ -37,8 +37,7 @@ Future<T?> showBottomSheetOrDialog<T>(
   Color? backgroundColor,
 }) {
   final windowSize = WindowSizeContext.of(context);
-  backgroundColor =
-      backgroundColor ?? Theme.of(context).colorScheme.surfaceContainerLow;
+  backgroundColor = backgroundColor ?? Theme.of(context).colorScheme.surface;
   final scrollController = ScrollController();
 
   final column = ConstrainedBox(

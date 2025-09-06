@@ -504,6 +504,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
   signersDone(BuildContext context) async {
     if (unsignedTx == null) return;
 
+    final fsCtx = FrostsnapContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final access = walletCtx.wallet.frostKey()!.accessStructures()[0];
     final chainTipHeight = walletCtx.wallet.superWallet.height();
@@ -529,6 +530,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
           accessStructureRef: access.accessStructureRef(),
           unsignedTx: unsignedTx!,
           devices: selectedDevicesModel.selected.toList(),
+          psbtMan: fsCtx.psbtManager,
         ),
       ),
     );

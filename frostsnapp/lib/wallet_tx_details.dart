@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/animated_check.dart';
@@ -10,9 +12,12 @@ import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/psbt.dart';
+import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/psbt_manager.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
@@ -114,6 +119,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
 
     return ListTile(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      contentPadding: EdgeInsets.symmetric(horizontal: 16),
       onTap: onTap,
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -129,6 +135,8 @@ class TxSentOrReceivedTile extends StatelessWidget {
                               : 'Confirming...')
                         : (txDetails.isConfirmed ? 'Received' : 'Receiving...')
                   : 'Signing...',
+              overflow: TextOverflow.fade,
+              softWrap: false,
             ),
           ),
           Expanded(
@@ -202,39 +210,47 @@ class TxDetailsPage extends StatefulWidget {
   final UnsignedTx? unsignedTx;
   final List<DeviceId>? devices;
   final Stream<TxState> txStates;
+  final PsbtManager psbtMan;
+  final Psbt? psbt;
 
   const TxDetailsPage({
     super.key,
     this.scrollController,
     required this.txStates,
     required this.txDetails,
+    required this.psbtMan,
   }) : signingSessionId = null,
        finishedSigningSessionId = null,
        accessStructureRef = null,
        unsignedTx = null,
-       devices = null;
+       devices = null,
+       psbt = null;
 
   const TxDetailsPage.needsBroadcast({
     super.key,
     this.scrollController,
     required this.txStates,
     required this.txDetails,
+    required this.psbtMan,
     required SignSessionId this.finishedSigningSessionId,
   }) : signingSessionId = null,
        accessStructureRef = null,
        unsignedTx = null,
-       devices = null;
+       devices = null,
+       psbt = null;
 
   const TxDetailsPage.restoreSigning({
     super.key,
     this.scrollController,
     required this.txStates,
     required this.txDetails,
+    required this.psbtMan,
     required SignSessionId this.signingSessionId,
   }) : finishedSigningSessionId = null,
        accessStructureRef = null,
        unsignedTx = null,
-       devices = null;
+       devices = null,
+       psbt = null;
 
   const TxDetailsPage.startSigning({
     super.key,
@@ -244,6 +260,8 @@ class TxDetailsPage extends StatefulWidget {
     required AccessStructureRef this.accessStructureRef,
     required UnsignedTx this.unsignedTx,
     required List<DeviceId> this.devices,
+    required this.psbtMan,
+    this.psbt,
   }) : signingSessionId = null,
        finishedSigningSessionId = null;
 
@@ -264,6 +282,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   SigningState? signingState;
   bool? broadcastDone;
   Set<DeviceId> connectedDevices = deviceIdSet([]);
+  Psbt? psbt;
 
   late final actionDialogController;
 
@@ -276,11 +295,51 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     if (tx != null && mounted) setState(() => txDetails.update(tx));
   }
 
+  bool isFirstRun = true;
+
   Future<void> onSigningSessionData(SigningState data) async {
     if (!mounted) return;
+
+    if (!widget.isStartSigning) this.isFirstRun = false;
+
+    final hasAllShares = data.gotShares.length >= data.neededFrom.length;
+
+    var psbt = this.psbt;
+    if (psbt != null) {
+      if (hasAllShares) {
+        psbt = txDetails.tx.attachSignaturesToPsbt(
+          signatures: data.finishedSignatures,
+          psbt: psbt,
+        );
+        if (psbt == null) {
+          showErrorSnackbar(
+            context,
+            'Failed to attach signatures to PSBT: input ownership mismatch?',
+          );
+          return;
+        }
+        showMessageSnackbar(
+          context,
+          'PSBT signed: ${psbt.serialize().length} bytes',
+        );
+      }
+
+      if ((widget.isStartSigning && isFirstRun) || hasAllShares) {
+        isFirstRun = false;
+        widget.psbtMan.insert(ssid: data.sessionId, psbt: psbt);
+        if (!hasAllShares) {
+          showMessageSnackbar(
+            context,
+            'PSBT saved: ${psbt.serialize().length} bytes',
+          );
+        }
+      }
+    }
+
     setState(() {
       signingState = data;
       ssid = data.sessionId;
+      if (psbt != null) this.psbt = psbt;
     });
 
     actionDialogController.batchAddActionNeeded(
@@ -296,6 +355,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       ),
     );
     await actionDialogController.batchRemoveActionNeeded(data.gotShares);
+
+    return null;
   }
 
   onDeviceListData(DeviceListUpdate data) {
@@ -322,6 +383,14 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     txDetails = widget.txDetails;
     ssid = widget.signingSessionId ?? widget.finishedSigningSessionId;
+    psbt = widget.psbt;
+    // Attempt to get psbt elsewhere.
+    if (psbt == null && ssid != null) {
+      psbt = widget.psbtMan.withSsid(ssid: ssid!);
+    }
+    if (psbt == null) {
+      psbt = widget.psbtMan.withTxid(txid: widget.txDetails.tx.rawTxid());
+    }
 
     txStateSub = widget.txStates.listen(onTxStateData);
 
@@ -391,31 +460,43 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           sliver: SliverList(
             delegate: SliverChildListDelegate.fixed([
               Card.filled(
-                color: theme.colorScheme.surface,
-                margin: margin,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4.0,
-                    vertical: 8.0,
+                color: theme.colorScheme.surfaceContainer,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(24),
+                    bottom: Radius.circular(4),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TxSentOrReceivedTile(
-                        txDetails: txDetails,
-                        signingState: signingState,
-                        hideSubtitle: true,
-                      ),
-                    ],
+                ),
+                margin: margin.copyWith(bottom: 2),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: TxSentOrReceivedTile(
+                    txDetails: txDetails,
+                    signingState: signingState,
+                    hideSubtitle: true,
                   ),
                 ),
               ),
-              buildDetailsColumn(
-                context,
-                txDetails: txDetails,
-                dense: true,
-                showConfirmations: !widget.isSigning,
-                signingState: signingState,
+              Card.filled(
+                color: theme.colorScheme.surfaceContainer,
+                margin: margin,
+                clipBehavior: Clip.hardEdge,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(4),
+                    bottom: Radius.circular(24),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: buildDetailsColumn(
+                    context,
+                    txDetails: txDetails,
+                    dense: true,
+                    showConfirmations: !widget.isSigning,
+                    signingState: signingState,
+                  ),
+                ),
               ),
               AnimatedCrossFade(
                 firstChild: buildActionsRow(context),
@@ -498,30 +579,54 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     ],
   );
 
-  Widget buildBroadcastNeededColumn(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          spacing: 8.0,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            TextButton(
-              onPressed: () async => showCancelBroadcastDialog(context),
-              child: Text('Cancel'),
+  Widget buildBroadcastNeededColumn(BuildContext context) {
+    final psbt = this.psbt;
+
+    final buttonGroup = Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 8,
+      children: [
+        if (psbt != null)
+          Flexible(
+            child: FilledButton.tonal(
+              onPressed: () => showExportPsbtDialog(context, psbt),
+              child: Text('PSBT'),
             ),
-            FilledButton(
-              onPressed: (signingDone ?? true && !isBroadcasting)
-                  ? () => broadcast(context)
-                  : null,
-              child: Text('Broadcast Transaction'),
-            ),
-          ],
+          ),
+        Flexible(
+          child: FilledButton(
+            onPressed: (signingDone ?? true && !isBroadcasting)
+                ? () => broadcast(context)
+                : null,
+            child: Text('Broadcast'),
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            spacing: 8.0,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                flex: 3,
+                child: TextButton(
+                  onPressed: () async => showCancelBroadcastDialog(context),
+                  child: Text('Forget'),
+                ),
+              ),
+              Expanded(child: SizedBox.shrink()),
+              buttonGroup,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget buildSignAndBroadcastCard(BuildContext context) {
     final theme = Theme.of(context);
@@ -547,14 +652,11 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           );
         }(buildSignaturesNeededColumn(context)),
       ),
-      secondChild: (Widget child) {
-        final theme = Theme.of(context);
-        return Card.outlined(
-          margin: EdgeInsets.all(16.0),
-          color: theme.colorScheme.surfaceContainerHigh,
-          child: child,
-        );
-      }(buildBroadcastNeededColumn(context)),
+      secondChild: Card.filled(
+        color: Colors.transparent,
+        margin: EdgeInsets.all(0.0),
+        child: buildBroadcastNeededColumn(context),
+      ),
       crossFadeState: (signingDone ?? true)
           ? CrossFadeState.showSecond
           : CrossFadeState.showFirst,
@@ -659,8 +761,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   }
 
   Widget buildActionsRow(BuildContext context) {
+    final psbt = this.psbt;
     return Padding(
-      padding: const EdgeInsets.all(24.0),
+      padding: const EdgeInsets.all(16.0),
       child: Align(
         alignment: AlignmentDirectional.centerEnd,
         child: Wrap(
@@ -668,6 +771,12 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           runSpacing: 8.0,
           alignment: WrapAlignment.end,
           children: [
+            if (psbt != null)
+              ActionChip(
+                avatar: Icon(Icons.description),
+                label: Text('Show PSBT'),
+                onPressed: () => showExportPsbtDialog(context, psbt),
+              ),
             if (!txDetails.isConfirmed && (signingDone ?? true))
               ActionChip(
                 avatar: Icon(Icons.publish),
@@ -695,6 +804,7 @@ Widget buildDetailsColumn(
   bool showConfirmations = true,
   SigningState? signingState,
 }) {
+  const contentPadding = EdgeInsets.symmetric(horizontal: 16);
   final walletCtx = WalletContext.of(context)!;
   final theme = Theme.of(context);
   final fee = txDetails.tx.fee();
@@ -707,6 +817,7 @@ Widget buildDetailsColumn(
             children: [
               ListTile(
                 dense: dense,
+                contentPadding: contentPadding,
                 leading: Text('Recipient #${info.vout}'),
                 title: Text(
                   spacedHex(address ?? '<unknown>'),
@@ -719,6 +830,7 @@ Widget buildDetailsColumn(
               ),
               ListTile(
                 dense: dense,
+                contentPadding: contentPadding,
                 leading: Text('\u2570 Amount'),
                 title: SatoshiText(value: info.amount, showSign: false),
                 onTap: () =>
@@ -730,6 +842,7 @@ Widget buildDetailsColumn(
       if (txDetails.isSend)
         ListTile(
           dense: dense,
+          contentPadding: contentPadding,
           leading: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -755,6 +868,7 @@ Widget buildDetailsColumn(
       if (showConfirmations)
         ListTile(
           dense: dense,
+          contentPadding: contentPadding,
           leading: Text('Confirmations'),
           title: Text(
             txDetails.isConfirmed
@@ -770,6 +884,7 @@ Widget buildDetailsColumn(
         ),
       ListTile(
         dense: dense,
+        contentPadding: contentPadding,
         leading: Text('Txid'),
         title: Text(
           txDetails.tx.txid,
@@ -782,11 +897,10 @@ Widget buildDetailsColumn(
   );
 }
 
-copyAction(BuildContext context, String what, String data) {
-  Clipboard.setData(ClipboardData(text: data));
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text('$what copied to clipboard')));
+void copyAction(BuildContext context, String what, String data) async {
+  await Clipboard.setData(ClipboardData(text: data));
+  if (context.mounted)
+    showMessageSnackbar(context, '$what copied to clipboard');
 }
 
 Future<void> rebroadcastAction(
@@ -799,17 +913,79 @@ Future<void> rebroadcastAction(
         .rebroadcast(txid: txid)
         .timeout(BROADCAST_TIMEOUT);
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Failed to rebroadcast transaction: $e')),
-    );
+    showErrorSnackbar(context, 'Failed to rebroadcast transaction: $e');
   }
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text('Transaction rebroadcasted')));
 }
 
-explorerAction(BuildContext context, {required String txid}) async {
+Future<void> explorerAction(
+  BuildContext context, {
+  required String txid,
+}) async {
   final walletCtx = WalletContext.of(context)!;
   final explorer = getBlockExplorer(walletCtx.superWallet.network);
   await launchUrl(explorer.replace(path: '${explorer.path}tx/$txid'));
+}
+
+void showExportPsbtDialog(BuildContext context, Psbt psbt) async {
+  final theme = Theme.of(context).copyWith(
+    colorScheme: ColorScheme.fromSeed(
+      brightness: Brightness.light,
+      seedColor: seedColor,
+    ),
+  );
+
+  final txid = txidHexString(txid: computeTxidOfPsbt(psbt: psbt));
+  final psbtBytes = psbt.serialize();
+
+  final animatedQr = AnimatedQr(input: psbtBytes);
+  final saveButton = TextButton(
+    onPressed: () async {
+      final shortTxid = txid.substring(0, 8);
+      final fileName = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save PSBT file',
+        fileName: 'signed_$shortTxid.psbt',
+      );
+      if (fileName == null) return;
+      final file = File(fileName);
+      try {
+        await file.writeAsBytes(psbtBytes);
+      } catch (e) {
+        showErrorSnackbar(context, 'Failed to save PSBT file: $e');
+        return;
+      }
+      Navigator.pop(context);
+      showMessageSnackbar(context, 'Saved PSBT file');
+    },
+    child: Text('Save PSBT'),
+  );
+  final doneButton = FilledButton(
+    onPressed: () => Navigator.pop(context),
+    child: Text('Done'),
+  );
+
+  await showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) => Theme(
+      data: theme,
+      child: Dialog(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
+              children: [
+                AspectRatio(aspectRatio: 1, child: animatedQr),
+                saveButton,
+                doneButton,
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }

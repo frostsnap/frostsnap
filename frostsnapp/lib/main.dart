@@ -8,7 +8,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:overlay_support/overlay_support.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -184,25 +183,18 @@ class _MyAppState extends State<MyApp> {
         }
         final textTheme = GoogleFonts.notoSansTextTheme(baseTheme.textTheme);
 
-        return OverlaySupport.global(
-          child: MaterialApp(
-            navigatorKey: rootNavKey,
-            scaffoldMessengerKey: rootScaffoldMessengerKey,
-            title: 'Frostsnap',
-            theme: baseTheme.copyWith(
-              colorScheme: colorScheme,
-              textTheme: textTheme,
-            ),
-            home: widget.startupError == null
-                ? const MyHomePage()
-                : StartupErrorWidget(error: widget.startupError!),
-            debugShowCheckedModeBanner: false,
+        return MaterialApp(
+          navigatorKey: rootNavKey,
+          scaffoldMessengerKey: rootScaffoldMessengerKey,
+          title: 'Frostsnap',
+          theme: baseTheme.copyWith(
+            colorScheme: colorScheme,
+            textTheme: textTheme,
           ),
-          toastTheme: ToastThemeData(
-            textColor: colorScheme.onInverseSurface,
-            background: colorScheme.inverseSurface,
-            alignment: Alignment.bottomCenter,
-          ),
+          home: widget.startupError == null
+              ? const MyHomePage()
+              : StartupErrorWidget(error: widget.startupError!),
+          debugShowCheckedModeBanner: false,
         );
       },
     );

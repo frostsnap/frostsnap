@@ -49,7 +49,7 @@ class _WalletMoreState extends State<WalletMore> {
             Navigator.popUntil(context, (r) => r.isFirst);
             await MaybeFullscreenDialog.show(
               context: context,
-              child: LoadPsbtPage(wallet: walletCtx.wallet),
+              child: walletCtx.wrap(LoadPsbtPage(wallet: walletCtx.wallet)),
             );
           },
         ),

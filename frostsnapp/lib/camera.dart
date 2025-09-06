@@ -7,6 +7,7 @@ import 'package:frostsnap/image_converter.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api/qr.dart';
+import 'package:frostsnap/theme.dart';
 
 class PsbtCameraReader extends StatefulWidget {
   const PsbtCameraReader({required this.cameras, super.key});
@@ -95,23 +96,34 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
             aspectRatio: 1.5,
             child: Center(child: CircularProgressIndicator()),
           );
-    // if (!controller.value.isInitialized) {
-    //   return Scaffold(body: Center(child: FsProgressIndicator()));
-    // }
 
-    return Scaffold(
-      appBar: FsAppBar(title: const Text('Scan PSBT')),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          spacing: 12,
-          children: [
-            preview,
-            LinearProgressIndicator(value: progress),
-            Text("${(progress * 100).round()}%"),
-          ],
-        ),
-      ),
+    final column = Column(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 12,
+      children: [
+        preview,
+        LinearProgressIndicator(value: progress),
+        Text("${(progress * 100).round()}%"),
+      ],
     );
+
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Scan PSBT'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+
+        SliverToBoxAdapter(child: column),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+
+    return SafeArea(child: scrollView);
   }
 }

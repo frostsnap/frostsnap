@@ -549,6 +549,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   Widget activityCard(BuildContext context) {
+    final fsCtx = FrostsnapContext.of(context)!;
     final thisAddr = _address?.address;
     final thisSpk = _address?.address.spk();
     final walletCtx = WalletContext.of(context)!;
@@ -579,6 +580,7 @@ class _ReceiverPageState extends State<ReceivePage> {
               scrollController: scrollController,
               txStates: walletCtx.txStream,
               txDetails: txDetails,
+              psbtMan: fsCtx.psbtManager,
             ),
           ),
         ),
@@ -664,47 +666,47 @@ class _ReceiverPageState extends State<ReceivePage> {
       ),
     );
     final img = addressQrImage(address);
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return BackdropFilter(
-          filter: blurFilter,
-          child: Theme(
-            data: theme,
-            child: PopScope(
-              canPop: false,
-              child: Dialog(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: 580),
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      spacing: 16,
-                      children: [
-                        AspectRatio(
-                          aspectRatio: 1,
-                          child: PrettyQrView(qrImage: img),
-                        ),
-                        SizedBox(height: 16),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: Text('Done'),
-                        ),
-                      ],
+    final isDone =
+        await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (context) {
+            return Theme(
+              data: theme,
+              child: PopScope(
+                canPop: false,
+                child: Dialog(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: 580),
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 28,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 1,
+                            child: PrettyQrView(qrImage: img),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: Text('Done'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-        );
-      },
-    );
-    if (context.mounted) markAddressShared(context, address);
-    if (mounted) focus = ReceivePageFocus.verify;
+            );
+          },
+        ) ??
+        false;
+    if (isDone) {
+      if (context.mounted) markAddressShared(context, address);
+      if (mounted) focus = ReceivePageFocus.verify;
+    }
   }
 
   void openAddressPicker(BuildContext context, AddressInfo address) {

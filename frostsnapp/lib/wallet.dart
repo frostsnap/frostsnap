@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
@@ -223,16 +222,6 @@ class WalletHome extends StatelessWidget {
   }
 }
 
-void copyToClipboard(BuildContext context, String copyText) {
-  Clipboard.setData(ClipboardData(text: copyText)).then((_) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Copied to clipboard!')));
-    }
-  });
-}
-
 class FloatingProgress extends StatefulWidget {
   final Stream<double> progressStream;
 
@@ -334,6 +323,7 @@ class _TxListState extends State<TxList> {
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
+    final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
 
     // TODO: This is a hack to scroll to top everytime we switch wallets.
@@ -450,6 +440,7 @@ class _TxListState extends State<TxList> {
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
                           finishedSigningSessionId: tx.sessionId,
+                          psbtMan: fsCtx.psbtManager,
                         ),
                       ),
                     ),
@@ -485,6 +476,7 @@ class _TxListState extends State<TxList> {
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
                           signingSessionId: signingState.sessionId,
+                          psbtMan: fsCtx.psbtManager,
                         ),
                       ),
                     ),
@@ -532,6 +524,7 @@ class _TxListState extends State<TxList> {
                           scrollController: scrollController,
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
+                          psbtMan: fsCtx.psbtManager,
                         ),
                       ),
                     ),
