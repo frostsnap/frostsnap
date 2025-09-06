@@ -335,49 +335,6 @@ class _TxListState extends State<TxList> {
 
     const scrolledUnderElevation = 1.0;
 
-    final appBarMenu = MenuAnchor(
-      menuChildren: [
-        MenuItemButton(
-          onPressed: () {
-            MaybeFullscreenDialog.show(
-              context: context,
-              child: LoadPsbtPage(wallet: walletCtx.wallet),
-            );
-          },
-          leadingIcon: Icon(Icons.key),
-          child: Text('Sign PSBT'),
-        ),
-        MenuItemButton(
-          onPressed: (frostKey == null)
-              ? null
-              : () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SignMessagePage(frostKey: frostKey),
-                  ),
-                ),
-          leadingIcon: Icon(Icons.key),
-          child: Text('Sign Message'),
-        ),
-        Divider(),
-        MenuItemButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => walletCtx.wrap(SettingsPage()),
-            ),
-          ),
-          leadingIcon: Icon(Icons.settings),
-          child: Text('Settings'),
-        ),
-      ],
-      builder: (_, controller, child) => IconButton(
-        onPressed: () =>
-            controller.isOpen ? controller.close() : controller.open(),
-        icon: Icon(Icons.more_vert),
-      ),
-    );
-
     return CustomScrollView(
       controller: scrollController,
       physics: ClampingScrollPhysics(),
@@ -386,6 +343,7 @@ class _TxListState extends State<TxList> {
           pinned: true,
           title: Text(frostKey?.keyName() ?? 'Unknown'),
           scrolledUnderElevation: scrolledUnderElevation,
+          actionsPadding: EdgeInsets.only(right: 8),
           actions: [
             StreamBuilder(
               stream: settingsCtx.chainStatusStream(walletCtx.network),
@@ -397,7 +355,6 @@ class _TxListState extends State<TxList> {
                 return ChainStatusIcon(chainStatus: chainStatus);
               },
             ),
-            appBarMenu,
           ],
         ),
         PinnedHeaderSliver(

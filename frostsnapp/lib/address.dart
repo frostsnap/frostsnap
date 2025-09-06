@@ -66,7 +66,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
           "This address belongs to us at ${result.address?.derivationPath ?? ""}",
         ),
         const SizedBox(height: 16),
-        ElevatedButton(
+        FilledButton.tonal(
           onPressed: () => showBottomSheetOrDialog(
             context,
             title: Text('Receive'),
@@ -98,7 +98,7 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
       }
       children.addAll([
         const SizedBox(height: 16),
-        ElevatedButton(
+        FilledButton.tonal(
           onPressed: () {
             setState(() {
               searchFuture = searchAddress();
@@ -109,67 +109,83 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
       ]);
     }
 
-    return Column(children: children);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Check whether an address belongs to this wallet'),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: 400,
-                  child: TextFormField(
-                    controller: textInputController,
-                    minLines: 2,
-                    maxLines: 6,
-                    decoration: const InputDecoration(counterText: ''),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                ElevatedButton(
-                  onPressed: () {
-                    currentDepth = 0;
-                    searchSize = 100;
-                    setState(() {
-                      searchFuture = searchAddress();
-                    });
-                  },
-                  child: const Text('Look for address'),
-                ),
-                const SizedBox(height: 16),
-                FutureBuilder<SearchResult>(
-                  future: searchFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(),
-                        ),
-                      );
-                    }
-
-                    if (snapshot.hasError) {
-                      return Text('Error: ${snapshot.error}');
-                    }
-
-                    return _buildSearchResults(snapshot.data);
-                  },
-                ),
-              ],
+    final body = Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Check whether an address belongs to this wallet'),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 400,
+            child: TextFormField(
+              controller: textInputController,
+              minLines: 2,
+              maxLines: 6,
+              decoration: const InputDecoration(counterText: ''),
             ),
           ),
-        ),
+          const SizedBox(height: 32),
+          FilledButton(
+            onPressed: () {
+              currentDepth = 0;
+              searchSize = 100;
+              setState(() {
+                searchFuture = searchAddress();
+              });
+            },
+            child: const Text('Look for address'),
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<SearchResult>(
+            future: searchFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Text('Error: ${snapshot.error}');
+              }
+
+              return _buildSearchResults(snapshot.data);
+            },
+          ),
+        ],
       ),
     );
+
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Check address'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(child: body),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+    return SafeArea(child: scrollView);
   }
 }
 
