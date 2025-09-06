@@ -22,6 +22,7 @@ impl super::Api {
         if crate::logger::set_dart_logger(log_stream) {
             let targets = Targets::new()
                 .with_target("nusb", Level::INFO)
+                .with_target("bdk_electrum_streaming", Level::WARN)
                 .with_default(Level::from(level));
 
             #[cfg(not(target_os = "android"))]
