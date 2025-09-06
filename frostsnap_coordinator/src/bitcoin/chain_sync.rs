@@ -188,6 +188,8 @@ impl ChainClient {
 }
 
 pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str {
+    // a tooling bug means we need this
+    #[allow(unreachable_patterns)]
     match network {
         bitcoin::Network::Bitcoin => "tcp://electrum.frostsn.app:50001",
         // we're using the tcp:// version since ssl ain't working for some reason
@@ -200,6 +202,8 @@ pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str 
 }
 
 pub const fn default_backup_electrum_server(network: bitcoin::Network) -> &'static str {
+    // a tooling bug means we need this
+    #[allow(unreachable_patterns)]
     match network {
         bitcoin::Network::Bitcoin => "ssl://blockstream.info:700",
         bitcoin::Network::Testnet => "ssl://blockstream.info:993",
