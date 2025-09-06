@@ -167,7 +167,7 @@ pub fn find_valid_subset(
     let mut found = None;
 
     // Try subsets from largest to smallest (but at least 2 shares)
-    'outer: for subset_size in sizes {
+    for subset_size in sizes {
         // Generate all combinations of indices of the given size
         for index_combo in generate_combinations(&indices, subset_size) {
             // For this combination of indices, try all possible share selections
@@ -184,7 +184,6 @@ pub fn find_valid_subset(
                 // Check if it matches the fingerprint
                 if shared_key.check_fingerprint::<sha2::Sha256>(fingerprint) {
                     found = Some(shared_key);
-                    break 'outer;
                 }
             }
         }
