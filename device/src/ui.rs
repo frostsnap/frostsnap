@@ -1,121 +1,75 @@
-pub use crate::ui_impl::FrostyUi;
-
-use crate::graphics::{
-    animation::AnimationState,
-    widgets::{EnterShareIndexScreen, EnterShareScreen},
-};
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-};
+// Imports removed - legacy screens are not used in stateless Workflow
+use alloc::{boxed::Box, string::String};
+use frost_backup::ShareBackup;
 use frostsnap_comms::Sha256Digest;
 use frostsnap_core::{
     device::{
         restoration::{BackupDisplayPhase, EnterBackupPhase},
         KeyGenPhase2, SignPhase1,
     },
-    schnorr_fun::frost::SecretShare,
-    SessionHash,
+    message::HeldShare,
 };
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
     fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
-
-    fn set_device_name(&mut self, name: Option<impl Into<String>>);
-
-    fn get_device_name(&self) -> Option<&str>;
-
     fn set_workflow(&mut self, workflow: Workflow);
-
     fn set_busy_task(&mut self, task: BusyTask);
-
-    fn set_recovery_mode(&mut self, value: bool);
-
     fn clear_busy_task(&mut self);
-
-    fn clear_workflow(&mut self) {
-        self.set_workflow(Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
-            completed_task: None,
-        }));
-    }
-
-    fn take_workflow(&mut self) -> Workflow;
-
     fn poll(&mut self) -> Option<UiEvent>;
+}
 
-    fn debug<S: ToString>(&mut self, debug: S) {
-        self.set_workflow(Workflow::Debug(debug.to_string()));
+// Implement UserInteraction for Box<T> where T implements UserInteraction
+impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
+    fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState) {
+        (**self).set_downstream_connection_state(state)
     }
 
-    fn cancel(&mut self) {
-        let workflow = self.take_workflow();
-        let new_workflow = match workflow {
-            Workflow::UserPrompt {
-                prompt: Prompt::NewName { old_name, new_name },
-                ..
-            } => Workflow::NamingDevice { old_name, new_name },
-            Workflow::NamingDevice { .. }
-            | Workflow::DisplayBackup { .. }
-            | Workflow::UserPrompt { .. }
-            | Workflow::DisplayAddress { .. }
-            | Workflow::EnteringBackup { .. }
-            | Workflow::FirmwareUpgrade(_)
-            | Workflow::WaitingFor(_) => Workflow::WaitingFor(WaitingFor::CoordinatorInstruction {
-                completed_task: None,
-            }),
-            Workflow::None | Workflow::Debug(_) => workflow,
-        };
-        self.set_workflow(new_workflow);
+    fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState) {
+        (**self).set_upstream_connection_state(state)
+    }
+
+    fn set_workflow(&mut self, workflow: Workflow) {
+        (**self).set_workflow(workflow)
+    }
+
+    fn set_busy_task(&mut self, task: BusyTask) {
+        (**self).set_busy_task(task)
+    }
+
+    fn clear_busy_task(&mut self) {
+        (**self).clear_busy_task()
+    }
+
+    fn poll(&mut self) -> Option<UiEvent> {
+        (**self).poll()
     }
 }
 
+// These will be used when implementing HoldToConfirm widgets
+#[allow(dead_code)]
 const HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(600);
+#[allow(dead_code)]
 const LONG_HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(6000);
-
-#[derive(Clone, Debug)]
-pub enum WaitingFor {
-    /// Waiting for the coord to say "Hey, finalize!"
-    WaitingForKeyGenFinalize {
-        key_name: String,
-        t_of_n: (u16, u16),
-        session_hash: SessionHash,
-    },
-    /// Looking for upstream device
-    LookingForUpstream { jtag: bool },
-    /// Waiting for the announce ack
-    CoordinatorAnnounceAck,
-    /// Waiting to be told to do something
-    CoordinatorInstruction { completed_task: Option<UiEvent> },
-    /// Waiting for the coordinator to respond to a message its sent
-    CoordinatorResponse(WaitingResponse),
-}
-
-#[derive(Clone, Debug)]
-pub enum WaitingResponse {
-    KeyGen,
-}
 
 #[derive(Debug)]
 pub enum Workflow {
     None,
-    WaitingFor(WaitingFor),
-    UserPrompt {
-        prompt: Prompt,
-        animation: AnimationState,
+    Standby {
+        device_name: String,
+        held_share: HeldShare,
     },
-    Debug(String),
+    UserPrompt(Prompt),
     NamingDevice {
-        old_name: Option<String>,
         new_name: String,
     },
     DisplayBackup {
         key_name: String,
-        backup: String,
+        backup: ShareBackup,
     },
-    EnteringBackup(EnteringBackupStage),
+    EnteringBackup(EnterBackupPhase),
     DisplayAddress {
-        address: String,
+        address: bitcoin::Address,
         bip32_path: String,
         rand_seed: u32,
     },
@@ -125,31 +79,8 @@ pub enum Workflow {
 impl Workflow {
     #[must_use]
     pub fn prompt(prompt: Prompt) -> Self {
-        let hold_duration = match prompt {
-            Prompt::WipeDevice => LONG_HOLD_TO_CONFIRM_TIME_MS,
-            _ => HOLD_TO_CONFIRM_TIME_MS,
-        };
-        Self::UserPrompt {
-            prompt,
-            animation: AnimationState::new(hold_duration),
-        }
+        Self::UserPrompt(prompt)
     }
-}
-
-#[derive(Debug)]
-pub enum EnteringBackupStage {
-    //HACK So the creator of the workflow doesn't have to construct the screen
-    Init {
-        phase: EnterBackupPhase,
-    },
-    ShareIndex {
-        phase: EnterBackupPhase,
-        screen: EnterShareIndexScreen,
-    },
-    Share {
-        phase: EnterBackupPhase,
-        screen: EnterShareScreen,
-    },
 }
 
 impl Default for Workflow {
@@ -176,10 +107,6 @@ pub enum Prompt {
     ConfirmFirmwareUpgrade {
         firmware_digest: Sha256Digest,
         size: u32,
-    },
-    ConfirmEnterBackup {
-        share_backup: SecretShare,
-        phase: EnterBackupPhase,
     },
     WipeDevice,
 }
@@ -211,7 +138,7 @@ pub enum UiEvent {
     NameConfirm(String),
     EnteredShareBackup {
         phase: EnterBackupPhase,
-        share_backup: SecretShare,
+        share_backup: ShareBackup,
     },
     BackupRequestConfirm {
         phase: Box<BackupDisplayPhase>,

@@ -290,7 +290,7 @@ pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<(u32, [u8;
             Ok(sector_data) => {
                 // Check for signature block magic bytes: 0xE7, 0x02, 0x00, 0x00
                 if sector_data.len() >= 4 && sector_data[0..4] == [0xE7, 0x02, 0x00, 0x00] {
-                    signature_block.copy_from_slice(&sector_data);
+                    signature_block.copy_from_slice(sector_data.as_ref());
                     return Some((i, signature_block));
                 }
             }

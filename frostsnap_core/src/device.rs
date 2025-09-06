@@ -15,7 +15,6 @@ use alloc::{
     string::String,
     vec::Vec,
 };
-use core::num::NonZeroU32;
 use schnorr_fun::frost::chilldkg::encpedpop::{self};
 use schnorr_fun::frost::{PairedSecretShare, SecretShare, ShareIndex};
 use schnorr_fun::fun::KeyPair;
@@ -135,14 +134,14 @@ impl EncryptedSecretShare {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenPhase1 {
-    pub device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
+    pub device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
     pub input_state: encpedpop::Contributor,
     pub threshold: u16,
     pub key_name: String,
     pub key_purpose: KeyPurpose,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenPhase2 {
     pub keygen_id: KeygenId,
     secret_share: PairedSecretShare,
@@ -329,13 +328,8 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 Ok(send.into_iter().collect())
             }
             KeyGen(keygen_msg) => match keygen_msg {
-                self::Keygen::Begin(self::keygen::Begin {
-                    keygen_id,
-                    device_to_share_index,
-                    threshold,
-                    key_name,
-                    purpose: key_purpose,
-                }) => {
+                self::Keygen::Begin(begin) => {
+                    let device_to_share_index = begin.device_to_share_index();
                     if !device_to_share_index.contains_key(&self.device_id()) {
                         return Ok(vec![]);
                     }
@@ -362,24 +356,24 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
                     let (input_state, keygen_input) = encpedpop::Contributor::gen_keygen_input(
                         &schnorr,
-                        threshold as u32,
+                        begin.threshold as u32,
                         &share_receivers_enckeys,
                         (*my_index).into(),
                         rng,
                     );
                     self.tmp_keygen_phase1.insert(
-                        keygen_id,
+                        begin.keygen_id,
                         KeyGenPhase1 {
                             device_to_share_index,
                             input_state,
-                            threshold,
-                            key_name: key_name.clone(),
-                            key_purpose,
+                            threshold: begin.threshold,
+                            key_name: begin.key_name.clone(),
+                            key_purpose: begin.purpose,
                         },
                     );
                     Ok(vec![DeviceSend::ToCoordinator(Box::new(
                         DeviceToCoordinatorMessage::KeyGenResponse(KeyGenResponse {
-                            keygen_id,
+                            keygen_id: begin.keygen_id,
                             input: Box::new(keygen_input),
                         }),
                     ))])
@@ -440,10 +434,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             &message,
                             format!("device doesn't have keygen for {keygen_id}"),
                         ))?;
+                    let key_name = keygen_pending_finalize.key_name.clone();
                     self.save_complete_share(keygen_pending_finalize);
 
                     Ok(vec![DeviceSend::ToUser(Box::new(
-                        DeviceToUserMessage::FinalizeKeyGen,
+                        DeviceToUserMessage::FinalizeKeyGen { key_name },
                     ))])
                 }
             },

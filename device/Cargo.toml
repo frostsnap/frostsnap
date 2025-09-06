@@ -5,8 +5,14 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-default = ["stack_guard"]
+default = ["read_protect_hmac_key", "stack_guard"]
 mem_debug = []
+read_protect_hmac_key = []
+debug_fps = []
+debug_mem = []
+debug_log = []
+debug = [ "debug_fps", "debug_mem", "debug_log" ]
+prefill-words = [] # the final word is "BODY"
 # turns on the esp32c3 hardware stack guard
 stack_guard = []
 # FIXME: remove this feature when v2.rs is deleted (only used in legacy factory code)
@@ -16,6 +22,7 @@ genuine_device = []
 frostsnap_core = { workspace = true }
 frostsnap_comms = { workspace = true }
 frostsnap_embedded = { workspace = true }
+frost_backup = { workspace = true, features = ["bincode"] }
 bitcoin.workspace = true
 esp-hal = { git = "https://github.com/frostsnap/esp-hal", branch = "ds", features = ["esp32c3", "digest"] }
 rand_core.workspace = true
@@ -41,6 +48,8 @@ fugit = "0.3.7"
 crc = "3"
 micromath = "*"
 reed-solomon = "0.2.1"
+frostsnap_widgets = { workspace = true }
+frostsnap_macros = { path = "../macros" }
 
 [[bin]]
 name = "dev"
@@ -49,3 +58,6 @@ path = "src/bin/dev.rs"
 [[bin]]
 name = "frontier"
 path = "src/bin/frontier.rs"
+
+[[bin]]
+name = "widget_dev"

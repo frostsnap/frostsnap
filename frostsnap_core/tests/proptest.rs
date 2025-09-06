@@ -170,7 +170,7 @@ impl ReferenceStateMachine for RefState {
             let keygen_trans = (keygen_id, devices_and_threshold, name)
                 .prop_map(|(keygen_id, (devices, threshold), key_name)| {
                     Transition::CStartKeygen(keygen::Begin::new_with_id(
-                        devices,
+                        devices.into_iter().collect(),
                         threshold as u16,
                         key_name,
                         KeyPurpose::Test,
@@ -185,8 +185,8 @@ impl ReferenceStateMachine for RefState {
         for (&keygen_id, keygen) in &state.pending_keygens {
             let candidates = keygen
                 .do_keygen
-                .device_to_share_index
-                .keys()
+                .devices
+                .iter()
                 .filter(|device_id| !keygen.devices_confirmed.contains(device_id))
                 .cloned()
                 .collect::<Vec<_>>();
@@ -221,7 +221,7 @@ impl ReferenceStateMachine for RefState {
                 .filter_map(|(key_index, key)| {
                     let available = key
                         .do_keygen
-                        .devices()
+                        .device_set()
                         .intersection(&state.available_signing_devices())
                         .cloned()
                         .collect::<Vec<_>>();
@@ -329,17 +329,14 @@ impl ReferenceStateMachine for RefState {
                     && state
                         .run_start
                         .device_set()
-                        .is_superset(&do_key_gen.devices())
+                        .is_superset(&do_key_gen.device_set())
             }
             Transition::DKeygenAck {
                 device_id,
                 keygen_id,
             } => match state.pending_keygens.get(keygen_id) {
                 Some(keygen_state) => {
-                    keygen_state
-                        .do_keygen
-                        .device_to_share_index
-                        .contains_key(device_id)
+                    keygen_state.do_keygen.devices.contains(device_id)
                         && !keygen_state.devices_confirmed.contains(device_id)
                 }
                 None => false,
@@ -347,8 +344,7 @@ impl ReferenceStateMachine for RefState {
             Transition::CKeygenConfirm { keygen_id } => {
                 match state.pending_keygens.get(keygen_id) {
                     Some(keygen_state) => {
-                        keygen_state.devices_confirmed.len()
-                            == keygen_state.do_keygen.device_to_share_index.len()
+                        keygen_state.devices_confirmed.len() == keygen_state.do_keygen.devices.len()
                     }
                     None => false,
                 }
@@ -361,7 +357,7 @@ impl ReferenceStateMachine for RefState {
             } => match state.finished_keygens.get(*key_index) {
                 Some(keygen) => {
                     !keygen.deleted
-                        && keygen.do_keygen.devices().is_superset(devices)
+                        && keygen.do_keygen.device_set().is_superset(devices)
                         && state.available_signing_devices().is_superset(devices)
                 }
                 None => false,
@@ -537,7 +533,7 @@ impl Env for ProptestEnv {
     ) {
         use DeviceToUserMessage::*;
         match message {
-            FinalizeKeyGen => {
+            FinalizeKeyGen { .. } => {
                 // TODO: Do we need to keep track of keygen-finalized messages received by the user?
                 // TODO: Ignore for now.
             }

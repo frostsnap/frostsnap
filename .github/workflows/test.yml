@@ -40,8 +40,8 @@ jobs:
           path: "target/riscv32imc-unknown-none-elf/release"
 
       - run: just lint-device --release --locked
-      - run: just build-device ${{ matrix.board }} --locked
-      - run: just save-image ${{ matrix.board }}
+      - run: just build-device --locked
+      - run: just save-image
       - uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnap-${{ matrix.board }}-${{ github.sha }}.bin

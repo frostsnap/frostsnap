@@ -10,7 +10,12 @@ use crate::{
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::VecDeque,
+    string::{String, ToString},
+    vec::Vec,
+};
 use esp_hal::timer::Timer;
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
@@ -18,7 +23,7 @@ use frostsnap_comms::{
 };
 use frostsnap_core::{
     device::{DeviceToUserMessage, FrostSigner},
-    message::{DeviceSend, DeviceToCoordinatorMessage},
+    message::DeviceSend,
 };
 use frostsnap_embedded::NonceAbSlot;
 use rand_core::RngCore;
@@ -95,10 +100,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
         }
     }
 
-    // Set recovery mode if we have saved backups
-    if !signer.saved_backups().is_empty() {
-        ui.set_recovery_mode(true);
-    }
+    // Note: widgets handles recovery mode internally
 
     // Get active firmware information
     let active_partition = ota_partitions.active_partition();
@@ -107,11 +109,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let active_firmware_digest =
         active_partition.sha256_digest(sha256, Some(firmware_and_signature_block_size));
 
-    // Set device name if we have one
     let device_id = signer.device_id();
-    if let Some(name) = &name {
-        ui.set_device_name(name.into());
-    }
 
     // Create serial interfaces
     let mut upstream_serial: SerialInterface<_, Upstream> = if upstream_detect.is_low() {
@@ -131,16 +129,26 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
     let mut magic_bytes_timeout_counter = 0;
 
-    ui.set_workflow(ui::Workflow::WaitingFor(
-        ui::WaitingFor::LookingForUpstream {
-            jtag: upstream_serial.is_jtag(),
-        },
-    ));
+    // Define default workflow macro
+    macro_rules! default_workflow {
+        ($name:expr, $signer:expr) => {
+            match ($name.as_ref(), $signer.held_shares().next()) {
+                (Some(device_name), Some(held_share)) => ui::Workflow::Standby {
+                    device_name: device_name.clone(),
+                    held_share,
+                },
+                _ => ui::Workflow::None,
+            }
+        };
+    }
+
+    ui.set_workflow(default_workflow!(name, signer));
 
     let mut upstream_connection = UpstreamConnection::new(device_id);
     ui.set_upstream_connection_state(upstream_connection.state);
     let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
     let mut ui_event_queue = VecDeque::default();
+    let mut pending_device_name: Option<String> = None;
     let mut conch_is_downstream = false;
 
     ui.clear_busy_task();
@@ -158,10 +166,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             downstream_connection_state = DownstreamConnectionState::Disconnected;
             upstream_connection.set_state(UpstreamConnectionState::PowerOn, ui);
             next_write_magic_bytes_downstream = Instant::from_ticks(0);
+            ui.set_workflow(default_workflow!(name, signer));
             upgrade = None;
-            ui.set_device_name(name.clone());
+            pending_device_name = None;
             outbox.clear();
-            ui.cancel();
         }
 
         let is_usb_connected_downstream = !downstream_detect.is_high();
@@ -392,8 +400,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 match &message_body {
                     CoordinatorSendBody::Cancel => {
                         signer.clear_tmp_data();
-                        ui.cancel();
-                        ui.set_device_name(name.clone());
+                        ui.set_workflow(default_workflow!(name, signer));
+                        // This either resets to the previous name, or clears it (if prev name does
+                        // not exist).
+                        pending_device_name = None;
                         upgrade = None;
                     }
                     CoordinatorSendBody::AnnounceAck => {
@@ -402,7 +412,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     }
                     CoordinatorSendBody::Naming(naming) => match naming {
                         frostsnap_comms::NameCommand::Preview(preview_name) => {
-                            ui.set_device_name(Some(preview_name));
+                            pending_device_name = Some(preview_name.to_string());
+                            ui.set_workflow(ui::Workflow::NamingDevice {
+                                new_name: preview_name.to_string(),
+                            });
                         }
                         frostsnap_comms::NameCommand::Prompt(new_name) => {
                             ui.set_workflow(ui::Workflow::prompt(ui::Prompt::NewName {
@@ -477,23 +490,14 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             while let Some(send) = outbox.pop_front() {
                 match send {
                     DeviceSend::ToCoordinator(boxed) => {
-                        if matches!(
-                            boxed.as_ref(),
-                            DeviceToCoordinatorMessage::KeyGenResponse(_)
-                        ) {
-                            ui.set_workflow(ui::Workflow::WaitingFor(
-                                ui::WaitingFor::CoordinatorResponse(ui::WaitingResponse::KeyGen),
-                            ));
-                        }
                         upstream_connection.send_to_coordinator([DeviceSendBody::Core(*boxed)]);
                     }
                     DeviceSend::ToUser(boxed) => {
                         match *boxed {
-                            DeviceToUserMessage::FinalizeKeyGen => {
-                                let new_name = ui
-                                    .get_device_name()
-                                    .expect("must have set name before starting keygen")
-                                    .to_string();
+                            DeviceToUserMessage::FinalizeKeyGen { key_name: _ } => {
+                                let new_name = pending_device_name.clone().expect(
+                                    "must have set pending_device_name before starting keygen",
+                                );
                                 name = Some(new_name.clone());
                                 mutation_log
                                     .push(Mutation::Name(new_name.clone()))
@@ -502,7 +506,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                     DeviceSendBody::SetName { name: new_name },
                                 ]);
                                 ui.clear_busy_task();
-                                ui.clear_workflow();
+                                ui.set_workflow(default_workflow!(name, signer));
                             }
                             DeviceToUserMessage::CheckKeyGen { phase } => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen { phase }));
@@ -513,7 +517,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                             } => {
                                 let rand_seed = rng.next_u32();
                                 ui.set_workflow(ui::Workflow::DisplayAddress {
-                                    address: address.to_string(),
+                                    address,
                                     bip32_path: bip32_path
                                         .path_segments_from_bitcoin_appkey()
                                         .map(|i| i.to_string())
@@ -542,21 +546,20 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                         });
                                     }
                                     EnterBackup { phase } => {
-                                        ui.set_workflow(ui::Workflow::EnteringBackup(
-                                            ui::EnteringBackupStage::Init { phase },
-                                        ));
+                                        ui.set_workflow(ui::Workflow::EnteringBackup(phase));
                                     }
                                     BackupSaved { .. } => {
-                                        ui.set_recovery_mode(true);
+                                        ui.set_workflow(default_workflow!(name, signer));
                                     }
                                     ConsolidateBackup(phase) => {
-                                        // Automatically confirm consolidation
+                                        // XXX: We don't tell the user about this message and just automatically confirm it.
+                                        // There isn't really anything they could do to actually verify to confirm it but since
                                         outbox.extend(signer.finish_consolidation(
                                             &mut hmac_keys.share_encryption,
                                             phase,
                                             rng,
                                         ));
-                                        ui.set_recovery_mode(false);
+                                        ui.set_workflow(default_workflow!(name, signer));
                                     }
                                 }
                             }
@@ -567,25 +570,15 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
 
             // Handle UI events
             for ui_event in ui_event_queue.drain(..) {
-                let mut switch_workflow = Some(ui::Workflow::WaitingFor(
-                    ui::WaitingFor::CoordinatorInstruction {
-                        completed_task: Some(ui_event.clone()),
-                    },
-                ));
-
                 match ui_event {
                     UiEvent::KeyGenConfirm { phase } => {
-                        let waiting_for = ui::WaitingFor::WaitingForKeyGenFinalize {
-                            key_name: phase.key_name().to_string(),
-                            t_of_n: phase.t_of_n(),
-                            session_hash: phase.session_hash(),
-                        };
                         outbox.extend(
                             signer
                                 .keygen_ack(*phase, &mut hmac_keys.share_encryption, rng)
                                 .expect("state changed while confirming keygen"),
                         );
-                        switch_workflow = Some(ui::Workflow::WaitingFor(waiting_for));
+                        ui.clear_busy_task();
+                        ui.set_workflow(default_workflow!(name, signer));
                     }
                     UiEvent::SigningConfirm { phase } => {
                         ui.set_busy_task(ui::BusyTask::Signing);
@@ -596,11 +589,14 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         );
                     }
                     UiEvent::NameConfirm(ref new_name) => {
-                        name = Some(new_name.into());
                         mutation_log
                             .push(Mutation::Name(new_name.to_string()))
                             .expect("flash write fail");
-                        ui.set_device_name(new_name.into());
+                        name = Some(new_name.to_string());
+                        pending_device_name = Some(new_name.to_string());
+                        ui.set_workflow(ui::Workflow::NamingDevice {
+                            new_name: new_name.to_string(),
+                        });
                         upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
                             name: new_name.into(),
                         }]);
@@ -619,7 +615,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         if let Some(upgrade) = upgrade.as_mut() {
                             upgrade.upgrade_confirm();
                         }
-                        switch_workflow = None;
                     }
                     UiEvent::EnteredShareBackup {
                         phase,
@@ -633,10 +628,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         nvs.erase_all().expect("failed to erase nvs");
                         reset(&mut upstream_serial);
                     }
-                }
-
-                if let Some(switch_workflow) = switch_workflow {
-                    ui.set_workflow(switch_workflow);
                 }
             }
         }

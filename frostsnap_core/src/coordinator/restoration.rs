@@ -241,6 +241,11 @@ impl State {
         self.tmp_waiting_consolidate
             .retain(|consolidation| consolidation.access_structure_ref.key_id != key_id);
     }
+
+    pub fn clear_tmp_data(&mut self) {
+        self.tmp_waiting_consolidate.clear();
+        self.tmp_waiting_save.clear();
+    }
 }
 
 impl FrostCoordinator {
@@ -305,7 +310,6 @@ impl FrostCoordinator {
             .ok_or(CheckBackupError::DecryptionError)?;
 
         let expected_image = root_shared_key.share_image(share_index);
-
         if phase.backup.share_image != expected_image {
             return Err(CheckBackupError::ShareImageIsWrong);
         }
@@ -349,7 +353,7 @@ impl FrostCoordinator {
         phase: PhysicalBackupPhase,
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
-    ) -> Result<impl IntoIterator<Item = CoordinatorSend>, CheckBackupError> {
+    ) -> Result<TellDeviceConsolidateBackup, CheckBackupError> {
         self.check_physical_backup(access_structure_ref, phase, encryption_key)?;
 
         let PhysicalBackupPhase {
@@ -368,17 +372,8 @@ impl FrostCoordinator {
             .get_frost_key(access_structure_ref.key_id)
             .expect("invariant");
 
-        let message = CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::Consolidate(
-                Box::new(ConsolidateBackup {
-                    share_index: share_image.index,
-                    root_shared_key,
-                    key_name: frost_key.key_name.clone(),
-                    purpose: frost_key.purpose,
-                }),
-            )),
-            destinations: [from].into(),
-        };
+        let key_name = frost_key.key_name.clone();
+        let purpose = frost_key.purpose;
 
         self.restoration
             .tmp_waiting_consolidate
@@ -388,7 +383,13 @@ impl FrostCoordinator {
                 share_index: share_image.index,
             });
 
-        Ok(vec![message])
+        Ok(TellDeviceConsolidateBackup {
+            device_id: from,
+            share_index: share_image.index,
+            root_shared_key,
+            key_name,
+            purpose,
+        })
     }
 
     pub fn add_recovery_share_to_restoration(
@@ -852,6 +853,11 @@ impl FrostCoordinator {
             .ok_or(ActionError::StateInconsistent(
                 "device does not have share in key".into(),
             ))?;
+        let root_shared_key = complete_key
+            .root_shared_key(access_structure_id, encryption_key)
+            .ok_or(ActionError::StateInconsistent(
+                "couldn't decrypt root key".into(),
+            ))?;
         let (_, coord_share_decryption_contrib) = complete_key
             .coord_share_decryption_contrib(access_structure_id, device_id, encryption_key)
             .ok_or(ActionError::StateInconsistent(
@@ -863,6 +869,7 @@ impl FrostCoordinator {
                     access_structure_ref,
                     coord_share_decryption_contrib,
                     party_index,
+                    root_shared_key,
                 },
             ),
             destinations: BTreeSet::from_iter([device_id]),
@@ -989,6 +996,34 @@ pub struct PendingConsolidation {
 pub struct PhysicalBackupPhase {
     pub backup: EnteredPhysicalBackup,
     pub from: DeviceId,
+}
+
+#[derive(Debug, Clone)]
+pub struct TellDeviceConsolidateBackup {
+    pub device_id: DeviceId,
+    pub share_index: ShareIndex,
+    pub root_shared_key: SharedKey,
+    pub key_name: String,
+    pub purpose: KeyPurpose,
+}
+
+impl IntoIterator for TellDeviceConsolidateBackup {
+    type Item = CoordinatorSend;
+    type IntoIter = core::iter::Once<CoordinatorSend>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        core::iter::once(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::Consolidate(
+                Box::new(ConsolidateBackup {
+                    share_index: self.share_index,
+                    root_shared_key: self.root_shared_key,
+                    key_name: self.key_name,
+                    purpose: self.purpose,
+                }),
+            )),
+            destinations: [self.device_id].into(),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
