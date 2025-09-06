@@ -159,22 +159,21 @@ pub fn run_factory_provisioning(
     // Destructure what we need
     let DevicePeripherals {
         mut display,
-        mut capsense,
+        mut touch_receiver,
         efuse,
-        mut jtag,
+        jtag,
         timer,
         ..
     } = *peripherals;
 
     // Initialize serial interface for factory communication
-    let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(&mut jtag, &timer);
-
+    let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(jtag, timer);
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
 
     // Run screen test
-    screen_test::run(&mut display, &mut capsense);
+    screen_test::run(&mut display, &mut touch_receiver);
 
     text_display!(
         &mut display,

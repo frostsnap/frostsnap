@@ -745,8 +745,17 @@ impl FrostCoordinator {
         coordinator_keypair: KeyPair,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SendBeginKeygen, ActionError> {
+        let device_to_share_index = begin_keygen.device_to_share_index();
+
+        // Assert no duplicates in devices list
+        assert_eq!(
+            device_to_share_index.len(),
+            begin_keygen.devices.len(),
+            "duplicate devices in keygen"
+        );
+
         let keygen::Begin {
-            device_to_share_index,
+            devices: _,
             threshold,
             key_name,
             purpose,
@@ -1247,8 +1256,9 @@ impl FrostCoordinator {
         let _ = self.pending_keygens.remove(&keygen_id);
     }
 
-    pub fn cancel_all_keygens(&mut self) {
-        self.pending_keygens.clear()
+    pub fn clear_tmp_data(&mut self) {
+        self.pending_keygens.clear();
+        self.restoration.clear_tmp_data();
     }
 
     pub fn knows_about_share(
@@ -1468,7 +1478,7 @@ impl CoordAccessStructure {
         AccessStructureId::from_app_poly(self.app_shared_key.key.point_polynomial())
     }
 
-    pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, Scalar<Public, NonZero>> {
+    pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, ShareIndex> {
         self.device_to_share_index.clone()
     }
 }
@@ -1699,7 +1709,7 @@ impl IntoIterator for SendBeginKeygen {
 
     fn into_iter(self) -> Self::IntoIter {
         core::iter::once(CoordinatorSend::ToDevice {
-            destinations: self.0.device_to_share_index.keys().cloned().collect(),
+            destinations: self.0.devices.iter().cloned().collect(),
             message: self.0.into(),
         })
     }

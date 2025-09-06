@@ -20,7 +20,7 @@ rustup target add riscv32imc-unknown-none-elf
 ### Build and flash
 
 ```bash
-just build-device v2
+just build-device 
 just flash
 ```
 

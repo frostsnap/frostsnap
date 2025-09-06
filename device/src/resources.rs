@@ -3,17 +3,22 @@
 use alloc::boxed::Box;
 use core::cell::RefCell;
 use esp_storage::FlashStorage;
+use frostsnap_comms::{Downstream, Upstream};
 use rand_chacha::ChaCha20Rng;
 
 use crate::{
     ds::HardwareDs,
     efuse::EfuseHmacKeys,
     flash::VersionedFactoryData,
+    frosty_ui::FrostyUi,
+    io::SerialInterface,
     ota::OtaPartitions,
     partitions::{EspFlashPartition, Partitions},
     peripherals::DevicePeripherals,
-    ui::FrostyUi,
 };
+
+/// Type alias for serial interfaces
+type Serial<'a, D> = SerialInterface<'a, Timer<Timer0<TIMG0>, Blocking>, D>;
 use esp_hal::{
     gpio::{AnyPin, Input},
     peripherals::TIMG0,
@@ -52,16 +57,40 @@ pub struct Resources<'a> {
     pub ui: FrostyUi<'a>,
 
     // Runtime peripherals needed by esp32_run
-    pub timer: Timer<Timer0<TIMG0>, Blocking>,
+    pub timer: &'a Timer<Timer0<TIMG0>, Blocking>,
     pub sha256: Sha<'a>,
-    pub uart_upstream: Option<Uart<'a, Blocking>>,
-    pub uart_downstream: Uart<'a, Blocking>,
-    pub jtag: UsbSerialJtag<'a, Blocking>,
-    pub upstream_detect: Input<'a, AnyPin>,
+    pub upstream_serial: Serial<'a, Upstream>,
+    pub downstream_serial: Serial<'a, Downstream>,
     pub downstream_detect: Input<'a, AnyPin>,
 }
 
 impl<'a> Resources<'a> {
+    /// Create serial interfaces from UARTs and JTAG
+    fn create_serial_interfaces(
+        timer: &'static Timer<Timer0<TIMG0>, Blocking>,
+        uart_upstream: Option<Uart<'static, Blocking>>,
+        uart_downstream: Uart<'static, Blocking>,
+        jtag: UsbSerialJtag<'a, Blocking>,
+        upstream_detect: &Input<'a, AnyPin>,
+    ) -> (Serial<'a, Upstream>, Serial<'a, Downstream>) {
+        let detect_device_upstream = upstream_detect.is_low();
+        let upstream_serial = if detect_device_upstream {
+            log!("upstream set to uart");
+            let uart = uart_upstream.expect("upstream UART should exist when detected");
+            SerialInterface::new_uart(uart, crate::uart_interrupt::UartNum::Uart1, timer)
+        } else {
+            log!("upstream set to jtag");
+            SerialInterface::new_jtag(jtag, timer)
+        };
+
+        let downstream_serial = SerialInterface::new_uart(
+            uart_downstream,
+            crate::uart_interrupt::UartNum::Uart0,
+            timer,
+        );
+
+        (upstream_serial, downstream_serial)
+    }
     /// Initialize resources for production device
     /// Factory data is required for production devices
     pub fn init_production(
@@ -83,7 +112,7 @@ impl<'a> Resources<'a> {
             timer,
             ui_timer,
             display,
-            capsense,
+            touch_receiver,
             sha256,
             ds,
             rsa,
@@ -103,8 +132,8 @@ impl<'a> Resources<'a> {
             .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
-        // Create UI with display and capsense (using ui_timer)
-        let ui = FrostyUi::new(display, capsense, ui_timer);
+        // Create UI with display and touch receiver (using ui_timer)
+        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
 
         // Extract factory data
         let factory = factory_data.into_factory_data();
@@ -117,6 +146,15 @@ impl<'a> Resources<'a> {
         // Extract certificate from factory data
         let certificate = Some(factory.certificate);
 
+        // Create serial interfaces
+        let (upstream_serial, downstream_serial) = Self::create_serial_interfaces(
+            timer,
+            uart_upstream,
+            uart_downstream,
+            jtag,
+            &upstream_detect,
+        );
+
         Box::new(Self {
             rng,
             hmac_keys,
@@ -128,10 +166,8 @@ impl<'a> Resources<'a> {
             ui,
             timer,
             sha256,
-            uart_upstream,
-            uart_downstream,
-            jtag,
-            upstream_detect,
+            upstream_serial,
+            downstream_serial,
             downstream_detect,
         })
     }
@@ -154,7 +190,7 @@ impl<'a> Resources<'a> {
             timer,
             ui_timer,
             display,
-            capsense,
+            touch_receiver,
             sha256,
             ds,
             rsa,
@@ -174,8 +210,8 @@ impl<'a> Resources<'a> {
             .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
-        // Create UI with display and capsense (using ui_timer)
-        let ui = FrostyUi::new(display, capsense, ui_timer);
+        // Create UI with display and touch receiver (using ui_timer)
+        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
 
         // Create HardwareDs if factory data is present (dev devices might have it)
         let (ds, certificate) = if let Some(factory_data) = factory_data {
@@ -191,6 +227,15 @@ impl<'a> Resources<'a> {
 
         let rsa = Rsa::new(rsa);
 
+        // Create serial interfaces
+        let (upstream_serial, downstream_serial) = Self::create_serial_interfaces(
+            timer,
+            uart_upstream,
+            uart_downstream,
+            jtag,
+            &upstream_detect,
+        );
+
         Box::new(Self {
             rng,
             hmac_keys,
@@ -202,10 +247,8 @@ impl<'a> Resources<'a> {
             ui,
             timer,
             sha256,
-            uart_upstream,
-            uart_downstream,
-            jtag,
-            upstream_detect,
+            upstream_serial,
+            downstream_serial,
             downstream_detect,
         })
     }

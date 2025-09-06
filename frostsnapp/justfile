@@ -13,8 +13,7 @@ build TARGET="linux" +ARGS="": maybe-gen
     BUNDLE_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
 
 run +ARGS="": maybe-gen
-    just ../build-device
-    just ../save-image
+    just ../gen-firmware
     BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
 
 run-secure +ARGS="": maybe-gen

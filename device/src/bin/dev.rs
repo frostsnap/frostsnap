@@ -16,7 +16,7 @@ fn main() -> ! {
     esp_alloc::heap_allocator!(256 * 1024);
 
     // Initialize ESP32 hardware
-    let mut peripherals = esp_hal::init({
+    let peripherals = esp_hal::init({
         let mut config = esp_hal::Config::default();
         config.cpu_clock = esp_hal::clock::CpuClock::max();
         config
@@ -26,7 +26,7 @@ fn main() -> ! {
     let flash = RefCell::new(FlashStorage::new());
 
     // Initialize all device peripherals with initial RNG
-    let device = DevicePeripherals::init(&mut peripherals);
+    let device = DevicePeripherals::init(peripherals);
 
     // Check if the device needs provisioning
     if device.needs_factory_provisioning() {
