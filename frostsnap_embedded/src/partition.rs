@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::cell::RefCell;
 use embedded_storage::nor_flash::{NorFlash, NorFlashError, NorFlashErrorKind, ReadNorFlash};
 
@@ -76,10 +77,10 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
         Ok(())
     }
 
-    pub fn read_sector(&self, sector: u32) -> Result<[u8; SECTOR_SIZE], NorFlashErrorKind> {
+    pub fn read_sector(&self, sector: u32) -> Result<Box<[u8; SECTOR_SIZE]>, NorFlashErrorKind> {
         let mut ret = [0u8; SECTOR_SIZE];
         self.read(sector * SECTOR_SIZE as u32, &mut ret[..])?;
-        Ok(ret)
+        Ok(Box::new(ret))
     }
 
     /// splits n_sectors off the end of the parition into a new parition

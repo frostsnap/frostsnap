@@ -243,9 +243,7 @@ pub fn firmware_size(partition: &EspFlashPartition) -> Result<(u32, u32), Firmwa
     }
 
     // Look for Secure Boot v2 signature block by scanning sectors
-    if let Some((signature_sector, _signature_block)) =
-        crate::secure_boot::find_signature_sector(partition)
-    {
+    if let Some(signature_sector) = crate::secure_boot::find_signature_sector(partition) {
         // Found signature block, firmware ends at end of signature sector
         let total_size = (signature_sector + 1) * (SECTOR_SIZE as u32);
         Ok((firmware_end, total_size))

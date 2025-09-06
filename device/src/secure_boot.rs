@@ -1,5 +1,6 @@
 extern crate alloc;
 use crate::partitions::EspFlashPartition;
+use alloc::boxed::Box;
 use alloc::{vec, vec::Vec};
 use crc::Crc;
 use embedded_storage::nor_flash::NorFlashErrorKind;
@@ -36,7 +37,7 @@ struct SignatureBlock {
 }
 
 impl SignatureBlock {
-    fn from_bytes(data: &[u8]) -> Self {
+    fn from_bytes(data: &[u8; SECTOR_SIZE]) -> Self {
         let mut block = SignatureBlock {
             image_digest: [0; 32],
             rsa_public_modulus: [0; 384],
@@ -279,16 +280,14 @@ pub fn is_secure_boot_enabled() -> bool {
     find_secure_boot_key().is_some()
 }
 
-pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<(u32, [u8; SECTOR_SIZE])> {
-    let mut signature_block = [0x00; SECTOR_SIZE];
+pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<u32> {
     // Search backwards from the end - signature blocks are typically at the end of firmware
     for i in (0..partition.n_sectors()).rev() {
         match partition.read_sector(i) {
             Ok(sector_data) => {
                 // Check for signature block magic bytes: 0xE7, 0x02, 0x00, 0x00
                 if sector_data.len() >= 4 && sector_data[0..4] == [0xE7, 0x02, 0x00, 0x00] {
-                    signature_block.copy_from_slice(&sector_data);
-                    return Some((i, signature_block));
+                    return Some(i);
                 }
             }
             Err(_) => {
@@ -300,13 +299,19 @@ pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<(u32, [u8;
     None // No signature block found
 }
 
+fn read_signature_sector(partition: &EspFlashPartition) -> Option<(u32, Box<[u8; SECTOR_SIZE]>)> {
+    let sector_idx = find_signature_sector(partition)?;
+    let sector_data = partition.read_sector(sector_idx).ok()?;
+    Some((sector_idx, sector_data))
+}
+
 pub fn verify_secure_boot<'a>(
     app_partition: &EspFlashPartition,
     rsa: &mut Rsa<'_, Blocking>,
     sha: &mut Sha,
 ) -> Result<(), SecureBootError<'a>> {
     let (signature_sector_index, signature_block) =
-        find_signature_sector(app_partition).ok_or(SecureBootError::MissingSignature)?;
+        read_signature_sector(app_partition).ok_or(SecureBootError::MissingSignature)?;
 
     // Parse signature block structure
     let parsed_block = SignatureBlock::from_bytes(&signature_block);
