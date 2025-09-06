@@ -11,7 +11,7 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Welcome,
-    Widget,
+    Widget, HOLD_TO_CONFIRM_TIME_LONG_MS, HOLD_TO_CONFIRM_TIME_MS,
 };
 
 use crate::{
@@ -269,7 +269,8 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         .with_alignment(embedded_graphics::text::Alignment::Center);
 
                         // Create HoldToConfirm widget with 2 second hold time
-                        let hold_to_confirm = HoldToConfirm::new(2000, prompt_text);
+                        let hold_to_confirm =
+                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, prompt_text);
 
                         // Store in WidgetTree - we need to add a new variant for this
                         WidgetTree::DisplayBackupRequestPrompt {
@@ -295,7 +296,8 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         .with_alignment(embedded_graphics::text::Alignment::Center);
 
                         // Create HoldToConfirm widget with 2 second hold time
-                        let hold_to_confirm = HoldToConfirm::new(2000, text_widget);
+                        let hold_to_confirm =
+                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, text_widget);
 
                         WidgetTree::NewNamePrompt {
                             widget: Box::new(hold_to_confirm),
@@ -314,7 +316,8 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
                         // Create HoldToConfirm widget with 3 second hold time for wipe
-                        let hold_to_confirm = HoldToConfirm::new(3000, text_widget);
+                        let hold_to_confirm =
+                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, text_widget);
 
                         WidgetTree::WipeDevicePrompt {
                             widget: Box::new(hold_to_confirm),

@@ -1,7 +1,7 @@
 use crate::{
     address_display::AddressDisplay, any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay,
     icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
-    widget_list::WidgetList, HoldToConfirm,
+    widget_list::WidgetList, HoldToConfirm, HOLD_TO_CONFIRM_TIME_MS,
 };
 use alloc::{format, string::ToString};
 use embedded_graphics::{
@@ -214,7 +214,8 @@ impl ConfirmationPage {
         let confirm_content = Column::new((sign_text, sending_text, amount_display, btc_text))
             .with_main_axis_alignment(MainAxisAlignment::Center);
 
-        let hold_confirm = HoldToConfirm::new(1500, confirm_content).with_faded_out_button();
+        let hold_confirm =
+            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, confirm_content).with_faded_out_button();
 
         Self { hold_confirm }
     }

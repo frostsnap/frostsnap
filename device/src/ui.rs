@@ -46,12 +46,6 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
     }
 }
 
-// These will be used when implementing HoldToConfirm widgets
-#[allow(dead_code)]
-const HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(600);
-#[allow(dead_code)]
-const LONG_HOLD_TO_CONFIRM_TIME_MS: crate::Duration = crate::Duration::millis(6000);
-
 #[derive(Debug)]
 pub enum Workflow {
     None,

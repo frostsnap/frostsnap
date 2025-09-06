@@ -1,4 +1,6 @@
 use super::{Column, Container, HoldToConfirm, Padding, Row, Text};
+use crate::HOLD_TO_CONFIRM_TIME_MS;
+
 use crate::{palette::PALETTE, MainAxisAlignment};
 use alloc::format;
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
@@ -71,10 +73,7 @@ impl KeygenCheck {
                 .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
         // Create the hold-to-confirm widget
-        let hold_to_confirm = HoldToConfirm::new(
-            2000, // 2 second hold duration
-            prompt_column,
-        );
+        let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, prompt_column);
 
         Self { hold_to_confirm }
     }

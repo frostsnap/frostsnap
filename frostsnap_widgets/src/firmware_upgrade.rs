@@ -1,3 +1,4 @@
+use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
     palette::PALETTE, prelude::*, HoldToConfirm, Padding, ProgressIndicator, FONT_MED, FONT_SMALL,
 };
@@ -140,7 +141,7 @@ impl FirmwareUpgradeConfirm {
             .push(size);
 
         // Create hold to confirm with 1 second hold time
-        let hold_to_confirm = HoldToConfirm::new(1000, content);
+        let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_SHORT_MS, content);
 
         Self { hold_to_confirm }
     }

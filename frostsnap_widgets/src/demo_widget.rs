@@ -15,6 +15,7 @@ macro_rules! demo_widget {
         };
         use u8g2_fonts::U8g2TextStyle;
         use $crate::alloc::string::{String, ToString};
+        use $crate::HOLD_TO_CONFIRM_TIME_MS;
 
         // Shared test word indices for demos that need them
         const TEST_WORD_INDICES: [u16; 25] = [
@@ -81,7 +82,7 @@ macro_rules! demo_widget {
                 use $crate::{text::Text, HoldToConfirm, palette::PALETTE};
                 use embedded_graphics::pixelcolor::BinaryColor;
                 let prompt_text = Text::new("Confirm\ntransaction", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)).with_alignment(embedded_graphics::text::Alignment::Center);
-                let widget = HoldToConfirm::new(2000, prompt_text);
+                let widget = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, prompt_text);
                 $run_macro!(widget);
             }
             "welcome" => {

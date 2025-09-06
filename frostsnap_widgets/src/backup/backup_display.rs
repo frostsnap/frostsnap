@@ -1,3 +1,4 @@
+use crate::HOLD_TO_CONFIRM_TIME_MS;
 use crate::{
     icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
     share_index::ShareIndexWidget, widget_list::WidgetList, FadeSwitcher, HoldToConfirm,
@@ -318,7 +319,7 @@ impl BackupConfirmationScreen {
             50,  // 50ms redraw interval
             PALETTE.background,
         );
-        let hold_confirm = HoldToConfirm::new(2000, fade_switcher) // 2 seconds to confirm
+        let hold_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, fade_switcher) // 2 seconds to confirm
             .with_faded_out_button();
 
         Self {
