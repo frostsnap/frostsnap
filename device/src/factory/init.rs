@@ -161,14 +161,13 @@ pub fn run_factory_provisioning(
         mut display,
         mut touch_receiver,
         efuse,
-        mut jtag,
+        jtag,
         timer,
         ..
     } = *peripherals;
 
     // Initialize serial interface for factory communication
-    let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(&mut jtag, &timer);
-
+    let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(jtag, timer);
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);

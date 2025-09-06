@@ -30,7 +30,7 @@ erase-device +ARGS="nvs":
     cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
 
 build-device BOARD=default_board +ARGS="":
-    cd device && cargo build --release --bin {{BOARD}} {{ARGS}}
+    cd device && cargo build --release --bin {{BOARD}} --features debug {{ARGS}}
     just save-image {{BOARD}} "firmware.bin"
 
 build-secure BOARD=default_board +ARGS="":

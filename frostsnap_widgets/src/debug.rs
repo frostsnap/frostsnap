@@ -507,7 +507,6 @@ macro_rules! log_stack {
         }
     }};
     () => {
-        let filename = file!().rsplit('/').next().unwrap_or(file!());
-        $crate::debug::log_stack_usage(&alloc::format!("{}:{}", filename, line!()));
+        $crate::log!("{}:{}", file!().rsplit('/').next().unwrap_or(file!());, line!())
     };
 }
