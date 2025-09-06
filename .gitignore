@@ -8,3 +8,4 @@ target/
 *.hex
 *.pem
 *.db
+.dir-locals.el

@@ -30,7 +30,7 @@ impl From<Keygen> for CoordinatorToDeviceMessage {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct Begin {
     pub keygen_id: KeygenId,
-    pub device_to_share_index: BTreeMap<DeviceId, NonZeroU32>,
+    pub devices: Vec<DeviceId>,
     pub threshold: u16,
     pub key_name: String,
     pub purpose: KeyPurpose,
@@ -51,26 +51,15 @@ impl From<Begin> for CoordinatorToDeviceMessage {
 
 impl Begin {
     pub fn new_with_id(
-        devices: BTreeSet<DeviceId>,
+        devices: Vec<DeviceId>,
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
         coordinator_public_key: Point,
         keygen_id: KeygenId,
     ) -> Self {
-        let device_to_share_index: BTreeMap<_, _> = devices
-            .iter()
-            .enumerate()
-            .map(|(index, device_id)| {
-                (
-                    *device_id,
-                    NonZeroU32::new((index + 1) as u32).expect("we added one"),
-                )
-            })
-            .collect();
-
         Self {
-            device_to_share_index,
+            devices,
             threshold,
             key_name,
             purpose,
@@ -78,8 +67,9 @@ impl Begin {
             coordinator_public_key,
         }
     }
+
     pub fn new(
-        devices: BTreeSet<DeviceId>,
+        devices: Vec<DeviceId>,
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
@@ -99,7 +89,22 @@ impl Begin {
         )
     }
 
-    pub fn devices(&self) -> BTreeSet<DeviceId> {
-        self.device_to_share_index.keys().cloned().collect()
+    /// Get the devices as a BTreeSet
+    pub fn device_set(&self) -> BTreeSet<DeviceId> {
+        self.devices.iter().cloned().collect()
+    }
+
+    /// Generate the device to share index mapping based on the device order in the Vec
+    pub fn device_to_share_index(&self) -> BTreeMap<DeviceId, core::num::NonZeroU32> {
+        self.devices
+            .iter()
+            .enumerate()
+            .map(|(index, device_id)| {
+                (
+                    *device_id,
+                    core::num::NonZeroU32::new((index as u32) + 1).expect("we added one"),
+                )
+            })
+            .collect()
     }
 }

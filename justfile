@@ -1,9 +1,10 @@
 import 'fetch.just'
 
 default_board := "dev"
-ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_factory -p frost_backup"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_factory -p frostsnap_widgets -p frost_backup"
 
 alias erase := erase-device
+alias demo := simulate
 
 flash BOARD=default_board +ARGS="":
     cd device && cargo run --release --bin {{BOARD}} -- --erase-parts otadata,ota_0 {{ARGS}}
@@ -90,6 +91,7 @@ fix-rust:
     ( cd device && cargo clippy --fix --allow-dirty --allow-staged --all-features --bins; )
     cargo fmt --all
 
+gen-firmware: build-device save-image
 
 run +ARGS="":
     just frostsnapp/run {{ARGS}}
@@ -112,3 +114,9 @@ install-cargo-bins:
 
 backup +ARGS="":
     cargo run --release --bin frost_backup -- {{ARGS}}
+
+simulate +ARGS="":
+    (cd widget_simulator && cargo run -- {{ARGS}}; )
+
+widget_dev +args="":
+    cd device && cargo run --bin widget_dev --release {{args}}

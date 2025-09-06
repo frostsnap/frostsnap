@@ -11,7 +11,6 @@ use alloc::{
     collections::{BTreeMap, BTreeSet},
     string::String,
 };
-use core::num::NonZeroU32;
 use frostsnap_macros::Kind;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::{chilldkg::certpedpop, ShareIndex};
@@ -64,6 +63,7 @@ pub enum CoordinatorRestoration {
         access_structure_ref: AccessStructureRef,
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
         party_index: ShareIndex,
+        root_shared_key: SharedKey,
     },
     RequestHeldShares,
 }

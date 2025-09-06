@@ -134,7 +134,7 @@ pub trait Env {
         rng: &mut impl RngCore,
     ) {
         match message {
-            DeviceToUserMessage::FinalizeKeyGen => {}
+            DeviceToUserMessage::FinalizeKeyGen { .. } => {}
             DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                 let ack = run
                     .device(from)
@@ -249,7 +249,7 @@ impl Run {
             .coordinator
             .begin_keygen(
                 keygen::Begin::new(
-                    run.devices.keys().cloned().collect(),
+                    run.devices.keys().cloned().collect::<Vec<_>>(),
                     threshold,
                     "my new key".to_string(),
                     purpose,
@@ -410,7 +410,7 @@ impl Run {
             self.start_coordinator,
             {
                 let mut tmp = self.coordinator.clone();
-                tmp.cancel_all_keygens();
+                tmp.clear_tmp_data();
                 tmp
             },
             "coordinator should be the same after applying mutations"
