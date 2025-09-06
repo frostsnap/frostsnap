@@ -257,14 +257,14 @@ impl SuperWallet {
 
     pub fn psbt_to_unsigned_tx(
         &self,
-        psbt: Psbt,
+        psbt: &Psbt,
         master_appkey: MasterAppkey,
     ) -> Result<UnsignedTx> {
         let template = self
             .inner
             .lock()
             .unwrap()
-            .psbt_to_tx_template(&psbt, master_appkey)?;
+            .psbt_to_tx_template(psbt, master_appkey)?;
 
         Ok(UnsignedTx {
             template_tx: template,
