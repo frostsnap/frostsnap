@@ -281,11 +281,8 @@ pub fn is_secure_boot_enabled() -> bool {
 
 pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<(u32, [u8; SECTOR_SIZE])> {
     let mut signature_block = [0x00; SECTOR_SIZE];
-    // Note: with 1280K firmware, 320 sectors, each has a 1 in 2^(8*4) chance of a false
-    // positive with these magic bytes. So 320/2^(8*4) ~ 1 in 13.4m firmware updates will
-    // fail to pass signature verification upon upgrading; and in that incredibly improbably
-    // situation: we as the vendor would be the first notice first and not release it.
-    for i in 0..partition.n_sectors() {
+    // Search backwards from the end - signature blocks are typically at the end of firmware
+    for i in (0..partition.n_sectors()).rev() {
         match partition.read_sector(i) {
             Ok(sector_data) => {
                 // Check for signature block magic bytes: 0xE7, 0x02, 0x00, 0x00
@@ -300,7 +297,6 @@ pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<(u32, [u8;
             }
         }
     }
-
     None // No signature block found
 }
 
