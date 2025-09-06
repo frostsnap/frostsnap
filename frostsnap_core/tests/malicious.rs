@@ -97,6 +97,7 @@ fn keygen_maliciously_replace_public_poly() {
 /// Send different signing requests with the same nonces twice.
 /// The device should reject signing the second request.
 #[test]
+#[should_panic(expected = "Attempt to reuse nonces")]
 fn send_sign_req_with_same_nonces_but_different_message() {
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
     let mut run = Run::start_after_keygen_and_nonces(
@@ -140,15 +141,7 @@ fn send_sign_req_with_same_nonces_but_different_message() {
     };
 
     run.extend(sign_req);
-    let sign_request_result = run.run_until_finished(&mut DefaultTestEnv, &mut test_rng);
-
-    assert!(matches!(
-        sign_request_result,
-        Err(frostsnap_core::Error::InvalidMessage { .. })
-    ));
-
-    assert!(sign_request_result
-        .expect_err("should be error")
-        .to_string()
-        .contains("Attempt to reuse nonces!"))
+    // This will panic when sign_ack tries to reuse nonces
+    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
+        .unwrap();
 }

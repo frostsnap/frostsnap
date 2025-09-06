@@ -109,7 +109,7 @@ pub trait NonceStreamSlot {
         last_used: u32,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
         device_hmac: &mut impl DeviceSecretDerivation,
-    ) -> (Vec<SignatureShare>, Option<NonceStreamSegment>) {
+    ) -> Result<(Vec<SignatureShare>, Option<NonceStreamSegment>), NoncesUnavailable> {
         let slot_value = self
             .read_slot()
             .expect("cannot sign with uninitialized slot");
@@ -117,10 +117,8 @@ pub trait NonceStreamSlot {
             coord_nonce_state.stream_id, slot_value.nonce_stream_id,
             "wrong stream id"
         );
-        if coord_nonce_state.index < slot_value.index {
-            panic!("trying to sign with old nonce");
-        }
 
+        // Check if we have cached signatures for this session first
         let with_signatures = match &slot_value.signing_state {
             Some(SigningState {
                 session_id: saved_session_id,
@@ -133,6 +131,13 @@ pub trait NonceStreamSlot {
                 slot_value
             }
             _ => {
+                // Only check nonce availability if we're not using cached signatures
+                if coord_nonce_state.index < slot_value.index {
+                    return Err(NoncesUnavailable::IndexUsed {
+                        current: slot_value.index,
+                        requested: coord_nonce_state.index,
+                    });
+                }
                 let mut nonce_iter = slot_value
                     .iter_secret_nonces(device_hmac)
                     .skip((coord_nonce_state.index - slot_value.index) as usize);
@@ -186,7 +191,7 @@ pub trait NonceStreamSlot {
         let implied_coord_nonce_state = coord_nonce_state.after_signing(signature_shares.len());
         let replenishment =
             self.reconcile_coord_nonce_stream_state(implied_coord_nonce_state, device_hmac);
-        (signature_shares, replenishment)
+        Ok((signature_shares, replenishment))
     }
 }
 
@@ -215,18 +220,20 @@ impl<S: NonceStreamSlot> AbSlots<S> {
         coord_nonce_state: CoordNonceStreamState,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
         device_hmac: &mut impl DeviceSecretDerivation,
-    ) -> Option<(Vec<SignatureShare>, Option<NonceStreamSegment>)> {
+    ) -> Result<(Vec<SignatureShare>, Option<NonceStreamSegment>), NoncesUnavailable> {
         let last_used = self.last_used + 1;
-        let slot = self.get(coord_nonce_state.stream_id)?;
+        let slot = self
+            .get(coord_nonce_state.stream_id)
+            .ok_or(NoncesUnavailable::Overflow)?; // Using Overflow as a placeholder for "stream not found"
         let out = slot.sign_guaranteeing_nonces_destroyed(
             session_id,
             coord_nonce_state,
             last_used,
             sessions,
             device_hmac,
-        );
+        )?;
         self.last_used = last_used;
-        Some(out)
+        Ok(out)
     }
 
     fn increment_last_used(&mut self) -> u32 {
