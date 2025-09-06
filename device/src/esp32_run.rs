@@ -2,7 +2,6 @@
 
 use crate::partitions::PartitionExt;
 use crate::{
-    ds,
     flash::{Mutation, MutationLog},
     io::SerialInterface,
     ota,
@@ -446,8 +445,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                             (hardware_rsa.as_mut(), certificate.as_ref())
                         {
                             let signature = hw_rsa.sign(challenge.as_ref(), sha256);
-
-                            let signature = ds::words_to_bytes(&signature);
                             upstream_connection.send_to_coordinator([
                                 DeviceSendBody::SignedChallenge {
                                     signature: Box::new(signature),

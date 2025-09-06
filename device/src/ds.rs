@@ -20,7 +20,7 @@ impl<'a> HardwareDs<'a> {
     }
 
     /// Sign a message using the hardware DS peripheral
-    pub fn sign(&mut self, message: &[u8], sha256: &mut Sha<'_>) -> [u32; 96] {
+    pub fn sign(&mut self, message: &[u8], sha256: &mut Sha<'_>) -> [u8; 384] {
         // Calculate message digest using hardware SHA and apply padding
         let mut digest = [0u8; 32];
         let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
@@ -31,11 +31,12 @@ impl<'a> HardwareDs<'a> {
         block!(hasher.finish(&mut digest)).unwrap();
 
         let padded_message = pad_message_for_rsa(&digest);
-        private_exponentiation(self.ds, &self.encrypted_params, padded_message)
+        let sig = private_exponentiation(self.ds, &self.encrypted_params, padded_message);
+        words_to_bytes(&sig)
     }
 }
 
-pub fn words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
+fn words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
     let mut result = [0u8; 384];
     for (i, &word) in words.iter().rev().enumerate() {
         let bytes = word.to_be_bytes();
