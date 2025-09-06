@@ -67,7 +67,6 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                             key_name: key_name.clone(),
                         },
                     )));
-                    // share_image is already what we need
 
                     Ok(vec![
                         DeviceSend::ToUser(Box::new(DeviceToUserMessage::Restoration(

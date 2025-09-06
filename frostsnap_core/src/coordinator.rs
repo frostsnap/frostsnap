@@ -749,8 +749,12 @@ impl FrostCoordinator {
 
         // Assert no duplicates in devices list
         assert_eq!(
-            device_to_share_index.len(),
             begin_keygen.devices.len(),
+            begin_keygen
+                .devices
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
             "duplicate devices in keygen"
         );
 

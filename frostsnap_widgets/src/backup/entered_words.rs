@@ -213,59 +213,56 @@ impl EnteredWords {
             return None; // Touch is in status bar area
         }
 
-        // Check if touch is within the content area
-        if point.x >= WORD_LIST_LEFT_PAD && point.x < WORD_LIST_LEFT_PAD + FB_WIDTH as i32 {
-            // Adjust point for content offset
-            let content_point =
-                Point::new(point.x - WORD_LIST_LEFT_PAD, point.y + self.scroll_position);
+        if point.x < WORD_LIST_LEFT_PAD || point.x >= WORD_LIST_LEFT_PAD + FB_WIDTH as i32 {
+            return None; // Touch is outside content area
+        }
 
-            // Calculate which word was touched using row height with padding
-            // Account for TOP_PADDING in the framebuffer
-            let row_height = (FONT_SIZE.height + VERTICAL_PAD) as i32;
-            let adjusted_y = content_point.y - TOP_PADDING as i32;
-            let word_index = if adjusted_y >= 0 {
-                (adjusted_y / row_height) as usize
-            } else {
-                return None; // Touch is in the top padding area
-            };
+        // Adjust point for content offset
+        let content_point =
+            Point::new(point.x - WORD_LIST_LEFT_PAD, point.y + self.scroll_position);
 
-            // Get the number of visible rows up to and including current
-            let visible_rows = (self.view_state.row + 1).min(TOTAL_WORDS + 1);
+        // Calculate which word was touched using row height with padding
+        // Account for TOP_PADDING in the framebuffer
+        let row_height = (FONT_SIZE.height + VERTICAL_PAD) as i32;
+        let adjusted_y = content_point.y - TOP_PADDING as i32;
 
-            if word_index < visible_rows {
-                // Check if this row can be edited - only completed rows and current row
-                let can_edit = word_index <= self.view_state.row;
+        if adjusted_y < 0 {
+            return None; // Touch is in the top padding area
+        }
 
-                if can_edit {
-                    // Create a rectangle for the touched word (includes padding)
-                    // Add TOP_PADDING since words are offset in the framebuffer
-                    let y = TOP_PADDING as i32 + (word_index as i32 * row_height)
-                        - self.scroll_position;
-                    let status_y = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
+        let word_index = (adjusted_y / row_height) as usize;
 
-                    // Clip the rectangle height if it would extend into the status area
-                    let max_height = (status_y - y).max(0) as u32;
-                    let rect_height = (FONT_SIZE.height + VERTICAL_PAD).min(max_height);
+        // Get the number of visible rows up to and including current
+        let visible_rows = (self.view_state.row + 1).min(TOTAL_WORDS + 1);
 
-                    // Only return a touch if the rectangle has some height
-                    if rect_height > 0 {
-                        // Calculate width excluding scrollbar area
-                        let touch_width = self.visible_size.width - SCROLLBAR_WIDTH;
+        if word_index >= visible_rows {
+            return None; // Word not visible
+        }
 
-                        let rect = Rectangle::new(
-                            Point::new(0, y), // x=0 as requested
-                            Size::new(touch_width, rect_height),
-                        );
-                        Some(KeyTouch::new(Key::EditWord(word_index), rect))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+        // Only completed rows and current row can be edited
+        if word_index > self.view_state.row {
+            return None;
+        }
+
+        // Create a rectangle for the touched word (includes padding)
+        // Add TOP_PADDING since words are offset in the framebuffer
+        let y = TOP_PADDING as i32 + (word_index as i32 * row_height) - self.scroll_position;
+        let status_y = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
+
+        // Clip the rectangle height if it would extend into the status area
+        let max_height = (status_y - y).max(0) as u32;
+        let rect_height = (FONT_SIZE.height + VERTICAL_PAD).min(max_height);
+
+        // Only return a touch if the rectangle has some height
+        if rect_height > 0 {
+            // Calculate width excluding scrollbar area
+            let touch_width = self.visible_size.width - SCROLLBAR_WIDTH;
+
+            let rect = Rectangle::new(
+                Point::new(0, y), // x=0 as requested
+                Size::new(touch_width, rect_height),
+            );
+            Some(KeyTouch::new(Key::EditWord(word_index), rect))
         } else {
             None
         }

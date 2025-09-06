@@ -16,18 +16,24 @@ impl DeviceList {
         !self.outbox.is_empty()
     }
 
+    // Order devices by connection order, with any new devices appended
     pub fn sort_as_connected(
         &self,
-        mut devices: HashSet<DeviceId>,
+        devices: HashSet<DeviceId>,
     ) -> impl Iterator<Item = DeviceId> + '_ {
-        let can_order = self
+        let ordered_devices: Vec<_> = self
             .devices
             .iter()
-            .filter(|device| devices.remove(device))
+            .filter(|id| devices.contains(id))
             .copied()
-            .collect::<Vec<_>>();
-        // make sure to include devices that weren't connected
-        can_order.into_iter().chain(devices)
+            .collect();
+
+        let remaining_devices: Vec<_> = devices
+            .into_iter()
+            .filter(|id| !self.devices.contains(id))
+            .collect();
+
+        ordered_devices.into_iter().chain(remaining_devices)
     }
 
     pub fn devices(&self) -> Vec<api::ConnectedDevice> {

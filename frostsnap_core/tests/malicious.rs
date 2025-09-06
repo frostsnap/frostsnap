@@ -1,6 +1,6 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use common::TEST_ENCRYPTION_KEY;
-use env::{DefaultTestEnv, TestEnv};
+use env::TestEnv;
 use frostsnap_core::coordinator::{CoordinatorSend, FrostCoordinator};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
@@ -55,7 +55,7 @@ fn keygen_maliciously_replace_public_poly() {
 
     run.extend(keygen_init.clone());
 
-    let result = run.run_until(&mut DefaultTestEnv, &mut test_rng, move |run| {
+    let result = run.run_until(&mut TestEnv::default(), &mut test_rng, move |run| {
         for send in run.message_queue.iter_mut() {
             if let Send::DeviceToCoordinator {
                 from: _,
@@ -100,7 +100,7 @@ fn send_sign_req_with_same_nonces_but_different_message() {
     let mut run = Run::start_after_keygen_and_nonces(
         1,
         1,
-        &mut DefaultTestEnv,
+        &mut TestEnv::default(),
         &mut test_rng,
         1,
         KeyPurpose::Test,
@@ -129,7 +129,7 @@ fn send_sign_req_with_same_nonces_but_different_message() {
         ));
         run.extend(sign_req.clone().unwrap());
     }
-    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
+    run.run_until_finished(&mut TestEnv::default(), &mut test_rng)
         .unwrap();
 
     let mut sign_req = sign_req.unwrap();
@@ -139,7 +139,7 @@ fn send_sign_req_with_same_nonces_but_different_message() {
 
     run.extend(sign_req);
     // This will panic when sign_ack tries to reuse nonces
-    run.run_until_finished(&mut DefaultTestEnv, &mut test_rng)
+    run.run_until_finished(&mut TestEnv::default(), &mut test_rng)
         .unwrap();
 }
 
