@@ -17,20 +17,57 @@ use esp_hal::{
     },
     peripherals::{Peripherals, DS, RSA, TIMG0, TIMG1},
     prelude::*,
-    spi::{
-        master::{Config as SpiConfig, Spi},
-        SpiMode,
-    },
+    spi::master::Spi,
     timer::timg::{Timer, Timer0, TimerGroup},
     uart::{self, Uart},
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
-use mipidsi::{models::ST7789, options::ColorInversion};
+use mipidsi::models::ST7789;
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 
 use crate::efuse::EfuseController;
+
+#[macro_export]
+macro_rules! init_display {
+    (peripherals: $peripherals:expr, delay: $delay:expr) => {{
+        use display_interface_spi::SPIInterface;
+        use esp_hal::{
+            gpio::{Level, Output},
+            prelude::*,
+            spi::{
+                master::{Config as SpiConfig, Spi},
+                SpiMode,
+            },
+        };
+        use mipidsi::{models::ST7789, options::ColorInversion};
+
+        let spi = Spi::new_with_config(
+            &mut $peripherals.SPI2,
+            SpiConfig {
+                frequency: 80.MHz(),
+                mode: SpiMode::Mode2,
+                ..SpiConfig::default()
+            },
+        )
+        .with_sck(&mut $peripherals.GPIO8)
+        .with_mosi(&mut $peripherals.GPIO7);
+
+        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
+        let di = SPIInterface::new(spi_device, Output::new(&mut $peripherals.GPIO9, Level::Low));
+
+        let display = mipidsi::Builder::new(ST7789, di)
+            .display_size(240, 280)
+            .display_offset(0, 20) // 240*280 panel
+            .invert_colors(ColorInversion::Inverted)
+            .reset_pin(Output::new(&mut $peripherals.GPIO6, Level::Low))
+            .init($delay)
+            .unwrap();
+
+        display
+    }};
+}
 
 /// Dummy CS pin for our display
 pub struct NoCs;
@@ -186,28 +223,7 @@ impl<'a> DevicePeripherals<'a> {
             })
             .unwrap();
 
-        // Initialize display SPI
-        let spi = Spi::new_with_config(
-            &mut peripherals.SPI2,
-            SpiConfig {
-                frequency: 80.MHz(),
-                mode: SpiMode::Mode2,
-                ..SpiConfig::default()
-            },
-        )
-        .with_sck(&mut peripherals.GPIO8)
-        .with_mosi(&mut peripherals.GPIO7);
-
-        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-        let di = SPIInterface::new(spi_device, Output::new(&mut peripherals.GPIO9, Level::Low));
-
-        let mut display = mipidsi::Builder::new(ST7789, di)
-            .display_size(240, 280)
-            .display_offset(0, 20)
-            .invert_colors(ColorInversion::Inverted)
-            .reset_pin(Output::new(&mut peripherals.GPIO6, Level::Low))
-            .init(&mut delay)
-            .unwrap();
+        let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
 
         // Initialize I2C for touch sensor
         let i2c = I2c::new(

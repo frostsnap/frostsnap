@@ -1,7 +1,7 @@
 #![allow(unused)]
 use crate::api::device_list as api;
 use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Default)]
 pub struct DeviceList {
@@ -14,6 +14,26 @@ pub struct DeviceList {
 impl DeviceList {
     pub fn update_ready(&self) -> bool {
         !self.outbox.is_empty()
+    }
+
+    // Order devices by connection order, with any new devices appended
+    pub fn sort_as_connected(
+        &self,
+        devices: HashSet<DeviceId>,
+    ) -> impl Iterator<Item = DeviceId> + '_ {
+        let ordered_devices: Vec<_> = self
+            .devices
+            .iter()
+            .filter(|id| devices.contains(id))
+            .copied()
+            .collect();
+
+        let remaining_devices: Vec<_> = devices
+            .into_iter()
+            .filter(|id| !self.devices.contains(id))
+            .collect();
+
+        ordered_devices.into_iter().chain(remaining_devices)
     }
 
     pub fn devices(&self) -> Vec<api::ConnectedDevice> {

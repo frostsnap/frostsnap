@@ -78,9 +78,9 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
     }
 
     pub fn read_sector(&self, sector: u32) -> Result<Box<[u8; SECTOR_SIZE]>, NorFlashErrorKind> {
-        let mut ret = [0u8; SECTOR_SIZE];
+        let mut ret = Box::new([0u8; SECTOR_SIZE]);
         self.read(sector * SECTOR_SIZE as u32, &mut ret[..])?;
-        Ok(Box::new(ret))
+        Ok(ret)
     }
 
     /// splits n_sectors off the end of the parition into a new parition
