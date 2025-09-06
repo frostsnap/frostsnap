@@ -18,11 +18,7 @@ pub use schnorr_fun::frost::Fingerprint;
 pub use share_backup::*;
 
 /// The default fingerprint used for share generation in production
-pub const FINGERPRINT: Fingerprint = Fingerprint {
-    bits_per_coeff: 18,
-    max_bits_total: 36,
-    tag: "frost-v0",
-};
+pub const FINGERPRINT: Fingerprint = Fingerprint::FROST_V0;
 
 /// Generate an xpriv from a secret scalar
 ///

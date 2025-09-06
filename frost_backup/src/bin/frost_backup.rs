@@ -42,10 +42,17 @@ enum Commands {
             help = "Output file for all shares (use '-' for stdout, omit to print all shares to stdout)"
         )]
         output: Option<String>,
+
+        #[arg(
+            short = 'y',
+            long = "yes",
+            help = "Skip confirmation prompt (not recommended for production use)"
+        )]
+        yes: bool,
     },
     Reconstruct {
         #[arg(
-            help = "Share files to reconstruct from (use '-' for stdin)",
+            help = "Share files to reconstruct from (use '-' for stdin with EOF (Ctrl+D) to finish)",
             required = true,
             num_args = 1..
         )]
@@ -84,7 +91,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             number_of_shares,
             secret,
             output,
+            yes,
         } => {
+            if !yes {
+                eprintln!("⚠️  WARNING: Local Key Generation Not Recommended");
+                eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                eprintln!("📱 This command is intended primarily for testing and");
+                eprintln!("   advanced users who understand the security implications.");
+                eprintln!();
+                eprintln!("🔒 Real keys used to protect funds should be generated using");
+                eprintln!("   Frostsnap devices through a truly 'Distributed'-DKG process.");
+                eprintln!();
+                eprint!("Continue with local key generation? [y/N]: ");
+
+                use std::io::{self, Write};
+                io::stdout().flush()?;
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+
+                match input.trim().to_lowercase().as_str() {
+                    "y" | "yes" => {
+                        eprintln!("Proceeding with local generation...");
+                    }
+                    _ => {
+                        eprintln!("Aborted. Use Frostsnap devices for secure key generation.");
+                        return Ok(());
+                    }
+                }
+            }
+
             // Validate parameters
             if threshold > number_of_shares {
                 return Err("Threshold cannot be greater than number of shares".into());
@@ -256,11 +292,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("⚠️  Warning: Skipping fingerprint check - accepting any valid {}-of-{} polynomial", 
                     threshold.unwrap(), shares.len());
                 // Use 0-bit fingerprint (no checking)
-                schnorr_fun::frost::Fingerprint {
-                    bits_per_coeff: 0,
-                    max_bits_total: 0,
-                    tag: "none",
-                }
+                schnorr_fun::frost::Fingerprint::NONE
             } else {
                 frost_backup::FINGERPRINT
             };
