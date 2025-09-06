@@ -1,0 +1,25 @@
+[package]
+name = "frostsnap_cst816s"
+version = "0.1.0"
+authors = ["Frostsnap Developers", "Todd Stellanova <tstellanova@users.noreply.github.com>","Felix Weidinger <felix-weidinger@outlook.de>"]
+edition = "2024"
+description = "CST816S touchscreen driver with ESP32 interrupt support for Frostsnap"
+license = "BSD-3-Clause"
+repository = "https://github.com/frostsnap/frostsnap"
+categories = [
+    "embedded",
+    "hardware-support",
+    "no-std",
+]
+keywords = [
+    "embedded-hal-driver",
+    "CST816S",
+    "touchscreen",
+]
+readme = "README.md"
+
+[dependencies]
+embedded-hal = "1.0"
+esp-hal = { git = "https://github.com/frostsnap/esp-hal", branch = "ds", features = ["esp32c3"] }
+heapless = { version = "0.8", features = ["portable-atomic"] }
+

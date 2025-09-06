@@ -83,7 +83,7 @@ impl<'a> Resources<'a> {
             timer,
             ui_timer,
             display,
-            capsense,
+            touch_receiver,
             sha256,
             ds,
             rsa,
@@ -103,8 +103,8 @@ impl<'a> Resources<'a> {
             .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
-        // Create UI with display and capsense (using ui_timer)
-        let ui = FrostyUi::new(display, capsense, ui_timer);
+        // Create UI with display and touch receiver (using ui_timer)
+        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
 
         // Extract factory data
         let factory = factory_data.into_factory_data();
@@ -154,7 +154,7 @@ impl<'a> Resources<'a> {
             timer,
             ui_timer,
             display,
-            capsense,
+            touch_receiver,
             sha256,
             ds,
             rsa,
@@ -174,8 +174,8 @@ impl<'a> Resources<'a> {
             .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
-        // Create UI with display and capsense (using ui_timer)
-        let ui = FrostyUi::new(display, capsense, ui_timer);
+        // Create UI with display and touch receiver (using ui_timer)
+        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
 
         // Create HardwareDs if factory data is present (dev devices might have it)
         let (ds, certificate) = if let Some(factory_data) = factory_data {

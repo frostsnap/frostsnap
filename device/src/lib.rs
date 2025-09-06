@@ -27,6 +27,7 @@ pub mod root_widget;
 pub mod secure_boot;
 pub mod stack_guard;
 pub mod touch_calibration;
+pub mod touch_handler;
 pub mod ui;
 pub mod widget_tree;
 
@@ -128,36 +129,3 @@ pub enum DownstreamConnectionState {
 
 pub type Instant = fugit::Instant<u64, 1, 1_000_000>;
 pub type Duration = fugit::Duration<u64, 1, 1_000_000>;
-
-use micromath::F32Ext;
-/// Converts a non‑calibrated point into a calibrated point.
-/// The calibration adjusts the y‑coordinate based on the x and y values.
-pub fn calibrate_point(
-    point: embedded_graphics::prelude::Point,
-) -> embedded_graphics::prelude::Point {
-    let corrected_y = point.y + x_based_adjustment(point.x) + y_based_adjustment(point.y);
-    embedded_graphics::prelude::Point::new(point.x, corrected_y)
-}
-
-// DO NOT TOUCH the calibration functions below!
-fn x_based_adjustment(x: i32) -> i32 {
-    let x = x as f32;
-    let corrected = 1.3189e-14 * x.powi(7) - 2.1879e-12 * x.powi(6) - 7.6483e-10 * x.powi(5)
-        + 3.2578e-8 * x.powi(4)
-        + 6.4233e-5 * x.powi(3)
-        - 1.2229e-2 * x.powi(2)
-        + 0.8356 * x
-        - 20.0;
-    (-corrected) as i32
-}
-
-fn y_based_adjustment(y: i32) -> i32 {
-    if y > 170 {
-        return 0;
-    }
-    let y = y as f32;
-    let corrected =
-        -5.5439e-07 * y.powi(4) + 1.7576e-04 * y.powi(3) - 1.5104e-02 * y.powi(2) - 2.3443e-02 * y
-            + 40.0;
-    (-corrected) as i32
-}
