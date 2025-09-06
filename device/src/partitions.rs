@@ -11,21 +11,21 @@ pub type EspFlashPartition<'a> = FlashPartition<'a, FlashStorage>;
 
 #[derive(Clone)]
 pub struct Partitions<'a> {
+    pub factory_cert: EspFlashPartition<'a>,
     pub ota: OtaPartitions<'a>,
     pub nvs: EspFlashPartition<'a>,
-    pub factory_data: EspFlashPartition<'a>,
 }
 
 impl<'a> Partitions<'a> {
     fn new(flash: &'a RefCell<FlashStorage>) -> Self {
         Self {
+            factory_cert: EspFlashPartition::new(flash, 0, 0, "factory_cert"),
             ota: OtaPartitions {
                 otadata: EspFlashPartition::new(flash, 0, 0, "otadata"),
                 ota_0: EspFlashPartition::new(flash, 0, 0, "ota_0"),
                 ota_1: EspFlashPartition::new(flash, 0, 0, "ota_1"),
             },
             nvs: EspFlashPartition::new(flash, 0, 0, "nvs"),
-            factory_data: EspFlashPartition::new(flash, 0, 0, "factory_cert"),
         }
     }
 
@@ -42,7 +42,7 @@ impl<'a> Partitions<'a> {
             match row.name() {
                 "factory_cert" => {
                     self_
-                        .factory_data
+                        .factory_cert
                         .set_offset_and_size(row.offset, row.size as u32);
                 }
                 "otadata" => {
@@ -70,11 +70,11 @@ impl<'a> Partitions<'a> {
             }
         }
         for part in [
-            self_.nvs,
+            self_.factory_cert,
             self_.ota.otadata,
             self_.ota.ota_0,
             self_.ota.ota_1,
-            self_.factory_data,
+            self_.nvs,
         ] {
             assert!(part.size() > 0, "partition {} must not be empty", part.tag);
         }

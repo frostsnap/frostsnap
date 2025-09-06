@@ -209,13 +209,13 @@ pub fn run_factory_provisioning(
     // Write factory data to flash
     let factory_data = VersionedFactoryData::init(encrypted_params.clone(), certificate.clone());
     partitions
-        .factory_data
+        .factory_cert
         .erase_and_write_this::<{ frostsnap_embedded::WRITE_BUF_SIZE }>(&factory_data)
         .unwrap();
 
     // Verify it was written successfully
     let read_factory_data = bincode::decode_from_reader::<VersionedFactoryData, _, _>(
-        partitions.factory_data.bincode_reader(),
+        partitions.factory_cert.bincode_reader(),
         ABWRITE_BINCODE_CONFIG,
     )
     .expect("we should have been able to read the factory data back out!");

@@ -218,7 +218,7 @@ impl<'a> Resources<'a> {
         let partitions = Partitions::load(flash);
 
         // Try to read factory data (may not exist on dev devices)
-        let factory_data = VersionedFactoryData::read(partitions.factory_data).ok();
+        let factory_data = VersionedFactoryData::read(partitions.factory_cert).ok();
 
         (partitions, factory_data)
     }
