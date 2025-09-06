@@ -349,7 +349,11 @@ impl AccessStructureRef {
 }
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
-pub struct SignSessionId(pub [u8; 32]);
+pub struct SignSessionId(pub [u8; Self::LEN]);
+
+impl SignSessionId {
+    pub const LEN: usize = 32;
+}
 
 impl_display_debug_serialize! {
     fn to_bytes(value: &SignSessionId) -> [u8;32] {

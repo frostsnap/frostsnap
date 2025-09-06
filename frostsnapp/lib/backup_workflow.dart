@@ -9,6 +9,7 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/theme.dart';
 
 class BackupChecklist extends StatefulWidget {
   final BackupManager backupManager;
@@ -149,19 +150,28 @@ class _BackupChecklistState extends State<BackupChecklist> {
     final accessStructure = frostKey.accessStructures().first;
     final backupStream = walletCtx.backupStream;
 
-    final appBar = SliverAppBar(
-      title: const Text('Backup Checklist'),
-      titleTextStyle: theme.textTheme.titleMedium,
-      centerTitle: true,
-      backgroundColor: theme.colorScheme.surfaceContainerLow,
-      pinned: false,
-      stretch: true,
-      forceMaterialTransparency: true,
-      automaticallyImplyLeading: false,
+    // final appBar = SliverAppBar(
+    //   title: const Text('Backup Checklist'),
+    //   titleTextStyle: theme.textTheme.titleMedium,
+    //   centerTitle: true,
+    //   backgroundColor: theme.colorScheme.surfaceContainerLow,
+    //   pinned: false,
+    //   stretch: true,
+    //   forceMaterialTransparency: true,
+    //   automaticallyImplyLeading: false,
+    //   leading: IconButton(
+    //     onPressed: () => Navigator.pop(context),
+    //     icon: Icon(Icons.close),
+    //   ),
+    // );
+
+    final topBar = TopBarSliver(
+      title: Text('Backup checklist'),
       leading: IconButton(
+        icon: Icon(Icons.arrow_back),
         onPressed: () => Navigator.pop(context),
-        icon: Icon(Icons.close),
       ),
+      showClose: false,
     );
 
     final toBringList =
@@ -359,7 +369,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
                 Center(
                   child: FilledButton(
                     onPressed: completedDevices.length == allDevices.length
-                        ? () => Navigator.pop(context)
+                        ? () => Navigator.popUntil(context, (r) => r.isFirst)
                         : null,
                     child: const Text('Done'),
                   ),
@@ -376,7 +386,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
       shrinkWrap: true,
       physics: ClampingScrollPhysics(),
       slivers: [
-        if (widget.showAppBar) appBar,
+        topBar,
         infoColumn,
         devicesColumn,
         SliverSafeArea(sliver: SliverToBoxAdapter()),

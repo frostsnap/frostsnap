@@ -15,6 +15,7 @@ import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
+import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -600,23 +601,17 @@ class DeleteWalletPage extends StatelessWidget {
     final frostKey = coord.getFrostKey(keyId: keyId)!;
     final walletName = frostKey.keyName();
 
-    return Padding(
+    var body = Padding(
       padding: EdgeInsets.all(16.0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Wallet Name
-          Text(
-            "DELETE ‘$walletName’?",
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          SizedBox(height: 8),
-
           if (walletCtx != null)
             DefaultTextStyle(
-              style: const TextStyle(fontSize: 24),
+              style: Theme.of(context).textTheme.titleLarge!,
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.start,
                 children: [
                   const Text('Balance: '),
                   StreamBuilder(
@@ -624,14 +619,13 @@ class DeleteWalletPage extends StatelessWidget {
                     builder: (context, snapshot) =>
                         SatoshiText(value: snapshot.data?.balance ?? 0),
                   ),
-                  //UpdatingBalance(txStream: walletCtx.txStream),
                 ],
               ),
             ),
-          SizedBox(height: 16),
+          SizedBox(height: 24),
           DefaultTextStyle(
             textAlign: TextAlign.left,
-            style: Theme.of(context).textTheme.bodyLarge!,
+            style: Theme.of(context).textTheme.titleMedium!,
             child: BulletList(const [
               Text(
                 'This only deletes the wallet from this app.',
@@ -659,6 +653,7 @@ class DeleteWalletPage extends StatelessWidget {
               ),
               onComplete: () async {
                 await coord.deleteKey(keyId: keyId);
+                Navigator.popUntil(context, (r) => r.isFirst);
                 if (context.mounted) {
                   showDialog(
                     context: context,
@@ -669,11 +664,9 @@ class DeleteWalletPage extends StatelessWidget {
                         'The wallet has been successfully deleted.',
                       ),
                       actions: [
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context); // close popup
-                            Navigator.pop(context); // close delete page
-                          },
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.popUntil(context, (r) => r.isFirst),
                           child: Text('OK'),
                         ),
                       ],
@@ -686,6 +679,24 @@ class DeleteWalletPage extends StatelessWidget {
         ],
       ),
     );
+
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Delete \'$walletName\'?'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(child: body),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+
+    return SafeArea(child: scrollView);
   }
 }
 
@@ -782,7 +793,14 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
               ),
             ),
-            widget.buttonText,
+            DefaultTextStyle(
+              style: TextStyle(
+                color: _isPressed
+                    ? theme.colorScheme.onSecondary
+                    : theme.colorScheme.onTertiary,
+              ),
+              child: widget.buttonText,
+            ),
           ],
         ),
       ),
@@ -799,14 +817,14 @@ class KeysSettings extends StatelessWidget {
     final keyName = keyCtx.name;
     final keyId = keyCtx.keyId;
 
-    return Container(
-      padding: EdgeInsets.all(16.0),
+    final body = Padding(
+      padding: EdgeInsets.all(16.0).copyWith(top: 0),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 16,
         children: [
-          Text(
-            "The ‘$keyName’ wallet can be unlocked with:",
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
+          Text("The ‘$keyName’ wallet can be unlocked with:"),
           StreamBuilder(
             stream: GlobalStreams.keyStateSubject,
             builder: (context, snap) {
@@ -823,6 +841,24 @@ class KeysSettings extends StatelessWidget {
         ],
       ),
     );
+
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Keys'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(child: body),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+
+    return SafeArea(child: scrollView);
   }
 }
 

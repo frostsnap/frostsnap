@@ -184,6 +184,8 @@ class _MyAppState extends State<MyApp> {
         final textTheme = GoogleFonts.notoSansTextTheme(baseTheme.textTheme);
 
         return MaterialApp(
+          navigatorKey: rootNavKey,
+          scaffoldMessengerKey: rootScaffoldMessengerKey,
           title: 'Frostsnap',
           theme: baseTheme.copyWith(
             colorScheme: colorScheme,

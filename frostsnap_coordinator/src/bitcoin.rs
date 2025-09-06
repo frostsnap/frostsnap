@@ -1,4 +1,5 @@
 pub mod chain_sync;
+pub mod psbt;
 pub mod wallet;
 mod wallet_persist;
 

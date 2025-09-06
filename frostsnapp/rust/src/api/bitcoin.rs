@@ -166,6 +166,57 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    #[frb(sync)]
+    pub fn raw_txid(&self) -> Txid {
+        self.inner.compute_txid()
+    }
+
+    fn owned_input_indices(&self) -> impl Iterator<Item = usize> + '_ {
+        self.inner
+            .input
+            .iter()
+            .enumerate()
+            .filter(|(_, txin)| {
+                let prev_txout = match self.prevouts.get(&txin.previous_output) {
+                    Some(txout) => txout,
+                    None => return false,
+                };
+                self.is_mine.contains(&prev_txout.script_pubkey)
+            })
+            .map(|(vin, _)| vin)
+    }
+
+    #[frb(sync)]
+    pub fn attach_signatures_to_psbt(
+        &self,
+        signatures: Vec<EncodedSignature>,
+        psbt: &Psbt,
+    ) -> Option<Psbt> {
+        let owned_indices = self.owned_input_indices().collect::<Vec<_>>();
+        if signatures.len() != owned_indices.len() {
+            return None;
+        }
+
+        let mut psbt = psbt.clone();
+        let mut signatures = signatures.into_iter();
+
+        for i in self.owned_input_indices() {
+            let signature = signatures.next();
+            // we are assuming the signatures are correct here.
+            let input = &mut psbt.inputs[i];
+            let schnorr_sig = bitcoin::taproot::Signature {
+                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
+                    &signature.unwrap().0,
+                )
+                .unwrap(),
+                sighash_type: bitcoin::sighash::TapSighashType::Default,
+            };
+            input.tap_key_sig = Some(schnorr_sig);
+        }
+
+        Some(psbt)
+    }
+
     /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
     /// `filter`, if provided. The result is `None` if any input is missing a previous output.
     fn _sum_inputs(&self, filter: Option<&HashSet<bitcoin::ScriptBuf>>) -> Option<u64> {
@@ -433,4 +484,14 @@ impl Psbt {
     #[frb(sync)]
     #[allow(unused)]
     pub fn deserialize(bytes: &[u8]) -> Result<Psbt, PsbtError> {}
+}
+
+#[frb(sync)]
+pub fn compute_txid_of_psbt(psbt: &Psbt) -> Txid {
+    psbt.unsigned_tx.compute_txid()
+}
+
+#[frb(sync)]
+pub fn txid_hex_string(txid: &Txid) -> String {
+    txid.to_string()
 }
