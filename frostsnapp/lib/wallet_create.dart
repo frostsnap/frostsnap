@@ -13,6 +13,8 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
+import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:glowy_borders/glowy_borders.dart';
@@ -49,6 +51,9 @@ class WalletCreateController extends ChangeNotifier {
   String? _nameError;
   late final StreamSubscription _deviceListSub;
   late DeviceListState _deviceList;
+
+  bool _hasAutoAdvanced = false;
+  Stream<NonceReplenishState>? _nonceStream;
 
   KeyGenState? _keygenState;
   late final FullscreenActionDialogController _keygenController;
@@ -220,12 +225,25 @@ class WalletCreateController extends ChangeNotifier {
     (selectedId) =>
         _deviceList.devices.any((dev) => deviceIdEquals(dev.id, selectedId)),
   );
+  bool get devicesNeedNonceReplenishment {
+    final nonceRequest = coord.createNonceRequest(
+      devices: _form.selectedDevices.toList(),
+    );
+    return nonceRequest.someNoncesRequested();
+  }
+
+  Future<bool> _shouldShowNonceStep() async {
+    final devices = _form.selectedDevices.toList();
+    final nonceRequest = await coord.createNonceRequest(devices: devices);
+    return nonceRequest.someNoncesRequested();
+  }
 
   bool get canGoNext => switch (_step) {
     WalletCreateStep.name =>
       _nameError == null && _nameController.value.text.isNotEmpty,
     WalletCreateStep.deviceCount =>
       _deviceList.devices.isNotEmpty && !devicesNeedUpgrade && !devicesUsed,
+    WalletCreateStep.nonceReplenish => false, // Auto-advances, no manual next
     WalletCreateStep.deviceNames =>
       allWalletDevicesConnected && _form.allDevicesNamed,
     WalletCreateStep.threshold =>
@@ -249,7 +267,8 @@ class WalletCreateController extends ChangeNotifier {
   /// Does additional checks (maybe) and tries to populate the _form.
   Future<bool> _handleNext(BuildContext context) async {
     _isAnimationForward = true;
-    if (!canGoNext) return false;
+    // Skip canGoNext check for nonceReplenish since it auto-advances
+    if (_step != WalletCreateStep.nonceReplenish && !canGoNext) return false;
     switch (_step) {
       case WalletCreateStep.name:
         _form.name = _nameController.text;
@@ -257,6 +276,19 @@ class WalletCreateController extends ChangeNotifier {
       case WalletCreateStep.deviceCount:
         _form.selectedDevices.clear();
         _form.selectedDevices.addAll(_deviceList.devices.map((dev) => dev.id));
+        // Check if nonces are needed after selecting devices
+        final needsNonces = await _shouldShowNonceStep();
+        if (needsNonces) {
+          // Prepare the nonce stream for the next step
+          final devices = _form.selectedDevices.toList();
+          final nonceRequest = await coord.createNonceRequest(devices: devices);
+          _nonceStream = coord
+              .replenishNonces(nonceRequest: nonceRequest, devices: devices)
+              .toBehaviorSubject();
+          _hasAutoAdvanced = false; // Reset for this run
+        }
+        return true;
+      case WalletCreateStep.nonceReplenish:
         return true;
       case WalletCreateStep.deviceNames:
         return true;
@@ -357,9 +389,32 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   void next(BuildContext context) async {
-    if (!await _handleNext(context)) return;
-    if (!context.mounted) return;
-    final nextStep = WalletCreateStep.values.elementAtOrNull(_step.index + 1);
+    if (!await _handleNext(context)) {
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+
+    // Determine next step, potentially skipping nonce replenishment
+    WalletCreateStep? nextStep;
+    if (_step == WalletCreateStep.deviceCount) {
+      // Check if we should skip nonce replenishment
+      if (_nonceStream == null) {
+        // No nonces needed, skip to device names
+        nextStep = WalletCreateStep.deviceNames;
+      } else {
+        // Nonces needed, go to nonce replenishment
+        nextStep = WalletCreateStep.nonceReplenish;
+      }
+    } else if (_step == WalletCreateStep.nonceReplenish) {
+      // After nonce replenishment, go to device names
+      nextStep = WalletCreateStep.deviceNames;
+    } else {
+      // Normal progression
+      nextStep = WalletCreateStep.values.elementAtOrNull(_step.index + 1);
+    }
+
     if (nextStep != null) {
       _step = nextStep;
       notifyListeners();
@@ -378,8 +433,28 @@ class WalletCreateController extends ChangeNotifier {
 
   void back(context) {
     if (!_handleBack(context)) return;
-    final prevIndex = _step.index - 1;
-    final prevStep = WalletCreateStep.values.elementAtOrNull(prevIndex);
+
+    // Handle back navigation, skipping nonce step
+    WalletCreateStep? prevStep;
+    if (_step == WalletCreateStep.deviceNames) {
+      // Always go back to deviceCount from deviceNames, skipping nonce step
+      // since nonce generation is automatic and shouldn't be re-shown
+      prevStep = WalletCreateStep.deviceCount;
+      // Clear nonce stream to allow re-generation if needed
+      _nonceStream = null;
+      _hasAutoAdvanced = false;
+    } else if (_step == WalletCreateStep.nonceReplenish) {
+      // If somehow on nonce step, go back to deviceCount
+      prevStep = WalletCreateStep.deviceCount;
+      // Clear nonce stream
+      _nonceStream = null;
+      _hasAutoAdvanced = false;
+    } else {
+      // Normal back navigation
+      final prevIndex = _step.index - 1;
+      prevStep = WalletCreateStep.values.elementAtOrNull(prevIndex);
+    }
+
     if (prevStep != null) {
       _step = prevStep;
       notifyListeners();
@@ -397,6 +472,7 @@ class WalletCreateController extends ChangeNotifier {
       1 => 'Continue with 1 device',
       _ => 'Continue with ${_deviceList.devices.length} devices',
     },
+    WalletCreateStep.nonceReplenish => null,
     WalletCreateStep.deviceNames =>
       _form.allDevicesNamed ? null : 'Name all devices to continue',
     WalletCreateStep.threshold => 'Generate keys',
@@ -405,6 +481,7 @@ class WalletCreateController extends ChangeNotifier {
   String get title => switch (_step) {
     WalletCreateStep.name => 'Name wallet',
     WalletCreateStep.deviceCount => 'Pick devices',
+    WalletCreateStep.nonceReplenish => "Preparing devices",
     WalletCreateStep.deviceNames => 'Name devices',
     WalletCreateStep.threshold => 'Choose threshold',
   };
@@ -413,6 +490,7 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.name => 'Choose a name for this wallet',
     WalletCreateStep.deviceCount =>
       'Connect devices to become keys for "${form.name ?? ''}"',
+    WalletCreateStep.nonceReplenish => '',
     WalletCreateStep.deviceNames => 'Each device needs a name to idenitfy it',
     WalletCreateStep.threshold =>
       'Decide how many devices will be required to sign transactions or to make changes to this wallet',
@@ -431,7 +509,13 @@ class WalletCreateController extends ChangeNotifier {
   }
 }
 
-enum WalletCreateStep { name, deviceCount, deviceNames, threshold }
+enum WalletCreateStep {
+  name,
+  deviceCount,
+  nonceReplenish,
+  deviceNames,
+  threshold,
+}
 
 class WalletCreatePage extends StatefulWidget {
   const WalletCreatePage({super.key});
@@ -799,12 +883,67 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     ),
   );
 
+  Widget buildNonceReplenish(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Use the pre-initialized stream
+    final stream = _controller._nonceStream;
+    if (stream == null) {
+      // This shouldn't happen as we skip the step when no nonces are needed
+      // But if it does, auto-advance immediately
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_controller._hasAutoAdvanced) {
+          _controller._hasAutoAdvanced = true;
+          _controller.next(context);
+        }
+      });
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 24),
+              Text('Initializing...', style: theme.textTheme.bodyLarge),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Use the minimal widget from nonce_replenish.dart
+    return SliverToBoxAdapter(
+      child: MinimalNonceReplenishWidget(
+        stream: stream,
+        autoAdvance: true,
+        onComplete: () {
+          if (mounted && !_controller._hasAutoAdvanced) {
+            _controller._hasAutoAdvanced = true;
+            _controller.next(context);
+          }
+        },
+        onAbort: () {
+          // Device disconnected - go back to device selection
+          if (mounted) {
+            coord.cancelProtocol();
+            _controller._nonceStream = null;
+            _controller._step = WalletCreateStep.deviceCount;
+            _controller.notifyListeners();
+          }
+        },
+      ),
+    );
+  }
+
   Widget buildBody(BuildContext context) {
     switch (_controller.step) {
       case WalletCreateStep.name:
         return buildWalletNameBody(context);
       case WalletCreateStep.deviceCount:
         return buildDevicesBody(context);
+      case WalletCreateStep.nonceReplenish:
+        return buildNonceReplenish(context);
       case WalletCreateStep.deviceNames:
         return buildNameDevicesBody(context);
       case WalletCreateStep.threshold:
@@ -885,31 +1024,33 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Divider(height: 0),
+            if (_controller.step != WalletCreateStep.nonceReplenish)
+              Divider(height: 0),
             if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
                 false)
               buildAdvancedOptions(context),
-            Padding(
-              padding: EdgeInsets.all(
-                16,
-              ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
-              child: SafeArea(
-                top: false,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    onPressed: _controller.canGoNext
-                        ? () => _controller.next(context)
-                        : null,
-                    child: Text(
-                      _controller.nextText ?? 'Next',
-                      softWrap: false,
-                      overflow: TextOverflow.fade,
+            if (_controller.step != WalletCreateStep.nonceReplenish)
+              Padding(
+                padding: EdgeInsets.all(
+                  16,
+                ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
+                child: SafeArea(
+                  top: false,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed: _controller.canGoNext
+                          ? () => _controller.next(context)
+                          : null,
+                      child: Text(
+                        _controller.nextText ?? 'Next',
+                        softWrap: false,
+                        overflow: TextOverflow.fade,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ],

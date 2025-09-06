@@ -8,12 +8,15 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_add.dart';
 
@@ -112,6 +115,9 @@ class WalletRecoveryPage extends StatelessWidget {
                       restorationId: restoringKey.restorationId,
                       encryptionKey: encryptionKey,
                     );
+
+                    // Nonce generation now happens when each device is enrolled,
+                    // not at the end of wallet restoration
                     onWalletRecovered(accessStructureRef);
                   } catch (e) {
                     if (context.mounted) {
@@ -331,8 +337,8 @@ class WalletRecoveryFlow extends StatefulWidget {
   final RestorationId? continuing;
   // We're recovering a share for a key that already exists
   final AccessStructureRef? existing;
-  final String? initialStep;
   final bool isDialog;
+  final RecoveryFlowStep? initialStep;
 
   const WalletRecoveryFlow({
     super.key,
@@ -346,21 +352,21 @@ class WalletRecoveryFlow extends StatefulWidget {
     this.continuing,
     this.existing,
     this.isDialog = true,
-  }) : initialStep = 'wait_device';
+  }) : initialStep = RecoveryFlowStep.waitDevice;
 
   const WalletRecoveryFlow.startWithPhysicalBackup({
     super.key,
     this.continuing,
     this.existing,
     this.isDialog = true,
-  }) : initialStep = 'enter_restoration_details';
+  }) : initialStep = RecoveryFlowStep.enterRestorationDetails;
 
   @override
   State<WalletRecoveryFlow> createState() => _WalletRecoveryFlowState();
 }
 
 class _RecoveryFlowPrevState {
-  String currentStep = 'start';
+  RecoveryFlowStep currentStep = RecoveryFlowStep.start;
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
   ConnectedDevice? blankDevice;
@@ -380,7 +386,7 @@ class _RecoveryFlowPrevState {
 class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   late final MethodChoiceKind kind;
 
-  String currentStep = 'start';
+  RecoveryFlowStep currentStep = RecoveryFlowStep.start;
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
   ConnectedDevice? blankDevice;
@@ -389,6 +395,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   BitcoinNetwork? bitcoinNetwork;
   int? threshold;
   String? error;
+  Stream<NonceReplenishState>? activeNonceStream;
+  StreamSubscription? _nonceStreamSubscription;
 
   // For back gesture.
   final prevStates = List<_RecoveryFlowPrevState>.empty(growable: true);
@@ -418,6 +426,13 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         blankDevice = prevState.blankDevice;
         restorationId = prevState.restorationId;
         error = prevState.error;
+
+        // Cancel any active operations when going back
+        if (activeNonceStream != null) {
+          _nonceStreamSubscription?.cancel();
+          activeNonceStream = null;
+          coord.cancelProtocol();
+        }
       });
       return true;
     }
@@ -425,11 +440,18 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   }
 
   @override
+  void dispose() {
+    _nonceStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
 
-    final initialStep = widget.initialStep;
-    if (initialStep != null) currentStep = initialStep;
+    if (widget.initialStep != null) {
+      currentStep = widget.initialStep!;
+    }
 
     if (widget.continuing != null) {
       kind = MethodChoiceKind.continueRecovery;
@@ -451,7 +473,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     _TitledWidget child;
 
     switch (currentStep) {
-      case 'wait_device':
+      case RecoveryFlowStep.waitDevice:
         child = _PlugInPromptView(
           continuing: widget.continuing,
           existing: widget.existing,
@@ -461,43 +483,138 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                 pushPrevState();
                 candidate = detectedShare;
                 this.compatibility = compatibility;
-                currentStep = 'candidate_ready';
+                currentStep = RecoveryFlowStep.candidateReady;
               });
             }
           },
         );
         break;
-      case 'candidate_ready':
+      case RecoveryFlowStep.candidateReady:
         child = _CandidateReadyView(
           candidate: candidate!,
           compatibility: compatibility!,
           continuing: widget.continuing,
           existing: widget.existing,
+          onDeviceDisconnected: () {
+            // Device disconnected during nonce generation - go back to waiting
+            setState(() {
+              candidate = null;
+              compatibility = null;
+              currentStep = RecoveryFlowStep.waitDevice;
+            });
+          },
         );
         break;
-      case 'wait_physical_backup_device':
+      case RecoveryFlowStep.waitPhysicalBackupDevice:
         child = _PlugInBlankView(
           onBlankDeviceConnected: (device) {
             setState(() {
               pushPrevState();
               blankDevice = device;
-              currentStep = 'enter_device_name';
+              currentStep = RecoveryFlowStep.enterDeviceName;
             });
           },
         );
         break;
 
-      case 'enter_device_name':
+      case RecoveryFlowStep.enterDeviceName:
+        // Check if device is still connected
+        if (blankDevice == null) {
+          child = _ErrorView(
+            title: 'Device Disconnected',
+            message:
+                'The device was disconnected. Please reconnect and try again.',
+            onRetry: () {
+              setState(() {
+                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+                error = null;
+              });
+            },
+          );
+          break;
+        }
+
         child = _EnterDeviceNameView(
           deviceId: blankDevice!.id,
           onDeviceName: (name) {
-            setState(() {
-              pushPrevState();
-              currentStep = 'enter_backup';
-            });
+            // Check nonces synchronously, just like we do for existing device recovery
+            final device = blankDevice;
+            if (device == null) {
+              setState(() {
+                error = 'Device disconnected';
+                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+              });
+              return;
+            }
+
+            final nonceRequest = coord.createNonceRequest(devices: [device.id]);
+
+            if (nonceRequest.someNoncesRequested()) {
+              // Show nonce generation UI immediately
+              final stream = coord
+                  .replenishNonces(
+                    nonceRequest: nonceRequest,
+                    devices: [device.id],
+                  )
+                  .toBehaviorSubject();
+
+              setState(() {
+                pushPrevState();
+                activeNonceStream = stream;
+                currentStep = RecoveryFlowStep.generatingNonces;
+              });
+            } else {
+              // Go straight to backup entry
+              setState(() {
+                pushPrevState();
+                currentStep = RecoveryFlowStep.enterBackup;
+              });
+            }
           },
         );
-      case 'enter_backup':
+
+      case RecoveryFlowStep.generatingNonces:
+        if (activeNonceStream == null) {
+          // Stream not ready, go back
+          setState(() {
+            currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+          });
+          child = _LoadingView(title: 'Preparing...', subtitle: null);
+        } else {
+          // Use the same enrollment dialog UI for consistency
+          child = _EnrollmentNonceDialog(
+            stream: activeNonceStream!,
+            deviceName: blankDevice != null
+                ? coord.getDeviceName(id: blankDevice!.id)
+                : null,
+            onComplete: () {
+              setState(() {
+                activeNonceStream = null;
+                currentStep = RecoveryFlowStep.enterBackup;
+              });
+            },
+            onCancel: () {
+              coord.cancelProtocol();
+              setState(() {
+                activeNonceStream = null;
+                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+              });
+            },
+            onError: (error) {
+              setState(() {
+                // Don't set error for device disconnection - just go back
+                if (!error.contains('disconnected')) {
+                  this.error = error;
+                }
+                activeNonceStream = null;
+                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+              });
+            },
+          );
+        }
+        break;
+
+      case RecoveryFlowStep.enterBackup:
         final stream = coord.tellDeviceToEnterPhysicalBackup(
           deviceId: blankDevice!.id,
         );
@@ -532,19 +649,19 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   );
                   setState(() {
                     pushPrevState();
-                    currentStep = "physical_backup_success";
+                    currentStep = RecoveryFlowStep.physicalBackupSuccess;
                   });
                 } else {
                   setState(() {
                     pushPrevState();
-                    currentStep = "physical_backup_fail";
+                    currentStep = RecoveryFlowStep.physicalBackupFail;
                   });
                 }
               }
             } catch (e) {
               setState(() {
                 pushPrevState();
-                currentStep = "physical_backup_fail";
+                currentStep = RecoveryFlowStep.physicalBackupFail;
                 error = e.toString();
               });
             }
@@ -552,13 +669,13 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onError: (e) {
             setState(() {
               pushPrevState();
-              currentStep = "physical_backup_fail";
+              currentStep = RecoveryFlowStep.physicalBackupFail;
               error = e.toString();
             });
           },
         );
         break;
-      case 'enter_restoration_details':
+      case RecoveryFlowStep.enterRestorationDetails:
         child = _EnterWalletNameView(
           initialWalletName: walletName,
           initialBitcoinNetwork: bitcoinNetwork,
@@ -567,13 +684,13 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
               pushPrevState();
               this.walletName = walletName;
               this.bitcoinNetwork = bitcoinNetwork;
-              currentStep = 'enter_threshold';
+              currentStep = RecoveryFlowStep.enterThreshold;
             });
           },
         );
         break;
 
-      case 'enter_threshold':
+      case RecoveryFlowStep.enterThreshold:
         child = _EnterThresholdView(
           walletName: walletName!,
           network: bitcoinNetwork!,
@@ -582,12 +699,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
             setState(() {
               pushPrevState();
               this.threshold = threshold;
-              currentStep = 'wait_physical_backup_device';
+              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
             });
           },
         );
         break;
-      case 'physical_backup_success':
+      case RecoveryFlowStep.physicalBackupSuccess:
         child = _PhysicalBackupSuccessView(
           deviceName: coord.getDeviceName(id: blankDevice!.id)!,
           onClose: () {
@@ -595,14 +712,14 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
         );
         break;
-      case 'physical_backup_fail':
+      case RecoveryFlowStep.physicalBackupFail:
         child = _PhysicalBackupFailView(
           errorMessage: error,
           compatibility: compatibility,
           onRetry: () {
             setState(() {
               pushPrevState();
-              currentStep = 'enter_backup';
+              currentStep = RecoveryFlowStep.enterBackup;
               error = null;
             });
           },
@@ -617,7 +734,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onDeviceChosen: () {
             setState(() {
               pushPrevState();
-              currentStep = 'wait_device';
+              currentStep = RecoveryFlowStep.waitDevice;
             });
           },
           onPhysicalBackupChosen: () {
@@ -625,11 +742,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
               switch (kind) {
                 case MethodChoiceKind.startRecovery:
                   pushPrevState();
-                  currentStep = "enter_restoration_details";
+                  currentStep = RecoveryFlowStep.enterRestorationDetails;
                   break;
                 default:
                   pushPrevState();
-                  currentStep = 'wait_physical_backup_device';
+                  currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               }
             });
           },
@@ -707,12 +824,27 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     }
   }
 
-  void goBackOrClose(BuildContext) {
+  void goBackOrClose(BuildContext context) {
     if (!tryPopPrevState(context)) Navigator.pop(context);
   }
 }
 
 enum MethodChoiceKind { startRecovery, continueRecovery, addToWallet }
+
+// Recovery flow step states
+enum RecoveryFlowStep {
+  start,
+  waitDevice,
+  candidateReady,
+  waitPhysicalBackupDevice,
+  enterDeviceName,
+  generatingNonces,
+  enterBackup,
+  enterRestorationDetails,
+  enterThreshold,
+  physicalBackupSuccess,
+  physicalBackupFail,
+}
 
 mixin _TitledWidget on Widget {
   String get titleText;
@@ -1431,7 +1563,10 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
       );
     } else {
       // No error: show the spinner centered within the space.
-      displayWidget = CircularProgressIndicator();
+      displayWidget = Semantics(
+        label: 'Waiting for device to connect',
+        child: CircularProgressIndicator(),
+      );
     }
 
     final String prompt;
@@ -1471,34 +1606,155 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
   }
 }
 
-class _CandidateReadyView extends StatelessWidget with _TitledWidget {
+class _CandidateReadyView extends StatefulWidget with _TitledWidget {
   final RecoverShare candidate;
   final ShareCompatibility compatibility;
   final RestorationId? continuing;
   final AccessStructureRef? existing;
+  final VoidCallback? onDeviceDisconnected;
 
   const _CandidateReadyView({
     required this.candidate,
     required this.compatibility,
     this.continuing,
     this.existing,
+    this.onDeviceDisconnected,
   });
 
   @override
   String get titleText => 'Restore with existing key';
 
   @override
-  Widget build(BuildContext context) {
-    final deviceName = coord.getDeviceName(id: candidate.heldBy) ?? '<empty>';
+  State<_CandidateReadyView> createState() => _CandidateReadyViewState();
+}
 
+class _CandidateReadyViewState extends State<_CandidateReadyView> {
+  bool _isGeneratingNonces = false;
+  bool _isEnrolling = false; // Prevent duplicate enrollments
+  Stream<NonceReplenishState>? _nonceStream;
+  StreamSubscription? _nonceStreamSubscription;
+
+  @override
+  void dispose() {
+    _nonceStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _completeEnrollment(BuildContext context) async {
+    // Prevent duplicate enrollments
+    if (_isEnrolling) return;
+
+    setState(() {
+      _isEnrolling = true;
+    });
+
+    try {
+      RestorationId? restorationId;
+      if (widget.continuing != null) {
+        await coord.continueRestoringWalletFromDeviceShare(
+          restorationId: widget.continuing!,
+          recoverShare: widget.candidate,
+        );
+      } else if (widget.existing != null) {
+        final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+        await coord.recoverShare(
+          accessStructureRef: widget.existing!,
+          recoverShare: widget.candidate,
+          encryptionKey: encryptionKey,
+        );
+      } else {
+        restorationId = await coord.startRestoringWalletFromDeviceShare(
+          recoverShare: widget.candidate,
+        );
+      }
+
+      if (context.mounted) {
+        Navigator.pop(context, restorationId);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        setState(() {
+          _isEnrolling = false; // Reset on error
+        });
+        showErrorSnackbarBottom(context, "Failed to recover key: $e");
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final deviceName =
+        coord.getDeviceName(id: widget.candidate.heldBy) ?? '<empty>';
+
+    // If we're generating nonces, show the nonce UI inline
+    if (_isGeneratingNonces && _nonceStream != null) {
+      return Column(
+        key: const ValueKey('nonceGeneration'),
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          MaterialDialogCard(
+            title: SizedBox.shrink(),
+            content: Container(
+              constraints: BoxConstraints(minHeight: 120),
+              child: StreamBuilder<NonceReplenishState>(
+                stream: _nonceStream!,
+                builder: (context, snapshot) {
+                  final state = snapshot.data;
+
+                  // Handle abort (device disconnection)
+                  if (state != null && state.abort) {
+                    // Device disconnected - go back to waiting for device
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        coord.cancelProtocol();
+                        _nonceStreamSubscription?.cancel();
+                        // Call parent callback to go back to waitDevice state
+                        widget.onDeviceDisconnected?.call();
+                      }
+                    });
+                    return SizedBox.shrink(); // Return early to avoid showing completion UI
+                  }
+
+                  // Handle completion
+                  if (state != null) {
+                    final isComplete =
+                        state.receivedFrom.length == state.devices.length;
+                    if (isComplete) {
+                      // Add a delay to show completion before proceeding
+                      Future.delayed(Durations.long1, () async {
+                        if (mounted) {
+                          await _nonceStreamSubscription?.cancel();
+                          // Don't change UI state - just complete enrollment which will navigate
+                          _completeEnrollment(context);
+                        }
+                      });
+                    }
+                  }
+
+                  return MinimalNonceReplenishWidget(
+                    stream: _nonceStream!,
+                    autoAdvance: false,
+                  );
+                },
+              ),
+            ),
+            actions:
+                [], // No cancel button - user can disconnect device to cancel
+          ),
+        ],
+      );
+    }
+
+    // Otherwise show the normal "Key ready" UI
     IconData icon;
     String title;
     String message;
     String buttonText;
     bool buttonFilled;
-    VoidCallback buttonAction;
+    VoidCallback? buttonAction;
 
-    switch (compatibility) {
+    switch (widget.compatibility) {
       case ShareCompatibility_Compatible() ||
           // we ignore the problem of different wallet names on the shares for now.
           // This happens when you eneter a physical backup and enter a different
@@ -1508,54 +1764,66 @@ class _CandidateReadyView extends StatelessWidget with _TitledWidget {
         icon = Icons.check_circle;
         title = 'Key ready';
 
-        if (continuing != null || existing != null) {
+        if (widget.continuing != null || widget.existing != null) {
           message =
-              'Key \'$deviceName\' is ready to be added to wallet \'${candidate.heldShare.keyName}\'.';
-          buttonText = 'Add to wallet';
+              'Key \'$deviceName\' is ready to be added to wallet \'${widget.candidate.heldShare.keyName}\'.';
+          buttonText = _isEnrolling ? 'Adding...' : 'Add to wallet';
         } else {
           message =
-              'Key \'$deviceName\' is part of a wallet called \'${candidate.heldShare.keyName}\'.';
-          buttonText = 'Start restoring';
+              'Key \'$deviceName\' is part of a wallet called \'${widget.candidate.heldShare.keyName}\'.';
+          buttonText = _isEnrolling ? 'Starting...' : 'Start restoring';
         }
 
         buttonFilled = true;
-        buttonAction = () async {
-          try {
-            RestorationId? restorationId;
-            if (continuing != null) {
-              await coord.continueRestoringWalletFromDeviceShare(
-                restorationId: continuing!,
-                recoverShare: candidate,
-              );
-            } else if (existing != null) {
-              final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-              await coord.recoverShare(
-                accessStructureRef: existing!,
-                recoverShare: candidate,
-                encryptionKey: encryptionKey,
-              );
-            } else {
-              restorationId = await coord.startRestoringWalletFromDeviceShare(
-                recoverShare: candidate,
-              );
-            }
+        buttonAction = _isEnrolling
+            ? null
+            : () {
+                // Prevent duplicate clicks
+                if (_isEnrolling) return;
 
-            if (context.mounted) {
-              Navigator.pop(context, restorationId);
-            }
-          } catch (e) {
-            if (context.mounted) {
-              showErrorSnackbarBottom(context, "Failed to recover key: $e");
-            }
-          }
-        };
+                // Run async operations in a fire-and-forget manner
+                () async {
+                  try {
+                    // Check if device needs nonces before enrolling
+                    final nonceRequest = await coord.createNonceRequest(
+                      devices: [widget.candidate.heldBy],
+                    );
+
+                    if (nonceRequest.someNoncesRequested()) {
+                      // Show nonce generation inline instead of in a dialog
+                      if (mounted) {
+                        setState(() {
+                          _isGeneratingNonces = true;
+                          _nonceStream = coord
+                              .replenishNonces(
+                                nonceRequest: nonceRequest,
+                                devices: [widget.candidate.heldBy],
+                              )
+                              .toBehaviorSubject();
+                          // The abort flag in NonceReplenishState will handle device disconnection
+                        });
+                      }
+                      return; // Don't proceed until nonces are done
+                    }
+
+                    // If no nonces needed, proceed directly
+                    if (mounted) {
+                      _completeEnrollment(context);
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      showErrorSnackbarBottom(context, e.toString());
+                    }
+                  }
+                }();
+              };
 
         break;
 
       case ShareCompatibility_AlreadyGotIt():
         icon = Icons.info_rounded;
         title = 'Key already restored';
-        message = 'You’ve already restored "$deviceName".';
+        message = "You've already restored '$deviceName'.";
         buttonText = 'Close';
         buttonFilled = false;
         buttonAction = () => Navigator.pop(context);
@@ -1565,7 +1833,7 @@ class _CandidateReadyView extends StatelessWidget with _TitledWidget {
         icon = Icons.error_rounded;
         title = 'Key cannot be used';
         message =
-            'This key "$deviceName" is part of a different wallet called "${candidate.heldShare.keyName}".';
+            'This key "$deviceName" is part of a different wallet called "${widget.candidate.heldShare.keyName}".';
         buttonText = 'Close';
         buttonFilled = false;
         buttonAction = () => Navigator.pop(context);
@@ -1575,7 +1843,7 @@ class _CandidateReadyView extends StatelessWidget with _TitledWidget {
         icon = Icons.error_rounded;
         title = 'Backup does not match';
         message =
-            "You have already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Consider removing that key from the restoration first.";
+            "You have already restored backup #$index on '${coord.getDeviceName(id: deviceId)!}' and it doesn't match the one you just entered. Consider removing that key from the restoration first.";
         buttonText = 'Close';
         buttonFilled = false;
         buttonAction = () => Navigator.pop(context);
@@ -1670,6 +1938,201 @@ class _PhysicalBackupFailView extends StatelessWidget with _TitledWidget {
 
   @override
   String get titleText => '';
+}
+
+// Loading view with optional subtitle
+class _LoadingView extends StatelessWidget with _TitledWidget {
+  final String title;
+  final String? subtitle;
+
+  const _LoadingView({required this.title, this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AnimatedSwitcher(
+      duration: Durations.medium2,
+      child: Center(
+        key: ValueKey('$title$subtitle'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 24),
+            AnimatedDefaultTextStyle(
+              style: theme.textTheme.titleMedium!,
+              duration: Durations.short4,
+              child: Text(title, textAlign: TextAlign.center),
+            ),
+            if (subtitle != null) ...[
+              SizedBox(height: 8),
+              AnimatedDefaultTextStyle(
+                style: theme.textTheme.bodyMedium!.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                duration: Durations.short4,
+                child: Text(subtitle!, textAlign: TextAlign.center),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  String get titleText => '';
+}
+
+// Error view with retry option
+class _ErrorView extends StatelessWidget with _TitledWidget {
+  final String title;
+  final String message;
+  final VoidCallback? onRetry;
+
+  const _ErrorView({required this.title, required this.message, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return MaterialDialogCard(
+      iconData: Icons.error_outline_rounded,
+      title: Text(title),
+      content: Text(message, textAlign: TextAlign.center),
+      backgroundColor: theme.colorScheme.errorContainer,
+      textColor: theme.colorScheme.onErrorContainer,
+      iconColor: theme.colorScheme.onErrorContainer,
+      actions: onRetry != null
+          ? [
+              FilledButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('Try Again'),
+                onPressed: onRetry,
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.error,
+                  foregroundColor: theme.colorScheme.onError,
+                ),
+              ),
+            ]
+          : [],
+    );
+  }
+
+  @override
+  String get titleText => 'Error';
+}
+
+// Unified nonce dialog for both enrollment and physical backup flows
+class _EnrollmentNonceDialog extends StatefulWidget with _TitledWidget {
+  final Stream<NonceReplenishState> stream;
+  final String? deviceName;
+  final VoidCallback onComplete;
+  final VoidCallback onCancel;
+  final Function(String) onError;
+
+  const _EnrollmentNonceDialog({
+    required this.stream,
+    this.deviceName,
+    required this.onComplete,
+    required this.onCancel,
+    required this.onError,
+  });
+
+  @override
+  State<_EnrollmentNonceDialog> createState() => _EnrollmentNonceDialogState();
+
+  @override
+  String get titleText => 'Preparing Device';
+}
+
+class _EnrollmentNonceDialogState extends State<_EnrollmentNonceDialog> {
+  bool _hasCompleted = false;
+  bool _hasErrored = false;
+  StreamSubscription? _streamSubscription;
+
+  @override
+  void dispose() {
+    _streamSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<NonceReplenishState>(
+      stream: widget.stream,
+      builder: (context, snapshot) {
+        // Handle stream errors
+        if (snapshot.hasError && !_hasErrored) {
+          _hasErrored = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              try {
+                widget.onError('Failed to prepare device: ${snapshot.error}');
+              } catch (e) {
+                debugPrint('Error in onError callback: $e');
+              }
+            }
+          });
+        }
+
+        final state = snapshot.data;
+
+        // Handle completion
+        if (state != null && !_hasCompleted && !_hasErrored) {
+          final isComplete = state.receivedFrom.length == state.devices.length;
+          if (isComplete) {
+            _hasCompleted = true;
+            // Add a delay to show the completion state before transitioning
+            Future.delayed(Durations.long1, () {
+              if (mounted) {
+                try {
+                  widget.onComplete();
+                } catch (e) {
+                  debugPrint('Error in onComplete callback: $e');
+                }
+              }
+            });
+          }
+        }
+
+        // Handle abort
+        if (state?.abort == true && !_hasCompleted && !_hasErrored) {
+          _hasErrored = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              try {
+                widget.onError('Device disconnected during preparation');
+              } catch (e) {
+                debugPrint('Error in onError callback: $e');
+              }
+            }
+          });
+        }
+
+        // Build compact dialog card without redundant icon/title
+        return Column(
+          key: const ValueKey('nonceGeneration'),
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            MaterialDialogCard(
+              title: SizedBox.shrink(),
+              content: Container(
+                constraints: BoxConstraints(minHeight: 120),
+                child: MinimalNonceReplenishWidget(
+                  stream: widget.stream,
+                  autoAdvance: false,
+                ),
+              ),
+              actions:
+                  [], // No cancel button - user can disconnect device to cancel
+              actionsAlignment: MainAxisAlignment.center,
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 void continueWalletRecoveryFlowDialog(

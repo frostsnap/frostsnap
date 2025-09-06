@@ -404,6 +404,7 @@ impl FrostCoordinator {
         let message_kind = message.kind();
         match message {
             DeviceToCoordinatorMessage::NonceResponse { segments } => {
+                let mut outgoing = vec![];
                 for new_segment in segments {
                     self.nonce_cache
                         .check_can_extend(from, &new_segment)
@@ -420,7 +421,11 @@ impl FrostCoordinator {
                     });
                 }
 
-                Ok(vec![])
+                outgoing.push(CoordinatorSend::ToUser(
+                    CoordinatorToUserMessage::ReplenishedNonces { device_id: from },
+                ));
+
+                Ok(outgoing)
             }
             DeviceToCoordinatorMessage::KeyGenResponse(response) => {
                 let keygen_id = response.keygen_id;
@@ -1012,20 +1017,28 @@ impl FrostCoordinator {
 
     pub fn maybe_request_nonce_replenishment(
         &self,
-        device_id: DeviceId,
+        devices: &BTreeSet<DeviceId>,
         desired_nonce_streams: usize,
         rng: &mut impl rand_core::RngCore,
-    ) -> impl IntoIterator<Item = CoordinatorSend> {
-        core::iter::once(CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::OpenNonceStreams {
-                streams: self
-                    .nonce_cache
-                    .generate_nonce_stream_opening_requests(device_id, desired_nonce_streams, rng)
-                    .into_iter()
-                    .collect(),
-            },
-            destinations: [device_id].into(),
-        })
+    ) -> NonceReplenishRequest {
+        let replenish_requests = devices
+            .iter()
+            .map(|device_id| {
+                (
+                    *device_id,
+                    self.nonce_cache
+                        .generate_nonce_stream_opening_requests(
+                            *device_id,
+                            desired_nonce_streams,
+                            rng,
+                        )
+                        .into_iter()
+                        .collect(),
+                )
+            })
+            .collect();
+
+        NonceReplenishRequest { replenish_requests }
     }
 
     pub fn verify_address(
@@ -1595,6 +1608,33 @@ pub enum CoordinatorSend {
         destinations: BTreeSet<DeviceId>,
     },
     ToUser(CoordinatorToUserMessage),
+}
+
+pub struct NonceReplenishRequest {
+    pub replenish_requests: BTreeMap<DeviceId, Vec<CoordNonceStreamState>>,
+}
+
+impl NonceReplenishRequest {
+    pub fn some_nonces_requested(&self) -> bool {
+        self.replenish_requests
+            .values()
+            .any(|streams| streams.iter().any(|stream| stream.remaining == 0))
+    }
+}
+
+impl IntoIterator for NonceReplenishRequest {
+    type Item = CoordinatorSend;
+    type IntoIter = std::vec::IntoIter<CoordinatorSend>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.replenish_requests
+            .into_iter()
+            .map(|(device_id, streams)| CoordinatorSend::ToDevice {
+                message: CoordinatorToDeviceMessage::OpenNonceStreams { streams },
+                destinations: [device_id].into(),
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
 }
 
 #[derive(Debug, Clone)]

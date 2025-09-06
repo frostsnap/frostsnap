@@ -327,7 +327,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 let mut segments = vec![];
                 // we need to order prioritize streams that already exist since not getting a
                 // response to this message the coordinator will think that everything is ok.
-                // Ignoring new requests is fine it just means they won't be opened.
                 let (existing, new): (Vec<_>, Vec<_>) = streams
                     .iter()
                     .partition(|stream| self.nonce_slots.get(stream.stream_id).is_some());
@@ -347,12 +346,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     }
                 }
 
-                let send = if !segments.is_empty() {
+                // we always send a response regardless if the segments are empty
+                // so that the coordinator can track UI progress.
+                let send = {
                     Some(DeviceSend::ToCoordinator(Box::new(
                         DeviceToCoordinatorMessage::NonceResponse { segments },
                     )))
-                } else {
-                    None
                 };
                 Ok(send.into_iter().collect())
             }

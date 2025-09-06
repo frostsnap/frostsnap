@@ -13,6 +13,7 @@ use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
+use frostsnap_coordinator::nonce_replenish::NonceReplenishState;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::verify_address::{VerifyAddressProtocol, VerifyAddressProtocolState};
@@ -28,7 +29,7 @@ use frostsnap_core::coordinator::restoration::{
 };
 use frostsnap_core::coordinator::{
     CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
-    FrostCoordinator,
+    FrostCoordinator, NonceReplenishRequest,
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
@@ -202,13 +203,13 @@ impl FfiCoordinator {
                                 if let Some(connected_device) = device_list.get_device(id) {
                                     // we only send some messages out if the device has up to date firmware
                                     if !connected_device.needs_firmware_upgrade() {
-                                        coordinator_outbox.extend(
-                                            coordinator.maybe_request_nonce_replenishment(
-                                                id,
-                                                N_NONCE_STREAMS,
-                                                &mut rand::thread_rng(),
-                                            ),
-                                        );
+                                        // coordinator_outbox.extend(
+                                        //     coordinator.maybe_request_nonce_replenishment(
+                                        //         &BTreeSet::from([id]),
+                                        //         N_NONCE_STREAMS,
+                                        //         &mut rand::thread_rng(),
+                                        //     ),
+                                        // );
                                     }
                                 }
                             }
@@ -414,6 +415,33 @@ impl FfiCoordinator {
             .copied()
             .max()
             .unwrap_or(0)
+    }
+
+    pub fn nonce_replenish_request(&self, devices: BTreeSet<DeviceId>) -> NonceReplenishRequest {
+        frostsnap_coordinator::nonce_replenish::NonceReplenishProtocol::create_nonce_request(
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            devices,
+            N_NONCE_STREAMS,
+            &mut rand::thread_rng(),
+        )
+    }
+
+    pub fn replenish_nonces(
+        &self,
+        nonce_request: NonceReplenishRequest,
+        devices: BTreeSet<DeviceId>,
+        sink: impl Sink<frostsnap_coordinator::nonce_replenish::NonceReplenishState>,
+    ) -> anyhow::Result<()> {
+        let ui_protocol = frostsnap_coordinator::nonce_replenish::NonceReplenishProtocol::new(
+            devices,
+            nonce_request,
+            sink,
+        );
+
+        ui_protocol.emit_state();
+        self.start_protocol(ui_protocol);
+
+        Ok(())
     }
 
     pub fn start_signing(

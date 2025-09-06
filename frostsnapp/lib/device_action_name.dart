@@ -45,6 +45,16 @@ class DeviceActionNameDialogController with ChangeNotifier {
     Function(String)? onNamed,
   }) async {
     _dialogController.addActionNeeded(context, id);
+
+    // Check if device already has this name
+    final currentName = coord.getDeviceName(id: id);
+    if (currentName == name) {
+      // Device already has this name, no need to rename
+      await _dialogController.removeActionNeeded(id);
+      onNamed?.call(name);
+      return name;
+    }
+
     await coord.finishNaming(id: id, name: name);
 
     final confirmedName = await Stream<String?>.fromFutures([
