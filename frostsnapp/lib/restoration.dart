@@ -337,8 +337,8 @@ class WalletRecoveryFlow extends StatefulWidget {
   final RestorationId? continuing;
   // We're recovering a share for a key that already exists
   final AccessStructureRef? existing;
-  final String? initialStep;
   final bool isDialog;
+  final RecoveryFlowStep? initialStep;
 
   const WalletRecoveryFlow({
     super.key,
@@ -352,14 +352,14 @@ class WalletRecoveryFlow extends StatefulWidget {
     this.continuing,
     this.existing,
     this.isDialog = true,
-  }) : initialStep = 'wait_device';
+  }) : initialStep = RecoveryFlowStep.waitDevice;
 
   const WalletRecoveryFlow.startWithPhysicalBackup({
     super.key,
     this.continuing,
     this.existing,
     this.isDialog = true,
-  }) : initialStep = 'enter_restoration_details';
+  }) : initialStep = RecoveryFlowStep.enterRestorationDetails;
 
   @override
   State<WalletRecoveryFlow> createState() => _WalletRecoveryFlowState();
@@ -426,6 +426,13 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         blankDevice = prevState.blankDevice;
         restorationId = prevState.restorationId;
         error = prevState.error;
+
+        // Cancel any active operations when going back
+        if (activeNonceStream != null) {
+          _nonceStreamSubscription?.cancel();
+          activeNonceStream = null;
+          coord.cancelProtocol();
+        }
       });
       return true;
     }
@@ -442,10 +449,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   void initState() {
     super.initState();
 
-    final initialStep = widget.initialStep;
-    if (initialStep != null) {
-      // Map string to enum for backwards compatibility
-      currentStep = _mapStringToStep(initialStep);
+    if (widget.initialStep != null) {
+      currentStep = widget.initialStep!;
     }
 
     if (widget.continuing != null) {
@@ -819,19 +824,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     }
   }
 
-  // Helper function for backwards compatibility with string-based initial steps
-  RecoveryFlowStep _mapStringToStep(String step) {
-    switch (step) {
-      case 'wait_device':
-        return RecoveryFlowStep.waitDevice;
-      case 'enter_restoration_details':
-        return RecoveryFlowStep.enterRestorationDetails;
-      default:
-        return RecoveryFlowStep.start;
-    }
-  }
-
-  void goBackOrClose(BuildContext) {
+  void goBackOrClose(BuildContext context) {
     if (!tryPopPrevState(context)) Navigator.pop(context);
   }
 }

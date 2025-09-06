@@ -434,17 +434,21 @@ class WalletCreateController extends ChangeNotifier {
   void back(context) {
     if (!_handleBack(context)) return;
 
-    // Handle back navigation, skipping nonce step if it was skipped forward
+    // Handle back navigation, skipping nonce step
     WalletCreateStep? prevStep;
     if (_step == WalletCreateStep.deviceNames) {
-      // Check if we should skip nonce step when going back
-      if (_nonceStream == null) {
-        // Nonce step was skipped, go directly to deviceCount
-        prevStep = WalletCreateStep.deviceCount;
-      } else {
-        // Nonce step was shown, go back to it
-        prevStep = WalletCreateStep.nonceReplenish;
-      }
+      // Always go back to deviceCount from deviceNames, skipping nonce step
+      // since nonce generation is automatic and shouldn't be re-shown
+      prevStep = WalletCreateStep.deviceCount;
+      // Clear nonce stream to allow re-generation if needed
+      _nonceStream = null;
+      _hasAutoAdvanced = false;
+    } else if (_step == WalletCreateStep.nonceReplenish) {
+      // If somehow on nonce step, go back to deviceCount
+      prevStep = WalletCreateStep.deviceCount;
+      // Clear nonce stream
+      _nonceStream = null;
+      _hasAutoAdvanced = false;
     } else {
       // Normal back navigation
       final prevIndex = _step.index - 1;
@@ -1020,31 +1024,33 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Divider(height: 0),
+            if (_controller.step != WalletCreateStep.nonceReplenish)
+              Divider(height: 0),
             if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
                 false)
               buildAdvancedOptions(context),
-            Padding(
-              padding: EdgeInsets.all(
-                16,
-              ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
-              child: SafeArea(
-                top: false,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    onPressed: _controller.canGoNext
-                        ? () => _controller.next(context)
-                        : null,
-                    child: Text(
-                      _controller.nextText ?? 'Next',
-                      softWrap: false,
-                      overflow: TextOverflow.fade,
+            if (_controller.step != WalletCreateStep.nonceReplenish)
+              Padding(
+                padding: EdgeInsets.all(
+                  16,
+                ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
+                child: SafeArea(
+                  top: false,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed: _controller.canGoNext
+                          ? () => _controller.next(context)
+                          : null,
+                      child: Text(
+                        _controller.nextText ?? 'Next',
+                        softWrap: false,
+                        overflow: TextOverflow.fade,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ],

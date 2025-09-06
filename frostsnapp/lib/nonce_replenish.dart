@@ -207,6 +207,3 @@ class NonceReplenishDialog extends StatelessWidget {
     );
   }
 }
-
-// Backwards compatibility alias
-typedef NonceReplenishWidget = NonceReplenishDialog;

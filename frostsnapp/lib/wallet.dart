@@ -157,7 +157,7 @@ class WalletHome extends StatelessWidget {
                   if (nonceRequest.someNoncesRequested()) {
                     await MaybeFullscreenDialog.show<bool>(
                       context: context,
-                      child: NonceReplenishWidget(
+                      child: NonceReplenishDialog(
                         stream: coord
                             .replenishNonces(
                               nonceRequest: nonceRequest,
