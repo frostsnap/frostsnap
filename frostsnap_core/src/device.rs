@@ -298,6 +298,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
     pub fn clear_unfinished_keygens(&mut self) {
         self.tmp_keygen_phase1.clear();
+        self.tmp_keygen_phase2.clear();
         self.tmp_keygen_pending_finalize.clear();
     }
 
@@ -510,7 +511,10 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     // Add all certificates to the certifier
                     for (pubkey, cert) in certificate {
                         certifier.receive_certificate(pubkey, cert).map_err(|e| {
-                            Error::signer_invalid_message(&message, format!("Invalid certificate received: {e}"))
+                            Error::signer_invalid_message(
+                                &message,
+                                format!("Invalid certificate received: {e}"),
+                            )
                         })?;
                     }
 
