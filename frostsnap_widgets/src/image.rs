@@ -131,9 +131,7 @@ where
     where
         I: IntoIterator<Item = Self::Color>,
     {
-        // This is less efficient but correct - we could optimize with unsafe transmute if needed
-        let mapped_colors: alloc::vec::Vec<_> =
-            colors.into_iter().map(|c| (self.map_fn)(c)).collect();
+        let mapped_colors = colors.into_iter().map(|c| (self.map_fn)(c));
         self.inner.fill_contiguous(area, mapped_colors)
     }
 

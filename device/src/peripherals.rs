@@ -21,7 +21,7 @@ use esp_hal::{
         SpiMode,
     },
     timer::timg::{Timer, Timer0, TimerGroup},
-    uart::{self, Uart},
+    uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
@@ -65,8 +65,8 @@ type Display<'a> = mipidsi::Display<
 
 /// All device peripherals initialized and ready to use
 pub struct DevicePeripherals<'a> {
-    /// Shared timer for timing operations
-    pub timer: Timer<Timer0<TIMG0>, Blocking>,
+    /// Shared timer for timing operations (leaked to 'static for SerialInterface)
+    pub timer: &'static Timer<Timer0<TIMG0>, Blocking>,
 
     /// UI timer for display and touch operations
     pub ui_timer: Timer<Timer0<TIMG1>, Blocking>,
@@ -81,10 +81,10 @@ pub struct DevicePeripherals<'a> {
     pub backlight: channel::Channel<'a, LowSpeed>,
 
     /// UART for upstream device connection (if detected)
-    pub uart_upstream: Option<Uart<'a, Blocking>>,
+    pub uart_upstream: Option<Uart<'static, Blocking>>,
 
     /// UART for downstream device connection
-    pub uart_downstream: Uart<'a, Blocking>,
+    pub uart_downstream: Uart<'static, Blocking>,
 
     /// USB JTAG for debugging and upstream connection
     pub jtag: UsbSerialJtag<'a, Blocking>,
@@ -174,7 +174,10 @@ impl<'a> DevicePeripherals<'a> {
         // Initialize timers
         let timg0 = TimerGroup::new(&mut peripherals.TIMG0);
         let timg1 = TimerGroup::new(&mut peripherals.TIMG1);
-        let timer = timg0.timer0;
+
+        // Extract timer0 from TIMG0 and leak it to get 'static reference for SerialInterface
+        // This is safe because the timer lives for the entire program lifetime
+        let timer = Box::leak(Box::new(timg0.timer0));
         let ui_timer = timg1.timer0;
 
         // Detection pins (using AnyPin to avoid generics)
@@ -254,18 +257,11 @@ impl<'a> DevicePeripherals<'a> {
         // Initialize JTAG
         let jtag = UsbSerialJtag::new(&mut peripherals.USB_DEVICE);
 
-        // Initialize UART configuration
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            ..Default::default()
-        };
-
         // Initialize upstream UART only if upstream device is detected
         let uart_upstream = if upstream_detect.is_low() {
             Some(
-                Uart::new_with_config(
+                Uart::new(
                     &mut peripherals.UART1,
-                    serial_conf,
                     &mut peripherals.GPIO18,
                     &mut peripherals.GPIO19,
                 )
@@ -276,9 +272,8 @@ impl<'a> DevicePeripherals<'a> {
         };
 
         // Always initialize downstream UART
-        let uart_downstream = Uart::new_with_config(
+        let uart_downstream = Uart::new(
             &mut peripherals.UART0,
-            serial_conf,
             &mut peripherals.GPIO21,
             &mut peripherals.GPIO20,
         )

@@ -11,7 +11,6 @@ pub enum DeviceToUserMessage {
         key_name: String,
     },
     CheckKeyGen {
-        session_hash: SessionHash,
         phase: Box<KeyGenPhase3>,
     },
     SignatureRequest {
