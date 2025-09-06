@@ -5,12 +5,21 @@ extern crate std;
 
 #[macro_use]
 extern crate alloc;
+pub mod factory;
+pub mod genuine_certificate;
+use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
 use frostsnap_core::{DeviceId, Gist};
+use genuine_certificate::Certificate;
+
+pub const FACTORY_PUBLIC_KEY: [u8; 32] = [
+    0xf3, 0xdb, 0x4b, 0x52, 0x53, 0xe7, 0xc5, 0x66, 0x9a, 0x7a, 0xe9, 0x52, 0x8a, 0x58, 0x51, 0x12,
+    0x7c, 0x4f, 0x70, 0x0c, 0x38, 0xfa, 0xe4, 0xeb, 0xac, 0x03, 0x40, 0x9d, 0x7d, 0x46, 0xea, 0x0b,
+];
 
 pub const BAUDRATE: u32 = 115_200;
 /// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
@@ -28,9 +37,6 @@ const MAGICBYTES_RECV_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0x5d, 0xa3, 0x85,
 pub const MAGIC_BYTES_PERIOD: u64 = 100;
 
 pub const FIRMWARE_UPGRADE_CHUNK_LEN: u32 = 4096;
-
-/// This value comes from partitions.csv
-pub const FIRMWARE_IMAGE_SIZE: u32 = 0x140_000;
 
 pub const FIRMWARE_NEXT_CHUNK_READY_SIGNAL: u8 = 0x11;
 
@@ -210,6 +216,7 @@ pub enum CoordinatorSendBody {
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
     DataWipe,
+    Challenge(Box<[u8; 32]>),
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
@@ -291,7 +298,7 @@ pub trait HasMagicBytes {
 }
 
 pub trait Direction: HasMagicBytes {
-    type RecvType: bincode::Encode + Gist;
+    type RecvType: bincode::Encode + bincode::Decode<()> + Gist;
     type Opposite: Direction;
 }
 
@@ -384,13 +391,23 @@ impl<B: Gist> Gist for DeviceSendMessage<B> {
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum DeviceSendBody {
     Core(frostsnap_core::message::DeviceToCoordinatorMessage),
-    Debug { message: String },
-    Announce { firmware_digest: Sha256Digest },
-    SetName { name: String },
+    Debug {
+        message: String,
+    },
+    Announce {
+        firmware_digest: Sha256Digest,
+    },
+    SetName {
+        name: String,
+    },
     DisconnectDownstream,
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
     Misc(CommsMisc),
+    SignedChallenge {
+        signature: Box<[u8; 384]>,
+        certificate: Box<Certificate>,
+    },
 }
 
 #[derive(Encode, Decode, Debug, Clone)]

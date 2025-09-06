@@ -17,5 +17,5 @@ runs:
     - name: Retrieve device firmware
       uses: actions/download-artifact@v4
       with:
-        name: "frostsnap-${{ github.sha }}.bin"
+        name: "frostsnap-dev-${{ github.sha }}.bin"
         path: target/riscv32imc-unknown-none-elf/release/

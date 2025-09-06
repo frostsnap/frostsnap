@@ -5,3 +5,6 @@ tmp/
 target/
 .vscode
 /riscv
+*.hex
+*.pem
+*.db

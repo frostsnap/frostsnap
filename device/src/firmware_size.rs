@@ -13,19 +13,21 @@
 //! - The remaining space is filled with 0xFF bytes (erased flash state)
 //! - The device has no filesystem to track the actual firmware size
 //!
+//! When Secure Boot v2 is enabled, firmware includes additional signature blocks:
+//! - Signature blocks are 4KB sectors containing RSA signatures and public keys
+//! - They are identified by magic bytes: `0xE7, 0x02, 0x00, 0x00`
+//! - The algorithm scans all sectors to locate signature blocks rather than
+//!   trying to predict complex MMU page alignment schemes
+//!
 //! ## Algorithm
 //!
 //! The algorithm mimics what `espflash` does to calculate firmware size:
 //!
 //! 1. **Read the image header** (24 bytes) containing magic byte 0xE9 and segment count
 //! 2. **Parse all segments** sequentially to find where the last one ends
-//!    - Segments are stored one after another with no gaps
-//!    - Each segment has an 8-byte header followed by its data
-//!    - Track the maximum end position across all segments
 //! 3. **Apply 16-byte alignment** as required by the ESP32 bootloader
 //! 4. **Add 32 bytes if a SHA256 digest is appended** (`append_digest == 1`)
-//!    - This digest is a simple integrity check, separate from secure boot
-//!    - The digest covers everything up to itself (header + segments + padding)
+//! 5. **Scan for Secure Boot v2 signature blocks** and include their size if present
 //!
 //! ## Why This Is Needed
 //!
@@ -33,6 +35,7 @@
 //! - Calculate the same SHA256 hash that external tools like `sha256sum` would produce
 //! - Verify firmware integrity by comparing device-calculated and externally-calculated hashes
 //! - Support deterministic/reproducible builds where the same source produces identical binaries
+//! - Most importantly, implement secure boot.
 //!
 //! ## Future Improvements
 //!
@@ -118,11 +121,7 @@ pub const MAX_SEGMENT_SIZE: u32 = 16 * 1024 * 1024; // 16MB limit
 /// Calculate the actual size of ESP32 firmware in a partition.
 ///
 /// This function parses the ESP32 firmware image format to determine where the
-/// actual firmware content ends within the partition. The returned size includes:
-/// - Image header (24 bytes)
-/// - All segments and their data
-/// - 16-byte alignment padding
-/// - Optional 32-byte SHA256 digest (if `append_digest == 1`)
+/// actual firmware content ends within the partition.
 ///
 /// # Arguments
 ///
@@ -130,9 +129,18 @@ pub const MAX_SEGMENT_SIZE: u32 = 16 * 1024 * 1024; // 16MB limit
 ///
 /// # Returns
 ///
-/// The size in bytes of the actual firmware content, suitable for:
-/// - Calculating SHA256 hashes that match external tools
-/// - Determining how much data to read for firmware verification
+/// A tuple containing:
+/// - First value: Size of firmware content only (header + segments + padding + digest)
+/// - Second value: Total size including Secure Boot v2 signature blocks if present
+///
+/// The first value is suitable for:
+/// - Calculating SHA256 hashes for secure boot
+/// - Determining firmware content size
+///
+/// The second value is suitable for:
+/// - Determining total bytes written to flash partition
+/// - Calculating SHA256 hashes to present to user and compare against deterministic builds
+/// - OTA update size validation
 ///
 /// # Errors
 ///
@@ -140,7 +148,7 @@ pub const MAX_SEGMENT_SIZE: u32 = 16 * 1024 * 1024; // 16MB limit
 /// - The partition cannot be read
 /// - The firmware header is invalid or corrupted
 /// - Segment headers are malformed
-pub fn firmware_size(partition: &EspFlashPartition) -> Result<u32, FirmwareSizeError> {
+pub fn firmware_size(partition: &EspFlashPartition) -> Result<(u32, u32), FirmwareSizeError> {
     // Read and validate the first sector
     let first_sector_array = FlashPartition::read_sector(partition, 0)
         .map_err(|e| FirmwareSizeError::IoError(format!("Failed to read first sector: {:?}", e)))?;
@@ -234,7 +242,14 @@ pub fn firmware_size(partition: &EspFlashPartition) -> Result<u32, FirmwareSizeE
             .ok_or(FirmwareSizeError::CorruptedSegmentHeader)?;
     }
 
-    Ok(firmware_end)
+    // Look for Secure Boot v2 signature block by scanning sectors
+    if let Some(signature_sector) = crate::secure_boot::find_signature_sector(partition) {
+        // Found signature block, firmware ends at end of signature sector
+        let total_size = (signature_sector + 1) * (SECTOR_SIZE as u32);
+        Ok((firmware_end, total_size))
+    } else {
+        Ok((firmware_end, firmware_end))
+    }
 }
 
 fn read_segment_header_safe(

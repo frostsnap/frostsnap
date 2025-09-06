@@ -1,113 +1,195 @@
+use alloc::rc::Rc;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 use esp_hal::efuse::{self as hal_efuse, Efuse};
-use esp_hal::hmac::{self, Hmac};
 use esp_hal::peripherals::EFUSE;
 use frostsnap_core::AccessStructureRef;
 use rand_chacha::rand_core::RngCore;
 use rand_core::SeedableRng;
 use reed_solomon;
 
+// See table Table 4.3-1 and Table 4.3-2 from esp32c3 technical reference
 const KEY_BLOCKS_OFFSET: u8 = 4;
 const WR_DIS_KEY_OFFSET: u8 = 23;
 const WR_DIS_KP_OFFSET: u8 = 8;
+
 const READ_COMMAND: u16 = 0x5AA5;
 const WRITE_COMMAND: u16 = 0x5A5A;
 
-pub struct EfuseController {
-    pub efuse: EFUSE,
+use esp_hal::peripheral::{Peripheral, PeripheralRef};
+
+pub struct EfuseController<'a> {
+    pub efuse: PeripheralRef<'a, EFUSE>,
 }
 
-impl EfuseController {
-    pub fn new(efuse: EFUSE) -> Self {
-        Self { efuse }
+impl<'a> EfuseController<'a> {
+    pub fn new(efuse: impl Peripheral<P = EFUSE> + 'a) -> Self {
+        Self {
+            efuse: efuse.into_ref(),
+        }
     }
 
-    pub fn init_key(
-        &self,
-        key_id: u8,
-        key_purpose: KeyPurpose,
-        read_protect: bool,
-        rng: &mut impl RngCore,
-    ) -> Result<(), EfuseError> {
-        let efuse_field = match key_id {
-            0 => hal_efuse::KEY_PURPOSE_0,
-            1 => hal_efuse::KEY_PURPOSE_1,
-            2 => hal_efuse::KEY_PURPOSE_2,
-            3 => hal_efuse::KEY_PURPOSE_3,
-            4 => hal_efuse::KEY_PURPOSE_4,
-            5 => hal_efuse::KEY_PURPOSE_5,
-            _ => return Err(EfuseError::EfuseError),
-        };
-        let key: u8 = Efuse::read_field_le(efuse_field);
-        // Check if there's an existing key so we don't accidentally overwrite it
-        if key == 0 {
-            let mut buff = [0x00_u8; 32];
-            rng.fill_bytes(&mut buff);
+    /// Check if HMAC keys have been initialized
+    pub fn has_hmac_keys_initialized(&self) -> bool {
+        let discovered = self.discover_efuses();
+        // We need at least share_encryption and fixed_entropy keys
+        // DS key is optional for backward compatibility
+        discovered.share_encryption.is_some() && discovered.fixed_entropy.is_some()
+    }
 
-            unsafe {
-                self.write_block(&buff, key_id + KEY_BLOCKS_OFFSET)?;
-                self.write_key_purpose(key_id, key_purpose, read_protect)?;
+    /// Discover which key slots contain which keys based on their purposes
+    pub fn discover_efuses(&self) -> DiscoveredEfuses {
+        use esp_hal::hmac::KeyId;
+
+        let mut hmac_upstream_keys = Vec::new();
+        let mut ds_key = None;
+
+        // Scan all key slots
+        for key_id in [
+            KeyId::Key0,
+            KeyId::Key1,
+            KeyId::Key2,
+            KeyId::Key3,
+            KeyId::Key4,
+            KeyId::Key5,
+        ] {
+            let purpose = Self::key_purpose(key_id);
+
+            match purpose {
+                KeyPurpose::HmacUpstream => {
+                    hmac_upstream_keys.push((key_id as u8, key_id));
+                }
+                KeyPurpose::Ds => {
+                    ds_key = Some(key_id);
+                }
+                _ => {}
             }
         }
-        Ok(())
+
+        // Sort HmacUpstream keys by index
+        hmac_upstream_keys.sort_by_key(|(idx, _)| *idx);
+
+        // Assign keys based on order (lower index = share_encryption, higher = fixed_entropy)
+        let share_encryption = hmac_upstream_keys.first().map(|(_, id)| *id);
+        let fixed_entropy = hmac_upstream_keys.get(1).map(|(_, id)| *id);
+
+        DiscoveredEfuses {
+            share_encryption,
+            fixed_entropy,
+            ds: ds_key,
+        }
     }
 
-    /// # Safety
-    unsafe fn write_key_purpose(
+    /// All key purposes must be written at the same time because efuse Block 0
+    /// (configuration block) can only be programmed once. Multiple writes to Block
+    /// 0 would accumulate (OR together) all the bits from each write, potentially setting
+    /// unintended configuration bits. By batching all key purpose configurations into
+    /// a single Block 0 write, we ensure only the intended bits are set.
+    unsafe fn write_key_purposes(
         &self,
-        key_number: u8,
-        key_purpose: KeyPurpose,
-        read_protect: bool,
+        configs: &[(u8, KeyPurpose, bool)],
     ) -> Result<(), EfuseError> {
+        // buff[0..4]   -> EFUSE_PGM_DATA0_REG (write disable)
+        // buff[4..8]   -> EFUSE_PGM_DATA1_REG -> EFUSE_RD_REPEAT_DATA0_REG
+        // buff[8..12]  -> EFUSE_PGM_DATA2_REG -> EFUSE_RD_REPEAT_DATA1_REG (KEY_PURPOSE_0,1)
+        // buff[12..16] -> EFUSE_PGM_DATA3_REG -> EFUSE_RD_REPEAT_DATA2_REG (KEY_PURPOSE_2,3,4,5)
         let mut buff = [0x00u8; 32];
+        let mut write_disable: u32 = 0;
 
-        let kp = key_purpose as u8;
-        match key_number {
-            0 => buff[11] = kp,
-            1 => buff[11] = kp << 4,
-            2 => buff[12] = kp,
-            3 => buff[12] = kp << 4,
-            4 => buff[13] = kp,
-            5 => buff[13] = kp << 4,
-            _ => return Err(EfuseError::EfuseError),
+        for &(key_num, purpose, read_protect) in configs {
+            // Set key purpose bits
+            let kp = purpose as u8;
+            match key_num {
+                0 => buff[11] |= kp,
+                1 => buff[11] |= kp << 4,
+                2 => buff[12] |= kp,
+                3 => buff[12] |= kp << 4,
+                4 => buff[13] |= kp,
+                5 => buff[13] |= kp << 4,
+                _ => return Err(EfuseError::EfuseError),
+            }
+
+            // Set write disable bits
+            write_disable |= 0x01 << (WR_DIS_KEY_OFFSET + key_num);
+            write_disable |= 0x01 << (WR_DIS_KP_OFFSET + key_num);
+
+            // Set read protect if needed
+            if read_protect {
+                let read_disable = 0x01u8 << key_num;
+                buff[4] |= read_disable;
+            }
         }
 
-        // We bundle every config in Block 0 to minimize write operations
-        // Todo: Write key purpose and rw flags for multiple keys
-        // Disable write to key block
-        let mut write_disable: u32 = 0x01 << (WR_DIS_KEY_OFFSET + key_number);
-        // Disable write to key purpose
-        write_disable += 0x01 << (WR_DIS_KP_OFFSET + key_number);
         buff[0..4].copy_from_slice(&write_disable.to_le_bytes());
-
-        if read_protect {
-            self.set_read_protect(key_number, &mut buff);
-        }
-
         self.write_block(&buff, 0)
     }
 
-    /// # Safety
-    unsafe fn set_read_protect(&self, key_number: u8, buff: &mut [u8; 32]) {
-        // Disable read key
-        let read_disable = 0x01_u8 << key_number;
-        buff[4] = read_disable;
+    /// There should only be one series of calls to set_efuse_key accompanied by write_key_purposes
+    unsafe fn set_efuse_key(
+        &self,
+        key_id: esp_hal::hmac::KeyId,
+        value: [u8; 32],
+    ) -> Result<(), EfuseError> {
+        if self.is_key_written(key_id) {
+            return Err(EfuseError::EfuseAlreadyBurned);
+        }
+        self.write_block(&value, (key_id as u8) + KEY_BLOCKS_OFFSET)?;
+
+        Ok(())
+    }
+
+    fn key_purpose(key_id: esp_hal::hmac::KeyId) -> KeyPurpose {
+        use esp_hal::hmac::KeyId;
+        let efuse_field = match key_id {
+            KeyId::Key0 => hal_efuse::KEY_PURPOSE_0,
+            KeyId::Key1 => hal_efuse::KEY_PURPOSE_1,
+            KeyId::Key2 => hal_efuse::KEY_PURPOSE_2,
+            KeyId::Key3 => hal_efuse::KEY_PURPOSE_3,
+            KeyId::Key4 => hal_efuse::KEY_PURPOSE_4,
+            KeyId::Key5 => hal_efuse::KEY_PURPOSE_5,
+        };
+        let field_value: u8 = Efuse::read_field_le(efuse_field);
+        KeyPurpose::try_from(field_value).expect("key purpose was invalid")
+    }
+
+    pub fn is_key_written(&self, key_id: esp_hal::hmac::KeyId) -> bool {
+        Self::key_purpose(key_id) != KeyPurpose::User
+    }
+
+    pub fn read_efuse(&self, key_id: esp_hal::hmac::KeyId) -> Result<[u8; 32], EfuseError> {
+        use esp_hal::hmac::KeyId;
+        let field = match key_id {
+            KeyId::Key0 => hal_efuse::KEY0,
+            KeyId::Key1 => hal_efuse::KEY1,
+            KeyId::Key2 => hal_efuse::KEY2,
+            KeyId::Key3 => hal_efuse::KEY3,
+            KeyId::Key4 => hal_efuse::KEY4,
+            KeyId::Key5 => hal_efuse::KEY5,
+        };
+        let bytes: [u8; 32] = Efuse::read_field_le::<[u8; 32]>(field);
+
+        Ok(bytes)
     }
 
     /// # Safety
     unsafe fn write_block(&self, data: &[u8; 32], block_number: u8) -> Result<(), EfuseError> {
-        let efuse = &self.efuse;
-
+        let efuse = &*self.efuse;
         let mut to_burn: [u32; 11] = [0; 11];
 
-        // Generate and write Reed-Solomon ECC
-        // Efuse controller ignores RS code for blocks 0 and 1
-        let rs_enc = reed_solomon::Encoder::new(12);
-        let ecc = rs_enc.encode(data);
-
-        // Flip efuse words to little endian
-        for (i, word) in ecc.chunks(4).enumerate() {
-            let n = u32::from_le_bytes(word.try_into().unwrap());
-            to_burn[i] = n;
+        if block_number == 0 {
+            // Block 0: Use raw data - hardware uses 4x backup scheme
+            for (i, word) in data.chunks(4).enumerate() {
+                let n = u32::from_le_bytes(word.try_into().unwrap());
+                to_burn[i] = n;
+            }
+        } else {
+            // Blocks 2-10: Apply Reed-Solomon encoding
+            let rs_enc = reed_solomon::Encoder::new(12);
+            let ecc = rs_enc.encode(data);
+            for (i, word) in ecc.chunks(4).enumerate() {
+                let n = u32::from_le_bytes(word.try_into().unwrap());
+                to_burn[i] = n;
+            }
         }
 
         // Write to efuse controller register
@@ -191,33 +273,133 @@ impl EfuseController {
     }
 }
 
+/// Result of discovering which key slots contain which keys
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiscoveredEfuses {
+    pub share_encryption: Option<esp_hal::hmac::KeyId>,
+    pub fixed_entropy: Option<esp_hal::hmac::KeyId>,
+    pub ds: Option<esp_hal::hmac::KeyId>,
+}
+
+/// Builder for writing multiple efuse keys with their purposes in a single operation
+pub struct EfuseKeyWriter<'a> {
+    efuse: &'a EfuseController<'a>,
+    keys: Vec<(esp_hal::hmac::KeyId, [u8; 32], KeyPurpose)>, // (key_id, value, purpose)
+    read_protect: bool,
+}
+
+impl<'a> EfuseKeyWriter<'a> {
+    /// Create a new builder for writing efuse keys
+    pub fn new(efuse: &'a EfuseController<'a>) -> Self {
+        Self {
+            efuse,
+            keys: Vec::new(),
+            read_protect: false,
+        }
+    }
+
+    /// Set whether to read-protect the keys
+    pub fn read_protect(mut self, protect: bool) -> Self {
+        self.read_protect = protect;
+        self
+    }
+
+    /// Add a key to be written (generic method for custom key slots)
+    pub fn add_key(
+        mut self,
+        key_id: esp_hal::hmac::KeyId,
+        value: [u8; 32],
+        purpose: KeyPurpose,
+    ) -> Self {
+        self.keys.push((key_id, value, purpose));
+        self
+    }
+
+    /// Add the share encryption key
+    pub fn add_encryption_key(mut self, value: [u8; 32]) -> Self {
+        self.keys.push((
+            EfuseHmacKeys::ENCRYPTION_KEYID,
+            value,
+            KeyPurpose::HmacUpstream,
+        ));
+        self
+    }
+
+    /// Add the fixed entropy key
+    pub fn add_entropy_key(mut self, value: [u8; 32]) -> Self {
+        self.keys.push((
+            EfuseHmacKeys::FIXED_ENTROPY_KEYID,
+            value,
+            KeyPurpose::HmacUpstream,
+        ));
+        self
+    }
+
+    /// Add the DS (Digital Signature) key for hardware attestation
+    pub fn add_ds_key(mut self, value: [u8; 32]) -> Self {
+        self.keys
+            .push((EfuseHmacKeys::DS_KEYID, value, KeyPurpose::Ds));
+        self
+    }
+
+    /// Write all configured keys and their purposes to efuses
+    pub fn write_efuses(self) -> Result<(), EfuseError> {
+        // First write all the key values
+        for &(key_id, ref value, _) in &self.keys {
+            unsafe {
+                self.efuse.set_efuse_key(key_id, *value)?;
+            }
+        }
+
+        // Then write all key purposes at once (single Block 0 write)
+        let configs: Vec<(u8, KeyPurpose, bool)> = self
+            .keys
+            .iter()
+            .map(|&(key_id, _, purpose)| (key_id as u8, purpose, self.read_protect))
+            .collect();
+
+        unsafe {
+            self.efuse.write_key_purposes(&configs)?;
+        }
+
+        Ok(())
+    }
+}
+
 pub struct EfuseHmacKeys<'a> {
     pub share_encryption: EfuseHmacKey<'a>,
     pub fixed_entropy: EfuseHmacKey<'a>,
 }
 
 impl<'a> EfuseHmacKeys<'a> {
-    pub fn load_or_init(
+    pub const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key2;
+    pub const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key3;
+    pub const DS_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key4;
+
+    /// Load existing HMAC keys from eFuse memory
+    /// Keys must have been previously initialized
+    pub fn load(
         efuse: &EfuseController,
-        hmac: &'a core::cell::RefCell<Hmac<'a>>,
-        read_protect: bool,
-        rng: &mut impl RngCore,
+        hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
     ) -> Result<Self, EfuseError> {
-        let share_encryption_key_id = hmac::KeyId::Key0;
-        let fixed_entropy_key_id = hmac::KeyId::Key1;
+        // Discover which slots contain our keys
+        let discovered = efuse.discover_efuses();
 
-        for key_id in [share_encryption_key_id, fixed_entropy_key_id] {
-            efuse.init_key(key_id as u8, KeyPurpose::HmacUpstream, read_protect, rng)?;
-        }
+        // Ensure we have the required keys
+        let share_encryption_id = discovered
+            .share_encryption
+            .ok_or(EfuseError::EfuseReadError)?;
+        let fixed_entropy_id = discovered.fixed_entropy.ok_or(EfuseError::EfuseReadError)?;
 
+        // Create and return the key handles with discovered slots
         Ok(EfuseHmacKeys {
-            share_encryption: EfuseHmacKey::new(hmac, share_encryption_key_id),
-            fixed_entropy: EfuseHmacKey::new(hmac, fixed_entropy_key_id),
+            share_encryption: EfuseHmacKey::new(hmac.clone(), share_encryption_id),
+            fixed_entropy: EfuseHmacKey::new(hmac, fixed_entropy_id),
         })
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum KeyPurpose {
     User = 0,
     Aes128 = 4,
@@ -230,21 +412,44 @@ pub enum KeyPurpose {
     SecureBootDigest2 = 11,
 }
 
+impl TryFrom<u8> for KeyPurpose {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(KeyPurpose::User),
+            4 => Ok(KeyPurpose::Aes128),
+            5 => Ok(KeyPurpose::HmacDownstream),
+            6 => Ok(KeyPurpose::JtagHmacDownstream),
+            7 => Ok(KeyPurpose::Ds),
+            8 => Ok(KeyPurpose::HmacUpstream),
+            9 => Ok(KeyPurpose::SecureBootDigest0),
+            10 => Ok(KeyPurpose::SecureBootDigest1),
+            11 => Ok(KeyPurpose::SecureBootDigest2),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum EfuseError {
     EfuseReadError,
     EfuseWriteError(u8),
-    EfuseBurned,
+    EfuseAlreadyBurned,
     EfuseError,
+    ValidationFailed,
 }
 
 pub struct EfuseHmacKey<'a> {
-    hmac: &'a core::cell::RefCell<Hmac<'a>>,
-    hmac_key_id: hmac::KeyId,
+    hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
+    hmac_key_id: esp_hal::hmac::KeyId,
 }
 
 impl<'a> EfuseHmacKey<'a> {
-    pub fn new(hmac: &'a core::cell::RefCell<Hmac<'a>>, hmac_key_id: hmac::KeyId) -> Self {
+    pub fn new(
+        hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
+        hmac_key_id: esp_hal::hmac::KeyId,
+    ) -> Self {
         Self { hmac, hmac_key_id }
     }
 
@@ -258,7 +463,7 @@ impl<'a> EfuseHmacKey<'a> {
         let mut remaining = input;
 
         hmac.init();
-        nb::block!(hmac.configure(hmac::HmacPurpose::ToUser, self.hmac_key_id))?;
+        nb::block!(hmac.configure(esp_hal::hmac::HmacPurpose::ToUser, self.hmac_key_id))?;
 
         let len_byte = [domain_separator.len() as u8];
         let _its_one_byte = nb::block!(hmac.update(&len_byte[..])).unwrap();
@@ -277,7 +482,7 @@ impl<'a> EfuseHmacKey<'a> {
         Ok(output)
     }
 
-    pub fn mix_in_rng(&mut self, rng: &mut impl RngCore) -> impl RngCore {
+    pub fn mix_in_rng(&mut self, rng: &mut impl RngCore) -> rand_chacha::ChaCha20Rng {
         let mut entropy = [0u8; 64];
         rng.fill_bytes(&mut entropy);
         let chacha_seed = self.hash("mix-in-rng", &entropy).expect("entropy hash");

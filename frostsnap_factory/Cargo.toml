@@ -1,0 +1,22 @@
+[package]
+name = "frostsnap_factory"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rsa.workspace = true
+frostsnap_core.workspace = true
+frostsnap_comms.workspace = true
+rand.workspace = true
+num-bigint-dig = "0.8"
+num-traits = "0.2"
+aes = "0.8"
+cbc = "0.1"
+hmac = "0.12"
+frostsnap_coordinator.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+bincode.workspace = true
+
+mysql = "24.0"

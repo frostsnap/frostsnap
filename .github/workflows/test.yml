@@ -15,7 +15,7 @@ jobs:
       RISCV_VERSION: "2024.09.03-nightly"
     strategy:
       matrix:
-        board: ["v2"]
+        board: ["dev", "frontier"]
     defaults:
       run:
         working-directory: ./device
@@ -44,7 +44,7 @@ jobs:
       - run: just save-image ${{ matrix.board }}
       - uses: "./.github/actions/upload-artifact"
         with:
-          name: frostsnap-${{ github.sha }}.bin
+          name: frostsnap-${{ matrix.board }}-${{ github.sha }}.bin
           path: target/riscv32imc-unknown-none-elf/release/firmware.bin
 
   test-ordinary-libs:

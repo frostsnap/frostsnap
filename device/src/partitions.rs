@@ -11,6 +11,7 @@ pub type EspFlashPartition<'a> = FlashPartition<'a, FlashStorage>;
 
 #[derive(Clone)]
 pub struct Partitions<'a> {
+    pub factory_cert: EspFlashPartition<'a>,
     pub ota: OtaPartitions<'a>,
     pub nvs: EspFlashPartition<'a>,
 }
@@ -18,18 +19,19 @@ pub struct Partitions<'a> {
 impl<'a> Partitions<'a> {
     fn new(flash: &'a RefCell<FlashStorage>) -> Self {
         Self {
+            factory_cert: EspFlashPartition::new(flash, 0, 0, "factory_cert"),
             ota: OtaPartitions {
                 otadata: EspFlashPartition::new(flash, 0, 0, "otadata"),
                 ota_0: EspFlashPartition::new(flash, 0, 0, "ota_0"),
                 ota_1: EspFlashPartition::new(flash, 0, 0, "ota_1"),
-                factory: EspFlashPartition::new(flash, 0, 0, "factory"),
             },
             nvs: EspFlashPartition::new(flash, 0, 0, "nvs"),
         }
     }
 
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
-        let table = esp_partition_table::PartitionTable::new(0x8000, 10 * 32);
+        let table = esp_partition_table::PartitionTable::new(0xd000, 10 * 32);
+
         let mut self_ = Self::new(flash);
         for row in table.iter_storage(&mut *flash.borrow_mut(), false) {
             let row = match row {
@@ -38,6 +40,11 @@ impl<'a> Partitions<'a> {
             };
             assert_eq!(row.offset % FlashStorage::ERASE_SIZE as u32, 0);
             match row.name() {
+                "factory_cert" => {
+                    self_
+                        .factory_cert
+                        .set_offset_and_size(row.offset, row.size as u32);
+                }
                 "otadata" => {
                     self_
                         .ota
@@ -56,12 +63,6 @@ impl<'a> Partitions<'a> {
                         .ota_1
                         .set_offset_and_size(row.offset, row.size as u32);
                 }
-                "factory" => {
-                    self_
-                        .ota
-                        .factory
-                        .set_offset_and_size(row.offset, row.size as u32);
-                }
                 "nvs" => {
                     self_.nvs.set_offset_and_size(row.offset, row.size as u32);
                 }
@@ -69,11 +70,11 @@ impl<'a> Partitions<'a> {
             }
         }
         for part in [
-            self_.nvs,
+            self_.factory_cert,
             self_.ota.otadata,
             self_.ota.ota_0,
             self_.ota.ota_1,
-            self_.ota.factory,
+            self_.nvs,
         ] {
             assert!(part.size() > 0, "partition {} must not be empty", part.tag);
         }
@@ -88,7 +89,15 @@ pub trait PartitionExt {
     /// * `sha256` - SHA256 hardware peripheral
     /// * `up_to` - Optional byte limit.
     fn sha256_digest(&self, sha256: &mut Sha<'_>, up_to: Option<u32>) -> Sha256Digest;
-    fn firmware_size(&self) -> Result<u32, FirmwareSizeError>;
+
+    /// Calculate firmware size information
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - Firmware content size (without signature blocks)
+    /// - Total size including signature blocks if present
+    fn firmware_size(&self) -> Result<(u32, u32), FirmwareSizeError>;
 }
 
 impl PartitionExt for EspFlashPartition<'_> {
@@ -124,7 +133,7 @@ impl PartitionExt for EspFlashPartition<'_> {
         Sha256Digest(digest)
     }
 
-    fn firmware_size(&self) -> Result<u32, FirmwareSizeError> {
+    fn firmware_size(&self) -> Result<(u32, u32), FirmwareSizeError> {
         crate::firmware_size::firmware_size(self)
     }
 }

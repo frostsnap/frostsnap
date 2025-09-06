@@ -1,11 +1,7 @@
-# Name,   Type, SubType, Offset,  Size, Flags
-reserved, data, undefined,  0x9000,   0x4000
-otadata,  data, ota,        0xd000,   0x2000
-factory,  app,  factory,   0x10000, 0x140000
-ota_0,    app,  ota_0,    0x150000, 0x140000
-ota_1,    app,  ota_1,    0x290000, 0x140000
-nvs,      data, nvs,      0x3D0000,  0x30000
-
-# Notes:
-# - The partition table is at 0x8000..0x9000 which I think is why things start after that.
-# - Before that is the bootloader starting at 0x0
+# ESP-IDF Partition Table
+# Name, Type, SubType, Offset, Size, Flags
+factory_cert,data,nvs,0xe000,16K,
+otadata,data,ota,0x12000,8K,
+ota_0,app,ota_0,0x20000,1724K,
+ota_1,app,ota_1,0x1d0000,1724K,
+nvs,data,nvs,0x37f000,512K,

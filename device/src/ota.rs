@@ -1,16 +1,19 @@
 use crate::{
     io::SerialIo,
     partitions::{EspFlashPartition, PartitionExt},
+    secure_boot,
     ui::{self, UserInteraction},
 };
 use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
+use esp_hal::rsa::Rsa;
 use esp_hal::sha::Sha;
 use esp_hal::time::Duration;
 use esp_hal::timer;
+use esp_hal::Blocking;
 use frostsnap_comms::{
-    CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_IMAGE_SIZE,
-    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
+    CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
+    FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use nb::block;
 
@@ -19,7 +22,6 @@ pub struct OtaPartitions<'a> {
     pub otadata: EspFlashPartition<'a>,
     pub ota_0: EspFlashPartition<'a>,
     pub ota_1: EspFlashPartition<'a>,
-    pub factory: EspFlashPartition<'a>,
 }
 
 /// CRC used by out bootloader (and incidentally python's binutils crc32 function when passed 0xFFFFFFFF as the init).
@@ -35,7 +37,6 @@ const CRC: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::Algorithm {
 });
 
 const SECTOR_SIZE: u32 = 4096;
-const SECTORS_PER_IMAGE: u32 = FIRMWARE_IMAGE_SIZE / SECTOR_SIZE;
 /// We switch the baudrate during OTA update to make it faster
 const OTA_UPDATE_BAUD: u32 = 921_600;
 
@@ -72,7 +73,7 @@ impl<'a> OtaPartitions<'a> {
     pub fn active_partition(&self) -> EspFlashPartition<'a> {
         match self.current_slot() {
             Some((slot, _)) => self.ota_partitions()[slot],
-            None => self.factory,
+            None => self.ota_0,
         }
     }
 
@@ -156,10 +157,9 @@ impl<'a> OtaPartitions<'a> {
     ) -> FirmwareUpgradeMode<'_> {
         let slot = self.next_slot();
         let partition = &self.ota_partitions()[slot];
-        assert_eq!(
-            partition.size(),
-            FIRMWARE_IMAGE_SIZE,
-            "partition size should be the same as FIRMWARE_IMAGE_SIZE"
+        assert!(
+            size <= partition.size(),
+            "new firmware size should fit inside the partition"
         );
         assert!(
             partition.size() % FIRMWARE_UPGRADE_CHUNK_LEN == 0,
@@ -227,6 +227,7 @@ impl FirmwareUpgradeMode<'_> {
                     }
                     State::Erase { seq } => {
                         let mut finished = false;
+                        let last_sector_index = partition.n_sectors() - 1;
                         /// So we erase multiple sectors poll (otherwise it's slow).
                         const ERASE_CHUNK_SIZE: usize = 32;
                         for _ in 0..ERASE_CHUNK_SIZE {
@@ -241,15 +242,14 @@ impl FirmwareUpgradeMode<'_> {
                                 partition.erase_sector(*seq).expect("must erase sector");
                             }
                             *seq += 1;
-                            if *seq == SECTORS_PER_IMAGE {
+                            if *seq == last_sector_index {
                                 finished = true;
                                 break;
                             }
                         }
-
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
-                                progress: *seq as f32 / SECTORS_PER_IMAGE as f32,
+                                progress: *seq as f32 / last_sector_index as f32,
                             },
                         ));
 
@@ -300,11 +300,12 @@ impl FirmwareUpgradeMode<'_> {
 
     pub fn enter_upgrade_mode<T: timer::Timer>(
         &mut self,
-        upstream_io: &mut SerialIo<'_>,
-        mut downstream_io: Option<&mut SerialIo<'_>>,
+        upstream_io: &mut SerialIo<'_, '_>,
+        mut downstream_io: Option<&mut SerialIo<'_, '_>>,
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
         timer: &T,
+        rsa: &mut Rsa<Blocking>,
     ) {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {
@@ -321,7 +322,7 @@ impl FirmwareUpgradeMode<'_> {
         };
 
         upstream_io.change_baud(OTA_UPDATE_BAUD);
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(downstream_io) = &mut downstream_io {
             downstream_io.change_baud(OTA_UPDATE_BAUD);
         }
 
@@ -347,7 +348,7 @@ impl FirmwareUpgradeMode<'_> {
                     i += 1;
                     byte_count += 1;
                     finished_writing = byte_count == upgrade_size;
-                    if let Some(downstream_io) = downstream_io.as_mut() {
+                    if let Some(downstream_io) = &mut downstream_io {
                         block!(downstream_io.write_byte_nb(byte)).unwrap();
                     }
 
@@ -382,7 +383,7 @@ impl FirmwareUpgradeMode<'_> {
             }
 
             if !finished_writing {
-                if let Some(downstream_io) = downstream_io.as_mut() {
+                if let Some(downstream_io) = &mut downstream_io {
                     while let Ok(byte) = downstream_io.read_byte() {
                         assert!(
                             byte == FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
@@ -402,14 +403,14 @@ impl FirmwareUpgradeMode<'_> {
 
         ui.poll();
 
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(downstream_io) = &mut downstream_io {
             downstream_io.flush();
         }
 
         // change it back to the original baudrate but keep in mind that the devices are meant to
         // restart after the upgrade.
         upstream_io.change_baud(BAUDRATE);
-        if let Some(downstream_io) = downstream_io.as_mut() {
+        if let Some(downstream_io) = &mut downstream_io {
             downstream_io.change_baud(BAUDRATE);
         }
 
@@ -422,15 +423,22 @@ impl FirmwareUpgradeMode<'_> {
         } = &self
         {
             let partition = &ota.ota_partitions()[*ota_slot];
-            let firmware_size = partition.firmware_size().unwrap();
-            assert_eq!(*size, firmware_size);
-            let digest = partition.sha256_digest(sha, Some(firmware_size));
+            let (_firmware_size, firmware_and_signature_block_size) =
+                partition.firmware_size().unwrap();
+            assert_eq!(*size, firmware_and_signature_block_size);
+
+            let digest = partition.sha256_digest(sha, Some(firmware_and_signature_block_size));
             if digest != *expected_digest {
                 panic!(
                     "upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",
                     expected_digest
                 );
             }
+
+            if secure_boot::is_secure_boot_enabled() {
+                secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
+            }
+
             ota.switch_partition(*ota_slot, OtaMetadata {});
         }
     }

@@ -642,7 +642,7 @@ class DeleteWalletPage extends StatelessWidget {
                 softWrap: true,
               ),
               Text(
-                'The wallet will still can still be restored from Frostsnap devices and/or backups',
+                'The wallet can still be restored from Frostsnap devices and/or backups',
                 softWrap: true,
               ),
             ]),

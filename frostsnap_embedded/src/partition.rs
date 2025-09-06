@@ -1,5 +1,8 @@
+use alloc::boxed::Box;
 use core::cell::RefCell;
 use embedded_storage::nor_flash::{NorFlash, NorFlashError, NorFlashErrorKind, ReadNorFlash};
+
+use crate::ABWRITE_BINCODE_CONFIG;
 
 pub struct FlashPartition<'a, S> {
     pub tag: &'static str,
@@ -74,10 +77,10 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
         Ok(())
     }
 
-    pub fn read_sector(&self, sector: u32) -> Result<[u8; SECTOR_SIZE], NorFlashErrorKind> {
+    pub fn read_sector(&self, sector: u32) -> Result<Box<[u8; SECTOR_SIZE]>, NorFlashErrorKind> {
         let mut ret = [0u8; SECTOR_SIZE];
         self.read(sector * SECTOR_SIZE as u32, &mut ret[..])?;
-        Ok(ret)
+        Ok(Box::new(ret))
     }
 
     /// splits n_sectors off the end of the parition into a new parition
@@ -179,6 +182,19 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
             buf_index: 0,
             word_pos: 0,
         }
+    }
+
+    pub fn erase_and_write_this<const BUFFER_SIZE: usize>(
+        &mut self,
+        blob: impl bincode::Encode,
+    ) -> Result<u32, NorFlashErrorKind> {
+        self.erase_all()?;
+        let mut writer = self.bincode_writer_remember_to_flush::<BUFFER_SIZE>();
+        // FIXME: it's a bit annoying no error message can be passed into this error kind
+        bincode::encode_into_writer(blob, &mut writer, ABWRITE_BINCODE_CONFIG)
+            .map_err(|_| NorFlashErrorKind::Other)?;
+        let bytes_written = writer.flush()?;
+        Ok(bytes_written)
     }
 }
 

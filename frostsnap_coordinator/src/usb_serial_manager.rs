@@ -5,14 +5,21 @@ const USB_PID: u16 = 4097;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
+use frostsnap_comms::genuine_certificate::CertificateVerifier;
 use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
-    FIRMWARE_IMAGE_SIZE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
+    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
+use frostsnap_core::schnorr_fun::fun::marker::EvenY;
+use frostsnap_core::schnorr_fun::fun::Point;
+use frostsnap_core::sha2::Sha256;
 use frostsnap_core::{sha2, DeviceId, Gist};
+use rsa::pkcs1::DecodeRsaPublicKey;
+use rsa::RsaPublicKey;
+use sha2::Digest;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -47,6 +54,8 @@ pub struct UsbSerialManager {
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
     firmware_bin: Option<FirmwareBin>,
+    /// Ongoing genuine check challenges to devices
+    challenges: HashMap<DeviceId, [u8; 32]>,
 }
 
 pub struct DevicePort {
@@ -80,6 +89,7 @@ impl UsbSerialManager {
             port_outbox: receiver,
             outbox_sender: sender,
             firmware_bin,
+            challenges: Default::default(),
         }
     }
 
@@ -368,6 +378,51 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Misc(inner),
                                     }))
                                 }
+                                DeviceSendBody::SignedChallenge {
+                                    signature,
+                                    certificate,
+                                } => {
+                                    if let Some(challenge) = self.challenges.remove(&message.from) {
+                                        let factory_key: Point<EvenY> = Point::from_xonly_bytes(
+                                            frostsnap_comms::FACTORY_PUBLIC_KEY,
+                                        )
+                                        .unwrap();
+
+                                        if let Some(certificate_body) = CertificateVerifier::verify(
+                                            certificate.as_ref(),
+                                            factory_key,
+                                        ) {
+                                            match RsaPublicKey::from_pkcs1_der(
+                                                certificate_body.ds_public_key(),
+                                            ) {
+                                                Err(_) => {
+                                                    // TODO: similarly we probably shouldnt silently ignore invalid rsa keys
+                                                }
+                                                Ok(ds_public_key) => {
+                                                    let padding =
+                                                        rsa::Pkcs1v15Sign::new::<Sha256>();
+                                                    let message_digest: [u8; 32] =
+                                                        sha2::Sha256::digest(challenge).into();
+
+                                                    if ds_public_key
+                                                        .verify(
+                                                            padding,
+                                                            &message_digest,
+                                                            signature.as_ref(),
+                                                        )
+                                                        .is_ok()
+                                                    {
+                                                        device_changes.push(
+                                                            DeviceChange::GenuineDevice {
+                                                                id: message.from,
+                                                            },
+                                                        )
+                                                    } // TODO: probably want to note if a device fails genuine
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -465,7 +520,7 @@ impl UsbSerialManager {
                     }
                 };
                 event!(Level::DEBUG, message = message.gist(), "queueing message");
-                port.queue_send(message.clone());
+                port.queue_send(message.clone().into());
             }
         }
 
@@ -773,6 +828,9 @@ pub enum DeviceChange {
         id: DeviceId,
     },
     AppMessage(AppMessage),
+    GenuineDevice {
+        id: DeviceId,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -824,19 +882,6 @@ impl FirmwareBin {
         use frostsnap_core::sha2::digest::Digest;
         let mut state = sha2::Sha256::default();
         state.update(self.bin);
-        Sha256Digest(state.finalize().into())
-    }
-
-    #[allow(dead_code)]
-    fn padded_digest(&self) -> Sha256Digest {
-        use frostsnap_core::sha2::digest::Digest;
-        let mut state = sha2::Sha256::default();
-        state.update(self.bin);
-        let mut len = self.bin.len();
-        while len < FIRMWARE_IMAGE_SIZE as usize {
-            len += 1;
-            state.update([0xff]);
-        }
         Sha256Digest(state.finalize().into())
     }
 }
