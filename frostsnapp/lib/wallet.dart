@@ -1103,17 +1103,16 @@ class BackupWarningBanner extends StatelessWidget {
     return streamedBanner;
   }
 
-  onTap(BuildContext context, WalletContext walletContext) {
+  void onTap(BuildContext context, WalletContext walletContext) async {
     final backupManager = FrostsnapContext.of(context)!.backupManager;
-    showBottomSheetOrDialog(
-      context,
-      title: Text('Backup Checklist'),
-      builder: (context, scrollController) => walletContext.wrap(
+
+    await MaybeFullscreenDialog.show(
+      context: context,
+      child: walletContext.wrap(
         BackupChecklist(
           backupManager: backupManager,
-          scrollController: scrollController,
           accessStructure: frostKey.accessStructures()[0],
-          showAppBar: false,
+          showAppBar: true,
         ),
       ),
     );

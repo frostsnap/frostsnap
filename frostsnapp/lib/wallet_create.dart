@@ -1021,15 +1021,15 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
           ),
         ),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_controller.step != WalletCreateStep.nonceReplenish)
-              Divider(height: 0),
-            if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
-                false)
-              buildAdvancedOptions(context),
-            if (_controller.step != WalletCreateStep.nonceReplenish)
+        if (_controller.step != WalletCreateStep.nonceReplenish)
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_controller.step != WalletCreateStep.nonceReplenish)
+                Divider(height: 0),
+              if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
+                  false)
+                buildAdvancedOptions(context),
               Padding(
                 padding: EdgeInsets.all(
                   16,
@@ -1051,8 +1051,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   ),
                 ),
               ),
-          ],
-        ),
+            ],
+          ),
       ],
     );
 
