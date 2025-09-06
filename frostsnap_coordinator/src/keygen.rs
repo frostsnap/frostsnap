@@ -29,7 +29,7 @@ impl KeyGen {
         let mut self_ = Self {
             sink: Box::new(keygen_sink),
             state: KeyGenState {
-                devices: begin_keygen.device_to_share_index.keys().cloned().collect(),
+                devices: begin_keygen.devices.clone(),
                 threshold: begin_keygen.threshold.into(),
                 keygen_id: begin_keygen.keygen_id,
                 ..Default::default()
@@ -38,9 +38,7 @@ impl KeyGen {
             send_cancel_to_all: false,
         };
 
-        if !currently_connected
-            .is_superset(&begin_keygen.device_to_share_index.keys().cloned().collect())
-        {
+        if !currently_connected.is_superset(&begin_keygen.device_set()) {
             self_.abort("A selected device was disconnected".into(), false);
         }
 

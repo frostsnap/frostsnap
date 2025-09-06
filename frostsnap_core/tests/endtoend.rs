@@ -1,281 +1,20 @@
-use bitcoin::Address;
-use common::{TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
+use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::coordinator::restoration::{PhysicalBackupPhase, RecoverShare};
-use frostsnap_core::device::{self, DeviceToUserMessage, KeyPurpose};
-use frostsnap_core::message::EncodedSignature;
+use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::tweak::BitcoinBip32Path;
-use frostsnap_core::{
-    coordinator::{
-        CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
-        FrostCoordinator,
-    },
-    CheckedSignTask, DeviceId, MasterAppkey, SessionHash, WireSignTask,
-};
-use frostsnap_core::{EnterPhysicalId, KeyId, RestorationId, SignSessionId};
+use frostsnap_core::EnterPhysicalId;
+use frostsnap_core::{coordinator::FrostCoordinator, MasterAppkey, WireSignTask};
 use rand::seq::IteratorRandom;
-use rand::RngCore;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use schnorr_fun::frost::SecretShare;
-use schnorr_fun::fun::{g, s, G};
-use schnorr_fun::{Schnorr, Signature};
+use schnorr_fun::{fun::prelude::*, Schnorr};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 mod common;
+mod env;
 use crate::common::Run;
-
-#[derive(Default)]
-struct TestEnv {
-    // keygen
-    pub keygen_checks: BTreeMap<DeviceId, SessionHash>,
-    pub received_keygen_shares: BTreeSet<DeviceId>,
-    pub coordinator_check: Option<SessionHash>,
-    pub coordinator_got_keygen_acks: BTreeSet<DeviceId>,
-    pub keygen_acks: BTreeSet<KeyId>,
-
-    // backups
-    pub backups: BTreeMap<DeviceId, (String, String)>,
-    pub physical_backups_entered: Vec<PhysicalBackupPhase>,
-
-    // nonces
-    pub received_nonce_replenishes: BTreeSet<DeviceId>,
-
-    // signing
-    pub received_signing_shares: BTreeMap<SignSessionId, BTreeSet<DeviceId>>,
-    pub sign_tasks: BTreeMap<DeviceId, CheckedSignTask>,
-    pub signatures: BTreeMap<SignSessionId, Vec<Signature>>,
-
-    pub verification_requests: BTreeMap<DeviceId, (Address, BitcoinBip32Path)>,
-
-    // options
-    pub enter_invalid_backup: bool,
-}
-
-impl common::Env for TestEnv {
-    fn user_react_to_coordinator(
-        &mut self,
-        run: &mut Run,
-        message: CoordinatorToUserMessage,
-        rng: &mut impl RngCore,
-    ) {
-        match message {
-            CoordinatorToUserMessage::KeyGen {
-                keygen_id,
-                inner: keygen_message,
-            } => match keygen_message {
-                CoordinatorToUserKeyGenMessage::ReceivedShares { from, .. } => {
-                    assert!(
-                        self.received_keygen_shares.insert(from),
-                        "should not have already received"
-                    )
-                }
-                CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash, .. } => {
-                    assert!(
-                        self.coordinator_check.replace(session_hash).is_none(),
-                        "should not have already set this"
-                    );
-                }
-                CoordinatorToUserKeyGenMessage::KeyGenAck {
-                    from,
-                    all_acks_received,
-                } => {
-                    assert!(
-                        self.coordinator_got_keygen_acks.insert(from),
-                        "should only receive this once"
-                    );
-
-                    if all_acks_received {
-                        assert_eq!(
-                            self.coordinator_got_keygen_acks.len(),
-                            self.received_keygen_shares.len()
-                        );
-                        let send_finalize_keygen = run
-                            .coordinator
-                            .finalize_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng)
-                            .unwrap();
-                        self.keygen_acks
-                            .insert(send_finalize_keygen.access_structure_ref.key_id);
-                        run.extend(send_finalize_keygen);
-                    }
-                }
-            },
-            CoordinatorToUserMessage::Signing(signing_message) => match signing_message {
-                CoordinatorToUserSigningMessage::GotShare { from, session_id } => {
-                    assert!(
-                        self.received_signing_shares
-                            .entry(session_id)
-                            .or_default()
-                            .insert(from),
-                        "should only send share once"
-                    );
-                }
-                CoordinatorToUserSigningMessage::Signed {
-                    session_id,
-                    signatures,
-                } => {
-                    let sigs = self.signatures.entry(session_id).or_default();
-                    assert!(sigs.is_empty(), "should only get the signed event once");
-                    sigs.extend(
-                        signatures
-                            .into_iter()
-                            .map(EncodedSignature::into_decoded)
-                            .map(Option::unwrap),
-                    );
-                }
-            },
-            CoordinatorToUserMessage::Restoration(msg) => {
-                use frostsnap_core::coordinator::restoration::ToUserRestoration::*;
-                match msg {
-                    GotHeldShares {
-                        held_by, shares, ..
-                    } => {
-                        // This logic here is just about doing something sensible in the context of a test.
-                        // We start a new restoration if we get a new share but don't already know about it.
-                        for held_share in shares {
-                            let recover_share = RecoverShare {
-                                held_by,
-                                held_share: held_share.clone(),
-                            };
-
-                            match held_share.access_structure_ref {
-                                Some(access_structure_ref)
-                                    if run
-                                        .coordinator
-                                        .get_access_structure(access_structure_ref)
-                                        .is_some() =>
-                                {
-                                    if !run.coordinator.knows_about_share(
-                                        held_by,
-                                        access_structure_ref,
-                                        held_share.share_image.index,
-                                    ) {
-                                        run.coordinator
-                                            .recover_share(
-                                                access_structure_ref,
-                                                &recover_share,
-                                                TEST_ENCRYPTION_KEY,
-                                            )
-                                            .unwrap();
-                                    }
-                                }
-                                _ => {
-                                    let existing_restoration =
-                                        run.coordinator.restoring().find(|state| {
-                                            state.access_structure_ref
-                                                == held_share.access_structure_ref
-                                        });
-
-                                    match existing_restoration {
-                                        Some(existing_restoration) => {
-                                            if !existing_restoration
-                                                .access_structure
-                                                .has_got_share_image(
-                                                    recover_share.held_by,
-                                                    recover_share.held_share.share_image,
-                                                )
-                                            {
-                                                run.coordinator
-                                                    .add_recovery_share_to_restoration(
-                                                        existing_restoration.restoration_id,
-                                                        &recover_share,
-                                                    )
-                                                    .unwrap();
-                                            }
-                                        }
-                                        None => {
-                                            run.coordinator.start_restoring_key_from_recover_share(
-                                                &recover_share,
-                                                RestorationId::new(rng),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    PhysicalBackupEntered(physical_backup_phase) => {
-                        self.physical_backups_entered.push(*physical_backup_phase);
-                    }
-                    _ => { /* ignored */ }
-                }
-            }
-            CoordinatorToUserMessage::ReplenishedNonces { device_id } => {
-                self.received_nonce_replenishes.insert(device_id);
-            }
-        }
-    }
-
-    fn user_react_to_device(
-        &mut self,
-        run: &mut Run,
-        from: DeviceId,
-        message: DeviceToUserMessage,
-        rng: &mut impl RngCore,
-    ) {
-        match message {
-            DeviceToUserMessage::FinalizeKeyGen => {}
-            DeviceToUserMessage::CheckKeyGen { phase, .. } => {
-                self.keygen_checks.insert(from, phase.session_hash());
-                let ack = run
-                    .device(from)
-                    .keygen_ack(*phase, &mut TestDeviceKeyGen, rng)
-                    .unwrap();
-                run.extend_from_device(from, ack);
-            }
-            DeviceToUserMessage::SignatureRequest { phase } => {
-                self.sign_tasks.insert(from, phase.sign_task().clone());
-                let sign_ack = run
-                    .device(from)
-                    .sign_ack(*phase, &mut TestDeviceKeyGen)
-                    .unwrap();
-                run.extend_from_device(from, sign_ack);
-            }
-            DeviceToUserMessage::Restoration(restoration) => {
-                use device::restoration::ToUserRestoration::*;
-                match restoration {
-                    DisplayBackup { key_name, backup } => {
-                        self.backups.insert(from, (key_name, backup));
-                    }
-                    EnterBackup { phase } => {
-                        let device = run.device(from);
-                        let (_, backup) = self.backups.get(&from).unwrap();
-                        let mut secret_share = SecretShare::from_bech32_backup(backup).unwrap();
-                        if self.enter_invalid_backup {
-                            secret_share.share += s!(42);
-                        }
-                        let response =
-                            device.tell_coordinator_about_backup_load_result(phase, secret_share);
-                        run.extend_from_device(from, response);
-                    }
-                    DisplayBackupRequest { phase } => {
-                        let backup_ack = run
-                            .device(from)
-                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                            .unwrap();
-                        run.extend_from_device(from, backup_ack);
-                    }
-                    ConsolidateBackup(phase) => {
-                        let ack = run.device(from).finish_consolidation(
-                            &mut TestDeviceKeyGen,
-                            phase,
-                            rng,
-                        );
-                        run.extend_from_device(from, ack);
-                    }
-                    BackupSaved { .. } => { /* informational */ }
-                }
-            }
-            DeviceToUserMessage::VerifyAddress {
-                address,
-                bip32_path,
-            } => {
-                self.verification_requests
-                    .insert(from, (address, bip32_path));
-            }
-        }
-    }
-}
+use crate::env::TestEnv;
 
 #[test]
 fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
@@ -438,11 +177,21 @@ fn test_display_backup() {
 
     assert_eq!(env.backups.len(), 3);
 
+    // Get the SharedKey from the coordinator for validation
+    let root_shared_key = run
+        .coordinator
+        .root_shared_key(access_structure_ref, TEST_ENCRYPTION_KEY)
+        .expect("Should be able to get root shared key");
+
     let decoded_backups = env
         .backups
         .values()
         .map(|(_name, backup)| {
-            schnorr_fun::frost::SecretShare::from_bech32_backup(backup).expect("valid backup")
+            // Extract and validate the share with the polynomial checksum
+            backup
+                .clone()
+                .extract_secret(&root_shared_key)
+                .expect("Polynomial checksum should be valid")
         })
         .collect::<Vec<_>>();
 
@@ -1029,4 +778,87 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
     let nonces_available = run.coordinator.nonces_available(device_id);
 
     assert_eq!(nonces_available, available_at_start);
+}
+
+#[test]
+fn consolidate_backup_with_polynomial_checksum_validation() {
+    let mut test_rng = ChaCha20Rng::from_seed([43u8; 32]);
+    let mut env = TestEnv::default();
+
+    // Do a 2-of-2 keygen to get valid keys
+    let mut run =
+        Run::start_after_keygen_and_nonces(2, 2, &mut env, &mut test_rng, 2, KeyPurpose::Test);
+
+    let device_set = run.device_set();
+    let key_data = run.coordinator.iter_keys().next().unwrap();
+    let access_structure_ref = key_data
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+
+    // Display backups for all devices
+    for &device_id in &device_set {
+        let display_backup = run
+            .coordinator
+            .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        run.extend(display_backup);
+    }
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    // Now we have backups in env.backups
+    assert_eq!(env.backups.len(), 2);
+
+    // Pick the first device
+    let device_id = *env.backups.keys().next().unwrap();
+
+    // Tell the device to enter backup mode
+    let enter_physical_id = frostsnap_core::EnterPhysicalId::new(&mut test_rng);
+    let enter_backup = run
+        .coordinator
+        .tell_device_to_load_physical_backup(enter_physical_id, device_id);
+    run.extend(enter_backup);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    // The env should have received an EnterBackup message and we simulate entering it
+    // The TestEnv will handle entering the backup we already have for this device
+
+    // Get the PhysicalBackupPhase from the env that was populated when the device responded
+    let physical_backup_phase = *env
+        .physical_backups_entered
+        .last()
+        .expect("Should have a physical backup phase");
+
+    let consolidate = run
+        .coordinator
+        .tell_device_to_consolidate_physical_backup(
+            physical_backup_phase,
+            access_structure_ref,
+            TEST_ENCRYPTION_KEY,
+        )
+        .unwrap();
+    run.extend(consolidate);
+
+    // This should succeed because the polynomial checksum is valid
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    // Verify that the device now has the consolidated share
+    let device = run.device(device_id);
+    let _encrypted_share = device
+        .get_encrypted_share(
+            access_structure_ref,
+            physical_backup_phase.backup.share_image.index,
+        )
+        .expect("Device should have the consolidated share");
+
+    // Verify the coordinator also knows about this share
+    assert!(
+        run.coordinator.knows_about_share(
+            device_id,
+            access_structure_ref,
+            physical_backup_phase.backup.share_image.index
+        ),
+        "Coordinator should know about the consolidated share"
+    );
 }

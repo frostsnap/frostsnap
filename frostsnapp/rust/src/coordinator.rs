@@ -355,20 +355,18 @@ impl FfiCoordinator {
 
     pub fn generate_new_key(
         &self,
-        devices: BTreeSet<DeviceId>,
+        devices: Vec<DeviceId>,
         threshold: u16,
         key_name: String,
         purpose: KeyPurpose,
         sink: impl Sink<frostsnap_coordinator::keygen::KeyGenState>,
     ) -> anyhow::Result<()> {
-        let currently_connected = self
-            .device_list
-            .lock()
-            .unwrap()
-            .devices()
-            .into_iter()
-            .map(|device| device.id)
-            .collect();
+        let device_list = self.device_list.lock().unwrap();
+        let devices = devices.into_iter().collect();
+        // sort them as connected so we get #1 assigned to the first one etc
+        let devices = device_list.sort_as_connected(devices).collect();
+        let currently_connected = device_list.devices().into_iter().map(|device| device.id);
+        drop(device_list);
 
         let coordinator_keygen_keypair =
             FrostCoordinator::short_lived_keygen_keypair(&mut rand::thread_rng());
@@ -385,7 +383,7 @@ impl FfiCoordinator {
         let ui_protocol = frostsnap_coordinator::keygen::KeyGen::new(
             sink,
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
-            currently_connected,
+            currently_connected.into_iter().collect(),
             coordinator_keygen_keypair,
             begin_keygen,
             &mut rand::thread_rng(),
