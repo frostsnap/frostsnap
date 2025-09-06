@@ -9,6 +9,7 @@ members = [
     "frostsnap_embedded",
     "frostsnap_factory",
     "frost_backup",
+    "frostsnap_widgets", "widget_simulator",
 ]
 resolver = "2"
 
@@ -32,6 +33,7 @@ frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
 frostsnap_device = { path = "device" }
 frostsnap_embedded = { path = "frostsnap_embedded", default-features = false }
+frostsnap_widgets = { path = "frostsnap_widgets", default-features = false }
 frostsnap_macros = { path = "macros", default-features = false }
 frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
 tracing = { version = "0.1", default-features = false }
@@ -46,7 +48,11 @@ bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
 rand = "0.8"
 futures = "0.3.31"
+
+# embedded
 embedded-storage = "0.3.1"
+embedded-graphics = "0.8"
+u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 tracing-subscriber = { version = "0.3" }
 rsa = { version = "=0.9.7" }
 

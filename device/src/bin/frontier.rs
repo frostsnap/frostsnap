@@ -8,9 +8,7 @@ extern crate alloc;
 use core::cell::RefCell;
 use esp_hal::entry;
 use esp_storage::FlashStorage;
-use frostsnap_device::{
-    esp32_run, peripherals::DevicePeripherals, resources::Resources,
-};
+use frostsnap_device::{esp32_run, peripherals::DevicePeripherals, resources::Resources};
 
 #[entry]
 fn main() -> ! {

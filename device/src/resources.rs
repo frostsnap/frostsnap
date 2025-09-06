@@ -9,10 +9,10 @@ use crate::{
     ds::HardwareDs,
     efuse::EfuseHmacKeys,
     flash::VersionedFactoryData,
+    frosty_ui::FrostyUi,
     ota::OtaPartitions,
     partitions::{EspFlashPartition, Partitions},
     peripherals::DevicePeripherals,
-    ui::FrostyUi,
 };
 use esp_hal::{
     gpio::{AnyPin, Input},
