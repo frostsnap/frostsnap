@@ -476,7 +476,7 @@ pub struct BackupDisplay {
 impl BackupDisplay {
     pub fn new(word_indices: [u16; 25], share_index: u16) -> Self {
         let page_list = BackupPageList::new(word_indices, share_index);
-        let page_slider = PageSlider::new(page_list, 100)
+        let page_slider = PageSlider::new(page_list, 40)
             .with_on_page_ready(|page| {
                 // Try to downcast to BackupConfirmationScreen
                 if let Some(confirmation_screen) = page.downcast_mut::<BackupConfirmationScreen>() {
