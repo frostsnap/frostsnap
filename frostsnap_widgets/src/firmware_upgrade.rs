@@ -138,7 +138,8 @@ impl FirmwareUpgradeConfirm {
             .gap(8)
             .push(hash_container)
             .gap(8)
-            .push(size);
+            .push(size)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
         // Create hold to confirm with 1 second hold time
         let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_SHORT_MS, content);

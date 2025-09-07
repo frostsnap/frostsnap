@@ -392,7 +392,7 @@ pub struct SignTxPrompt {
 impl SignTxPrompt {
     pub fn new(prompt: PromptSignBitcoinTx) -> Self {
         let page_list = SignPromptPageList::new(prompt);
-        let page_slider = PageSlider::new(page_list, 100)
+        let page_slider = PageSlider::new(page_list, 40)
             .with_on_page_ready(|page| {
                 // Try to downcast to ConfirmationPage
                 if let Some(confirmation_page) = page.downcast_mut::<ConfirmationPage>() {

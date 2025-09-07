@@ -7,7 +7,7 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
 };
 
-const ANIMATION_DURATION_MS: u64 = 500;
+const ANIMATION_DURATION_MS: u64 = 750;
 const MIN_SWIPE_DISTANCE: u32 = 0;
 
 // Type aliases to reduce complexity
