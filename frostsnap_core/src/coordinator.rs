@@ -754,6 +754,7 @@ impl FrostCoordinator {
             key_name,
             purpose,
             keygen_id,
+            devices_in_order,
         } = begin_keygen;
 
         if self.pending_keygens.contains_key(&keygen_id) {
@@ -808,9 +809,8 @@ impl FrostCoordinator {
         );
 
         // Create the keygen::Begin message from the API struct
-        let devices = device_to_share_index.keys().cloned().collect();
         let begin_message = keygen::Begin {
-            devices,
+            devices: devices_in_order,
             threshold,
             key_name,
             purpose,

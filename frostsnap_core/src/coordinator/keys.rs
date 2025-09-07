@@ -11,6 +11,7 @@ use schnorr_fun::frost::{ShareIndex, SharedKey};
 #[derive(Clone, Debug)]
 pub struct BeginKeygen {
     pub keygen_id: KeygenId,
+    pub devices_in_order: Vec<DeviceId>,
     pub device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
     pub threshold: u16,
     pub key_name: String,
@@ -37,6 +38,7 @@ impl BeginKeygen {
             .collect();
 
         Self {
+            devices_in_order: devices,
             device_to_share_index,
             threshold,
             key_name,

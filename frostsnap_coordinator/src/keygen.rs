@@ -28,7 +28,7 @@ impl KeyGen {
         let mut self_ = Self {
             sink: Box::new(keygen_sink),
             state: KeyGenState {
-                devices: begin_keygen.devices().into_iter().collect(),
+                devices: begin_keygen.devices_in_order.clone(),
                 threshold: begin_keygen.threshold.into(),
                 keygen_id: begin_keygen.keygen_id,
                 ..Default::default()
