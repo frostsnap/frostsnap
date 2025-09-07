@@ -231,6 +231,51 @@ impl ToSql for SqlDescriptorId {
     }
 }
 
+pub struct SqlSignSessionId(pub frostsnap_core::SignSessionId);
+
+impl FromSql for SqlSignSessionId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        use frostsnap_core::SignSessionId;
+
+        let blob_data = value.as_blob()?;
+        if blob_data.len() != SignSessionId::LEN {
+            return Err(FromSqlError::InvalidBlobSize {
+                expected_size: SignSessionId::LEN,
+                blob_size: blob_data.len(),
+            });
+        }
+
+        Ok(SqlSignSessionId(
+            SignSessionId::from_slice(blob_data).expect("already checked len"),
+        ))
+    }
+}
+
+impl ToSql for SqlSignSessionId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.0.to_bytes().to_vec()))
+    }
+}
+
+pub struct SqlPsbt(pub bdk_chain::bitcoin::Psbt);
+
+impl FromSql for SqlPsbt {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        use bdk_chain::bitcoin::Psbt;
+        let bytes = value.as_bytes()?;
+        println!("PSBT size: {}", bytes.len());
+        let psbt =
+            Psbt::deserialize(value.as_bytes()?).map_err(|e| FromSqlError::Other(Box::new(e)))?;
+        Ok(SqlPsbt(psbt))
+    }
+}
+
+impl ToSql for SqlPsbt {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.0.serialize()))
+    }
+}
+
 pub struct BincodeWrapper<T>(pub T);
 
 impl<T: bincode::Encode> ToSql for BincodeWrapper<T> {

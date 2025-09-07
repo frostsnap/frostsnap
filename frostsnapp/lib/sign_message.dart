@@ -7,7 +7,6 @@ import 'package:frostsnap/device_action.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/secure_key_provider.dart';
-import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
@@ -22,15 +21,23 @@ class SignMessagePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: FsAppBar(title: const Text('Sign Message')),
-      body: Padding(
-        padding: EdgeInsets.all(8.0),
-        child: SignMessageForm(
-          frostKey: frostKey,
-        ), // Specify the required number of devices
-      ),
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Sign message'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(child: SignMessageForm(frostKey: frostKey)),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
     );
+
+    return SafeArea(child: scrollView);
   }
 }
 
@@ -84,38 +91,41 @@ class _SignMessageFormState extends State<SignMessageForm> {
       };
     }
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          TextField(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 24,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
             controller: _messageController,
             onChanged: (_) {
               setState(() {});
             },
             decoration: InputDecoration(labelText: 'Message to sign'),
           ),
-          SizedBox(height: 20.0),
-          Text(
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
             'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 20.0),
           ),
-          Expanded(
-            child: SigningDeviceSelector(
-              frostKey: widget.frostKey,
-              onChanged: (selectedDevices) => setState(() {
-                selected = selectedDevices;
-              }),
-            ),
-          ),
-          ElevatedButton(
+        ),
+        SigningDeviceSelector(
+          frostKey: widget.frostKey,
+          onChanged: (selectedDevices) => setState(() {
+            selected = selectedDevices;
+          }),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: FilledButton(
             onPressed: submitButtonOnPressed,
             child: Text('Submit'),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -123,11 +133,13 @@ class _SignMessageFormState extends State<SignMessageForm> {
 class SigningDeviceSelector extends StatefulWidget {
   final FrostKey frostKey;
   final Function(Set<DeviceId>)? onChanged;
+  final Iterable<DeviceId>? initialSet;
 
   const SigningDeviceSelector({
     super.key,
     required this.frostKey,
     this.onChanged,
+    this.initialSet,
   });
 
   @override
@@ -135,11 +147,13 @@ class SigningDeviceSelector extends StatefulWidget {
 }
 
 class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
-  Set<DeviceId> selected = deviceIdSet([]);
+  final Set<DeviceId> selected = deviceIdSet([]);
 
   @override
   void initState() {
     super.initState();
+    final initialSet = widget.initialSet;
+    if (initialSet != null) selected.addAll(initialSet);
   }
 
   @override
@@ -152,12 +166,9 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
     final accessStructure = widget.frostKey.accessStructures()[0];
     final devices = accessStructure.devices();
 
-    return ListView.builder(
-      itemCount: devices.length,
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
-      itemBuilder: (context, index) {
-        final id = devices[index];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: devices.map((id) {
         final name = coord.getDeviceName(id: id);
         onChanged(bool? value) {
           setState(() {
@@ -171,17 +182,15 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
         }
 
         final enoughNonces = coord.noncesAvailable(id: id) >= 1;
-        return Padding(
-          padding: EdgeInsets.all(5),
-          child: CheckboxListTile(
-            title: Text(
-              "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
-            ),
-            value: selected.contains(id),
-            onChanged: enoughNonces ? onChanged : null,
+        return CheckboxListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          title: Text(
+            "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
           ),
+          value: selected.contains(id),
+          onChanged: enoughNonces ? onChanged : null,
         );
-      },
+      }).toList(),
     );
   }
 }

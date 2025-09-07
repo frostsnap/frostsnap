@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
@@ -8,9 +7,7 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/nonce_replenish.dart';
-import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/restoration.dart';
-import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -21,6 +18,7 @@ import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_add.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
+import 'package:frostsnap/wallet_more.dart';
 import 'package:frostsnap/wallet_receive.dart';
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/settings.dart';
@@ -222,16 +220,6 @@ class WalletHome extends StatelessWidget {
   }
 }
 
-void copyToClipboard(BuildContext context, String copyText) {
-  Clipboard.setData(ClipboardData(text: copyText)).then((_) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Copied to clipboard!')));
-    }
-  });
-}
-
 class FloatingProgress extends StatefulWidget {
   final Stream<double> progressStream;
 
@@ -333,6 +321,7 @@ class _TxListState extends State<TxList> {
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
+    final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
 
     // TODO: This is a hack to scroll to top everytime we switch wallets.
@@ -344,49 +333,6 @@ class _TxListState extends State<TxList> {
 
     const scrolledUnderElevation = 1.0;
 
-    final appBarMenu = MenuAnchor(
-      menuChildren: [
-        MenuItemButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => LoadPsbtPage(wallet: walletCtx.wallet),
-            ),
-          ),
-          leadingIcon: Icon(Icons.key),
-          child: Text('Sign PSBT'),
-        ),
-        MenuItemButton(
-          onPressed: (frostKey == null)
-              ? null
-              : () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SignMessagePage(frostKey: frostKey),
-                  ),
-                ),
-          leadingIcon: Icon(Icons.key),
-          child: Text('Sign Message'),
-        ),
-        Divider(),
-        MenuItemButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => walletCtx.wrap(SettingsPage()),
-            ),
-          ),
-          leadingIcon: Icon(Icons.settings),
-          child: Text('Settings'),
-        ),
-      ],
-      builder: (_, controller, child) => IconButton(
-        onPressed: () =>
-            controller.isOpen ? controller.close() : controller.open(),
-        icon: Icon(Icons.more_vert),
-      ),
-    );
-
     return CustomScrollView(
       controller: scrollController,
       physics: ClampingScrollPhysics(),
@@ -395,6 +341,7 @@ class _TxListState extends State<TxList> {
           pinned: true,
           title: Text(frostKey?.keyName() ?? 'Unknown'),
           scrolledUnderElevation: scrolledUnderElevation,
+          actionsPadding: EdgeInsets.only(right: 8),
           actions: [
             StreamBuilder(
               stream: settingsCtx.chainStatusStream(walletCtx.network),
@@ -406,7 +353,6 @@ class _TxListState extends State<TxList> {
                 return ChainStatusIcon(chainStatus: chainStatus);
               },
             ),
-            appBarMenu,
           ],
         ),
         PinnedHeaderSliver(
@@ -449,6 +395,7 @@ class _TxListState extends State<TxList> {
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
                           finishedSigningSessionId: tx.sessionId,
+                          psbtMan: fsCtx.psbtManager,
                         ),
                       ),
                     ),
@@ -484,6 +431,7 @@ class _TxListState extends State<TxList> {
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
                           signingSessionId: signingState.sessionId,
+                          psbtMan: fsCtx.psbtManager,
                         ),
                       ),
                     ),
@@ -531,6 +479,7 @@ class _TxListState extends State<TxList> {
                           scrollController: scrollController,
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
+                          psbtMan: fsCtx.psbtManager,
                         ),
                       ),
                     ),
@@ -760,58 +709,87 @@ class WalletBottomBar extends StatelessWidget {
       return SizedBox();
     }
     final theme = Theme.of(context);
-    const elevation = 3.0;
-    return BottomAppBar(
-      color: Colors.transparent,
-      child: Align(
-        alignment: AlignmentDirectional.center,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 560),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 16,
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => showBottomSheetOrDialog(
-                    context,
-                    title: Text('Receive'),
-                    builder: (context, scrollController) => walletCtx.wrap(
-                      ReceivePage(
-                        wallet: walletCtx.wallet,
-                        txStream: walletCtx.txStream,
-                        scrollController: scrollController,
-                      ),
-                    ),
-                  ),
-                  label: Text('Receive'),
-                  icon: Icon(Icons.south_east),
-                  style: ElevatedButton.styleFrom(
-                    elevation: elevation,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    foregroundColor: theme.colorScheme.onPrimaryContainer,
-                  ),
+
+    final textButtonStyle = TextButton.styleFrom(
+      fixedSize: Size.fromHeight(48),
+      foregroundColor: theme.colorScheme.onPrimaryContainer,
+    );
+
+    final iconButtonStyle = IconButton.styleFrom(
+      fixedSize: Size.square(48),
+      foregroundColor: theme.colorScheme.onPrimaryContainer,
+    );
+
+    final receiveButton = TextButton.icon(
+      onPressed: () => showBottomSheetOrDialog(
+        context,
+        title: Text('Receive'),
+        builder: (context, scrollController) => walletCtx.wrap(
+          ReceivePage(
+            wallet: walletCtx.wallet,
+            txStream: walletCtx.txStream,
+            scrollController: scrollController,
+          ),
+        ),
+      ),
+      label: Text('Receive'),
+      icon: Icon(Icons.south_east),
+      style: textButtonStyle,
+    );
+
+    final sendButton = TextButton.icon(
+      onPressed: () => showBottomSheetOrDialog(
+        context,
+        title: Text('Send'),
+        builder: (context, scrollController) =>
+            walletCtx.wrap(WalletSendPage(scrollController: scrollController)),
+      ),
+      label: Text('Send'),
+      icon: Icon(Icons.north_east),
+      style: textButtonStyle,
+    );
+
+    final moreButton = IconButton(
+      onPressed: () => showBottomSheetOrDialog(
+        context,
+        title: Text('More Actions'),
+        builder: (context, scrollController) =>
+            walletCtx.wrap(WalletMore(scrollController: scrollController)),
+      ),
+      icon: Icon(Icons.more_vert_rounded),
+      style: iconButtonStyle,
+      tooltip: 'More',
+    );
+
+    // Replicates a Material 3 Expressive Toolbar
+    // https://m3.material.io/components/toolbars
+    return SizedBox(
+      // Arbitary height to bound the bottom bar.
+      height: 200,
+      child: SafeArea(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Material(
+              color: theme.colorScheme.primaryContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(32)),
+              ),
+              elevation: 12,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  spacing: 4,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(child: receiveButton),
+                    Flexible(child: sendButton),
+                    Flexible(child: moreButton),
+                  ],
                 ),
               ),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => showBottomSheetOrDialog(
-                    context,
-                    title: Text('Send'),
-                    builder: (context, scrollController) => walletCtx.wrap(
-                      WalletSendPage(scrollController: scrollController),
-                    ),
-                  ),
-                  label: Text('Send'),
-                  icon: Icon(Icons.north_east),
-                  style: ElevatedButton.styleFrom(
-                    elevation: elevation,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    foregroundColor: theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1125,17 +1103,16 @@ class BackupWarningBanner extends StatelessWidget {
     return streamedBanner;
   }
 
-  onTap(BuildContext context, WalletContext walletContext) {
+  void onTap(BuildContext context, WalletContext walletContext) async {
     final backupManager = FrostsnapContext.of(context)!.backupManager;
-    showBottomSheetOrDialog(
-      context,
-      title: Text('Backup Checklist'),
-      builder: (context, scrollController) => walletContext.wrap(
+
+    await MaybeFullscreenDialog.show(
+      context: context,
+      child: walletContext.wrap(
         BackupChecklist(
           backupManager: backupManager,
-          scrollController: scrollController,
           accessStructure: frostKey.accessStructures()[0],
-          showAppBar: false,
+          showAppBar: true,
         ),
       ),
     );

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -28,3 +29,8 @@ class GlobalStreams {
       .subKeyEvents()
       .toBehaviorSubject();
 }
+
+// Global key so that snackbar will always show on top.
+final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+final rootNavKey = GlobalKey<NavigatorState>();

@@ -7,6 +7,7 @@ import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/init.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/src/rust/api/psbt_manager.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/wallet.dart';
@@ -34,6 +35,7 @@ class FrostsnapContext extends InheritedWidget {
   }
 
   BackupManager get backupManager => appCtx.backupManager;
+  PsbtManager get psbtManager => appCtx.psbtManager;
 }
 
 class SuperWalletContext extends InheritedWidget {

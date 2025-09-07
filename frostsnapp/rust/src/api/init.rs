@@ -1,5 +1,6 @@
 use super::{
-    backup_manager::BackupManager, coordinator::Coordinator, log::LogLevel, settings::Settings,
+    backup_manager::BackupManager, coordinator::Coordinator, log::LogLevel,
+    psbt_manager::PsbtManager, settings::Settings,
 };
 use crate::{
     coordinator::FfiCoordinator,
@@ -108,6 +109,7 @@ fn load_internal(
     let app_state = AppCtx {
         settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir)?),
         backup_manager: RustAutoOpaque::new(BackupManager::new(db.clone())?),
+        psbt_manager: RustAutoOpaque::new(PsbtManager::new(db.clone())),
     };
     println!("loaded db");
 
@@ -117,6 +119,7 @@ fn load_internal(
 pub struct AppCtx {
     pub settings: RustAutoOpaque<Settings>,
     pub backup_manager: RustAutoOpaque<BackupManager>,
+    pub psbt_manager: RustAutoOpaque<PsbtManager>,
 }
 
 #[flutter_rust_bridge::frb(init)]
