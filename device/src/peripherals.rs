@@ -2,12 +2,11 @@
 
 use alloc::{boxed::Box, rc::Rc};
 use core::cell::RefCell;
-use cst816s::CST816S;
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use esp_hal::{
     delay::Delay,
-    gpio::{AnyPin, Input, Level, Output, Pull},
+    gpio::{AnyPin, Input, Io, Output, Pull},
     hmac::Hmac,
     i2c::master::{Config as I2cConfig, I2c},
     ledc::{
@@ -23,6 +22,7 @@ use esp_hal::{
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
+use frostsnap_cst816s::CST816S;
 use mipidsi::models::ST7789;
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
@@ -111,8 +111,8 @@ pub struct DevicePeripherals<'a> {
     /// Display
     pub display: Display<'a>,
 
-    /// Touch sensor (keeping concrete types for factory compatibility)
-    pub capsense: CST816S<I2c<'a, Blocking>, Input<'a>, Output<'a>>,
+    /// Touch receiver for interrupt-based touch handling
+    pub touch_receiver: frostsnap_cst816s::interrupt::TouchReceiver,
 
     /// Display backlight
     pub backlight: channel::Channel<'a, LowSpeed>,
@@ -170,6 +170,10 @@ fn extract_entropy(
     ChaCha20Rng::from_seed(result.into())
 }
 
+// Static storage for peripherals to enable 'static references
+// This is safe because peripherals are initialized once at startup and never dropped
+static mut PERIPHERALS_SINGLETON: Option<Peripherals> = None;
+
 impl<'a> DevicePeripherals<'a> {
     /// Check if the device needs factory provisioning
     pub fn needs_factory_provisioning(&self) -> bool {
@@ -177,7 +181,20 @@ impl<'a> DevicePeripherals<'a> {
     }
 
     /// Initialize all device peripherals including initial RNG
-    pub fn init(peripherals: &'a mut Peripherals) -> Box<Self> {
+    pub fn init(peripherals: Peripherals) -> Box<Self> {
+        // SAFETY: We can store peripherals in static storage and get a 'static reference
+        // since we're never passing it on to anyone else.
+        let peripherals = unsafe {
+            PERIPHERALS_SINGLETON = Some(peripherals);
+            // Use a raw pointer to avoid the mutable static warning
+            let ptr = &raw mut PERIPHERALS_SINGLETON;
+            (*ptr).as_mut().unwrap()
+        };
+        // Initialize Io for interrupt handling.
+        // SAFETY: We bypass the check that esp-hal is trying to get us to do here since this function has the
+        // only copy of Peripherals. Hopefully this doesn't need to happen in esp-hal v1.0+.
+        let mut io = Io::new(unsafe { core::mem::zeroed() });
+
         // Enable stack guard if feature is enabled
         #[cfg(feature = "stack_guard")]
         crate::stack_guard::enable_stack_guard(&mut peripherals.ASSIST_DEBUG);
@@ -236,12 +253,11 @@ impl<'a> DevicePeripherals<'a> {
         .with_sda(&mut peripherals.GPIO4)
         .with_scl(&mut peripherals.GPIO5);
 
-        let mut capsense = CST816S::new(
-            i2c,
-            Input::new(&mut peripherals.GPIO2, Pull::Down),
-            Output::new(&mut peripherals.GPIO3, Level::Low),
-        );
+        let mut capsense = CST816S::new_esp32(i2c, &mut peripherals.GPIO2, &mut peripherals.GPIO3);
         capsense.setup(&mut delay).unwrap();
+
+        // Register the capsense instance with the interrupt handler
+        let touch_receiver = frostsnap_cst816s::interrupt::register(capsense, &mut io);
 
         // Clear display and turn on backlight
         let _ = display.clear(Rgb565::BLACK);
@@ -288,7 +304,7 @@ impl<'a> DevicePeripherals<'a> {
             timer,
             ui_timer,
             display,
-            capsense,
+            touch_receiver,
             backlight,
             uart_upstream,
             uart_downstream,

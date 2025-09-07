@@ -159,7 +159,7 @@ pub fn run_factory_provisioning(
     // Destructure what we need
     let DevicePeripherals {
         mut display,
-        mut capsense,
+        mut touch_receiver,
         efuse,
         mut jtag,
         timer,
@@ -174,7 +174,7 @@ pub fn run_factory_provisioning(
     let mut partitions = crate::partitions::Partitions::load(&flash);
 
     // Run screen test
-    screen_test::run(&mut display, &mut capsense);
+    screen_test::run(&mut display, &mut touch_receiver);
 
     text_display!(
         &mut display,

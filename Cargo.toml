@@ -10,6 +10,7 @@ members = [
     "frostsnap_factory",
     "frost_backup",
     "frostsnap_widgets", "widget_simulator",
+    "cst816s",
 ]
 resolver = "2"
 
@@ -36,6 +37,9 @@ frostsnap_embedded = { path = "frostsnap_embedded", default-features = false }
 frostsnap_widgets = { path = "frostsnap_widgets", default-features = false }
 frostsnap_macros = { path = "macros", default-features = false }
 frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
+frostsnap_cst816s = { path = "cst816s", default-features = false }
+esp-hal = { git = "https://github.com/frostsnap/esp-hal", rev = "6ecaa2eb75d4d97de877c18d13bfd07d251da971" }
+embedded-hal = "1.0"
 tracing = { version = "0.1", default-features = false }
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 proptest = "=1.6.0"
