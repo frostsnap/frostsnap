@@ -37,7 +37,7 @@ impl<I2C> CST816S<I2C, esp_hal::gpio::Input<'static>, esp_hal::gpio::Output<'sta
 
         let mut pin_int = Input::new(interrupt_pin, Pull::Up);
         // Falling edge is best since if we use Low we can sometimes gets false positives.
-        pin_int.listen(Event::FallingEdge);
+        pin_int.listen(Event::LowLevel);
 
         Self {
             i2c,
