@@ -678,7 +678,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                 child: Dialog(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: 580),
-                    child: Padding(
+                    child: SingleChildScrollView(
                       padding: EdgeInsets.all(16),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,

@@ -285,7 +285,7 @@ void showExportWalletDialog(BuildContext context, String descriptor) async {
         child: Dialog(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 600),
-            child: Padding(
+            child: SingleChildScrollView(
               padding: EdgeInsets.all(16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
