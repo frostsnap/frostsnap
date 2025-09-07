@@ -537,7 +537,6 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
                     Ok(vec![DeviceSend::ToUser(Box::new(
                         DeviceToUserMessage::CheckKeyGen {
-                            session_hash,
                             phase: Box::new(phase3),
                         },
                     ))])
