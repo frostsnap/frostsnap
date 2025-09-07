@@ -118,6 +118,9 @@ impl<'a> EfuseController<'a> {
                 let read_disable = 0x01u8 << key_num;
                 buff[4] |= read_disable;
             }
+
+            // Write-disable the read-protect bits
+            write_disable |= 0x01;
         }
 
         buff[0..4].copy_from_slice(&write_disable.to_le_bytes());

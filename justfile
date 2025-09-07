@@ -16,10 +16,16 @@ flash-secure BOARD=default_board:
 
 # Initial secure boot setup: bootloader + partitions + firmware + monitor
 flash-secure-new BOARD=default_board +ARGS="":
-    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x0 device/bootloader.bin {{ARGS}}
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x0 device/bootloader-dev-sb.bin {{ARGS}}
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0xD000 device/partitions.bin {{ARGS}}
-    just flash-secure
+    just flash-secure {{BOARD}}
     just monitor
+
+# Initial secure boot setup: bootloader + partitions + firmware
+flash-frontier-new BOARD="frontier" +ARGS="":
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x0 device/bootloader-frontier.bin {{ARGS}}
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0xD000 device/partitions.bin {{ARGS}}
+    just flash-secure {{BOARD}}
 
 monitor +ARGS="":
     espflash monitor --no-stub
