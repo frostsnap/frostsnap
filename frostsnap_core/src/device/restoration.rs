@@ -390,7 +390,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
     }
 }
 
-#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, frostsnap_macros::Kind)]
 pub enum RestorationMutation {
     Save(SavedBackup),
     UnSave(ShareImage),

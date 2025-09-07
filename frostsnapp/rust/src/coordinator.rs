@@ -28,7 +28,7 @@ use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
 };
 use frostsnap_core::coordinator::{
-    CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
+    BeginKeygen, CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
     FrostCoordinator, NonceReplenishRequest,
 };
 use frostsnap_core::device::KeyPurpose;
@@ -368,15 +368,11 @@ impl FfiCoordinator {
         let currently_connected = device_list.devices().into_iter().map(|device| device.id);
         drop(device_list);
 
-        let coordinator_keygen_keypair =
-            FrostCoordinator::short_lived_keygen_keypair(&mut rand::thread_rng());
-
-        let begin_keygen = message::keygen::Begin::new(
+        let begin_keygen = BeginKeygen::new(
             devices,
             threshold,
             key_name,
             purpose,
-            coordinator_keygen_keypair.public_key(),
             &mut rand::thread_rng(),
         );
 
@@ -384,7 +380,6 @@ impl FfiCoordinator {
             sink,
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             currently_connected.into_iter().collect(),
-            coordinator_keygen_keypair,
             begin_keygen,
             &mut rand::thread_rng(),
         );

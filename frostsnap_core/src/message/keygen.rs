@@ -50,50 +50,6 @@ impl From<Begin> for CoordinatorToDeviceMessage {
 }
 
 impl Begin {
-    pub fn new_with_id(
-        devices: Vec<DeviceId>,
-        threshold: u16,
-        key_name: String,
-        purpose: KeyPurpose,
-        coordinator_public_key: Point,
-        keygen_id: KeygenId,
-    ) -> Self {
-        Self {
-            devices,
-            threshold,
-            key_name,
-            purpose,
-            keygen_id,
-            coordinator_public_key,
-        }
-    }
-
-    pub fn new(
-        devices: Vec<DeviceId>,
-        threshold: u16,
-        key_name: String,
-        purpose: KeyPurpose,
-        coordinator_public_key: Point,
-        rng: &mut impl rand_core::RngCore, // for the keygen id
-    ) -> Self {
-        let mut id = [0u8; 16];
-        rng.fill_bytes(&mut id[..]);
-
-        Self::new_with_id(
-            devices,
-            threshold,
-            key_name,
-            purpose,
-            coordinator_public_key,
-            KeygenId::from_bytes(id),
-        )
-    }
-
-    /// Get the devices as a BTreeSet
-    pub fn device_set(&self) -> BTreeSet<DeviceId> {
-        self.devices.iter().cloned().collect()
-    }
-
     /// Generate the device to share index mapping based on the device order in the Vec
     pub fn device_to_share_index(&self) -> BTreeMap<DeviceId, core::num::NonZeroU32> {
         self.devices
@@ -106,5 +62,21 @@ impl Begin {
                 )
             })
             .collect()
+    }
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
+pub enum DeviceKeygen {
+    Response(super::KeyGenResponse),
+    Certify {
+        keygen_id: KeygenId,
+        vrf_cert: vrf_cert::CertVrfProof,
+    },
+    Ack(super::KeyGenAck),
+}
+
+impl From<DeviceKeygen> for DeviceToCoordinatorMessage {
+    fn from(value: DeviceKeygen) -> Self {
+        Self::KeyGen(value)
     }
 }

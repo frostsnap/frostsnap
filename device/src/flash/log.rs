@@ -19,7 +19,7 @@ impl ShareSlot {
     pub fn into_mutations(self) -> impl IntoIterator<Item = device::Mutation> {
         core::iter::once(match self {
             ShareSlot::SecretShare(save_share_mutation) => {
-                device::Mutation::SaveShare(save_share_mutation)
+                device::Mutation::Keygen(device::keys::KeyMutation::SaveShare(save_share_mutation))
             }
             ShareSlot::SavedBackup(saved_backup) => device::Mutation::Restoration(
                 device::restoration::RestorationMutation::Save(saved_backup),
@@ -54,7 +54,9 @@ impl<'a, S: NorFlash> MutationLog<'a, S> {
             // For these mutations (which contain secret shares of some type) we don't write them to
             // the log, we write them to a special part of flash. We only store one secret share at a
             // time.
-            Mutation::Core(device::Mutation::SaveShare(save_share_mutation)) => {
+            Mutation::Core(device::Mutation::Keygen(device::keys::KeyMutation::SaveShare(
+                save_share_mutation,
+            ))) => {
                 self.share_slot
                     .write(&ShareSlot::SecretShare(save_share_mutation));
             }
