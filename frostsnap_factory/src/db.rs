@@ -76,15 +76,22 @@ impl Database {
         firmware_digest: Sha256Digest,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut conn = self.get_conn()?;
-        let result = conn.exec_iter(
+
+        let exists: Option<u8> = conn.exec_first(
+            "SELECT 1 FROM devices WHERE serial_number = ?",
+            (serial_number,),
+        )?;
+
+        if exists.is_none() {
+            return Err(format!("Serial number {} not found in database", serial_number).into());
+        }
+
+        // Allow genuine checks to succeed again
+        conn.exec_drop(
             "UPDATE devices SET firmware_hash = ?, genuine_verified = TRUE, status = 'genuine_verified' 
              WHERE serial_number = ?",
             (firmware_digest.to_string(), serial_number),
         )?;
-
-        if result.affected_rows() == 0 {
-            return Err(format!("Serial number {} not found in database", serial_number).into());
-        }
 
         Ok(())
     }
