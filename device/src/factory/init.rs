@@ -226,12 +226,21 @@ pub fn run_factory_provisioning(
     let mut share_encryption_key = [0u8; 32];
     factory_rng.fill_bytes(&mut share_encryption_key);
 
+    // Generate user key just to occupy Key5
+    let mut user_key = [0u8; 32];
+    factory_rng.fill_bytes(&mut user_key);
+
     // Burn EFUSES with configurable read protection
     EfuseKeyWriter::new(&efuse)
         .read_protect(config.read_protect)
         .add_encryption_key(share_encryption_key)
         .add_entropy_key(factory_entropy)
         .add_ds_key(ds_hmac_key)
+        .add_key(
+            esp_hal::hmac::KeyId::Key5,
+            user_key,
+            crate::efuse::KeyPurpose::HmacUpstream,
+        )
         .write_efuses()
         .unwrap();
 
