@@ -19,7 +19,7 @@ keywords = [
 readme = "README.md"
 
 [dependencies]
-embedded-hal = "1.0"
-esp-hal = { git = "https://github.com/frostsnap/esp-hal", branch = "ds", features = ["esp32c3"] }
+embedded-hal.workspace = true
+esp-hal = { workspace = true, features = ["esp32c3"] }
 heapless = { version = "0.8", features = ["portable-atomic"] }
 

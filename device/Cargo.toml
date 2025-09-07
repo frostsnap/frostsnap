@@ -23,12 +23,13 @@ frostsnap_comms = { workspace = true }
 frostsnap_embedded = { workspace = true }
 frost_backup = { workspace = true, features = ["bincode"] }
 bitcoin.workspace = true
-esp-hal = { git = "https://github.com/frostsnap/esp-hal", branch = "ds", features = ["esp32c3", "digest"] }
+esp-hal = { workspace = true, features = ["esp32c3", "digest"] }
 rand_core.workspace = true
 esp-alloc = "0.5.0"
 nb = "1"
 embedded-hal-nb = "1"
 embedded-hal-bus = "0.1.0"
+embedded-hal.workspace = true
 embedded-storage.workspace = true
 esp-storage = { version = "0.6.0", features = ["esp32c3", "bytewise-read"] }
 esp-partition-table = "0.1"
@@ -41,7 +42,6 @@ embedded-text = "0.7.0"
 u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 rand_chacha = { workspace = true }
 frostsnap_cst816s = { workspace = true }
-embedded-hal = { version = "1.0" }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }
 fugit = "0.3.7"
 crc = "3"
