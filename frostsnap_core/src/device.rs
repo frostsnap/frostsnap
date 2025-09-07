@@ -5,7 +5,7 @@ use crate::tweak::{self, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureKind, AccessStructureRef,
     ActionError, CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId,
-    MessageResult, RestorationId, SessionHash, ShareImage,
+    MessageResult, RestorationId, SessionHash, ShareImage, Kind,
 };
 use crate::{DeviceId, SignSessionId};
 use alloc::boxed::Box;
@@ -18,6 +18,8 @@ use alloc::{
 use core::num::NonZeroU32;
 use schnorr_fun::frost::chilldkg::certpedpop::{self};
 use schnorr_fun::frost::{Fingerprint, PairedSecretShare, SecretShare, ShareIndex, SharedKey};
+
+pub mod keys;
 use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{frost, fun::prelude::*};
 use sha2::Sha256;
@@ -229,11 +231,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn apply_mutation(&mut self, mutation: Mutation) -> Option<Mutation> {
         use Mutation::*;
         match mutation {
-            NewKey {
+            Keygen(keys::KeyMutation::NewKey {
                 key_id,
                 ref key_name,
                 purpose,
-            } => {
+            }) => {
                 self.keys.insert(
                     key_id,
                     KeyData {
@@ -244,11 +246,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     },
                 );
             }
-            NewAccessStructure {
+            Keygen(keys::KeyMutation::NewAccessStructure {
                 access_structure_ref,
                 kind,
                 threshold,
-            } => {
+            }) => {
                 self.keys
                     .entry(access_structure_ref.key_id)
                     .and_modify(|key_data| {
@@ -262,7 +264,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         );
                     });
             }
-            SaveShare(ref boxed) => {
+            Keygen(keys::KeyMutation::SaveShare(ref boxed)) => {
                 let SaveShareMutation {
                     access_structure_ref,
                     encrypted_secret_share,
@@ -401,10 +403,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         },
                     );
                     Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                        DeviceToCoordinatorMessage::KeyGenResponse(KeyGenResponse {
-                            keygen_id: begin.keygen_id,
-                            input: Box::new(keygen_input),
-                        }),
+                        DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Response(
+                            KeyGenResponse {
+                                keygen_id: begin.keygen_id,
+                                input: Box::new(keygen_input),
+                            },
+                        )),
                     ))])
                 }
                 self::Keygen::CertifyPlease {
@@ -473,10 +477,10 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                         },
                     );
                     Ok(vec![DeviceSend::ToCoordinator(Box::new(
-                        DeviceToCoordinatorMessage::KeyGenCertify {
+                        DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Certify {
                             keygen_id,
                             vrf_cert,
-                        },
+                        }),
                     ))])
                 }
                 self::Keygen::Check {
@@ -827,20 +831,20 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     }
 
     fn save_complete_share(&mut self, phase: KeyGenPhase4) {
-        self.mutate(Mutation::NewKey {
+        self.mutate(Mutation::Keygen(keys::KeyMutation::NewKey {
             key_id: phase.access_structure_ref.key_id,
             key_name: phase.key_name,
             purpose: phase.key_purpose,
-        });
-        self.mutate(Mutation::NewAccessStructure {
+        }));
+        self.mutate(Mutation::Keygen(keys::KeyMutation::NewAccessStructure {
             access_structure_ref: phase.access_structure_ref,
             threshold: phase.threshold,
             kind: phase.access_structure_kind,
-        });
-        self.mutate(Mutation::SaveShare(Box::new(SaveShareMutation {
+        }));
+        self.mutate(Mutation::Keygen(keys::KeyMutation::SaveShare(Box::new(SaveShareMutation {
             access_structure_ref: phase.access_structure_ref,
             encrypted_secret_share: phase.encrypted_secret_share,
-        })));
+        }))));
     }
 
     pub fn wallet_network(&self, key_id: KeyId) -> Option<bitcoin::Network> {
@@ -891,19 +895,10 @@ pub struct SaveShareMutation {
     pub encrypted_secret_share: EncryptedSecretShare,
 }
 
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq, frostsnap_macros::Kind)]
 pub enum Mutation {
-    NewKey {
-        key_id: KeyId,
-        key_name: String,
-        purpose: KeyPurpose,
-    },
-    NewAccessStructure {
-        access_structure_ref: AccessStructureRef,
-        threshold: u16,
-        kind: AccessStructureKind,
-    },
-    SaveShare(Box<SaveShareMutation>),
+    #[delegate_kind]
+    Keygen(keys::KeyMutation),
     Restoration(restoration::RestorationMutation),
 }
 

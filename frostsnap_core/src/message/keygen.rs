@@ -64,3 +64,19 @@ impl Begin {
             .collect()
     }
 }
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
+pub enum DeviceKeygen {
+    Response(super::KeyGenResponse),
+    Certify {
+        keygen_id: KeygenId,
+        vrf_cert: vrf_cert::CertVrfProof,
+    },
+    Ack(super::KeyGenAck),
+}
+
+impl From<DeviceKeygen> for DeviceToCoordinatorMessage {
+    fn from(value: DeviceKeygen) -> Self {
+        Self::KeyGen(value)
+    }
+}

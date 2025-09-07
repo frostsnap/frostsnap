@@ -178,17 +178,17 @@ impl FrostCoordinator {
         }
         use Mutation::*;
         match mutation {
-            NewKey {
+            Keygen(keys::KeyMutation::NewKey {
                 ref complete_key,
                 ref key_name,
                 purpose,
-            } => {
+            }) => {
                 ensure_key(self, complete_key.clone(), key_name, purpose);
             }
-            NewAccessStructure {
+            Keygen(keys::KeyMutation::NewAccessStructure {
                 ref shared_key,
                 kind,
-            } => {
+            }) => {
                 let access_structure_id =
                     AccessStructureId::from_app_poly(shared_key.key().point_polynomial());
                 let appkey = MasterAppkey::from_xpub_unchecked(shared_key);
@@ -219,11 +219,11 @@ impl FrostCoordinator {
                     }
                 }
             }
-            NewShare {
+            Keygen(keys::KeyMutation::NewShare {
                 access_structure_ref,
                 device_id,
                 share_index,
-            } => match self.keys.get_mut(&access_structure_ref.key_id) {
+            }) => match self.keys.get_mut(&access_structure_ref.key_id) {
                 Some(key_data) => {
                     let complete_key = &mut key_data.complete_key;
 
@@ -256,7 +256,7 @@ impl FrostCoordinator {
                     );
                 }
             },
-            DeleteKey(key_id) => {
+            Keygen(keys::KeyMutation::DeleteKey(key_id)) => {
                 self.keys.remove(&key_id)?;
                 self.key_order.retain(|&entry| entry != key_id);
                 self.restoration.clear_up_key_deletion(key_id);
@@ -423,7 +423,7 @@ impl FrostCoordinator {
 
                 Ok(outgoing)
             }
-            DeviceToCoordinatorMessage::KeyGenResponse(response) => {
+            DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Response(response)) => {
                 let keygen_id = response.keygen_id;
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
@@ -507,10 +507,10 @@ impl FrostCoordinator {
                     )),
                 }
             }
-            DeviceToCoordinatorMessage::KeyGenCertify {
+            DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Certify {
                 keygen_id,
                 vrf_cert,
-            } => {
+            }) => {
                 let mut outgoing = vec![];
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
@@ -576,10 +576,10 @@ impl FrostCoordinator {
                     )),
                 }
             }
-            DeviceToCoordinatorMessage::KeyGenAck(self::KeyGenAck {
+            DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Ack(self::KeyGenAck {
                 keygen_id,
                 ack_session_hash,
-            }) => {
+            })) => {
                 let mut outgoing = vec![];
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
@@ -1112,7 +1112,7 @@ impl FrostCoordinator {
         };
 
         if self.get_frost_key(key_id).is_none() {
-            self.mutate(Mutation::NewKey {
+            self.mutate(Mutation::Keygen(keys::KeyMutation::NewKey {
                 key_name: name,
                 purpose,
                 complete_key: CompleteKey {
@@ -1120,20 +1120,20 @@ impl FrostCoordinator {
                     encrypted_rootkey,
                     access_structures: Default::default(),
                 },
-            });
+            }));
         }
 
-        self.mutate(Mutation::NewAccessStructure {
+        self.mutate(Mutation::Keygen(keys::KeyMutation::NewAccessStructure {
             shared_key: app_shared_key,
             kind: AccessStructureKind::Master,
-        });
+        }));
 
         for (device_id, share_index) in device_to_share_index {
-            self.mutate(Mutation::NewShare {
+            self.mutate(Mutation::Keygen(keys::KeyMutation::NewShare {
                 access_structure_ref,
                 device_id,
                 share_index,
-            });
+            }));
         }
 
         access_structure_ref
@@ -1141,7 +1141,7 @@ impl FrostCoordinator {
 
     pub fn delete_key(&mut self, key_id: KeyId) {
         if self.keys.contains_key(&key_id) {
-            self.mutate(Mutation::DeleteKey(key_id));
+            self.mutate(Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)));
         }
     }
 
@@ -1533,21 +1533,8 @@ impl std::error::Error for StartSignError {}
 /// Mutations to the coordinator state
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq, Kind)]
 pub enum Mutation {
-    NewKey {
-        key_name: String,
-        purpose: KeyPurpose,
-        complete_key: CompleteKey,
-    },
-    NewAccessStructure {
-        shared_key: Xpub<SharedKey>,
-        kind: AccessStructureKind,
-    },
-    NewShare {
-        access_structure_ref: AccessStructureRef,
-        device_id: DeviceId,
-        share_index: ShareIndex,
-    },
-    DeleteKey(KeyId),
+    #[delegate_kind]
+    Keygen(keys::KeyMutation),
     NewNonces {
         device_id: DeviceId,
         nonce_segment: NonceStreamSegment,
@@ -1576,15 +1563,15 @@ pub enum Mutation {
 impl Mutation {
     pub fn tied_to_key(&self) -> Option<KeyId> {
         Some(match self {
-            Mutation::NewKey { complete_key, .. } => complete_key.master_appkey.key_id(),
-            Mutation::NewAccessStructure { shared_key, .. } => {
+            Mutation::Keygen(keys::KeyMutation::NewKey { complete_key, .. }) => complete_key.master_appkey.key_id(),
+            Mutation::Keygen(keys::KeyMutation::NewAccessStructure { shared_key, .. }) => {
                 MasterAppkey::from_xpub_unchecked(shared_key).key_id()
             }
-            Mutation::NewShare {
+            Mutation::Keygen(keys::KeyMutation::NewShare {
                 access_structure_ref,
                 ..
-            } => access_structure_ref.key_id,
-            Mutation::DeleteKey(key_id) => *key_id,
+            }) => access_structure_ref.key_id,
+            Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)) => *key_id,
             Mutation::Restoration(inner) => inner.tied_to_key()?,
             _ => return None,
         })

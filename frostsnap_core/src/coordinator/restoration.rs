@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use super::*;
 use crate::{fail, EnterPhysicalId, RestorationId};
+use super::keys;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RestorationState {
@@ -575,11 +576,11 @@ impl FrostCoordinator {
 
         let share_index = recover_share.held_share.share_image.index;
 
-        self.mutate(Mutation::NewShare {
+        self.mutate(Mutation::Keygen(keys::KeyMutation::NewShare {
             access_structure_ref,
             device_id: recover_share.held_by,
             share_index,
-        });
+        }));
 
         let was_a_physical_backup = recover_share.held_share.access_structure_ref.is_none();
 
@@ -741,11 +742,11 @@ impl FrostCoordinator {
                     .tmp_waiting_consolidate
                     .remove(&consolidation)
                 {
-                    self.mutate(Mutation::NewShare {
+                    self.mutate(Mutation::Keygen(keys::KeyMutation::NewShare {
                         access_structure_ref,
                         device_id: from,
                         share_index,
-                    });
+                    }));
                 } else if self
                     .restoration
                     .pending_physical_consolidations

@@ -123,13 +123,7 @@ pub enum DeviceToCoordinatorMessage {
     NonceResponse {
         segments: Vec<NonceStreamSegment>,
     },
-    KeyGenResponse(KeyGenResponse),
-    KeyGenCertify {
-        keygen_id: KeygenId,
-        vrf_cert: certpedpop::vrf_cert::CertVrfProof,
-    },
-    KeyGenAck(KeyGenAck),
-    // KeyGenFinalized,
+    KeyGen(keygen::DeviceKeygen),
     SignatureShare {
         session_id: SignSessionId,
         signature_shares: Vec<SignatureShare>,
@@ -235,6 +229,6 @@ impl IntoIterator for KeyGenAck {
 
 impl From<KeyGenAck> for DeviceToCoordinatorMessage {
     fn from(value: KeyGenAck) -> Self {
-        DeviceToCoordinatorMessage::KeyGenAck(value)
+        DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Ack(value))
     }
 }

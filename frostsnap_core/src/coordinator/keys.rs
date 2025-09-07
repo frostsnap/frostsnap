@@ -1,7 +1,11 @@
 use crate::{
-    device::KeyPurpose, DeviceId, KeygenId,
+    device::KeyPurpose, DeviceId, KeygenId, KeyId, AccessStructureRef, AccessStructureKind, Kind,
 };
+use crate::coordinator::CompleteKey;
+use crate::tweak::Xpub;
 use alloc::{collections::BTreeMap, collections::BTreeSet, string::String, vec::Vec};
+use frostsnap_macros::Kind as KindDerive;
+use schnorr_fun::frost::{SharedKey, ShareIndex};
 
 /// API input for beginning a key generation (without coordinator_public_key)
 #[derive(Clone, Debug)]
@@ -63,4 +67,23 @@ impl BeginKeygen {
     pub fn devices(&self) -> BTreeSet<DeviceId> {
         self.device_to_share_index.keys().cloned().collect()
     }
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq, KindDerive)]
+pub enum KeyMutation {
+    NewKey {
+        key_name: String,
+        purpose: KeyPurpose,
+        complete_key: CompleteKey,
+    },
+    NewAccessStructure {
+        shared_key: Xpub<SharedKey>,
+        kind: AccessStructureKind,
+    },
+    NewShare {
+        access_structure_ref: AccessStructureRef,
+        device_id: DeviceId,
+        share_index: ShareIndex,
+    },
+    DeleteKey(KeyId),
 }
