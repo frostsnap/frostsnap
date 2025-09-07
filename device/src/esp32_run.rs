@@ -47,7 +47,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
         ref mut downstream_detect,
         ref mut rsa,
     } = resources;
-
+    // create an unmolested copy first so we can erase it all
+    let full_nvs = *nvs;
     // Read device header and keypair from NVS
     let header_sectors = nvs.split_off_front(2);
     let header_flash = crate::flash::FlashHeader::new(header_sectors);
@@ -628,7 +629,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         );
                     }
                     UiEvent::WipeDataConfirm => {
-                        nvs.erase_all().expect("failed to erase nvs");
+                        full_nvs.erase_all().expect("failed to erase nvs");
                         reset(&mut upstream_serial);
                     }
                 }
