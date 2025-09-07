@@ -1,6 +1,4 @@
-use crate::{
-    Kind, MasterAppkey,
-};
+use crate::{Kind, MasterAppkey};
 use frostsnap_macros::Kind as KindDerive;
 
 /// Screen verification messages (for verifying addresses on device screens)

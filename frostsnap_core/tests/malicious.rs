@@ -4,8 +4,8 @@ use env::TestEnv;
 use frostsnap_core::coordinator::{BeginKeygen, CoordinatorSend};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, Keygen,
-    keygen::DeviceKeygen,
+    keygen::DeviceKeygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
+    Keygen,
 };
 use frostsnap_core::WireSignTask;
 use rand_chacha::rand_core::SeedableRng;
@@ -79,7 +79,9 @@ fn keygen_maliciously_replace_public_poly() {
                     .into_iter()
                     .find_map(|send| match send {
                         DeviceSend::ToCoordinator(boxed) => match *boxed {
-                            DeviceToCoordinatorMessage::KeyGen(DeviceKeygen::Response(response)) => Some(response),
+                            DeviceToCoordinatorMessage::KeyGen(DeviceKeygen::Response(
+                                response,
+                            )) => Some(response),
                             _ => None,
                         },
                         _ => None,

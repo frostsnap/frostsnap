@@ -1,18 +1,16 @@
 use crate::{
-    Kind, SignSessionId, 
-    nonce_stream::{NonceStreamSegment, CoordNonceStreamState},
+    nonce_stream::{CoordNonceStreamState, NonceStreamSegment},
+    Kind, SignSessionId,
 };
-use alloc::{vec::Vec, boxed::Box};
-use schnorr_fun::frost::SignatureShare;
+use alloc::{boxed::Box, vec::Vec};
 use frostsnap_macros::Kind as KindDerive;
+use schnorr_fun::frost::SignatureShare;
 
 /// Coordinator to device signing messages
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, KindDerive)]
 pub enum CoordinatorSigning {
     RequestSign(Box<super::RequestSign>),
-    OpenNonceStreams {
-        streams: Vec<CoordNonceStreamState>,
-    },
+    OpenNonceStreams { streams: Vec<CoordNonceStreamState> },
 }
 
 /// Device to coordinator signing messages  

@@ -1,7 +1,5 @@
-use crate::{
-    device::KeyPurpose, AccessStructureRef, AccessStructureKind, KeyId, Kind,
-};
-use alloc::{string::String, boxed::Box};
+use crate::{device::KeyPurpose, AccessStructureKind, AccessStructureRef, KeyId, Kind};
+use alloc::{boxed::Box, string::String};
 use frostsnap_macros::Kind as KindDerive;
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq, KindDerive)]

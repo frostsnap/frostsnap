@@ -1,9 +1,8 @@
 use crate::device::KeyPurpose;
 use crate::nonce_stream::CoordNonceStreamState;
 use crate::{
-    AccessStructureId, AccessStructureRef, CheckedSignTask,
-    CoordShareDecryptionContrib, Gist, KeygenId, MasterAppkey, SessionHash, ShareImage,
-    SignSessionId, SignTaskError, Vec,
+    AccessStructureId, AccessStructureRef, CheckedSignTask, CoordShareDecryptionContrib, Gist,
+    KeygenId, MasterAppkey, SessionHash, ShareImage, SignSessionId, SignTaskError, Vec,
 };
 use crate::{DeviceId, EnterPhysicalId, Kind, WireSignTask};
 use alloc::{
@@ -13,8 +12,8 @@ use alloc::{
 };
 use frostsnap_macros::Kind;
 use schnorr_fun::binonce;
-use schnorr_fun::frost::{chilldkg::certpedpop, ShareIndex};
 use schnorr_fun::frost::SharedKey;
+use schnorr_fun::frost::{chilldkg::certpedpop, ShareIndex};
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::fun::Point;
 use schnorr_fun::Signature;
@@ -22,8 +21,8 @@ use sha2::digest::Update;
 use sha2::Digest;
 
 pub mod keygen;
-pub mod signing;
 pub mod screen_verify;
+pub mod signing;
 pub use keygen::Keygen;
 
 #[derive(Clone, Debug)]

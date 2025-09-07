@@ -1638,10 +1638,12 @@ impl IntoIterator for VerifyAddress {
 
     fn into_iter(self) -> Self::IntoIter {
         core::iter::once(CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::ScreenVerify(crate::message::screen_verify::ScreenVerify::VerifyAddress {
-                master_appkey: self.master_appkey,
-                derivation_index: self.derivation_index,
-            }),
+            message: CoordinatorToDeviceMessage::ScreenVerify(
+                crate::message::screen_verify::ScreenVerify::VerifyAddress {
+                    master_appkey: self.master_appkey,
+                    derivation_index: self.derivation_index,
+                },
+            ),
             destinations: self.target_devices,
         })
     }

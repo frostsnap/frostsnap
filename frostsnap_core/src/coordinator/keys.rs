@@ -1,11 +1,11 @@
-use crate::{
-    device::KeyPurpose, DeviceId, KeygenId, KeyId, AccessStructureRef, AccessStructureKind, Kind,
-};
 use crate::coordinator::CompleteKey;
 use crate::tweak::Xpub;
+use crate::{
+    device::KeyPurpose, AccessStructureKind, AccessStructureRef, DeviceId, KeyId, KeygenId, Kind,
+};
 use alloc::{collections::BTreeMap, collections::BTreeSet, string::String, vec::Vec};
 use frostsnap_macros::Kind as KindDerive;
-use schnorr_fun::frost::{SharedKey, ShareIndex};
+use schnorr_fun::frost::{ShareIndex, SharedKey};
 
 /// API input for beginning a key generation (without coordinator_public_key)
 #[derive(Clone, Debug)]

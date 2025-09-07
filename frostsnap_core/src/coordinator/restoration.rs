@@ -1,8 +1,8 @@
 use std::collections::{BTreeSet, HashSet};
 
+use super::keys;
 use super::*;
 use crate::{fail, EnterPhysicalId, RestorationId};
-use super::keys;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RestorationState {

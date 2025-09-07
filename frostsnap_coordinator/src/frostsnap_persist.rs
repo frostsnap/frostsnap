@@ -71,7 +71,9 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
     fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
         for mutation in update {
             match mutation {
-                coordinator::Mutation::Keygen(coordinator::keys::KeyMutation::DeleteKey(key_id)) => {
+                coordinator::Mutation::Keygen(coordinator::keys::KeyMutation::DeleteKey(
+                    key_id,
+                )) => {
                     conn.execute(
                         "DELETE FROM fs_coordinator_mutations WHERE tied_to_key=?1",
                         params![key_id],

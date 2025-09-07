@@ -1,10 +1,7 @@
-use crate::{
-    DeviceId, SignSessionId, Kind,
-    nonce_stream::NonceStreamSegment,
-};
+use crate::{nonce_stream::NonceStreamSegment, DeviceId, Kind, SignSessionId};
 use alloc::vec::Vec;
-use schnorr_fun::frost::SignatureShare;
 use frostsnap_macros::Kind as KindDerive;
+use schnorr_fun::frost::SignatureShare;
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq, KindDerive)]
 pub enum SigningMutation {
