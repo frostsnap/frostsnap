@@ -1,12 +1,21 @@
 #![no_std]
 
 use alloc::{collections::VecDeque, string::ToString};
-use frostsnap_comms::{DeviceSendBody, DeviceSendMessage};
+use frostsnap_comms::{DeviceSendBody, DeviceSendMessage, WireDeviceSendBody};
 use frostsnap_core::DeviceId;
 use ui::UserInteraction;
 
 #[macro_use]
 extern crate alloc;
+
+/// Log macro for debug logging
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "debug_log")]
+        frostsnap_widgets::debug::log(alloc::format!($($arg)*))
+    };
+}
 
 pub mod device_config;
 pub mod ds;
@@ -27,13 +36,14 @@ pub mod secure_boot;
 pub mod stack_guard;
 pub mod touch_calibration;
 pub mod touch_handler;
+pub mod uart_interrupt;
 pub mod ui;
 pub mod widget_tree;
 
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
     state: UpstreamConnectionState,
-    messages: VecDeque<DeviceSendMessage<DeviceSendBody>>,
+    messages: VecDeque<DeviceSendMessage<WireDeviceSendBody>>,
     announcement: Option<DeviceSendMessage<DeviceSendBody>>,
     my_device_id: DeviceId,
 }
@@ -52,7 +62,11 @@ impl UpstreamConnection {
         ui.set_upstream_connection_state(state);
         match state {
             UpstreamConnectionState::PowerOn => {
-                self.messages.clear();
+                // HACK: We want to clear messages when resetting the connection
+                // upstream but keep the downstream announcements otherwise we
+                // would have to trigger something downstream for them to resend
+                // it.
+                self.messages.retain(|msg| msg.from != self.my_device_id);
             }
             UpstreamConnectionState::Established => {}
             UpstreamConnectionState::EstablishedAndCoordAck => {}
@@ -64,10 +78,10 @@ impl UpstreamConnection {
         self.state
     }
 
-    pub fn dequeue_message(&mut self) -> Option<DeviceSendMessage<DeviceSendBody>> {
+    pub fn dequeue_message(&mut self) -> Option<DeviceSendMessage<WireDeviceSendBody>> {
         if self.state >= UpstreamConnectionState::Established {
             if let Some(announcement) = self.announcement.take() {
-                return Some(announcement);
+                return Some(announcement.into());
             }
         }
 
@@ -89,11 +103,17 @@ impl UpstreamConnection {
         &mut self,
         iter: impl IntoIterator<Item = impl Into<DeviceSendBody>>,
     ) {
-        self.messages
-            .extend(iter.into_iter().map(|body| DeviceSendMessage {
+        self.messages.extend(iter.into_iter().map(|body| {
+            DeviceSendMessage {
                 from: self.my_device_id,
                 body: body.into(),
-            }));
+            }
+            .into()
+        }));
+    }
+
+    pub fn forward_to_coordinator(&mut self, message: DeviceSendMessage<WireDeviceSendBody>) {
+        self.messages.push_back(message);
     }
 
     fn send_debug(&mut self, message: impl ToString) {

@@ -300,8 +300,8 @@ impl FirmwareUpgradeMode<'_> {
 
     pub fn enter_upgrade_mode<T: timer::Timer>(
         &mut self,
-        upstream_io: &mut SerialIo<'_, '_>,
-        mut downstream_io: Option<&mut SerialIo<'_, '_>>,
+        upstream_io: &mut SerialIo<'_>,
+        mut downstream_io: Option<&mut SerialIo<'_>>,
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
         timer: &T,
@@ -343,7 +343,7 @@ impl FirmwareUpgradeMode<'_> {
 
         while !finished_writing {
             if downstream_ready {
-                if let Ok(byte) = upstream_io.read_byte() {
+                if let Some(byte) = upstream_io.read_byte() {
                     in_buf[i] = byte;
                     i += 1;
                     byte_count += 1;
@@ -384,7 +384,7 @@ impl FirmwareUpgradeMode<'_> {
 
             if !finished_writing {
                 if let Some(downstream_io) = &mut downstream_io {
-                    while let Ok(byte) = downstream_io.read_byte() {
+                    while let Some(byte) = downstream_io.read_byte() {
                         assert!(
                             byte == FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
                             "invalid control byte sent by downstream"

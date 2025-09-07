@@ -33,7 +33,6 @@ pub fn process_all_touch_events<W>(
                     if *current_widget_index == 0 {
                         *current_widget_index = 1;
                         widget.show_logs();
-                        frostsnap_widgets::debug::log("Switched to debug log".into());
                     }
                 }
                 TouchGesture::SlideRight => {
@@ -41,7 +40,6 @@ pub fn process_all_touch_events<W>(
                     if *current_widget_index == 1 {
                         *current_widget_index = 0;
                         widget.show_main();
-                        frostsnap_widgets::debug::log("Switched to main widget".into());
                     }
                 }
                 _ => {}
