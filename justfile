@@ -20,7 +20,9 @@ flash-secure BOARD=default_board:
 flash-secure-new BOARD=default_board +ARGS="":
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x0 device/bootloader-dev-sb.bin {{ARGS}}
     espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0xD000 device/partitions.bin {{ARGS}}
-    just flash-secure {{BOARD}}
+    ## TMP: Instead of building again, we want to flash with pre-signed firmware!
+    # just flash-secure {{BOARD}}
+    espflash write-bin --chip esp32c3 --port /dev/ttyACM0 --baud 921600 --no-stub 0x20000 target/riscv32imc-unknown-none-elf/release/firmware.bin
     just monitor
 
 # Initial secure boot setup: bootloader + partitions + firmware
