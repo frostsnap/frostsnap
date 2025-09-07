@@ -582,7 +582,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                 .expect("state changed while confirming keygen"),
                         );
                         ui.clear_busy_task();
-                        ui.set_workflow(default_workflow!(name, signer));
                     }
                     UiEvent::SigningConfirm { phase } => {
                         ui.set_busy_task(ui::BusyTask::Signing);
