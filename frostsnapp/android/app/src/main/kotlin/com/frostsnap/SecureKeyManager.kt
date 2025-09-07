@@ -103,38 +103,49 @@ class SecureKeyManager : FlutterPlugin, MethodCallHandler, ActivityAware, Plugin
     private fun createKey() {
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256, ANDROID_KEYSTORE)
         
-        val builder = KeyGenParameterSpec.Builder(
-            KEY_ALIAS,
-            KeyProperties.PURPOSE_SIGN
-        )
-            .setKeySize(256)
-            .setUserAuthenticationRequired(true)
-        
-        // Use the new API for Android 11+ (API 30+), fall back to deprecated method for older versions
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            builder.setUserAuthenticationParameters(
-                Integer.MAX_VALUE,
-                KeyProperties.AUTH_DEVICE_CREDENTIAL or KeyProperties.AUTH_BIOMETRIC_STRONG
+        fun buildKeySpec(useStrongBox: Boolean): KeyGenParameterSpec {
+            val builder = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_SIGN
             )
-        } else {
-            builder.setUserAuthenticationValidityDurationSeconds(Integer.MAX_VALUE)
+                .setKeySize(256)
+                .setUserAuthenticationRequired(true)
+            
+            // Use the new API for Android 11+ (API 30+), fall back to deprecated method for older versions
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                builder.setUserAuthenticationParameters(
+                    Integer.MAX_VALUE,
+                    KeyProperties.AUTH_DEVICE_CREDENTIAL or KeyProperties.AUTH_BIOMETRIC_STRONG
+                )
+            } else {
+                builder.setUserAuthenticationValidityDurationSeconds(Integer.MAX_VALUE)
+            }
+            
+            // Set StrongBox if requested and available (API 28+)
+            if (useStrongBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                builder.setIsStrongBoxBacked(true)
+            }
+            
+            return builder.build()
         }
         
         // Try to use StrongBox if available (API 28+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
-                builder.setIsStrongBoxBacked(true)
-                keyGenerator.init(builder.build())
+                keyGenerator.init(buildKeySpec(useStrongBox = true))
                 keyGenerator.generateKey()
                 Log.i(TAG, "Key created successfully with StrongBox backing")
                 return
-            } catch (e: java.security.ProviderException) {
-                keyGenerator.init(builder.build())
-                keyGenerator.generateKey()
-                Log.i(TAG, "Key created successfully with TEE backing")
+            } catch (e: Exception) {
+                // StrongBox failed, try without it
+                Log.w(TAG, "StrongBox not available: ${e.message}, falling back to TEE")
             }
         }
         
+        // Create key without StrongBox (for older devices or when StrongBox fails)
+        keyGenerator.init(buildKeySpec(useStrongBox = false))
+        keyGenerator.generateKey()
+        Log.i(TAG, "Key created successfully with TEE backing")
     }
     
     private fun launchLockScreen(result: Result) {
