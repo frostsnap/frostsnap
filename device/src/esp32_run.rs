@@ -65,6 +65,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
 
     // Set up NVS partitions for shares, nonces, and mutation log
     let share_partition = nvs.split_off_front(2);
+
+    // Keep some space reserved for other potential uses in the future, 8 AB slots
+    let _reserved = nvs.split_off_front(8 * 2);
+
     let nonce_slots = {
         // Give half the remaining nvs over to nonces
         let mut n_nonce_sectors = nvs.n_sectors().div_ceil(2);
