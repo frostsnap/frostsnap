@@ -23,6 +23,7 @@ use sha2::Digest;
 
 pub mod keygen;
 pub mod signing;
+pub mod screen_verify;
 pub use keygen::Keygen;
 
 #[derive(Clone, Debug)]
@@ -39,10 +40,8 @@ pub enum CoordinatorToDeviceMessage {
     Signing(signing::CoordinatorSigning),
     #[delegate_kind]
     Restoration(CoordinatorRestoration),
-    VerifyAddress {
-        master_appkey: MasterAppkey,
-        derivation_index: u32,
-    },
+    #[delegate_kind]
+    ScreenVerify(screen_verify::ScreenVerify),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]

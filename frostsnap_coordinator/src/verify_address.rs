@@ -75,10 +75,12 @@ impl UiProtocol for VerifyAddressProtocol {
                     &mut self.need_to_send_to,
                 )),
                 message_body: CoordinatorSendBody::Core(
-                    CoordinatorToDeviceMessage::VerifyAddress {
-                        master_appkey: self.master_appkey,
-                        derivation_index: self.derivation_index,
-                    },
+                    CoordinatorToDeviceMessage::ScreenVerify(
+                        frostsnap_core::message::screen_verify::ScreenVerify::VerifyAddress {
+                            master_appkey: self.master_appkey,
+                            derivation_index: self.derivation_index,
+                        }
+                    ),
                 ),
             });
         }

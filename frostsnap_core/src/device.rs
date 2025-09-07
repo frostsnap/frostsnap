@@ -633,10 +633,10 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     },
                 ))])
             }
-            VerifyAddress {
+            ScreenVerify(screen_verify::ScreenVerify::VerifyAddress {
                 master_appkey,
                 derivation_index,
-            } => {
+            }) => {
                 let key_id = master_appkey.key_id();
                 // check we actually know about this key
                 let _key_data = self
