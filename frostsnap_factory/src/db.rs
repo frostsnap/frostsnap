@@ -32,13 +32,13 @@ impl Database {
         conn.query_drop(
             "CREATE TABLE IF NOT EXISTS serial_counter (
                 id INT PRIMARY KEY,
-                current_serial INT NOT NULL DEFAULT 220825000,
+                current_serial INT NOT NULL DEFAULT 00001000,
                 CHECK (id = 1)
             )",
         )?;
 
         conn.query_drop(
-            "INSERT IGNORE INTO serial_counter (id, current_serial) VALUES (1, 220825000)",
+            "INSERT IGNORE INTO serial_counter (id, current_serial) VALUES (1, 00001000)",
         )?;
 
         Ok(Database { pool })
