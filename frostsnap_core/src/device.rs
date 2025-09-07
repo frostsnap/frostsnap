@@ -4,8 +4,8 @@ use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
 use crate::tweak::{self, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureKind, AccessStructureRef,
-    ActionError, CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId,
-    MessageResult, RestorationId, SessionHash, ShareImage, Kind,
+    ActionError, CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId, Kind,
+    MessageResult, RestorationId, SessionHash, ShareImage,
 };
 use crate::{DeviceId, SignSessionId};
 use alloc::boxed::Box;
@@ -325,7 +325,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match message.clone() {
-            OpenNonceStreams { streams } => {
+            Signing(signing::CoordinatorSigning::OpenNonceStreams { streams }) => {
                 let mut segments = vec![];
                 // we need to order prioritize streams that already exist since not getting a
                 // response to this message the coordinator will think that everything is ok.
@@ -352,7 +352,9 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 // so that the coordinator can track UI progress.
                 let send = {
                     Some(DeviceSend::ToCoordinator(Box::new(
-                        DeviceToCoordinatorMessage::NonceResponse { segments },
+                        DeviceToCoordinatorMessage::Signing(
+                            signing::DeviceSigning::NonceResponse { segments },
+                        ),
                     )))
                 };
                 Ok(send.into_iter().collect())
@@ -561,7 +563,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     ))])
                 }
             },
-            RequestSign(request_sign) => {
+            Signing(signing::CoordinatorSigning::RequestSign(request_sign)) => {
                 let self::RequestSign {
                     group_sign_req,
                     device_sign_req,
@@ -822,11 +824,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             .map_err(|e| ActionError::StateInconsistent(e.to_string()))?;
 
         Ok(vec![DeviceSend::ToCoordinator(Box::new(
-            DeviceToCoordinatorMessage::SignatureShare {
+            DeviceToCoordinatorMessage::Signing(signing::DeviceSigning::SignatureShare {
                 session_id,
                 signature_shares,
                 replenish_nonces,
-            },
+            }),
         ))])
     }
 
@@ -841,10 +843,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             threshold: phase.threshold,
             kind: phase.access_structure_kind,
         }));
-        self.mutate(Mutation::Keygen(keys::KeyMutation::SaveShare(Box::new(SaveShareMutation {
-            access_structure_ref: phase.access_structure_ref,
-            encrypted_secret_share: phase.encrypted_secret_share,
-        }))));
+        self.mutate(Mutation::Keygen(keys::KeyMutation::SaveShare(Box::new(
+            SaveShareMutation {
+                access_structure_ref: phase.access_structure_ref,
+                encrypted_secret_share: phase.encrypted_secret_share,
+            },
+        ))));
     }
 
     pub fn wallet_network(&self, key_id: KeyId) -> Option<bitcoin::Network> {
@@ -899,6 +903,7 @@ pub struct SaveShareMutation {
 pub enum Mutation {
     #[delegate_kind]
     Keygen(keys::KeyMutation),
+    #[delegate_kind]
     Restoration(restoration::RestorationMutation),
 }
 

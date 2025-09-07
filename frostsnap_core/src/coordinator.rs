@@ -3,7 +3,7 @@ use crate::{
     device::KeyPurpose,
     map_ext::*,
     message::*,
-    nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
+    nonce_stream::{CoordNonceStreamState, NonceStreamId},
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
@@ -35,8 +35,10 @@ use tracing::{event, Level};
 mod coordinator_to_user;
 pub mod keys;
 pub mod restoration;
+pub mod signing;
 pub use coordinator_to_user::*;
 pub use keys::BeginKeygen;
+use signing::SigningMutation;
 
 pub const MIN_NONCES_BEFORE_REQUEST: u32 = NONCE_BATCH_SIZE / 2;
 
@@ -267,16 +269,16 @@ impl FrostCoordinator {
                     .map(|(&key_id, _)| key_id)
                     .collect::<Vec<_>>();
                 for session_id in sessions_to_delete {
-                    self.apply_mutation(Mutation::CloseSignSession {
+                    self.apply_mutation(Mutation::Signing(SigningMutation::CloseSignSession {
                         session_id,
                         finished: None,
-                    });
+                    }));
                 }
             }
-            NewNonces {
+            Signing(SigningMutation::NewNonces {
                 device_id,
                 ref nonce_segment,
-            } => {
+            }) => {
                 match self
                     .nonce_cache
                     .extend_segment(device_id, nonce_segment.clone())
@@ -289,17 +291,17 @@ impl FrostCoordinator {
                     Err(e) => fail!("failed to extend nonce segment: {e}"),
                 }
             }
-            NewSigningSession(ref signing_session_state) => {
+            Signing(SigningMutation::NewSigningSession(ref signing_session_state)) => {
                 let ssid = signing_session_state.init.group_request.session_id();
                 self.active_signing_sessions
                     .insert(ssid, signing_session_state.clone());
                 self.active_sign_session_order.push(ssid);
             }
-            GotSignatureSharesFromDevice {
+            Signing(SigningMutation::GotSignatureSharesFromDevice {
                 session_id,
                 device_id,
                 ref signature_shares,
-            } => {
+            }) => {
                 if let Some(session_state) = self.active_signing_sessions.get_mut(&session_id) {
                     for (progress, share) in session_state.progress.iter_mut().zip(signature_shares)
                     {
@@ -307,10 +309,10 @@ impl FrostCoordinator {
                     }
                 }
             }
-            SentSignReq {
+            Signing(SigningMutation::SentSignReq {
                 session_id,
                 device_id,
-            } => {
+            }) => {
                 if !self
                     .active_signing_sessions
                     .get_mut(&session_id)?
@@ -320,10 +322,10 @@ impl FrostCoordinator {
                     return None;
                 }
             }
-            CloseSignSession {
+            Signing(SigningMutation::CloseSignSession {
                 session_id,
                 ref finished,
-            } => {
+            }) => {
                 let (index, _) = self
                     .active_sign_session_order
                     .iter()
@@ -354,7 +356,7 @@ impl FrostCoordinator {
                     );
                 }
             }
-            ForgetFinishedSignSession { session_id } => {
+            Signing(SigningMutation::ForgetFinishedSignSession { session_id }) => {
                 self.finished_signing_sessions.remove(&session_id);
             }
             Restoration(inner) => {
@@ -399,7 +401,9 @@ impl FrostCoordinator {
     ) -> MessageResult<Vec<CoordinatorSend>> {
         let message_kind = message.kind();
         match message {
-            DeviceToCoordinatorMessage::NonceResponse { segments } => {
+            DeviceToCoordinatorMessage::Signing(
+                crate::message::signing::DeviceSigning::NonceResponse { segments },
+            ) => {
                 let mut outgoing = vec![];
                 for new_segment in segments {
                     self.nonce_cache
@@ -411,10 +415,10 @@ impl FrostCoordinator {
                             )
                         })?;
 
-                    self.mutate(Mutation::NewNonces {
+                    self.mutate(Mutation::Signing(SigningMutation::NewNonces {
                         device_id: from,
                         nonce_segment: new_segment,
-                    });
+                    }));
                 }
 
                 outgoing.push(CoordinatorSend::ToUser(
@@ -647,11 +651,13 @@ impl FrostCoordinator {
                     )),
                 }
             }
-            DeviceToCoordinatorMessage::SignatureShare {
-                session_id,
-                ref signature_shares,
-                ref replenish_nonces,
-            } => {
+            DeviceToCoordinatorMessage::Signing(
+                crate::message::signing::DeviceSigning::SignatureShare {
+                    session_id,
+                    ref signature_shares,
+                    ref replenish_nonces,
+                },
+            ) => {
                 let active_sign_session = self
                     .active_signing_sessions
                     .get(&session_id)
@@ -705,17 +711,19 @@ impl FrostCoordinator {
                     CoordinatorToUserSigningMessage::GotShare { session_id, from },
                 )));
 
-                self.mutate(Mutation::GotSignatureSharesFromDevice {
-                    session_id,
-                    device_id: from,
-                    signature_shares: signature_shares.clone(),
-                });
+                self.mutate(Mutation::Signing(
+                    SigningMutation::GotSignatureSharesFromDevice {
+                        session_id,
+                        device_id: from,
+                        signature_shares: signature_shares.clone(),
+                    },
+                ));
 
                 if let Some(replenish_nonces) = replenish_nonces {
-                    self.mutate(Mutation::NewNonces {
+                    self.mutate(Mutation::Signing(SigningMutation::NewNonces {
                         device_id: from,
                         nonce_segment: replenish_nonces.clone(),
-                    });
+                    }));
                 }
 
                 if let Some(signatures) = self.complete_sign_session(session_id) {
@@ -963,7 +971,9 @@ impl FrostCoordinator {
             sent_req_to_device: Default::default(),
         };
 
-        self.mutate(Mutation::NewSigningSession(local_session));
+        self.mutate(Mutation::Signing(SigningMutation::NewSigningSession(
+            local_session,
+        )));
 
         Ok(session_id)
     }
@@ -998,10 +1008,10 @@ impl FrostCoordinator {
             )
             .expect("must be able to decrypt rootkey");
 
-        self.mutate(Mutation::SentSignReq {
+        self.mutate(Mutation::Signing(SigningMutation::SentSignReq {
             device_id,
             session_id,
-        });
+        }));
 
         let request_sign = RequestSign {
             group_sign_req,
@@ -1196,10 +1206,10 @@ impl FrostCoordinator {
                 .map(EncodedSignature::new)
                 .collect();
 
-            self.mutate(Mutation::CloseSignSession {
+            self.mutate(Mutation::Signing(SigningMutation::CloseSignSession {
                 session_id,
                 finished: Some(signatures.clone()),
-            });
+            }));
 
             Some(signatures)
         } else {
@@ -1208,10 +1218,10 @@ impl FrostCoordinator {
     }
 
     pub fn cancel_sign_session(&mut self, session_id: SignSessionId) {
-        self.mutate(Mutation::CloseSignSession {
+        self.mutate(Mutation::Signing(SigningMutation::CloseSignSession {
             session_id,
             finished: None,
-        })
+        }))
     }
 
     pub fn forget_finished_sign_session(
@@ -1219,7 +1229,9 @@ impl FrostCoordinator {
         session_id: SignSessionId,
     ) -> Option<FinishedSignSession> {
         let session_to_delete = self.finished_signing_sessions.get(&session_id).cloned()?;
-        self.mutate(Mutation::ForgetFinishedSignSession { session_id });
+        self.mutate(Mutation::Signing(
+            SigningMutation::ForgetFinishedSignSession { session_id },
+        ));
         Some(session_to_delete)
     }
 
@@ -1535,27 +1547,8 @@ impl std::error::Error for StartSignError {}
 pub enum Mutation {
     #[delegate_kind]
     Keygen(keys::KeyMutation),
-    NewNonces {
-        device_id: DeviceId,
-        nonce_segment: NonceStreamSegment,
-    },
-    NewSigningSession(ActiveSignSession),
-    SentSignReq {
-        session_id: SignSessionId,
-        device_id: DeviceId,
-    },
-    GotSignatureSharesFromDevice {
-        session_id: SignSessionId,
-        device_id: DeviceId,
-        signature_shares: Vec<SignatureShare>,
-    },
-    CloseSignSession {
-        session_id: SignSessionId,
-        finished: Option<Vec<EncodedSignature>>,
-    },
-    ForgetFinishedSignSession {
-        session_id: SignSessionId,
-    },
+    #[delegate_kind]
+    Signing(signing::SigningMutation),
     #[delegate_kind]
     Restoration(restoration::RestorationMutation),
 }
@@ -1563,7 +1556,9 @@ pub enum Mutation {
 impl Mutation {
     pub fn tied_to_key(&self) -> Option<KeyId> {
         Some(match self {
-            Mutation::Keygen(keys::KeyMutation::NewKey { complete_key, .. }) => complete_key.master_appkey.key_id(),
+            Mutation::Keygen(keys::KeyMutation::NewKey { complete_key, .. }) => {
+                complete_key.master_appkey.key_id()
+            }
             Mutation::Keygen(keys::KeyMutation::NewAccessStructure { shared_key, .. }) => {
                 MasterAppkey::from_xpub_unchecked(shared_key).key_id()
             }
@@ -1620,7 +1615,9 @@ impl IntoIterator for NonceReplenishRequest {
         self.replenish_requests
             .into_iter()
             .map(|(device_id, streams)| CoordinatorSend::ToDevice {
-                message: CoordinatorToDeviceMessage::OpenNonceStreams { streams },
+                message: CoordinatorToDeviceMessage::Signing(
+                    crate::message::signing::CoordinatorSigning::OpenNonceStreams { streams },
+                ),
                 destinations: [device_id].into(),
             })
             .collect::<Vec<_>>()
@@ -1665,7 +1662,11 @@ pub struct RequestDeviceSign {
 impl From<RequestDeviceSign> for CoordinatorSend {
     fn from(value: RequestDeviceSign) -> Self {
         CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::RequestSign(Box::new(value.request_sign)),
+            message: CoordinatorToDeviceMessage::Signing(
+                crate::message::signing::CoordinatorSigning::RequestSign(Box::new(
+                    value.request_sign,
+                )),
+            ),
             destinations: [value.device_id].into(),
         }
     }

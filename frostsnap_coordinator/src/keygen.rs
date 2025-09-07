@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 use crate::{Completion, Sink, UiProtocol};
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{BeginKeygen, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator},
+    coordinator::{
+        BeginKeygen, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator,
+    },
     AccessStructureRef, DeviceId, KeygenId, SessionHash,
 };
 use tracing::{event, Level};

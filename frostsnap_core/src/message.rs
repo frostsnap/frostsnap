@@ -1,7 +1,7 @@
 use crate::device::KeyPurpose;
 use crate::nonce_stream::CoordNonceStreamState;
 use crate::{
-    nonce_stream::NonceStreamSegment, AccessStructureId, AccessStructureRef, CheckedSignTask,
+    AccessStructureId, AccessStructureRef, CheckedSignTask,
     CoordShareDecryptionContrib, Gist, KeygenId, MasterAppkey, SessionHash, ShareImage,
     SignSessionId, SignTaskError, Vec,
 };
@@ -14,7 +14,7 @@ use alloc::{
 use frostsnap_macros::Kind;
 use schnorr_fun::binonce;
 use schnorr_fun::frost::{chilldkg::certpedpop, ShareIndex};
-use schnorr_fun::frost::{SharedKey, SignatureShare};
+use schnorr_fun::frost::SharedKey;
 use schnorr_fun::fun::prelude::*;
 use schnorr_fun::fun::Point;
 use schnorr_fun::Signature;
@@ -22,6 +22,7 @@ use sha2::digest::Update;
 use sha2::Digest;
 
 pub mod keygen;
+pub mod signing;
 pub use keygen::Keygen;
 
 #[derive(Clone, Debug)]
@@ -34,10 +35,8 @@ pub enum DeviceSend {
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum CoordinatorToDeviceMessage {
     KeyGen(keygen::Keygen),
-    RequestSign(Box<RequestSign>),
-    OpenNonceStreams {
-        streams: Vec<CoordNonceStreamState>,
-    },
+    #[delegate_kind]
+    Signing(signing::CoordinatorSigning),
     #[delegate_kind]
     Restoration(CoordinatorRestoration),
     VerifyAddress {
@@ -120,15 +119,9 @@ impl Gist for CoordinatorToDeviceMessage {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum DeviceToCoordinatorMessage {
-    NonceResponse {
-        segments: Vec<NonceStreamSegment>,
-    },
     KeyGen(keygen::DeviceKeygen),
-    SignatureShare {
-        session_id: SignSessionId,
-        signature_shares: Vec<SignatureShare>,
-        replenish_nonces: Option<NonceStreamSegment>,
-    },
+    #[delegate_kind]
+    Signing(signing::DeviceSigning),
     #[delegate_kind]
     Restoration(DeviceRestoration),
 }
