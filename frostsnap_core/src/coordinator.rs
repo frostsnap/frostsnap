@@ -15,7 +15,7 @@ use alloc::{
     borrow::ToOwned,
     boxed::Box,
     collections::{BTreeMap, BTreeSet, VecDeque},
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 use core::fmt;
@@ -33,8 +33,10 @@ use std::collections::{HashMap, HashSet};
 use tracing::{event, Level};
 
 mod coordinator_to_user;
+pub mod keys;
 pub mod restoration;
 pub use coordinator_to_user::*;
+pub use keys::BeginKeygen;
 
 pub const MIN_NONCES_BEFORE_REQUEST: u32 = NONCE_BATCH_SIZE / 2;
 
@@ -152,12 +154,6 @@ impl FrostCoordinator {
         } else {
             event!(Level::DEBUG, kind = kind, "ignoring mutation");
         }
-    }
-
-    /// A shortlived keypair used for the coordinator's keygen certification
-    pub fn short_lived_keygen_keypair(rng: &mut impl rand_core::RngCore) -> KeyPair {
-        let coordinator_keygen_secret = Scalar::random(rng);
-        KeyPair::new(coordinator_keygen_secret)
     }
 
     pub fn apply_mutation(&mut self, mutation: Mutation) -> Option<Mutation> {
@@ -741,47 +737,30 @@ impl FrostCoordinator {
 
     pub fn begin_keygen(
         &mut self,
-        begin_keygen: keygen::Begin,
-        coordinator_keypair: KeyPair,
+        begin_keygen: BeginKeygen,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SendBeginKeygen, ActionError> {
-        let device_to_share_index = begin_keygen.device_to_share_index();
-
-        // Assert no duplicates in devices list
-        assert_eq!(
-            begin_keygen.devices.len(),
-            begin_keygen
-                .devices
-                .iter()
-                .collect::<std::collections::HashSet<_>>()
-                .len(),
-            "duplicate devices in keygen"
-        );
-
-        let keygen::Begin {
-            devices: _,
+        let BeginKeygen {
+            device_to_share_index,
             threshold,
             key_name,
             purpose,
             keygen_id,
-            coordinator_public_key,
-        } = &begin_keygen;
+        } = begin_keygen;
 
-        assert_eq!(
-            coordinator_keypair.public_key(),
-            *coordinator_public_key,
-            "key mismatch with keygen Begin"
-        );
-
-        if self.pending_keygens.contains_key(&begin_keygen.keygen_id) {
+        if self.pending_keygens.contains_key(&keygen_id) {
             return Err(ActionError::StateInconsistent(
                 "keygen with that id already in progress".into(),
             ));
         }
 
+        // Generate coordinator keypair internally
+        let coordinator_secret = Scalar::random(rng);
+        let coordinator_keypair = KeyPair::new(coordinator_secret);
+
         let n_devices = device_to_share_index.len();
 
-        if n_devices < *threshold as usize {
+        if n_devices < threshold as usize {
             panic!(
                 "caller needs to ensure that threshold < devices.len(). Tried {threshold}-of-{n_devices}",
             );
@@ -792,13 +771,13 @@ impl FrostCoordinator {
             .collect::<BTreeMap<_, _>>();
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
         let mut input_aggregator = certpedpop::Coordinator::new(
-            (*threshold).into(),
+            threshold.into(),
             (n_devices + 1) as u32,
             &share_receivers_enckeys,
         );
         let (contributer, input) = certpedpop::Contributor::gen_keygen_input(
             &schnorr,
-            (*threshold).into(),
+            threshold.into(),
             &share_receivers_enckeys,
             0,
             rng,
@@ -808,19 +787,30 @@ impl FrostCoordinator {
             .expect("we just generated the input");
 
         self.pending_keygens.insert(
-            *keygen_id,
+            keygen_id,
             KeyGenState::WaitingForResponses(KeyGenWaitingForResponses {
-                keygen_id: *keygen_id,
+                keygen_id,
                 input_aggregator,
                 device_to_share_index: device_to_share_index.clone(),
-                pending_key_name: key_name.to_string(),
-                purpose: *purpose,
+                pending_key_name: key_name.clone(),
+                purpose,
                 contributer: Box::new(contributer),
                 my_keypair: coordinator_keypair,
             }),
         );
 
-        Ok(SendBeginKeygen(begin_keygen.clone()))
+        // Create the keygen::Begin message from the API struct
+        let devices = device_to_share_index.keys().cloned().collect();
+        let begin_message = keygen::Begin {
+            devices,
+            threshold,
+            key_name,
+            purpose,
+            keygen_id,
+            coordinator_public_key: coordinator_keypair.public_key(),
+        };
+
+        Ok(SendBeginKeygen(begin_message))
     }
 
     pub fn finalize_keygen(

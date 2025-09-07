@@ -1,10 +1,10 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
 use common::TEST_ENCRYPTION_KEY;
 use env::TestEnv;
-use frostsnap_core::coordinator::{CoordinatorSend, FrostCoordinator};
+use frostsnap_core::coordinator::{BeginKeygen, CoordinatorSend};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
-    keygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, Keygen,
+    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, Keygen,
 };
 use frostsnap_core::WireSignTask;
 use rand_chacha::rand_core::SeedableRng;
@@ -24,21 +24,23 @@ fn keygen_maliciously_replace_public_poly() {
     let mut run = Run::generate(1, &mut test_rng);
     let device_set = run.device_set();
     let mut shadow_device = run.devices.values().next().unwrap().clone();
-    let coordinator_keygen_keypair = FrostCoordinator::short_lived_keygen_keypair(&mut test_rng);
+
+    use rand_chacha::rand_core::{RngCore, SeedableRng};
+    let mut seed = [0u8; 32];
+    test_rng.fill_bytes(&mut seed);
+    let mut coordinator_rng = ChaCha20Rng::from_seed(seed);
 
     let keygen_init = run
         .coordinator
         .begin_keygen(
-            keygen::Begin::new(
+            BeginKeygen::new(
                 device_set.into_iter().collect(),
                 1,
                 "test".into(),
                 KeyPurpose::Test,
-                coordinator_keygen_keypair.public_key(),
                 &mut test_rng,
             ),
-            coordinator_keygen_keypair,
-            &mut test_rng,
+            &mut coordinator_rng,
         )
         .unwrap();
     let do_keygen = keygen_init

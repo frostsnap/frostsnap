@@ -1,11 +1,10 @@
 use bitcoin::hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
 use frostsnap_core::device::{DeviceSecretDerivation, DeviceToUserMessage, KeyPurpose};
-use frostsnap_core::message::{
-    keygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
-};
+use frostsnap_core::message::{CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage};
 use frostsnap_core::{
     coordinator::{
-        CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator,
+        BeginKeygen, CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
+        FrostCoordinator,
     },
     device::FrostSigner,
     DeviceId, SymmetricKey,
@@ -13,7 +12,6 @@ use frostsnap_core::{
 use frostsnap_core::{AccessStructureRef, MessageResult};
 use rand::RngCore;
 use schnorr_fun::frost::ShareIndex;
-use schnorr_fun::fun::KeyPair;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub const TEST_ENCRYPTION_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
@@ -181,7 +179,6 @@ pub trait Env {
 #[derive(Clone)]
 pub struct Run {
     pub coordinator: FrostCoordinator,
-    pub coordinator_keygen_keypair: KeyPair,
     pub devices: BTreeMap<DeviceId, FrostSigner>,
     pub message_queue: VecDeque<Send>,
     pub transcript: Vec<Send>,
@@ -208,7 +205,6 @@ impl Run {
         rng: &mut impl rand_core::RngCore,
         nonce_slots: usize,
     ) -> Self {
-        let coordinator_keygen_keypair = FrostCoordinator::short_lived_keygen_keypair(rng);
         let mut coordinator = FrostCoordinator::new();
         coordinator.keygen_fingerprint = schnorr_fun::frost::Fingerprint {
             bits_per_coeff: 2,
@@ -217,7 +213,6 @@ impl Run {
         };
         Self::new(
             coordinator,
-            coordinator_keygen_keypair,
             (0..n_devices)
                 .map(|_| {
                     let mut signer = FrostSigner::new_random(rng, nonce_slots);
@@ -245,19 +240,23 @@ impl Run {
         purpose: KeyPurpose,
     ) -> Self {
         let mut run = Self::generate(n_devices, rng);
+
+        use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        let mut coordinator_rng = ChaCha20Rng::from_seed(seed);
+
         let keygen_init = run
             .coordinator
             .begin_keygen(
-                keygen::Begin::new(
+                BeginKeygen::new(
                     run.devices.keys().cloned().collect::<Vec<_>>(),
                     threshold,
                     "my new key".to_string(),
                     purpose,
-                    run.coordinator_keygen_keypair.public_key(),
                     rng,
                 ),
-                run.coordinator_keygen_keypair,
-                rng,
+                &mut coordinator_rng,
             )
             .unwrap();
         let keygen_id = keygen_init.0.keygen_id;
@@ -289,14 +288,9 @@ impl Run {
         run
     }
 
-    pub fn new(
-        coordinator: FrostCoordinator,
-        coordinator_keygen_keypair: KeyPair,
-        devices: BTreeMap<DeviceId, FrostSigner>,
-    ) -> Self {
+    pub fn new(coordinator: FrostCoordinator, devices: BTreeMap<DeviceId, FrostSigner>) -> Self {
         Self {
             start_coordinator: coordinator.clone(),
-            coordinator_keygen_keypair,
             start_devices: devices.clone(),
             coordinator,
             devices,

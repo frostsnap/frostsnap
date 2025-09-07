@@ -3,9 +3,7 @@ use std::collections::BTreeSet;
 use crate::{Completion, Sink, UiProtocol};
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator},
-    message::keygen,
-    schnorr_fun::fun::KeyPair,
+    coordinator::{BeginKeygen, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator},
     AccessStructureRef, DeviceId, KeygenId, SessionHash,
 };
 use tracing::{event, Level};
@@ -22,14 +20,13 @@ impl KeyGen {
         keygen_sink: impl Sink<KeyGenState> + 'static,
         coordinator: &mut FrostCoordinator,
         currently_connected: BTreeSet<DeviceId>,
-        coordinator_keypair: KeyPair,
-        begin_keygen: keygen::Begin,
+        begin_keygen: BeginKeygen,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let mut self_ = Self {
             sink: Box::new(keygen_sink),
             state: KeyGenState {
-                devices: begin_keygen.devices.clone(),
+                devices: begin_keygen.devices().into_iter().collect(),
                 threshold: begin_keygen.threshold.into(),
                 keygen_id: begin_keygen.keygen_id,
                 ..Default::default()
@@ -38,11 +35,11 @@ impl KeyGen {
             send_cancel_to_all: false,
         };
 
-        if !currently_connected.is_superset(&begin_keygen.device_set()) {
+        if !currently_connected.is_superset(&begin_keygen.devices()) {
             self_.abort("A selected device was disconnected".into(), false);
         }
 
-        match coordinator.begin_keygen(begin_keygen, coordinator_keypair, rng) {
+        match coordinator.begin_keygen(begin_keygen, rng) {
             Ok(messages) => {
                 for message in messages {
                     self_.keygen_messages.push(

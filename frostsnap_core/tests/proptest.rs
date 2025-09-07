@@ -10,10 +10,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use frostsnap_core::{
     coordinator::{
-        CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
+        BeginKeygen, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
+        CoordinatorToUserSigningMessage,
     },
     device::{DeviceToUserMessage, KeyGenPhase3, KeyPurpose, SignPhase1},
-    message::keygen,
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
 use proptest_state_machine::{
@@ -83,19 +83,19 @@ impl RefSignSession {
 
 #[derive(Clone, Debug)]
 struct RefKeygen {
-    do_keygen: keygen::Begin,
+    do_keygen: BeginKeygen,
     devices_confirmed: BTreeSet<DeviceId>,
 }
 
 #[derive(Clone, Debug)]
 struct RefFinishedKey {
-    do_keygen: keygen::Begin,
+    do_keygen: BeginKeygen,
     deleted: bool,
 }
 
 #[derive(Clone, Debug)]
 enum Transition {
-    CStartKeygen(keygen::Begin),
+    CStartKeygen(BeginKeygen),
     DKeygenAck {
         device_id: DeviceId,
         keygen_id: KeygenId,
@@ -167,16 +167,13 @@ impl ReferenceStateMachine for RefState {
                 .no_shrink();
             let keygen_id = array::uniform::<_, 16>(0..=u8::MAX)/* testing colliding keygen ids is not of interest */ .no_shrink();
 
-            let coordinator_keygen_keypair =
-                state.run_start.coordinator_keygen_keypair.public_key();
             let keygen_trans = (keygen_id, devices_and_threshold, name)
                 .prop_map(move |(keygen_id, (devices, threshold), key_name)| {
-                    Transition::CStartKeygen(keygen::Begin::new_with_id(
+                    Transition::CStartKeygen(BeginKeygen::new_with_id(
                         devices.into_iter().collect(),
                         threshold as u16,
                         key_name,
                         KeyPurpose::Test,
-                        coordinator_keygen_keypair,
                         KeygenId::from_bytes(keygen_id),
                     ))
                 })
@@ -188,8 +185,8 @@ impl ReferenceStateMachine for RefState {
         for (&keygen_id, keygen) in &state.pending_keygens {
             let candidates = keygen
                 .do_keygen
-                .devices
-                .iter()
+                .device_to_share_index
+                .keys()
                 .filter(|device_id| !keygen.devices_confirmed.contains(device_id))
                 .cloned()
                 .collect::<Vec<_>>();
@@ -224,7 +221,7 @@ impl ReferenceStateMachine for RefState {
                 .filter_map(|(key_index, key)| {
                     let available = key
                         .do_keygen
-                        .device_set()
+                        .devices()
                         .intersection(&state.available_signing_devices())
                         .cloned()
                         .collect::<Vec<_>>();
@@ -332,14 +329,17 @@ impl ReferenceStateMachine for RefState {
                     && state
                         .run_start
                         .device_set()
-                        .is_superset(&do_key_gen.device_set())
+                        .is_superset(&do_key_gen.devices())
             }
             Transition::DKeygenAck {
                 device_id,
                 keygen_id,
             } => match state.pending_keygens.get(keygen_id) {
                 Some(keygen_state) => {
-                    keygen_state.do_keygen.devices.contains(device_id)
+                    keygen_state
+                        .do_keygen
+                        .device_to_share_index
+                        .contains_key(device_id)
                         && !keygen_state.devices_confirmed.contains(device_id)
                 }
                 None => false,
@@ -347,7 +347,8 @@ impl ReferenceStateMachine for RefState {
             Transition::CKeygenConfirm { keygen_id } => {
                 match state.pending_keygens.get(keygen_id) {
                     Some(keygen_state) => {
-                        keygen_state.devices_confirmed.len() == keygen_state.do_keygen.devices.len()
+                        keygen_state.devices_confirmed.len()
+                            == keygen_state.do_keygen.device_to_share_index.len()
                     }
                     None => false,
                 }
@@ -360,7 +361,7 @@ impl ReferenceStateMachine for RefState {
             } => match state.finished_keygens.get(*key_index) {
                 Some(keygen) => {
                     !keygen.deleted
-                        && keygen.do_keygen.device_set().is_superset(devices)
+                        && keygen.do_keygen.devices().is_superset(devices)
                         && state.available_signing_devices().is_superset(devices)
                 }
                 None => false,
@@ -602,9 +603,13 @@ impl StateMachineTest for HappyPathTest {
         } = &mut state;
         match transition {
             Transition::CStartKeygen(do_keygen) => {
+                use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
+                let mut seed = [0u8; 32];
+                rng.fill_bytes(&mut seed);
+                let mut coordinator_rng = ChaCha20Rng::from_seed(seed);
                 let do_keygen = run
                     .coordinator
-                    .begin_keygen(do_keygen, run.coordinator_keygen_keypair, rng)
+                    .begin_keygen(do_keygen, &mut coordinator_rng)
                     .unwrap();
                 run.extend(do_keygen);
             }
