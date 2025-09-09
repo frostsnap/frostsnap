@@ -190,6 +190,33 @@ impl<'a> DevicePeripherals<'a> {
             let ptr = &raw mut PERIPHERALS_SINGLETON;
             (*ptr).as_mut().unwrap()
         };
+
+        // Initialize JTAG
+        let jtag = UsbSerialJtag::new(&mut peripherals.USB_DEVICE);
+
+        let upstream_detect = Input::new(&mut peripherals.GPIO0, Pull::Up);
+        // Initialize upstream UART only if upstream device is detected
+        let uart_upstream = if upstream_detect.is_low() {
+            Some(
+                Uart::new(
+                    &mut peripherals.UART1,
+                    &mut peripherals.GPIO18,
+                    &mut peripherals.GPIO19,
+                )
+                .unwrap(),
+            )
+        } else {
+            None
+        };
+
+        // Always initialize downstream UART
+        let uart_downstream = Uart::new(
+            &mut peripherals.UART0,
+            &mut peripherals.GPIO21,
+            &mut peripherals.GPIO20,
+        )
+        .unwrap();
+
         // Initialize Io for interrupt handling.
         // SAFETY: We bypass the check that esp-hal is trying to get us to do here since this function has the
         // only copy of Peripherals. Hopefully this doesn't need to happen in esp-hal v1.0+.
@@ -218,7 +245,6 @@ impl<'a> DevicePeripherals<'a> {
         let ui_timer = timg1.timer0;
 
         // Detection pins (using AnyPin to avoid generics)
-        let upstream_detect = Input::new(&mut peripherals.GPIO0, Pull::Up);
         let downstream_detect = Input::new(&mut peripherals.GPIO10, Pull::Up);
 
         // Initialize backlight control
@@ -269,31 +295,6 @@ impl<'a> DevicePeripherals<'a> {
         // Initialize other crypto peripherals
         let efuse = EfuseController::new(&mut peripherals.EFUSE);
         let hmac = Rc::new(RefCell::new(Hmac::new(&mut peripherals.HMAC)));
-
-        // Initialize JTAG
-        let jtag = UsbSerialJtag::new(&mut peripherals.USB_DEVICE);
-
-        // Initialize upstream UART only if upstream device is detected
-        let uart_upstream = if upstream_detect.is_low() {
-            Some(
-                Uart::new(
-                    &mut peripherals.UART1,
-                    &mut peripherals.GPIO18,
-                    &mut peripherals.GPIO19,
-                )
-                .unwrap(),
-            )
-        } else {
-            None
-        };
-
-        // Always initialize downstream UART
-        let uart_downstream = Uart::new(
-            &mut peripherals.UART0,
-            &mut peripherals.GPIO21,
-            &mut peripherals.GPIO20,
-        )
-        .unwrap();
 
         Box::new(Self {
             timer,

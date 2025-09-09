@@ -312,8 +312,15 @@ impl SerialIo<'_> {
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError> {
-        for byte in bytes {
-            while self.write_byte_nb(*byte).is_err() {}
+        match self {
+            SerialIo::Uart { writer, .. } => {
+                writer
+                    .write_bytes(bytes)
+                    .map_err(SerialInterfaceError::UartWriteError)?;
+            }
+            SerialIo::Jtag { jtag, .. } => {
+                let _ = jtag.write_bytes(bytes);
+            }
         }
         Ok(())
     }

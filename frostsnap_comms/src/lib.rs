@@ -29,9 +29,9 @@ pub const BAUDRATE: u32 = 115_200;
 /// The last byte of magic bytes is used to signal features (by incrementing for new features).
 pub const MAGIC_BYTES_LEN: usize = 7;
 
-const MAGICBYTES_RECV_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
+pub const MAGICBYTES_RECV_DOWNSTREAM: [u8; MAGIC_BYTES_LEN] =
     [0xff, 0xe4, 0x31, 0xb8, 0x02, 0x8b, 0x06];
-const MAGICBYTES_RECV_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
+pub const MAGICBYTES_RECV_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0x5d, 0xa3, 0x85, 0xd4, 0xee, 0x5a];
 
 /// Write magic bytes once every 100ms
 pub const MAGIC_BYTES_PERIOD: u64 = 100;

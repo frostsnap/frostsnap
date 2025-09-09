@@ -144,6 +144,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
 
     ui.clear_busy_task();
 
+    let start = timer.now();
+
     // Main event loop
     loop {
         if soft_reset {
@@ -158,6 +160,16 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             upgrade = None;
             pending_device_name = None;
             outbox.clear();
+        }
+
+        if timer
+            .now()
+            .checked_duration_since(start)
+            .unwrap()
+            .to_millis()
+            > 5_000
+        {
+            reset(upstream_serial);
         }
 
         let is_usb_connected_downstream = !downstream_detect.is_high();
@@ -603,6 +615,6 @@ fn reset<T>(upstream_serial: &mut SerialInterface<T, Upstream>)
 where
     T: esp_hal::timer::Timer,
 {
-    let _ = upstream_serial.send_reset_signal();
+    // let _ = upstream_serial.send_reset_signal();
     esp_hal::reset::software_reset();
 }
