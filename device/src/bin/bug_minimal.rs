@@ -7,6 +7,76 @@ extern crate alloc;
 
 use esp_hal::entry;
 
+// Macro to flush TX buffer with timeout
+macro_rules! flush_tx {
+    ($usb_serial:expr, $timer:expr, $timeout_ms:expr) => {{
+        let flush_start = $timer.now();
+        loop {
+            match $usb_serial.flush_tx_nb() {
+                Ok(()) => break,
+                Err(nb::Error::WouldBlock) => {
+                    if $timer
+                        .now()
+                        .checked_duration_since(flush_start)
+                        .unwrap()
+                        .to_millis()
+                        > $timeout_ms
+                    {
+                        panic!("Timeout flushing TX buffer ({}ms)", $timeout_ms);
+                    }
+                    continue;
+                }
+                Err(nb::Error::Other(e)) => {
+                    panic!("Error flushing TX: {:?}", e);
+                }
+            }
+        }
+    }};
+}
+
+// Macro to write a byte with timeout
+macro_rules! write_timeout {
+    ($usb_serial:expr, $timer:expr, $byte:expr, $timeout_ms:expr) => {{
+        let write_start = $timer.now();
+        loop {
+            match $usb_serial.write_byte_nb($byte) {
+                Ok(()) => break,
+                Err(nb::Error::WouldBlock) => {
+                    if $timer
+                        .now()
+                        .checked_duration_since(write_start)
+                        .unwrap()
+                        .to_millis()
+                        > $timeout_ms
+                    {
+                        panic!("Timeout writing byte 0x{:02x} ({}ms)", $byte, $timeout_ms);
+                    }
+                    continue;
+                }
+                Err(nb::Error::Other(e)) => {
+                    panic!("Error writing byte 0x{:02x}: {:?}", $byte, e);
+                }
+            }
+        }
+    }};
+}
+
+// Macro for busy waiting
+macro_rules! busy_wait {
+    ($timer:expr, $duration_ms:expr) => {{
+        let wait_start = $timer.now();
+        while $timer
+            .now()
+            .checked_duration_since(wait_start)
+            .unwrap()
+            .to_millis()
+            < $duration_ms
+        {
+            // busy wait
+        }
+    }};
+}
+
 #[entry]
 fn main() -> ! {
     // Initialize heap
@@ -27,16 +97,24 @@ fn main() -> ! {
         use frostsnap_comms::{MAGICBYTES_RECV_DOWNSTREAM, MAGICBYTES_RECV_UPSTREAM};
 
         // Create USB serial directly
-        let mut usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
-        
+
         // Create timer directly
         let timg0 = TimerGroup::new(peripherals.TIMG0);
         let timer = timg0.timer0;
 
-        // Step 1: Read bytes until we find magic bytes (non-blocking with 10s timeout)
+        // Step 1: Read bytes until we find magic bytes (non-blocking with 5s timeout between bytes)
         let mut last_read = timer.now();
         let mut received_bytes = alloc::vec::Vec::new();
+        let mut usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
+        busy_wait!(&timer, 5_000);
+
+        // Write a single 0x00 byte before flushing
+        write_timeout!(&mut usb_serial, &timer, 0x00, 1000);
+
+        flush_tx!(&mut usb_serial, &timer, 1001);
+
         loop {
+            // Try to read a byte with timeout tracking
             match usb_serial.read_byte() {
                 Ok(byte) => {
                     last_read = timer.now();
@@ -56,7 +134,7 @@ fn main() -> ! {
                     }
                 }
                 Err(nb::Error::WouldBlock) => {
-                    // Check timeout
+                    // Check timeout since last successful read
                     if timer
                         .now()
                         .checked_duration_since(last_read)
@@ -69,7 +147,6 @@ fn main() -> ! {
                             received_bytes.len()
                         );
                     }
-                    // Try again
                     continue;
                 }
                 Err(nb::Error::Other(e)) => {
@@ -77,75 +154,20 @@ fn main() -> ! {
                 }
             }
         }
-        // Step 2: Send magic bytes once (non-blocking with 5s timeout)
-        let write_start = timer.now();
-        let mut bytes_written = 0;
 
+        // Flush TX buffer even though we haven't written anything. This is a legal operation.
+        flush_tx!(&mut usb_serial, &timer, 1000);
+
+        // Step 2: Send magic bytes once (non-blocking with 5s timeout per byte)
         for &byte in &MAGICBYTES_RECV_DOWNSTREAM {
-            loop {
-                match usb_serial.write_byte_nb(byte) {
-                    Ok(()) => {
-                        bytes_written += 1;
-                        break;
-                    }
-                    Err(nb::Error::WouldBlock) => {
-                        // Check timeout
-                        if timer
-                            .now()
-                            .checked_duration_since(write_start)
-                            .unwrap()
-                            .to_millis()
-                            > 5000
-                        {
-                            panic!(
-                                "Timeout writing magic bytes! Only wrote {} bytes. NG",
-                                bytes_written
-                            );
-                        }
-                        // Try again
-                        continue;
-                    }
-                    Err(nb::Error::Other(e)) => {
-                        panic!("Error writing byte: {:?}", e);
-                    }
-                }
-            }
+            write_timeout!(&mut usb_serial, &timer, byte, 5000);
         }
 
-        // Flush with timeout
-        let flush_start = timer.now();
-        loop {
-            match usb_serial.flush_tx_nb() {
-                Ok(()) => break,
-                Err(nb::Error::WouldBlock) => {
-                    if timer
-                        .now()
-                        .checked_duration_since(flush_start)
-                        .unwrap()
-                        .to_millis()
-                        > 5000
-                    {
-                        panic!("Timeout flushing TX buffer after writing {} bytes", bytes_written);
-                    }
-                    continue;
-                }
-                Err(nb::Error::Other(e)) => {
-                    panic!("Error flushing TX: {:?}", e);
-                }
-            }
-        }
+        // Flush after writing all bytes
+        flush_tx!(&mut usb_serial, &timer, 5000);
 
-        // Step 3: Wait 4 seconds then soft reset
-        let final_wait_start = timer.now();
-        while timer
-            .now()
-            .checked_duration_since(final_wait_start)
-            .unwrap()
-            .to_millis()
-            < 4000
-        {
-            // busy wait
-        }
+        // Step 3: Wait 10 seconds then soft reset
+        busy_wait!(&timer, 5_000);
         esp_hal::reset::software_reset();
     }
 
