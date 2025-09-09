@@ -134,3 +134,28 @@ simulate +ARGS="":
 
 widget_dev +args="":
     cd device && cargo run --bin widget_dev --release {{args}}
+
+# Download firmware.bin from the most recent GitHub release (that has a firmware release)
+fetch-released-firmware:
+    #!/bin/bash
+    releases=$(curl -s "https://api.github.com/repos/frostsnap/frostsnap/releases?per_page=100")
+    if [ $? -ne 0 ] || [ -z "$releases" ]; then
+        echo "Error: Failed to fetch releases from GitHub API"
+        exit 1
+    fi
+
+    mkdir -p target/riscv32imc-unknown-none-elf/release/
+
+    # Iterate through all releases (already sorted by creation date, newest first)
+    for i in $(seq 0 $(($(echo "$releases" | jq length) - 1))); do
+        firmware_url=$(echo "$releases" | jq -r ".[$i].assets[]? | select(.name==\"firmware.bin\") | .browser_download_url")
+        tag_name=$(echo "$releases" | jq -r ".[$i].tag_name")
+
+        if [ -n "$firmware_url" ] && [ "$firmware_url" != "null" ]; then
+            echo "Found firmware.bin in release $tag_name"
+            curl -L -o target/riscv32imc-unknown-none-elf/release/firmware.bin "$firmware_url"
+            exit $?
+        fi
+    done
+
+    echo "Error: No firmware.bin found in any releases"
