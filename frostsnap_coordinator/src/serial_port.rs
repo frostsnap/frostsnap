@@ -130,6 +130,7 @@ impl<D: Direction> FramedSerialPort<D> {
     pub fn raw_write(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
         let io_device = self.inner.get_mut();
         io_device.write_all(bytes)?;
+        io_device.flush()?;
         Ok(())
     }
 
@@ -172,6 +173,9 @@ impl<D: Direction> FramedSerialPort<D> {
         frame: ReceiveSerial<D::Opposite>,
     ) -> Result<(), bincode::error::EncodeError> {
         bincode::encode_into_std_write(frame, self.inner.get_mut(), BINCODE_CONFIG)?;
+        self.inner.get_mut().flush().map_err(|e| {
+            bincode::error::EncodeError::OtherString(format!("failed to flush: {e}"))
+        })?;
         Ok(())
     }
 

@@ -1,19 +1,13 @@
 use anyhow::{anyhow, Result};
-use futures::executor::block_on;
-use futures::future::{select, Either};
-use futures::task::noop_waker;
 use nusb::{
-    transfer::{
-        Control, ControlType, Direction, EndpointType, Recipient, RequestBuffer, TransferFuture,
-    },
-    Device, Interface,
+    descriptors::TransferType,
+    io::{EndpointRead, EndpointWrite},
+    transfer::{Bulk, ControlOut, ControlType, Direction, In, Out, Recipient},
+    Device, Interface, MaybeFuture,
 };
-use std::collections::VecDeque;
-use std::future::Future;
+use std::cell::RefCell;
 use std::io;
 use std::os::fd::OwnedFd;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::Duration;
 use tracing::{event, Level};
 
@@ -24,13 +18,9 @@ pub struct CdcAcmSerial {
     baud: u32,
     if_comm: Interface,
     if_data: Interface,
-    ep_out: u8,
-    ep_in: u8,
+    writer: EndpointWrite<Bulk>,
+    reader: RefCell<EndpointRead<Bulk>>,
     timeout: Duration,
-    // we need interior mutability because bytes_to_read doesn't take &mut self
-    rx_fut: std::cell::RefCell<Option<TransferFuture<RequestBuffer>>>,
-    rx_buf: std::cell::RefCell<VecDeque<u8>>,
-    rt: tokio::runtime::Runtime,
 }
 
 impl CdcAcmSerial {
@@ -39,7 +29,7 @@ impl CdcAcmSerial {
     /// Create a blocking CDC-ACM port from an already-open usbfs FD. It automatically difures out
     /// the interface numbers and bulk out/in endpoint addresses.
     pub fn new_auto(fd: OwnedFd, name: String, baud: u32) -> Result<Self> {
-        let dev = Device::from_fd(fd)?;
+        let dev = Device::from_fd(fd).wait()?;
         let cfg = dev.active_configuration()?;
 
         // ---------------- scan for CDC interfaces & bulk endpoints -------
@@ -63,7 +53,7 @@ impl CdcAcmSerial {
 
                     // Pick the first bulk-IN and bulk-OUT on this interface.
                     for ep in alt0.endpoints() {
-                        if ep.transfer_type() == EndpointType::Bulk {
+                        if ep.transfer_type() == TransferType::Bulk {
                             match ep.direction() {
                                 Direction::In if ep_in_addr.is_none() => {
                                     ep_in_addr = Some(ep.address());
@@ -87,17 +77,22 @@ impl CdcAcmSerial {
 
         // ---------------- claim interfaces (detaching any kernel driver) ---
         event!(Level::DEBUG, if_num = comm_if, "claiming comm interface");
-        let if_comm = dev.detach_and_claim_interface(comm_if)?;
+        let if_comm = dev.detach_and_claim_interface(comm_if).wait()?;
         event!(Level::DEBUG, if_num = data_if, "claiming data interface");
-        let if_data = dev.detach_and_claim_interface(data_if)?;
+        let if_data = dev.detach_and_claim_interface(data_if).wait()?;
+
+        let writer = if_data
+            .endpoint::<Bulk, Out>(ep_out)?
+            .writer(4096)
+            .with_num_transfers(4);
+        let reader = if_data
+            .endpoint::<Bulk, In>(ep_in)?
+            .reader(4096)
+            .with_num_transfers(4)
+            .with_read_timeout(Duration::from_millis(1_000));
 
         // ---------------- mandatory CDC setup packets ---------------------
         send_cdc_setup(&if_comm, baud)?;
-
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time() // Only enable what you need
-            .build()
-            .map_err(|e| anyhow!("Failed to create tokio runtime: {}", e))?;
 
         let self_ = Self {
             dev,
@@ -105,70 +100,14 @@ impl CdcAcmSerial {
             name,
             if_comm,
             if_data,
-            ep_out,
-            ep_in,
-            rx_buf: Default::default(),
-            rx_fut: Default::default(),
+            writer,
+            reader: RefCell::new(reader),
             timeout: Duration::from_secs(1),
-            rt,
         };
 
-        // start the reading from the usb device to kick things off.
-        self_.fill_buf_non_blocking();
-
-        event!(
-            Level::INFO,
-            name = self_.name,
-            bulk_in = self_.ep_in,
-            bulk_out = self_.ep_out,
-            "opened USB port"
-        );
+        event!(Level::INFO, name = self_.name, "opened USB port");
 
         Ok(self_)
-    }
-
-    fn fill_buf_non_blocking(&self) {
-        let mut rx_buf = self.rx_buf.borrow_mut();
-        if !rx_buf.is_empty() {
-            return;
-        }
-
-        // buffer is not empty so we're going to poll the inflight URB to see if there's any data
-        // available right now.
-        let mut rx_fut_opt = self.rx_fut.borrow_mut();
-
-        if let Some(rx_fut) = rx_fut_opt.as_mut() {
-            let pin_fut = Pin::new(rx_fut);
-            let waker = noop_waker(); // no async runtime needed
-            let mut cx = Context::from_waker(&waker);
-
-            match pin_fut.poll(&mut cx) {
-                // ───── URB completed successfully ─────
-                Poll::Ready(transfer_completion) => {
-                    match transfer_completion.into_result() {
-                        Ok(data) => rx_buf.extend(data),
-                        Err(e) => {
-                            event!(
-                                Level::ERROR,
-                                error = e.to_string(),
-                                device = self.name,
-                                "error while trying to fill read buffer for cdc-acm device"
-                            );
-                        }
-                    }; // queue packet
-                    *rx_fut_opt = None; // drop finished future
-                }
-                // ───── still pending ───────────────────
-                Poll::Pending => {
-                    // leave `fut` untouched
-                }
-            }
-        }
-
-        if rx_fut_opt.is_none() {
-            let fut = self.if_data.bulk_in(self.ep_in, RequestBuffer::new(64));
-            *rx_fut_opt = Some(fut);
-        }
     }
 }
 
@@ -189,25 +128,34 @@ fn send_cdc_setup(if_comm: &Interface, baud: u32) -> Result<()> {
         0x08, // 8 data bits
     ];
 
-    let ctl = Control {
-        control_type: ControlType::Class,
-        recipient: Recipient::Interface,
-        request: 0x20,
-        value: 0,
-        index: if_comm.interface_number() as u16,
-    };
-
-    if_comm.control_out_blocking(ctl, &line_coding, Duration::from_millis(100))?;
+    if_comm
+        .control_out(
+            ControlOut {
+                control_type: ControlType::Class,
+                recipient: Recipient::Interface,
+                request: 0x20,
+                value: 0,
+                index: if_comm.interface_number() as u16,
+                data: &line_coding,
+            },
+            Duration::from_millis(100),
+        )
+        .wait()?;
 
     // USB-CDC §6.2.3.7 – SET_CONTROL_LINE_STATE (assert DTR | RTS)
-    let ctl = Control {
-        control_type: ControlType::Class,
-        recipient: Recipient::Interface,
-        request: 0x22,
-        value: 0x0003,
-        index: if_comm.interface_number() as u16,
-    };
-    if_comm.control_out_blocking(ctl, &[], Duration::from_millis(100))?;
+    if_comm
+        .control_out(
+            ControlOut {
+                control_type: ControlType::Class,
+                recipient: Recipient::Interface,
+                request: 0x22,
+                value: 0x0003,
+                index: if_comm.interface_number() as u16,
+                data: &[],
+            },
+            Duration::from_millis(100),
+        )
+        .wait()?;
 
     Ok(())
 }
@@ -217,13 +165,11 @@ fn send_cdc_setup(if_comm: &Interface, baud: u32) -> Result<()> {
 //--------------------------------------------------------------------------
 impl io::Write for CdcAcmSerial {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        block_on(self.if_data.bulk_out(self.ep_out, buf.to_vec()))
-            .into_result()
-            .map_err(io::Error::other)?;
-        Ok(buf.len())
+        self.writer.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        self.writer.submit();
         Ok(())
     }
 }
@@ -233,53 +179,7 @@ impl io::Write for CdcAcmSerial {
 //--------------------------------------------------------------------------
 impl io::Read for CdcAcmSerial {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.fill_buf_non_blocking();
-        let mut rx_buf = self.rx_buf.borrow_mut();
-
-        let mut copy_over = |rx_buf: &mut VecDeque<u8>| -> usize {
-            let n = rx_buf.len().min(buf.len());
-            for byte in buf.iter_mut().take(n) {
-                *byte = rx_buf.pop_front().unwrap();
-            }
-            n
-        };
-        // ───────── 1 – fast path: drain already-queued bytes ─────────
-        if !rx_buf.is_empty() {
-            return Ok(copy_over(&mut rx_buf));
-        }
-
-        let mut rx_fut_opt = self.rx_fut.borrow_mut();
-
-        // ───────── 2 – slow path: wait for URB *or* timeout ──────────
-        let rx_fut = rx_fut_opt
-            .take()
-            .expect("rx_fut will be Some here because we fill_buf");
-
-        let result = self.rt.block_on(async {
-            let delay_future = tokio::time::sleep(self.timeout);
-            futures::pin_mut!(delay_future);
-
-            match select(rx_fut, delay_future).await {
-                Either::Left((req, _unused_delay)) => {
-                    let data = req.into_result().map_err(io::Error::other)?;
-                    Ok((data, None))
-                }
-                Either::Right((_, pending_fut)) => Ok((Vec::new(), Some(pending_fut))),
-            }
-        });
-
-        match result {
-            Ok((data, pending_fut_opt)) => {
-                if let Some(pending_fut) = pending_fut_opt {
-                    *rx_fut_opt = Some(pending_fut);
-                    Ok(0)
-                } else {
-                    rx_buf.extend(data);
-                    Ok(copy_over(&mut rx_buf))
-                }
-            }
-            Err(e) => Err(e),
-        }
+        self.reader.borrow_mut().read(buf)
     }
 }
 
@@ -296,8 +196,23 @@ mod _impl {
             Ok(self.baud)
         }
         fn bytes_to_read(&self) -> Result<u32> {
-            self.fill_buf_non_blocking();
-            Ok(self.rx_buf.borrow().len() as u32)
+            use futures::task::noop_waker;
+            use std::pin::Pin;
+            use std::task::{Context, Poll};
+            use tokio::io::AsyncBufRead;
+
+            let waker = noop_waker();
+            let mut cx = Context::from_waker(&waker);
+
+            // Poll without blocking to check if data is available
+            let mut reader = self.reader.borrow_mut();
+            let pin_reader = Pin::new(&mut *reader);
+
+            match pin_reader.poll_fill_buf(&mut cx) {
+                Poll::Ready(Ok(buf)) => Ok(buf.len() as u32),
+                Poll::Ready(Err(_)) => Ok(0),
+                Poll::Pending => Ok(0), // No data available yet, don't block
+            }
         }
 
         fn data_bits(&self) -> Result<DataBits> {

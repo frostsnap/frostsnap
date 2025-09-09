@@ -22,7 +22,7 @@ impl super::Api {
         // Global default subscriber must only be set once.
         if crate::logger::set_dart_logger(log_stream) {
             let targets = Targets::new()
-                .with_target("nusb", Level::INFO)
+                .with_target("nusb", Level::ERROR /* nusb makes spurious warnings */)
                 .with_target("bdk_electrum_streaming", Level::WARN)
                 .with_default(Level::from(level));
 
