@@ -14,8 +14,9 @@ runs:
     - uses: "./.github/actions/fetch-dart-deps"
     - uses: "./.github/actions/generate-frb"
     - uses: "./.github/actions/install-cargo-bins" # needed for espflash
-    - name: Retrieve device firmware
-      uses: actions/download-artifact@v4
-      with:
-        name: "frostsnap-dev-${{ github.sha }}.bin"
-        path: target/riscv32imc-unknown-none-elf/release/
+    - name: Download signed firmware
+      shell: bash
+      run: |
+        mkdir -p target/riscv32imc-unknown-none-elf/release
+        curl -L -o target/riscv32imc-unknown-none-elf/release/firmware.bin \
+          "https://github.com/frostsnap/frostsnap/releases/download/v0.0.1/firmware.bin"
