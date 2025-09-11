@@ -12,19 +12,13 @@ extension StreamToBehaviorSubjectExtension<T> on Stream<T> {
         : BehaviorSubject<T>();
 
     // Listen to the original stream and forward events to the BehaviorSubject
-    late StreamSubscription<T> subscription;
-    subscription = listen(
+    listen(
       (data) => subject.add(data),
       onError: (error) => subject.addError(error),
       onDone: () {
         subject.close();
       },
     );
-
-    // Cancel subscription when subject is closed to prevent memory leaks
-    subject.onCancel = () {
-      subscription.cancel();
-    };
 
     return subject;
   }
@@ -40,19 +34,13 @@ extension StreamToBehaviorSubjectExtension<T> on Stream<T> {
         : ReplaySubject<T>();
 
     // Listen to the original stream and forward events to the ReplaySubject
-    late StreamSubscription<T> subscription;
-    subscription = listen(
+    listen(
       (data) => subject.add(data),
       onError: (error) => subject.addError(error),
       onDone: () {
         subject.close();
       },
     );
-
-    // Cancel subscription when subject is closed to prevent memory leaks
-    subject.onCancel = () {
-      subscription.cancel();
-    };
 
     return subject;
   }
