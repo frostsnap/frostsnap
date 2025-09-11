@@ -33,11 +33,9 @@ impl<I2C> CST816S<I2C, esp_hal::gpio::Input<'static>, esp_hal::gpio::Output<'sta
         interrupt_pin: impl esp_hal::peripheral::Peripheral<P = impl esp_hal::gpio::InputPin> + 'static,
         reset_pin: impl esp_hal::peripheral::Peripheral<P = impl esp_hal::gpio::OutputPin> + 'static,
     ) -> Self {
-        use esp_hal::gpio::{Event, Input, Level, Output, Pull};
+        use esp_hal::gpio::{Input, Level, Output, Pull};
 
-        let mut pin_int = Input::new(interrupt_pin, Pull::Up);
-        // Falling edge is best since if we use Low we can sometimes gets false positives.
-        pin_int.listen(Event::LowLevel);
+        let pin_int = Input::new(interrupt_pin, Pull::Up);
 
         Self {
             i2c,
@@ -273,6 +271,8 @@ pub mod interrupt {
         >,
         io: &mut impl InterruptConfigurable,
     ) -> TouchReceiver {
+        use esp_hal::gpio::Event;
+        
         unsafe {
             // Split the queue into producer and consumer
             let event_queue = &raw mut EVENT_QUEUE;
@@ -282,8 +282,13 @@ pub mod interrupt {
             // Store the instance (only accessed from interrupt)
             (&raw mut GLOBAL_INSTANCE).write(Some(instance));
 
-            // Set up the interrupt handler
+            // Set up the interrupt handler first
             io.set_interrupt_handler(gpio_interrupt_handler);
+            
+            // Now enable the interrupt after handler is registered
+            // Using LowLevel for now to ensure we don't miss touches
+            let cst = (&raw mut GLOBAL_INSTANCE).as_mut().unwrap().as_mut().unwrap();
+            cst.pin_int.listen(Event::LowLevel);
 
             // Return the consumer for the caller to use
             consumer
