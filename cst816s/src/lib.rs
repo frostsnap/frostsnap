@@ -83,7 +83,8 @@ where
         self.pin_rst.set_low().map_err(Error::Pin)?;
         delay_source.delay_us(20_000);
         self.pin_rst.set_high().map_err(Error::Pin)?;
-        delay_source.delay_us(400_000);
+        // ❗ This used to 400_000 but this seems to work in practice.
+        delay_source.delay_us(50_000);
 
         Ok(())
     }
@@ -272,7 +273,7 @@ pub mod interrupt {
         io: &mut impl InterruptConfigurable,
     ) -> TouchReceiver {
         use esp_hal::gpio::Event;
-        
+
         unsafe {
             // Split the queue into producer and consumer
             let event_queue = &raw mut EVENT_QUEUE;
@@ -284,10 +285,14 @@ pub mod interrupt {
 
             // Set up the interrupt handler first
             io.set_interrupt_handler(gpio_interrupt_handler);
-            
+
             // Now enable the interrupt after handler is registered
             // Using LowLevel for now to ensure we don't miss touches
-            let cst = (&raw mut GLOBAL_INSTANCE).as_mut().unwrap().as_mut().unwrap();
+            let cst = (&raw mut GLOBAL_INSTANCE)
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .unwrap();
             cst.pin_int.listen(Event::LowLevel);
 
             // Return the consumer for the caller to use
@@ -299,20 +304,25 @@ pub mod interrupt {
     #[handler]
     pub fn gpio_interrupt_handler() {
         unsafe {
-            let producer = (&raw mut PRODUCER).as_mut().unwrap().as_mut().unwrap();
             let cst = (&raw mut GLOBAL_INSTANCE)
                 .as_mut()
                 .unwrap()
                 .as_mut()
                 .unwrap();
-            // Read touch events from I2C registers
-            while let Some(event) = cst.read_one_touch_event(true /* to avoid hangs */) {
+            // Read a touch event from the i2c registers.
+            // We don't need to read them all, if there's any left over we'll get re-interupted.
+            if let Some(event) = cst.read_one_touch_event(
+                // The pin should be low since we just got the interrupt.
+                false,
+            ) {
+                let producer = (&raw mut PRODUCER).as_mut().unwrap().as_mut().unwrap();
                 // Try to enqueue the event (drops if queue is full)
                 let _ = producer.enqueue(event);
             }
 
-            // Clear the interrupt flag last to prevent re-entrancy issues.
-            // This ensures we complete all processing before another interrupt can fire.
+            // Clear the interrupt flag to let the interrupt controller we've
+            // dealt with the interrupt (if there are events left over it will
+            // re-interrupt us).
             cst.pin_int.clear_interrupt();
         }
     }
