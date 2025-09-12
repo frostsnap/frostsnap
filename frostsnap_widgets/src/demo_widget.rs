@@ -787,8 +787,122 @@ macro_rules! demo_widget {
 
                 $run_macro!(device_name);
             }
+            "gray4_text" => {
+                use $crate::{fonts::{Gray4TextStyle, NOTO_SANS_17_REGULAR}, PageSlider, Column, Center, PageFactory, text::Text, any_of::AnyOf};
+                use embedded_graphics::{text::{TextStyleBuilder, Alignment, Baseline, DecorationColor, renderer::CharacterStyle}, prelude::*};
+
+                // Define the page types
+                type Gray4Page = Center<Column<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>>;
+                type U8g2Page = Center<Column<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>>;
+                type PageWidget = AnyOf<(Gray4Page, U8g2Page)>;
+
+                // Helper functions to create pages with different styles
+                fn page_1_lorem<S, C>(style1: S, style2: S, style3: S) -> Center<Column<(Text<S>, Text<S>, Text<S>)>>
+                where
+                    S: CharacterStyle<Color = C> + embedded_graphics::text::renderer::TextRenderer<Color = C> + Clone,
+                    C: embedded_graphics::pixelcolor::PixelColor,
+                {
+                    Center::new(Column::new((
+                        Text::new("Lorem ipsum dolor sit,", style1),
+                        Text::new("consectetur adipiscing.", style2),
+                        Text::new("Sed do eiusmod tempor.", style3),
+                    )).with_main_axis_alignment($crate::MainAxisAlignment::Center))
+                }
+
+                fn page_2_fox<S, C>(style1: S, style2: S, style3: S) -> Center<Column<(Text<S>, Text<S>, Text<S>)>>
+                where
+                    S: CharacterStyle<Color = C> + embedded_graphics::text::renderer::TextRenderer<Color = C> + Clone,
+                    C: embedded_graphics::pixelcolor::PixelColor,
+                {
+                    Center::new(Column::new((
+                        Text::new("The quick brown fox", style1),
+                        Text::new("jumps over the lazy dog", style2),
+                        Text::new("0123456789 !@#$%", style3),
+                    )).with_main_axis_alignment($crate::MainAxisAlignment::SpaceEvenly))
+                }
+
+                fn page_3_decorations<S, C>(style1: S, style2: S, style3: S) -> Center<Column<(Text<S>, Text<S>, Text<S>)>>
+                where
+                    S: CharacterStyle<Color = C> + embedded_graphics::text::renderer::TextRenderer<Color = C> + Clone,
+                    C: embedded_graphics::pixelcolor::PixelColor,
+                {
+                    Center::new(Column::new((
+                        Text::new("Underlined text", style1),
+                        Text::new("Custom underline color", style2),
+                        Text::new("Multiple decorations", style3),
+                    )).with_main_axis_alignment($crate::MainAxisAlignment::Center))
+                }
+
+                // Create pages using embedded-graphics Text directly
+                let page_list = PageFactory::new(6, |index| -> Option<PageWidget> {
+                    match index {
+                        0 => {
+                            // Page 1: Basic gray4 text samples with different colors
+                            Some(AnyOf::new(page_1_lorem(
+                                Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.on_background),
+                                Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.primary),
+                                Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.tertiary),
+                            )))
+                        },
+                        1 => {
+                            // Page 2: Same content with u8g2 font for comparison
+                            Some(AnyOf::new(page_1_lorem(
+                                U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background),
+                                U8g2TextStyle::new(FONT_SMALL, PALETTE.primary),
+                                U8g2TextStyle::new(FONT_SMALL, PALETTE.tertiary),
+                            )))
+                        },
+                        2 => {
+                            // Page 3: Different colors with Gray4
+                            Some(AnyOf::new(page_2_fox(
+                                Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.on_background),
+                                Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.error),
+                                Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.tertiary),
+                            )))
+                        },
+                        3 => {
+                            // Page 4: Same content with u8g2 font
+                            Some(AnyOf::new(page_2_fox(
+                                U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background),
+                                U8g2TextStyle::new(FONT_SMALL, PALETTE.error),
+                                U8g2TextStyle::new(FONT_SMALL, PALETTE.tertiary),
+                            )))
+                        },
+                        4 => {
+                            // Page 5: Text with decorations using Gray4
+                            let style_underline = Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.on_background)
+                                .with_underline_color(DecorationColor::TextColor);
+                            let style_custom_underline = Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.on_background)
+                                .with_underline_color(DecorationColor::Custom(PALETTE.error));
+
+                            Some(AnyOf::new(page_3_decorations(
+                                style_underline,
+                                style_custom_underline,
+                                Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.primary),
+                            )))
+                        },
+                        5 => {
+                            // Page 6: Text with decorations using u8g2
+                            let mut style_underline = U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background);
+                            style_underline.set_underline_color(DecorationColor::TextColor);
+                            let mut style_custom_underline = U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background);
+                            style_custom_underline.set_underline_color(DecorationColor::Custom(PALETTE.error));
+
+                            Some(AnyOf::new(page_3_decorations(
+                                style_underline,
+                                style_custom_underline,
+                                U8g2TextStyle::new(FONT_SMALL, PALETTE.primary),
+                            )))
+                        },
+                        _ => None,
+                    }
+                });
+
+                let page_slider = PageSlider::new(page_list, $screen_size.height);
+                $run_macro!(page_slider);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, gray4_text", $demo);
             }
         }
     };

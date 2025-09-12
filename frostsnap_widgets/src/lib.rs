@@ -65,6 +65,7 @@ pub mod translate;
 pub mod vec_framebuffer;
 pub mod welcome;
 pub mod widget_color;
+pub mod fonts;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -75,7 +76,7 @@ pub use share_index::ShareIndexWidget;
 pub use sign_prompt::SignTxPrompt;
 pub use super_draw_target::SuperDrawTarget;
 pub use widget_color::{ColorInterpolate, WidgetColor};
-pub use widget_list::WidgetList;
+pub use widget_list::{WidgetList, PageFactory};
 
 // Re-export all widget items
 pub use address_display::{AddressDisplay, AddressWithPath};
@@ -113,10 +114,10 @@ pub use translate::*;
 pub use welcome::*;
 
 // Font re-exports
-use u8g2_fonts::fonts;
-pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
-pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
-pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+use u8g2_fonts::fonts as u8g2_fonts_module;
+pub const FONT_LARGE: u8g2_fonts_module::u8g2_font_profont29_mf = u8g2_fonts_module::u8g2_font_profont29_mf;
+pub const FONT_MED: u8g2_fonts_module::u8g2_font_profont22_mf = u8g2_fonts_module::u8g2_font_profont22_mf;
+pub const FONT_SMALL: u8g2_fonts_module::u8g2_font_profont17_mf = u8g2_fonts_module::u8g2_font_profont17_mf;
 
 pub const HOLD_TO_CONFIRM_TIME_SHORT_MS: u32 = 1000;
 pub const HOLD_TO_CONFIRM_TIME_MS: u32 = 2000;

@@ -1,3 +1,8 @@
+use embedded_graphics::{
+    pixelcolor::Gray4,
+    prelude::*,
+};
+
 /// Gray4 font format - 4-bit anti-aliased fonts with 16 levels of gray
 
 /// Glyph info - stores position in packed data array
@@ -47,6 +52,50 @@ impl Gray4Font {
         } else {
             byte & 0x0F         // Low nibble
         }
+    }
+    
+    /// Get an iterator over all non-transparent pixels in a glyph
+    pub fn glyph_pixels<'a>(&'a self, glyph: &'a GlyphInfo) -> GlyphPixelIterator<'a> {
+        GlyphPixelIterator {
+            font: self,
+            glyph,
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
+/// Iterator that yields Pixel<Gray4> for each non-transparent pixel in a glyph
+pub struct GlyphPixelIterator<'a> {
+    font: &'a Gray4Font,
+    glyph: &'a GlyphInfo,
+    x: u8,
+    y: u8,
+}
+
+impl<'a> Iterator for GlyphPixelIterator<'a> {
+    type Item = Pixel<Gray4>;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.y < self.glyph.height {
+            while self.x < self.glyph.width {
+                let x = self.x;
+                let y = self.y;
+                self.x += 1;
+                
+                let value = self.font.get_pixel(self.glyph, x as u32, y as u32);
+                if value > 0 {
+                    // Return non-transparent pixel
+                    let point = Point::new(x as i32, y as i32);
+                    let gray = Gray4::new(value);
+                    return Some(Pixel(point, gray));
+                }
+            }
+            // Move to next row
+            self.x = 0;
+            self.y += 1;
+        }
+        None
     }
 }
 

@@ -78,6 +78,7 @@ fn main() -> ! {
                         now.duration_since_epoch().to_millis(),
                     );
 
+<<<<<<< HEAD
                     // Process all pending touch events
                     touch_handler::process_all_touch_events(
                         &mut touch_receiver,
@@ -86,6 +87,9 @@ fn main() -> ! {
                         &mut current_widget_index,
                         now_ms,
                     );
+=======
+    let screen_size = Size::new(SCREEN_WIDTH, SCREEN_HEIGHT);
+>>>>>>> 351fe487 ([widgets] New fonts working)
 
                     // Only redraw if at least 10ms has passed since last redraw
                     let elapsed_ms = (now - last_redraw_time).to_millis();
