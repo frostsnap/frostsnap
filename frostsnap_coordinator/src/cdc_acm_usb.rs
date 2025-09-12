@@ -83,12 +83,12 @@ impl CdcAcmSerial {
 
         let writer = if_data
             .endpoint::<Bulk, Out>(ep_out)?
-            .writer(512)  // EXTREMELY RESTRICTIVE: 512 bytes (was 4096)
-            .with_num_transfers(2);  // EXTREMELY RESTRICTIVE: only 2 in flight (was 4)
+            .writer(8192)  // VERY LARGE: 8KB buffers
+            .with_num_transfers(2);  // MINIMUM: only 2 in-flight
         let reader = if_data
             .endpoint::<Bulk, In>(ep_in)?
-            .reader(512)  // EXTREMELY RESTRICTIVE: 512 bytes (was 4096)
-            .with_num_transfers(2)  // EXTREMELY RESTRICTIVE: only 2 in flight (was 4)
+            .reader(8192)  // VERY LARGE: 8KB buffers
+            .with_num_transfers(2)  // MINIMUM: only 2 in-flight
             .with_read_timeout(Duration::from_millis(1_000));
 
         // ---------------- mandatory CDC setup packets ---------------------
