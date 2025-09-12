@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/src/rust/api/port.dart';
@@ -28,7 +29,13 @@ class HostPortHandler {
   static Stream<UsbSystemEvent>? _systemEventsStream;
 
   HostPortHandler(this.ffiserial) {
-    _usbPermissionsChannel.setMethodCallHandler(_handleNativeDeviceApproved);
+    // On Android, we need permission approval. On macOS, devices appear automatically.
+    if (Platform.isAndroid) {
+      _usbPermissionsChannel.setMethodCallHandler(_handleNativeDeviceApproved);
+    } else if (Platform.isMacOS) {
+      // On macOS, immediately populate available devices
+      _refreshMacOSDevices();
+    }
     _systemUsbEventsSubscription = getSystemUsbEventsStream().listen(
       _handleSystemUsbEvent,
     );
@@ -70,7 +77,27 @@ class HostPortHandler {
       _approvedSystemDevices.remove(id);
       _updateFfiAvailablePorts();
     } else if (systemEvent.type == UsbSystemEventType.attached) {
-      // device attached but not yet approved so there's nothing much we need to do.
+      if (Platform.isMacOS) {
+        // On macOS, devices are automatically available when attached
+        _refreshMacOSDevices();
+      }
+      // On Android, device attached but not yet approved so there's nothing much we need to do.
+    }
+  }
+
+  Future<void> _refreshMacOSDevices() async {
+    if (!Platform.isMacOS) return;
+    
+    try {
+      final devices = await listDevices();
+      _approvedSystemDevices.clear();
+      for (final device in devices) {
+        _approvedSystemDevices[device.id] = device;
+      }
+      _updateFfiAvailablePorts();
+      debugPrint("HostPortHandler: Refreshed macOS devices, found ${devices.length} devices");
+    } catch (e) {
+      debugPrint("HostPortHandler: Error refreshing macOS devices: $e");
     }
   }
 

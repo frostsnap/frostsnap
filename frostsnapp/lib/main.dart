@@ -58,7 +58,7 @@ Future<void> main() async {
   try {
     final appDir = await getApplicationSupportDirectory();
     final appDirPath = appDir.path;
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isMacOS) {
       final (coord_, appCtx_, ffiserial) = await api.loadHostHandlesSerial(
         appDir: appDirPath,
       );
