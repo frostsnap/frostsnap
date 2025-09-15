@@ -725,6 +725,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final tx = await txDetails.tx.withSignatures(
       signatures: signingState?.finishedSignatures ?? [],
     );
+    var broadcastError = '';
     final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
         .timeout(BROADCAST_TIMEOUT)
@@ -735,7 +736,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                   await coord.forgetFinishedSignSession(ssid: ssid!);
                   return true;
                 },
-          onError: (_) => false,
+          onError: (e) {
+            broadcastError = e.toString();
+            return false;
+          },
         );
     if (mounted) {
       if (broadcasted) {
@@ -755,6 +759,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           ),
         );
       } else {
+        showErrorSnackbar(
+          context,
+          'Failed to broadcast transaction: $broadcastError',
+        );
         setState(() => isBroadcasting = false);
       }
     }
