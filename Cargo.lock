@@ -282,9 +282,9 @@ dependencies = [
 
 [[package]]
 name = "bdk_coin_select"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c084bf76f0f67546fc814ffa82044144be1bb4618183a15016c162f8b087ad4"
+checksum = "43064fa3dd1d3a8b24079cfcb5ede6b785857edc782277f17a1736511ccc1916"
 
 [[package]]
 name = "bdk_core"

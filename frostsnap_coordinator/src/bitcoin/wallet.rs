@@ -443,7 +443,7 @@ impl CoordSuperWallet {
         let target = Target {
             fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(feerate)),
             outputs: TargetOutputs::fund_outputs(vec![(
-                target_output.weight().to_wu() as u32,
+                target_output.weight().to_wu(),
                 target_output.value.to_sat(),
             )]),
         };
@@ -576,7 +576,7 @@ impl CoordSuperWallet {
                     script_pubkey: addr.script_pubkey(),
                     value: Amount::ZERO,
                 };
-                (txo.weight().to_wu() as u32, 0)
+                (txo.weight().to_wu(), 0)
             })),
         };
         let candidates = self

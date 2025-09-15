@@ -23,7 +23,7 @@ rsa.workspace = true
 
 bdk_chain = { version = "0.23", features = ["rusqlite"] }
 bdk_electrum_streaming = { version = "0.5.2" }
-bdk_coin_select = { version = "0.3" }
+bdk_coin_select = { version = "0.4.1" }
 
 webpki-roots = { version = "0.26" }
 
