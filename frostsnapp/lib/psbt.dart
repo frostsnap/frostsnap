@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -109,18 +108,15 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final enoughSelected =
         selectedDevices.length == accessStructure.threshold();
     Widget? scanPsbtButton;
-
     if (Platform.isAndroid || Platform.isIOS) {
       scanPsbtButton = TextButton.icon(
         onPressed: !enoughSelected
             ? null
             : () async {
-                WidgetsFlutterBinding.ensureInitialized();
-                final cameras = await availableCameras();
                 if (context.mounted) {
                   final psbtBytes = await MaybeFullscreenDialog.show<Uint8List>(
                     context: context,
-                    child: PsbtCameraReader(cameras: cameras),
+                    child: PsbtCameraReader(),
                   );
                   if (psbtBytes == null) return;
                   if (!context.mounted) return;
@@ -134,6 +130,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     } else {
       scanPsbtButton = null;
     }
+    // ...
 
     final loadPsbtFileButton = TextButton.icon(
       onPressed: !enoughSelected
