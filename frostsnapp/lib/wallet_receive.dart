@@ -578,6 +578,7 @@ class _ReceiverPageState extends State<ReceivePage> {
           builder: (context, scrollController) => walletCtx.wrap(
             TxDetailsPage(
               scrollController: scrollController,
+              keyId: walletCtx.keyId,
               txStates: walletCtx.txStream,
               txDetails: txDetails,
               psbtMan: fsCtx.psbtManager,

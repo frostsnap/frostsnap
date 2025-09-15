@@ -436,6 +436,11 @@ impl Coordinator {
     pub fn sub_signing_session_signals(&self, key_id: KeyId, sink: StreamSink<()>) {
         self.0.sub_signing_session_signals(key_id, SinkWrap(sink))
     }
+
+    #[frb(sync)]
+    pub fn emit_signing_session_signal(&self, key_id: KeyId) {
+        self.0.emit_signing_signal(key_id);
+    }
 }
 
 #[derive(Clone, Debug)]

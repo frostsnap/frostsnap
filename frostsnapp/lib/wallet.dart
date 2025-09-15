@@ -392,6 +392,7 @@ class _TxListState extends State<TxList> {
                       builder: (context, scrollController) => walletCtx.wrap(
                         TxDetailsPage.needsBroadcast(
                           scrollController: scrollController,
+                          keyId: walletCtx.keyId,
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
                           finishedSigningSessionId: tx.sessionId,
@@ -428,6 +429,7 @@ class _TxListState extends State<TxList> {
                       builder: (context, scrollController) => walletCtx.wrap(
                         TxDetailsPage.restoreSigning(
                           scrollController: scrollController,
+                          keyId: walletCtx.keyId,
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
                           signingSessionId: signingState.sessionId,
@@ -477,6 +479,7 @@ class _TxListState extends State<TxList> {
                       builder: (context, scrollController) => walletCtx.wrap(
                         TxDetailsPage(
                           scrollController: scrollController,
+                          keyId: walletCtx.keyId,
                           txStates: walletCtx.txStream,
                           txDetails: txDetails,
                           psbtMan: fsCtx.psbtManager,

@@ -203,6 +203,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
 
 class TxDetailsPage extends StatefulWidget {
   final ScrollController? scrollController;
+  final KeyId keyId;
   final TxDetailsModel txDetails;
   final SignSessionId? signingSessionId;
   final SignSessionId? finishedSigningSessionId;
@@ -216,6 +217,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
@@ -229,6 +231,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage.needsBroadcast({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
@@ -242,6 +245,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage.restoreSigning({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
@@ -255,6 +259,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage.startSigning({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required AccessStructureRef this.accessStructureRef,
@@ -435,6 +440,13 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   @override
   void dispose() {
+    // WORKAROUND: Sometimes the wallet tx list does not refresh after a new tx is created. This
+    // forces a refresh after the tx details dialog closes so that the tx appears in the wallet tx
+    // list.
+    Future.delayed(
+      Duration(seconds: 1),
+    ).then((_) => coord.emitSigningSessionSignal(keyId: widget.keyId));
+
     devicesSub?.cancel();
     devicesSub = null;
     if (signingSub?.cancel() != null) {

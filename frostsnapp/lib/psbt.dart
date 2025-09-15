@@ -84,6 +84,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
         title: Text('Transaction Details'),
         builder: (context, scrollController) => walletCtx.wrap(
           TxDetailsPage.startSigning(
+            keyId: walletCtx.keyId,
             txStates: walletCtx.txStream,
             txDetails: txDetails,
             accessStructureRef: wallet
