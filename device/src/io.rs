@@ -14,7 +14,7 @@ use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::BINCODE_CONFIG;
 
 use crate::uart_interrupt::RX_FIFO_THRESHOLD;
-use crate::uart_interrupt::{fill_buffer, UartNum, UartReceiver, UartWriter};
+use crate::uart_interrupt::{UartHandle, UartNum, UartReceiver};
 
 pub struct SerialInterface<'a, T, D> {
     io: SerialIo<'a>,
@@ -38,11 +38,11 @@ impl<'a, T, D> SerialInterface<'a, T, D> {
         uart.apply_config(&serial_conf).unwrap();
 
         // Register UART for interrupt handling
-        let (writer, consumer) = crate::uart_interrupt::register_uart(uart, uart_num);
+        let (handle, consumer) = crate::uart_interrupt::register_uart(uart, uart_num);
 
         Self {
             io: SerialIo::Uart {
-                writer,
+                handle,
                 uart_num,
                 consumer,
             },
@@ -216,7 +216,7 @@ impl<T, D> Writer for SerialInterface<'_, T, D> {
 
 pub enum SerialIo<'a> {
     Uart {
-        writer: UartWriter,
+        handle: UartHandle,
         uart_num: UartNum,
         consumer: UartReceiver,
     },
@@ -239,11 +239,11 @@ impl SerialIo<'_> {
     pub fn read_byte(&mut self) -> Option<u8> {
         match self {
             SerialIo::Uart {
-                consumer, uart_num, ..
+                consumer, handle, ..
             } => match consumer.dequeue() {
                 Some(byte) => Some(byte),
                 None => {
-                    fill_buffer(*uart_num);
+                    handle.fill_buffer();
                     consumer.dequeue()
                 }
             },
@@ -262,17 +262,17 @@ impl SerialIo<'_> {
     pub fn change_baud(&mut self, baudrate: u32) {
         self.flush();
         match self {
-            SerialIo::Uart { writer, .. } => {
-                writer.change_baud(baudrate);
+            SerialIo::Uart { handle, .. } => {
+                handle.change_baud(baudrate);
             }
             SerialIo::Jtag { .. } => { /* no baud rate for USB jtag */ }
         }
     }
     pub fn fill_queue(&mut self) {
         match self {
-            SerialIo::Uart { uart_num, .. } => {
+            SerialIo::Uart { handle, .. } => {
                 // Fill buffer with any bytes that haven't triggered an interrupt (< threshold)
-                fill_buffer(*uart_num);
+                handle.fill_buffer();
             }
             SerialIo::Jtag { jtag, peek_byte } => {
                 // For JTAG, fill the peek byte if empty
@@ -286,10 +286,10 @@ impl SerialIo<'_> {
     pub fn write_byte_nb(&mut self, byte: u8) -> nb::Result<(), Infallible> {
         match self {
             SerialIo::Jtag { jtag, .. } => jtag.write_byte_nb(byte),
-            SerialIo::Uart { writer, .. } => {
+            SerialIo::Uart { handle, .. } => {
                 // write_bytes is blocking, so we need to check if there's space first
                 // For now, use write_bytes and convert the error
-                match writer.write_bytes(&[byte]) {
+                match handle.write_bytes(&[byte]) {
                     Ok(_) => Ok(()),
                     Err(_) => Err(nb::Error::WouldBlock), // Assume any error is WouldBlock
                 }
@@ -299,7 +299,7 @@ impl SerialIo<'_> {
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError> {
         match self {
-            SerialIo::Uart { writer, .. } => writer
+            SerialIo::Uart { handle, .. } => handle
                 .write_bytes(bytes)
                 .map_err(SerialInterfaceError::UartWriteError)?,
             SerialIo::Jtag { jtag, .. } => {
@@ -328,9 +328,9 @@ impl SerialIo<'_> {
     // something before resetting.
     pub fn flush(&mut self) {
         match self {
-            SerialIo::Uart { writer, .. } => {
+            SerialIo::Uart { handle, .. } => {
                 // just waits until evertything has been written
-                while let Err(nb::Error::WouldBlock) = writer.flush_tx() {
+                while let Err(nb::Error::WouldBlock) = handle.flush_tx() {
                     // wait
                 }
             }
