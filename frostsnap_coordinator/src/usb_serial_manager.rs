@@ -2,6 +2,7 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
+use crate::firmware_bin::FirmwareBin;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
@@ -664,7 +665,7 @@ impl UsbSerialManager {
 
             event!(Level::INFO, port = port, "starting writing firmware");
             let mut chunks = firmware_bin
-                .bin
+                .as_bytes()
                 .chunks(FIRMWARE_UPGRADE_CHUNK_LEN as usize)
                 .enumerate();
 
@@ -845,45 +846,4 @@ pub struct AppMessage {
 pub enum AppMessageBody {
     Core(Box<DeviceToCoordinatorMessage>),
     Misc(CommsMisc),
-}
-
-#[derive(Clone, Copy)]
-pub struct FirmwareBin {
-    bin: &'static [u8],
-    digest_cache: Option<Sha256Digest>,
-}
-
-impl FirmwareBin {
-    pub const fn is_stub(&self) -> bool {
-        self.bin.is_empty()
-    }
-
-    pub const fn new(bin: &'static [u8]) -> Self {
-        Self {
-            bin,
-            digest_cache: None,
-        }
-    }
-
-    pub fn num_chunks(&self) -> u32 {
-        (self.bin.len() as u32).div_ceil(FIRMWARE_UPGRADE_CHUNK_LEN)
-    }
-
-    pub fn size(&self) -> u32 {
-        self.bin.len() as u32
-    }
-
-    pub fn cached_digest(&mut self) -> Sha256Digest {
-        let digest_cache = self.digest_cache.take();
-        let digest = digest_cache.unwrap_or_else(|| self.digest());
-        self.digest_cache = Some(digest);
-        digest
-    }
-
-    pub fn digest(&self) -> Sha256Digest {
-        use frostsnap_core::sha2::digest::Digest;
-        let mut state = sha2::Sha256::default();
-        state.update(self.bin);
-        Sha256Digest(state.finalize().into())
-    }
 }

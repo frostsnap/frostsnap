@@ -36,14 +36,12 @@ use frostsnap_core::{
     message, AccessStructureRef, DeviceId, KeyId, KeygenId, RestorationId, SignSessionId,
     SymmetricKey, WireSignTask,
 };
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::ops::DerefMut;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
 use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
@@ -567,10 +565,13 @@ impl FfiCoordinator {
         let ui_protocol = {
             let device_list = self.device_list.lock().unwrap();
 
-            let devices = device_list
+            let devices: HashMap<DeviceId, Sha256Digest> = device_list
                 .devices()
                 .into_iter()
-                .map(|device| device.id)
+                .map(|device| {
+                    let digest = Sha256Digest::from_str(&device.firmware_digest).unwrap();
+                    (device.id, digest)
+                })
                 .collect();
 
             let need_upgrade = device_list

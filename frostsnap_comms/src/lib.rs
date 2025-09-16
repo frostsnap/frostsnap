@@ -6,6 +6,7 @@ extern crate std;
 #[macro_use]
 extern crate alloc;
 pub mod factory;
+pub mod firmware_reader;
 pub mod fixed_string;
 pub mod genuine_certificate;
 use alloc::boxed::Box;
@@ -46,6 +47,10 @@ const MAGICBYTES_RECV_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0x5d, 0xa3, 0x85,
 pub const MAGIC_BYTES_PERIOD: u64 = 100;
 
 pub const FIRMWARE_UPGRADE_CHUNK_LEN: u32 = 4096;
+
+// Secure Boot v2 signature block constants
+pub const SIGNATURE_BLOCK_SIZE: usize = firmware_reader::SECTOR_SIZE;
+pub const SIGNATURE_BLOCK_MAGIC: [u8; 4] = [0xE7, 0x02, 0x00, 0x00];
 
 pub const FIRMWARE_NEXT_CHUNK_READY_SIGNAL: u8 = 0x11;
 
@@ -251,13 +256,47 @@ impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSend
     }
 }
 
+/// Firmware upgrade protocol messages sent by coordinator to devices.
+///
+/// ## Digest Variants
+///
+/// There are two `PrepareUpgrade` variants that differ in which digest they send:
+///
+/// - [`PrepareUpgrade`]: Legacy variant that sends digest of entire signed firmware
+///   (including signature block and padding). Used by v0.0.1 and earlier devices.
+///
+/// - [`PrepareUpgrade2`]: New variant that sends digest of deterministic firmware only
+///   (excluding signature block and padding). The device displays this digest on screen,
+///   allowing users to verify it matches their locally-built reproducible firmware.
+///
+/// ## Device Verification Strategy
+///
+/// Devices accept **both** digest types during verification for backwards compatibility.
+/// This is cryptographically sound because:
+///
+/// 1. SHA256 collision resistance (~2^-256 probability) makes accidental matches impossible
+/// 2. The two digests cover different byte ranges, requiring collision at specific boundaries
+/// 3. Simplifies device code - no need to track which variant was received
+/// 4. Provides graceful fallback if coordinator sends wrong digest type
+///
+/// See `device/src/ota.rs::enter_upgrade_mode()` for verification implementation.
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum CoordinatorUpgradeMessage {
+    /// Legacy upgrade preparation - sends digest of entire signed firmware.
+    /// Digest includes firmware + padding + signature block (if present).
     PrepareUpgrade {
         size: u32,
         firmware_digest: Sha256Digest,
     },
     EnterUpgradeMode,
+    /// New upgrade preparation - sends digest of deterministic firmware only.
+    /// Digest excludes padding and signature block. Device displays this digest,
+    /// allowing users to verify it matches their locally-built reproducible firmware.
+    /// Placed at end of enum for bincode backwards compatibility.
+    PrepareUpgrade2 {
+        size: u32,
+        firmware_digest: Sha256Digest,
+    },
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -560,6 +599,12 @@ fn _find_and_remove_magic_bytes(
     found
 }
 
+#[derive(Encode, Decode, Debug, Clone, Default, PartialEq)]
+pub struct FirmwareCapabilities {
+    /// Device supports firmware digest verification without signature block
+    pub upgrade_digest_no_sig: bool,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Sha256Digest(pub [u8; 32]);
 
@@ -573,6 +618,30 @@ frostsnap_core::impl_fromstr_deserialize! {
     name => "sha256 digest",
     fn from_bytes(bytes: [u8;32]) -> Sha256Digest {
         Sha256Digest(bytes)
+    }
+}
+
+impl Sha256Digest {
+    /// Returns capabilities based on known firmware versions
+    pub fn capabilities(&self) -> FirmwareCapabilities {
+        // v0.0.1 signed firmware digest
+        const V0_0_1_SIGNED_DIGEST: [u8; 32] = [
+            0x57, 0x16, 0x1f, 0x80, 0xb4, 0x14, 0x13, 0xb1, 0x05, 0x3e, 0x27, 0x2f, 0x9c, 0x3d,
+            0xa8, 0xd1, 0x6e, 0xcf, 0xce, 0x44, 0x79, 0x33, 0x45, 0xbe, 0x69, 0xf7, 0xfe, 0x03,
+            0xd9, 0x3f, 0x4e, 0xb0,
+        ];
+
+        // v0.0.1 unsigned firmware digest (deterministic build)
+        const V0_0_1_UNSIGNED_DIGEST: [u8; 32] = [
+            0x8f, 0x45, 0xae, 0x6b, 0x72, 0xc2, 0x41, 0xa2, 0x07, 0x98, 0xac, 0xbd, 0x3c, 0x6d,
+            0x3e, 0x54, 0x07, 0x1c, 0xae, 0x73, 0xe3, 0x35, 0xdf, 0x17, 0x85, 0xf2, 0xd4, 0x85,
+            0xa9, 0x15, 0xda, 0x4c,
+        ];
+
+        FirmwareCapabilities {
+            upgrade_digest_no_sig: self.0 != V0_0_1_SIGNED_DIGEST
+                && self.0 != V0_0_1_UNSIGNED_DIGEST,
+        }
     }
 }
 
