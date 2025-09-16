@@ -535,6 +535,7 @@ impl crate::DynWidget for Framebuf {
         crate::Sizing {
             width: FB_WIDTH,
             height: self.viewport_height,
+            ..Default::default()
         }
     }
 }

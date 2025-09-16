@@ -138,7 +138,20 @@ impl<W: Widget> crate::DynWidget for Container<W> {
             child_sizing.height + 2 * self.border_width
         };
 
-        self.computed_sizing = Some(crate::Sizing { width, height });
+        // If no border, use the child's dirty rect offset by where the child is positioned
+        // If there's a border, the whole container area is dirty
+        let dirty_rect = if self.border_width == 0 {
+            self.child.sizing().dirty_rect
+        } else {
+            // With a border, the whole container is the dirty rect
+            None
+        };
+
+        self.computed_sizing = Some(crate::Sizing {
+            width,
+            height,
+            dirty_rect,
+        });
 
         // Also compute and store the child rectangle
         self.child_rect = Some(Rectangle::new(

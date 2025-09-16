@@ -45,6 +45,7 @@ pub mod demo_widget;
 pub mod device_name;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
+pub mod fonts;
 pub mod fps;
 pub mod keygen_check;
 pub mod layout;
@@ -65,7 +66,6 @@ pub mod translate;
 pub mod vec_framebuffer;
 pub mod welcome;
 pub mod widget_color;
-pub mod fonts;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -76,7 +76,7 @@ pub use share_index::ShareIndexWidget;
 pub use sign_prompt::SignTxPrompt;
 pub use super_draw_target::SuperDrawTarget;
 pub use widget_color::{ColorInterpolate, WidgetColor};
-pub use widget_list::{WidgetList, PageFactory};
+pub use widget_list::{PageFactory, WidgetList};
 
 // Re-export all widget items
 pub use address_display::{AddressDisplay, AddressWithPath};
@@ -114,10 +114,10 @@ pub use translate::*;
 pub use welcome::*;
 
 // Font re-exports
-use u8g2_fonts::fonts as u8g2_fonts_module;
-pub const FONT_LARGE: u8g2_fonts_module::u8g2_font_profont29_mf = u8g2_fonts_module::u8g2_font_profont29_mf;
-pub const FONT_MED: u8g2_fonts_module::u8g2_font_profont22_mf = u8g2_fonts_module::u8g2_font_profont22_mf;
-pub const FONT_SMALL: u8g2_fonts_module::u8g2_font_profont17_mf = u8g2_fonts_module::u8g2_font_profont17_mf;
+use u8g2_fonts::fonts as u8g2;
+pub const FONT_LARGE: u8g2::u8g2_font_profont29_mf = u8g2::u8g2_font_profont29_mf;
+pub const FONT_MED: u8g2::u8g2_font_profont22_mf = u8g2::u8g2_font_profont22_mf;
+pub const FONT_SMALL: u8g2::u8g2_font_profont17_mf = u8g2::u8g2_font_profont17_mf;
 
 pub const HOLD_TO_CONFIRM_TIME_SHORT_MS: u32 = 1000;
 pub const HOLD_TO_CONFIRM_TIME_MS: u32 = 2000;
@@ -128,7 +128,11 @@ pub const HOLD_TO_CONFIRM_TIME_LONG_MS: u32 = 6000;
 pub struct Sizing {
     pub width: u32,
     pub height: u32,
-    // Future: min_width, min_height, preferred_width, preferred_height, etc.
+    /// The actual area within the sized area where this widget will draw.
+    /// If None, assumes the widget may draw to the entire sized area.
+    /// Widgets like Column, Row, and Padding should set this to the actual area
+    /// they give their children to draw in.
+    pub dirty_rect: Option<embedded_graphics::primitives::Rectangle>,
 }
 
 impl From<Size> for Sizing {
@@ -136,7 +140,20 @@ impl From<Size> for Sizing {
         Sizing {
             width: size.width,
             height: size.height,
+            dirty_rect: None,
         }
+    }
+}
+
+impl Sizing {
+    /// Returns the dirty rectangle, or constructs one from width/height if not set
+    pub fn dirty_rect(&self) -> embedded_graphics::primitives::Rectangle {
+        self.dirty_rect.unwrap_or_else(|| {
+            embedded_graphics::primitives::Rectangle::new(
+                embedded_graphics::prelude::Point::zero(),
+                Size::new(self.width, self.height),
+            )
+        })
     }
 }
 
@@ -273,10 +290,7 @@ impl<T: DynWidget> DynWidget for Option<T> {
         if let Some(widget) = self {
             widget.sizing()
         } else {
-            Sizing {
-                width: 0,
-                height: 0,
-            }
+            Size::new(0, 0).into()
         }
     }
 

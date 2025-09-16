@@ -23,7 +23,7 @@ pub trait WidgetList<T> {
 }
 
 // Implementation for Vec<T> where T is Clone
-impl<T> WidgetList<T> for alloc::vec::Vec<T> 
+impl<T> WidgetList<T> for alloc::vec::Vec<T>
 where
     T: Clone,
 {

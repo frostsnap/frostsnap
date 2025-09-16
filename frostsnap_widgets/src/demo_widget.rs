@@ -1,7 +1,7 @@
 /// Macro for selecting and running demo widgets
 #[macro_export]
 macro_rules! demo_widget {
-    ($demo:expr, $screen_size:expr, $run_macro:ident) => {
+    ($demo:expr,  $run_macro:ident) => {
         // Common imports for all demos
         use $crate::{
             palette::PALETTE,
@@ -898,7 +898,7 @@ macro_rules! demo_widget {
                     }
                 });
 
-                let page_slider = PageSlider::new(page_list, $screen_size.height);
+                let page_slider = PageSlider::new(page_list, 50);
                 $run_macro!(page_slider);
             }
             _ => {

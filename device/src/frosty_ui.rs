@@ -1,3 +1,4 @@
+use crate::DISPLAY_REFRESH_MS;
 use alloc::boxed::Box;
 use embedded_graphics::prelude::*;
 use esp_hal::prelude::*;
@@ -392,15 +393,14 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             now_ms,
         );
 
-        // Only redraw if at least 10ms has passed since last redraw
+        // Only redraw if enough time has passed since last redraw
         let elapsed_ms = (now - self.last_redraw_time).to_millis();
-        if elapsed_ms >= 5 {
+        if elapsed_ms >= DISPLAY_REFRESH_MS {
+            // Update last redraw time
+            self.last_redraw_time = now;
             // Draw the widget tree
             // Draw the UI stack (includes debug stats overlay)
             let _ = self.widget.draw(&mut self.display, now_ms);
-
-            // Update last redraw time
-            self.last_redraw_time = now;
         }
 
         // Check widget states and generate UI events

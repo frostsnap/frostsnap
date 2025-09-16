@@ -154,6 +154,7 @@ impl crate::DynWidget for AlphabeticKeyboard {
         crate::Sizing {
             width: FRAMEBUFFER_WIDTH,
             height: self.visible_height,
+            ..Default::default()
         }
     }
 

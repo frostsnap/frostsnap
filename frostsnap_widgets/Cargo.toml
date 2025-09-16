@@ -5,10 +5,11 @@ edition = "2021"
 
 [features]
 default = ["std"]
+prefill-words = []
 std = []
 
 [dependencies]
-embedded-graphics = "0.8.1"
+embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }
 u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px", "96px"] }
 micromath = "0.2"

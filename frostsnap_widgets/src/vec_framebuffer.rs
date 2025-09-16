@@ -550,22 +550,25 @@ impl DrawTarget for VecFramebuffer<Gray2> {
 
 // Implementation for BinaryColor (1-bit monochrome)
 impl VecFramebuffer<BinaryColor> {
+    /// Convert pixel coordinates to byte index and bit position
+    #[inline]
+    fn pixel_to_bit_index(&self, x: usize, y: usize) -> (usize, u8) {
+        let pixel_index = y * self.width + x;
+        let byte_index = pixel_index >> 3; // Equivalent to / 8
+        let bit_index = 7 - ((pixel_index & 7) as u8); // Equivalent to % 8, MSB first
+        (byte_index, bit_index)
+    }
+
     /// Set a pixel at the given point
     #[inline]
     pub fn set_pixel(&mut self, point: Point, color: BinaryColor) {
         if let (Ok(x), Ok(y)) = (usize::try_from(point.x), usize::try_from(point.y)) {
             if x < self.width && y < self.height {
-                let pixel_index = y * self.width + x;
-                let byte_index = pixel_index / 8;
-                let bit_index = 7 - (pixel_index % 8); // MSB first
+                let (byte_index, bit_index) = self.pixel_to_bit_index(x, y);
 
-                let raw: RawU1 = color.into();
-                let bit_value = raw.into_inner();
-
-                if bit_value != 0 {
-                    self.data[byte_index] |= 1 << bit_index;
-                } else {
-                    self.data[byte_index] &= !(1 << bit_index);
+                match color {
+                    BinaryColor::On => self.data[byte_index] |= 1 << bit_index,
+                    BinaryColor::Off => self.data[byte_index] &= !(1 << bit_index),
                 }
             }
         }
@@ -576,9 +579,7 @@ impl VecFramebuffer<BinaryColor> {
     pub fn get_pixel(&self, point: Point) -> Option<BinaryColor> {
         if let (Ok(x), Ok(y)) = (usize::try_from(point.x), usize::try_from(point.y)) {
             if x < self.width && y < self.height {
-                let pixel_index = y * self.width + x;
-                let byte_index = pixel_index / 8;
-                let bit_index = 7 - (pixel_index % 8);
+                let (byte_index, bit_index) = self.pixel_to_bit_index(x, y);
 
                 let value = (self.data[byte_index] >> bit_index) & 1;
                 let raw = RawU1::new(value);
@@ -596,23 +597,24 @@ impl VecFramebuffer<BinaryColor> {
     }
 
     /// Iterate over all pixels that are set to On
+    ///
+    /// NOTE: This could potentially be optimized by iterating byte-by-byte and skipping
+    /// empty bytes (0x00), but this would require division operations to convert byte
+    /// indices back to pixel coordinates. Benchmarking should be done first to verify
+    /// that such an optimization actually improves performance for typical use cases.
     pub fn on_pixels(&self) -> impl Iterator<Item = Point> + '_ {
         let width = self.width;
         let height = self.height;
 
         (0..height).flat_map(move |y| {
             (0..width).filter_map(move |x| {
-                let pixel_index = y * width + x;
-                let byte_index = pixel_index / 8;
-                let bit_index = 7 - (pixel_index % 8);
-
-                if byte_index < self.data.len() {
-                    let bit = (self.data[byte_index] >> bit_index) & 1;
-                    if bit != 0 {
-                        return Some(Point::new(x as i32, y as i32));
-                    }
+                let (byte_index, bit_index) = self.pixel_to_bit_index(x, y);
+                let bit = ((self.data[byte_index] >> bit_index) & 1) != 0;
+                if bit {
+                    Some(Point::new(x as i32, y as i32))
+                } else {
+                    None
                 }
-                None
             })
         })
     }

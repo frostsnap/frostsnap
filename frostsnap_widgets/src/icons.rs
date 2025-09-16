@@ -83,6 +83,7 @@ impl<I: embedded_graphics::image::ImageDrawable<Color = Rgb565>> crate::DynWidge
         crate::Sizing {
             width: size.width,
             height: size.height,
+            ..Default::default()
         }
     }
 
