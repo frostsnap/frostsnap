@@ -352,7 +352,7 @@ impl FirmwareUpgradeMode<'_> {
                         block!(downstream_io.write_byte_nb(byte)).unwrap();
                     }
 
-                    if i == SECTOR_SIZE as _ || finished_writing {
+                    if i == SECTOR_SIZE as usize || finished_writing {
                         // we know the downstream device (if it exists) might be writing to flash so
                         // assume it's not ready yet.
                         downstream_ready = downstream_io.is_none();
