@@ -105,17 +105,14 @@ fn uart1_interrupt_handler() {
     handle_uart_interrupt(1);
 }
 
-/// A wrapper that allows writing to a UART stored in a Mutex
-pub struct UartWriter {
+/// A handle for interacting with a UART stored in a Mutex
+pub struct UartHandle {
     uart_num: UartNum,
 }
 
-impl UartWriter {
+impl UartHandle {
     fn uart_index(&self) -> usize {
-        match self.uart_num {
-            UartNum::Uart0 => 0,
-            UartNum::Uart1 => 1,
-        }
+        self.uart_num as usize
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), uart::Error> {
@@ -154,7 +151,7 @@ impl UartWriter {
             let uart_index = self.uart_index();
             let mut uart_opt = UARTS[uart_index].borrow_ref_mut(cs);
 
-            // Safe to unwrap: UartWriter is only created when UART exists
+            // Safe to unwrap: UartHandle is only created when UART exists
             let uart = uart_opt.as_mut().unwrap();
             uart.flush_tx()
         })
@@ -165,7 +162,7 @@ impl UartWriter {
             let uart_index = self.uart_index();
             let mut uart_opt = UARTS[uart_index].borrow_ref_mut(cs);
 
-            // Safe to unwrap: UartWriter is only created when UART exists
+            // Safe to unwrap: UartHandle is only created when UART exists
             let uart = uart_opt.as_mut().unwrap();
             uart.apply_config(&esp_hal::uart::Config {
                 baudrate,
@@ -175,25 +172,22 @@ impl UartWriter {
             .unwrap();
         })
     }
-}
 
-/// Fill buffer with any remaining bytes (for when there are fewer than threshold bytes)
-/// This now drains both UARTs in round-robin fashion to ensure we never miss data
-pub fn fill_buffer(_uart_num: UartNum) {
-    critical_section::with(|cs| {
-        drain_uart_to_queue(cs);
-    });
+    /// Fill buffer with any remaining bytes (for when there are fewer than threshold bytes)
+    /// This drains both UARTs in round-robin fashion to ensure we never miss data
+    pub fn fill_buffer(&mut self) {
+        critical_section::with(|cs| {
+            drain_uart_to_queue(cs);
+        });
+    }
 }
 
 /// Register a UART for interrupt handling
 pub fn register_uart(
     mut uart: Uart<'static, Blocking, AnyUart>,
     uart_num: UartNum,
-) -> (UartWriter, UartReceiver) {
-    let uart_index = match uart_num {
-        UartNum::Uart0 => 0,
-        UartNum::Uart1 => 1,
-    };
+) -> (UartHandle, UartReceiver) {
+    let uart_index = uart_num as usize;
 
     unsafe {
         // Split the queue into producer and consumer
@@ -215,13 +209,13 @@ pub fn register_uart(
                 .replace(producer);
         });
 
-        // Return writer and consumer
-        (UartWriter { uart_num }, consumer)
+        // Return handle and consumer
+        (UartHandle { uart_num }, consumer)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum UartNum {
-    Uart0,
-    Uart1,
+    Uart0 = 0,
+    Uart1 = 1,
 }
