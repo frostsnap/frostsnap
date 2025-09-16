@@ -9,6 +9,7 @@ use frostsnap_coordinator::bitcoin::chain_sync::{
 };
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
+use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 use frostsnap_core::message::EncodedSignature;
 use tracing::{event, Level};
 
@@ -166,6 +167,45 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    pub(crate) fn from_template(tx_temp: &TransactionTemplate) -> Self {
+        let raw_tx = tx_temp.to_rust_bitcoin_tx();
+        let txid = tx_temp.txid();
+        let is_mine = tx_temp
+            .iter_locally_owned_inputs()
+            .map(|(_, _, spk)| spk.spk())
+            .chain(
+                tx_temp
+                    .iter_locally_owned_outputs()
+                    .map(|(_, _, spk)| spk.spk()),
+            )
+            .collect::<HashSet<_>>();
+        let prevouts = tx_temp
+            .inputs()
+            .iter()
+            .map(|input| (input.outpoint(), input.txout()))
+            .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
+        Self {
+            inner: raw_tx,
+            txid: txid.to_string(),
+            confirmation_time: None,
+            last_seen: None,
+            prevouts,
+            is_mine,
+        }
+    }
+
+    pub(crate) fn fill_signatures(&mut self, signatures: &[EncodedSignature]) {
+        for (txin, signature) in self.inner.input.iter_mut().zip(signatures) {
+            let schnorr_sig = bitcoin::taproot::Signature {
+                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+                    .unwrap(),
+                sighash_type: bitcoin::sighash::TapSighashType::Default,
+            };
+            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
+            txin.witness = witness;
+        }
+    }
+
     #[frb(sync)]
     pub fn raw_txid(&self) -> Txid {
         self.inner.compute_txid()
