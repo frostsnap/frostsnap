@@ -1082,6 +1082,35 @@ class AboutPage extends StatelessWidget {
               );
             },
           ),
+          Builder(
+            builder: (context) {
+              const buildCommit = String.fromEnvironment(
+                'BUILD_COMMIT',
+                defaultValue: 'unknown',
+              );
+
+              return ListTile(
+                leading: Icon(Icons.commit),
+                title: Text('Build commit'),
+                subtitle: Text(buildCommit, style: monospaceTextStyle),
+                trailing: buildCommit != 'unknown'
+                    ? Icon(Icons.copy, size: 20)
+                    : null,
+                onTap: buildCommit != 'unknown'
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: buildCommit));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Copied full commit hash to clipboard',
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+              );
+            },
+          ),
         ],
       ),
     );
