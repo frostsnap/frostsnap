@@ -2,7 +2,7 @@ import 'fetch.just'
 
 default_board := "dev"
 ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_factory -p frostsnap_widgets -p frost_backup"
-device_crates := "-p frostsnap_device -p frostsnap_cst816s --target riscv32imc-unknown-none-elf"
+device_crates := "-p frostsnap_device -p frostsnap_cst816s"
 
 alias erase := erase-device
 alias demo := simulate
@@ -69,14 +69,15 @@ check-ordinary +ARGS="":
     cargo check {{ordinary_crates}} {{ARGS}} --all-features --tests --bins
 
 check-device +ARGS="":
-    cargo check {{device_crates}} {{ARGS}} --all-features
+    cargo check --target riscv32imc-unknown-none-elf {{device_crates}} {{ARGS}} --all-features
 
 lint-ordinary +ARGS="":
     cargo fmt {{ordinary_crates}} -- --check
     cargo clippy {{ordinary_crates}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
 
 lint-device +ARGS="":
-    cargo clippy {{device_crates}} {{ARGS}} --all-features -- -Dwarnings
+    cargo fmt {{device_crates}} -- --check
+    cargo clippy {{device_crates}} --target riscv32imc-unknown-none-elf  {{ARGS}} --all-features -- -Dwarnings
 
 dart-format-check-app:
     ( cd frostsnapp; dart format --set-exit-if-changed --output=none  $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*") )
@@ -97,7 +98,7 @@ fix: fix-dart fix-rust
 
 fix-rust:
     cargo clippy --fix --allow-dirty --allow-staged {{ordinary_crates}} --all-features --tests --bins
-    cargo clippy --fix --allow-dirty --allow-staged {{device_crates}} --all-features
+    cargo clippy --fix --allow-dirty --target riscv32imc-unknown-none-elf --allow-staged {{device_crates}} --all-features
     cargo fmt --all
 
 gen-firmware: build-device save-image
