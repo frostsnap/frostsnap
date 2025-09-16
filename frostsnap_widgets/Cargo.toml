@@ -11,7 +11,6 @@ std = []
 embedded-graphics = "0.8.1"
 u8g2-fonts = { version = "0.3.0", features = ["embedded_graphics_textstyle"] }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px", "96px"] }
-embedded-text = "0.7.0"
 micromath = "0.2"
 frost_backup = { workspace = true, features = [ "bincode" ] }
 frostsnap_core = { workspace = true }
