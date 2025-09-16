@@ -7,9 +7,7 @@ use embedded_graphics::{
     mono_font::{ascii::*, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::*,
 };
-use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
 use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
@@ -26,13 +24,19 @@ pub struct ProvisioningConfig {
 macro_rules! text_display {
     ($display:expr, $text:expr) => {
         let _ = $display.clear(Rgb565::BLACK);
-        let _ = TextBox::with_textbox_style(
+
+        let character_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+        let text_style = embedded_graphics::text::TextStyleBuilder::new()
+            .alignment(embedded_graphics::text::Alignment::Center)
+            .build();
+
+        let display_width = $display.size().width as i32;
+
+        let _ = embedded_graphics::text::Text::with_text_style(
             $text,
-            Rectangle::new(Point::new(0, 20), $display.size()),
-            MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-            TextBoxStyleBuilder::new()
-                .alignment(HorizontalAlignment::Center)
-                .build(),
+            Point::new(display_width / 2, 30),
+            character_style,
+            text_style,
         )
         .draw($display);
     };
@@ -75,29 +79,17 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         mono_font::{ascii::FONT_10X20, MonoTextStyle},
         pixelcolor::Rgb565,
         prelude::*,
-        primitives::Rectangle,
     };
-    use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
     use esp_hal::{time::Duration, timer::Timer};
 
     // Warning countdown before burning efuses
     const COUNTDOWN_SECONDS: u32 = 30;
     for seconds_remaining in (1..=COUNTDOWN_SECONDS).rev() {
-        let _ = display.clear(Rgb565::BLACK);
         let text = alloc::format!(
             "WARNING\n\nDev-Device Initialization\nAbout to burn eFuses!\n\n{} seconds remaining...\n\nUnplug now to cancel!",
             seconds_remaining
         );
-
-        let _ = TextBox::with_textbox_style(
-            &text,
-            Rectangle::new(Point::new(0, 20), display.size()),
-            MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-            TextBoxStyleBuilder::new()
-                .alignment(HorizontalAlignment::Center)
-                .build(),
-        )
-        .draw(&mut display);
+        text_display!(&mut display, &text);
 
         // Wait 1 second
         let start = timer.now();
@@ -105,16 +97,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
     }
 
     // Show provisioning message
-    let _ = display.clear(Rgb565::BLACK);
-    let _ = TextBox::with_textbox_style(
-        "Dev mode: generating keys locally",
-        Rectangle::new(Point::new(0, 20), display.size()),
-        MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-        TextBoxStyleBuilder::new()
-            .alignment(HorizontalAlignment::Center)
-            .build(),
-    )
-    .draw(&mut display);
+    text_display!(&mut display, "Dev mode: generating keys locally");
 
     // Generate share encryption key
     let mut share_encryption_key = [0u8; 32];
@@ -134,16 +117,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         .expect("Failed to initialize dev HMAC keys");
 
     // Show completion
-    let _ = display.clear(Rgb565::BLACK);
-    let _ = TextBox::with_textbox_style(
-        "Dev device initialized!\n\nRestarting...",
-        Rectangle::new(Point::new(0, 20), display.size()),
-        MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-        TextBoxStyleBuilder::new()
-            .alignment(HorizontalAlignment::Center)
-            .build(),
-    )
-    .draw(&mut display);
+    text_display!(&mut display, "Dev device initialized!\n\nRestarting...");
 
     // Reset the device
     esp_hal::reset::software_reset();
