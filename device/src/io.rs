@@ -161,20 +161,6 @@ where
         &mut self.io
     }
 
-    /// Read a single byte, polling if necessary
-    /// This is used by OTA for byte-by-byte protocol handling
-    pub fn read_byte_blocking(&mut self) -> u8 {
-        loop {
-            // First try to get a byte
-            if let Some(byte) = self.io.read_byte() {
-                return byte;
-            }
-
-            // If no byte available, fill the buffer and try again
-            self.fill_buffer();
-        }
-    }
-
     /// Try to read a byte without blocking
     pub fn read_byte(&mut self) -> nb::Result<u8, core::convert::Infallible> {
         // Then try to read
@@ -312,8 +298,13 @@ impl SerialIo<'_> {
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialInterfaceError> {
-        for byte in bytes {
-            while self.write_byte_nb(*byte).is_err() {}
+        match self {
+            SerialIo::Uart { writer, .. } => writer
+                .write_bytes(bytes)
+                .map_err(SerialInterfaceError::UartWriteError)?,
+            SerialIo::Jtag { jtag, .. } => {
+                let _infallible = jtag.write_bytes(bytes);
+            }
         }
         Ok(())
     }
