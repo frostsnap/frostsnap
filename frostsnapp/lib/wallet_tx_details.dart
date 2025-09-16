@@ -408,28 +408,35 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       onDismissed: () {},
     );
 
-    if (widget.isSigning) {
-      devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
-      broadcastDone = false;
-      if (widget.isRestoreSigning) {
-        signingSub = coord
-            .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
-            .listen(onSigningSessionData);
-      } else if (widget.isStartSigning) {
-        late final StreamSubscription<SigningState> sub;
-        sub = coord
-            .startSigningTx(
-              accessStructureRef: widget.accessStructureRef!,
-              unsignedTx: widget.unsignedTx!,
-              devices: widget.devices!,
-            )
-            .listen((state) {
-              // Ensure `onSigningSessionData` is called sequentially.
-              sub.pause();
-              onSigningSessionData(state).whenComplete(sub.resume);
-            });
-        signingSub = sub;
+    try {
+      if (widget.isSigning) {
+        devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
+        broadcastDone = false;
+        if (widget.isRestoreSigning) {
+          signingSub = coord
+              .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
+              .listen(onSigningSessionData);
+        } else if (widget.isStartSigning) {
+          late final StreamSubscription<SigningState> sub;
+          sub = coord
+              .startSigningTx(
+                accessStructureRef: widget.accessStructureRef!,
+                unsignedTx: widget.unsignedTx!,
+                devices: widget.devices!,
+              )
+              .listen((state) {
+                // Ensure `onSigningSessionData` is called sequentially.
+                sub.pause();
+                onSigningSessionData(state).whenComplete(sub.resume);
+              });
+          signingSub = sub;
+        }
       }
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showErrorSnackbar(context, e.toString());
+        Navigator.popUntil(context, (r) => r.isFirst);
+      });
     }
   }
 
@@ -730,12 +737,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
         .timeout(BROADCAST_TIMEOUT)
         .then<bool>(
-          (ssid == null)
-              ? (_) => false
-              : (_) async {
-                  await coord.forgetFinishedSignSession(ssid: ssid!);
-                  return true;
-                },
+          (_) => ssid != null,
           onError: (e) {
             broadcastError = e.toString();
             return false;

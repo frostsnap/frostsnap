@@ -12,7 +12,6 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
-import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
@@ -374,77 +373,60 @@ class _TxListState extends State<TxList> {
           builder: (context, snapshot) {
             final chainTipHeight = walletCtx.wallet.superWallet.height();
             final now = DateTime.now();
-            final txToBroadcastTiles = coord
-                .unbroadcastedTxs(
-                  superWallet: walletCtx.wallet.superWallet,
-                  keyId: walletCtx.keyId,
+            final uncanonicalTiles = coord
+                .uncanonicalTxs(
+                  sWallet: walletCtx.wallet.superWallet,
+                  masterAppkey: walletCtx.masterAppkey,
                 )
-                .map((tx) {
+                .map((uncanonicalTx) {
                   final txDetails = TxDetailsModel(
-                    tx: tx.tx,
+                    tx: uncanonicalTx.tx,
                     chainTipHeight: chainTipHeight,
                     now: now,
                   );
-                  return TxSentOrReceivedTile(
-                    onTap: () => showBottomSheetOrDialog(
-                      context,
-                      title: Text('Transaction Details'),
-                      builder: (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage.needsBroadcast(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                          finishedSigningSessionId: tx.sessionId,
-                          psbtMan: fsCtx.psbtManager,
+                  final session = uncanonicalTx.activeSession;
+                  if (session != null) {
+                    final signingState = session.state();
+                    return TxSentOrReceivedTile(
+                      onTap: () => showBottomSheetOrDialog(
+                        context,
+                        title: Text('Transaction Details'),
+                        builder: (context, scrollController) => walletCtx.wrap(
+                          TxDetailsPage.restoreSigning(
+                            scrollController: scrollController,
+                            txStates: walletCtx.txStream,
+                            txDetails: txDetails,
+                            signingSessionId: signingState.sessionId,
+                            psbtMan: fsCtx.psbtManager,
+                          ),
                         ),
                       ),
-                    ),
-                    txDetails: txDetails,
-                  );
-                });
-            final txToSignTiles = coord
-                .activeSigningSessions(keyId: walletCtx.keyId)
-                .map<(Transaction, SigningState)?>((session) {
-                  final Transaction? tx = switch (session.details()) {
-                    SigningDetails_Transaction(:final transaction) =>
-                      transaction,
-                    _ => null,
-                  };
-                  if (tx == null) return null;
-                  return (tx, session.state());
-                })
-                .nonNulls
-                .map((state) {
-                  final (tx, signingState) = state;
-                  final txDetails = TxDetailsModel(
-                    tx: tx,
-                    chainTipHeight: chainTipHeight,
-                    now: now,
-                  );
-                  return TxSentOrReceivedTile(
-                    onTap: () => showBottomSheetOrDialog(
-                      context,
-                      title: Text('Transaction Details'),
-                      builder: (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage.restoreSigning(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                          signingSessionId: signingState.sessionId,
-                          psbtMan: fsCtx.psbtManager,
+                      txDetails: txDetails,
+                      signingState: signingState,
+                    );
+                  } else {
+                    return TxSentOrReceivedTile(
+                      onTap: () => showBottomSheetOrDialog(
+                        context,
+                        title: Text('Transaction Details'),
+                        builder: (context, scrollController) => walletCtx.wrap(
+                          TxDetailsPage.needsBroadcast(
+                            scrollController: scrollController,
+                            txStates: walletCtx.txStream,
+                            txDetails: txDetails,
+                            finishedSigningSessionId: uncanonicalTx.sessionId,
+                            psbtMan: fsCtx.psbtManager,
+                          ),
                         ),
                       ),
-                    ),
-                    txDetails: txDetails,
-                    signingState: signingState,
-                  );
+                      txDetails: txDetails,
+                    );
+                  }
                 });
+
             return SliverVisibility(
-              visible:
-                  txToSignTiles.isNotEmpty || txToBroadcastTiles.isNotEmpty,
-              sliver: SliverList.list(
-                children: [...txToBroadcastTiles, ...txToSignTiles],
-              ),
+              visible: uncanonicalTiles.isNotEmpty,
+              sliver: SliverList.list(children: uncanonicalTiles.toList()),
             );
           },
         ),
