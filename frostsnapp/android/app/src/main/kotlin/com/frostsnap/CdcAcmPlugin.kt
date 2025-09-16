@@ -105,6 +105,9 @@ class CdcAcmPlugin : FlutterPlugin, MethodCallHandler {
     }
 
     private fun openAndDupFd(device: UsbDevice): Int? {
+        // Sleep so that we don't open the usb port immediately
+        // This resolved an issue with screens not turning on when reset or unplugged/replugged
+        Thread.sleep(1000);
         val connection = usbManager.openDevice(device) ?: return null
 
         val origFd = connection.fileDescriptor

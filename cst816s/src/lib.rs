@@ -83,8 +83,9 @@ where
         self.pin_rst.set_low().map_err(Error::Pin)?;
         delay_source.delay_us(20_000);
         self.pin_rst.set_high().map_err(Error::Pin)?;
-        // ❗ This used to 400_000 but this seems to work in practice.
-        delay_source.delay_us(50_000);
+        // ❗ This probably doesn't need to be so long. We changed it and
+        // started to get issues with other things (not the touch sensor).
+        delay_source.delay_us(400_000);
 
         Ok(())
     }
@@ -238,9 +239,9 @@ impl core::convert::From<u8> for TouchGesture {
 /// Global interrupt handling support for ESP32C3
 pub mod interrupt {
     use super::*;
-    use esp_hal::InterruptConfigurable;
     use esp_hal::gpio::Input;
     use esp_hal::macros::handler;
+    use esp_hal::InterruptConfigurable;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     /// Default queue capacity for touch events
