@@ -10,15 +10,21 @@ gen +ARGS="":
     find {{API_DIR}} -type f -exec sha256sum {} + > {{CANARY}}
 
 build TARGET="linux" +ARGS="": maybe-gen
-    BUNDLE_FIRMWARE=1 flutter build {{TARGET}} {{ARGS}}
+    #!/bin/sh
+    BUILD_COMMIT=$(just get-build-commit)
+    BUNDLE_FIRMWARE=1 flutter build {{TARGET}} --dart-define=BUILD_COMMIT="$BUILD_COMMIT" {{ARGS}}
 
 run +ARGS="": maybe-gen
+    #!/bin/sh
     just ../gen-firmware
-    BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
+    BUILD_COMMIT=$(just get-build-commit)
+    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" {{ARGS}}
 
 run-secure +ARGS="": maybe-gen
+    #!/bin/sh
     just ../build-secure
-    BUNDLE_FIRMWARE=1 flutter run {{ARGS}}
+    BUILD_COMMIT=$(just get-build-commit)
+    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" {{ARGS}}
 
 maybe-gen:
     #!/bin/sh
@@ -41,6 +47,14 @@ install-cargo-bins:
         exit 1
     fi
     cargo install cargo-ndk@3.5.4 espflash@3.2.0 cargo-expand@1.0.95 "flutter_rust_bridge_codegen@$flutter_rust_bridge_version"
+
+get-build-commit:
+    #!/bin/sh
+    BUILD_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    if [ "$BUILD_COMMIT" != "unknown" ] && ! git diff-index --quiet HEAD --; then
+        BUILD_COMMIT="${BUILD_COMMIT}-modified"
+    fi
+    echo "$BUILD_COMMIT"
 
 build-appimage +ARGS="":
     #!/bin/sh
