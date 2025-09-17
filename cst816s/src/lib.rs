@@ -239,9 +239,9 @@ impl core::convert::From<u8> for TouchGesture {
 /// Global interrupt handling support for ESP32C3
 pub mod interrupt {
     use super::*;
+    use esp_hal::InterruptConfigurable;
     use esp_hal::gpio::Input;
     use esp_hal::macros::handler;
-    use esp_hal::InterruptConfigurable;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     /// Default queue capacity for touch events
