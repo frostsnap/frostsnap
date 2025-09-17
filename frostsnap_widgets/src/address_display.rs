@@ -1,24 +1,27 @@
 use crate::{
     any_of::AnyOf,
+    fonts::{Gray4TextStyle, NOTO_SANS_MONO_24_BOLD, NOTO_SANS_14_LIGHT},
     layout::{Column, CrossAxisAlignment, MainAxisAlignment},
     p2tr_address_display::P2trAddressDisplay,
     palette::PALETTE,
     text::Text,
-    FONT_MED, FONT_SMALL,
 };
 use alloc::{
     boxed::Box,
     string::{String, ToString},
 };
-use embedded_graphics::{pixelcolor::Rgb565, text::Alignment};
+use embedded_graphics::text::Alignment;
 use frostsnap_macros::Widget;
-use u8g2_fonts::U8g2TextStyle;
+
+// Font constants for address display
+const FONT_BITCOIN_ADDRESS: &crate::fonts::Gray4Font = &NOTO_SANS_MONO_24_BOLD;
+const FONT_DERIVATION_PATH: &crate::fonts::Gray4Font = &NOTO_SANS_14_LIGHT;
 
 /// A widget that displays only a Bitcoin address (without derivation path)
 #[derive(Widget)]
 pub struct AddressDisplay {
     #[widget_delegate]
-    container: Box<AnyOf<(P2trAddressDisplay, Text<U8g2TextStyle<Rgb565>>)>>,
+    container: Box<AnyOf<(P2trAddressDisplay, Text<Gray4TextStyle<'static>>)>>,
 }
 
 impl AddressDisplay {
@@ -54,7 +57,7 @@ impl AddressDisplay {
             // Create the address text
             let address_text = Text::new(
                 formatted,
-                U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, PALETTE.on_background),
             )
             .with_alignment(Alignment::Center);
 
@@ -68,7 +71,7 @@ impl AddressDisplay {
 #[derive(Widget)]
 pub struct AddressWithPath {
     #[widget_delegate]
-    container: Column<(AddressDisplay, Text<U8g2TextStyle<Rgb565>>)>,
+    container: Column<(AddressDisplay, Text<Gray4TextStyle<'static>>)>,
 }
 
 impl AddressWithPath {
@@ -78,7 +81,7 @@ impl AddressWithPath {
         // Create the derivation path text (secondary, smaller)
         let path_text = Text::new(
             derivation_path,
-            U8g2TextStyle::new(FONT_SMALL, PALETTE.text_secondary),
+            Gray4TextStyle::new(FONT_DERIVATION_PATH, PALETTE.text_secondary),
         )
         .with_alignment(Alignment::Center);
 

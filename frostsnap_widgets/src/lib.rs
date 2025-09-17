@@ -40,6 +40,7 @@ pub mod widget_list;
 pub mod any_of;
 pub mod bitcoin_amount_display;
 pub mod bobbing_carat;
+pub mod bobbing_carat_small;
 pub mod circle_button;
 pub mod demo_widget;
 pub mod device_name;
@@ -49,7 +50,11 @@ pub mod fonts;
 pub mod fps;
 pub mod keygen_check;
 pub mod layout;
+pub mod p2pkh_address_display;
+pub mod p2sh_address_display;
 pub mod p2tr_address_display;
+pub mod p2wpkh_address_display;
+pub mod p2wsh_address_display;
 pub mod prelude;
 pub mod scroll_bar;
 pub mod share_index;
@@ -66,6 +71,7 @@ pub mod translate;
 pub mod vec_framebuffer;
 pub mod welcome;
 pub mod widget_color;
+pub mod wipe_device;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -94,6 +100,7 @@ pub use one_time_clear_hack::OneTimeClearHack;
 pub use rat::{Frac, Rat};
 // pub use hold_to_confirm_button::*;
 pub use bobbing_carat::BobbingCarat;
+pub use bobbing_carat_small::SmallBobbingCarat;
 pub use circle_button::*;
 pub use device_name::*;
 pub use fade_switcher::FadeSwitcher;
@@ -112,6 +119,7 @@ pub use text::*;
 pub use touch_listener::TouchListener;
 pub use translate::*;
 pub use welcome::*;
+pub use wipe_device::*;
 
 // Font re-exports
 use u8g2_fonts::fonts as u8g2;

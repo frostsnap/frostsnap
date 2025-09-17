@@ -11,7 +11,7 @@ const ANIMATION_DURATION_MS: u64 = 750;
 const MIN_SWIPE_DISTANCE: u32 = 0;
 
 // Type aliases to reduce complexity
-type PageStack<T> = Stack<(SlideInTransition<T>, Option<Fader<SwipeUpChevron<Rgb565>>>)>;
+type PageStack<T> = Stack<(SlideInTransition<T>, Option<Fader<SwipeUpChevron>>)>;
 type PageReadyCallback<T> = Box<dyn FnMut(&mut T)>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,7 +56,7 @@ where
 
         // Build stack with transition and optional chevron aligned at bottom center
         let stack = Stack::builder().push(transition).push_aligned(
-            None::<Fader<SwipeUpChevron<Rgb565>>>,
+            None::<Fader<SwipeUpChevron>>,
             Alignment::BottomCenter,
         );
 

@@ -1,21 +1,26 @@
-use crate::{palette::PALETTE, prelude::*, rat::FatRat};
+use crate::{
+    fonts::{Gray4TextStyle, NOTO_SANS_MONO_28_BOLD},
+    palette::PALETTE, prelude::*, rat::FatRat
+};
 use alloc::string::ToString;
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
-use u8g2_fonts::U8g2TextStyle;
+
+// Font constant for Bitcoin amounts
+const FONT_BITCOIN_AMOUNT: &crate::fonts::Gray4Font = &NOTO_SANS_MONO_28_BOLD;
 
 // Type alias to reduce complexity
 type BitcoinAmountRow = Row<(
-    Text<U8g2TextStyle<Rgb565>>, // Whole part + decimal point
-    Text<U8g2TextStyle<Rgb565>>, // First decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Second decimal digit
-    SizedBox<Rgb565>,            // Half-width space
-    Text<U8g2TextStyle<Rgb565>>, // Third decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Fourth decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Fifth decimal digit
-    SizedBox<Rgb565>,            // Half-width space
-    Text<U8g2TextStyle<Rgb565>>, // Sixth decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Seventh decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Eighth decimal digit
+    Text<Gray4TextStyle<'static>>, // Whole part + decimal point
+    Text<Gray4TextStyle<'static>>, // First decimal digit
+    Text<Gray4TextStyle<'static>>, // Second decimal digit
+    SizedBox<Rgb565>,               // Half-width space
+    Text<Gray4TextStyle<'static>>, // Third decimal digit
+    Text<Gray4TextStyle<'static>>, // Fourth decimal digit
+    Text<Gray4TextStyle<'static>>, // Fifth decimal digit
+    SizedBox<Rgb565>,               // Half-width space
+    Text<Gray4TextStyle<'static>>, // Sixth decimal digit
+    Text<Gray4TextStyle<'static>>, // Seventh decimal digit
+    Text<Gray4TextStyle<'static>>, // Eighth decimal digit
 )>;
 
 /// A widget that displays a Bitcoin amount with proper formatting and coloring
@@ -37,7 +42,7 @@ impl BitcoinAmountDisplay {
         if btc.whole_part() > 0 {
             color = PALETTE.primary;
         }
-        let whole_text = Text::new(amount_str, U8g2TextStyle::new(crate::FONT_LARGE, color));
+        let whole_text = Text::new(amount_str, Gray4TextStyle::new(FONT_BITCOIN_AMOUNT, color));
 
         // Get decimal digits iterator (take only 8 for Bitcoin)
         let mut after_decimal = btc.decimal_digits().take(8).map(|digit| {
@@ -46,7 +51,7 @@ impl BitcoinAmountDisplay {
             }
             Text::new(
                 digit.to_string(),
-                U8g2TextStyle::new(crate::FONT_LARGE, color),
+                Gray4TextStyle::new(FONT_BITCOIN_AMOUNT, color),
             )
         });
 

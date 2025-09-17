@@ -13,12 +13,11 @@ const FONT_BITCOIN_ADDRESS: &crate::fonts::Gray4Font = &NOTO_SANS_MONO_24_BOLD;
 const ADDRESS_HORIZONTAL_SPACING: u32 = 15; // Horizontal spacing between chunks
 const ADDRESS_VERTICAL_SPACING: u32 = 3; // Vertical spacing between rows
 
-/// A widget for displaying P2TR (Taproot) addresses in a specific format:
-/// - 6 rows with 3 chunks each (4 chars per chunk)
-/// - Last row has the final 2 characters centered in the middle column
-/// - Total: 62 characters displayed as 16 chunks
+/// A widget for displaying P2WSH addresses
+/// P2WSH addresses are 62 characters long (same as P2TR)
+/// Uses the same display format as P2TR addresses
 #[derive(frostsnap_macros::Widget)]
-pub struct P2trAddressDisplay {
+pub struct P2wshAddressDisplay {
     #[widget_delegate]
     column: Column<(
         Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
@@ -35,16 +34,14 @@ pub struct P2trAddressDisplay {
     )>,
 }
 
-impl P2trAddressDisplay {
+impl P2wshAddressDisplay {
     pub fn new(address: &str) -> Self {
-        // Use current time as seed for non-deterministic randomness
-        // In a real embedded system, this would come from the system's time counter
-        // For now, we'll use a default seed but the API allows passing time
+        // Use default seed but provide API for passing time/randomness
         Self::new_with_seed(address, 0)
     }
 
     pub fn new_with_seed(address: &str, seed: u32) -> Self {
-        // P2TR addresses are always 62 characters (ASCII)
+        // P2WSH addresses are 62 characters (same as P2TR)
         // Split into chunks of 4 characters, padding with spaces as needed
         let chunks: Vec<String> = (0..address.len()).step_by(4).map(|start| {
             let end = (start + 4).min(address.len());
@@ -84,8 +81,8 @@ impl P2trAddressDisplay {
             }
         };
 
-        // Create rows with 3 chunks each (except last row with 2 chunks)
-        // Row 0: chunks 0, 1, 2 (bc1p and first two data chunks)
+        // Create rows with 3 chunks each
+        // Row 0: chunks 0, 1, 2 (bc1q and first two data chunks)
         let row0 = Row::new((
             Text::new(chunks[0].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(0))),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
@@ -130,8 +127,7 @@ impl P2trAddressDisplay {
             Text::new(chunks[14].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(14))),
         )).with_main_axis_alignment(MainAxisAlignment::Center);
 
-        // Row 5: Last 2 characters centered within their chunk in middle column
-        // Use empty text for left and right columns
+        // Row 5: Last 2 characters centered in middle column (same as P2TR)
         // The last chunk (chunks[15]) is already padded to 4 chars, but we want to center it
         let last_chunk = &address[60..62]; // Get the actual last 2 characters
         let centered_last_chunk = format!(" {} ", last_chunk); // Center within 4 chars: " XY "
