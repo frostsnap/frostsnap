@@ -579,7 +579,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: Text('Cancel'),
+            child: Text('Forget'),
           ),
         ),
       ),
@@ -702,15 +702,15 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Cancel Transaction'),
-        content: Text('No Bitcoin will be sent.'),
+        title: Text('Forget Transaction'),
+        content: Text('No Bitcoin will be sent. Transaction will be lost.'),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('Back'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text('I\'m Sure!'),
           ),
