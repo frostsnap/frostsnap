@@ -59,7 +59,7 @@ impl Serial for FfiSerial {
         self.available_ports.lock().unwrap().clone()
     }
 
-    #[allow(unreachable_code)]
+    #[allow(unreachable_code, unused)]
     fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
         let (tx, rx) = std::sync::mpsc::sync_channel(0);
         loop {
@@ -87,7 +87,7 @@ impl Serial for FfiSerial {
             ));
         }
 
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         {
             use frostsnap_coordinator::cdc_acm_usb::CdcAcmSerial;
             use std::os::fd::FromRawFd;
@@ -99,10 +99,9 @@ impl Serial for FfiSerial {
             let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
             let cdc_acm = CdcAcmSerial::new_auto(fd, id.to_string(), baud_rate)
                 .map_err(|e| PortOpenError::Other(e.into()))?;
-            Ok(Box::new(cdc_acm))
+            return Ok(Box::new(cdc_acm));
         }
 
-        #[cfg(target_os = "windows")]
-        panic!("Ffi Serial not available on windows");
+        panic!("Host handles serial not available on this operating system");
     }
 }

@@ -183,6 +183,37 @@ jobs:
           name: Frostsnap-${{ github.sha }}-windows
           path: frostsnapp/build/windows/x64/runner/Release
 
+  app-build-macos:
+    name: "Build app for macOS"
+    needs: ["build-device-firmware"]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: "./.github/actions/set-up-app-build"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: "./.github/actions/cache-rust-target"
+        with:
+          key: "app-build-macos-v0"
+          path: |
+            target/aarch64-apple-darwin/release
+            target/x86_64-apple-darwin/release
+      - name: Install CocoaPods
+        run: |
+          gem install cocoapods
+      - name: Install create-dmg
+        run: |
+          brew install create-dmg
+      - name: Build App macOS and Create DMG
+        run: just build-dmg
+      - uses: "./.github/actions/upload-artifact"
+        with:
+          friendly: Frostsnap.dmg
+          description: "Frostsnap for macOS (Intel and Apple Silicon)"
+          name: Frostsnap-${{ github.sha }}-macos.dmg
+          path: frostsnapp/Frostsnap-${{ github.sha }}-universal.dmg
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
