@@ -12,6 +12,7 @@ pub struct Center<W> {
     pub child: W,
     constraints: Option<Size>,
     child_rect: Rectangle,
+    sizing: crate::Sizing,
 }
 
 impl<W> Center<W> {
@@ -20,6 +21,7 @@ impl<W> Center<W> {
             child,
             constraints: None,
             child_rect: Rectangle::zero(),
+            sizing: crate::Sizing::default(),
         }
     }
 }
@@ -30,15 +32,26 @@ impl<W: Widget> crate::DynWidget for Center<W> {
         self.child.set_constraints(max_size);
 
         // Calculate centered position for child
-        let child_size: Size = self.child.sizing().into();
+        let child_sizing = self.child.sizing();
+        let child_size: Size = child_sizing.into();
         let x_offset = ((max_size.width as i32 - child_size.width as i32) / 2).max(0);
         let y_offset = ((max_size.height as i32 - child_size.height as i32) / 2).max(0);
         self.child_rect = Rectangle::new(Point::new(x_offset, y_offset), child_size);
+
+        // Calculate our sizing with the child's dirty_rect offset by the centering position
+        let mut child_dirty = child_sizing.dirty_rect();
+        child_dirty.top_left += self.child_rect.top_left;
+        let dirty_rect = Some(child_dirty);
+
+        self.sizing = crate::Sizing {
+            width: max_size.width,
+            height: max_size.height,
+            dirty_rect,
+        };
     }
 
     fn sizing(&self) -> crate::Sizing {
-        // Center takes up all available space
-        self.constraints.unwrap().into()
+        self.sizing
     }
 
     fn handle_touch(

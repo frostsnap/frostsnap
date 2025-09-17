@@ -335,6 +335,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let demo = std::env::args().nth(1).unwrap_or("help".to_string());
 
     // Use the demo_widget! macro for all demos (including help)
-    frostsnap_widgets::demo_widget!(demo, screen_size, run_widget);
+    frostsnap_widgets::demo_widget!(demo, run_widget);
     Ok(())
 }

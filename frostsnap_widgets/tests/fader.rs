@@ -26,10 +26,11 @@ impl DynWidget for SinglePixelWidget {
     }
 
     fn sizing(&self) -> frostsnap_widgets::Sizing {
-        frostsnap_widgets::Sizing {
+        Size {
             width: 1,
             height: 1,
         }
+        .into()
     }
 
     fn handle_touch(
