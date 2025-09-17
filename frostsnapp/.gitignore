@@ -63,3 +63,6 @@ binding-rerun.sha256
 *.AppImage
 appimage/AppDir/*
 appimage/linuxdeploy
+
+# macOS DMG files
+*.dmg

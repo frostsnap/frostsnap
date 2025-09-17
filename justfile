@@ -110,6 +110,10 @@ run +ARGS="":
 run-secure +ARGS="":
     just frostsnapp/run-secure
 
+# Build macOS DMG
+build-dmg:
+    just frostsnapp/build-dmg
+
 fetch-riscv VERSION="2024.09.03-nightly":
     #!/bin/sh
     version="riscv32-elf-ubuntu-22.04-gcc-nightly-{{VERSION}}.tar.gz"
