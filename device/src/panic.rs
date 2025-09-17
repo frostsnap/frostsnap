@@ -17,6 +17,11 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
         gpio::{Level, Output},
         peripherals::Peripherals,
     };
+    unsafe {
+        // stop all interrupts. Interrupt handlers may panic after this panic
+        // handler otherwise and clobber the first panic message.
+        critical_section::acquire();
+    }
 
     let mut peripherals = unsafe { Peripherals::steal() };
 
@@ -25,6 +30,7 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
     let mut delay = Delay::new();
 
     let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
+    let display_size = display.bounding_box().size;
 
     let _ = display.clear(Rgb565::CSS_DARK_BLUE);
 
@@ -33,7 +39,7 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
     use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle};
     use embedded_graphics::text::{Text, TextStyle};
 
-    let error_rect = Rectangle::new(Point::new(0, 0), Size::new(240, 40));
+    let error_rect = Rectangle::new(Point::new(0, 0), Size::new(display_size.width, 40));
     let _ = error_rect
         .into_styled(PrimitiveStyleBuilder::new().fill_color(Rgb565::RED).build())
         .draw(&mut display);
@@ -41,13 +47,13 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
     let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
     let _ = Text::with_text_style(
         "ERROR",
-        Point::new(95, 25), // Centered horizontally
+        Point::new(display_size.width as i32 / 2, 25), // Centered horizontally
         text_style,
-        TextStyle::default(),
+        TextStyle::with_alignment(Alignment::Center),
     )
     .draw(&mut display);
 
-    let mut panic_buf = StringFixed::<512>::with_wrap((240 / FONT_WIDTH) as usize);
+    let mut panic_buf = StringFixed::<512>::with_wrap((display_size.width / FONT_WIDTH) as usize);
 
     let _ = match info.location() {
         Some(location) => write!(
@@ -76,7 +82,7 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
     let contact_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_WHITE);
     let _ = Text::with_text_style(
         "Contact\nsupport@frostsnap.com",
-        Point::new(120, 240), // Centered horizontally
+        Point::new(display_size.width as i32 / 2, 240), // Centered horizontally
         contact_style,
         TextStyle::with_alignment(Alignment::Center),
     )
