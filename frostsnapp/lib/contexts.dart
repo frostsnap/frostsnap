@@ -89,6 +89,7 @@ class SuperWalletContext extends InheritedWidget {
     // Get or create tx stream
     var stream = _txStreams[keyId];
     if (stream == null) {
+      print('Made tx stream for ${masterAppkey.field0.inner}');
       stream = superWallet
           .subTxState(masterAppkey: masterAppkey)
           .toBehaviorSubject();
@@ -232,4 +233,21 @@ class HomeContext extends InheritedWidget {
 
   @override
   bool updateShouldNotify(covariant InheritedWidget oldWidget) => false;
+}
+
+// Context that informs whether we should be able to create a new transaction.
+//
+// The currently policy is we only allow 1 uncanonical outgoing transaction at a time.
+class CanCreateContext extends InheritedWidget {
+  final ValueNotifier<bool> _canCreate;
+
+  const CanCreateContext({super.key, required canCreate, required super.child})
+    : _canCreate = canCreate;
+
+  static ValueNotifier? of(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<CanCreateContext>()
+      ?._canCreate;
+
+  @override
+  bool updateShouldNotify(covariant InheritedWidget _oldWidget) => false;
 }
