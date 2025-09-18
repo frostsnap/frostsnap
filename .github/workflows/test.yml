@@ -108,7 +108,7 @@ jobs:
           friendly: "Frostsnap.apk"
           description: "Frostsnap for android"
           name: Frostsnap-${{ github.sha }}.apk
-          path: frostsnapp/build/app/outputs/apk/release/app-release.apk
+          path: frostsnapp/build/app/outputs/flutter-apk/app-release.apk
       - name: Upload App Bundle (Android)
         uses: "./.github/actions/upload-artifact"
         with:
