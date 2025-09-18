@@ -203,6 +203,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
 
 class TxDetailsPage extends StatefulWidget {
   final ScrollController? scrollController;
+  final KeyId keyId;
   final TxDetailsModel txDetails;
   final SignSessionId? signingSessionId;
   final SignSessionId? finishedSigningSessionId;
@@ -216,6 +217,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
@@ -229,6 +231,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage.needsBroadcast({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
@@ -242,6 +245,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage.restoreSigning({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
@@ -255,6 +259,7 @@ class TxDetailsPage extends StatefulWidget {
   const TxDetailsPage.startSigning({
     super.key,
     this.scrollController,
+    required this.keyId,
     required this.txStates,
     required this.txDetails,
     required AccessStructureRef this.accessStructureRef,
@@ -408,33 +413,49 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       onDismissed: () {},
     );
 
-    if (widget.isSigning) {
-      devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
-      broadcastDone = false;
-      if (widget.isRestoreSigning) {
-        signingSub = coord
-            .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
-            .listen(onSigningSessionData);
-      } else if (widget.isStartSigning) {
-        late final StreamSubscription<SigningState> sub;
-        sub = coord
-            .startSigningTx(
-              accessStructureRef: widget.accessStructureRef!,
-              unsignedTx: widget.unsignedTx!,
-              devices: widget.devices!,
-            )
-            .listen((state) {
-              // Ensure `onSigningSessionData` is called sequentially.
-              sub.pause();
-              onSigningSessionData(state).whenComplete(sub.resume);
-            });
-        signingSub = sub;
+    try {
+      if (widget.isSigning) {
+        devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
+        broadcastDone = false;
+        if (widget.isRestoreSigning) {
+          signingSub = coord
+              .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
+              .listen(onSigningSessionData);
+        } else if (widget.isStartSigning) {
+          late final StreamSubscription<SigningState> sub;
+          sub = coord
+              .startSigningTx(
+                accessStructureRef: widget.accessStructureRef!,
+                unsignedTx: widget.unsignedTx!,
+                devices: widget.devices!,
+              )
+              .listen((state) {
+                // Ensure `onSigningSessionData` is called sequentially.
+                sub.pause();
+                onSigningSessionData(state).whenComplete(sub.resume);
+              });
+          signingSub = sub;
+        }
       }
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showErrorSnackbar(context, e.toString());
+        Navigator.popUntil(context, (r) => r.isFirst);
+        // force refresh.
+        coord.emitSigningSessionSignal(keyId: widget.keyId);
+      });
     }
   }
 
   @override
   void dispose() {
+    // WORKAROUND: Sometimes the wallet tx list does not refresh after a new tx is created. This
+    // forces a refresh after the tx details dialog closes so that the tx appears in the wallet tx
+    // list.
+    Future.delayed(
+      Duration(seconds: 1),
+    ).then((_) => coord.emitSigningSessionSignal(keyId: widget.keyId));
+
     devicesSub?.cancel();
     devicesSub = null;
     if (signingSub?.cancel() != null) {
@@ -572,7 +593,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: Text('Cancel'),
+            child: Text('Forget'),
           ),
         ),
       ),
@@ -695,15 +716,15 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Cancel Transaction'),
-        content: Text('No Bitcoin will be sent.'),
+        title: Text('Forget Transaction'),
+        content: Text('No Bitcoin will be sent. Transaction will be lost.'),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('Back'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text('I\'m Sure!'),
           ),
@@ -725,17 +746,16 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final tx = await txDetails.tx.withSignatures(
       signatures: signingState?.finishedSignatures ?? [],
     );
+    var broadcastError = '';
     final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
         .timeout(BROADCAST_TIMEOUT)
         .then<bool>(
-          (ssid == null)
-              ? (_) => false
-              : (_) async {
-                  await coord.forgetFinishedSignSession(ssid: ssid!);
-                  return true;
-                },
-          onError: (_) => false,
+          (_) => ssid != null,
+          onError: (e) {
+            broadcastError = e.toString();
+            return false;
+          },
         );
     if (mounted) {
       if (broadcasted) {
@@ -755,6 +775,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           ),
         );
       } else {
+        showErrorSnackbar(
+          context,
+          'Failed to broadcast transaction: $broadcastError',
+        );
         setState(() => isBroadcasting = false);
       }
     }
