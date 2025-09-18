@@ -1374,8 +1374,8 @@ class _EnterDeviceNameView extends StatelessWidget with _TitledWidget {
         const SizedBox(height: 16),
         DeviceNameField(
           id: deviceId,
-          mode: DeviceNameMode.rename,
-          buttonText: 'Confirm on device',
+          mode: DeviceNameMode.preview,
+          buttonText: 'Continue',
           onNamed: (name) {
             onDeviceName?.call(name);
           },
