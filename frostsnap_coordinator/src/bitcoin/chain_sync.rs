@@ -3,12 +3,12 @@ use anyhow::{anyhow, Result};
 pub use bdk_chain::spk_client::SyncRequest;
 use bdk_chain::{
     bitcoin::{self, BlockHash},
-    spk_client::{self, FullScanResponse},
+    spk_client::{self},
     CheckPoint, ConfirmationBlockTime,
 };
 use bdk_electrum_streaming::{
-    electrum_streaming_client::{request, Request},
-    run_async, AsyncReceiver, AsyncState, Cache, DerivedSpkTracker, ReqCoord, Update,
+    electrum_streaming_client::request, run_async, AsyncReceiver, AsyncState, Cache,
+    DerivedSpkTracker, ReqCoord, Update,
 };
 use frostsnap_core::MasterAppkey;
 use futures::{
@@ -19,7 +19,6 @@ use futures::{
     FutureExt, StreamExt,
 };
 use futures::{pin_mut, select_biased};
-use rustls::pki_types;
 use std::{
     collections::BTreeMap,
     fmt::Debug,
@@ -28,11 +27,6 @@ use std::{
     time::Duration,
 };
 use tokio::io::AsyncWriteExt;
-use tokio_rustls::{
-    client::TlsStream,
-    rustls::{self},
-    TlsConnector,
-};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{event, Level};
 
@@ -40,8 +34,15 @@ use crate::Sink;
 
 use super::{
     descriptor_for_account_keychain,
+    status_tracker::StatusTracker,
+    tofu::{
+        connection::{Conn, TargetServer, TargetServerReq},
+        trusted_certs::TrustedCertificates,
+        verifier::{TofuError, UntrustedCertificate},
+    },
     wallet::{CoordSuperWallet, KeychainId},
 };
+use crate::persist::Persisted;
 
 #[derive(Debug)]
 pub struct ReqAndResponse<I, O> {
@@ -71,9 +72,21 @@ pub type KeychainClientReceiver = bdk_electrum_streaming::AsyncReceiver<Keychain
 
 /// The messages the client can send to the backend
 pub enum Message {
-    ChangeUrlReq(ReqAndResponse<TargetServerReq, Result<()>>),
+    ChangeUrlReq(ReqAndResponse<TargetServerReq, Result<ConnectionResult>>),
     SetStatusSink(Box<dyn Sink<ChainStatus>>),
     Reconnect,
+    TrustCertificate {
+        server_url: String,
+        certificate_der: Vec<u8>,
+    },
+}
+
+/// Result of a connection attempt
+#[derive(Debug, Clone)]
+pub enum ConnectionResult {
+    Success,
+    CertificatePromptNeeded(UntrustedCertificate),
+    Failed(String),
 }
 
 impl std::fmt::Display for Message {
@@ -82,6 +95,9 @@ impl std::fmt::Display for Message {
             Message::ChangeUrlReq(_) => write!(f, "Message::ChangeUrlReq"),
             Message::SetStatusSink(_) => write!(f, "Message::SetStatusSink"),
             Message::Reconnect => write!(f, "Message::Reconnect"),
+            Message::TrustCertificate { server_url, .. } => {
+                write!(f, "Message::TrustCertificate({})", server_url)
+            }
         }
     }
 }
@@ -100,7 +116,11 @@ pub struct ChainClient {
 }
 
 impl ChainClient {
-    pub fn new(genesis_hash: BlockHash) -> (Self, ConnectionHandler) {
+    pub fn new(
+        genesis_hash: BlockHash,
+        trusted_certificates: Persisted<TrustedCertificates>,
+        db: Arc<sync::Mutex<rusqlite::Connection>>,
+    ) -> (Self, ConnectionHandler) {
         let (req_sender, req_recv) = mpsc::unbounded();
         let (client, client_recv) = KeychainClient::new();
         let cache = Cache::default();
@@ -115,17 +135,22 @@ impl ChainClient {
                 cache,
                 client,
                 genesis_hash,
+                trusted_certificates,
+                db,
             },
         )
     }
 
-    pub fn check_and_set_electrum_server_url(&self, url: String, is_backup: bool) -> Result<()> {
+    pub fn check_and_set_electrum_server_url(
+        &self,
+        url: String,
+        is_backup: bool,
+    ) -> Result<ConnectionResult> {
         let (req, response) = ReqAndResponse::new(TargetServerReq { url, is_backup });
         self.req_sender
             .unbounded_send(Message::ChangeUrlReq(req))
             .unwrap();
-        block_on(response)??;
-        Ok(())
+        block_on(response)?
     }
 
     pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
@@ -185,13 +210,22 @@ impl ChainClient {
     pub fn reconnect(&self) {
         self.req_sender.unbounded_send(Message::Reconnect).unwrap();
     }
+
+    pub fn trust_certificate(&self, server_url: String, certificate_der: Vec<u8>) {
+        self.req_sender
+            .unbounded_send(Message::TrustCertificate {
+                server_url,
+                certificate_der,
+            })
+            .unwrap();
+    }
 }
 
 pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str {
     // a tooling bug means we need this
     #[allow(unreachable_patterns)]
     match network {
-        bitcoin::Network::Bitcoin => "tcp://electrum.frostsn.app:50001",
+        bitcoin::Network::Bitcoin => "ssl://electrum.frostsn.app:50002",
         // we're using the tcp:// version since ssl ain't working for some reason
         bitcoin::Network::Testnet => "tcp://electrum.blockstream.info:60001",
         bitcoin::Network::Testnet4 => "ssl://blackie.c3-soft.com:57010",
@@ -220,19 +254,8 @@ pub struct ConnectionHandler {
     req_recv: mpsc::UnboundedReceiver<Message>,
     cache: Cache,
     genesis_hash: BlockHash,
-}
-
-#[derive(Debug, Clone)]
-pub struct UpdateIter {
-    update_recv: Arc<futures::lock::Mutex<mpsc::UnboundedReceiver<FullScanResponse<KeychainId>>>>,
-}
-
-impl Iterator for UpdateIter {
-    type Item = FullScanResponse<KeychainId>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        block_on(async { self.update_recv.lock().await.next().await })
-    }
+    trusted_certificates: Persisted<TrustedCertificates>,
+    db: Arc<sync::Mutex<rusqlite::Connection>>,
 }
 
 impl ConnectionHandler {
@@ -246,17 +269,19 @@ impl ConnectionHandler {
         SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
         F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send + 'static,
     {
-        tracing::debug!("Running ConnectionHandler");
-
         let lookahead: u32;
         let chain_tip: CheckPoint;
+        let network: bitcoin::Network;
         {
             let super_wallet = super_wallet.lock().expect("must lock");
+            network = super_wallet.network;
             lookahead = super_wallet.lookahead();
             chain_tip = super_wallet.chain_tip();
             self.cache.txs.extend(super_wallet.tx_cache());
             self.cache.anchors.extend(super_wallet.anchor_cache());
         }
+
+        tracing::info!("Running ConnectionHandler for {} network", network);
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -279,41 +304,56 @@ impl ConnectionHandler {
             );
 
             let mut conn_stage = TargetServer { url, backup_url, conn: None, backup_conn: None };
-            // The current connection (if any).
-            let mut conn_opt = Option::<Conn>::None;
-
-            let mut sink_stage = Option::<Box<dyn Sink<ChainStatus>>>::None;
-            let mut sink: Box<dyn Sink<ChainStatus>> = Box::new(());
+            let mut status = StatusTracker::new(&conn_stage.url);
 
             async move {
-                // Make sure we have a status sync before handling connection.
-                while let Some(msg) = self.req_recv.next().await {
-                    let is_status_sink = msg.is_status_sink();
-                    Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage).await;
-                    if is_status_sink {
-                        break;
-                    }
+                // 🥱 Lazily connect to electrum servers -- wait until we actually get a request
+                match self.req_recv.next().await {
+                     Some(msg) => {
+                         Self::handle_msg(self.genesis_hash, msg, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
+                     }
+                     None => return,
                 }
 
                 // Reconnection loop.
+
                 loop {
-                    if let Some(new_conn) = conn_stage.take_conn() {
-                        conn_opt = Some(new_conn);
-                    }
-                    if let Some(new_sink) = sink_stage.take() {
-                        sink = new_sink;
-                    }
+                    // Get or establish a connection
+                    let mut conn = if let Some((staged_conn, url)) = conn_stage.take_conn() {
+                        // Use the staged connection from a ChangeUrlReq
+                        // Update status to reflect we're using this connection
+                        status.update(&url, ChainStatusState::Connected);
+                        tracing::info!("Using staged connection with {}.", url);
+                        staged_conn
+                    } else {
+                        // Try to establish a new connection
+                        match Self::try_connect(
+                            self.genesis_hash,
+                            &conn_stage.url,
+                            &conn_stage.backup_url,
+                            &mut status,
+                            &mut self.trusted_certificates,
+                        ).await {
+                            Some((new_conn, _connected_url)) => {
+                                // try_connect already updated the status
+                                new_conn
+                            }
+                            None => {
+                                // No connection available, wait before
+                                tokio::time::sleep(Self::RECONNECT_DELAY).await;
+                                continue;
+                            }
+                        }
+                    };
 
                     {
-                        let conn_fut = Self::try_connect_and_run(
-                            self.genesis_hash,
-                            conn_stage.url.clone(),
-                            conn_stage.backup_url.clone(),
-                            &mut conn_opt,
+                        // Now run the connection (doesn't need trusted_certificates)
+                        let url = conn_stage.url.clone();
+                        let conn_fut = Self::run_connection(
+                            &mut conn,
                             &mut state,
                             &mut self.client_recv,
                             &mut update_sender,
-                            &*sink,
                         )
                         .fuse();
                         let ping_fut = async {
@@ -329,7 +369,7 @@ impl ConnectionHandler {
                                         if let Err(err) = result {
                                             return err;
                                         }
-                                        tracing::info!("Received pong from server");
+                                        tracing::trace!("Received pong from server");
                                     },
                                     _ = req_timeout_fut => {
                                         return anyhow!("Timeout waiting for pong");
@@ -339,84 +379,111 @@ impl ConnectionHandler {
                         }.fuse();
                         pin_mut!(conn_fut);
                         pin_mut!(ping_fut);
-                        select_biased! {
-                            msg_opt = self.req_recv.next() => {
-                                let msg = match msg_opt {
-                                    Some(msg) => msg,
-                                    None => return,
-                                };
-                                tracing::info!(msg = msg.to_string(), "Handling message");
-                                Self::handle_msg(self.genesis_hash, msg, &mut sink_stage, &mut conn_stage).await;
+
+                        // Keep handling messages until connection fails
+                        loop {
+                            select_biased! {
+                                msg_opt = self.req_recv.next() => {
+                                    let msg = match msg_opt {
+                                        Some(msg) => msg,
+                                        None => return,
+                                    };
+                                    tracing::info!(msg = msg.to_string(), "Handling message");
+                                    // Now we can handle the message directly since trusted_certificates is not borrowed
+                                    let should_reconnect = Self::handle_msg(self.genesis_hash, msg, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
+
+                                    if should_reconnect {
+                                        tracing::info!("Breaking connection loop due to reconnect request");
+                                        break;
+                                    }
+
+                                    // Check if a new connection was staged (server change)
+                                    if let Some((_, new_url)) = conn_stage.staged_connection() {
+                                        tracing::info!(
+                                            current_url = %url,
+                                            new_url = %new_url,
+                                            "New connection staged, restarting connection loop to switch servers"
+                                        );
+                                        break;
+                                    }
+                                    // Otherwise continue the inner loop to handle more messages
+                                }
+                                err = ping_fut => {
+                                    tracing::error!(error = err.to_string(), "Failed to keep connection alive");
+                                    break; // Exit inner loop on ping failure
+                                },
+                                _ = conn_fut => {
+                                    tracing::debug!("Connection service stopped");
+                                    break; // Exit inner loop when connection stops
+                                },
                             }
-                            err = ping_fut => {
-                                tracing::error!(error = err.to_string(), "Failed to keep connection alive");
-                            },
-                            _ = conn_fut => {
-                                tracing::debug!("Connection service stopped");
-                            },
                         }
                     }
 
-                    if let Some(old_conn) = conn_opt.take() {
-                        let shutdown_result = match old_conn {
-                            Conn::Tcp((rh, wh)) => rh.unsplit(wh).shutdown().await,
-                            Conn::Ssl((rh, wh)) => rh.unsplit(wh).shutdown().await,
-                        };
-                        tracing::info!(result = ?shutdown_result, "Connection shutdown");
-                    }
+                    // Update and send disconnected status after connection ends
+                    status.update(&conn_stage.url, ChainStatusState::Disconnected);
+
+                    // Shutdown the connection
+                    let shutdown_result = match conn {
+                        Conn::Tcp((rh, wh)) => rh.unsplit(wh).shutdown().await,
+                        Conn::Ssl((rh, wh)) => rh.unsplit(wh).shutdown().await,
+                    };
+                    tracing::info!(result = ?shutdown_result, "Connection shutdown");
+
+                    // Wait before reconnecting
+                    tokio::time::sleep(Self::RECONNECT_DELAY).await;
                 }
             }
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn try_connect_and_run(
+    /// Try to establish a new connection
+    /// Returns Some((connection, url)) if successful, None if all servers fail
+    async fn try_connect(
         genesis_hash: BlockHash,
-        url: String,
-        backup_url: String,
-        conn_opt: &mut Option<Conn>,
+        url: &str,
+        backup_url: &str,
+        status: &mut StatusTracker,
+        trusted_certificates: &mut Persisted<TrustedCertificates>,
+    ) -> Option<(Conn, String)> {
+        for url in [url, backup_url] {
+            status.update(url, ChainStatusState::Connecting);
+            tracing::info!("Connecting to {}.", url);
+
+            match Conn::new(
+                genesis_hash,
+                url,
+                Self::CONNECT_TIMEOUT,
+                trusted_certificates,
+            )
+            .await
+            {
+                Ok(conn) => {
+                    status.update(url, ChainStatusState::Connected);
+                    tracing::info!("Connection established with {}.", url);
+                    return Some((conn, url.to_string()));
+                }
+                Err(err) => {
+                    status.update(url, ChainStatusState::Disconnected);
+                    tracing::error!(err = err.to_string(), url, "failed to connect",);
+                }
+            }
+        }
+
+        tracing::error!(
+            reconnecting_in_secs = Self::RECONNECT_DELAY.as_secs_f32(),
+            "Failed to connect to all Electrum servers"
+        );
+        None
+    }
+
+    /// Run the sync loop with an established connection
+    async fn run_connection(
+        conn: &mut Conn,
         state: &mut AsyncState<KeychainId>,
         client_recv: &mut AsyncReceiver<KeychainId>,
         update_sender: &mut mpsc::UnboundedSender<Update<KeychainId>>,
-        status_sink: &dyn Sink<ChainStatus>,
     ) {
-        let conn = match conn_opt {
-            Some(conn) => {
-                status_sink.send(ChainStatus::new(&url, ChainStatusState::Connected));
-                tracing::info!("Using previously established connection with {}.", url);
-                conn
-            }
-            conn_opt => {
-                for url in [url.as_str(), backup_url.as_str()] {
-                    status_sink.send(ChainStatus::new(url, ChainStatusState::Connecting));
-                    tracing::info!("No existing connection. Connecting to {}.", url);
-
-                    match Conn::new(genesis_hash, url, Self::CONNECT_TIMEOUT).await {
-                        Ok(conn) => {
-                            status_sink.send(ChainStatus::new(url, ChainStatusState::Connected));
-                            tracing::info!("Connection established with {}.", url);
-                            *conn_opt = Some(conn);
-                            break;
-                        }
-                        Err(err) => {
-                            status_sink.send(ChainStatus::new(url, ChainStatusState::Disconnected));
-                            tracing::error!(err = err.to_string(), url, "failed to connect",);
-                        }
-                    }
-                }
-                match conn_opt {
-                    Some(conn) => conn,
-                    None => {
-                        tracing::error!(
-                            reconnecting_in_secs = Self::RECONNECT_DELAY.as_secs_f32(),
-                            "Failed to connect to all Electrum servers"
-                        );
-                        tokio::time::sleep(Self::RECONNECT_DELAY).await;
-                        return;
-                    }
-                }
-            }
-        };
         let conn_result = match conn {
             Conn::Tcp((read_half, write_half)) => {
                 run_async(
@@ -441,11 +508,9 @@ impl ConnectionHandler {
         };
         // TODO: This is not necessarily a closed connection.
         match conn_result {
-            Ok(_) => tracing::info!(url, "Connection service stopped gracefully"),
-            Err(err) => tracing::warn!(url, ?err, "Connection service stopped"),
+            Ok(_) => tracing::info!("Connection service stopped gracefully"),
+            Err(err) => tracing::warn!(?err, "Connection service stopped"),
         };
-        status_sink.send(ChainStatus::new(&url, ChainStatusState::Disconnected));
-        tokio::time::sleep(Self::RECONNECT_DELAY).await;
     }
 
     /// Handle a single message.
@@ -453,15 +518,19 @@ impl ConnectionHandler {
     /// Note that this requires a tokio runtime with networking as we need to handle
     /// connect/reconnect logic.
     ///
+    /// Returns true if the connection loop should be broken (to trigger reconnection).
+    ///
     /// * `sink_stage` stages changes to the `ChainStatus` sink which updates the Flutter UI about
     ///   connection status.
     /// * `conn_stage` stages changes to the connection.
     async fn handle_msg(
         genesis_hash: BlockHash,
         msg: Message,
-        sink_stage: &mut Option<Box<dyn Sink<ChainStatus>>>,
+        status: &mut StatusTracker,
         conn_stage: &mut TargetServer,
-    ) {
+        trusted_certificates: &mut Persisted<TrustedCertificates>,
+        db: &Arc<sync::Mutex<rusqlite::Connection>>,
+    ) -> bool {
         match msg {
             Message::ChangeUrlReq(ReqAndResponse { request, response }) => {
                 tracing::info!(
@@ -470,7 +539,14 @@ impl ConnectionHandler {
                     is_backup = request.is_backup,
                 );
 
-                match Conn::new(genesis_hash, &request.url, Self::CONNECT_TIMEOUT).await {
+                match Conn::new(
+                    genesis_hash,
+                    &request.url,
+                    Self::CONNECT_TIMEOUT,
+                    trusted_certificates,
+                )
+                .await
+                {
                     Ok(conn) => {
                         if request.is_backup {
                             conn_stage.backup_url = request.url.clone();
@@ -479,19 +555,74 @@ impl ConnectionHandler {
                             conn_stage.url = request.url.clone();
                             conn_stage.conn = Some(conn);
                         }
-                        let _ = response.send(Ok(()));
+                        let _ = response.send(Ok(ConnectionResult::Success));
                     }
-                    Err(err) => {
-                        let _ = response.send(Err(err));
-                    }
+                    Err(err) => match err {
+                        TofuError::NotTrusted(cert) => {
+                            tracing::info!(
+                                "Certificate not trusted for {}: {}",
+                                request.url,
+                                cert.fingerprint
+                            );
+                            let _ =
+                                response.send(Ok(ConnectionResult::CertificatePromptNeeded(cert)));
+                        }
+                        TofuError::Other(e) => {
+                            tracing::error!("Failed to connect to {}: {}", request.url, e);
+                            let _ = response.send(Ok(ConnectionResult::Failed(e.to_string())));
+                        }
+                    },
                 };
+                false
             }
-            Message::SetStatusSink(sink) => {
+            Message::SetStatusSink(new_sink) => {
                 tracing::info!(msg = "SetStatusSink");
-                *sink_stage = Some(sink);
+                status.set_sink(new_sink);
+                false
             }
             Message::Reconnect => {
-                tracing::info!(msg = "Reconnect");
+                tracing::info!(msg = "Reconnect - forcing reconnection");
+                true // Break the loop to force reconnection
+            }
+            Message::TrustCertificate {
+                server_url,
+                certificate_der,
+            } => {
+                tracing::info!(msg = "TrustCertificate", server_url = server_url);
+                let cert = certificate_der.into();
+
+                // Extract hostname from URL (remove protocol and port)
+                let hostname = match server_url.split_once("://") {
+                    Some((_, addr)) => {
+                        // Remove port if present
+                        addr.split_once(':')
+                            .map(|(host, _)| host)
+                            .unwrap_or(addr)
+                            .to_string()
+                    }
+                    None => {
+                        // No protocol, remove port if present
+                        server_url
+                            .split_once(':')
+                            .map(|(host, _)| host)
+                            .unwrap_or(&server_url)
+                            .to_string()
+                    }
+                };
+
+                tracing::info!("Storing certificate for hostname: {}", hostname);
+
+                // Use Persisted's mutation methods to update and persist
+                let mut db_guard = db.lock().unwrap();
+                if let Err(e) =
+                    trusted_certificates.mutate2(&mut *db_guard, |trusted_certs, update| {
+                        trusted_certs.add_certificate(cert, hostname, update);
+                        Ok(())
+                    })
+                {
+                    tracing::error!("Failed to trust certificate: {:?}", e);
+                }
+                false
             }
         }
     }
@@ -548,135 +679,4 @@ pub enum ChainStatusState {
     Connected,
     Disconnected,
     Connecting,
-}
-
-/// Check that the connection actually connects to an Electrum server and the server is on the right
-/// network.
-async fn check_conn<R, W>(rh: R, mut wh: W, genesis_hash: BlockHash) -> Result<()>
-where
-    R: tokio::io::AsyncRead + Unpin,
-    W: tokio::io::AsyncWrite + Unpin,
-{
-    use bdk_electrum_streaming::electrum_streaming_client as client;
-    use client::request;
-    use client::RawNotificationOrResponse;
-    use futures::io::BufReader;
-
-    let req_id = rand::random::<u32>();
-    let req = client::RawRequest::from_request(req_id, request::Header { height: 0 });
-    client::io::tokio_write(&mut wh, req).await?;
-
-    let mut read_stream = client::io::ReadStreamer::new(BufReader::new(rh.compat()));
-    let raw_incoming = read_stream
-        .next()
-        .await
-        .ok_or(anyhow!("failed to get response from server"))??;
-
-    let raw_resp = match raw_incoming {
-        RawNotificationOrResponse::Notification(_) => {
-            return Err(anyhow!("Received unexpected notification from server"))
-        }
-        RawNotificationOrResponse::Response(raw_resp) => raw_resp,
-    };
-
-    if raw_resp.id != req_id {
-        return Err(anyhow!(
-            "Response id {} does not match request id {}",
-            raw_resp.id,
-            req_id
-        ));
-    }
-
-    let raw_val = raw_resp
-        .result
-        .map_err(|err| anyhow!("Server responded with error: {err}"))?;
-
-    let resp: <request::Header as Request>::Response = client::serde_json::from_value(raw_val)?;
-
-    if genesis_hash != resp.header.block_hash() {
-        return Err(anyhow!("Electrum server is on a different network"));
-    }
-
-    Ok(())
-}
-
-type SplitConn<T> = (tokio::io::ReadHalf<T>, tokio::io::WriteHalf<T>);
-
-enum Conn {
-    Tcp(SplitConn<tokio::net::TcpStream>),
-    Ssl(SplitConn<TlsStream<tokio::net::TcpStream>>),
-}
-
-impl Conn {
-    async fn new(genesis_hash: BlockHash, url: &str, timeout: Duration) -> Result<Self> {
-        let connect_fut = Self::_new(genesis_hash, url).fuse();
-        pin_mut!(connect_fut);
-
-        let timeout_fut = tokio::time::sleep(timeout).fuse();
-        pin_mut!(timeout_fut);
-
-        select! {
-            conn_res = connect_fut => conn_res,
-            _ = timeout_fut => Err(anyhow!("Timed out")),
-        }
-    }
-
-    async fn _new(genesis_hash: BlockHash, url: &str) -> Result<Self> {
-        let (is_ssl, socket_addr) = match url.split_once("://") {
-            Some(("ssl", socket_addr)) => (true, socket_addr.to_owned()),
-            Some(("tcp", socket_addr)) => (false, socket_addr.to_owned()),
-            Some((unknown_scheme, _)) => {
-                return Err(anyhow!("unknown url scheme '{unknown_scheme}'"));
-            }
-            None => (false, url.to_owned()),
-        };
-        tracing::info!(url, "Connecting");
-        if is_ssl {
-            let mut root_store = rustls::RootCertStore::empty();
-            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            let config = rustls::ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_no_client_auth();
-            let host = socket_addr
-                .clone()
-                .split_once(":")
-                .map(|(host, _)| host.to_string())
-                .unwrap_or(socket_addr.clone());
-            let dnsname = pki_types::ServerName::try_from(host)?;
-            let sock = tokio::net::TcpStream::connect(socket_addr).await?;
-            let connector = TlsConnector::from(Arc::new(config));
-            let stream = connector.connect(dnsname, sock).await?;
-            let (mut rh, mut wh) = tokio::io::split(stream);
-            check_conn(&mut rh, &mut wh, genesis_hash)
-                .await
-                .inspect_err(|e| tracing::error!(e = e.to_string()))?;
-            anyhow::Ok(Conn::Ssl((rh, wh)))
-        } else {
-            let sock = tokio::net::TcpStream::connect(socket_addr).await?;
-            let (mut rh, mut wh) = tokio::io::split(sock);
-            check_conn(&mut rh, &mut wh, genesis_hash)
-                .await
-                .inspect_err(|e| tracing::error!(e = e.to_string()))?;
-            anyhow::Ok(Conn::Tcp((rh, wh)))
-        }
-    }
-}
-
-struct TargetServer {
-    url: String,
-    backup_url: String,
-    conn: Option<Conn>,
-    backup_conn: Option<Conn>,
-}
-
-impl TargetServer {
-    fn take_conn(&mut self) -> Option<Conn> {
-        self.conn.take().or_else(|| self.backup_conn.take())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TargetServerReq {
-    pub url: String,
-    pub is_backup: bool,
 }

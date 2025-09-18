@@ -3,7 +3,10 @@ use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, SUPPORTED_NETWORKS};
-pub use frostsnap_coordinator::bitcoin::chain_sync::{ChainStatus, ChainStatusState};
+pub use frostsnap_coordinator::bitcoin::chain_sync::{
+    ChainStatus, ChainStatusState, ConnectionResult,
+};
+pub use frostsnap_coordinator::bitcoin::tofu::verifier::UntrustedCertificate;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::settings::Settings as RSettings;
 use std::collections::HashMap;
@@ -66,7 +69,17 @@ impl Settings {
             let backup_electrum_url = persisted.get_backup_electrum_server(network);
 
             let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
-            let (chain_api, conn_handler) = ChainClient::new(genesis_hash);
+
+            // Load trusted certificates for this network from the database
+            let trusted_certificates = {
+                let mut db_ = db.lock().unwrap();
+                use frostsnap_coordinator::bitcoin::tofu::trusted_certs::TrustedCertificates;
+                use frostsnap_coordinator::persist::Persisted;
+                Persisted::<TrustedCertificates>::new(&mut *db_, network)?
+            };
+
+            let (chain_api, conn_handler) =
+                ChainClient::new(genesis_hash, trusted_certificates, db.clone());
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
             // FIXME: the dependency relationship here is overly convoluted.
@@ -148,20 +161,48 @@ impl Settings {
         network: BitcoinNetwork,
         url: String,
         is_backup: bool,
-    ) -> Result<()> {
+    ) -> Result<ConnectionResult> {
         let chain_api = self
             .chain_clients
             .get(&network)
             .ok_or_else(|| anyhow!("network not supported {}", network))?;
-        chain_api.check_and_set_electrum_server_url(url.clone(), is_backup)?;
-        let mut db = self.db.lock().unwrap();
-        self.settings.mutate2(&mut *db, |settings, update| {
-            settings.set_electrum_server(network, url, update);
-            Ok(())
-        })?;
 
-        self.emit_electrum_settings();
-        Ok(())
+        match chain_api.check_and_set_electrum_server_url(url.clone(), is_backup)? {
+            ConnectionResult::Success => {
+                // Connection succeeded, persist the setting
+                let mut db = self.db.lock().unwrap();
+                self.settings.mutate2(&mut *db, |settings, update| {
+                    settings.set_electrum_server(network, url, update);
+                    Ok(())
+                })?;
+                self.emit_electrum_settings();
+                Ok(ConnectionResult::Success)
+            }
+            result => {
+                // Return TOFU prompt or failure without persisting
+                Ok(result)
+            }
+        }
+    }
+
+    pub fn accept_certificate_and_retry(
+        &mut self,
+        network: BitcoinNetwork,
+        server_url: String,
+        certificate: Vec<u8>,
+        is_backup: bool,
+    ) -> Result<ConnectionResult> {
+        // Use message-passing to trust the certificate
+        let chain_api = self
+            .chain_clients
+            .get(&network)
+            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+
+        // Send the trust certificate message - the backend will handle persistence
+        chain_api.trust_certificate(server_url.clone(), certificate);
+
+        // Retry connection now that we've trusted the certificate
+        self.check_and_set_electrum_server(network, server_url, is_backup)
     }
 
     pub fn subscribe_chain_status(
@@ -230,4 +271,21 @@ pub enum _ChainStatusState {
     Connected,
     Disconnected,
     Connecting,
+}
+
+#[frb(mirror(ConnectionResult))]
+pub enum _ConnectionResult {
+    Success,
+    CertificatePromptNeeded(UntrustedCertificate),
+    Failed(String),
+}
+
+#[frb(mirror(UntrustedCertificate))]
+pub struct _UntrustedCertificate {
+    pub fingerprint: String,
+    pub server_url: String,
+    pub is_changed: bool,
+    pub old_fingerprint: Option<String>,
+    pub certificate_der: Vec<u8>,
+    pub valid_for_names: Option<Vec<String>>,
 }
