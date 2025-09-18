@@ -6,6 +6,7 @@ pub mod firmware_upgrade;
 pub mod init;
 pub mod keygen;
 pub mod log;
+pub mod name;
 pub mod nonce_replenish;
 pub mod port;
 pub mod psbt_manager;

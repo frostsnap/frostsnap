@@ -13,6 +13,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
+import 'package:frostsnap/src/rust/api/name.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -69,8 +70,9 @@ class WalletCreateController extends ChangeNotifier {
             nameError = 'Wallet name required';
             return;
           }
-          if (name.length > 21) {
-            nameError = 'Wallet name cannot be over 21 chars';
+          if (name.length > keyNameMaxLength()) {
+            nameError =
+                'Wallet name cannot be over ${keyNameMaxLength()} chars';
             return;
           }
         } else if (name.isNotEmpty) {
@@ -557,7 +559,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           border: OutlineInputBorder(),
           errorText: _controller.nameError,
         ),
-        maxLength: 21,
+        maxLength: keyNameMaxLength(),
         textCapitalization: TextCapitalization.words,
         onSubmitted: (_) {
           _controller.next(context);
@@ -751,6 +753,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   border: OutlineInputBorder(),
                   labelText: 'Device Name',
                 ),
+                maxLength: DeviceName.maxLength(),
                 initialValue: _controller.form.deviceNames[device.id],
                 onChanged: (name) => _controller.setDeviceName(device.id, name),
                 onFieldSubmitted: (_) => Navigator.pop(context),
@@ -799,6 +802,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             suffixIcon: Icon(Icons.edit_rounded),
             filled: true,
           ),
+          maxLength: DeviceName.maxLength(),
           style: monospaceTextStyle,
           controller: textController,
           onChanged: isPart

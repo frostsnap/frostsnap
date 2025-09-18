@@ -341,12 +341,16 @@ impl FfiCoordinator {
         key_event_stream.replace(Box::new(stream));
     }
 
-    pub fn update_name_preview(&self, id: DeviceId, name: &str) {
-        self.usb_sender.update_name_preview(id, name);
+    pub fn update_name_preview(&self, id: DeviceId, name: &str) -> anyhow::Result<()> {
+        let device_name: frostsnap_coordinator::frostsnap_comms::DeviceName = name.try_into()?;
+        self.usb_sender.update_name_preview(id, device_name);
+        Ok(())
     }
 
-    pub fn finish_naming(&self, id: DeviceId, name: &str) {
-        self.usb_sender.finish_naming(id, name);
+    pub fn finish_naming(&self, id: DeviceId, name: &str) -> anyhow::Result<()> {
+        let device_name: frostsnap_coordinator::frostsnap_comms::DeviceName = name.try_into()?;
+        self.usb_sender.finish_naming(id, device_name);
+        Ok(())
     }
 
     pub fn send_cancel(&self, id: DeviceId) {
@@ -771,8 +775,8 @@ impl FfiCoordinator {
             if restoration_state.key_name != held_share.key_name {
                 event!(
                     Level::WARN,
-                    recovery_name = restoration_state.key_name,
-                    device_name = held_share.key_name,
+                    recovery_name = %restoration_state.key_name,
+                    device_name = %held_share.key_name,
                     "had to rename restoration share"
                 );
                 held_share.key_name = restoration_state.key_name.clone();
@@ -1208,7 +1212,7 @@ fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {
                 problem: status.problem(),
                 shares_obtained: status.shares,
                 restoration_id: restoring.restoration_id,
-                name: restoring.key_name,
+                name: restoring.key_name.to_string(),
                 threshold: restoring.access_structure.threshold,
                 bitcoin_network: restoring.key_purpose.bitcoin_network(),
             }

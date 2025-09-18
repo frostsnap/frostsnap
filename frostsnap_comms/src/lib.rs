@@ -6,6 +6,7 @@ extern crate std;
 #[macro_use]
 extern crate alloc;
 pub mod factory;
+pub mod fixed_string;
 pub mod genuine_certificate;
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -14,6 +15,11 @@ use alloc::{collections::BTreeSet, string::String};
 use bincode::{de::read::Reader, enc::write::Writer, Decode, Encode};
 use core::marker::PhantomData;
 use frostsnap_core::{DeviceId, Gist};
+
+pub use fixed_string::{
+    DeviceName, FixedString, StringTooLong, DEVICE_NAME_MAX_LENGTH, KEY_NAME_MAX_LENGTH,
+};
+
 use genuine_certificate::Certificate;
 
 pub const FACTORY_PUBLIC_KEY: [u8; 32] = [
@@ -253,8 +259,8 @@ pub enum CoordinatorUpgradeMessage {
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum NameCommand {
-    Preview(String),
-    Prompt(String),
+    Preview(DeviceName),
+    Prompt(DeviceName),
 }
 
 impl Gist for CoordinatorSendBody {
@@ -398,7 +404,7 @@ pub enum DeviceSendBody {
         firmware_digest: Sha256Digest,
     },
     SetName {
-        name: String,
+        name: DeviceName,
     },
     DisconnectDownstream,
     NeedName,
@@ -431,7 +437,7 @@ pub enum WireDeviceSendBody {
     _Core,
     Debug { message: String },
     Announce { firmware_digest: Sha256Digest },
-    SetName { name: String },
+    SetName { name: DeviceName },
     DisconnectDownstream,
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
