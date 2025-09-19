@@ -41,6 +41,7 @@ class _DeviceNameField extends State<DeviceNameField> {
     if (name != null) {
       _controller.text = name;
     }
+    coord.updateNamePreview(id: widget.id, name: _controller.text);
   }
 
   @override

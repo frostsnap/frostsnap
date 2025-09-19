@@ -3,6 +3,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -365,11 +366,23 @@ class WalletRecoveryFlow extends StatefulWidget {
   State<WalletRecoveryFlow> createState() => _WalletRecoveryFlowState();
 }
 
+/// Encapsulates a device and a future that completes when it disconnects
+class TargetDevice {
+  final ConnectedDevice device;
+  final Future<void> onDisconnected;
+
+  TargetDevice({required this.device, required this.onDisconnected});
+
+  DeviceId get id => device.id;
+  String? get name => device.name;
+  bool needsFirmwareUpgrade() => device.needsFirmwareUpgrade();
+}
+
 class _RecoveryFlowPrevState {
   RecoveryFlowStep currentStep = RecoveryFlowStep.start;
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
-  ConnectedDevice? blankDevice;
+  TargetDevice? targetDevice;
   RestorationId? restorationId;
   String? error;
 
@@ -377,7 +390,7 @@ class _RecoveryFlowPrevState {
     required this.currentStep,
     required this.candidate,
     required this.compatibility,
-    required this.blankDevice,
+    required this.targetDevice,
     required this.restorationId,
     required this.error,
   });
@@ -389,14 +402,14 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   RecoveryFlowStep currentStep = RecoveryFlowStep.start;
   RecoverShare? candidate;
   ShareCompatibility? compatibility;
-  ConnectedDevice? blankDevice;
+  TargetDevice? targetDevice;
+  Completer<void>? _disconnectionCompleter;
   RestorationId? restorationId;
   String? walletName;
   BitcoinNetwork? bitcoinNetwork;
   int? threshold;
   String? error;
-  Stream<NonceReplenishState>? activeNonceStream;
-  StreamSubscription? _nonceStreamSubscription;
+  StreamSubscription<DeviceListUpdate>? _deviceListSubscription;
 
   // For back gesture.
   final prevStates = List<_RecoveryFlowPrevState>.empty(growable: true);
@@ -408,7 +421,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         currentStep: currentStep,
         candidate: candidate,
         compatibility: compatibility,
-        blankDevice: blankDevice,
+        targetDevice: targetDevice,
         restorationId: restorationId,
         error: error,
       ),
@@ -423,16 +436,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         currentStep = prevState.currentStep;
         candidate = prevState.candidate;
         compatibility = prevState.compatibility;
-        blankDevice = prevState.blankDevice;
+        targetDevice = prevState.targetDevice;
         restorationId = prevState.restorationId;
         error = prevState.error;
 
         // Cancel any active operations when going back
-        if (activeNonceStream != null) {
-          _nonceStreamSubscription?.cancel();
-          activeNonceStream = null;
-          coord.cancelProtocol();
-        }
+        coord.cancelProtocol();
       });
       return true;
     }
@@ -441,8 +450,55 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
   @override
   void dispose() {
-    _nonceStreamSubscription?.cancel();
+    _deviceListSubscription?.cancel();
     super.dispose();
+  }
+
+  void _setTargetDevice(ConnectedDevice device) {
+    // Cancel any existing subscription
+    _deviceListSubscription?.cancel();
+    // Complete any existing completer if not already completed
+    if (_disconnectionCompleter != null &&
+        !_disconnectionCompleter!.isCompleted) {
+      _disconnectionCompleter!.complete();
+    }
+
+    // Create new disconnection completer
+    _disconnectionCompleter = Completer<void>();
+
+    targetDevice = TargetDevice(
+      device: device,
+      onDisconnected: _disconnectionCompleter!.future,
+    );
+
+    // Start monitoring for disconnection
+    _deviceListSubscription = GlobalStreams.deviceListSubject.listen((update) {
+      // Check if our target device is still connected
+      final stillConnected = update.state.devices.any(
+        (d) => deviceIdEquals(d.id, device.id),
+      );
+
+      if (!stillConnected && targetDevice != null && mounted) {
+        // Complete the disconnection future - let children handle cleanup
+        if (!_disconnectionCompleter!.isCompleted) {
+          _disconnectionCompleter!.complete();
+        }
+        _deviceListSubscription?.cancel();
+        _deviceListSubscription = null;
+      }
+    });
+  }
+
+  void _clearTargetDevice() {
+    targetDevice = null;
+    // Complete if not already completed
+    if (_disconnectionCompleter != null &&
+        !_disconnectionCompleter!.isCompleted) {
+      _disconnectionCompleter!.complete();
+    }
+    _disconnectionCompleter = null;
+    _deviceListSubscription?.cancel();
+    _deviceListSubscription = null;
   }
 
   @override
@@ -509,9 +565,31 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _PlugInBlankView(
           onBlankDeviceConnected: (device) {
             setState(() {
-              pushPrevState();
-              blankDevice = device;
+              _setTargetDevice(device);
+              // Check if firmware upgrade is needed
+              if (device.needsFirmwareUpgrade()) {
+                currentStep = RecoveryFlowStep.firmwareUpgrade;
+              } else {
+                currentStep = RecoveryFlowStep.enterDeviceName;
+              }
+            });
+          },
+        );
+        break;
+
+      case RecoveryFlowStep.firmwareUpgrade:
+        child = _FirmwareUpgradeView(
+          key: ValueKey("firmware-upgrade"),
+          targetDevice: targetDevice!,
+          onComplete: () {
+            setState(() {
               currentStep = RecoveryFlowStep.enterDeviceName;
+            });
+          },
+          onCancel: () {
+            setState(() {
+              _clearTargetDevice();
+              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
             });
           },
         );
@@ -519,7 +597,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
       case RecoveryFlowStep.enterDeviceName:
         // Check if device is still connected
-        if (blankDevice == null) {
+        if (targetDevice == null) {
           child = _ErrorView(
             title: 'Device Disconnected',
             message:
@@ -535,10 +613,16 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         }
 
         child = _EnterDeviceNameView(
-          deviceId: blankDevice!.id,
+          targetDevice: targetDevice!,
+          onDisconnected: () {
+            setState(() {
+              _clearTargetDevice();
+              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+            });
+          },
           onDeviceName: (name) {
             // Check nonces synchronously, just like we do for existing device recovery
-            final device = blankDevice;
+            final device = targetDevice;
             if (device == null) {
               setState(() {
                 error = 'Device disconnected';
@@ -551,16 +635,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
             if (nonceRequest.someNoncesRequested()) {
               // Show nonce generation UI immediately
-              final stream = coord
-                  .replenishNonces(
-                    nonceRequest: nonceRequest,
-                    devices: [device.id],
-                  )
-                  .toBehaviorSubject();
-
               setState(() {
                 pushPrevState();
-                activeNonceStream = stream;
                 currentStep = RecoveryFlowStep.generatingNonces;
               });
             } else {
@@ -574,29 +650,32 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
 
       case RecoveryFlowStep.generatingNonces:
-        if (activeNonceStream == null) {
-          // Stream not ready, go back
+        final device = targetDevice;
+        if (device == null) {
+          // Device disconnected, go back
           setState(() {
             currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
           });
-          child = _LoadingView(title: 'Preparing...', subtitle: null);
+          child = _LoadingView(title: 'Device disconnected', subtitle: null);
         } else {
-          // Use the same enrollment dialog UI for consistency
+          // Create nonce stream here and pass to dialog
+          final nonceRequest = coord.createNonceRequest(devices: [device.id]);
+          final stream = coord
+              .replenishNonces(nonceRequest: nonceRequest, devices: [device.id])
+              .toBehaviorSubject();
+
           child = _EnrollmentNonceDialog(
-            stream: activeNonceStream!,
-            deviceName: blankDevice != null
-                ? coord.getDeviceName(id: blankDevice!.id)
-                : null,
+            stream: stream,
+            deviceName: coord.getDeviceName(id: device.id),
             onComplete: () {
               setState(() {
-                activeNonceStream = null;
                 currentStep = RecoveryFlowStep.enterBackup;
               });
             },
             onCancel: () {
               coord.cancelProtocol();
               setState(() {
-                activeNonceStream = null;
+                _clearTargetDevice();
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
             },
@@ -606,7 +685,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                 if (!error.contains('disconnected')) {
                   this.error = error;
                 }
-                activeNonceStream = null;
+                _clearTargetDevice();
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
             },
@@ -616,7 +695,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
       case RecoveryFlowStep.enterBackup:
         final stream = coord.tellDeviceToEnterPhysicalBackup(
-          deviceId: blankDevice!.id,
+          deviceId: targetDevice!.id,
         );
         child = _EnterBackupView(
           stream: stream,
@@ -652,6 +731,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                     currentStep = RecoveryFlowStep.physicalBackupSuccess;
                   });
                 } else {
+                  // Incompatible backup - show fail screen with retry option
                   setState(() {
                     pushPrevState();
                     currentStep = RecoveryFlowStep.physicalBackupFail;
@@ -659,18 +739,21 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                 }
               }
             } catch (e) {
+              // Error during backup save - go back to waiting for device
               setState(() {
-                pushPrevState();
-                currentStep = RecoveryFlowStep.physicalBackupFail;
+                _clearTargetDevice();
+                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
                 error = e.toString();
               });
             }
           },
           onError: (e) {
+            // Device disconnected or other error - go back to waiting for device
             setState(() {
-              pushPrevState();
-              currentStep = RecoveryFlowStep.physicalBackupFail;
-              error = e.toString();
+              _clearTargetDevice();
+              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+              error =
+                  null; // Clear error since disconnection is expected behavior
             });
           },
         );
@@ -706,7 +789,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         break;
       case RecoveryFlowStep.physicalBackupSuccess:
         child = _PhysicalBackupSuccessView(
-          deviceName: coord.getDeviceName(id: blankDevice!.id)!,
+          deviceName: coord.getDeviceName(id: targetDevice!.id)!,
           onClose: () {
             Navigator.pop(context);
           },
@@ -718,7 +801,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           compatibility: compatibility,
           onRetry: () {
             setState(() {
-              pushPrevState();
+              // Don't push prev state, just go back to enterBackup
               currentStep = RecoveryFlowStep.enterBackup;
               error = null;
             });
@@ -837,6 +920,7 @@ enum RecoveryFlowStep {
   waitDevice,
   candidateReady,
   waitPhysicalBackupDevice,
+  firmwareUpgrade,
   enterDeviceName,
   generatingNonces,
   enterBackup,
@@ -1355,10 +1439,34 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
   }
 }
 
-class _EnterDeviceNameView extends StatelessWidget with _TitledWidget {
+class _EnterDeviceNameView extends StatefulWidget with _TitledWidget {
   final Function(String)? onDeviceName;
-  final DeviceId deviceId;
-  const _EnterDeviceNameView({required this.deviceId, this.onDeviceName});
+  final VoidCallback? onDisconnected;
+  final TargetDevice targetDevice;
+  const _EnterDeviceNameView({
+    required this.targetDevice,
+    this.onDeviceName,
+    this.onDisconnected,
+  });
+
+  @override
+  State<_EnterDeviceNameView> createState() => _EnterDeviceNameViewState();
+
+  @override
+  String get titleText => 'Device name';
+}
+
+class _EnterDeviceNameViewState extends State<_EnterDeviceNameView> {
+  @override
+  void initState() {
+    super.initState();
+    // Listen for device disconnection
+    widget.targetDevice.onDisconnected.then((_) {
+      if (mounted) {
+        widget.onDisconnected?.call();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1373,19 +1481,16 @@ class _EnterDeviceNameView extends StatelessWidget with _TitledWidget {
         ),
         const SizedBox(height: 16),
         DeviceNameField(
-          id: deviceId,
-          mode: DeviceNameMode.rename,
-          buttonText: 'Confirm on device',
+          id: widget.targetDevice.id,
+          mode: DeviceNameMode.preview,
+          buttonText: 'Continue',
           onNamed: (name) {
-            onDeviceName?.call(name);
+            widget.onDeviceName?.call(name);
           },
         ),
       ],
     );
   }
-
-  @override
-  String get titleText => 'Device name';
 }
 
 class _EnterBackupView extends StatefulWidget with _TitledWidget {
@@ -1918,26 +2023,109 @@ class _PhysicalBackupFailView extends StatelessWidget with _TitledWidget {
   Widget build(BuildContext context) {
     final String compatMessage = switch (compatibility) {
       ShareCompatibility_ConflictsWith(:final deviceId, :final index) =>
-        "You have already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Are you sure that this backup is for this wallet?",
-      _ => "Unknown error of kind: $compatibility",
+        "You have already restored backup #$index on '${coord.getDeviceName(id: deviceId)!}' and it doesn't match the one you just entered. Try a different backup.",
+      ShareCompatibility_Incompatible() =>
+        "This backup is for a different wallet. Try a different backup.",
+      ShareCompatibility_AlreadyGotIt() =>
+        "You've already added this backup to the restoration. Try a different backup.",
+      _ => "The backup is not compatible with this wallet.",
     };
 
     final String message = errorMessage ?? compatMessage;
     return MaterialDialogCard(
       key: const ValueKey('physicalBackupFail'),
       iconData: Icons.error_rounded,
-      title: Text('Couldn\'t load backup'),
+      title: Text('Incompatible backup'),
       content: Text(message, textAlign: TextAlign.center),
-
       actions: [
         TextButton(child: const Text('Close'), onPressed: onClose),
-        FilledButton(child: const Text('Retry'), onPressed: onRetry),
+        FilledButton(
+          child: const Text('Try Different Backup'),
+          onPressed: onRetry,
+        ),
       ],
     );
   }
 
   @override
-  String get titleText => '';
+  String get titleText => 'Backup Error';
+}
+
+class _FirmwareUpgradeView extends StatefulWidget with _TitledWidget {
+  final TargetDevice targetDevice;
+  final VoidCallback onComplete;
+  final VoidCallback onCancel;
+
+  const _FirmwareUpgradeView({
+    super.key,
+    required this.targetDevice,
+    required this.onComplete,
+    required this.onCancel,
+  });
+
+  @override
+  State<_FirmwareUpgradeView> createState() => _FirmwareUpgradeViewState();
+
+  @override
+  String get titleText => 'Firmware Upgrade Required';
+}
+
+class _FirmwareUpgradeViewState extends State<_FirmwareUpgradeView> {
+  late final DeviceActionUpgradeController _controller;
+  bool _isUpgrading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = DeviceActionUpgradeController();
+    // Don't handle disconnection - firmware upgrade causes device to reset which is normal
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startUpgrade() async {
+    setState(() {
+      _isUpgrading = true;
+    });
+
+    final success = await _controller.run(context);
+
+    if (mounted) {
+      if (success) {
+        widget.onComplete();
+      } else {
+        // If upgrade fails or is cancelled, exit the entire flow
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Simple prompt - the actual upgrade UI is handled by the controller's fullscreen dialog
+    return MaterialDialogCard(
+      key: const ValueKey('firmwareUpgradePrompt'),
+      iconData: Icons.system_update_alt_rounded,
+      title: Text('Firmware Update Required'),
+      content: Text(
+        'This device needs a firmware update before it can be used for wallet restoration.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isUpgrading ? null : () => Navigator.of(context).pop(),
+          child: Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isUpgrading ? null : _startUpgrade,
+          child: Text(_isUpgrading ? 'Upgrading...' : 'Upgrade Now'),
+        ),
+      ],
+    );
+  }
 }
 
 // Loading view with optional subtitle
@@ -2066,11 +2254,7 @@ class _EnrollmentNonceDialogState extends State<_EnrollmentNonceDialog> {
           _hasErrored = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              try {
-                widget.onError('Failed to prepare device: ${snapshot.error}');
-              } catch (e) {
-                debugPrint('Error in onError callback: $e');
-              }
+              widget.onError('Failed to prepare device: ${snapshot.error}');
             }
           });
         }
@@ -2085,11 +2269,7 @@ class _EnrollmentNonceDialogState extends State<_EnrollmentNonceDialog> {
             // Add a delay to show the completion state before transitioning
             Future.delayed(Durations.long1, () {
               if (mounted) {
-                try {
-                  widget.onComplete();
-                } catch (e) {
-                  debugPrint('Error in onComplete callback: $e');
-                }
+                widget.onComplete();
               }
             });
           }
@@ -2100,11 +2280,7 @@ class _EnrollmentNonceDialogState extends State<_EnrollmentNonceDialog> {
           _hasErrored = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              try {
-                widget.onError('Device disconnected during preparation');
-              } catch (e) {
-                debugPrint('Error in onError callback: $e');
-              }
+              widget.onError('Device disconnected during preparation');
             }
           });
         }
@@ -2147,7 +2323,6 @@ void continueWalletRecoveryFlowDialog(
   );
   await coord.cancelProtocol();
   if (homeCtx == null) {
-    print('NO HOME CONTEXT!');
     return;
   }
   homeCtx.walletListController.selectRecoveringWallet(restorationId);
