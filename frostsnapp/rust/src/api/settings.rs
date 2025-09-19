@@ -52,6 +52,7 @@ impl Settings {
     pub(crate) fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
         app_directory: PathBuf,
+        password: Option<&str>,
     ) -> anyhow::Result<Self> {
         let persisted: Persisted<RSettings> = {
             let mut db_ = db.lock().unwrap();
@@ -68,7 +69,7 @@ impl Settings {
             let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
             let (chain_api, conn_handler) = ChainClient::new(genesis_hash);
             let super_wallet =
-                SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
+                SuperWallet::load_or_new(&app_directory, network, chain_api.clone(), password)?;
             // FIXME: the dependency relationship here is overly convoluted.
             thread::spawn({
                 let super_wallet = super_wallet.clone();
