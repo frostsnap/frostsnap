@@ -45,6 +45,11 @@ Future<void> main() async {
   await RustLib.init();
   api = Api();
 
+  final widget = await initializeApp();
+  runApp(widget);
+}
+
+Future<Widget> initializeApp({String? password}) async {
   String? startupError;
   // // set logging up first before doing anything else
   final Stream<String> logStream = api
@@ -82,7 +87,7 @@ Future<void> main() async {
   }
 
   if (startupError != null) {
-    runApp(MyApp(startupError: startupError));
+    return FrostsnapApp(startupError: startupError);
   } else {
     GlobalStreams.deviceListSubject.forEach((update) {
       // If we detect a device that's in recovery mode we should tell it to exit
@@ -121,7 +126,7 @@ Future<void> main() async {
     );
 
     final mainWidget = buildMainWidget(appCtx!, logStream);
-    runApp(mainWidget);
+    return mainWidget;
   }
 }
 
@@ -131,21 +136,21 @@ Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
     logStream: logStream,
     child: SettingsContext(
       settings: appCtx.settings,
-      child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
+      child: SuperWalletContext(appCtx: appCtx, child: FrostsnapApp()),
     ),
   );
 }
 
-class MyApp extends StatefulWidget {
+class FrostsnapApp extends StatefulWidget {
   final String? startupError;
 
-  const MyApp({super.key, this.startupError});
+  const FrostsnapApp({super.key, this.startupError});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<FrostsnapApp> createState() => _FrostsnapAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _FrostsnapAppState extends State<FrostsnapApp> {
   late final Future<List<void>> googleFontsPending;
   late ColorScheme colorScheme;
 
