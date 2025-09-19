@@ -332,7 +332,7 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
         let page = if index < recipient_pages {
             // It's either an amount or address page for a recipient
             let recipient_idx = index / 2;
-            let is_amount = index % 2 == 0;
+            let is_amount = index.is_multiple_of(2);
 
             if is_amount {
                 // Amount page

@@ -42,8 +42,8 @@ impl nor_flash::NorFlash for TestNorFlash {
     }
 
     fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        assert!(offset % WORD_SIZE == 0);
-        assert!(bytes.len() % 4 == 0);
+        assert!(offset.is_multiple_of(WORD_SIZE));
+        assert!(bytes.len().is_multiple_of(4));
         self.0[offset as usize..offset as usize + bytes.len()].copy_from_slice(bytes);
 
         Ok(())
