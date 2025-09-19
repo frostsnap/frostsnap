@@ -3,6 +3,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -397,6 +398,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   String? error;
   Stream<NonceReplenishState>? activeNonceStream;
   StreamSubscription? _nonceStreamSubscription;
+  StreamSubscription<DeviceListUpdate>? _deviceListSubscription;
 
   // For back gesture.
   final prevStates = List<_RecoveryFlowPrevState>.empty(growable: true);
@@ -442,7 +444,40 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   @override
   void dispose() {
     _nonceStreamSubscription?.cancel();
+    _deviceListSubscription?.cancel();
     super.dispose();
+  }
+
+  void _setBlankDeviceAndMonitor(ConnectedDevice device) {
+    // Cancel any existing subscription
+    _deviceListSubscription?.cancel();
+
+    blankDevice = device;
+
+    // Start monitoring for disconnection
+    _deviceListSubscription = GlobalStreams.deviceListSubject.listen((update) {
+      // Check if our blank device is still connected
+      final stillConnected = update.state.devices.any(
+        (d) => deviceIdEquals(d.id, device.id),
+      );
+
+      if (!stillConnected && blankDevice != null && mounted) {
+        // Device disconnected - reset to waiting state
+        setState(() {
+          blankDevice = null;
+          _deviceListSubscription?.cancel();
+          _deviceListSubscription = null;
+          currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+          error = null; // Clear error since disconnection is expected
+        });
+      }
+    });
+  }
+
+  void _clearBlankDevice() {
+    blankDevice = null;
+    _deviceListSubscription?.cancel();
+    _deviceListSubscription = null;
   }
 
   @override
@@ -509,9 +544,30 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _PlugInBlankView(
           onBlankDeviceConnected: (device) {
             setState(() {
-              pushPrevState();
-              blankDevice = device;
+              _setBlankDeviceAndMonitor(device);
+              // Check if firmware upgrade is needed
+              if (device.needsFirmwareUpgrade()) {
+                currentStep = RecoveryFlowStep.firmwareUpgrade;
+              } else {
+                currentStep = RecoveryFlowStep.enterDeviceName;
+              }
+            });
+          },
+        );
+        break;
+
+      case RecoveryFlowStep.firmwareUpgrade:
+        child = _FirmwareUpgradeView(
+          device: blankDevice!,
+          onComplete: () {
+            setState(() {
               currentStep = RecoveryFlowStep.enterDeviceName;
+            });
+          },
+          onCancel: () {
+            setState(() {
+              _clearBlankDevice();
+              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
             });
           },
         );
@@ -598,7 +654,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
               coord.cancelProtocol();
               setState(() {
                 activeNonceStream = null;
-                blankDevice = null;
+                _clearBlankDevice();
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
             },
@@ -609,7 +665,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   this.error = error;
                 }
                 activeNonceStream = null;
-                blankDevice = null;
+                _clearBlankDevice();
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
             },
@@ -665,7 +721,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
             } catch (e) {
               // Error during backup save - go back to waiting for device
               setState(() {
-                blankDevice = null;
+                _clearBlankDevice();
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
                 error = e.toString();
               });
@@ -674,7 +730,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onError: (e) {
             // Device disconnected or other error - go back to waiting for device
             setState(() {
-              blankDevice = null;
+              _clearBlankDevice();
               currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               error =
                   null; // Clear error since disconnection is expected behavior
@@ -844,6 +900,7 @@ enum RecoveryFlowStep {
   waitDevice,
   candidateReady,
   waitPhysicalBackupDevice,
+  firmwareUpgrade,
   enterDeviceName,
   generatingNonces,
   enterBackup,
@@ -1951,6 +2008,81 @@ class _PhysicalBackupFailView extends StatelessWidget with _TitledWidget {
 
   @override
   String get titleText => 'Backup Error';
+}
+
+class _FirmwareUpgradeView extends StatefulWidget with _TitledWidget {
+  final ConnectedDevice device;
+  final VoidCallback onComplete;
+  final VoidCallback onCancel;
+
+  const _FirmwareUpgradeView({
+    required this.device,
+    required this.onComplete,
+    required this.onCancel,
+  });
+
+  @override
+  State<_FirmwareUpgradeView> createState() => _FirmwareUpgradeViewState();
+
+  @override
+  String get titleText => 'Firmware Upgrade Required';
+}
+
+class _FirmwareUpgradeViewState extends State<_FirmwareUpgradeView> {
+  late final DeviceActionUpgradeController _controller;
+  bool _isUpgrading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = DeviceActionUpgradeController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startUpgrade() async {
+    setState(() {
+      _isUpgrading = true;
+    });
+
+    final success = await _controller.run(context);
+
+    if (mounted) {
+      if (success) {
+        widget.onComplete();
+      } else {
+        // If upgrade fails or is cancelled, exit the entire flow
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Simple prompt - the actual upgrade UI is handled by the controller's fullscreen dialog
+    return MaterialDialogCard(
+      key: const ValueKey('firmwareUpgradePrompt'),
+      iconData: Icons.system_update_alt_rounded,
+      title: Text('Firmware Update Required'),
+      content: Text(
+        'This device needs a firmware update before it can be used for wallet restoration.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isUpgrading ? null : () => Navigator.of(context).pop(),
+          child: Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isUpgrading ? null : _startUpgrade,
+          child: Text(_isUpgrading ? 'Upgrading...' : 'Upgrade Now'),
+        ),
+      ],
+    );
+  }
 }
 
 // Loading view with optional subtitle
