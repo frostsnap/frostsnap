@@ -396,8 +396,6 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   BitcoinNetwork? bitcoinNetwork;
   int? threshold;
   String? error;
-  Stream<NonceReplenishState>? activeNonceStream;
-  StreamSubscription? _nonceStreamSubscription;
   StreamSubscription<DeviceListUpdate>? _deviceListSubscription;
 
   // For back gesture.
@@ -430,11 +428,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         error = prevState.error;
 
         // Cancel any active operations when going back
-        if (activeNonceStream != null) {
-          _nonceStreamSubscription?.cancel();
-          activeNonceStream = null;
-          coord.cancelProtocol();
-        }
+        coord.cancelProtocol();
       });
       return true;
     }
@@ -443,7 +437,6 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
   @override
   void dispose() {
-    _nonceStreamSubscription?.cancel();
     _deviceListSubscription?.cancel();
     super.dispose();
   }
@@ -607,16 +600,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
             if (nonceRequest.someNoncesRequested()) {
               // Show nonce generation UI immediately
-              final stream = coord
-                  .replenishNonces(
-                    nonceRequest: nonceRequest,
-                    devices: [device.id],
-                  )
-                  .toBehaviorSubject();
-
               setState(() {
                 pushPrevState();
-                activeNonceStream = stream;
                 currentStep = RecoveryFlowStep.generatingNonces;
               });
             } else {
@@ -630,30 +615,34 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
 
       case RecoveryFlowStep.generatingNonces:
-        if (activeNonceStream == null) {
-          // Stream not ready, go back
+        final device = blankDevice;
+        if (device == null) {
+          // Device disconnected, go back
           setState(() {
-            blankDevice = null;
             currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
           });
-          child = _LoadingView(title: 'Preparing...', subtitle: null);
+          child = _LoadingView(title: 'Device disconnected', subtitle: null);
         } else {
-          // Use the same enrollment dialog UI for consistency
+          // Create nonce stream here and pass to dialog
+          final nonceRequest = coord.createNonceRequest(devices: [device.id]);
+          final stream = coord
+              .replenishNonces(
+                nonceRequest: nonceRequest,
+                devices: [device.id],
+              )
+              .toBehaviorSubject();
+
           child = _EnrollmentNonceDialog(
-            stream: activeNonceStream!,
-            deviceName: blankDevice != null
-                ? coord.getDeviceName(id: blankDevice!.id)
-                : null,
+            stream: stream,
+            deviceName: coord.getDeviceName(id: device.id),
             onComplete: () {
               setState(() {
-                activeNonceStream = null;
                 currentStep = RecoveryFlowStep.enterBackup;
               });
             },
             onCancel: () {
               coord.cancelProtocol();
               setState(() {
-                activeNonceStream = null;
                 _clearBlankDevice();
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
@@ -664,7 +653,6 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                 if (!error.contains('disconnected')) {
                   this.error = error;
                 }
-                activeNonceStream = null;
                 _clearBlankDevice();
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
