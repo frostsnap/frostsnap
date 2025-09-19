@@ -155,6 +155,11 @@ impl Coordinator {
         self.0.send_cancel(id);
     }
 
+    pub fn send_cancel_all(&self) {
+        event!(Level::WARN, "dart sent cancel all");
+        self.0.usb_sender.send_cancel_all();
+    }
+
     pub fn display_backup(
         &self,
         id: DeviceId,

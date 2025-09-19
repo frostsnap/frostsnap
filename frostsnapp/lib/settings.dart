@@ -8,6 +8,7 @@ import 'package:frostsnap/access_structures.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/bullet_list.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -205,6 +206,38 @@ class SettingsPage extends StatelessWidget {
                               },
                               value: snap.data?.developerMode ?? false,
                             ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  SettingsItem(
+                    title: Text(
+                      "Erase multiple devices",
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
+                    icon: Icons.delete_sweep,
+                    builder: (context, title, icon) {
+                      final settingsCtx = SettingsContext.of(context)!;
+                      return StreamBuilder(
+                        stream: settingsCtx.developerSettings,
+                        builder: (context, snap) {
+                          final isDeveloperMode =
+                              snap.data?.developerMode ?? false;
+
+                          if (!isDeveloperMode) {
+                            return SizedBox.shrink();
+                          }
+
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                            ),
+                            leading: Icon(icon, color: Colors.redAccent),
+                            title: title,
+                            onTap: () async {
+                              await _showEraseAllDialog(context);
+                            },
                           );
                         },
                       );
@@ -900,5 +933,67 @@ class BitcoinNetworkChooser extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+Future<void> _showEraseAllDialog(BuildContext context) async {
+  late final FullscreenActionDialogController controller;
+
+  controller = FullscreenActionDialogController(
+    title: 'Erase Multiple Devices',
+    body: (context) {
+      final theme = Theme.of(context);
+      return Card.filled(
+        margin: EdgeInsets.zero,
+        color: theme.colorScheme.errorContainer,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.warning_rounded),
+              title: Text(
+                'This will wipe all keys from devices.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'Devices will be rendered blank.\nThis action cannot be reverted, and the only way to restore keys is by loading their backups.',
+                ),
+              ),
+              isThreeLine: true,
+              textColor: theme.colorScheme.onErrorContainer,
+              iconColor: theme.colorScheme.onErrorContainer,
+              contentPadding: EdgeInsets.symmetric(horizontal: 16),
+            ),
+          ],
+        ),
+      );
+    },
+    actionButtons: [
+      OutlinedButton(
+        child: Text('Cancel'),
+        onPressed: () async {
+          await coord.sendCancelAll();
+          await controller.clearAllActionsNeeded();
+        },
+      ),
+      DeviceActionHint(),
+    ],
+    onDismissed: () async {
+      await coord.sendCancelAll();
+      await controller.clearAllActionsNeeded();
+    },
+  );
+
+  final currentUpdate = await GlobalStreams.deviceListSubject.first;
+  final devicesToErase = currentUpdate.state.devices
+      // intentionally erasing all and not filtering out "blank"
+      .map((device) => device.id)
+      .toList();
+
+  if (devicesToErase.isNotEmpty) {
+    controller.batchAddActionNeeded(context, devicesToErase);
+    await coord.wipeAllDevices();
   }
 }
