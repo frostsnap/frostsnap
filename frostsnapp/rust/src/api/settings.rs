@@ -22,7 +22,6 @@ pub struct Settings {
     db: Arc<Mutex<rusqlite::Connection>>,
     chain_clients: HashMap<BitcoinNetwork, ChainClient>,
 
-    #[allow(unused)]
     app_directory: PathBuf,
     loaded_wallets: HashMap<BitcoinNetwork, SuperWallet>,
 
@@ -177,6 +176,14 @@ impl Settings {
 
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
         Ok(())
+    }
+
+    #[frb(sync)]
+    pub fn app_directory(&self) -> String {
+        self.app_directory
+            .to_str()
+            .expect("app path shouldn't have non-utf8 chars")
+            .to_string()
     }
 }
 

@@ -57,6 +57,14 @@ Future<void> main() async {
     appDirPath = appDir.path;
   }
 
+  if (!Platform.isAndroid) {
+    final appDir = await getApplicationSupportDirectory();
+
+    await api.checkAndApplyPendingRekey(appDir: appDir.path);
+    // Note that we could directly launch the app with the new password read from rekey file^,
+    // but this could be confusing to users: "i thought i just applied a password".
+  }
+
   runApp(FrostsnapAppInitializer(appDirPath: appDirPath, logStream: logStream));
 }
 
@@ -560,7 +568,7 @@ class _PasswordScreenState extends State<PasswordScreen> {
               Icon(Icons.lock, size: 64),
               SizedBox(height: 24),
               Text(
-                "Database Password Required",
+                "App Password Required",
                 style: Theme.of(context).textTheme.headlineSmall,
                 textAlign: TextAlign.center,
               ),
