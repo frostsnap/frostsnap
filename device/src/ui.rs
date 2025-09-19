@@ -93,7 +93,7 @@ pub enum Prompt {
     },
     NewName {
         old_name: Option<String>,
-        new_name: String,
+        new_name: frostsnap_comms::DeviceName,
     },
     DisplayBackupRequest {
         phase: Box<BackupDisplayPhase>,
@@ -129,7 +129,7 @@ pub enum UiEvent {
     SigningConfirm {
         phase: Box<SignPhase1>,
     },
-    NameConfirm(String),
+    NameConfirm(frostsnap_comms::DeviceName),
     EnteredShareBackup {
         phase: EnterBackupPhase,
         share_backup: ShareBackup,

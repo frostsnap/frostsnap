@@ -9,12 +9,7 @@ use crate::{
     ui::{self, UiEvent, UserInteraction},
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
-use alloc::{
-    boxed::Box,
-    collections::VecDeque,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
 use esp_hal::timer::Timer;
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceSendBody, ReceiveSerial,
@@ -93,7 +88,9 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     signer.apply_mutation(mutation);
                 }
                 Mutation::Name(name_update) => {
-                    name = Some(name_update);
+                    // Truncate to DeviceName length when loading from flash
+                    let device_name = frostsnap_comms::DeviceName::truncate(name_update);
+                    name = Some(device_name.to_string());
                 }
             },
             Err(e) => {
@@ -140,7 +137,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let mut upstream_connection = UpstreamConnection::new(device_id);
     ui.set_upstream_connection_state(upstream_connection.state);
     let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
-    let mut pending_device_name: Option<String> = None;
+    let mut pending_device_name: Option<frostsnap_comms::DeviceName> = None;
 
     ui.clear_busy_task();
 
@@ -251,7 +248,9 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         firmware_digest: active_firmware_digest,
                     });
                     upstream_connection.send_to_coordinator([match &name {
-                        Some(name) => DeviceSendBody::SetName { name: name.into() },
+                        Some(name) => DeviceSendBody::SetName {
+                            name: frostsnap_comms::DeviceName::truncate(name.clone()),
+                        },
                         None => DeviceSendBody::NeedName,
                     }]);
 
@@ -369,7 +368,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 }
                 CoordinatorSendBody::Naming(naming) => match naming {
                     frostsnap_comms::NameCommand::Preview(preview_name) => {
-                        pending_device_name = Some(preview_name.to_string());
+                        pending_device_name = Some(preview_name.clone());
                         ui.set_workflow(ui::Workflow::NamingDevice {
                             new_name: preview_name.to_string(),
                         });
@@ -462,9 +461,9 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                             let new_name = pending_device_name
                                 .clone()
                                 .expect("must have set pending_device_name before starting keygen");
-                            name = Some(new_name.clone());
+                            name = Some(new_name.to_string());
                             mutation_log
-                                .push(Mutation::Name(new_name.clone()))
+                                .push(Mutation::Name(new_name.to_string()))
                                 .expect("flash write fail");
                             upstream_connection
                                 .send_to_coordinator([DeviceSendBody::SetName { name: new_name }]);
@@ -502,7 +501,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                 }
                                 DisplayBackup { key_name, backup } => {
                                     ui.set_workflow(ui::Workflow::DisplayBackup {
-                                        key_name,
+                                        key_name: key_name.to_string(),
                                         backup,
                                     });
                                 }
@@ -553,12 +552,12 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         .push(Mutation::Name(new_name.to_string()))
                         .expect("flash write fail");
                     name = Some(new_name.to_string());
-                    pending_device_name = Some(new_name.to_string());
+                    pending_device_name = Some(new_name.clone());
                     ui.set_workflow(ui::Workflow::NamingDevice {
                         new_name: new_name.to_string(),
                     });
                     upstream_connection.send_to_coordinator([DeviceSendBody::SetName {
-                        name: new_name.into(),
+                        name: new_name.clone(),
                     }]);
                 }
                 UiEvent::BackupRequestConfirm { phase } => {

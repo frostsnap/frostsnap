@@ -14,6 +14,7 @@ import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/name.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -458,7 +459,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       restorationId = widget.continuing!;
       final state = coord.getRestorationState(restorationId: restorationId!)!;
       threshold = state.accessStructure.threshold;
-      walletName = state.keyName;
+      walletName = state.keyName.toString();
       bitcoinNetwork =
           state.keyPurpose.bitcoinNetwork() ?? BitcoinNetwork.bitcoin;
     } else if (widget.existing != null) {
@@ -1223,6 +1224,7 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
           const SizedBox(height: 24),
           TextFormField(
             controller: _walletNameController,
+            maxLength: keyNameMaxLength(),
             decoration: const InputDecoration(
               labelText: 'Wallet Name',
               border: OutlineInputBorder(),
