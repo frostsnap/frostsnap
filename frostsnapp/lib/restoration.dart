@@ -577,6 +577,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         if (activeNonceStream == null) {
           // Stream not ready, go back
           setState(() {
+            blankDevice = null;
             currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
           });
           child = _LoadingView(title: 'Preparing...', subtitle: null);
@@ -597,6 +598,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
               coord.cancelProtocol();
               setState(() {
                 activeNonceStream = null;
+                blankDevice = null;
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
             },
@@ -607,6 +609,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   this.error = error;
                 }
                 activeNonceStream = null;
+                blankDevice = null;
                 currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
               });
             },
@@ -652,6 +655,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                     currentStep = RecoveryFlowStep.physicalBackupSuccess;
                   });
                 } else {
+                  // Incompatible backup - show fail screen with retry option
                   setState(() {
                     pushPrevState();
                     currentStep = RecoveryFlowStep.physicalBackupFail;
@@ -659,18 +663,21 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                 }
               }
             } catch (e) {
+              // Error during backup save - go back to waiting for device
               setState(() {
-                pushPrevState();
-                currentStep = RecoveryFlowStep.physicalBackupFail;
+                blankDevice = null;
+                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
                 error = e.toString();
               });
             }
           },
           onError: (e) {
+            // Device disconnected or other error - go back to waiting for device
             setState(() {
-              pushPrevState();
-              currentStep = RecoveryFlowStep.physicalBackupFail;
-              error = e.toString();
+              blankDevice = null;
+              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
+              error =
+                  null; // Clear error since disconnection is expected behavior
             });
           },
         );
@@ -718,7 +725,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           compatibility: compatibility,
           onRetry: () {
             setState(() {
-              pushPrevState();
+              // Don't push prev state, just go back to enterBackup
               currentStep = RecoveryFlowStep.enterBackup;
               error = null;
             });
@@ -1918,26 +1925,32 @@ class _PhysicalBackupFailView extends StatelessWidget with _TitledWidget {
   Widget build(BuildContext context) {
     final String compatMessage = switch (compatibility) {
       ShareCompatibility_ConflictsWith(:final deviceId, :final index) =>
-        "You have already restored backup #$index on ‘${coord.getDeviceName(id: deviceId)!}’ and it doesn't match the one you just entered. Are you sure that this backup is for this wallet?",
-      _ => "Unknown error of kind: $compatibility",
+        "You have already restored backup #$index on '${coord.getDeviceName(id: deviceId)!}' and it doesn't match the one you just entered. Try a different backup.",
+      ShareCompatibility_Incompatible() =>
+        "This backup is for a different wallet. Try a different backup.",
+      ShareCompatibility_AlreadyGotIt() =>
+        "You've already added this backup to the restoration. Try a different backup.",
+      _ => "The backup is not compatible with this wallet.",
     };
 
     final String message = errorMessage ?? compatMessage;
     return MaterialDialogCard(
       key: const ValueKey('physicalBackupFail'),
       iconData: Icons.error_rounded,
-      title: Text('Couldn\'t load backup'),
+      title: Text('Incompatible backup'),
       content: Text(message, textAlign: TextAlign.center),
-
       actions: [
         TextButton(child: const Text('Close'), onPressed: onClose),
-        FilledButton(child: const Text('Retry'), onPressed: onRetry),
+        FilledButton(
+          child: const Text('Try Different Backup'),
+          onPressed: onRetry,
+        ),
       ],
     );
   }
 
   @override
-  String get titleText => '';
+  String get titleText => 'Backup Error';
 }
 
 // Loading view with optional subtitle
