@@ -334,7 +334,7 @@ impl VecFramebuffer<Gray4> {
             if x < self.width && y < self.height {
                 let pixel_index = y * self.width + x;
                 let byte_index = pixel_index / 2;
-                let nibble_shift = if pixel_index % 2 == 0 { 4 } else { 0 };
+                let nibble_shift = if pixel_index.is_multiple_of(2) { 4 } else { 0 };
 
                 let raw: RawU4 = color.into();
                 let value = raw.into_inner();
@@ -356,7 +356,7 @@ impl VecFramebuffer<Gray4> {
             if x < self.width && y < self.height {
                 let pixel_index = y * self.width + x;
                 let byte_index = pixel_index / 2;
-                let nibble_shift = if pixel_index % 2 == 0 { 4 } else { 0 };
+                let nibble_shift = if pixel_index.is_multiple_of(2) { 4 } else { 0 };
 
                 let value = (self.data[byte_index] >> nibble_shift) & 0xF;
                 let raw = RawU4::new(value);
@@ -376,10 +376,14 @@ impl VecFramebuffer<Gray4> {
         self.data.fill(fill_byte);
 
         // Handle odd width case where the last pixel might not be paired
-        if (self.width * self.height) % 2 != 0 {
+        if !(self.width * self.height).is_multiple_of(2) {
             let last_pixel_index = self.width * self.height - 1;
             let byte_index = last_pixel_index / 2;
-            let nibble_shift = if last_pixel_index % 2 == 0 { 4 } else { 0 };
+            let nibble_shift = if last_pixel_index.is_multiple_of(2) {
+                4
+            } else {
+                0
+            };
             let mask = !(0xF << nibble_shift);
             self.data[byte_index] &= mask;
             self.data[byte_index] |= (value & 0xF) << nibble_shift;
@@ -400,7 +404,7 @@ impl VecFramebuffer<Gray4> {
             for x in start_x..end_x {
                 let pixel_index = y * self.width + x;
                 let byte_index = pixel_index / 2;
-                let nibble_shift = if pixel_index % 2 == 0 { 4 } else { 0 };
+                let nibble_shift = if pixel_index.is_multiple_of(2) { 4 } else { 0 };
 
                 let mask = !(0xF << nibble_shift);
                 self.data[byte_index] &= mask;

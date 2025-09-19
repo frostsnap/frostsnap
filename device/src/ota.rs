@@ -162,7 +162,7 @@ impl<'a> OtaPartitions<'a> {
             "new firmware size should fit inside the partition"
         );
         assert!(
-            partition.size() % FIRMWARE_UPGRADE_CHUNK_LEN == 0,
+            partition.size().is_multiple_of(FIRMWARE_UPGRADE_CHUNK_LEN),
             "these should match up to avoid overwriting"
         );
 
