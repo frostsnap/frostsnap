@@ -208,7 +208,7 @@ pub struct DesktopSerial;
 
 impl Serial for DesktopSerial {
     fn available_ports(&self) -> Vec<PortDesc> {
-        serialport::available_ports()
+        let mut ports: Vec<PortDesc> = serialport::available_ports()
             .unwrap_or_default()
             .into_iter()
             .filter_map(|port| match port.port_type {
@@ -219,7 +219,35 @@ impl Serial for DesktopSerial {
                 }),
                 _ => None,
             })
-            .collect()
+            .collect();
+
+        // On macOS, filter duplicate tty/cu devices
+        if cfg!(target_os = "macos") {
+            use std::collections::HashSet;
+
+            // Find all device numbers that have cu versions
+            let cu_device_numbers: HashSet<String> = ports
+                .iter()
+                .filter(|p| p.id.starts_with("/dev/cu."))
+                .filter_map(|p| {
+                    // Extract device number after "cu."
+                    p.id.strip_prefix("/dev/cu.").map(|s| s.to_string())
+                })
+                .collect();
+
+            // Keep only cu devices when both exist, otherwise keep tty
+            ports.retain(|p| {
+                if let Some(device_num) = p.id.strip_prefix("/dev/tty.") {
+                    // This is a tty device - only keep if no corresponding cu device exists
+                    !cu_device_numbers.contains(device_num)
+                } else {
+                    // Keep all non-tty devices (including cu devices)
+                    true
+                }
+            });
+        }
+
+        ports
     }
 
     fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
