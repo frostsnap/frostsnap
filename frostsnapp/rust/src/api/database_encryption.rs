@@ -34,6 +34,41 @@ impl std::fmt::Display for DatabaseError {
 
 impl std::error::Error for DatabaseError {}
 
+/// Get all database files that exist in the app directory
+fn get_all_database_files(app_dir: &str) -> Vec<std::path::PathBuf> {
+    let mut all_dbs = Vec::new();
+
+    // Main database
+    let main_db = Path::new(app_dir).join("frostsnap.sqlite");
+    if main_db.exists() {
+        all_dbs.push(main_db);
+    }
+
+    // BDK databases
+    for network in [
+        BitcoinNetwork::Bitcoin,
+        BitcoinNetwork::Testnet,
+        BitcoinNetwork::Signet,
+        BitcoinNetwork::Regtest,
+    ] {
+        let bdk_file = network.bdk_file(app_dir);
+        if bdk_file.exists() {
+            all_dbs.push(bdk_file);
+        }
+    }
+
+    all_dbs
+}
+
+/// Get all backup files that exist for our databases
+fn get_all_backup_files(app_dir: &str) -> Vec<std::path::PathBuf> {
+    get_all_database_files(app_dir)
+        .into_iter()
+        .map(|db_path| db_path.with_extension("backup"))
+        .filter(|backup_path| backup_path.exists())
+        .collect()
+}
+
 pub(crate) fn open_database(
     db_path: &Path,
     password: Option<&str>,
@@ -66,41 +101,121 @@ pub(crate) fn open_database(
     Ok(conn)
 }
 
+fn encrypt_database(db_path: &Path, new_password: &str) -> Result<(), DatabaseError> {
+    let temp_path = db_path.with_extension("tmp");
+
+    // Remove any existing temp file from previous failed attempts
+    let _ = std::fs::remove_file(&temp_path);
+
+    // Create new encrypted database
+    {
+        let new_db = rusqlite::Connection::open(&temp_path)
+            .map_err(|e| DatabaseError::Other(format!("Failed to create temp db: {}", e)))?;
+        new_db
+            .pragma_update(None, "key", new_password)
+            .map_err(|e| DatabaseError::Other(format!("Failed to set key: {}", e)))?;
+    }
+
+    let old_db = rusqlite::Connection::open(db_path)
+        .map_err(|e| DatabaseError::Other(format!("Failed to open source db: {}", e)))?;
+
+    old_db
+        .execute(
+            "ATTACH DATABASE ?1 AS encrypted KEY ?2",
+            rusqlite::params![temp_path.to_string_lossy(), new_password],
+        )
+        .map_err(|e| DatabaseError::Other(format!("Failed to attach encrypted db: {}", e)))?;
+
+    old_db
+        .query_row("SELECT sqlcipher_export('encrypted')", [], |_| Ok(()))
+        .map_err(|e| DatabaseError::Other(format!("Failed to export data: {}", e)))?;
+
+    old_db
+        .execute("DETACH DATABASE encrypted", [])
+        .map_err(|e| DatabaseError::Other(format!("Failed to detach db: {}", e)))?;
+
+    drop(old_db);
+
+    // Atomic replacement
+    std::fs::remove_file(db_path)
+        .map_err(|e| DatabaseError::Other(format!("Failed to remove original: {}", e)))?;
+    std::fs::rename(&temp_path, db_path)
+        .map_err(|e| DatabaseError::Other(format!("Failed to rename temp file: {}", e)))?;
+
+    Ok(())
+}
+
+fn change_password(
+    db_path: &Path,
+    old_password: &str,
+    new_password: &str,
+) -> Result<(), DatabaseError> {
+    let db = open_database(db_path, Some(old_password))?;
+    db.pragma_update(None, "rekey", new_password)
+        .map_err(|e| DatabaseError::Other(format!("Failed to rekey: {}", e)))?;
+    Ok(())
+}
+
+fn decrypt_database(db_path: &Path, old_password: &str) -> Result<(), DatabaseError> {
+    let temp_path = db_path.with_extension("tmp");
+
+    // Remove any existing temp file from previous failed attempts
+    let _ = std::fs::remove_file(&temp_path);
+
+    let new_db = rusqlite::Connection::open(&temp_path)
+        .map_err(|e| DatabaseError::Other(format!("Failed to create temp db: {}", e)))?;
+    drop(new_db);
+
+    let old_db = open_database(db_path, Some(old_password))?;
+
+    old_db
+        .execute(
+            "ATTACH DATABASE ?1 AS unencrypted",
+            rusqlite::params![temp_path.to_string_lossy()],
+        )
+        .map_err(|e| DatabaseError::Other(format!("Failed to attach db: {}", e)))?;
+
+    old_db
+        .query_row("SELECT sqlcipher_export('unencrypted')", [], |_| Ok(()))
+        .map_err(|e| DatabaseError::Other(format!("Failed to export data: {}", e)))?;
+
+    old_db
+        .execute("DETACH DATABASE unencrypted", [])
+        .map_err(|e| DatabaseError::Other(format!("Failed to detach db: {}", e)))?;
+
+    drop(old_db);
+
+    std::fs::remove_file(db_path)
+        .map_err(|e| DatabaseError::Other(format!("Failed to remove original: {}", e)))?;
+    std::fs::rename(&temp_path, db_path)
+        .map_err(|e| DatabaseError::Other(format!("Failed to rename temp file: {}", e)))?;
+
+    Ok(())
+}
+
 impl super::Api {
     pub fn get_database_state(&self, app_dir: &str) -> Result<DbEncryptionState> {
         let db_file = Path::new(app_dir).join("frostsnap.sqlite");
-
         if !db_file.exists() {
             return Ok(DbEncryptionState::Fresh);
         }
 
-        let is_encrypted = {
-            if let Ok(conn) = rusqlite::Connection::open(&db_file) {
+        match rusqlite::Connection::open(&db_file) {
+            Ok(conn) => {
                 match conn.pragma_query_value(None, "page_count", |row| row.get::<_, i32>(0)) {
-                    Ok(_) => false,
+                    Ok(_) => Ok(DbEncryptionState::ExistingUnencrypted),
                     Err(rusqlite::Error::SqliteFailure(err, _))
                         if err.code == rusqlite::ErrorCode::NotADatabase =>
                     {
-                        true
+                        Ok(DbEncryptionState::ExistingEncrypted)
                     }
                     Err(e) => {
-                        event!(
-                            Level::ERROR,
-                            e = e.to_string(),
-                            "failed to check database encryption"
-                        );
-                        false
+                        event!(Level::ERROR, "Database check failed: {}", e);
+                        Ok(DbEncryptionState::ExistingUnencrypted)
                     }
                 }
-            } else {
-                false
             }
-        };
-
-        if is_encrypted {
-            Ok(DbEncryptionState::ExistingEncrypted)
-        } else {
-            Ok(DbEncryptionState::ExistingUnencrypted)
+            Err(_) => Ok(DbEncryptionState::ExistingUnencrypted),
         }
     }
 
@@ -110,11 +225,7 @@ impl super::Api {
         password: String,
     ) -> Result<(), DatabaseError> {
         let db_file = Path::new(&app_dir).join("frostsnap.sqlite");
-        if let Err(e) = open_database(&db_file, Some(&password)) {
-            event!(Level::INFO, e = e.to_string(), "Password attempt failed");
-            return Err(e);
-        }
-        Ok(())
+        open_database(&db_file, Some(&password)).map(|_| ())
     }
 
     pub fn schedule_rekey(
@@ -135,130 +246,121 @@ impl super::Api {
 
     pub fn check_and_apply_pending_rekey(&self, app_dir: String) -> Result<()> {
         let rekey_file = Path::new(&app_dir).join(".pending_rekey");
-        event!(Level::INFO, "checking for pending rekey");
+
+        // Find backup files from previous failed attempt
+        let backup_files = get_all_backup_files(&app_dir);
+
+        // Restore from backups if any exist
+        if !backup_files.is_empty() {
+            event!(
+                Level::WARN,
+                "Found backup files - restoring from previous failed rekey"
+            );
+            for backup_file in backup_files {
+                let original_file = backup_file.with_extension("sqlite");
+                event!(
+                    Level::INFO,
+                    "Restoring {} from backup",
+                    original_file.display()
+                );
+
+                if original_file.exists() {
+                    std::fs::remove_file(&original_file)?;
+                }
+                std::fs::rename(&backup_file, &original_file)?;
+            }
+        }
+
+        // Check if there's a rekey to do
         if !rekey_file.exists() {
             return Ok(());
         }
-        event!(Level::INFO, "pending rekey found!");
+
+        event!(Level::INFO, "Starting rekey operation");
+
         let content = std::fs::read(&rekey_file)?;
         let ReKeyContents {
             old_password,
             new_password,
         } = bincode::decode_from_slice(&content, bincode::config::standard())?.0;
 
-        let db_file = Path::new(&app_dir).join("frostsnap.sqlite");
-        let db_encryption_state = self.get_database_state(&app_dir)?;
+        // Get all database files that exist
+        let all_dbs = get_all_database_files(&app_dir);
 
-        match db_encryption_state {
-            DbEncryptionState::ExistingUnencrypted => {
-                // Migrate existing unencrypted database to encrypted
-                let temp_file = db_file.with_extension("sqlite.tmp");
-
-                // Create new encrypted database
-                let new_db = rusqlite::Connection::open(&temp_file)?;
-                new_db.pragma_update(None, "key", &new_password)?;
-                drop(new_db);
-
-                // Export all data from old to new
-                let old_db = rusqlite::Connection::open(&db_file)?;
-                old_db.execute(
-                    &format!(
-                        "ATTACH DATABASE '{}' AS encrypted KEY '{}'",
-                        temp_file.display(),
-                        new_password.replace("'", "''")
-                    ),
-                    [],
-                )?;
-                old_db.query_row("SELECT sqlcipher_export('encrypted')", [], |_| Ok(()))?;
-                old_db.execute("DETACH DATABASE encrypted", [])?;
-                drop(old_db);
-
-                // Replace old with encrypted
-                std::fs::remove_file(&db_file)?;
-                std::fs::rename(&temp_file, &db_file)?;
-
-                event!(Level::INFO, "Migrated database to encrypted");
-            }
-            DbEncryptionState::ExistingEncrypted => {
-                // Change password of already encrypted database
-                let db = open_database(&db_file, Some(&old_password))?;
-                db.pragma_update(None, "rekey", &new_password)?;
-                event!(Level::INFO, "Changed database password");
-            }
-            DbEncryptionState::Fresh => {
-                // No existing database - create new encrypted one if password provided
-                if !new_password.is_empty() {
-                    let db = rusqlite::Connection::open(&db_file)?;
-                    db.pragma_update(None, "key", &new_password)?;
-                    event!(Level::INFO, "Created new encrypted database");
-                }
-                // If new_password is empty, just let the app create unencrypted DB normally
-            }
+        // Create backups for all databases first
+        for db_file in &all_dbs {
+            let backup_file = db_file.with_extension("backup");
+            std::fs::copy(db_file, &backup_file)?;
+            event!(Level::DEBUG, "Created backup for {}", db_file.display());
         }
 
-        {
-            for network in [
-                BitcoinNetwork::Bitcoin,
-                BitcoinNetwork::Testnet,
-                BitcoinNetwork::Signet,
-                BitcoinNetwork::Regtest,
-            ] {
-                let bdk_file = network.bdk_file(&app_dir);
-                if bdk_file.exists() {
-                    let bdk_state = {
-                        match rusqlite::Connection::open(&bdk_file) {
-                            Ok(db) => match db.prepare("SELECT name FROM sqlite_master LIMIT 1") {
-                                Ok(_) => DbEncryptionState::ExistingUnencrypted,
-                                Err(_) => DbEncryptionState::ExistingEncrypted,
-                            },
-                            Err(_) => continue, // Skip if can't open
-                        }
-                    };
+        // Determine encryption state from main database (assume all databases have same state)
+        let main_db_state = self.get_database_state(&app_dir)?;
 
-                    match bdk_state {
-                        DbEncryptionState::ExistingUnencrypted => {
-                            // Migrate BDK database to encrypted
-                            let temp_file = bdk_file.with_extension("tmp");
-                            let new_db = rusqlite::Connection::open(&temp_file)?;
-                            new_db.pragma_update(None, "key", &new_password)?;
-                            drop(new_db);
-
-                            let old_db = rusqlite::Connection::open(&bdk_file)?;
-                            old_db.execute(
-                                &format!(
-                                    "ATTACH DATABASE '{}' AS encrypted KEY '{}'",
-                                    temp_file.display(),
-                                    new_password.replace("'", "''")
-                                ),
-                                [],
-                            )?;
-                            old_db.query_row("SELECT sqlcipher_export('encrypted')", [], |_| {
-                                Ok(())
-                            })?;
-                            old_db.execute("DETACH DATABASE encrypted", [])?;
-                            drop(old_db);
-
-                            std::fs::remove_file(&bdk_file)?;
-                            std::fs::rename(&temp_file, &bdk_file)?;
-                            event!(
-                                Level::INFO,
-                                "Migrated BDK database to encrypted: {}",
-                                network
-                            );
-                        }
-                        DbEncryptionState::ExistingEncrypted => {
-                            // Rekey existing encrypted BDK database
-                            let db = open_database(&bdk_file, Some(&old_password))?;
-                            db.pragma_update(None, "rekey", &new_password)?;
-                            event!(Level::INFO, "Rekeyed BDK database: {}", network);
-                        }
-                        _ => {}
+        // Now rekey all databases using the same operation
+        for db_path in &all_dbs {
+            let result = match main_db_state {
+                DbEncryptionState::ExistingUnencrypted => {
+                    if new_password.is_empty() {
+                        Ok(()) // No encryption needed
+                    } else {
+                        encrypt_database(db_path, &new_password)
                     }
                 }
+                DbEncryptionState::ExistingEncrypted => {
+                    if new_password.is_empty() {
+                        decrypt_database(db_path, &old_password)
+                    } else {
+                        change_password(db_path, &old_password, &new_password)
+                    }
+                }
+                DbEncryptionState::Fresh => {
+                    if !new_password.is_empty() {
+                        // Create new encrypted database
+                        let db = rusqlite::Connection::open(db_path).map_err(|e| {
+                            DatabaseError::Other(format!("Failed to create db: {}", e))
+                        })?;
+                        db.pragma_update(None, "key", &new_password).map_err(|e| {
+                            DatabaseError::Other(format!("Failed to set key: {}", e))
+                        })?;
+                        Ok(())
+                    } else {
+                        Ok(()) // Create unencrypted database (default behavior)
+                    }
+                }
+            };
+
+            if let Err(e) = result {
+                event!(Level::ERROR, "Failed to rekey {}: {}", db_path.display(), e);
+
+                // Restore all databases from backups
+                for db_file in &all_dbs {
+                    let backup_file = db_file.with_extension("backup");
+                    if backup_file.exists() {
+                        let _ = std::fs::remove_file(db_file);
+                        let _ = std::fs::rename(&backup_file, db_file);
+                    }
+                }
+
+                return Err(anyhow::anyhow!(
+                    "Rekey failed on {}: {}",
+                    db_path.display(),
+                    e
+                ));
             }
+
+            event!(Level::INFO, "Successfully rekeyed {}", db_path.display());
         }
 
-        std::fs::remove_file(rekey_file)?;
+        // Success! Clean up backups and rekey file
+        for db_file in &all_dbs {
+            let backup_file = db_file.with_extension("backup");
+            let _ = std::fs::remove_file(&backup_file);
+        }
+
+        std::fs::remove_file(&rekey_file)?;
+        event!(Level::INFO, "Rekey operation completed successfully");
+
         Ok(())
     }
 }
