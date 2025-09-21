@@ -169,8 +169,16 @@ jobs:
     strategy:
       fail-fast: false
     runs-on: windows-latest
+    env:
+      OPENSSL_DIR: C:\vcpkg\installed\x64-windows-static
+      OPENSSL_STATIC: 1
+      OPENSSL_LIB_DIR: C:\vcpkg\installed\x64-windows-static\lib
+      OPENSSL_INCLUDE_DIR: C:\vcpkg\installed\x64-windows-static\include
     steps:
       - uses: actions/checkout@v4
+      - name: Install OpenSSL
+        run: |
+          vcpkg install openssl:x64-windows-static
       - uses: "./.github/actions/set-up-app-build"
       - uses: dtolnay/rust-toolchain@stable
       - uses: "./.github/actions/cache-rust-target"
