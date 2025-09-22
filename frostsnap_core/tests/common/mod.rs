@@ -16,12 +16,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub const TEST_ENCRYPTION_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
 
-pub const TEST_KEYGEN_FINGERPRINT: schnorr_fun::frost::Fingerprint =
-    schnorr_fun::frost::Fingerprint {
-        bits_per_coeff: 2,
-        max_bits_total: 6,
-        tag: "test",
-    };
+pub const TEST_FINGERPRINT: schnorr_fun::frost::Fingerprint = schnorr_fun::frost::Fingerprint {
+    bits_per_coeff: 2,
+    max_bits_total: 6,
+    tag: "test",
+};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // we're in a test
@@ -214,7 +213,7 @@ impl Run {
         nonce_batch_size: u32,
     ) -> Self {
         let mut coordinator = FrostCoordinator::new();
-        coordinator.keygen_fingerprint = TEST_KEYGEN_FINGERPRINT;
+        coordinator.keygen_fingerprint = TEST_FINGERPRINT;
         Self::new(
             coordinator,
             (0..n_devices)
@@ -224,7 +223,7 @@ impl Run {
                         nonce_slots,
                         nonce_batch_size,
                     );
-                    signer.keygen_fingerprint = TEST_KEYGEN_FINGERPRINT;
+                    signer.keygen_fingerprint = TEST_FINGERPRINT;
                     (signer.device_id(), signer)
                 })
                 .collect(),
@@ -304,9 +303,21 @@ impl Run {
     }
 
     #[allow(unused)]
-    pub fn replace_coordiantor(&mut self, coordinator: FrostCoordinator) {
+    pub fn clear_coordinator(&mut self) {
+        let mut coordinator = FrostCoordinator::new();
+        coordinator.keygen_fingerprint = TEST_FINGERPRINT;
         self.coordinator = coordinator.clone();
         self.start_coordinator = coordinator;
+    }
+
+    #[allow(unused)]
+    pub fn new_device(&mut self, rng: &mut impl rand_core::RngCore) -> DeviceId {
+        let mut signer = FrostSigner::new_random_with_nonce_batch_size(rng, 8, 10);
+        signer.keygen_fingerprint = TEST_FINGERPRINT;
+        let device_id = signer.device_id();
+        self.devices.insert(device_id, signer.clone());
+        self.start_devices.insert(device_id, signer);
+        device_id
     }
 
     pub fn device_set(&self) -> BTreeSet<DeviceId> {

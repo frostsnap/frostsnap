@@ -17,6 +17,7 @@ class DeviceNameField extends StatefulWidget {
   final DeviceId id;
   final DeviceNameMode mode;
   final String? buttonText;
+  final String? initialValue;
   final Function(String)? onNamed;
 
   const DeviceNameField({
@@ -24,6 +25,7 @@ class DeviceNameField extends StatefulWidget {
     required this.id,
     required this.mode,
     this.buttonText,
+    this.initialValue,
     this.onNamed,
   });
 
@@ -38,7 +40,7 @@ class _DeviceNameField extends State<DeviceNameField> {
   @override
   void initState() {
     super.initState();
-    final name = coord.getDeviceName(id: widget.id);
+    final name = widget.initialValue ?? coord.getDeviceName(id: widget.id);
     if (name != null) {
       _controller.text = name;
     }

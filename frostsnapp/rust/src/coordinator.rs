@@ -709,7 +709,7 @@ impl FfiCoordinator {
     pub fn start_restoring_wallet(
         &self,
         name: String,
-        threshold: u16,
+        threshold: Option<u16>,
         key_purpose: KeyPurpose,
     ) -> Result<RestorationId> {
         let restoration_id = {
@@ -762,29 +762,19 @@ impl FfiCoordinator {
     pub fn continue_restoring_wallet_from_device_share(
         &self,
         restoration_id: RestorationId,
-        mut recover_share: &RecoverShare,
+        recover_share: &RecoverShare,
+        encryption_key: SymmetricKey,
     ) -> Result<()> {
         {
             let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
-            let restoration_state = coordinator
-                .get_restoration_state(restoration_id)
-                .ok_or(anyhow!("non-existent restoration"))?;
 
-            let mut held_share = recover_share.held_share.clone();
-
-            // HACK: We overwrite the name of the device share here to contrive compatibility.
-            if restoration_state.key_name != held_share.key_name {
-                event!(
-                    Level::WARN,
-                    recovery_name = %restoration_state.key_name,
-                    device_name = %held_share.key_name,
-                    "had to rename restoration share"
-                );
-                held_share.key_name = restoration_state.key_name.clone();
-            }
             coordinator.staged_mutate(&mut *db, |coordinator| {
-                coordinator.add_recovery_share_to_restoration(restoration_id, recover_share)?;
+                coordinator.add_recovery_share_to_restoration(
+                    restoration_id,
+                    recover_share,
+                    encryption_key,
+                )?;
                 Ok(())
             })?;
         }
@@ -844,7 +834,7 @@ impl FfiCoordinator {
             let restoration_state = coordinator
                 .get_restoration_state(restoration_id)
                 .ok_or(anyhow!("can't finish restoration that doesn't exist"))?;
-            let needs_consolidation = restoration_state.need_to_consolidate;
+            let needs_consolidation: Vec<_> = restoration_state.needs_to_consolidate().collect();
             let assid = coordinator.staged_mutate(&mut *db, |coordinator| {
                 Ok(coordinator.finish_restoring(
                     restoration_id,
@@ -1215,20 +1205,7 @@ fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {
         .map(api::coordinator::FrostKey)
         .collect();
 
-    let restoring = coordinator
-        .restoring()
-        .map(|restoring| {
-            let status = restoring.status();
-            api::recovery::RestoringKey {
-                problem: status.problem(),
-                shares_obtained: status.shares,
-                restoration_id: restoring.restoration_id,
-                name: restoring.key_name.to_string(),
-                threshold: restoring.access_structure.threshold,
-                bitcoin_network: restoring.key_purpose.bitcoin_network(),
-            }
-        })
-        .collect();
+    let restoring = coordinator.restoring().collect();
 
     api::coordinator::KeyState { keys, restoring }
 }

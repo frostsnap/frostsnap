@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
@@ -23,12 +24,12 @@ import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_add.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
-  final RestoringKey restoringKey;
+  final RestorationState restorationState;
   final Function(AccessStructureRef) onWalletRecovered;
 
   const WalletRecoveryPage({
     super.key,
-    required this.restoringKey,
+    required this.restorationState,
     required this.onWalletRecovered,
   });
 
@@ -37,84 +38,126 @@ class WalletRecoveryPage extends StatelessWidget {
     final theme = Theme.of(context);
     final homeCtx = HomeContext.of(context)!;
 
+    // Get status to determine the restoration state from raw data
+    final status = restorationState.status();
+    final shareCount = status.shareCount();
+
+    final isRecovered = status.sharedKey != null;
+    final hasIncompatibleShares = shareCount.incompatible > 0;
+
+    final sharesNeeded = shareCount.needed != null && !isRecovered
+        ? shareCount.needed! - shareCount.got
+        : null;
+    final isReady = isRecovered && !hasIncompatibleShares;
+
+    // Determine card properties based on state
+    final IconData cardIcon;
+    final String cardTitle;
+    final String cardMessage;
+    final Color cardBackgroundColor;
+    final Color cardTextColor;
+
+    if (isReady) {
+      cardIcon = Icons.check_circle_outline_rounded;
+      cardTitle = 'Ready to restore';
+      cardMessage =
+          "You have enough keys to restore the wallet. You can still continue adding keys now or add them later in the wallet's settings";
+      cardBackgroundColor = theme.colorScheme.primaryContainer;
+      cardTextColor = theme.colorScheme.onPrimaryContainer;
+    } else if (hasIncompatibleShares && isRecovered) {
+      cardIcon = Icons.error_outline_rounded;
+      cardTitle = 'Remove incompatible shares';
+      cardMessage =
+          'You have enough compatible keys to restore, but some incompatible shares are present. Remove the incompatible shares before restoring.';
+      cardBackgroundColor = theme.colorScheme.errorContainer;
+      cardTextColor = theme.colorScheme.onErrorContainer;
+    } else if (hasIncompatibleShares) {
+      cardIcon = Icons.error_outline_rounded;
+      cardTitle = 'Some shares are invalid';
+      cardMessage =
+          'At least one share is incompatible with the other shares. Try adding more shares.';
+      cardBackgroundColor = theme.colorScheme.errorContainer;
+      cardTextColor = theme.colorScheme.onErrorContainer;
+    } else if (shareCount.needed == null) {
+      cardIcon = Icons.info_rounded;
+      cardTitle = 'Gathering keys';
+      cardMessage = 'Add more keys to restore the wallet.';
+      cardBackgroundColor = theme.colorScheme.secondaryContainer;
+      cardTextColor = theme.colorScheme.onSecondaryContainer;
+    } else if (sharesNeeded != null && sharesNeeded > 0) {
+      cardIcon = Icons.info_rounded;
+      cardTitle = 'Not enough shares';
+      cardMessage = sharesNeeded == 1
+          ? '1 more key to restore wallet.'
+          : '$sharesNeeded more keys needed to restore wallet.';
+      cardBackgroundColor = theme.colorScheme.secondaryContainer;
+      cardTextColor = theme.colorScheme.onSecondaryContainer;
+    } else {
+      cardIcon = Icons.info_rounded;
+      cardTitle = 'Not enough shares';
+      cardMessage = 'Add more keys to restore wallet.';
+      cardBackgroundColor = theme.colorScheme.secondaryContainer;
+      cardTextColor = theme.colorScheme.onSecondaryContainer;
+    }
+
     final progressActionCard = MaterialDialogCard(
-      iconData: switch (restoringKey.problem) {
-        null => Icons.check_circle_outline_rounded,
-        RestorationProblem_NotEnoughShares() => Icons.info_rounded,
-        RestorationProblem_InvalidShares() => Icons.running_with_errors_rounded,
-      },
-      title: switch (restoringKey.problem) {
-        null => Text('Ready to restore'),
-        RestorationProblem_NotEnoughShares() => Text('Not enough shares'),
-        RestorationProblem_InvalidShares() => Text('Some shares are invalid'),
-      },
-      content: switch (restoringKey.problem) {
-        null => Text(
-          'You have enough keys to restore the wallet. You can add more keys later under settings if needed.',
-        ),
-        RestorationProblem_NotEnoughShares(:final needMore) => Text(
-          needMore == 1
-              ? '1 more key to restore wallet.'
-              : '$needMore more keys needed to restore wallet.',
-        ),
-        RestorationProblem_InvalidShares() => Text(
-          'Remove incompatible shares before continuing.',
-        ),
-      },
-      backgroundColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.primaryContainer,
-        RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.secondaryContainer,
-        RestorationProblem_InvalidShares() => theme.colorScheme.errorContainer,
-      },
-      textColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.onPrimaryContainer,
-        RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.onSecondaryContainer,
-        RestorationProblem_InvalidShares() =>
-          theme.colorScheme.onErrorContainer,
-      },
-      variantTextColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.onPrimaryContainer,
-        RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.onSecondaryContainer,
-        RestorationProblem_InvalidShares() =>
-          theme.colorScheme.onErrorContainer,
-      },
-      iconColor: switch (restoringKey.problem) {
-        null => theme.colorScheme.onPrimaryContainer,
-        RestorationProblem_NotEnoughShares() =>
-          theme.colorScheme.onSecondaryContainer,
-        RestorationProblem_InvalidShares() =>
-          theme.colorScheme.onErrorContainer,
-      },
+      iconData: cardIcon,
+      title: Text(cardTitle),
+      content: Text(cardMessage),
+      backgroundColor: cardBackgroundColor,
+      textColor: cardTextColor,
+      variantTextColor: cardTextColor,
+      iconColor: cardTextColor,
       actions: [
         TextButton.icon(
           icon: const Icon(Icons.close_rounded),
           label: const Text('Cancel'),
-          onPressed: () {
-            coord.cancelRestoration(restorationId: restoringKey.restorationId);
+          onPressed: () async {
+            // Show confirmation if there are any shares
+            if (status.shares.isNotEmpty) {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Cancel restoration?'),
+                  content: Text(
+                    'You have ${status.shares.length} key${status.shares.length > 1 ? 's' : ''} added. '
+                    'Are you sure you want to cancel this restoration?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text('Keep restoring'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: Text('Cancel restoration'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                coord.cancelRestoration(
+                  restorationId: restorationState.restorationId,
+                );
+              }
+            } else {
+              coord.cancelRestoration(
+                restorationId: restorationState.restorationId,
+              );
+            }
           },
-          style: TextButton.styleFrom(
-            foregroundColor: switch (restoringKey.problem) {
-              null => theme.colorScheme.onPrimaryContainer,
-              RestorationProblem_NotEnoughShares() =>
-                theme.colorScheme.onSecondaryContainer,
-              RestorationProblem_InvalidShares() =>
-                theme.colorScheme.onErrorContainer,
-            },
-          ),
+          style: TextButton.styleFrom(foregroundColor: cardTextColor),
         ),
         FilledButton.icon(
           icon: const Icon(Icons.check_rounded),
           label: const Text('Restore'),
-          onPressed: restoringKey.problem == null
+          onPressed: isReady
               ? () async {
                   try {
                     final encryptionKey =
                         await SecureKeyProvider.getEncryptionKey();
                     final accessStructureRef = await coord.finishRestoring(
-                      restorationId: restoringKey.restorationId,
+                      restorationId: restorationState.restorationId,
                       encryptionKey: encryptionKey,
                     );
 
@@ -140,7 +183,7 @@ class WalletRecoveryPage extends StatelessWidget {
       title: Text.rich(
         TextSpan(
           children: [
-            TextSpan(text: restoringKey.name),
+            TextSpan(text: restorationState.keyName),
             WidgetSpan(
               child: Card.filled(
                 color: theme.colorScheme.primaryContainer.withAlpha(80),
@@ -169,17 +212,43 @@ class WalletRecoveryPage extends StatelessWidget {
 
     var devicesColumn = Column(
       spacing: 8,
-      children: restoringKey.sharesObtained.map((share) {
+      children: status.shares.map((share) {
         final deleteButton = IconButton(
-          icon: const Icon(Icons.delete),
+          icon: const Icon(Icons.remove_circle_outline),
           tooltip: 'Remove key',
           onPressed: () async {
+            // Show confirmation if this is a compatible share in a recovered wallet
+            if (isRecovered &&
+                share.compatibility == ShareCompatibility.compatible) {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Remove compatible key?'),
+                  content: Text(
+                    'This key is compatible with your wallet. '
+                    'Are you sure you want to remove it?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text('Keep'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: Text('Remove'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm != true) return;
+            }
+
             await coord.deleteRestorationShare(
-              restorationId: restoringKey.restorationId,
+              restorationId: restorationState.restorationId,
               deviceId: share.deviceId,
             );
             homeCtx.walletListController.selectRecoveringWallet(
-              restoringKey.restorationId,
+              restorationState.restorationId,
             );
           },
         );
@@ -188,47 +257,47 @@ class WalletRecoveryPage extends StatelessWidget {
           color: theme.colorScheme.surfaceContainerHigh,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(24)),
+            side: share.compatibility == ShareCompatibility.compatible
+                ? BorderSide(color: theme.colorScheme.primary, width: 2)
+                : BorderSide.none,
           ),
           margin: EdgeInsets.zero,
           child: ListTile(
             contentPadding: EdgeInsets.symmetric(horizontal: 16),
             leading: Icon(Icons.key),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 8,
-              children: [
-                ...switch (share.validity) {
-                  RestorationShareValidity.valid => [
-                    Tooltip(
-                      message: "Valid key",
-                      child: Icon(
-                        Icons.check_circle,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                  RestorationShareValidity.unknown => [
-                    Tooltip(
-                      message: "Validity to be determined",
-                      child: Icon(
-                        Icons.pending_rounded,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                  RestorationShareValidity.invalid => [
-                    Tooltip(
-                      message: "This key is incompatible with the other keys",
-                      child: Icon(
-                        Icons.warning,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
-                },
-                deleteButton,
-              ],
-            ),
+            trailing: deleteButton,
+            subtitle: () {
+              final icon;
+              final text;
+              final color;
+
+              switch (share.compatibility) {
+                case ShareCompatibility.compatible:
+                  icon = Icons.check_circle;
+                  text = 'Compatible';
+                  color = Theme.of(context).colorScheme.primary;
+                  break;
+                case ShareCompatibility.incompatible:
+                  icon = Icons.cancel;
+                  text = 'Incompatible';
+                  color = Theme.of(context).colorScheme.error;
+                  break;
+                case ShareCompatibility.uncertain:
+                  icon = Icons.pending;
+                  text = 'Compatibility uncertain';
+                  color = Theme.of(context).colorScheme.onSurfaceVariant;
+                  break;
+              }
+
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 14, color: color),
+                  SizedBox(width: 4),
+                  Text(text, style: TextStyle(fontSize: 12, color: color)),
+                ],
+              );
+            }(),
             title: Row(
               spacing: 8,
               children: [
@@ -238,23 +307,25 @@ class WalletRecoveryPage extends StatelessWidget {
                     child: Text(
                       "#${share.index}",
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 18,
                       ),
                     ),
                   ),
                 ),
-                Flexible(child: Text(deviceName, style: monospaceTextStyle)),
+                Flexible(
+                  child: Text(
+                    deviceName,
+                    style: monospaceTextStyle.copyWith(fontSize: 18),
+                  ),
+                ),
               ],
             ),
           ),
         );
       }).toList(),
     );
-
-    final usableHeight =
-        MediaQuery.of(context).size.height -
-        MediaQuery.of(context).padding.top -
-        MediaQuery.of(context).padding.bottom;
 
     final sizeClass = WindowSizeContext.of(context);
     final alignTop =
@@ -265,63 +336,62 @@ class WalletRecoveryPage extends StatelessWidget {
       slivers: [
         appBar,
         SliverToBoxAdapter(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 560,
-              minHeight: alignTop ? 0.0 : usableHeight * 2 / 3,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Align(
-                alignment: AlignmentDirectional.center,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Align(
+              alignment: AlignmentDirectional.center,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: alignTop ? double.infinity : 600,
+                ),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: alignTop ? double.infinity : 600,
-                  ),
+                  constraints: BoxConstraints(maxWidth: 600),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(4.0),
-                        child: Text(
-                          "You need ${restoringKey.threshold} or more keys to restore this wallet.",
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: Text('Keys added so far:'),
-                      ),
-                      const SizedBox(height: 12),
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: 600),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Text.rich(
+                          TextSpan(
                             children: [
-                              devicesColumn,
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: AlignmentDirectional.centerEnd,
-                                child: TextButton.icon(
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Add another key'),
-                                  onPressed: () {
-                                    continueWalletRecoveryFlowDialog(
-                                      context,
-                                      restorationId: restoringKey.restorationId,
-                                    );
-                                  },
+                              TextSpan(
+                                text: '${shareCount.got}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
                                 ),
                               ),
-                              SizedBox(height: 16),
-                              progressActionCard,
+                              TextSpan(text: ' out of '),
+                              TextSpan(
+                                text: '${shareCount.needed ?? "??"}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                              TextSpan(text: ' keys needed in restoration:'),
                             ],
                           ),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      devicesColumn,
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add another key'),
+                          onPressed: () {
+                            continueWalletRecoveryFlowDialog(
+                              context,
+                              restorationId: restorationState.restorationId,
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      progressActionCard,
                     ],
                   ),
                 ),
@@ -382,18 +452,14 @@ class TargetDevice {
 class _RecoveryFlowPrevState {
   RecoveryFlowStep currentStep = RecoveryFlowStep.start;
   RecoverShare? candidate;
-  ShareCompatibility? compatibility;
   TargetDevice? targetDevice;
   RestorationId? restorationId;
-  String? error;
 
   _RecoveryFlowPrevState({
     required this.currentStep,
     required this.candidate,
-    required this.compatibility,
     required this.targetDevice,
     required this.restorationId,
-    required this.error,
   });
 }
 
@@ -402,15 +468,18 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
   RecoveryFlowStep currentStep = RecoveryFlowStep.start;
   RecoverShare? candidate;
-  ShareCompatibility? compatibility;
   TargetDevice? targetDevice;
   Completer<void>? _disconnectionCompleter;
   RestorationId? restorationId;
   String? walletName;
+  String? deviceName;
   BitcoinNetwork? bitcoinNetwork;
   int? threshold;
   String? error;
+  String? errorTitle;
+  bool isException = false;
   StreamSubscription<DeviceListUpdate>? _deviceListSubscription;
+  bool isPhysical = false;
 
   // For back gesture.
   final prevStates = List<_RecoveryFlowPrevState>.empty(growable: true);
@@ -421,10 +490,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       _RecoveryFlowPrevState(
         currentStep: currentStep,
         candidate: candidate,
-        compatibility: compatibility,
         targetDevice: targetDevice,
         restorationId: restorationId,
-        error: error,
       ),
     );
   }
@@ -435,18 +502,32 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         isAnimationForward = false;
         final prevState = prevStates.removeLast();
         currentStep = prevState.currentStep;
-        candidate = prevState.candidate;
-        compatibility = prevState.compatibility;
-        targetDevice = prevState.targetDevice;
-        restorationId = prevState.restorationId;
-        error = prevState.error;
-
-        // Cancel any active operations when going back
-        coord.cancelProtocol();
+        // Clear any errors when going back
+        error = null;
+        errorTitle = null;
       });
       return true;
     }
     return false;
+  }
+
+  // 🚨 Pop state on error, keeping device connection intact
+  void popOnError({
+    String? errorMessage,
+    String? errorTitle,
+    bool isException = false,
+  }) {
+    setState(() {
+      if (prevStates.isNotEmpty) {
+        isAnimationForward = false;
+        final prevState = prevStates.removeLast();
+        currentStep = prevState.currentStep;
+      }
+      // Set error after popping so it shows on the previous screen
+      this.error = errorMessage;
+      this.errorTitle = errorTitle;
+      this.isException = isException;
+    });
   }
 
   @override
@@ -492,6 +573,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
   void _clearTargetDevice() {
     targetDevice = null;
+    candidate = null;
     // Complete if not already completed
     if (_disconnectionCompleter != null &&
         !_disconnectionCompleter!.isCompleted) {
@@ -502,19 +584,62 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     _deviceListSubscription = null;
   }
 
+  Future<void> _completeDeviceShareEnrollment() async {
+    try {
+      RestorationId? restorationId;
+      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+
+      // Compatibility was already checked in onCandidateDetected,
+      // so we can proceed directly with the restoration
+      if (widget.continuing != null) {
+        await coord.continueRestoringWalletFromDeviceShare(
+          restorationId: widget.continuing!,
+          recoverShare: candidate!,
+          encryptionKey: encryptionKey,
+        );
+      } else if (widget.existing != null) {
+        await coord.recoverShare(
+          accessStructureRef: widget.existing!,
+          recoverShare: candidate!,
+          encryptionKey: encryptionKey,
+        );
+      } else {
+        restorationId = await coord.startRestoringWalletFromDeviceShare(
+          recoverShare: candidate!,
+        );
+      }
+
+      if (mounted) {
+        Navigator.pop(context, restorationId);
+      }
+    } catch (e, stackTrace) {
+      if (mounted) {
+        popOnError(
+          errorTitle: 'Unexpected error',
+          errorMessage: '$e\n\nStack trace:\n$stackTrace',
+          isException: true,
+        );
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
     if (widget.initialStep != null) {
       currentStep = widget.initialStep!;
+      // Set isPhysical based on which flow we're starting with
+      if (widget.initialStep == RecoveryFlowStep.enterRestorationDetails) {
+        isPhysical = true;
+      }
     }
 
     if (widget.continuing != null) {
       kind = MethodChoiceKind.continueRecovery;
       restorationId = widget.continuing!;
       final state = coord.getRestorationState(restorationId: restorationId!)!;
-      threshold = state.accessStructure.threshold;
+      threshold = state.accessStructure.effectiveThreshold();
       walletName = state.keyName.toString();
       bitcoinNetwork =
           state.keyPurpose.bitcoinNetwork() ?? BitcoinNetwork.bitcoin;
@@ -527,19 +652,75 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
   @override
   Widget build(BuildContext context) {
+    // Normal flow
     _TitledWidget child;
-
     switch (currentStep) {
       case RecoveryFlowStep.waitDevice:
         child = _PlugInPromptView(
           continuing: widget.continuing,
           existing: widget.existing,
-          onCandidateDetected: (detectedShare, compatibility) {
+          onCandidateDetected: (detectedShare) async {
             if (mounted) {
+              final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+
+              // Check compatibility based on the flow type
+              if (widget.continuing != null) {
+                // Case 2: Continuing a restoration
+                final error = await coord
+                    .checkContinueRestoringWalletFromDeviceShare(
+                      restorationId: widget.continuing!,
+                      recoverShare: detectedShare,
+                      encryptionKey: encryptionKey,
+                    );
+                if (error != null) {
+                  setState(() {
+                    this.error = error.toString();
+                    this.errorTitle = 'Cannot add key';
+                  });
+                  return;
+                }
+              } else if (widget.existing != null) {
+                // Case 3: Adding to existing wallet
+                final error = await coord.checkRecoverShare(
+                  accessStructureRef: widget.existing!,
+                  recoverShare: detectedShare,
+                  encryptionKey: encryptionKey,
+                );
+                if (error != null) {
+                  setState(() {
+                    this.error = error.toString();
+                    this.errorTitle = 'Cannot add key';
+                  });
+                  return;
+                }
+              } else {
+                // Case 1: Starting new restoration
+                final error = await coord.checkStartRestoringKeyFromDeviceShare(
+                  recoverShare: detectedShare,
+                  encryptionKey: encryptionKey,
+                );
+                if (error != null) {
+                  setState(() {
+                    this.error = error.toString();
+                    this.errorTitle = 'Cannot start restoration';
+                  });
+                  return;
+                }
+              }
+
+              // Get the device from the device list and set up targetDevice
+              final deviceList = await GlobalStreams.deviceListSubject.first;
+              final device = deviceList.state.getDevice(
+                id: detectedShare.heldBy,
+              );
+
+              if (device != null) {
+                _setTargetDevice(device);
+              }
+
               setState(() {
                 pushPrevState();
                 candidate = detectedShare;
-                this.compatibility = compatibility;
                 currentStep = RecoveryFlowStep.candidateReady;
               });
             }
@@ -549,15 +730,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       case RecoveryFlowStep.candidateReady:
         child = _CandidateReadyView(
           candidate: candidate!,
-          compatibility: compatibility!,
           continuing: widget.continuing,
           existing: widget.existing,
-          onDeviceDisconnected: () {
-            // Device disconnected during nonce generation - go back to waiting
+          onConfirm: () {
             setState(() {
-              candidate = null;
-              compatibility = null;
-              currentStep = RecoveryFlowStep.waitDevice;
+              pushPrevState();
+              currentStep = RecoveryFlowStep.generatingNonces;
             });
           },
         );
@@ -593,7 +771,9 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           targetDevice: targetDevice!,
           onComplete: () {
             setState(() {
-              currentStep = RecoveryFlowStep.enterDeviceName;
+              // After firmware upgrade, device reboots - need to wait for reconnection
+              _clearTargetDevice();
+              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
             });
           },
           onCancel: () {
@@ -602,46 +782,39 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
               currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
             });
           },
+          onDisconnected: () {
+            _clearTargetDevice();
+            popOnError(
+              errorTitle: 'Device Disconnected',
+              errorMessage:
+                  'The device was disconnected. Please reconnect and try again.',
+            );
+          },
         );
         break;
 
       case RecoveryFlowStep.enterDeviceName:
-        // Check if device is still connected
-        if (targetDevice == null) {
-          child = _ErrorView(
-            title: 'Device Disconnected',
-            message:
-                'The device was disconnected. Please reconnect and try again.',
-            onRetry: () {
-              setState(() {
-                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-                error = null;
-              });
-            },
-          );
-          break;
-        }
-
         child = _EnterDeviceNameView(
           targetDevice: targetDevice!,
+          name: deviceName,
           onDisconnected: () {
-            setState(() {
-              _clearTargetDevice();
-              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-            });
+            deviceName = null;
+            _clearTargetDevice(); // Device actually disconnected
+            popOnError(
+              errorTitle: 'Device Disconnected',
+              errorMessage:
+                  'The device was disconnected. Please reconnect and try again.',
+            );
           },
           onDeviceName: (name) {
-            // Check nonces synchronously, just like we do for existing device recovery
-            final device = targetDevice;
-            if (device == null) {
-              setState(() {
-                error = 'Device disconnected';
-                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-              });
-              return;
-            }
+            // Store the device name in state
+            setState(() {
+              deviceName = name;
+            });
 
-            final nonceRequest = coord.createNonceRequest(devices: [device.id]);
+            final nonceRequest = coord.createNonceRequest(
+              devices: [targetDevice!.id],
+            );
 
             if (nonceRequest.someNoncesRequested()) {
               // Show nonce generation UI immediately
@@ -660,47 +833,47 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
 
       case RecoveryFlowStep.generatingNonces:
-        final device = targetDevice;
-        if (device == null) {
-          // Device disconnected, go back
-          setState(() {
-            currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-          });
-          child = _LoadingView(title: 'Device disconnected', subtitle: null);
-        } else {
-          // Create nonce stream here and pass to dialog
-          final nonceRequest = coord.createNonceRequest(devices: [device.id]);
-          final stream = coord
-              .replenishNonces(nonceRequest: nonceRequest, devices: [device.id])
-              .toBehaviorSubject();
+        // Create nonce stream - always use targetDevice which is set for both flows
+        final nonceRequest = coord.createNonceRequest(
+          devices: [targetDevice!.id],
+        );
+        final stream = coord
+            .replenishNonces(
+              nonceRequest: nonceRequest,
+              devices: [targetDevice!.id],
+            )
+            .toBehaviorSubject();
 
-          child = _EnrollmentNonceDialog(
-            stream: stream,
-            deviceName: coord.getDeviceName(id: device.id),
-            onComplete: () {
+        child = NonceGenerationPage(
+          stream: stream,
+          deviceName: coord.getDeviceName(id: targetDevice!.id),
+          onDisconnected: targetDevice!.onDisconnected,
+          onComplete: () async {
+            if (isPhysical) {
+              // Physical backup: continue to enter backup
               setState(() {
                 currentStep = RecoveryFlowStep.enterBackup;
               });
-            },
-            onCancel: () {
-              coord.cancelProtocol();
-              setState(() {
-                _clearTargetDevice();
-                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-              });
-            },
-            onError: (error) {
-              setState(() {
-                // Don't set error for device disconnection - just go back
-                if (!error.contains('disconnected')) {
-                  this.error = error;
-                }
-                _clearTargetDevice();
-                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-              });
-            },
-          );
-        }
+            } else {
+              // Device share: complete enrollment and exit
+              await _completeDeviceShareEnrollment();
+            }
+          },
+          onCancel: () {
+            coord.cancelProtocol();
+            popOnError(); // Just go back without error message
+          },
+          onDeviceDisconnected: () {
+            _clearTargetDevice();
+            popOnError(
+              errorTitle: 'Device Disconnected',
+              errorMessage: 'The device was disconnected during preparation.',
+            );
+          },
+          onError: (error) {
+            popOnError(errorMessage: error);
+          },
+        );
         break;
 
       case RecoveryFlowStep.enterBackup:
@@ -709,6 +882,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
         child = _EnterBackupView(
           stream: stream,
+          deviceId: targetDevice!.id,
+          deviceName: coord.getDeviceName(id: targetDevice!.id),
+          onCancel: () {
+            popOnError(); // User cancelled backup entry
+          },
           onFinished: (backupPhase) async {
             try {
               if (kind == MethodChoiceKind.addToWallet) {
@@ -719,52 +897,55 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   phase: backupPhase,
                   encryptionKey: encryptionKey,
                 );
+                // Successfully added to existing wallet, close dialog
+                if (mounted) {
+                  Navigator.pop(context);
+                }
               } else {
                 restorationId ??= await coord.startRestoringWallet(
                   name: walletName!,
-                  threshold: threshold!,
+                  threshold: threshold,
                   network: bitcoinNetwork!,
                 );
 
-                compatibility = coord.checkPhysicalBackupCompatible(
+                // Check if this physical backup can be added to the restoration
+                final encryptionKey =
+                    await SecureKeyProvider.getEncryptionKey();
+                final error = await coord.checkPhysicalBackupForRestoration(
                   restorationId: restorationId!,
                   phase: backupPhase,
+                  encryptionKey: encryptionKey,
                 );
 
-                if (compatibility == ShareCompatibility.compatible()) {
-                  await coord.tellDeviceToSavePhysicalBackup(
-                    phase: backupPhase,
-                    restorationId: restorationId!,
+                if (error != null) {
+                  popOnError(
+                    errorTitle: 'Cannot add backup',
+                    errorMessage: error.toString(),
                   );
-                  setState(() {
-                    pushPrevState();
-                    currentStep = RecoveryFlowStep.physicalBackupSuccess;
-                  });
-                } else {
-                  // Incompatible backup - show fail screen with retry option
-                  setState(() {
-                    pushPrevState();
-                    currentStep = RecoveryFlowStep.physicalBackupFail;
-                  });
+                  return;
                 }
+
+                // Save the backup
+                await coord.tellDeviceToSavePhysicalBackup(
+                  phase: backupPhase,
+                  restorationId: restorationId!,
+                );
+                setState(() {
+                  currentStep = RecoveryFlowStep.physicalBackupSuccess;
+                });
               }
-            } catch (e) {
-              // Error during backup save - go back to waiting for device
-              setState(() {
-                _clearTargetDevice();
-                currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-                error = e.toString();
-              });
+            } catch (e, stackTrace) {
+              // Error during backup save - pop back with error
+              popOnError(
+                errorTitle: 'Failed to save backup',
+                errorMessage: '$e\n\nStack trace:\n$stackTrace',
+                isException: true,
+              );
             }
           },
           onError: (e) {
-            // Device disconnected or other error - go back to waiting for device
-            setState(() {
-              _clearTargetDevice();
-              currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
-              error =
-                  null; // Clear error since disconnection is expected behavior
-            });
+            // Device disconnected or other error - pop back with error
+            popOnError(errorMessage: e);
           },
         );
         break;
@@ -801,37 +982,25 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         child = _PhysicalBackupSuccessView(
           deviceName: coord.getDeviceName(id: targetDevice!.id)!,
           onClose: () {
-            Navigator.pop(context);
+            // Return the restorationId so it can be selected in the wallet list
+            Navigator.pop(context, restorationId);
           },
         );
         break;
-      case RecoveryFlowStep.physicalBackupFail:
-        child = _PhysicalBackupFailView(
-          errorMessage: error,
-          compatibility: compatibility,
-          onRetry: () {
-            setState(() {
-              // Don't push prev state, just go back to enterBackup
-              currentStep = RecoveryFlowStep.enterBackup;
-              error = null;
-            });
-          },
-          onClose: () {
-            Navigator.pop(context);
-          },
-        );
-        break;
+      // physicalBackupFail case removed - we always allow saving
       default:
         child = _ChooseMethodView(
           kind: kind,
           onDeviceChosen: () {
             setState(() {
+              isPhysical = false;
               pushPrevState();
               currentStep = RecoveryFlowStep.waitDevice;
             });
           },
           onPhysicalBackupChosen: () {
             setState(() {
+              isPhysical = true;
               switch (kind) {
                 case MethodChoiceKind.startRecovery:
                   pushPrevState();
@@ -844,6 +1013,23 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
             });
           },
         );
+    }
+
+    // Override with error view if error is present
+    if (error != null && errorTitle != null) {
+      child = _ErrorView(
+        title: errorTitle!,
+        message: error!,
+        isWarning:
+            !isException, // Exceptions are severe, validation errors are warnings
+        onRetry: () {
+          setState(() {
+            error = null;
+            errorTitle = null;
+            isException = false;
+          });
+        },
+      );
     }
 
     final switcher = AnimatedSwitcher(
@@ -926,18 +1112,22 @@ enum MethodChoiceKind { startRecovery, continueRecovery, addToWallet }
 
 // Recovery flow step states
 enum RecoveryFlowStep {
+  // Shared steps (both flows)
   start,
+  generatingNonces,
+
+  // Device share flow unique
   waitDevice,
   candidateReady,
+
+  // Physical backup flow unique
   waitPhysicalBackupDevice,
   firmwareUpgrade,
   enterDeviceName,
-  generatingNonces,
   enterBackup,
   enterRestorationDetails,
   enterThreshold,
   physicalBackupSuccess,
-  physicalBackupFail,
 }
 
 mixin _TitledWidget on Widget {
@@ -1169,13 +1359,10 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
         OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
         DeviceActionHint(),
       ],
-      onDismissed: _onCancel,
     );
   }
 
   void _onCancel() async {
-    final id = _connectedDevice?.id;
-    if (id != null) await coord.sendCancel(id: id);
     await _eraseController.clearAllActionsNeeded();
   }
 
@@ -1344,6 +1531,7 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
             controller: _walletNameController,
             maxLength: keyNameMaxLength(),
             inputFormatters: [nameInputFormatter],
+            autofocus: true,
             decoration: const InputDecoration(
               labelText: 'Wallet Name',
               border: OutlineInputBorder(),
@@ -1384,7 +1572,7 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
 class _EnterThresholdView extends StatefulWidget with _TitledWidget {
   final String walletName;
   final BitcoinNetwork network;
-  final Function(int threshold) onThresholdEntered;
+  final Function(int? threshold) onThresholdEntered;
   final int? initialThreshold;
 
   const _EnterThresholdView({
@@ -1398,12 +1586,15 @@ class _EnterThresholdView extends StatefulWidget with _TitledWidget {
   State<_EnterThresholdView> createState() => _EnterThresholdViewState();
 
   @override
-  String get titleText => 'Wallet Threshold';
+  String get titleText => 'Wallet Threshold (Optional)';
 }
 
 class _EnterThresholdViewState extends State<_EnterThresholdView> {
   final _formKey = GlobalKey<FormState>();
-  int _threshold = 2; // Default value
+  final _thresholdController = TextEditingController();
+  final _thresholdFocusNode = FocusNode();
+  int? _threshold;
+  bool _specifyThreshold = false;
 
   @override
   void initState() {
@@ -1411,6 +1602,23 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
     final initialThreshold = widget.initialThreshold;
     if (initialThreshold != null) {
       _threshold = initialThreshold;
+      _specifyThreshold = true;
+      _thresholdController.text = initialThreshold.toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _thresholdController.dispose();
+    _thresholdFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleSubmit() {
+    if (_specifyThreshold && _formKey.currentState!.validate()) {
+      widget.onThresholdEntered(_threshold);
+    } else if (!_specifyThreshold) {
+      widget.onThresholdEntered(null);
     }
   }
 
@@ -1418,59 +1626,144 @@ class _EnterThresholdViewState extends State<_EnterThresholdView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Form(
-      key: _formKey,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            "Enter the threshold from your backup.\nThis is the number of keys needed to use your wallet.",
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-          DropdownButtonFormField<int>(
-            initialValue: _threshold,
-            decoration: const InputDecoration(
-              labelText: 'Threshold',
-              border: OutlineInputBorder(),
-              hintText: 'Number of keys needed',
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.enter) {
+          _handleSubmit();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'If you know the threshold of the wallet, enter it here. Otherwise, we will determine it as we go.',
+              style: theme.textTheme.bodyMedium,
             ),
-            items: List.generate(5, (index) => index + 1)
-                .map(
-                  (number) => DropdownMenuItem<int>(
-                    value: number,
-                    child: Text('$number key${number > 1 ? 's' : ''}'),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value != null) {
+            const SizedBox(height: 24),
+            RadioGroup<bool>(
+              groupValue: _specifyThreshold,
+              onChanged: (value) {
                 setState(() {
-                  _threshold = value;
+                  _specifyThreshold = value ?? false;
+                  if (!_specifyThreshold) {
+                    _threshold = null;
+                  }
                 });
-              }
-            },
-            validator: (value) {
-              if (value == null) {
-                return 'Please select a threshold';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 24),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: FilledButton(
-              child: const Text('Begin restoring'),
-              onPressed: () async {
-                if (_formKey.currentState!.validate()) {
-                  widget.onThresholdEntered(_threshold);
-                }
               },
+              child: Column(
+                children: [
+                  Card.outlined(
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _specifyThreshold = false;
+                          _threshold = null;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Radio<bool>(value: false),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "I'm not sure",
+                                style: theme.textTheme.bodyLarge,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Card.outlined(
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _specifyThreshold = true;
+                        });
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _thresholdFocusNode.requestFocus();
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Radio<bool>(value: true),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    "I know the threshold",
+                                    style: theme.textTheme.bodyLarge,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _thresholdController,
+                              focusNode: _thresholdFocusNode,
+                              enabled: _specifyThreshold,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Threshold',
+                                border: OutlineInputBorder(),
+                                hintText: 'Number of keys needed',
+                              ),
+                              validator: (value) {
+                                if (!_specifyThreshold) return null;
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter a threshold';
+                                }
+                                final threshold = int.tryParse(value);
+                                if (threshold == null || threshold < 1) {
+                                  return 'Threshold must be at least 1';
+                                }
+                                return null;
+                              },
+                              onChanged: (value) {
+                                setState(() {
+                                  _threshold = int.tryParse(value);
+                                });
+                              },
+                              onFieldSubmitted: (_) => _handleSubmit(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FilledButton(
+                child: const Text('Continue'),
+                onPressed: _handleSubmit,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1480,8 +1773,10 @@ class _EnterDeviceNameView extends StatefulWidget with _TitledWidget {
   final Function(String)? onDeviceName;
   final VoidCallback? onDisconnected;
   final TargetDevice targetDevice;
+  final String? name;
   const _EnterDeviceNameView({
     required this.targetDevice,
+    this.name,
     this.onDeviceName,
     this.onDisconnected,
   });
@@ -1513,7 +1808,7 @@ class _EnterDeviceNameViewState extends State<_EnterDeviceNameView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          "If in doubt you can use the name written on the backup or make up a new one. You can always rename it later.",
+          "If in doubt you can use the name written on the backup or make up a new one.",
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
@@ -1521,6 +1816,7 @@ class _EnterDeviceNameViewState extends State<_EnterDeviceNameView> {
           id: widget.targetDevice.id,
           mode: DeviceNameMode.preview,
           buttonText: 'Continue',
+          initialValue: widget.name,
           onNamed: (name) {
             widget.onDeviceName?.call(name);
           },
@@ -1534,8 +1830,18 @@ class _EnterBackupView extends StatefulWidget with _TitledWidget {
   final Stream<EnterPhysicalBackupState> stream;
   final Function(PhysicalBackupPhase)? onFinished;
   final Function(String)? onError;
+  final VoidCallback? onCancel;
+  final DeviceId deviceId;
+  final String? deviceName;
 
-  const _EnterBackupView({required this.stream, this.onFinished, this.onError});
+  const _EnterBackupView({
+    required this.stream,
+    required this.deviceId,
+    this.deviceName,
+    this.onFinished,
+    this.onError,
+    this.onCancel,
+  });
 
   @override
   State<_EnterBackupView> createState() => _EnterBackupViewState();
@@ -1545,19 +1851,64 @@ class _EnterBackupView extends StatefulWidget with _TitledWidget {
 }
 
 class _EnterBackupViewState extends State<_EnterBackupView> {
+  late final FullscreenActionDialogController<void> _backupController;
   StreamSubscription? _subscription;
-  bool saved = false;
+  bool _dialogShown = false;
 
   @override
   void initState() {
     super.initState();
+
+    _backupController = FullscreenActionDialogController(
+      title: 'Enter Physical Backup',
+      body: (context) {
+        final theme = Theme.of(context);
+        return Card.filled(
+          margin: EdgeInsets.zero,
+          color: theme.colorScheme.surfaceContainerHigh,
+          child: ListTile(
+            leading: Icon(Icons.keyboard_rounded),
+            title: Text('Enter backup on ${widget.deviceName ?? "device"}'),
+            subtitle: Text(
+              'Enter the backup on the device screen. The app will continue automatically once complete.',
+            ),
+            isThreeLine: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          ),
+        );
+      },
+      actionButtons: [
+        OutlinedButton(
+          child: Text('Cancel'),
+          onPressed: () async {
+            await _backupController.clearAllActionsNeeded();
+            widget.onCancel?.call();
+          },
+        ),
+        DeviceActionHint(
+          label: 'Enter on device',
+          icon: Icons.keyboard_rounded,
+        ),
+      ],
+    );
+
     _subscription = widget.stream.listen((state) async {
       if (state.entered != null) {
         await _subscription?.cancel();
+        await _backupController.clearAllActionsNeeded();
         widget.onFinished?.call(state.entered!);
       }
       if (state.abort != null) {
+        await _backupController.clearAllActionsNeeded();
         widget.onError?.call(state.abort!);
+      }
+    });
+
+    // Show the fullscreen dialog immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_dialogShown && mounted) {
+        _dialogShown = true;
+        _backupController.addActionNeeded(context, widget.deviceId);
       }
     });
   }
@@ -1565,35 +1916,21 @@ class _EnterBackupViewState extends State<_EnterBackupView> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _backupController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      key: const ValueKey('EnterBackup'),
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        MaterialDialogCard(
-          iconData: Icons.keyboard_rounded,
-          title: Text('Waiting for backup'),
-          content: Text(
-            'Use your Frostsnap device to enter the physical backup. The app will continue once it’s complete.',
-          ),
-          actions: [CircularProgressIndicator()],
-          actionsAlignment: MainAxisAlignment.center,
-        ),
-      ],
-    );
+    // Return a loading indicator while the fullscreen dialog is being shown
+    return Center(child: CircularProgressIndicator());
   }
 }
 
 class _PlugInPromptView extends StatefulWidget with _TitledWidget {
   final RestorationId? continuing;
   final AccessStructureRef? existing;
-  final void Function(RecoverShare candidate, ShareCompatibility compatibility)
-  onCandidateDetected;
+  final void Function(RecoverShare candidate) onCandidateDetected;
 
   const _PlugInPromptView({
     this.continuing,
@@ -1611,7 +1948,6 @@ class _PlugInPromptView extends StatefulWidget with _TitledWidget {
 class _PlugInPromptViewState extends State<_PlugInPromptView> {
   late StreamSubscription _subscription;
   bool blankDeviceInserted = false;
-  RecoverShare? alreadyGot;
 
   @override
   void initState() {
@@ -1620,44 +1956,13 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
     _subscription = coord.waitForRecoveryShare().listen((
       waitForRecoverShareState,
     ) async {
-      ShareCompatibility? compatibility;
-      RecoverShare? last;
-      alreadyGot = null;
       blankDeviceInserted = false;
 
       if (waitForRecoverShareState.shares.isNotEmpty) {
-        for (final detectedShare in waitForRecoverShareState.shares) {
-          last = detectedShare;
-          if (widget.continuing != null) {
-            compatibility = coord.restorationCheckShareCompatible(
-              restorationId: widget.continuing!,
-              recoverShare: detectedShare,
-            );
-          } else if (widget.existing != null) {
-            final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-            compatibility = coord.checkRecoverShareCompatible(
-              accessStructureRef: widget.existing!,
-              recoverShare: detectedShare,
-              encryptionKey: encryptionKey,
-            );
-          } else {
-            compatibility = ShareCompatibility.compatible();
-          }
-
-          if (compatibility == ShareCompatibility.compatible()) {
-            break;
-          }
-        }
-
-        if (compatibility == ShareCompatibility.alreadyGotIt()) {
-          setState(() {
-            alreadyGot = last!;
-          });
-        } else {
-          setState(() {
-            widget.onCandidateDetected(last!, compatibility!);
-          });
-        }
+        final detectedShare = waitForRecoverShareState.shares.first;
+        setState(() {
+          widget.onCandidateDetected(detectedShare);
+        });
       } else {
         setState(() {
           blankDeviceInserted = waitForRecoverShareState.blank.isNotEmpty;
@@ -1678,20 +1983,7 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
 
     // Build the widget to display based on the error state.
     Widget displayWidget;
-    if (alreadyGot != null) {
-      displayWidget = MaterialDialogCard(
-        key: const ValueKey('warning-already-got'),
-        backgroundColor: theme.colorScheme.surfaceContainerLow,
-        iconData: Icons.warning_amber,
-        title: Text('Key already part of wallet'),
-        content: Text(
-          "The connected device “${coord.getDeviceName(id: alreadyGot!.heldBy)}” is already part of the wallet “${alreadyGot!.heldShare.keyName}”.",
-
-          textAlign: TextAlign.center,
-        ),
-        actions: [],
-      );
-    } else if (blankDeviceInserted) {
+    if (blankDeviceInserted) {
       displayWidget = MaterialDialogCard(
         key: const ValueKey('warning-blank'),
         backgroundColor: theme.colorScheme.surfaceContainerLow,
@@ -1748,259 +2040,49 @@ class _PlugInPromptViewState extends State<_PlugInPromptView> {
   }
 }
 
-class _CandidateReadyView extends StatefulWidget with _TitledWidget {
+class _CandidateReadyView extends StatelessWidget with _TitledWidget {
   final RecoverShare candidate;
-  final ShareCompatibility compatibility;
   final RestorationId? continuing;
   final AccessStructureRef? existing;
-  final VoidCallback? onDeviceDisconnected;
+  final VoidCallback onConfirm;
 
   const _CandidateReadyView({
     required this.candidate,
-    required this.compatibility,
     this.continuing,
     this.existing,
-    this.onDeviceDisconnected,
+    required this.onConfirm,
   });
 
   @override
   String get titleText => 'Restore with existing key';
 
   @override
-  State<_CandidateReadyView> createState() => _CandidateReadyViewState();
-}
-
-class _CandidateReadyViewState extends State<_CandidateReadyView> {
-  bool _isGeneratingNonces = false;
-  bool _isEnrolling = false; // Prevent duplicate enrollments
-  Stream<NonceReplenishState>? _nonceStream;
-  StreamSubscription? _nonceStreamSubscription;
-
-  @override
-  void dispose() {
-    _nonceStreamSubscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _completeEnrollment(BuildContext context) async {
-    // Prevent duplicate enrollments
-    if (_isEnrolling) return;
-
-    setState(() {
-      _isEnrolling = true;
-    });
-
-    try {
-      RestorationId? restorationId;
-      if (widget.continuing != null) {
-        await coord.continueRestoringWalletFromDeviceShare(
-          restorationId: widget.continuing!,
-          recoverShare: widget.candidate,
-        );
-      } else if (widget.existing != null) {
-        final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-        await coord.recoverShare(
-          accessStructureRef: widget.existing!,
-          recoverShare: widget.candidate,
-          encryptionKey: encryptionKey,
-        );
-      } else {
-        restorationId = await coord.startRestoringWalletFromDeviceShare(
-          recoverShare: widget.candidate,
-        );
-      }
-
-      if (context.mounted) {
-        Navigator.pop(context, restorationId);
-      }
-    } catch (e) {
-      if (context.mounted) {
-        setState(() {
-          _isEnrolling = false; // Reset on error
-        });
-        showErrorSnackbar(context, "Failed to recover key: $e");
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final deviceName =
-        coord.getDeviceName(id: widget.candidate.heldBy) ?? '<empty>';
+    final deviceName = coord.getDeviceName(id: candidate.heldBy) ?? '<empty>';
 
-    // If we're generating nonces, show the nonce UI inline
-    if (_isGeneratingNonces && _nonceStream != null) {
-      return Column(
-        key: const ValueKey('nonceGeneration'),
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          MaterialDialogCard(
-            title: SizedBox.shrink(),
-            content: Container(
-              constraints: BoxConstraints(minHeight: 120),
-              child: StreamBuilder<NonceReplenishState>(
-                stream: _nonceStream!,
-                builder: (context, snapshot) {
-                  final state = snapshot.data;
-
-                  // Handle abort (device disconnection)
-                  if (state != null && state.abort) {
-                    // Device disconnected - go back to waiting for device
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) {
-                        coord.cancelProtocol();
-                        _nonceStreamSubscription?.cancel();
-                        // Call parent callback to go back to waitDevice state
-                        widget.onDeviceDisconnected?.call();
-                      }
-                    });
-                    return SizedBox.shrink(); // Return early to avoid showing completion UI
-                  }
-
-                  // Handle completion
-                  if (state != null) {
-                    final isComplete = state.isFinished();
-                    if (isComplete) {
-                      // Add a delay to show completion before proceeding
-                      Future.delayed(Durations.long1, () async {
-                        if (mounted) {
-                          await _nonceStreamSubscription?.cancel();
-                          // Don't change UI state - just complete enrollment which will navigate
-                          _completeEnrollment(context);
-                        }
-                      });
-                    }
-                  }
-
-                  return MinimalNonceReplenishWidget(
-                    stream: _nonceStream!,
-                    autoAdvance: false,
-                  );
-                },
-              ),
-            ),
-            actions:
-                [], // No cancel button - user can disconnect device to cancel
-          ),
-        ],
-      );
-    }
-
-    // Otherwise show the normal "Key ready" UI
-    IconData icon;
     String title;
     String message;
     String buttonText;
-    bool buttonFilled;
-    VoidCallback? buttonAction;
 
-    switch (widget.compatibility) {
-      case ShareCompatibility_Compatible() ||
-          // we ignore the problem of different wallet names on the shares for now.
-          // This happens when you eneter a physical backup and enter a different
-          // name for the wallet than devices you later try to add to the wallet.
-          // We just carry on with the cosmetic SNAFU.
-          ShareCompatibility_NameMismatch():
-        icon = Icons.check_circle;
-        title = 'Key ready';
+    // Always allow adding the key - compatibility will be shown in the restoration list
+    title = 'Key ready';
 
-        if (widget.continuing != null || widget.existing != null) {
-          message =
-              'Key \'$deviceName\' is ready to be added to wallet \'${widget.candidate.heldShare.keyName}\'.';
-          buttonText = _isEnrolling ? 'Adding...' : 'Add to wallet';
-        } else {
-          message =
-              'Key \'$deviceName\' is part of a wallet called \'${widget.candidate.heldShare.keyName}\'.';
-          buttonText = _isEnrolling ? 'Starting...' : 'Start restoring';
-        }
-
-        buttonFilled = true;
-        buttonAction = _isEnrolling
-            ? null
-            : () {
-                // Prevent duplicate clicks
-                if (_isEnrolling) return;
-
-                // Run async operations in a fire-and-forget manner
-                () async {
-                  try {
-                    // Check if device needs nonces before enrolling
-                    final nonceRequest = await coord.createNonceRequest(
-                      devices: [widget.candidate.heldBy],
-                    );
-
-                    if (nonceRequest.someNoncesRequested()) {
-                      // Show nonce generation inline instead of in a dialog
-                      if (mounted) {
-                        setState(() {
-                          _isGeneratingNonces = true;
-                          _nonceStream = coord
-                              .replenishNonces(
-                                nonceRequest: nonceRequest,
-                                devices: [widget.candidate.heldBy],
-                              )
-                              .toBehaviorSubject();
-                          // The abort flag in NonceReplenishState will handle device disconnection
-                        });
-                      }
-                      return; // Don't proceed until nonces are done
-                    }
-
-                    // If no nonces needed, proceed directly
-                    if (mounted) {
-                      _completeEnrollment(context);
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      showErrorSnackbar(context, e.toString());
-                    }
-                  }
-                }();
-              };
-
-        break;
-
-      case ShareCompatibility_AlreadyGotIt():
-        icon = Icons.info_rounded;
-        title = 'Key already restored';
-        message = "You've already restored '$deviceName'.";
-        buttonText = 'Close';
-        buttonFilled = false;
-        buttonAction = () => Navigator.pop(context);
-        break;
-
-      case ShareCompatibility_Incompatible():
-        icon = Icons.error_rounded;
-        title = 'Key cannot be used';
-        message =
-            'This key "$deviceName" is part of a different wallet called "${widget.candidate.heldShare.keyName}".';
-        buttonText = 'Close';
-        buttonFilled = false;
-        buttonAction = () => Navigator.pop(context);
-        break;
-
-      case ShareCompatibility_ConflictsWith(:final deviceId, :final index):
-        icon = Icons.error_rounded;
-        title = 'Backup does not match';
-        message =
-            "You have already restored backup #$index on '${coord.getDeviceName(id: deviceId)!}' and it doesn't match the one you just entered. Consider removing that key from the restoration first.";
-        buttonText = 'Close';
-        buttonFilled = false;
-        buttonAction = () => Navigator.pop(context);
-        break;
+    if (continuing != null || existing != null) {
+      message =
+          'Key \'$deviceName\' is ready to be added to wallet \'${candidate.heldShare.keyName}\'.';
+      buttonText = 'Add to wallet';
+    } else {
+      message =
+          'Key \'$deviceName\' is part of a wallet called \'${candidate.heldShare.keyName}\'.';
+      buttonText = 'Start restoring';
     }
 
     return MaterialDialogCard(
       key: const ValueKey('candidateReady'),
-      iconData: icon,
+      iconData: Icons.check_circle,
       title: Text(title),
       content: Text(message, textAlign: TextAlign.center),
-      actions: [
-        buttonFilled
-            ? FilledButton(child: Text(buttonText), onPressed: buttonAction)
-            : TextButton(child: Text(buttonText), onPressed: buttonAction),
-      ],
+      actions: [FilledButton(child: Text(buttonText), onPressed: onConfirm)],
     );
   }
 }
@@ -2042,61 +2124,18 @@ class _PhysicalBackupSuccessView extends StatelessWidget with _TitledWidget {
   String get titleText => '';
 }
 
-class _PhysicalBackupFailView extends StatelessWidget with _TitledWidget {
-  final String? errorMessage;
-  final ShareCompatibility? compatibility;
-  final VoidCallback onRetry;
-  final VoidCallback onClose;
-
-  const _PhysicalBackupFailView({
-    required this.errorMessage,
-    required this.compatibility,
-    required this.onRetry,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final String compatMessage = switch (compatibility) {
-      ShareCompatibility_ConflictsWith(:final deviceId, :final index) =>
-        "You have already restored backup #$index on '${coord.getDeviceName(id: deviceId)!}' and it doesn't match the one you just entered. Try a different backup.",
-      ShareCompatibility_Incompatible() =>
-        "This backup is for a different wallet. Try a different backup.",
-      ShareCompatibility_AlreadyGotIt() =>
-        "You've already added this backup to the restoration. Try a different backup.",
-      _ => "The backup is not compatible with this wallet.",
-    };
-
-    final String message = errorMessage ?? compatMessage;
-    return MaterialDialogCard(
-      key: const ValueKey('physicalBackupFail'),
-      iconData: Icons.error_rounded,
-      title: Text('Incompatible backup'),
-      content: Text(message, textAlign: TextAlign.center),
-      actions: [
-        TextButton(child: const Text('Close'), onPressed: onClose),
-        FilledButton(
-          child: const Text('Try Different Backup'),
-          onPressed: onRetry,
-        ),
-      ],
-    );
-  }
-
-  @override
-  String get titleText => 'Backup Error';
-}
-
 class _FirmwareUpgradeView extends StatefulWidget with _TitledWidget {
   final TargetDevice targetDevice;
   final VoidCallback onComplete;
   final VoidCallback onCancel;
+  final VoidCallback onDisconnected;
 
   const _FirmwareUpgradeView({
     super.key,
     required this.targetDevice,
     required this.onComplete,
     required this.onCancel,
+    required this.onDisconnected,
   });
 
   @override
@@ -2114,7 +2153,15 @@ class _FirmwareUpgradeViewState extends State<_FirmwareUpgradeView> {
   void initState() {
     super.initState();
     _controller = DeviceActionUpgradeController();
-    // Don't handle disconnection - firmware upgrade causes device to reset which is normal
+
+    // Listen for device disconnection
+    // Note: During firmware upgrade, the device will reset which is expected.
+    // We only handle unexpected disconnections before the upgrade starts.
+    widget.targetDevice.onDisconnected.then((_) {
+      if (mounted && !_isUpgrading) {
+        widget.onDisconnected();
+      }
+    });
   }
 
   @override
@@ -2164,115 +2211,145 @@ class _FirmwareUpgradeViewState extends State<_FirmwareUpgradeView> {
   }
 }
 
-// Loading view with optional subtitle
-class _LoadingView extends StatelessWidget with _TitledWidget {
-  final String title;
-  final String? subtitle;
-
-  const _LoadingView({required this.title, this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AnimatedSwitcher(
-      duration: Durations.medium2,
-      child: Center(
-        key: ValueKey('$title$subtitle'),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 24),
-            AnimatedDefaultTextStyle(
-              style: theme.textTheme.titleMedium!,
-              duration: Durations.short4,
-              child: Text(title, textAlign: TextAlign.center),
-            ),
-            if (subtitle != null) ...[
-              SizedBox(height: 8),
-              AnimatedDefaultTextStyle(
-                style: theme.textTheme.bodyMedium!.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                duration: Durations.short4,
-                child: Text(subtitle!, textAlign: TextAlign.center),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  String get titleText => '';
-}
-
 // Error view with retry option
-class _ErrorView extends StatelessWidget with _TitledWidget {
+class _ErrorView extends StatefulWidget with _TitledWidget {
   final String title;
   final String message;
   final VoidCallback? onRetry;
+  final bool isWarning;
 
-  const _ErrorView({required this.title, required this.message, this.onRetry});
+  const _ErrorView({
+    required this.title,
+    required this.message,
+    this.onRetry,
+    this.isWarning = false,
+  });
+
+  @override
+  State<_ErrorView> createState() => _ErrorViewState();
+
+  @override
+  String get titleText => isWarning ? 'Warning' : 'Error';
+}
+
+class _ErrorViewState extends State<_ErrorView> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return MaterialDialogCard(
-      iconData: Icons.error_outline_rounded,
-      title: Text(title),
-      content: Text(message, textAlign: TextAlign.center),
-      backgroundColor: theme.colorScheme.errorContainer,
-      textColor: theme.colorScheme.onErrorContainer,
-      iconColor: theme.colorScheme.onErrorContainer,
-      actions: onRetry != null
-          ? [
-              FilledButton.icon(
-                icon: Icon(Icons.refresh),
-                label: Text('Try Again'),
-                onPressed: onRetry,
-                style: FilledButton.styleFrom(
-                  backgroundColor: theme.colorScheme.error,
-                  foregroundColor: theme.colorScheme.onError,
-                ),
+    // Wrap in SingleChildScrollView with NeverScrollableScrollPhysics to consume
+    // the scroll from Dialog.fullscreen but prevent actual scrolling
+    return SingleChildScrollView(
+      physics: NeverScrollableScrollPhysics(),
+      child: MaterialDialogCard(
+        iconData: widget.isWarning
+            ? Icons.warning_amber_rounded
+            : Icons.error_outline_rounded,
+        title: Text(widget.title),
+        content: Container(
+          constraints: BoxConstraints(maxHeight: 200),
+          child: Scrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: SelectableText(
+                widget.message,
+                textAlign: TextAlign.center,
               ),
-            ]
-          : [],
+            ),
+          ),
+        ),
+        backgroundColor: widget.isWarning
+            ? theme.colorScheme.surfaceContainerHigh
+            : theme.colorScheme.errorContainer,
+        textColor: widget.isWarning
+            ? theme.colorScheme.onSurface
+            : theme.colorScheme.onErrorContainer,
+        iconColor: widget.isWarning
+            ? theme.colorScheme.onSurfaceVariant
+            : theme.colorScheme.onErrorContainer,
+        actions: [
+          // Only show copy button for exceptions (they have stack traces worth copying)
+          if (!widget.isWarning)
+            OutlinedButton.icon(
+              icon: Icon(Icons.copy),
+              label: Text('Copy Error'),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: widget.message));
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: theme.colorScheme.onErrorContainer,
+                side: BorderSide(color: theme.colorScheme.onErrorContainer),
+              ),
+            ),
+          if (widget.onRetry != null)
+            FilledButton.icon(
+              icon: Icon(Icons.refresh),
+              label: Text('Try Again'),
+              onPressed: widget.onRetry,
+              style: widget.isWarning
+                  ? null // Use default button style for warnings
+                  : FilledButton.styleFrom(
+                      backgroundColor: theme.colorScheme.error,
+                      foregroundColor: theme.colorScheme.onError,
+                    ),
+            ),
+        ],
+      ),
     );
   }
-
-  @override
-  String get titleText => 'Error';
 }
 
 // Unified nonce dialog for both enrollment and physical backup flows
-class _EnrollmentNonceDialog extends StatefulWidget with _TitledWidget {
+class NonceGenerationPage extends StatefulWidget with _TitledWidget {
   final Stream<NonceReplenishState> stream;
   final String? deviceName;
+  final Future<void> onDisconnected;
   final VoidCallback onComplete;
   final VoidCallback onCancel;
+  final VoidCallback onDeviceDisconnected;
   final Function(String) onError;
 
-  const _EnrollmentNonceDialog({
+  const NonceGenerationPage({
     required this.stream,
     this.deviceName,
+    required this.onDisconnected,
     required this.onComplete,
     required this.onCancel,
+    required this.onDeviceDisconnected,
     required this.onError,
   });
 
   @override
-  State<_EnrollmentNonceDialog> createState() => _EnrollmentNonceDialogState();
+  State<NonceGenerationPage> createState() => _NonceGenerationPageState();
 
   @override
   String get titleText => 'Preparing Device';
 }
 
-class _EnrollmentNonceDialogState extends State<_EnrollmentNonceDialog> {
+class _NonceGenerationPageState extends State<NonceGenerationPage> {
   bool _hasCompleted = false;
   bool _hasErrored = false;
   StreamSubscription? _streamSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen for device disconnection
+    widget.onDisconnected.then((_) {
+      if (mounted && !_hasCompleted) {
+        widget.onDeviceDisconnected();
+      }
+    });
+  }
 
   @override
   void dispose() {

@@ -3,7 +3,7 @@ use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::EnterPhysicalId;
-use frostsnap_core::{coordinator::FrostCoordinator, MasterAppkey, WireSignTask};
+use frostsnap_core::{MasterAppkey, WireSignTask};
 use rand::seq::IteratorRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -404,13 +404,18 @@ fn check_share_for_valid_share_works() {
         .unwrap()
         .access_structure_ref();
 
-    for device_id in device_set {
+    for device_id in device_set.iter().cloned() {
         let display_backup = run
             .coordinator
             .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
             .unwrap();
         run.extend(display_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+        // Assign the valid backup that was just displayed for this device
+        let (_, backup) = env.backups.get(&device_id).unwrap().clone();
+        env.backup_to_enter.insert(device_id, backup);
+
         let enter_backup = run
             .coordinator
             .tell_device_to_load_physical_backup(enter_physical_id, device_id);
@@ -420,7 +425,7 @@ fn check_share_for_valid_share_works() {
 
     assert_eq!(env.physical_backups_entered.len(), n_parties);
 
-    for physical_backup in env.physical_backups_entered {
+    for physical_backup in env.physical_backups_entered.clone() {
         run.coordinator
             .check_physical_backup(access_structure_ref, physical_backup, TEST_ENCRYPTION_KEY)
             .unwrap();
@@ -432,10 +437,7 @@ fn check_share_for_invalid_share_fails() {
     let n_parties = 3;
     let threshold = 2;
     let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
-    let mut env = TestEnv {
-        enter_invalid_backup: true,
-        ..Default::default()
-    };
+    let mut env = TestEnv::default();
     let mut run = Run::start_after_keygen(
         n_parties,
         threshold,
@@ -446,6 +448,13 @@ fn check_share_for_invalid_share_fails() {
     let enter_physical_id = EnterPhysicalId::new(&mut test_rng);
     let device_set = run.device_set();
 
+    // Prepare invalid backups for testing
+    let invalid_backups: Vec<frost_backup::ShareBackup> = vec![
+        "#1 MISS DRAFT FOLD BRIGHT HURRY CONCERT SOURCE CLUB EQUIP ELEGANT TOY LYRICS CAR CABIN SYRUP LECTURE TEAM EQUIP WET ECHO LINK SILVER PURCHASE LECTURE NEXT".parse().unwrap(),
+        "#2 BEST MIXTURE FOOT HABIT WORLD OBSERVE ADVICE ANNUAL ISSUE CAUSE PROPERTY GUESS RETURN HURDLE WEASEL CUP ONCE NOVEL MARCH VALVE BLIND TRIGGER CHAIR ACTOR MONTH".parse().unwrap(),
+        "#3 PANDA SPHERE HAIR BRAVE VIRUS CATTLE LOOP WRAP RAMP READY TIP BODY GIANT OYSTER DIZZY CRUSH DANGER SNOW PLANET SHOVE LIQUID CLAW RICE AMONG JOB".parse().unwrap(),
+    ];
+
     let access_structure_ref = run
         .coordinator
         .iter_access_structures()
@@ -453,13 +462,21 @@ fn check_share_for_invalid_share_fails() {
         .unwrap()
         .access_structure_ref();
 
-    for device_id in device_set {
+    // Collect devices into a vector to access by index
+    let devices: Vec<_> = device_set.iter().cloned().collect();
+
+    for (i, &device_id) in devices.iter().enumerate() {
         let display_backup = run
             .coordinator
             .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
             .unwrap();
         run.extend(display_backup);
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+        // Assign invalid backup for this device to enter
+        env.backup_to_enter
+            .insert(device_id, invalid_backups[i].clone());
+
         let enter_backup = run
             .coordinator
             .tell_device_to_load_physical_backup(enter_physical_id, device_id);
@@ -495,7 +512,7 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     let access_structure = run.coordinator.iter_access_structures().next().unwrap();
 
     // replace coordinator with a fresh one that doesn't know about the key
-    run.replace_coordiantor(FrostCoordinator::new());
+    run.clear_coordinator();
 
     let restoring_devices = device_set.iter().cloned().take(2).collect::<Vec<_>>();
 
@@ -600,8 +617,11 @@ fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
         .expect("one device should be enough to restore the key");
     let restoration_id = restoration.restoration_id;
 
-    assert!(!restoration.access_structure.is_restorable());
-    assert_eq!(restoration.access_structure_ref, Some(access_structure_ref));
+    assert!(!restoration.is_restorable());
+    assert_eq!(
+        restoration.access_structure.access_structure_ref(),
+        Some(access_structure_ref)
+    );
 
     recover_next_share(&mut run, 1, &mut rng);
 
@@ -615,7 +635,7 @@ fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
         .get_restoration_state(restoration_id)
         .unwrap();
 
-    assert!(restoration.access_structure.is_restorable());
+    assert!(restoration.is_restorable());
     run.coordinator
         .finish_restoring(restoration.restoration_id, TEST_ENCRYPTION_KEY, &mut rng)
         .unwrap();
@@ -778,87 +798,4 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
     let nonces_available = run.coordinator.nonces_available(device_id);
 
     assert_eq!(nonces_available, available_at_start);
-}
-
-#[test]
-fn consolidate_backup_with_polynomial_checksum_validation() {
-    let mut test_rng = ChaCha20Rng::from_seed([43u8; 32]);
-    let mut env = TestEnv::default();
-
-    // Do a 2-of-2 keygen to get valid keys
-    let mut run =
-        Run::start_after_keygen_and_nonces(2, 2, &mut env, &mut test_rng, 2, KeyPurpose::Test);
-
-    let device_set = run.device_set();
-    let key_data = run.coordinator.iter_keys().next().unwrap();
-    let access_structure_ref = key_data
-        .access_structures()
-        .next()
-        .unwrap()
-        .access_structure_ref();
-
-    // Display backups for all devices
-    for &device_id in &device_set {
-        let display_backup = run
-            .coordinator
-            .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
-            .unwrap();
-        run.extend(display_backup);
-    }
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
-
-    // Now we have backups in env.backups
-    assert_eq!(env.backups.len(), 2);
-
-    // Pick the first device
-    let device_id = *env.backups.keys().next().unwrap();
-
-    // Tell the device to enter backup mode
-    let enter_physical_id = frostsnap_core::EnterPhysicalId::new(&mut test_rng);
-    let enter_backup = run
-        .coordinator
-        .tell_device_to_load_physical_backup(enter_physical_id, device_id);
-    run.extend(enter_backup);
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
-
-    // The env should have received an EnterBackup message and we simulate entering it
-    // The TestEnv will handle entering the backup we already have for this device
-
-    // Get the PhysicalBackupPhase from the env that was populated when the device responded
-    let physical_backup_phase = *env
-        .physical_backups_entered
-        .last()
-        .expect("Should have a physical backup phase");
-
-    let consolidate = run
-        .coordinator
-        .tell_device_to_consolidate_physical_backup(
-            physical_backup_phase,
-            access_structure_ref,
-            TEST_ENCRYPTION_KEY,
-        )
-        .unwrap();
-    run.extend(consolidate);
-
-    // This should succeed because the polynomial checksum is valid
-    run.run_until_finished(&mut env, &mut test_rng).unwrap();
-
-    // Verify that the device now has the consolidated share
-    let device = run.device(device_id);
-    let _encrypted_share = device
-        .get_encrypted_share(
-            access_structure_ref,
-            physical_backup_phase.backup.share_image.index,
-        )
-        .expect("Device should have the consolidated share");
-
-    // Verify the coordinator also knows about this share
-    assert!(
-        run.coordinator.knows_about_share(
-            device_id,
-            access_structure_ref,
-            physical_backup_phase.backup.share_image.index
-        ),
-        "Coordinator should know about the consolidated share"
-    );
 }

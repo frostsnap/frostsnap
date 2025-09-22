@@ -141,8 +141,8 @@ class WalletHome extends StatelessWidget {
                 child: TxList(key: Key(item.frostKey.keyId().toHex())),
               ),
               WalletItemRestoration item => WalletRecoveryPage(
-                key: Key(item.restoringKey.restorationId.toHex()),
-                restoringKey: item.restoringKey,
+                key: Key(item.restorationState.restorationId.toHex()),
+                restorationState: item.restorationState,
                 onWalletRecovered: (accessStructureRef) async {
                   walletListController.selectWallet(accessStructureRef.keyId);
 

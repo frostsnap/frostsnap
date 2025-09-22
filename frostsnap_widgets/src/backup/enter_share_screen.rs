@@ -10,6 +10,35 @@ use crate::{DynWidget, Key, KeyTouch, Widget};
 use alloc::{vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
+// Test word sets for auto-fill feature
+// 3 compatible shares from 2-of-3 scheme, plus 1 incompatible from different secret
+const TEST_WORD_SETS: [[&str; 24]; 4] = [
+    // Share #1 (25th word: MOBILE)
+    [
+        "MUTUAL", "JEANS", "SNAP", "STING", "BLESS", "JOURNEY", "MORAL", "BREAD", "ROOM", "LIMIT",
+        "DOSE", "GRAVITY", "SORT", "DELIVER", "OUTDOOR", "RIPPLE", "DONKEY", "BLOUSE", "PLAY",
+        "CART", "CENTURY", "MAXIMUM", "MAKE", "LOCAL",
+    ],
+    // Share #2 (25th word: BUSINESS)
+    [
+        "CASH", "TRASH", "FOIL", "PREFER", "BUTTER", "IDEA", "BRAVE", "BITTER", "ITEM", "WINK",
+        "DRIFT", "SMILE", "TOMATO", "LUNCH", "OPTION", "HERO", "THREE", "ENGINE", "BLESS",
+        "MANAGE", "HORSE", "JAR", "ADVICE", "SHERIFF",
+    ],
+    // Share #3 (25th word: FINGER)
+    [
+        "REGION", "FINISH", "TRAVEL", "LAUNDRY", "CHEAP", "HAIR", "PLUNGE", "BANANA", "CRACK",
+        "INTEREST", "DURING", "COTTON", "PHONE", "DISAGREE", "CRUNCH", "AIRPORT", "CANCEL", "FOLD",
+        "LAUNDRY", "PONY", "LOBSTER", "LENS", "MAMMAL", "CLOTH",
+    ],
+    // Share #4 - Incompatible (25th word: ZOO)
+    [
+        "MIRACLE", "KETCHUP", "SLIM", "MAZE", "GUESS", "FEBRUARY", "IDLE", "ENDORSE", "BARELY",
+        "POLAR", "AGAIN", "SIBLING", "CLARIFY", "SHELL", "EAGER", "FISCAL", "DISTANCE", "FEW",
+        "ABOVE", "SURE", "FRAME", "ENFORCE", "BUTTER", "MORNING",
+    ],
+];
+
 pub struct EnterShareScreen {
     model: BackupModel,
     numeric_keyboard: Option<OneTimeClearHack<NumericKeyboard>>,
@@ -21,6 +50,7 @@ pub struct EnterShareScreen {
     keyboard_rect: Rectangle,
     needs_redraw: bool,
     size: Size,
+    auto_fill_enabled: bool,
 }
 
 impl Default for EnterShareScreen {
@@ -46,6 +76,7 @@ impl EnterShareScreen {
             keyboard_rect: Rectangle::zero(),
             needs_redraw: true,
             size: Size::zero(),
+            auto_fill_enabled: false,
         }
     }
 
@@ -64,25 +95,12 @@ impl EnterShareScreen {
         }
     }
 
-    /// Testing method to pre-fill with specific test words for quick testing
+    /// Testing method to enable auto-fill mode
+    /// When enabled, entering a share index (1-4) will automatically fill in test words:
+    /// - Indices 1, 2, 3: Compatible shares from a 2-of-3 scheme
+    /// - Index 4: Incompatible share from a different secret
     pub fn prefill_test_words(&mut self) {
-        // First complete the share index
-        let mutations = self.model.complete_row("1");
-        self.input_preview.apply_mutations(&mutations);
-
-        // Then complete the 24 test words
-        let test_words = [
-            "EXCITE", "USELESS", "AUGUST", "ETHICS", "JEALOUS", "GADGET", "ALWAYS", "MATERIAL",
-            "MODEL", "VIOLIN", "READY", "SUIT", "WOOL", "HUMOR", "CHEAP", "PERSON", "WHERE",
-            "CANNON", "DISEASE", "WINK", "TUITION", "AMATEUR", "ROBUST", "SEGMENT",
-        ];
-
-        for word in test_words {
-            let mutations = self.model.complete_row(word);
-            self.input_preview.apply_mutations(&mutations);
-        }
-
-        self.update_from_model();
+        self.auto_fill_enabled = true;
     }
 
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
@@ -297,6 +315,20 @@ impl crate::DynWidget for EnterShareScreen {
                                 let mutations = self.model.complete_row(&current);
                                 self.input_preview.apply_mutations(&mutations);
                                 self.update_from_model();
+
+                                // Auto-fill test words if enabled
+                                if self.auto_fill_enabled {
+                                    if let Ok(index) = current.parse::<usize>() {
+                                        if (1..=4).contains(&index) {
+                                            let words = &TEST_WORD_SETS[index - 1];
+                                            for word in words {
+                                                let mutations = self.model.complete_row(word);
+                                                self.input_preview.apply_mutations(&mutations);
+                                            }
+                                            self.update_from_model();
+                                        }
+                                    }
+                                }
                             }
                         }
                         Key::Keyboard(c) if c.is_alphabetic() || c.is_numeric() => {
