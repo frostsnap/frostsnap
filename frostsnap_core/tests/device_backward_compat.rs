@@ -3,7 +3,7 @@ mod common;
 
 use frost_backup::ShareBackup;
 use frostsnap_core::device::{
-    restoration::{RestorationMutation, SavedBackup},
+    restoration::{LegacySavedBackup, RestorationMutation},
     EncryptedSecretShare, KeyPurpose, Mutation, SaveShareMutation,
 };
 use frostsnap_core::{AccessStructureId, AccessStructureKind, Kind};
@@ -71,7 +71,7 @@ fn test_all_device_mutations() {
             }),
         )),
         // Restoration mutations
-        Mutation::Restoration(RestorationMutation::Save(SavedBackup {
+        Mutation::Restoration(RestorationMutation::LegacySave(LegacySavedBackup {
             share_backup,
             threshold: 2,
             purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
@@ -97,7 +97,7 @@ fn test_all_device_mutations() {
                     "0001010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020200"
                 );
             }
-            Mutation::Restoration(RestorationMutation::Save(_)) => {
+            Mutation::Restoration(RestorationMutation::LegacySave(_)) => {
                 assert_bincode_hex_eq!(
                     mutation,
                     "01000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002aeb02010008746573745f6b6579"
@@ -114,6 +114,9 @@ fn test_all_device_mutations() {
                     mutation,
                     "000201010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1afb1dde6fd8607b05ecd33fcdf96eaef828be8955ad2af175f7b4f231e83dac8a2a89393d068530505297b93b9dc5b740d59a1ebee4d9a5924acda8cca"
                 );
+            }
+            _ => {
+                // Other mutations we're not testing yet
             }
         }
     }
