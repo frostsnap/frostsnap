@@ -1451,6 +1451,18 @@ pub struct CoordAccessStructure {
 }
 
 impl CoordAccessStructure {
+    pub fn new(
+        app_shared_key: Xpub<SharedKey>,
+        device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
+        kind: crate::AccessStructureKind,
+    ) -> Self {
+        Self {
+            app_shared_key,
+            device_to_share_index,
+            kind,
+        }
+    }
+
     pub fn threshold(&self) -> u16 {
         self.app_shared_key
             .key
