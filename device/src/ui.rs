@@ -7,7 +7,7 @@ use frostsnap_core::{
         restoration::{BackupDisplayPhase, EnterBackupPhase},
         KeyGenPhase3, SignPhase1,
     },
-    message::HeldShare,
+    message::HeldShare2,
     tweak::BitcoinBip32Path,
 };
 
@@ -53,7 +53,7 @@ pub enum Workflow {
     None,
     Standby {
         device_name: DeviceName,
-        held_share: HeldShare,
+        held_share: HeldShare2,
     },
     UserPrompt(Prompt),
     NamingDevice {

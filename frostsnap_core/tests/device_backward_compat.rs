@@ -3,8 +3,7 @@ mod common;
 
 use frost_backup::ShareBackup;
 use frostsnap_core::device::{
-    restoration::{RestorationMutation, SavedBackup},
-    EncryptedSecretShare, KeyPurpose, Mutation, SaveShareMutation,
+    restoration::*, EncryptedSecretShare, KeyPurpose, Mutation, SaveShareMutation,
 };
 use frostsnap_core::{AccessStructureId, AccessStructureKind, Kind};
 use schnorr_fun::frost::{SecretShare, ShareImage, SharedKey};
@@ -72,10 +71,16 @@ fn test_all_device_mutations() {
         )),
         // Restoration mutations
         Mutation::Restoration(RestorationMutation::Save(SavedBackup {
-            share_backup,
+            share_backup: share_backup.clone(),
             threshold: 2,
             purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
             key_name: "test_key".to_string(),
+        })),
+        Mutation::Restoration(RestorationMutation::Save2(SavedBackup2 {
+            share_backup,
+            threshold: Some(2),
+            purpose: Some(KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin)),
+            key_name: Some("test_key".to_string()),
         })),
         Mutation::Restoration(RestorationMutation::UnSave(share_image)),
     ];
@@ -101,6 +106,12 @@ fn test_all_device_mutations() {
                 assert_bincode_hex_eq!(
                     mutation,
                     "01000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002aeb02010008746573745f6b6579"
+                );
+            }
+            Mutation::Restoration(RestorationMutation::Save2(_)) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "01020000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002aeb01020101000108746573745f6b6579"
                 );
             }
             Mutation::Restoration(RestorationMutation::UnSave(_)) => {

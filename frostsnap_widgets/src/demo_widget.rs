@@ -855,11 +855,11 @@ macro_rules! demo_widget {
             }
             "standby" => {
                 use $crate::Standby;
-                use frostsnap_core::{message::HeldShare, device::KeyPurpose, schnorr_fun::frost::SecretShare};
+                use frostsnap_core::{message::HeldShare2, device::KeyPurpose, schnorr_fun::frost::SecretShare};
                 use bitcoin;
 
                 // Create a stub HeldShare for demo purposes
-                let held_share = HeldShare {
+                let held_share = HeldShare2 {
                     access_structure_ref: None,
                     // ShareImage is just a Point, we can use a generator point for demo
                     share_image: {
@@ -869,9 +869,10 @@ macro_rules! demo_widget {
                             share: Scalar::<Secret, Zero>::zero(),
                         }.share_image()
                     },
-                    threshold: 2,
-                    key_name: "Family Wallet".to_string(),
-                    purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+                    threshold: Some(2),
+                    key_name: Some("Family Wallet".to_string()),
+                    purpose: Some(KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin)),
+                    needs_consolidation: false,
                 };
 
                 let device_name = "Alice";

@@ -143,8 +143,11 @@ pub fn find_valid_subset(
     fingerprint: Fingerprint,
     known_threshold: Option<usize>,
 ) -> Option<(BTreeSet<ShareImage>, SharedKey<Normal, Zero>)> {
-    if images.len() < 2 {
-        // Can't verify fingerprint with less than 2 shares
+    // We need at least 2 images for the fingerprint to actually filter anything
+    // -- unless we know explicitly that it's the trivial 1-of-n case then we
+    // can just go ahead and choose one.
+    let min_shares_needed = known_threshold.unwrap_or(2);
+    if images.len() < min_shares_needed {
         return None;
     }
 
@@ -175,9 +178,10 @@ pub fn find_valid_subset(
                 // Try to reconstruct SharedKey from this combination
                 let shared_key = SharedKey::from_share_images(share_combo.clone());
 
-                // The poly must have at least 2 coefficients for us to discover
-                // shares that are compatible with each other.
-                if shared_key.point_polynomial().len() < 2 {
+                // For threshold > 1, the poly must have at least 2 coefficients
+                // for us to discover shares that are compatible with each other.
+                // For threshold = 1, we can proceed with a single coefficient.
+                if known_threshold != Some(1) && shared_key.point_polynomial().len() < 2 {
                     continue;
                 }
 

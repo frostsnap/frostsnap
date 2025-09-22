@@ -71,6 +71,25 @@ pub struct CompleteKey {
     pub access_structures: HashMap<AccessStructureId, CoordAccessStructure>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShareLocation {
+    pub device_ids: Vec<DeviceId>,
+    pub share_index: ShareIndex,
+    pub key_name: String,
+    pub key_purpose: KeyPurpose,
+    pub key_state: KeyLocationState,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum KeyLocationState {
+    Complete {
+        access_structure_ref: AccessStructureRef,
+    },
+    Restoring {
+        restoration_id: RestorationId,
+    },
+}
+
 impl CompleteKey {
     pub fn coord_share_decryption_contrib(
         &self,
@@ -364,7 +383,7 @@ impl FrostCoordinator {
             Restoration(inner) => {
                 return self
                     .restoration
-                    .apply_mutation_restoration(inner)
+                    .apply_mutation_restoration(inner, self.keygen_fingerprint)
                     .map(Mutation::Restoration);
             }
         }
@@ -390,6 +409,155 @@ impl FrostCoordinator {
         self.keys
             .iter()
             .flat_map(|(_, key_data)| key_data.access_structures())
+    }
+
+    pub fn iter_shares(
+        &self,
+        encryption_key: SymmetricKey,
+    ) -> impl Iterator<Item = (ShareImage, ShareLocation)> + '_ {
+        let complete_wallet_shares = self
+            .iter_access_structures()
+            .filter_map(move |access_structure| {
+                let access_structure_ref = access_structure.access_structure_ref();
+                self.root_shared_key(access_structure_ref, encryption_key)
+                    .map(|root_shared_key| {
+                        (access_structure, access_structure_ref, root_shared_key)
+                    })
+            })
+            .flat_map(
+                move |(access_structure, access_structure_ref, root_shared_key)| {
+                    let key = self
+                        .keys
+                        .get(&access_structure_ref.key_id)
+                        .expect("must exist");
+                    let key_name = key.key_name.clone();
+                    let key_purpose = key.purpose;
+
+                    access_structure.share_index_to_devices().into_iter().map(
+                        move |(share_index, device_ids)| {
+                            let share_image = root_shared_key.share_image(share_index);
+                            (
+                                share_image,
+                                ShareLocation {
+                                    device_ids,
+                                    share_index,
+                                    key_name: key_name.clone(),
+                                    key_purpose,
+                                    key_state: KeyLocationState::Complete {
+                                        access_structure_ref,
+                                    },
+                                },
+                            )
+                        },
+                    )
+                },
+            );
+
+        let restoration_shares = self
+            .restoration
+            .restorations
+            .values()
+            .flat_map(|restoration| {
+                let restoration_id = restoration.restoration_id;
+                let key_name = restoration.key_name.clone();
+                let key_purpose = restoration.key_purpose;
+
+                restoration
+                    .access_structure
+                    .share_image_to_devices()
+                    .into_iter()
+                    .map(move |(share_image, device_ids)| {
+                        (
+                            share_image,
+                            ShareLocation {
+                                device_ids,
+                                share_index: share_image.index,
+                                key_name: key_name.clone(),
+                                key_purpose,
+                                key_state: KeyLocationState::Restoring { restoration_id },
+                            },
+                        )
+                    })
+            });
+
+        complete_wallet_shares.chain(restoration_shares)
+    }
+
+    pub fn find_share(
+        &self,
+        share_image: ShareImage,
+        encryption_key: SymmetricKey,
+    ) -> Option<ShareLocation> {
+        // Check complete wallets first (they have priority)
+        let found = self.iter_access_structures().find(|access_structure| {
+            let access_structure_ref = access_structure.access_structure_ref();
+            let Some(root_shared_key) = self.root_shared_key(access_structure_ref, encryption_key)
+            else {
+                return false;
+            };
+
+            let computed_share_image = root_shared_key.share_image(share_image.index);
+            computed_share_image == share_image
+        });
+
+        if let Some(access_structure) = found {
+            let access_structure_ref = access_structure.access_structure_ref();
+            let device_ids = access_structure
+                .share_index_to_devices()
+                .get(&share_image.index)
+                .cloned()
+                .unwrap_or_default();
+            let key = self
+                .keys
+                .get(&access_structure_ref.key_id)
+                .expect("must exist");
+
+            return Some(ShareLocation {
+                device_ids,
+                share_index: share_image.index,
+                key_name: key.key_name.clone(),
+                key_purpose: key.purpose,
+                key_state: KeyLocationState::Complete {
+                    access_structure_ref,
+                },
+            });
+        }
+
+        // Check restorations
+        for restoration in self.restoration.restorations.values() {
+            let share_image_to_devices = restoration.access_structure.share_image_to_devices();
+
+            // Check physical shares
+            if let Some(device_ids) = share_image_to_devices.get(&share_image) {
+                return Some(ShareLocation {
+                    device_ids: device_ids.clone(),
+                    share_index: share_image.index,
+                    key_name: restoration.key_name.clone(),
+                    key_purpose: restoration.key_purpose,
+                    key_state: KeyLocationState::Restoring {
+                        restoration_id: restoration.restoration_id,
+                    },
+                });
+            }
+
+            // Check virtual shares (via cached SharedKey)
+            if let Some(shared_key) = &restoration.access_structure.shared_key {
+                let computed_share_image = shared_key.share_image(share_image.index);
+                if computed_share_image == share_image {
+                    return Some(ShareLocation {
+                        device_ids: Vec::new(),
+                        share_index: share_image.index,
+                        key_name: restoration.key_name.clone(),
+                        key_purpose: restoration.key_purpose,
+                        key_state: KeyLocationState::Restoring {
+                            restoration_id: restoration.restoration_id,
+                        },
+                    });
+                }
+            }
+        }
+
+        None
     }
 
     pub fn get_frost_key(&self, key_id: KeyId) -> Option<&CoordFrostKey> {
@@ -1531,6 +1699,16 @@ impl CoordAccessStructure {
 
     pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, ShareIndex> {
         self.device_to_share_index.clone()
+    }
+
+    pub fn share_index_to_devices(&self) -> BTreeMap<ShareIndex, Vec<DeviceId>> {
+        let mut map = BTreeMap::new();
+        for (&device_id, &share_index) in &self.device_to_share_index {
+            map.entry(share_index)
+                .or_insert_with(Vec::new)
+                .push(device_id);
+        }
+        map
     }
 }
 

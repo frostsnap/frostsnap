@@ -8,6 +8,7 @@ use frostsnap_core::coordinator::{
     ActiveSignSession, CompleteKey, CoordAccessStructure, Mutation, SignSessionProgress, StartSign,
 };
 use frostsnap_core::device::KeyPurpose;
+use frostsnap_core::message::HeldShare2;
 use frostsnap_core::message::{EncodedSignature, GroupSignReq};
 use frostsnap_core::nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment};
 use frostsnap_core::tweak::AppTweak;
@@ -232,6 +233,25 @@ fn test_all_coordinator_mutations() {
         Mutation::Restoration(RestorationMutation::DeviceFinishedConsolidation(
             pending_consolidation,
         )),
+        // New restoration mutations
+        Mutation::Restoration(RestorationMutation::NewRestoration2 {
+            restoration_id: RestorationId([1u8; 16]),
+            key_name: "test_key".to_string(),
+            starting_threshold: Some(2),
+            key_purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+        }),
+        Mutation::Restoration(RestorationMutation::RestorationProgress2 {
+            restoration_id: RestorationId([1u8; 16]),
+            device_id: DeviceId([2u8; 33]),
+            held_share: HeldShare2 {
+                access_structure_ref: Some(access_structure_ref),
+                share_image,
+                threshold: Some(2),
+                key_name: Some("test_key".to_string()),
+                purpose: Some(KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin)),
+                needs_consolidation: true,
+            },
+        }),
         // Keygen mutations
         Mutation::Keygen(KeyMutation::NewKey {
             key_name: "test_key".to_string(),
@@ -381,6 +401,18 @@ fn test_all_coordinator_mutations() {
                 assert_bincode_hex_eq!(
                     mutation,
                     "01050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+                );
+            }
+            Mutation::Restoration(RestorationMutation::NewRestoration2 { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "02060101010101010101010101010101010108746573745f6b657901020100"
+                );
+            }
+            Mutation::Restoration(RestorationMutation::RestorationProgress2 { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0207010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202020103030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af01020108746573745f6b657901010001"
                 );
             }
         }
