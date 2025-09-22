@@ -433,3 +433,20 @@ impl Drop for Run {
         self.check_mutations();
     }
 }
+
+/// Macro for testing backward compatibility of bincode serialization
+#[macro_export]
+macro_rules! assert_bincode_hex_eq {
+    ($mutation:expr, $expected_hex:expr) => {
+        // Decode hex string to bytes
+        let expected_bytes = frostsnap_core::hex::decode($expected_hex)
+            .expect(&format!("Failed to parse hex for {:?}", $mutation.kind()));
+
+        // Decode the bytes back to the type
+        let (decoded, _) = bincode::decode_from_slice(&expected_bytes, bincode::config::standard())
+            .expect(&format!("Failed to decode hex for {:?}", $mutation.kind()));
+
+        // Compare the decoded value with the original
+        assert_eq!($mutation, decoded, "Mismatch for {:?}", $mutation.kind());
+    };
+}
