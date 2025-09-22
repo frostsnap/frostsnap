@@ -152,7 +152,7 @@ impl Env for TestEnv {
                                 _ => {
                                     let existing_restoration =
                                         run.coordinator.restoring().find(|state| {
-                                            state.access_structure_ref
+                                            state.access_structure.get_access_structure_ref()
                                                 == held_share.access_structure_ref
                                         });
 

@@ -364,7 +364,7 @@ impl FrostCoordinator {
             Restoration(inner) => {
                 return self
                     .restoration
-                    .apply_mutation_restoration(inner)
+                    .apply_mutation_restoration(inner, self.keygen_fingerprint)
                     .map(Mutation::Restoration);
             }
         }
