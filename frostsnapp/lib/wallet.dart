@@ -12,6 +12,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
@@ -693,7 +694,7 @@ class WalletBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context);
-    final fsCtx = FrostsnapContext.of(context)!;
+    // final fsCtx = FrostsnapContext.of(context)!;
     if (walletCtx == null) return SizedBox();
     final outgoingCount = OutgoingCountContext.of(context)!;
 
@@ -736,58 +737,7 @@ class WalletBottomBar extends StatelessWidget {
       valueListenable: outgoingCount,
       builder: (context, value, _) {
         final button = TextButton.icon(
-          onPressed: value == 0
-              ? () => showBottomSheetOrDialog(
-                  context,
-                  title: Text('Send'),
-                  builder: (context, scrollController) => walletCtx.wrap(
-                    WalletSendPage(scrollController: scrollController),
-                  ),
-                )
-              : () {
-                  final uncanonicalTx = coord
-                      .uncanonicalTxs(
-                        sWallet: walletCtx.wallet.superWallet,
-                        masterAppkey: walletCtx.masterAppkey,
-                      )
-                      .firstOrNull;
-                  if (uncanonicalTx == null) return;
-                  final txDetails = TxDetailsModel(
-                    tx: uncanonicalTx.tx,
-                    chainTipHeight: walletCtx.wallet.superWallet.height(),
-                    now: DateTime.now(),
-                  );
-                  final session = uncanonicalTx.activeSession;
-                  if (session != null) {
-                    showBottomSheetOrDialog(
-                      context,
-                      title: Text('Transaction Details'),
-                      builder: (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage.restoreSigning(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                          signingSessionId: session.state().sessionId,
-                          psbtMan: fsCtx.psbtManager,
-                        ),
-                      ),
-                    );
-                  } else {
-                    showBottomSheetOrDialog(
-                      context,
-                      title: Text('Transaction Details'),
-                      builder: (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage.needsBroadcast(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                          finishedSigningSessionId: uncanonicalTx.sessionId,
-                          psbtMan: fsCtx.psbtManager,
-                        ),
-                      ),
-                    );
-                  }
-                },
+          onPressed: () async => await showPickOutgoingTxDialog(context),
           label: value == 0 ? Text('Send') : Text('Continue'),
           icon: Icon(Icons.north_east),
           style: value == 0 ? textButtonStyle : highlightTextButtonStyle,
@@ -846,6 +796,108 @@ class WalletBottomBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> showTxDetailsDialog(
+    BuildContext context,
+    UncanonicalTx uncanonicalTx,
+  ) async {
+    final walletCtx = WalletContext.of(context)!;
+    final fsCtx = FrostsnapContext.of(context)!;
+
+    final txDetails = TxDetailsModel(
+      tx: uncanonicalTx.tx,
+      chainTipHeight: walletCtx.wallet.superWallet.height(),
+      now: DateTime.now(),
+    );
+    final session = uncanonicalTx.activeSession;
+    if (session != null) {
+      await showBottomSheetOrDialog(
+        context,
+        title: Text('Transaction Details'),
+        builder: (context, scrollController) => walletCtx.wrap(
+          TxDetailsPage.restoreSigning(
+            scrollController: scrollController,
+            txStates: walletCtx.txStream,
+            txDetails: txDetails,
+            signingSessionId: session.state().sessionId,
+            psbtMan: fsCtx.psbtManager,
+          ),
+        ),
+      );
+    } else {
+      await showBottomSheetOrDialog(
+        context,
+        title: Text('Transaction Details'),
+        builder: (context, scrollController) => walletCtx.wrap(
+          TxDetailsPage.needsBroadcast(
+            scrollController: scrollController,
+            txStates: walletCtx.txStream,
+            txDetails: txDetails,
+            finishedSigningSessionId: uncanonicalTx.sessionId,
+            psbtMan: fsCtx.psbtManager,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> showPickOutgoingTxDialog(BuildContext context) async {
+    final walletCtx = WalletContext.of(context)!;
+    final uncanonicalTxs = coord.uncanonicalTxs(
+      sWallet: walletCtx.wallet.superWallet,
+      masterAppkey: walletCtx.masterAppkey,
+    );
+
+    if (uncanonicalTxs.length == 0) {
+      await showBottomSheetOrDialog(
+        context,
+        title: Text('Send'),
+        builder: (context, scrollController) =>
+            walletCtx.wrap(WalletSendPage(scrollController: scrollController)),
+      );
+      return;
+    }
+
+    if (uncanonicalTxs.length == 1) {
+      await showTxDetailsDialog(context, uncanonicalTxs.first);
+      return;
+    }
+
+    final parentCtx = context;
+    await showBottomSheetOrDialog(
+      parentCtx,
+      builder: (context, scrollController) {
+        return CustomScrollView(
+          controller: scrollController,
+          shrinkWrap: true,
+          physics: ClampingScrollPhysics(),
+          slivers: [
+            SliverSafeArea(
+              sliver: SliverList.builder(
+                itemCount: uncanonicalTxs.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final uncanonicalTx = uncanonicalTxs[index];
+                  final txDetails = TxDetailsModel(
+                    tx: uncanonicalTx.tx,
+                    chainTipHeight: walletCtx.superWallet.height(),
+                    now: DateTime.now(),
+                  );
+                  return TxSentOrReceivedTile(
+                    txDetails: txDetails,
+                    signingState: uncanonicalTx.activeSession?.state(),
+                    onTap: () {
+                      Navigator.popUntil(context, (r) => r.isFirst);
+                      showTxDetailsDialog(parentCtx, uncanonicalTx);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
