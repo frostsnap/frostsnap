@@ -238,14 +238,17 @@ class HomeContext extends InheritedWidget {
 // Context that informs whether we should be able to create a new transaction.
 //
 // The currently policy is we only allow 1 uncanonical outgoing transaction at a time.
-class CanCreateContext extends InheritedWidget {
-  final ValueNotifier<bool> _canCreate;
+class OutgoingCountContext extends InheritedWidget {
+  final ValueNotifier<int> _canCreate;
 
-  const CanCreateContext({super.key, required canCreate, required super.child})
-    : _canCreate = canCreate;
+  const OutgoingCountContext({
+    super.key,
+    required canCreate,
+    required super.child,
+  }) : _canCreate = canCreate;
 
-  static ValueNotifier? of(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<CanCreateContext>()
+  static ValueNotifier<int>? of(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<OutgoingCountContext>()
       ?._canCreate;
 
   @override

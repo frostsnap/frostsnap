@@ -319,7 +319,7 @@ class _TxListState extends State<TxList> {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
-    final canCreate = CanCreateContext.of(context)!;
+    final canCreate = OutgoingCountContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
     final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
@@ -427,7 +427,7 @@ class _TxListState extends State<TxList> {
 
             // Avoid marking for rebuild while already rebuilding.
             WidgetsBinding.instance.addPostFrameCallback(
-              (_) => canCreate.value = uncanonicalTiles.isEmpty,
+              (_) => canCreate.value = uncanonicalTiles.length,
             );
 
             return SliverVisibility(
@@ -695,7 +695,7 @@ class WalletBottomBar extends StatelessWidget {
     final walletCtx = WalletContext.of(context);
     final fsCtx = FrostsnapContext.of(context)!;
     if (walletCtx == null) return SizedBox();
-    final canCreate = CanCreateContext.of(context)!;
+    final outgoingCount = OutgoingCountContext.of(context)!;
 
     final theme = Theme.of(context);
 
@@ -733,10 +733,10 @@ class WalletBottomBar extends StatelessWidget {
     );
 
     final sendButton = ValueListenableBuilder(
-      valueListenable: canCreate,
+      valueListenable: outgoingCount,
       builder: (context, value, _) {
-        return TextButton.icon(
-          onPressed: value
+        final button = TextButton.icon(
+          onPressed: value == 0
               ? () => showBottomSheetOrDialog(
                   context,
                   title: Text('Send'),
@@ -788,9 +788,16 @@ class WalletBottomBar extends StatelessWidget {
                     );
                   }
                 },
-          label: value ? Text('Send') : Text('Continue'),
+          label: value == 0 ? Text('Send') : Text('Continue'),
           icon: Icon(Icons.north_east),
-          style: value ? textButtonStyle : highlightTextButtonStyle,
+          style: value == 0 ? textButtonStyle : highlightTextButtonStyle,
+        );
+
+        return Badge.count(
+          count: value,
+          // Only show count badge if we have more than one uncanonical outgoing tx.
+          isLabelVisible: value > 1,
+          child: button,
         );
       },
     );

@@ -212,7 +212,7 @@ class _MyHomePageState extends State<MyHomePage> {
   late final GlobalKey<ScaffoldState> scaffoldKey;
   late final WalletListController walletListController;
   late final ConfettiController confettiController;
-  final ValueNotifier<bool> canCreate = ValueNotifier(false);
+  final ValueNotifier<int> canCreate = ValueNotifier(0);
 
   @override
   void initState() {
@@ -240,7 +240,7 @@ class _MyHomePageState extends State<MyHomePage> {
       child: Stack(
         alignment: AlignmentDirectional.center,
         children: [
-          CanCreateContext(canCreate: canCreate, child: const WalletHome()),
+          OutgoingCountContext(canCreate: canCreate, child: const WalletHome()),
           Center(
             child: ConfettiWidget(
               confettiController: confettiController,
