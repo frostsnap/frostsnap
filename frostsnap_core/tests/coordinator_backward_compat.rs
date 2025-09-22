@@ -206,13 +206,13 @@ fn test_all_coordinator_mutations() {
             threshold: 2,
             key_purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
         }),
-        Mutation::Restoration(RestorationMutation::RestorationProgress {
+        Mutation::Restoration(RestorationMutation::LegacyRestorationProgress {
             restoration_id: RestorationId([1u8; 16]),
             device_id: DeviceId([2u8; 33]),
             share_image,
             access_structure_ref: None,
         }),
-        Mutation::Restoration(RestorationMutation::RestorationProgress {
+        Mutation::Restoration(RestorationMutation::LegacyRestorationProgress {
             restoration_id: RestorationId([1u8; 16]),
             device_id: DeviceId([2u8; 33]),
             share_image,
@@ -284,7 +284,7 @@ fn test_all_coordinator_mutations() {
                     "02000101010101010101010101010101010108746573745f6b6579020100"
                 );
             }
-            Mutation::Restoration(RestorationMutation::RestorationProgress {
+            Mutation::Restoration(RestorationMutation::LegacyRestorationProgress {
                 access_structure_ref: None,
                 ..
             }) => {
@@ -293,7 +293,7 @@ fn test_all_coordinator_mutations() {
                     "020101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020202000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af00"
                 );
             }
-            Mutation::Restoration(RestorationMutation::RestorationProgress {
+            Mutation::Restoration(RestorationMutation::LegacyRestorationProgress {
                 access_structure_ref: Some(_),
                 ..
             }) => {

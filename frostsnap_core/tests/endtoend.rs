@@ -3,7 +3,7 @@ use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::EnterPhysicalId;
-use frostsnap_core::{coordinator::FrostCoordinator, MasterAppkey, WireSignTask};
+use frostsnap_core::{MasterAppkey, WireSignTask};
 use rand::seq::IteratorRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -495,7 +495,7 @@ fn restore_a_share_by_connecting_devices_to_a_new_coordinator() {
     let access_structure = run.coordinator.iter_access_structures().next().unwrap();
 
     // replace coordinator with a fresh one that doesn't know about the key
-    run.replace_coordiantor(FrostCoordinator::new());
+    run.clear_coordinator();
 
     let restoring_devices = device_set.iter().cloned().take(2).collect::<Vec<_>>();
 
@@ -600,8 +600,8 @@ fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
         .expect("one device should be enough to restore the key");
     let restoration_id = restoration.restoration_id;
 
-    assert!(!restoration.access_structure.is_restorable());
-    assert_eq!(restoration.access_structure_ref, Some(access_structure_ref));
+    assert!(!restoration.is_restorable());
+    assert_eq!(restoration.access_structure.get_access_structure_ref(), Some(access_structure_ref));
 
     recover_next_share(&mut run, 1, &mut rng);
 
@@ -615,7 +615,7 @@ fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
         .get_restoration_state(restoration_id)
         .unwrap();
 
-    assert!(restoration.access_structure.is_restorable());
+    assert!(restoration.is_restorable());
     run.coordinator
         .finish_restoring(restoration.restoration_id, TEST_ENCRYPTION_KEY, &mut rng)
         .unwrap();
