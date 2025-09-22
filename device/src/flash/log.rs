@@ -12,6 +12,7 @@ pub enum Mutation {
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub enum ShareSlot {
     SecretShare(Box<SaveShareMutation>),
+    LegacySavedBackup(device::restoration::LegacySavedBackup),
     SavedBackup(device::restoration::SavedBackup),
 }
 
@@ -21,6 +22,9 @@ impl ShareSlot {
             ShareSlot::SecretShare(save_share_mutation) => {
                 device::Mutation::Keygen(device::keys::KeyMutation::SaveShare(save_share_mutation))
             }
+            ShareSlot::LegacySavedBackup(legacy_saved_backup) => device::Mutation::Restoration(
+                device::restoration::RestorationMutation::LegacySave(legacy_saved_backup),
+            ),
             ShareSlot::SavedBackup(saved_backup) => device::Mutation::Restoration(
                 device::restoration::RestorationMutation::Save(saved_backup),
             ),
@@ -59,6 +63,11 @@ impl<'a, S: NorFlash> MutationLog<'a, S> {
             ))) => {
                 self.share_slot
                     .write(&ShareSlot::SecretShare(save_share_mutation));
+            }
+            Mutation::Core(device::Mutation::Restoration(
+                device::restoration::RestorationMutation::LegacySave(legacy_saved_backup),
+            )) => {
+                self.share_slot.write(&ShareSlot::LegacySavedBackup(legacy_saved_backup));
             }
             Mutation::Core(device::Mutation::Restoration(
                 device::restoration::RestorationMutation::Save(saved_backup),

@@ -200,7 +200,7 @@ fn test_all_coordinator_mutations() {
     // Create all mutation variants we want to test
     let mutations = vec![
         // Restoration mutations
-        Mutation::Restoration(RestorationMutation::NewRestoration {
+        Mutation::Restoration(RestorationMutation::LegacyNewRestoration {
             restoration_id: RestorationId([1u8; 16]),
             key_name: "test_key".to_string(),
             threshold: 2,
@@ -278,7 +278,7 @@ fn test_all_coordinator_mutations() {
     // Test each mutation
     for mutation in mutations {
         match mutation.clone() {
-            Mutation::Restoration(RestorationMutation::NewRestoration { .. }) => {
+            Mutation::Restoration(RestorationMutation::LegacyNewRestoration { .. }) => {
                 assert_bincode_hex_eq!(
                     mutation,
                     "02000101010101010101010101010101010108746573745f6b6579020100"
@@ -382,6 +382,9 @@ fn test_all_coordinator_mutations() {
                     mutation,
                     "01050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                 );
+            }
+            _ => {
+                // Other mutations we're not testing yet
             }
         }
     }

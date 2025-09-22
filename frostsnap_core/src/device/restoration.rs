@@ -18,14 +18,19 @@ impl State {
     ) -> Option<RestorationMutation> {
         use RestorationMutation::*;
         match &mutation {
-            Save(saved_backup) => {
-                let backup_share_image = saved_backup.share_backup.share_image();
-                self.saved_backups
-                    .insert(backup_share_image, saved_backup.clone());
+            LegacySave(legacy_saved_backup) => {
+                // Convert legacy to new and recurse
+                let saved_backup: SavedBackup = legacy_saved_backup.clone().into();
+                return self.apply_mutation_restoration(Save(saved_backup));
             }
             UnSave(share_image) => {
                 self.tmp_loaded_backups.remove(share_image);
                 self.saved_backups.remove(share_image)?;
+            }
+            Save(saved_backup) => {
+                let backup_share_image = saved_backup.share_backup.share_image();
+                self.saved_backups
+                    .insert(backup_share_image, saved_backup.clone());
             }
         }
         Some(mutation)
@@ -50,6 +55,23 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                         phase: EnterBackupPhase { enter_physical_id },
                     }),
                 ))])
+            }
+            &CoordinatorRestoration::LegacySavePhysicalBackup {
+                share_image,
+                threshold,
+                purpose,
+                ref key_name,
+            } => {
+                // Convert to new SavePhysicalBackup and recurse
+                self.recv_restoration_message(
+                    CoordinatorRestoration::SavePhysicalBackup {
+                        share_image,
+                        threshold: Some(threshold),
+                        purpose,
+                        key_name: key_name.clone(),
+                    },
+                    _rng,
+                )
             }
             &CoordinatorRestoration::SavePhysicalBackup {
                 share_image,
@@ -321,7 +343,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                                     access_structure_id: *access_structure_id,
                                     key_id: *key_id,
                                 }),
-                                threshold: access_structure.threshold,
+                                threshold: Some(access_structure.threshold),
                                 purpose: key_data.purpose,
                             })
                         } else {
@@ -392,8 +414,9 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, frostsnap_macros::Kind)]
 pub enum RestorationMutation {
-    Save(SavedBackup),
+    LegacySave(LegacySavedBackup),
     UnSave(ShareImage),
+    Save(SavedBackup),
 }
 
 #[derive(Debug, Clone)]
@@ -405,7 +428,7 @@ pub enum ToUserRestoration {
         share_image: ShareImage,
         key_name: String,
         purpose: KeyPurpose,
-        threshold: u16,
+        threshold: Option<u16>,
     },
     ConsolidateBackup(ConsolidatePhase),
     DisplayBackupRequest {
@@ -439,9 +462,28 @@ pub struct EnterBackupPhase {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
-pub struct SavedBackup {
+pub struct LegacySavedBackup {
     pub share_backup: ShareBackup,
     pub threshold: u16,
     pub purpose: KeyPurpose,
     pub key_name: String,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct SavedBackup {
+    pub share_backup: ShareBackup,
+    pub threshold: Option<u16>,
+    pub purpose: KeyPurpose,
+    pub key_name: String,
+}
+
+impl From<LegacySavedBackup> for SavedBackup {
+    fn from(legacy: LegacySavedBackup) -> Self {
+        SavedBackup {
+            share_backup: legacy.share_backup,
+            threshold: Some(legacy.threshold),
+            purpose: legacy.purpose,
+            key_name: legacy.key_name,
+        }
+    }
 }

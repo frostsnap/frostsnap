@@ -58,7 +58,7 @@ impl RestorationState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RestorationStatus {
-    pub threshold: u16,
+    pub threshold: Option<u16>,
     pub shares: Vec<RestorationShare>,
     pub shared_key: Option<SharedKey>,
 }
@@ -82,10 +82,13 @@ impl RestorationStatus {
             .try_into()
             .expect("must be small");
 
-        if valid_unique < self.threshold {
-            return Some(RestorationProblem::NotEnoughShares {
-                need_more: self.threshold - valid_unique,
-            });
+        // If we know the threshold, check if we have enough shares
+        if let Some(threshold) = self.threshold {
+            if valid_unique < threshold {
+                return Some(RestorationProblem::NotEnoughShares {
+                    need_more: threshold - valid_unique,
+                });
+            }
         }
 
         None
@@ -137,6 +140,20 @@ impl State {
     ) -> Option<RestorationMutation> {
         use RestorationMutation::*;
         match mutation {
+            LegacyNewRestoration {
+                restoration_id,
+                ref key_name,
+                threshold,
+                key_purpose,
+            } => {
+                // Convert legacy to new and recurse
+                return self.apply_mutation_restoration(NewRestoration {
+                    restoration_id,
+                    key_name: key_name.clone(),
+                    threshold: Some(threshold),
+                    key_purpose,
+                });
+            }
             NewRestoration {
                 restoration_id,
                 ref key_name,
@@ -253,7 +270,7 @@ impl FrostCoordinator {
     pub fn start_restoring_key(
         &mut self,
         key_name: String,
-        threshold: u16,
+        threshold: Option<u16>,
         key_purpose: KeyPurpose,
         restoration_id: RestorationId,
     ) {
@@ -503,13 +520,15 @@ impl FrostCoordinator {
             .ok_or(RestorationError::NotEnoughShares)?;
 
         let got_threshold = root_shared_key.threshold();
-        let expected_threshold = state.access_structure.threshold;
 
-        if expected_threshold as usize != got_threshold {
-            return Err(RestorationError::ThresholdDoesntMatch {
-                expected: expected_threshold,
-                got: got_threshold as u16,
-            });
+        // If we have an expected threshold, verify it matches
+        if let Some(expected_threshold) = state.access_structure.threshold {
+            if expected_threshold as usize != got_threshold {
+                return Err(RestorationError::ThresholdDoesntMatch {
+                    expected: expected_threshold,
+                    got: got_threshold as u16,
+                });
+            }
         }
 
         let access_structure_ref = AccessStructureRef::from_root_shared_key(&root_shared_key);
@@ -772,6 +791,20 @@ impl FrostCoordinator {
                     ),
                 )])
             }
+            DeviceRestoration::LegacyHeldShares(legacy_held_shares) => {
+                // Convert legacy shares to new format
+                let held_shares: Vec<HeldShare> = legacy_held_shares
+                    .into_iter()
+                    .map(|legacy| legacy.into())
+                    .collect();
+                Ok(vec![CoordinatorSend::ToUser(
+                    ToUserRestoration::GotHeldShares {
+                        held_by: from,
+                        shares: held_shares,
+                    }
+                    .into(),
+                )])
+            }
             DeviceRestoration::HeldShares(held_shares) => Ok(vec![CoordinatorSend::ToUser(
                 ToUserRestoration::GotHeldShares {
                     held_by: from,
@@ -906,7 +939,7 @@ impl FrostCoordinator {
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq, Kind)]
 pub enum RestorationMutation {
-    NewRestoration {
+    LegacyNewRestoration {
         restoration_id: RestorationId,
         key_name: String,
         threshold: u16,
@@ -932,6 +965,12 @@ pub enum RestorationMutation {
     /// consolidate the physical backup.
     DeviceNeedsConsolidation(PendingConsolidation),
     DeviceFinishedConsolidation(PendingConsolidation),
+    NewRestoration {
+        restoration_id: RestorationId,
+        key_name: String,
+        threshold: Option<u16>,
+        key_purpose: KeyPurpose,
+    },
 }
 
 impl RestorationMutation {
@@ -950,7 +989,8 @@ impl RestorationMutation {
     pub fn tied_to_restoration(&self) -> Option<RestorationId> {
         use RestorationMutation::*;
         match self {
-            &NewRestoration { restoration_id, .. }
+            &LegacyNewRestoration { restoration_id, .. }
+            | &NewRestoration { restoration_id, .. }
             | &RestorationProgress { restoration_id, .. }
             | &DeleteRestoration { restoration_id }
             | &DeleteRestorationShare { restoration_id, .. } => Some(restoration_id),
@@ -1206,7 +1246,7 @@ impl std::error::Error for RecoverShareError {}
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct RecoveringAccessStructure {
-    pub threshold: u16,
+    pub threshold: Option<u16>,
     pub share_images: Vec<(DeviceId, ShareImage)>,
 }
 
@@ -1239,11 +1279,16 @@ impl RecoveringAccessStructure {
             .into_iter()
             .collect::<Vec<_>>();
 
-        if share_images.len() >= self.threshold.into() {
-            Some(SharedKey::from_share_images(share_images).non_zero()?)
-        } else {
-            None
+        // If we have a known threshold, check if we have enough shares
+        // If threshold is None, we'll try with whatever shares we have
+        if let Some(threshold) = self.threshold {
+            if share_images.len() < threshold as usize {
+                return None;
+            }
         }
+
+        // Try to create shared key from the share images we have
+        SharedKey::from_share_images(share_images).non_zero()
     }
 
     pub fn has_got_share_index(&self, share_index: ShareIndex) -> bool {
