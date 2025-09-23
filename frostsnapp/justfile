@@ -71,6 +71,53 @@ build-appimage +ARGS="":
     --executable "$executable" \
     --output appimage
 
+build-dmg: (build "macos" "--release")
+    #!/bin/sh
+    set -e
+
+    # Configuration
+    APP_NAME="Frostsnap"
+    APP_PATH="build/macos/Build/Products/Release/${APP_NAME}.app"
+    VERSION="${GITHUB_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo 'local')}"
+    DMG_NAME="${APP_NAME}-${VERSION}-universal.dmg"
+
+    # Check if app exists
+    if [ ! -d "$APP_PATH" ]; then
+        echo "ERROR: macOS build not found at $APP_PATH" >&2
+        exit 1
+    fi
+
+    echo "Creating DMG installer: $DMG_NAME" >&2
+
+    # Clean up any existing DMG
+    rm -f "$DMG_NAME"
+
+    # Check if create-dmg is available
+    if ! command -v create-dmg &> /dev/null; then
+        echo "ERROR: create-dmg is required but not installed" >&2
+        echo "Install with: brew install create-dmg" >&2
+        exit 1
+    fi
+
+    # Create professional DMG with background
+    create-dmg \
+      --volname "${APP_NAME}" \
+      --volicon "macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png" \
+      --background "macos/dmg-background.png" \
+      --window-pos 200 120 \
+      --window-size 600 400 \
+      --icon-size 100 \
+      --icon "${APP_NAME}.app" 150 185 \
+      --hide-extension "${APP_NAME}.app" \
+      --app-drop-link 450 185 \
+      --no-internet-enable \
+      --hdiutil-quiet \
+      "$DMG_NAME" \
+      "$APP_PATH"
+
+    echo "✅ Created installer DMG: $DMG_NAME" >&2
+    ls -lh "$DMG_NAME" >&2
+
 clean:
     flutter clean
     cd rust && cargo clean
