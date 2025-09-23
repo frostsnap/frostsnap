@@ -22,7 +22,6 @@ pub struct Settings {
     db: Arc<Mutex<rusqlite::Connection>>,
     chain_clients: HashMap<BitcoinNetwork, ChainClient>,
 
-    #[allow(unused)]
     app_directory: PathBuf,
     loaded_wallets: HashMap<BitcoinNetwork, SuperWallet>,
 
@@ -52,6 +51,7 @@ impl Settings {
     pub(crate) fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
         app_directory: PathBuf,
+        password: Option<&str>,
     ) -> anyhow::Result<Self> {
         let persisted: Persisted<RSettings> = {
             let mut db_ = db.lock().unwrap();
@@ -68,7 +68,7 @@ impl Settings {
             let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
             let (chain_api, conn_handler) = ChainClient::new(genesis_hash);
             let super_wallet =
-                SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
+                SuperWallet::load_or_new(&app_directory, network, chain_api.clone(), password)?;
             // FIXME: the dependency relationship here is overly convoluted.
             thread::spawn({
                 let super_wallet = super_wallet.clone();
@@ -176,6 +176,14 @@ impl Settings {
 
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
         Ok(())
+    }
+
+    #[frb(sync)]
+    pub fn app_directory(&self) -> String {
+        self.app_directory
+            .to_str()
+            .expect("app path shouldn't have non-utf8 chars")
+            .to_string()
     }
 }
 

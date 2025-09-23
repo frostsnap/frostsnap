@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/database_encryption.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
@@ -174,6 +176,33 @@ class SettingsPage extends StatelessWidget {
                       return ElectrumServerSettingsPage();
                     },
                   ),
+                  if (!Platform.isAndroid)
+                    SettingsItem(
+                      title: Text("App Password"),
+                      icon: Icons.lock,
+                      builder: (context, title, icon) {
+                        return ListTile(
+                          title: title,
+                          leading: Icon(icon),
+                          onTap: () async {
+                            final appDir = await FrostsnapContext.of(
+                              context,
+                            )!.appCtx.settings.appDirectory();
+                            final databaseState = await api.getDatabaseState(
+                              appDir: appDir,
+                            );
+                            final hasExistingPassword =
+                                databaseState !=
+                                DbEncryptionState.existingUnencrypted;
+                            await _showPasswordChangeDialog(
+                              context,
+                              appDir,
+                              hasExistingPassword,
+                            );
+                          },
+                        );
+                      },
+                    ),
                 ],
               ),
               SettingsCategory(
@@ -995,5 +1024,226 @@ Future<void> _showEraseAllDialog(BuildContext context) async {
   if (devicesToErase.isNotEmpty) {
     controller.batchAddActionNeeded(context, devicesToErase);
     await coord.wipeAllDevices();
+  }
+}
+
+Future<void> _showPasswordChangeDialog(
+  BuildContext context,
+  String appDir,
+  bool hasExistingPassword,
+) async {
+  await showBottomSheetOrDialog(
+    context,
+    title: Text("App Password"),
+    builder: (context, _) => _PasswordChangeBottomSheet(
+      appDir: appDir,
+      hasExistingPassword: hasExistingPassword,
+      onPasswordChanged: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Restart app to apply password change")),
+        );
+      },
+    ),
+  );
+}
+
+class _PasswordChangeBottomSheet extends StatefulWidget {
+  final String appDir;
+  final bool hasExistingPassword;
+  final VoidCallback? onPasswordChanged;
+
+  const _PasswordChangeBottomSheet({
+    required this.appDir,
+    required this.hasExistingPassword,
+    this.onPasswordChanged,
+  });
+
+  @override
+  State<_PasswordChangeBottomSheet> createState() =>
+      _PasswordChangeBottomSheetState();
+}
+
+class _PasswordChangeBottomSheetState
+    extends State<_PasswordChangeBottomSheet> {
+  final _oldController = TextEditingController();
+  final _newController = TextEditingController();
+  final _confirmController = TextEditingController();
+  String? _errorMessage;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _oldController.dispose();
+    _newController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _changePassword() async {
+    if (_isLoading) return;
+
+    if (_newController.text != _confirmController.text) {
+      setState(() {
+        _errorMessage = "New passwords don't match";
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      if (widget.hasExistingPassword) {
+        await api.attemptDatabasePassword(
+          appDir: widget.appDir,
+          password: _oldController.text.trim(),
+        );
+      }
+
+      await api.scheduleRekey(
+        appDir: widget.appDir,
+        oldPassword: widget.hasExistingPassword
+            ? _oldController.text.trim()
+            : "",
+        newPassword: _newController.text.trim(),
+      );
+
+      Navigator.pop(context);
+      widget.onPasswordChanged?.call();
+    } catch (e) {
+      setState(() {
+        _errorMessage = widget.hasExistingPassword
+            ? "Invalid current password"
+            : "Failed to change password";
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final theme = Theme.of(context);
+
+    return SafeArea(
+      minimum: const EdgeInsets.symmetric(
+        horizontal: 20,
+      ).copyWith(bottom: 32 + mediaQuery.viewInsets.bottom, top: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 16,
+        children: [
+          if (_errorMessage != null) ...[
+            Card.outlined(
+              margin: EdgeInsets.zero,
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      color: theme.colorScheme.onErrorContainer,
+                      size: 20,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (widget.hasExistingPassword) ...[
+            TextFormField(
+              controller: _oldController,
+              obscureText: true,
+              enabled: !_isLoading,
+              decoration: InputDecoration(
+                labelText: "Current Password",
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.lock_outline),
+              ),
+              onChanged: (_) {
+                if (_errorMessage != null) {
+                  setState(() => _errorMessage = null);
+                }
+              },
+            ),
+          ],
+          TextFormField(
+            controller: _newController,
+            obscureText: true,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              labelText: "New Password",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock),
+            ),
+            onChanged: (_) {
+              if (_errorMessage != null) {
+                setState(() => _errorMessage = null);
+              }
+            },
+          ),
+          TextFormField(
+            controller: _confirmController,
+            obscureText: true,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              labelText: "Confirm New Password",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock),
+            ),
+            onChanged: (_) {
+              if (_errorMessage != null) {
+                setState(() => _errorMessage = null);
+              }
+            },
+            onFieldSubmitted: (_) => _isLoading ? null : _changePassword(),
+          ),
+          SizedBox(height: 8),
+          Row(
+            spacing: 12,
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : () => Navigator.pop(context),
+                  child: Text("Cancel"),
+                ),
+              ),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _isLoading ? null : _changePassword,
+                  child: _isLoading
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.colorScheme.onPrimary,
+                          ),
+                        )
+                      : Text(widget.hasExistingPassword ? "Change" : "Set"),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
