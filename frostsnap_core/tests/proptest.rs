@@ -9,11 +9,13 @@ use proptest::{
 use std::collections::{BTreeMap, BTreeSet};
 
 use frostsnap_core::{
+    bitcoin_transaction::{LocalSpk, TransactionTemplate},
     coordinator::{
         BeginKeygen, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
         CoordinatorToUserSigningMessage,
     },
     device::{DeviceToUserMessage, KeyGenPhase3, KeyPurpose, SignPhase1},
+    tweak::BitcoinBip32Path,
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
 use proptest_state_machine::{
@@ -26,9 +28,10 @@ struct RefState {
     pending_keygens: BTreeMap<KeygenId, RefKeygen>,
     finished_keygens: Vec<RefFinishedKey>,
     sign_sessions: Vec<RefSignSession>,
-    got_nonces_from: BTreeSet<DeviceId>,
+    device_nonce_streams: BTreeMap<DeviceId, Vec<RefNonceStream>>,
     n_nonce_slots: usize,
     n_desired_nonce_streams_coord: usize,
+    nonce_batch_size: u32,
 }
 
 impl RefState {
@@ -36,30 +39,56 @@ impl RefState {
         self.run_start.devices.len()
     }
 
-    pub fn available_signing_devices(&self) -> BTreeSet<DeviceId> {
-        let mut device_counter = self
-            .run_start
-            .device_vec()
-            .into_iter()
-            .filter(|id| self.got_nonces_from.contains(id))
-            .map(|id| {
-                (
-                    id,
-                    self.n_nonce_slots.min(self.n_desired_nonce_streams_coord),
-                )
+    fn is_stream_locked(&self, device_id: DeviceId, stream_id: usize) -> bool {
+        self.sign_sessions.iter().any(|session| {
+            !session.canceled && session.device_streams.get(&device_id) == Some(&stream_id)
+        })
+    }
+
+    fn get_device_stream_for_signing_session(
+        &mut self,
+        session: &RefSignSession,
+        device_id: &DeviceId,
+    ) -> &mut RefNonceStream {
+        let stream_id = session.device_streams[device_id];
+        &mut self.device_nonce_streams.get_mut(device_id).unwrap()[stream_id]
+    }
+
+    fn find_available_stream(&self, device_id: DeviceId, n_inputs: usize) -> Option<usize> {
+        self.device_nonce_streams
+            .get(&device_id)?
+            .iter()
+            .enumerate()
+            .find(|(stream_id, stream)| {
+                !self.is_stream_locked(device_id, *stream_id) && stream.nonces_available >= n_inputs
             })
-            .collect::<BTreeMap<_, _>>();
+            .map(|(stream_id, _)| stream_id)
+    }
 
-        for session in &self.sign_sessions {
-            for device in &session.devices {
-                *device_counter.get_mut(device).unwrap() -= 1;
-            }
-        }
+    fn max_available_nonces_for_device(&self, device_id: DeviceId) -> usize {
+        self.device_nonce_streams
+            .get(&device_id)
+            .and_then(|streams| {
+                streams
+                    .iter()
+                    .enumerate()
+                    .filter(|(stream_id, _)| !self.is_stream_locked(device_id, *stream_id))
+                    .map(|(_, stream)| stream.nonces_available)
+                    .max()
+            })
+            .unwrap_or(0)
+    }
 
-        device_counter
-            .into_iter()
-            .filter(|(_, count)| *count > 0)
-            .map(|(id, _)| id)
+    pub fn available_signing_devices(&self) -> BTreeSet<DeviceId> {
+        // A device is available if it has at least one unlocked stream with at least 1 nonce
+        self.device_nonce_streams
+            .iter()
+            .filter(|(device_id, streams)| {
+                streams.iter().enumerate().any(|(stream_id, stream)| {
+                    !self.is_stream_locked(**device_id, stream_id) && stream.nonces_available > 0
+                })
+            })
+            .map(|(device_id, _)| *device_id)
             .collect()
     }
 }
@@ -68,8 +97,8 @@ impl RefState {
 struct RefSignSession {
     key_index: usize,
     devices: BTreeSet<DeviceId>,
-    #[allow(unused)]
-    message: String,
+    n_inputs: usize,
+    device_streams: BTreeMap<DeviceId, usize>, // DeviceId -> stream_id
     got_sigs_from: BTreeSet<DeviceId>,
     sent_req_to: BTreeSet<DeviceId>,
     canceled: bool,
@@ -94,6 +123,11 @@ struct RefFinishedKey {
 }
 
 #[derive(Clone, Debug)]
+struct RefNonceStream {
+    nonces_available: usize,
+}
+
+#[derive(Clone, Debug)]
 enum Transition {
     CStartKeygen(BeginKeygen),
     DKeygenAck {
@@ -109,7 +143,7 @@ enum Transition {
     CStartSign {
         key_index: usize,
         devices: BTreeSet<DeviceId>,
-        message: String,
+        n_inputs: usize,
     },
     CSendSignRequest {
         session_index: usize,
@@ -133,21 +167,27 @@ impl ReferenceStateMachine for RefState {
     type Transition = Transition;
 
     fn init_state() -> BoxedStrategy<Self::State> {
-        (1u16..10, 1usize..8, 1usize..8)
+        (1u16..8, 1usize..10, 1usize..4)
             .prop_map(
                 move |(n_devices, n_nonce_slots, n_desired_nonce_streams_coord)| {
                     let mut rng = TestRng::deterministic_rng(RngAlgorithm::ChaCha);
-                    let run =
-                        Run::generate_with_nonce_slots(n_devices.into(), &mut rng, n_nonce_slots);
+                    let nonce_batch_size = 4u32; // Small batch size for testing
+                    let run = Run::generate_with_nonce_slots_and_batch_size(
+                        n_devices.into(),
+                        &mut rng,
+                        n_nonce_slots,
+                        nonce_batch_size,
+                    );
 
                     RefState {
                         run_start: run,
                         pending_keygens: Default::default(),
                         finished_keygens: Default::default(),
                         sign_sessions: Default::default(),
-                        got_nonces_from: Default::default(),
+                        device_nonce_streams: Default::default(), // Start with no streams, CNonceReplenish will add them
                         n_nonce_slots,
                         n_desired_nonce_streams_coord,
+                        nonce_batch_size,
                     }
                 },
             )
@@ -173,7 +213,7 @@ impl ReferenceStateMachine for RefState {
                         devices.into_iter().collect(),
                         threshold as u16,
                         key_name,
-                        KeyPurpose::Test,
+                        KeyPurpose::Bitcoin(bitcoin::Network::Regtest),
                         KeygenId::from_bytes(keygen_id),
                     ))
                 })
@@ -224,6 +264,9 @@ impl ReferenceStateMachine for RefState {
                         .devices()
                         .intersection(&state.available_signing_devices())
                         .cloned()
+                        .map(|device_id| {
+                            (device_id, state.max_available_nonces_for_device(device_id))
+                        })
                         .collect::<Vec<_>>();
 
                     if available.len() > key.do_keygen.threshold as usize {
@@ -237,22 +280,41 @@ impl ReferenceStateMachine for RefState {
             if !candidate_keys.is_empty() {
                 let start_sign = sample::select(candidate_keys)
                     .prop_flat_map(|(key_index, key, available_devices)| {
-                        let sample = sample::select(available_devices);
-                        let signing_set = proptest::collection::btree_set(
-                            sample,
-                            key.do_keygen.threshold as usize,
-                        );
+                            let sample = sample::select(available_devices);
+                            let signing_set = proptest::collection::btree_set(
+                                sample,
+                                key.do_keygen.threshold as usize,
+                            );
 
-                        let message = proptest::string::string_regex("[a-z][a-z][a-z]").unwrap();
+                            signing_set
+                            .prop_flat_map(move |devices| {
+                                // Calculate minimum available nonces across selected devices
+                                let min_available_nonces = devices
+                                    .iter()
+                                    .map(|(_, nonces_available)| *nonces_available)
+                                    .min()
+                                    .unwrap_or(0);
 
-                        (signing_set, message).prop_map(move |(devices, message)| {
-                            Transition::CStartSign {
-                                key_index,
-                                devices,
-                                message,
+                                assert!(min_available_nonces > 0, "devices_with_nonces filter should ensure all devices have available nonces");
+
+                                let devices: BTreeSet<DeviceId> = devices.into_iter().map(|(device_id, _)| device_id).collect();
+
+                                // Generate n_inputs between 1 and min available
+                                (1..=min_available_nonces)
+                                    .prop_map(move |n_inputs| {
+                                        Some(Transition::CStartSign {
+                                            key_index,
+                                            devices: devices.clone(),
+                                            n_inputs,
+                                        })
+                                    })
+                                    .boxed()
                             }
-                        })
-                    })
+)
+                                .boxed()
+                        }
+)
+                    .prop_filter_map("filter out None transitions", |x| x)
                     .boxed();
 
                 trans.push((2, start_sign));
@@ -357,12 +419,22 @@ impl ReferenceStateMachine for RefState {
                 state.run_start.device_set().contains(device_id)
             }
             Transition::CStartSign {
-                key_index, devices, ..
+                key_index,
+                devices,
+                n_inputs,
             } => match state.finished_keygens.get(*key_index) {
                 Some(keygen) => {
-                    !keygen.deleted
+                    if !keygen.deleted
                         && keygen.do_keygen.devices().is_superset(devices)
                         && state.available_signing_devices().is_superset(devices)
+                    {
+                        // Check that all devices have enough nonces available for n_inputs
+                        devices.iter().all(|device_id| {
+                            state.max_available_nonces_for_device(*device_id) >= *n_inputs
+                        })
+                    } else {
+                        false
+                    }
                 }
                 None => false,
             },
@@ -433,33 +505,76 @@ impl ReferenceStateMachine for RefState {
                 }
             }
             Transition::CNonceReplenish { device_id } => {
-                state.got_nonces_from.insert(device_id);
+                // Initialize or replenish nonce streams for this device
+                let streams = state
+                    .device_nonce_streams
+                    .entry(device_id)
+                    .or_insert_with(|| {
+                        // Create n_nonce_slots streams for this device
+                        (0..state.n_nonce_slots)
+                            .map(|_| RefNonceStream {
+                                nonces_available: 0,
+                            })
+                            .collect()
+                    });
+
+                // Replenish up to n_desired_nonce_streams_coord streams
+                // The coordinator requests this many streams to be replenished
+                let streams_to_replenish =
+                    streams.iter_mut().take(state.n_desired_nonce_streams_coord);
+                for stream in streams_to_replenish {
+                    stream.nonces_available = state.nonce_batch_size as usize;
+                }
             }
             Transition::CStartSign {
                 key_index,
                 devices,
-                message,
-            } => state.sign_sessions.push(RefSignSession {
-                key_index,
-                devices,
-                message,
-                got_sigs_from: Default::default(),
-                sent_req_to: Default::default(),
-                canceled: false,
-            }),
+                n_inputs,
+            } => {
+                // Assign streams to each device (locking them)
+                let mut device_streams = BTreeMap::new();
+                for device in &devices {
+                    // Find the first available stream for this device
+                    let stream_id = state
+                        .find_available_stream(*device, n_inputs)
+                        .expect("state transition should be valid");
+                    device_streams.insert(*device, stream_id);
+                }
+
+                state.sign_sessions.push(RefSignSession {
+                    key_index,
+                    devices,
+                    n_inputs,
+                    device_streams,
+                    got_sigs_from: Default::default(),
+                    sent_req_to: Default::default(),
+                    canceled: false,
+                })
+            }
             Transition::CSendSignRequest {
                 session_index,
                 device_id,
             } => {
-                state
-                    .sign_sessions
-                    .get_mut(session_index)
-                    .unwrap()
-                    .sent_req_to
-                    .insert(device_id);
+                let session = state.sign_sessions.get_mut(session_index).unwrap();
+                session.sent_req_to.insert(device_id);
+                // Nonces aren't consumed here - they're only consumed if session is canceled
             }
             Transition::CCancelSignSession { session_index } => {
-                state.sign_sessions.get_mut(session_index).unwrap().canceled = true;
+                let session = state.sign_sessions.get_mut(session_index).unwrap();
+                session.canceled = true;
+                let session = session.clone();
+
+                // Consume nonces for devices that had requests sent but didn't ack
+                let devices_to_consume: Vec<_> = session
+                    .sent_req_to
+                    .difference(&session.got_sigs_from)
+                    .cloned()
+                    .collect();
+                for device_id in devices_to_consume {
+                    let stream = state.get_device_stream_for_signing_session(&session, &device_id);
+                    stream.nonces_available =
+                        stream.nonces_available.saturating_sub(session.n_inputs);
+                }
             }
             Transition::DAckSignRequest {
                 session_index,
@@ -467,6 +582,12 @@ impl ReferenceStateMachine for RefState {
             } => {
                 let session = &mut state.sign_sessions[session_index];
                 session.got_sigs_from.insert(device_id);
+                let session = session.clone();
+                let nonce_batch_size = state.nonce_batch_size as usize;
+
+                // Replenish nonces after signing (device sends back replenishment)
+                let stream = state.get_device_stream_for_signing_session(&session, &device_id);
+                stream.nonces_available = nonce_batch_size;
             }
             Transition::CDeleteKey { key_index } => {
                 for session in &mut state.sign_sessions {
@@ -649,12 +770,46 @@ impl StateMachineTest for HappyPathTest {
             Transition::CStartSign {
                 key_index,
                 devices,
-                message,
+                n_inputs,
             } => {
                 let as_ref = finished_keygens[key_index];
+                let key_data = run.coordinator.get_frost_key(as_ref.key_id).unwrap();
+                let master_appkey = key_data.complete_key.master_appkey;
+
+                // Generate a bitcoin transaction with n_inputs
+                let mut tx_template = TransactionTemplate::new();
+
+                // Add n_inputs owned inputs with random amounts
+                let mut total_in = 0u64;
+                for i in 0..n_inputs {
+                    let amount = 100_000 + (rng.next_u64() % 900_000); // 100k to 1M sats
+                    total_in += amount;
+                    tx_template.push_imaginary_owned_input(
+                        LocalSpk {
+                            master_appkey,
+                            bip32_path: BitcoinBip32Path::external(i as u32),
+                        },
+                        bitcoin::Amount::from_sat(amount),
+                    );
+                }
+
+                // Add output with some fee
+                let fee = 10_000; // 10k sats fee
+                let change = total_in.saturating_sub(fee);
+                if change > 0 {
+                    tx_template.push_owned_output(
+                        bitcoin::Amount::from_sat(change),
+                        LocalSpk {
+                            master_appkey,
+                            bip32_path: BitcoinBip32Path::internal(0),
+                        },
+                    );
+                }
+
+                let task = WireSignTask::BitcoinTransaction(tx_template);
                 let session_id = run
                     .coordinator
-                    .start_sign(as_ref, WireSignTask::Test { message }, &devices, rng)
+                    .start_sign(as_ref, task, &devices, rng)
                     .unwrap();
                 sign_sessions.push(session_id);
             }
@@ -723,9 +878,6 @@ prop_state_machine! {
         cases: 512,
         .. Config::default()
     })]
-
-    // NOTE: The `#[test]` attribute is commented out in here so we can run it
-    // as an example from the `fn main`.
 
     #[test]
     fn state_machine_happy(
