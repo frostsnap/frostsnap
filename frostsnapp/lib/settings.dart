@@ -629,33 +629,17 @@ class DeleteWalletPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final walletCtx = WalletContext.of(context);
     final keyId = KeyContext.of(context)!.keyId;
     final frostKey = coord.getFrostKey(keyId: keyId)!;
-    final walletName = frostKey.keyName();
 
-    var body = Padding(
+    final body = Padding(
       padding: EdgeInsets.all(16.0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (walletCtx != null)
-            DefaultTextStyle(
-              style: Theme.of(context).textTheme.titleLarge!,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  const Text('Balance: '),
-                  StreamBuilder(
-                    stream: walletCtx.txStream,
-                    builder: (context, snapshot) =>
-                        SatoshiText(value: snapshot.data?.balance ?? 0),
-                  ),
-                ],
-              ),
-            ),
-          SizedBox(height: 24),
           DefaultTextStyle(
             textAlign: TextAlign.left,
             style: Theme.of(context).textTheme.titleMedium!,
@@ -669,46 +653,77 @@ class DeleteWalletPage extends StatelessWidget {
                 softWrap: true,
               ),
               Text(
-                'The wallet can still be restored from Frostsnap devices and/or backups',
+                'The wallet can still be restored from Frostsnap devices and/or backups.',
                 softWrap: true,
               ),
             ]),
           ),
-          SizedBox(height: 24),
-          // Hold-to-Delete Button
-          Center(
-            child: HoldToDeleteButton(
-              buttonText: Text(
-                style: TextStyle(fontWeight: FontWeight.bold),
-                softWrap: true,
-                textAlign: TextAlign.center,
-                "Hold to Delete",
+          SizedBox(height: 52),
+          if (walletCtx != null)
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadiusGeometry.all(Radius.circular(28)),
               ),
-              onComplete: () async {
-                await coord.deleteKey(keyId: keyId);
-                Navigator.popUntil(context, (r) => r.isFirst);
-                if (context.mounted) {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => AlertDialog(
-                      title: Text('Wallet Deleted'),
-                      content: Text(
-                        'The wallet has been successfully deleted.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () =>
-                              Navigator.popUntil(context, (r) => r.isFirst),
-                          child: Text('OK'),
-                        ),
-                      ],
+              margin: EdgeInsets.zero,
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  spacing: 12,
+                  children: [
+                    Text(
+                      frostKey.keyName(),
+                      style: theme.textTheme.headlineSmall,
                     ),
-                  );
-                }
-              },
+                    StreamBuilder(
+                      stream: walletCtx.txStream,
+                      builder: (context, snapshot) => SatoshiText(
+                        value: snapshot.data?.balance ?? 0,
+                        style: theme.textTheme.headlineSmall,
+                      ),
+                    ),
+                    // Hold-to-Delete Button
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: HoldToDeleteButton(
+                          buttonText: Text(
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                            softWrap: true,
+                            textAlign: TextAlign.center,
+                            "Hold to Delete",
+                          ),
+                          onComplete: () async {
+                            await coord.deleteKey(keyId: keyId);
+                            Navigator.popUntil(context, (r) => r.isFirst);
+                            if (context.mounted) {
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (context) => AlertDialog(
+                                  title: Text('Wallet Deleted'),
+                                  content: Text(
+                                    'The wallet has been successfully deleted.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.popUntil(
+                                        context,
+                                        (r) => r.isFirst,
+                                      ),
+                                      child: Text('Ok'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -717,7 +732,7 @@ class DeleteWalletPage extends StatelessWidget {
       shrinkWrap: true,
       slivers: [
         TopBarSliver(
-          title: Text('Delete \'$walletName\'?'),
+          title: Text('Delete wallet?'),
           leading: IconButton(
             icon: Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context),
@@ -800,9 +815,11 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
         width: 120,
         height: 120,
         decoration: BoxDecoration(
-          color: _isPressed
-              ? theme.colorScheme.secondary
-              : theme.colorScheme.tertiary,
+          color: ElevationOverlay.applySurfaceTint(
+            theme.colorScheme.error,
+            Colors.black,
+            _isPressed ? 10.0 : 0.0,
+          ),
           shape: BoxShape.circle,
           boxShadow: _isPressed
               ? []
@@ -822,15 +839,17 @@ class _HoldToDeleteButtonState extends State<HoldToDeleteButton> {
               height: 120,
               child: CircularProgressIndicator(
                 value: _progress,
-                backgroundColor: theme.colorScheme.surfaceContainer,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+                backgroundColor: theme.colorScheme.error,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  theme.colorScheme.onError,
+                ),
               ),
             ),
             DefaultTextStyle(
               style: TextStyle(
                 color: _isPressed
-                    ? theme.colorScheme.onSecondary
-                    : theme.colorScheme.onTertiary,
+                    ? theme.colorScheme.onError
+                    : theme.colorScheme.onError,
               ),
               child: widget.buttonText,
             ),
