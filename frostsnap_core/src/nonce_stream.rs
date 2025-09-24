@@ -185,11 +185,3 @@ pub struct CoordNonceStreamState {
     pub index: u32,
     pub remaining: u32,
 }
-
-impl CoordNonceStreamState {
-    pub fn after_signing(mut self, n_sigs: usize) -> Self {
-        self.index = self.index.checked_add(n_sigs as u32).unwrap();
-        self.remaining = self.remaining.checked_sub(n_sigs as u32).unwrap();
-        self
-    }
-}

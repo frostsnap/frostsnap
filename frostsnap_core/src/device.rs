@@ -38,6 +38,7 @@ pub struct FrostSigner<S = MemoryNonceSlot> {
     tmp_keygen_pending_finalize: BTreeMap<KeygenId, (SessionHash, KeyGenPhase4)>,
     restoration: restoration::State,
     pub keygen_fingerprint: Fingerprint,
+    pub nonce_batch_size: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -219,6 +220,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             tmp_keygen_pending_finalize: Default::default(),
             restoration: Default::default(),
             keygen_fingerprint: Fingerprint::FROST_V0,
+            nonce_batch_size: crate::NONCE_BATCH_SIZE,
         }
     }
 
@@ -341,9 +343,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     let slot = self
                         .nonce_slots
                         .get_or_create(coord_stream_state.stream_id, rng);
-                    if let Some(segment) =
-                        slot.reconcile_coord_nonce_stream_state(coord_stream_state, device_hmac)
-                    {
+                    if let Some(segment) = slot.reconcile_coord_nonce_stream_state(
+                        coord_stream_state,
+                        device_hmac,
+                        self.nonce_batch_size,
+                    ) {
                         segments.push(segment);
                     }
                 }
@@ -820,6 +824,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 coord_nonce_state,
                 sign_sessions,
                 symm_keygen,
+                self.nonce_batch_size,
             )
             .map_err(|e| ActionError::StateInconsistent(e.to_string()))?;
 
@@ -882,14 +887,25 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 impl FrostSigner<MemoryNonceSlot> {
     /// For testing only
     pub fn new_random(rng: &mut impl rand_core::RngCore, nonce_streams: usize) -> Self {
-        Self::new(
+        Self::new_random_with_nonce_batch_size(rng, nonce_streams, crate::NONCE_BATCH_SIZE)
+    }
+
+    /// For testing only - with configurable nonce_batch_size
+    pub fn new_random_with_nonce_batch_size(
+        rng: &mut impl rand_core::RngCore,
+        nonce_streams: usize,
+        nonce_batch_size: u32,
+    ) -> Self {
+        let mut signer = Self::new(
             KeyPair::<Normal>::new(Scalar::random(rng)),
             AbSlots::new(
                 (0..nonce_streams)
                     .map(|_| MemoryNonceSlot::default())
                     .collect(),
             ),
-        )
+        );
+        signer.nonce_batch_size = nonce_batch_size;
+        signer
     }
 }
 
