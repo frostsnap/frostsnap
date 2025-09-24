@@ -13,11 +13,16 @@ pub struct Settings {
     pub electrum_servers: BTreeMap<bitcoin::Network, String>,
     pub backup_electrum_servers: BTreeMap<bitcoin::Network, String>,
     pub developer_mode: bool,
+    pub hide_balance: bool,
 }
 
 impl Settings {
     pub fn set_developer_mode(&mut self, value: bool, mutations: &mut Vec<Mutation>) {
         self.mutate(Mutation::SetDeveloperMode { value }, mutations);
+    }
+
+    pub fn set_hide_balance(&mut self, value: bool, mutations: &mut Vec<Mutation>) {
+        self.mutate(Mutation::SetHideBalance { value }, mutations);
     }
 
     pub fn get_electrum_server(&self, network: bitcoin::Network) -> String {
@@ -60,6 +65,9 @@ impl Settings {
             Mutation::SetBackupElectrumServer { network, url } => {
                 self.backup_electrum_servers.insert(network, url);
             }
+            Mutation::SetHideBalance { value } => {
+                self.hide_balance = value;
+            }
         }
     }
 }
@@ -76,6 +84,9 @@ pub enum Mutation {
     SetBackupElectrumServer {
         network: bitcoin::Network,
         url: String,
+    },
+    SetHideBalance {
+        value: bool,
     },
 }
 
@@ -120,6 +131,9 @@ impl Persist<rusqlite::Connection> for Settings {
                 let _ = span.enter();
                 let mutation = match key.as_str() {
                     "developer_mode" => Mutation::SetDeveloperMode {
+                        value: bool::from_str(value.as_str())?,
+                    },
+                    "hide_balance" => Mutation::SetHideBalance {
                         value: bool::from_str(value.as_str())?,
                     },
                     electrum_server if electrum_server.starts_with("electrum_server_") => {
@@ -189,6 +203,13 @@ impl Persist<rusqlite::Connection> for Settings {
                     conn.execute(
                         "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
                         params![format!("backup_electrum_server_{}", network), url.to_string()],
+                    )?;
+                }
+                Mutation::SetHideBalance { value } => {
+                    event!(Level::DEBUG, value = value, "changed hide balance");
+                    conn.execute(
+                        "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
+                        params!["hide_balance", value.to_string()],
                     )?;
                 }
             }
