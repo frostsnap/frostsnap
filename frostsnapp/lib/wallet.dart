@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
@@ -12,6 +13,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -320,6 +322,7 @@ class _TxListState extends State<TxList> {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
+    final canCreate = OutgoingCountContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
     final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
@@ -339,6 +342,8 @@ class _TxListState extends State<TxList> {
       slivers: <Widget>[
         SliverAppBar.medium(
           pinned: true,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
           title: Text(frostKey?.keyName() ?? 'Unknown'),
           scrolledUnderElevation: scrolledUnderElevation,
           actionsPadding: EdgeInsets.only(right: 8),
@@ -365,86 +370,74 @@ class _TxListState extends State<TxList> {
           ),
         ),
         StreamBuilder(
-          stream: MergeStream([
+          stream: MergeStream<void>([
             walletCtx.signingSessionSignals,
             // Also rebuild on canonical tx list changes since `unbroadcastedTxs` excludes from the
             // canonical tx list.
             walletCtx.txStream.map((_) => {}),
           ]),
-          builder: (context, snapshot) {
+          builder: (context, _) {
             final chainTipHeight = walletCtx.wallet.superWallet.height();
             final now = DateTime.now();
-            final txToBroadcastTiles = coord
-                .unbroadcastedTxs(
-                  superWallet: walletCtx.wallet.superWallet,
-                  keyId: walletCtx.keyId,
+            final uncanonicalTiles = coord
+                .uncanonicalTxs(
+                  sWallet: walletCtx.wallet.superWallet,
+                  masterAppkey: walletCtx.masterAppkey,
                 )
-                .map((tx) {
+                .map((uncanonicalTx) {
                   final txDetails = TxDetailsModel(
-                    tx: tx.tx,
+                    tx: uncanonicalTx.tx,
                     chainTipHeight: chainTipHeight,
                     now: now,
                   );
-                  return TxSentOrReceivedTile(
-                    onTap: () => showBottomSheetOrDialog(
-                      context,
-                      title: Text('Transaction Details'),
-                      builder: (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage.needsBroadcast(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                          finishedSigningSessionId: tx.sessionId,
-                          psbtMan: fsCtx.psbtManager,
+                  final session = uncanonicalTx.activeSession;
+                  if (session != null) {
+                    final signingState = session.state();
+                    return TxSentOrReceivedTile(
+                      onTap: () => showBottomSheetOrDialog(
+                        context,
+                        title: Text('Transaction Details'),
+                        builder: (context, scrollController) => walletCtx.wrap(
+                          TxDetailsPage.restoreSigning(
+                            scrollController: scrollController,
+                            txStates: walletCtx.txStream,
+                            txDetails: txDetails,
+                            signingSessionId: signingState.sessionId,
+                            psbtMan: fsCtx.psbtManager,
+                          ),
                         ),
                       ),
-                    ),
-                    txDetails: txDetails,
-                  );
-                });
-            final txToSignTiles = coord
-                .activeSigningSessions(keyId: walletCtx.keyId)
-                .map<(Transaction, SigningState)?>((session) {
-                  final Transaction? tx = switch (session.details()) {
-                    SigningDetails_Transaction(:final transaction) =>
-                      transaction,
-                    _ => null,
-                  };
-                  if (tx == null) return null;
-                  return (tx, session.state());
-                })
-                .nonNulls
-                .map((state) {
-                  final (tx, signingState) = state;
-                  final txDetails = TxDetailsModel(
-                    tx: tx,
-                    chainTipHeight: chainTipHeight,
-                    now: now,
-                  );
-                  return TxSentOrReceivedTile(
-                    onTap: () => showBottomSheetOrDialog(
-                      context,
-                      title: Text('Transaction Details'),
-                      builder: (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage.restoreSigning(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                          signingSessionId: signingState.sessionId,
-                          psbtMan: fsCtx.psbtManager,
+                      txDetails: txDetails,
+                      signingState: signingState,
+                    );
+                  } else {
+                    return TxSentOrReceivedTile(
+                      onTap: () => showBottomSheetOrDialog(
+                        context,
+                        title: Text('Transaction Details'),
+                        builder: (context, scrollController) => walletCtx.wrap(
+                          TxDetailsPage.needsBroadcast(
+                            scrollController: scrollController,
+                            txStates: walletCtx.txStream,
+                            txDetails: txDetails,
+                            finishedSigningSessionId: uncanonicalTx.sessionId,
+                            psbtMan: fsCtx.psbtManager,
+                          ),
                         ),
                       ),
-                    ),
-                    txDetails: txDetails,
-                    signingState: signingState,
-                  );
+                      txDetails: txDetails,
+                    );
+                  }
                 });
+
+            // Avoid marking for rebuild while already rebuilding.
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => canCreate.value = uncanonicalTiles.length,
+            );
+
             return SliverVisibility(
-              visible:
-                  txToSignTiles.isNotEmpty || txToBroadcastTiles.isNotEmpty,
-              sliver: SliverList.list(
-                children: [...txToBroadcastTiles, ...txToSignTiles],
-              ),
+              visible: uncanonicalTiles.isNotEmpty,
+              sliver: SliverList.list(children: uncanonicalTiles.toList()),
             );
           },
         ),
@@ -705,14 +698,21 @@ class WalletBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context);
-    if (walletCtx == null) {
-      return SizedBox();
-    }
+    // final fsCtx = FrostsnapContext.of(context)!;
+    if (walletCtx == null) return SizedBox();
+    final outgoingCount = OutgoingCountContext.of(context)!;
+
     final theme = Theme.of(context);
 
     final textButtonStyle = TextButton.styleFrom(
       fixedSize: Size.fromHeight(48),
       foregroundColor: theme.colorScheme.onPrimaryContainer,
+    );
+
+    final highlightTextButtonStyle = TextButton.styleFrom(
+      fixedSize: Size.fromHeight(48),
+      backgroundColor: theme.colorScheme.surfaceContainer,
+      foregroundColor: theme.colorScheme.onSurface,
     );
 
     final iconButtonStyle = IconButton.styleFrom(
@@ -737,16 +737,23 @@ class WalletBottomBar extends StatelessWidget {
       style: textButtonStyle,
     );
 
-    final sendButton = TextButton.icon(
-      onPressed: () => showBottomSheetOrDialog(
-        context,
-        title: Text('Send'),
-        builder: (context, scrollController) =>
-            walletCtx.wrap(WalletSendPage(scrollController: scrollController)),
-      ),
-      label: Text('Send'),
-      icon: Icon(Icons.north_east),
-      style: textButtonStyle,
+    final sendButton = ValueListenableBuilder(
+      valueListenable: outgoingCount,
+      builder: (context, value, _) {
+        final button = TextButton.icon(
+          onPressed: () async => await showPickOutgoingTxDialog(context),
+          label: value == 0 ? Text('Send') : Text('Continue'),
+          icon: Icon(Icons.north_east),
+          style: value == 0 ? textButtonStyle : highlightTextButtonStyle,
+        );
+
+        return Badge.count(
+          count: value,
+          // Only show count badge if we have more than one uncanonical outgoing tx.
+          isLabelVisible: value > 1,
+          child: button,
+        );
+      },
     );
 
     final moreButton = IconButton(
@@ -793,6 +800,108 @@ class WalletBottomBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> showTxDetailsDialog(
+    BuildContext context,
+    UncanonicalTx uncanonicalTx,
+  ) async {
+    final walletCtx = WalletContext.of(context)!;
+    final fsCtx = FrostsnapContext.of(context)!;
+
+    final txDetails = TxDetailsModel(
+      tx: uncanonicalTx.tx,
+      chainTipHeight: walletCtx.wallet.superWallet.height(),
+      now: DateTime.now(),
+    );
+    final session = uncanonicalTx.activeSession;
+    if (session != null) {
+      await showBottomSheetOrDialog(
+        context,
+        title: Text('Transaction Details'),
+        builder: (context, scrollController) => walletCtx.wrap(
+          TxDetailsPage.restoreSigning(
+            scrollController: scrollController,
+            txStates: walletCtx.txStream,
+            txDetails: txDetails,
+            signingSessionId: session.state().sessionId,
+            psbtMan: fsCtx.psbtManager,
+          ),
+        ),
+      );
+    } else {
+      await showBottomSheetOrDialog(
+        context,
+        title: Text('Transaction Details'),
+        builder: (context, scrollController) => walletCtx.wrap(
+          TxDetailsPage.needsBroadcast(
+            scrollController: scrollController,
+            txStates: walletCtx.txStream,
+            txDetails: txDetails,
+            finishedSigningSessionId: uncanonicalTx.sessionId,
+            psbtMan: fsCtx.psbtManager,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> showPickOutgoingTxDialog(BuildContext context) async {
+    final walletCtx = WalletContext.of(context)!;
+    final uncanonicalTxs = coord.uncanonicalTxs(
+      sWallet: walletCtx.wallet.superWallet,
+      masterAppkey: walletCtx.masterAppkey,
+    );
+
+    if (uncanonicalTxs.length == 0) {
+      await showBottomSheetOrDialog(
+        context,
+        title: Text('Send'),
+        builder: (context, scrollController) =>
+            walletCtx.wrap(WalletSendPage(scrollController: scrollController)),
+      );
+      return;
+    }
+
+    if (uncanonicalTxs.length == 1) {
+      await showTxDetailsDialog(context, uncanonicalTxs.first);
+      return;
+    }
+
+    final parentCtx = context;
+    await showBottomSheetOrDialog(
+      parentCtx,
+      builder: (context, scrollController) {
+        return CustomScrollView(
+          controller: scrollController,
+          shrinkWrap: true,
+          physics: ClampingScrollPhysics(),
+          slivers: [
+            SliverSafeArea(
+              sliver: SliverList.builder(
+                itemCount: uncanonicalTxs.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final uncanonicalTx = uncanonicalTxs[index];
+                  final txDetails = TxDetailsModel(
+                    tx: uncanonicalTx.tx,
+                    chainTipHeight: walletCtx.superWallet.height(),
+                    now: DateTime.now(),
+                  );
+                  return TxSentOrReceivedTile(
+                    txDetails: txDetails,
+                    signingState: uncanonicalTx.activeSession?.state(),
+                    onTap: () {
+                      Navigator.popUntil(context, (r) => r.isFirst);
+                      showTxDetailsDialog(parentCtx, uncanonicalTx);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -854,8 +963,9 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
   @override
   Widget build(BuildContext context) {
     final frostKey = widget.frostKey;
-
     final theme = Theme.of(context);
+    final settings = SettingsContext.of(context);
+
     final balanceTextStyle = theme.textTheme.headlineLarge;
     final pendingBalanceTextStyle = theme.textTheme.bodyLarge?.copyWith(
       color: theme.disabledColor,
@@ -863,8 +973,8 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
 
     final scrolledColor = ElevationOverlay.applySurfaceTint(
       theme.colorScheme.surfaceContainer,
-      theme.colorScheme.surfaceTint,
-      theme.appBarTheme.elevation ?? widget.scrolledUnderElevation ?? 3.0,
+      Colors.transparent,
+      0.0,
     );
 
     const duration = Durations.extralong4;
@@ -897,13 +1007,40 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
                 mainAxisAlignment: MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SatoshiText(
-                    key: UniqueKey(),
-                    value: avaliableBalance,
-                    style: atTop
-                        ? balanceTextStyle
-                        : theme.textTheme.headlineSmall,
-                    showSign: false,
+                  InkWell(
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                    child: Stack(
+                      alignment: AlignmentDirectional.centerEnd,
+                      children: [
+                        SatoshiText(
+                          value: avaliableBalance,
+                          style: atTop
+                              ? balanceTextStyle
+                              : theme.textTheme.headlineSmall,
+                          showSign: false,
+                        ),
+                        StreamBuilder(
+                          stream: settings!.displaySettings,
+                          builder: (context, snapshot) {
+                            final hideBalance =
+                                snapshot.data?.hideBalance ?? false;
+                            return hideBalance
+                                ? Padding(
+                                    padding: const EdgeInsets.only(right: 108),
+                                    child: Icon(
+                                      Icons.visibility_off,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  )
+                                : SizedBox.shrink();
+                          },
+                        ),
+                      ],
+                    ),
+                    onTap: () {
+                      final ss = settings.settings;
+                      ss.setHideBalance(value: !ss.hideBalance());
+                    },
                   ),
                   if (pendingIncomingBalance > 0)
                     Row(
@@ -966,6 +1103,7 @@ class SatoshiText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settings = SettingsContext.of(context)!;
     final baseStyle = DefaultTextStyle.of(context).style
         .merge(style)
         .copyWith(
@@ -992,53 +1130,72 @@ class SatoshiText extends StatelessWidget {
       color: disabledColor ?? Theme.of(context).disabledColor,
     );
 
-    final value = this.value ?? 0;
+    return StreamBuilder<DisplaySettings>(
+      stream: settings.displaySettings,
+      builder: (context, snapshot) {
+        final hideBalance = snapshot.data?.hideBalance ?? false;
 
-    // Convert to BTC string with 8 decimal places
-    String btcString = (value / 100000000.0).toStringAsFixed(8);
-    // Split the string into two parts, removing - sign: before and after the decimal
-    final parts = btcString.replaceFirst(r'-', '').split('.');
-    final sign = value.isNegative ? '-' : (showSign ? '+' : '\u00A0');
+        final value = hideBalance ? 0 : this.value ?? 0;
 
-    final unformatedWithoutSign =
-        "${parts[0]}.${parts[1].substring(0, 2)} ${parts[1].substring(2, 5)} ${parts[1].substring(5)} \u20BF";
-    final String unformatted;
-    if (hideLeadingWhitespace && sign == '\u00A0') {
-      unformatted = unformatedWithoutSign;
-    } else {
-      unformatted = '$sign $unformatedWithoutSign';
-    }
+        // Convert to BTC string with 8 decimal places
+        String btcString = (value / 100000000.0).toStringAsFixed(8);
+        // Split the string into two parts, removing - sign: before and after the decimal
+        final parts = btcString.replaceFirst(r'-', '').split('.');
+        final sign = value.isNegative ? '-' : (showSign ? '+' : '\u00A0');
 
-    final activeIndex = () {
-      var activeIndex = unformatted.indexOf(RegExp(r'[1-9]'));
-      if (activeIndex == -1) activeIndex = unformatted.length - 1;
-      return activeIndex;
-    }();
+        final unformatedWithoutSign =
+            "${parts[0]}.${parts[1].substring(0, 2)} ${parts[1].substring(2, 5)} ${parts[1].substring(5)} \u20BF";
+        final String unformatted;
+        if (hideLeadingWhitespace && sign == '\u00A0') {
+          unformatted = unformatedWithoutSign;
+        } else {
+          unformatted = '$sign $unformatedWithoutSign';
+        }
 
-    final List<TextSpan> spans = unformatted.characters.indexed.map((elem) {
-      final (i, char) = elem;
-      if (char == ' ') {
-        return TextSpan(
-          text: ' ',
-          style: TextStyle(letterSpacing: wordSpacing),
+        final activeIndex = () {
+          var activeIndex = unformatted.indexOf(RegExp(r'[1-9]'));
+          if (activeIndex == -1) activeIndex = unformatted.length - 1;
+          return activeIndex;
+        }();
+
+        final List<TextSpan> spans = unformatted.characters.indexed.map((elem) {
+          final (i, char) = elem;
+          if (char == ' ') {
+            return TextSpan(
+              text: ' ',
+              style: TextStyle(letterSpacing: wordSpacing),
+            );
+          }
+          if (char == '+' || char == '-') {
+            return TextSpan(text: char, style: activeStyle);
+          }
+          if (i < activeIndex) {
+            return TextSpan(text: char, style: inactiveStyle);
+          } else {
+            return TextSpan(text: char, style: activeStyle);
+          }
+        }).toList();
+
+        return ImageFiltered(
+          imageFilter: ImageFilter.compose(
+            inner: ImageFilter.dilate(radiusX: 4, radiusY: 4),
+            outer: ImageFilter.blur(
+              sigmaX: 4,
+              sigmaY: 4,
+              // We do not want to extend the blur.
+              tileMode: TileMode.decal,
+            ),
+          ),
+          enabled: snapshot.data?.hideBalance ?? false,
+          child: Text.rich(
+            TextSpan(children: spans),
+            textAlign: align,
+            softWrap: false,
+            overflow: TextOverflow.fade,
+            style: baseStyle,
+          ),
         );
-      }
-      if (char == '+' || char == '-') {
-        return TextSpan(text: char, style: activeStyle);
-      }
-      if (i < activeIndex) {
-        return TextSpan(text: char, style: inactiveStyle);
-      } else {
-        return TextSpan(text: char, style: activeStyle);
-      }
-    }).toList();
-
-    return Text.rich(
-      TextSpan(children: spans),
-      textAlign: align,
-      softWrap: false,
-      overflow: TextOverflow.fade,
-      style: baseStyle,
+      },
     );
   }
 }
