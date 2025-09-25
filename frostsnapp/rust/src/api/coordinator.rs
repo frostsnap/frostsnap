@@ -37,7 +37,7 @@ impl FrostKey {
 
     #[frb(sync)]
     pub fn key_name(&self) -> String {
-        self.0.key_name.clone()
+        self.0.key_name.to_string()
     }
 
     #[frb(sync)]
@@ -142,11 +142,11 @@ impl Coordinator {
         self.0.start()
     }
 
-    pub fn update_name_preview(&self, id: DeviceId, name: String) {
-        self.0.update_name_preview(id, &name);
+    pub fn update_name_preview(&self, id: DeviceId, name: String) -> Result<()> {
+        self.0.update_name_preview(id, &name)
     }
 
-    pub fn finish_naming(&self, id: DeviceId, name: String) {
+    pub fn finish_naming(&self, id: DeviceId, name: String) -> Result<()> {
         self.0.finish_naming(id, &name)
     }
 
