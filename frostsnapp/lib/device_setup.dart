@@ -97,6 +97,7 @@ class _DeviceNameField extends State<DeviceNameField> {
               border: OutlineInputBorder(),
               labelText: 'Device name',
             ),
+            inputFormatters: [nameInputFormatter],
             onSubmitted: (name) => _onSubmitted(context, name),
             onChanged: (value) async =>
                 await coord.updateNamePreview(id: widget.id, name: value),

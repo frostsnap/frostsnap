@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -8,6 +9,10 @@ import 'serialport.dart';
 late Coordinator coord;
 late Api api;
 late HostPortHandler? globalHostPortHandler;
+
+final nameInputFormatter = FilteringTextInputFormatter.allow(
+  RegExp(r"[a-zA-Z0-9_\-']"),
+);
 
 class GlobalStreams {
   /// Gets new updates from the device list

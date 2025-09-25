@@ -560,6 +560,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           errorText: _controller.nameError,
         ),
         maxLength: keyNameMaxLength(),
+        inputFormatters: [nameInputFormatter],
         textCapitalization: TextCapitalization.words,
         onSubmitted: (_) {
           _controller.next(context);
@@ -754,6 +755,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   labelText: 'Device Name',
                 ),
                 maxLength: DeviceName.maxLength(),
+                inputFormatters: [nameInputFormatter],
                 initialValue: _controller.form.deviceNames[device.id],
                 onChanged: (name) => _controller.setDeviceName(device.id, name),
                 onFieldSubmitted: (_) => Navigator.pop(context),
@@ -803,6 +805,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             filled: true,
           ),
           maxLength: DeviceName.maxLength(),
+          inputFormatters: [nameInputFormatter],
           style: monospaceTextStyle,
           controller: textController,
           onChanged: isPart

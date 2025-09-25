@@ -1309,6 +1309,7 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
           TextFormField(
             controller: _walletNameController,
             maxLength: keyNameMaxLength(),
+            inputFormatters: [nameInputFormatter],
             decoration: const InputDecoration(
               labelText: 'Wallet Name',
               border: OutlineInputBorder(),
