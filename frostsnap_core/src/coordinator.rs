@@ -332,17 +332,19 @@ impl FrostCoordinator {
                     .enumerate()
                     .find(|(_, ssid)| **ssid == session_id)?;
                 self.active_sign_session_order.remove(index);
-                let session_state = self.active_signing_sessions.remove(&session_id).unwrap();
-
+                let session_state = self
+                    .active_signing_sessions
+                    .remove(&session_id)
+                    .expect("it existed in the order");
+                let n_sigs = session_state.init.group_request.n_signatures();
                 for (device_id, nonce_segment) in &session_state.init.nonces {
                     if session_state.sent_req_to_device.contains(device_id) {
-                        let state_after_signing = nonce_segment
-                            .after_signing(session_state.init.group_request.n_signatures());
-                        self.nonce_cache.consume(
-                            *device_id,
-                            state_after_signing.stream_id,
-                            state_after_signing.index,
-                        );
+                        let consume_to = nonce_segment
+                            .index
+                            .checked_add(n_sigs as _)
+                            .expect("no overflow");
+                        self.nonce_cache
+                            .consume(*device_id, nonce_segment.stream_id, consume_to);
                     }
                 }
                 if let Some(signatures) = finished {

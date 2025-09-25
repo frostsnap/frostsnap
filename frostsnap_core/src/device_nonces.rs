@@ -1,7 +1,7 @@
 use crate::{
     device::DeviceSecretDerivation,
     nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
-    SignSessionId, Versioned, NONCE_BATCH_SIZE,
+    SignSessionId, Versioned,
 };
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -86,11 +86,12 @@ pub trait NonceStreamSlot {
         &mut self,
         state: CoordNonceStreamState,
         device_hmac: &mut impl DeviceSecretDerivation,
+        nonce_batch_size: u32,
     ) -> Option<NonceStreamSegment> {
         let value = self.read_slot()?;
         let our_index = value.index;
-        if our_index > state.index || state.remaining < NONCE_BATCH_SIZE {
-            Some(value.nonce_segment(None, NONCE_BATCH_SIZE as usize, device_hmac))
+        if our_index > state.index || state.remaining < nonce_batch_size {
+            Some(value.nonce_segment(None, nonce_batch_size as usize, device_hmac))
         } else if our_index == state.index {
             None
         } else {
@@ -109,6 +110,7 @@ pub trait NonceStreamSlot {
         last_used: u32,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
         device_hmac: &mut impl DeviceSecretDerivation,
+        nonce_batch_size: u32,
     ) -> Result<(Vec<SignatureShare>, Option<NonceStreamSegment>), NoncesUnavailable> {
         let slot_value = self
             .read_slot()
@@ -188,9 +190,11 @@ pub trait NonceStreamSlot {
             .expect("guaranteed")
             .signature_shares;
 
-        let implied_coord_nonce_state = coord_nonce_state.after_signing(signature_shares.len());
-        let replenishment =
-            self.reconcile_coord_nonce_stream_state(implied_coord_nonce_state, device_hmac);
+        let replenishment = self.reconcile_coord_nonce_stream_state(
+            coord_nonce_state,
+            device_hmac,
+            nonce_batch_size,
+        );
         Ok((signature_shares, replenishment))
     }
 }
@@ -220,6 +224,7 @@ impl<S: NonceStreamSlot> AbSlots<S> {
         coord_nonce_state: CoordNonceStreamState,
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
         device_hmac: &mut impl DeviceSecretDerivation,
+        nonce_batch_size: u32,
     ) -> Result<(Vec<SignatureShare>, Option<NonceStreamSegment>), NoncesUnavailable> {
         let last_used = self.last_used + 1;
         let slot = self
@@ -231,6 +236,7 @@ impl<S: NonceStreamSlot> AbSlots<S> {
             last_used,
             sessions,
             device_hmac,
+            nonce_batch_size,
         )?;
         self.last_used = last_used;
         Ok(out)

@@ -16,6 +16,13 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub const TEST_ENCRYPTION_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
 
+pub const TEST_KEYGEN_FINGERPRINT: schnorr_fun::frost::Fingerprint =
+    schnorr_fun::frost::Fingerprint {
+        bits_per_coeff: 2,
+        max_bits_total: 6,
+        tag: "test",
+    };
+
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // we're in a test
 pub enum Send {
@@ -200,27 +207,24 @@ impl core::fmt::Debug for Run {
 }
 
 impl Run {
-    pub fn generate_with_nonce_slots(
+    pub fn generate_with_nonce_slots_and_batch_size(
         n_devices: usize,
         rng: &mut impl rand_core::RngCore,
         nonce_slots: usize,
+        nonce_batch_size: u32,
     ) -> Self {
         let mut coordinator = FrostCoordinator::new();
-        coordinator.keygen_fingerprint = schnorr_fun::frost::Fingerprint {
-            bits_per_coeff: 2,
-            max_bits_total: 6,
-            tag: "test",
-        };
+        coordinator.keygen_fingerprint = TEST_KEYGEN_FINGERPRINT;
         Self::new(
             coordinator,
             (0..n_devices)
                 .map(|_| {
-                    let mut signer = FrostSigner::new_random(rng, nonce_slots);
-                    signer.keygen_fingerprint = schnorr_fun::frost::Fingerprint {
-                        bits_per_coeff: 2,
-                        max_bits_total: 6,
-                        tag: "test",
-                    };
+                    let mut signer = FrostSigner::new_random_with_nonce_batch_size(
+                        rng,
+                        nonce_slots,
+                        nonce_batch_size,
+                    );
+                    signer.keygen_fingerprint = TEST_KEYGEN_FINGERPRINT;
                     (signer.device_id(), signer)
                 })
                 .collect(),
@@ -228,7 +232,7 @@ impl Run {
     }
 
     pub fn generate(n_devices: usize, rng: &mut impl rand_core::RngCore) -> Self {
-        Self::generate_with_nonce_slots(n_devices, rng, 8)
+        Self::generate_with_nonce_slots_and_batch_size(n_devices, rng, 8, 10)
     }
 
     #[allow(unused)]
