@@ -1,14 +1,12 @@
+import 'package:frostsnap/camera.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnap/cached_future.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
-import 'package:frostsnap/wallet_send_scan.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 
 enum SendPageIndex { recipient, amount, signers }
@@ -26,22 +24,18 @@ class WalletSendPage extends StatefulWidget {
 class _WalletSendPageState extends State<WalletSendPage> {
   static const sectionPadding = EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0);
 
-  late final CachedFuture<List<CameraDescription>> cameras;
-
   late final AddressInputController addressModel;
   late final FeeRateController feeRateModel;
   late final AmountAvaliableController amountAvaliable;
   late final AmountInputController amountModel;
-
   UnsignedTx? unsignedTx;
   final selectedDevicesModel = SelectedDevicesController();
   final signingSession = SigningSessionController();
-
   var pageIndex = SendPageIndex.recipient;
   late final ScrollController _scrollController;
   late final ValueNotifier<bool> _isAtEnd;
-
   late final Widget _recipientDoneButton;
+
   _initRecipientDoneButton() {
     _recipientDoneButton = ListenableBuilder(
       listenable: addressModel,
@@ -94,7 +88,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
   @override
   void initState() {
     super.initState();
-
     _isAtEnd = ValueNotifier(true);
     _scrollController = widget.scrollController ?? ScrollController();
     _scrollController.addListener(() {
@@ -103,10 +96,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
           _scrollController.position.pixels ==
               _scrollController.position.maxScrollExtent;
     });
-
-    cameras = CachedFuture(
-      availableCameras().catchError((e) => <CameraDescription>[]),
-    );
 
     addressModel = AddressInputController();
     feeRateModel = FeeRateController(satsPerVB: 5.0);
@@ -578,23 +567,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
   recipientScan(BuildContext context) async {
     final addressResult = await showDialog<String>(
       context: context,
-      builder: (context) => FutureBuilder<List<CameraDescription>>(
-        future: cameras.value,
-        builder: (context, snapshot) => BackdropFilter(
-          filter: blurFilter,
-          child: Dialog(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: 580),
-              child: (snapshot.hasData)
-                  ? SendScanBody(
-                      cameras: snapshot.requireData,
-                      initialSelected: 0,
-                    )
-                  : SizedBox(),
-            ),
-          ),
-        ),
-      ),
+      builder: (context) => AddressScanner(),
     );
     if (!context.mounted || addressResult == null) return;
     addressModel.controller.text = addressResult;
