@@ -7,7 +7,7 @@ edition = "2024"
 prefill-words = []
 
 [dependencies]
-frostsnap_widgets = { workspace = true }
+frostsnap_widgets = { workspace = true, features = ["std"] }
 frostsnap_core.workspace = true
 embedded-graphics.workspace = true
 embedded-graphics-simulator = "0.6.0"

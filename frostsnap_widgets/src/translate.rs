@@ -47,6 +47,10 @@ pub struct Translate<W: Widget> {
     current_bitmap: VecFramebuffer<BinaryColor>,
     /// Cached constraints
     constraints: Option<Size>,
+    /// Offset of the dirty rect within the child's full area
+    dirty_rect_offset: Point,
+    /// The child's dirty rect (cached from set_constraints)
+    child_dirty_rect: Rectangle,
 }
 
 impl<W: Widget> Translate<W>
@@ -67,6 +71,8 @@ where
             animation_speed: AnimationSpeed::Linear,
             background_color,
             constraints: None,
+            dirty_rect_offset: Point::zero(),
+            child_dirty_rect: Rectangle::zero(),
         }
     }
 
@@ -187,12 +193,17 @@ where
         self.constraints = Some(max_size);
         self.child.set_constraints(max_size);
 
-        // Reinitialize bitmaps with the child's actual size
-        let child_size: Size = self.child.sizing().into();
+        // Use the child's dirty_rect if available, otherwise fall back to full sizing
+        let child_sizing = self.child.sizing();
+        let dirty_rect = child_sizing.dirty_rect();
+        let (buffer_size, offset) = (dirty_rect.size, dirty_rect.top_left);
+
+        self.dirty_rect_offset = offset;
+        self.child_dirty_rect = dirty_rect;
         self.previous_bitmap =
-            VecFramebuffer::new(child_size.width as usize, child_size.height as usize);
+            VecFramebuffer::new(buffer_size.width as usize, buffer_size.height as usize);
         self.current_bitmap =
-            VecFramebuffer::new(child_size.width as usize, child_size.height as usize);
+            VecFramebuffer::new(buffer_size.width as usize, buffer_size.height as usize);
     }
 
     fn sizing(&self) -> crate::Sizing {
@@ -242,15 +253,18 @@ where
             // Calculate offset difference
             let diff_offset = offset - self.current_offset;
 
-            // Create a translated SuperDrawTarget
+            // Create a translated SuperDrawTarget for the animation offset only
             let translated_target = target.clone().translate(offset);
 
             // Wrap it in TranslatorDrawTarget for pixel tracking
+            // The TranslatorDrawTarget will handle converting screen coords to bitmap coords
             let translator = TranslatorDrawTarget {
                 inner: translated_target,
                 current_bitmap: &mut self.current_bitmap,
                 previous_bitmap: &mut self.previous_bitmap,
                 diff_offset,
+                dirty_rect_offset: self.dirty_rect_offset,
+                dirty_rect: self.child_dirty_rect,
             };
 
             // Wrap the TranslatorDrawTarget in another SuperDrawTarget
@@ -260,9 +274,11 @@ where
             self.child.draw(&mut outer_target, current_time)?;
 
             // Clear any remaining pixels from the previous bitmap
+            let dirty_rect_offset = self.dirty_rect_offset;
             let clear_pixels = self.previous_bitmap.on_pixels().map(|point| {
                 // Translate bitmap coordinates to screen coordinates
-                let screen_point = point + self.current_offset;
+                // First add the dirty_rect offset, then the current animation offset
+                let screen_point = point + dirty_rect_offset + self.current_offset;
                 Pixel(screen_point, self.background_color)
             });
             target.draw_iter(clear_pixels)?;
@@ -271,7 +287,7 @@ where
             core::mem::swap(&mut self.previous_bitmap, &mut self.current_bitmap);
             self.current_offset = offset;
         } else {
-            // No movement - just draw normally
+            // No movement - just draw normally with animation offset
             let mut translated_target = target.clone().translate(offset);
             self.child.draw(&mut translated_target, current_time)?;
         }
@@ -290,6 +306,8 @@ where
     current_bitmap: &'a mut VecFramebuffer<BinaryColor>,
     previous_bitmap: &'a mut VecFramebuffer<BinaryColor>,
     diff_offset: Point,
+    dirty_rect_offset: Point,
+    dirty_rect: Rectangle,
 }
 
 impl<'a, D, C> DrawTarget for TranslatorDrawTarget<'a, D, C>
@@ -307,22 +325,36 @@ where
         let current_bitmap = &mut self.current_bitmap;
         let previous_bitmap = &mut self.previous_bitmap;
         let diff_offset = self.diff_offset;
+        let dirty_rect_offset = self.dirty_rect_offset;
+        let dirty_rect = self.dirty_rect;
 
-        self.inner
-            .draw_iter(pixels.into_iter().inspect(|Pixel(point, _color)| {
-                // Mark this pixel as drawn in the current bitmap
-                VecFramebuffer::<BinaryColor>::set_pixel(current_bitmap, *point, BinaryColor::On);
+        self.inner.draw_iter(
+            pixels
+                .into_iter()
+                .filter(move |Pixel(point, _)| {
+                    // Only draw pixels that are within the dirty_rect
+                    dirty_rect.contains(*point)
+                })
+                .inspect(|Pixel(point, _color)| {
+                    // Convert screen coordinates to bitmap coordinates
+                    let bitmap_point = *point - dirty_rect_offset;
 
-                // Clear this pixel from the previous bitmap (offset by diff_offset)
-                let prev_point = *point + diff_offset;
-                if prev_point.x >= 0 && prev_point.y >= 0 {
+                    // Mark this pixel as drawn in the current bitmap
+                    VecFramebuffer::<BinaryColor>::set_pixel(
+                        current_bitmap,
+                        bitmap_point,
+                        BinaryColor::On,
+                    );
+
+                    // Clear this pixel from the previous bitmap (offset by diff_offset)
+                    let prev_bitmap_point = bitmap_point + diff_offset;
                     VecFramebuffer::<BinaryColor>::set_pixel(
                         previous_bitmap,
-                        prev_point,
+                        prev_bitmap_point,
                         BinaryColor::Off,
                     );
-                }
-            }))
+                }),
+        )
     }
 }
 

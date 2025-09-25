@@ -8,6 +8,9 @@ use ui::UserInteraction;
 #[macro_use]
 extern crate alloc;
 
+/// Display refresh frequency in milliseconds (25ms = 40 FPS)
+pub const DISPLAY_REFRESH_MS: u64 = 25;
+
 /// Log macro for debug logging
 #[macro_export]
 macro_rules! log {
