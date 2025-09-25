@@ -323,12 +323,11 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         &mut self,
         message: CoordinatorToDeviceMessage,
         rng: &mut impl rand_core::RngCore,
-        device_hmac: &mut impl DeviceSecretDerivation,
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match message.clone() {
             Signing(signing::CoordinatorSigning::OpenNonceStreams { streams }) => {
-                let mut segments = vec![];
+                let mut tasks = vec![];
                 // we need to order prioritize streams that already exist since not getting a
                 // response to this message the coordinator will think that everything is ok.
                 let (existing, new): (Vec<_>, Vec<_>) = streams
@@ -343,25 +342,27 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     let slot = self
                         .nonce_slots
                         .get_or_create(coord_stream_state.stream_id, rng);
-                    if let Some(segment) = slot.reconcile_coord_nonce_stream_state(
+                    if let Some(task) = slot.reconcile_coord_nonce_stream_state(
                         coord_stream_state,
-                        device_hmac,
                         self.nonce_batch_size,
                     ) {
-                        segments.push(segment);
+                        tasks.push(task);
                     }
                 }
 
-                // we always send a response regardless if the segments are empty
-                // so that the coordinator can track UI progress.
-                let send = {
-                    Some(DeviceSend::ToCoordinator(Box::new(
+                // If there are no tasks, send empty response immediately
+                // Otherwise, send tasks for async processing
+                if tasks.is_empty() {
+                    Ok(vec![DeviceSend::ToCoordinator(Box::new(
                         DeviceToCoordinatorMessage::Signing(
-                            signing::DeviceSigning::NonceResponse { segments },
+                            signing::DeviceSigning::NonceResponse { segments: vec![] },
                         ),
-                    )))
-                };
-                Ok(send.into_iter().collect())
+                    ))])
+                } else {
+                    Ok(vec![DeviceSend::ToUser(Box::new(
+                        DeviceToUserMessage::NonceJobs(device_nonces::NonceJobBatch::new(tasks)),
+                    ))])
+                }
             }
             KeyGen(keygen_msg) => match keygen_msg {
                 self::Keygen::Begin(begin) => {
@@ -817,7 +818,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 (derived_xonly_key, session)
             });
 
-        let (signature_shares, replenish_nonces) = self
+        let (signature_shares, replenish_task) = self
             .nonce_slots
             .sign_guaranteeing_nonces_destroyed(
                 session_id,
@@ -827,6 +828,14 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 self.nonce_batch_size,
             )
             .map_err(|e| ActionError::StateInconsistent(e.to_string()))?;
+
+        // Run the replenishment task synchronously if present
+        let replenish_nonces = if let Some(mut task) = replenish_task {
+            task.run_until_finished(symm_keygen);
+            Some(task.into_segment())
+        } else {
+            None
+        };
 
         Ok(vec![DeviceSend::ToCoordinator(Box::new(
             DeviceToCoordinatorMessage::Signing(signing::DeviceSigning::SignatureShare {
