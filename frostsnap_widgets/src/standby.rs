@@ -2,7 +2,7 @@ use crate::{
     bitmap::EncodedImage, device_name::DeviceName, icons::IconWidget, image::Image,
     palette::PALETTE, prelude::*, share_index::ShareIndexWidget, vec_framebuffer::VecFramebuffer,
 };
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
 use embedded_iconoir::prelude::IconoirNewIcon;
 use frostsnap_core::message::HeldShare;
@@ -53,7 +53,7 @@ impl Standby {
         let wallet_icon = IconWidget::new(embedded_iconoir::icons::size24px::finance::Wallet::new(
             PALETTE.on_surface_variant,
         ));
-        let key_text = Text::new(held_share.key_name.clone(), key_style);
+        let key_text = Text::new(held_share.key_name.to_string(), key_style);
 
         let key_row = Row::builder().push(wallet_icon).gap(8).push(key_text);
 
