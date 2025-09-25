@@ -17,6 +17,7 @@ use frostsnap_comms::{
 };
 use frostsnap_core::{
     device::{DeviceToUserMessage, FrostSigner},
+    device_nonces::NonceJobBatch,
     message::{self, DeviceSend},
 };
 use frostsnap_embedded::NonceAbSlot;
@@ -115,6 +116,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
     let mut sends_user: Vec<DeviceToUserMessage> = vec![];
     let mut outbox = VecDeque::new();
+    let mut nonce_task_batch: Option<NonceJobBatch> = None;
     let mut inbox: Vec<CoordinatorSendBody> = vec![];
     let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
     let mut magic_bytes_timeout_counter = 0;
@@ -155,6 +157,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             upgrade = None;
             pending_device_name = None;
             outbox.clear();
+            nonce_task_batch = None;
         }
 
         let is_usb_connected_downstream = !downstream_detect.is_high();
@@ -391,11 +394,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     }
                     outbox.extend(
                         signer
-                            .recv_coordinator_message(
-                                core_message.clone(),
-                                rng,
-                                &mut hmac_keys.share_encryption,
-                            )
+                            .recv_coordinator_message(core_message.clone(), rng)
                             .expect("failed to process coordinator message"),
                     );
                 }
@@ -445,6 +444,23 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 upstream_connection
                     .send_debug(format!("core mutations took {}ms", after.to_millis()));
             }
+        }
+
+        // 🎯 Poll nonce job batch - process one nonce per iteration
+        if let Some(batch) = nonce_task_batch.as_mut() {
+            log!("start");
+            if batch.do_work(&mut hmac_keys.share_encryption) {
+                log!("finish");
+                // Batch completed, send the response with all segments
+                let completed_batch = nonce_task_batch.take().unwrap();
+                let segments = completed_batch.into_segments();
+                outbox.push_back(DeviceSend::ToCoordinator(Box::new(
+                    message::DeviceToCoordinatorMessage::Signing(
+                        message::signing::DeviceSigning::NonceResponse { segments },
+                    ),
+                )));
+            }
+            log!("done");
         }
 
         // Handle message outbox to send
@@ -525,6 +541,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                     ui.set_workflow(default_workflow!(name, signer));
                                 }
                             }
+                        }
+                        DeviceToUserMessage::NonceJobs(batch) => {
+                            // 🚀 Set the batch for processing
+                            nonce_task_batch = Some(batch);
                         }
                     };
                 }

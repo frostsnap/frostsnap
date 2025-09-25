@@ -3,7 +3,6 @@ use crate::{
     nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment},
     SignSessionId, Versioned,
 };
-use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use chacha20::{
     cipher::{KeyIvInit, StreamCipher},
@@ -15,6 +14,125 @@ use schnorr_fun::{
     frost::{NonceKeyPair, PairedSecretShare, PartySignSession, SignatureShare},
     fun::prelude::*,
 };
+
+/// A job that generates nonces incrementally, can be polled for work
+#[derive(Clone, Debug)]
+pub struct NonceJob {
+    pub stream_id: NonceStreamId,
+    seed_material: RatchetSeedMaterial,
+    index: u32,
+    target_index: u32,
+    nonces: Vec<binonce::Nonce>,
+    skip_to: u32,
+}
+
+impl NonceJob {
+    /// Do one unit of work - generate a single binonce
+    pub fn do_work(&mut self, device_hmac: &mut impl DeviceSecretDerivation) -> bool {
+        if self.index >= self.target_index {
+            return true;
+        }
+
+        let current_index = self.index;
+
+        // Derive actual nonce seed from material AND eFuse HMAC
+        let actual_seed_bytes =
+            device_hmac.derive_nonce_seed(self.stream_id, current_index, &self.seed_material);
+        let actual_seed = ChaChaSeed::from_bytes(actual_seed_bytes);
+
+        let mut chacha_nonce = [0u8; 12];
+        chacha_nonce[0..core::mem::size_of_val(&current_index)]
+            .copy_from_slice(current_index.to_le_bytes().as_ref());
+        let mut chacha = ChaCha20::new(actual_seed.as_bytes().into(), &chacha_nonce.into());
+
+        // Generate the next seed material (ratchet forward)
+        let mut next_seed_material = [0u8; 32];
+        chacha.apply_keystream(&mut next_seed_material);
+
+        let mut secret_nonce_bytes = [0u8; 64];
+        chacha.apply_keystream(&mut secret_nonce_bytes);
+        let secret_nonce = binonce::SecretNonce::from_bytes(secret_nonce_bytes)
+            .expect("computationally unreachable");
+
+        // Update state for next iteration
+        self.seed_material = next_seed_material;
+        self.index += 1;
+
+        // NOTE: This guard means that some do_work calls will go much faster
+        // than others but that's ok. The point of do_work is create an upper
+        // bound on how much work can be done at a time.
+        if current_index >= self.skip_to {
+            self.nonces
+                .push(NonceKeyPair::from_secret(secret_nonce).public());
+        }
+
+        self.index >= self.target_index
+    }
+
+    /// Run the task synchronously until completion
+    pub fn run_until_finished(&mut self, device_hmac: &mut impl DeviceSecretDerivation) {
+        while !self.do_work(device_hmac) {}
+    }
+
+    /// Convert completed task into a NonceStreamSegment
+    pub fn into_segment(self) -> NonceStreamSegment {
+        assert!(
+            self.index >= self.target_index,
+            "into_segment called on unfinished NonceJob (generated {}/{} nonces)",
+            self.index - self.skip_to,
+            self.target_index - self.skip_to
+        );
+        NonceStreamSegment {
+            stream_id: self.stream_id,
+            index: self.skip_to,
+            nonces: self.nonces.into(),
+        }
+    }
+}
+
+/// A batch of nonce generation jobs that will produce a single NonceResponse
+#[derive(Clone, Debug)]
+pub struct NonceJobBatch {
+    tasks: Vec<NonceJob>,
+    current_task_index: usize,
+}
+
+impl NonceJobBatch {
+    pub fn new(tasks: Vec<NonceJob>) -> Self {
+        Self {
+            tasks,
+            current_task_index: 0,
+        }
+    }
+
+    /// Do one unit of work - generate a single nonce from the current task
+    pub fn do_work(&mut self, device_hmac: &mut impl DeviceSecretDerivation) -> bool {
+        if let Some(task) = self.tasks.get_mut(self.current_task_index) {
+            if task.do_work(device_hmac) {
+                // Current task finished, move to next
+                self.current_task_index += 1;
+            }
+        }
+        // Return true when ALL tasks are complete
+        self.current_task_index >= self.tasks.len()
+    }
+
+    /// Run all tasks synchronously until completion
+    pub fn run_until_finished(&mut self, device_hmac: &mut impl DeviceSecretDerivation) {
+        while !self.do_work(device_hmac) {}
+    }
+
+    /// Convert completed batch into NonceStreamSegments
+    pub fn into_segments(self) -> Vec<NonceStreamSegment> {
+        assert!(
+            self.current_task_index >= self.tasks.len(),
+            "into_segments called on unfinished NonceJobBatch ({}/{} tasks complete)",
+            self.current_task_index,
+            self.tasks.len()
+        );
+        self.tasks.into_iter().map(|t| t.into_segment()).collect()
+    }
+}
 
 /// Raw seed material that gets ratcheted forward and stored between uses.
 /// This is passed through HMAC to derive the actual ChaChaSeed.
@@ -85,17 +203,16 @@ pub trait NonceStreamSlot {
     fn reconcile_coord_nonce_stream_state(
         &mut self,
         state: CoordNonceStreamState,
-        device_hmac: &mut impl DeviceSecretDerivation,
         nonce_batch_size: u32,
-    ) -> Option<NonceStreamSegment> {
+    ) -> Option<NonceJob> {
         let value = self.read_slot()?;
         let our_index = value.index;
         if our_index > state.index || state.remaining < nonce_batch_size {
-            Some(value.nonce_segment(None, nonce_batch_size as usize, device_hmac))
+            Some(value.nonce_task(None, nonce_batch_size as usize))
         } else if our_index == state.index {
             None
         } else {
-            Some(value.nonce_segment(None, (state.index - our_index) as usize, device_hmac))
+            Some(value.nonce_task(None, (state.index - our_index) as usize))
         }
     }
 
@@ -111,7 +228,7 @@ pub trait NonceStreamSlot {
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
         device_hmac: &mut impl DeviceSecretDerivation,
         nonce_batch_size: u32,
-    ) -> Result<(Vec<SignatureShare>, Option<NonceStreamSegment>), NoncesUnavailable> {
+    ) -> Result<(Vec<SignatureShare>, Option<NonceJob>), NoncesUnavailable> {
         let slot_value = self
             .read_slot()
             .expect("cannot sign with uninitialized slot");
@@ -190,11 +307,8 @@ pub trait NonceStreamSlot {
             .expect("guaranteed")
             .signature_shares;
 
-        let replenishment = self.reconcile_coord_nonce_stream_state(
-            coord_nonce_state,
-            device_hmac,
-            nonce_batch_size,
-        );
+        let replenishment =
+            self.reconcile_coord_nonce_stream_state(coord_nonce_state, nonce_batch_size);
         Ok((signature_shares, replenishment))
     }
 }
@@ -225,7 +339,7 @@ impl<S: NonceStreamSlot> AbSlots<S> {
         sessions: impl IntoIterator<Item = (PairedSecretShare<EvenY>, PartySignSession)>,
         device_hmac: &mut impl DeviceSecretDerivation,
         nonce_batch_size: u32,
-    ) -> Result<(Vec<SignatureShare>, Option<NonceStreamSegment>), NoncesUnavailable> {
+    ) -> Result<(Vec<SignatureShare>, Option<NonceJob>), NoncesUnavailable> {
         let last_used = self.last_used + 1;
         let slot = self
             .get(coord_nonce_state.stream_id)
@@ -361,12 +475,7 @@ impl SecretNonceSlot {
         Ok(())
     }
 
-    pub fn nonce_segment(
-        &self,
-        start: Option<u32>,
-        length: usize,
-        device_hmac: &mut impl DeviceSecretDerivation,
-    ) -> NonceStreamSegment {
+    pub fn nonce_task(&self, start: Option<u32>, length: usize) -> NonceJob {
         let start = start.unwrap_or(self.index);
         if start < self.index {
             panic!("can't iterate erased nonces");
@@ -376,28 +485,16 @@ impl SecretNonceSlot {
             panic!("cannot have an index at u32::MAX");
         }
 
-        let nonces = self
-            .iter_pub_nonces(device_hmac)
-            .skip((start - self.index) as _)
-            .map(|(_, nonce)| nonce)
-            .take(length)
-            .collect::<VecDeque<_>>();
-        assert_eq!(nonces.len(), length, "there weren't enough nonces for that");
-
-        NonceStreamSegment {
+        NonceJob {
             stream_id: self.nonce_stream_id,
-            index: start,
-            nonces,
+            seed_material: self.ratchet_prg_seed_material,
+            // Start from the slot's current index, not the requested start
+            // The task will skip forward as needed
+            index: self.index,
+            target_index: last,
+            nonces: Vec::with_capacity(length),
+            skip_to: start,
         }
-    }
-    pub fn iter_pub_nonces<'a>(
-        &'a self,
-        device_hmac: &'a mut impl DeviceSecretDerivation,
-    ) -> impl Iterator<Item = (u32, binonce::Nonce)> + 'a {
-        self.iter_secret_nonces(device_hmac)
-            .map(|(index, secret_nonce, _)| {
-                (index, NonceKeyPair::from_secret(secret_nonce).public())
-            })
     }
 }
 

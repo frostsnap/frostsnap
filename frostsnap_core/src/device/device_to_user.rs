@@ -1,3 +1,4 @@
+use crate::device_nonces::NonceJobBatch;
 use bitcoin::{address::NetworkChecked, Address};
 use tweak::BitcoinBip32Path;
 
@@ -21,4 +22,5 @@ pub enum DeviceToUserMessage {
         bip32_path: BitcoinBip32Path,
     },
     Restoration(restoration::ToUserRestoration),
+    NonceJobs(NonceJobBatch),
 }
