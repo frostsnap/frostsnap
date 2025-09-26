@@ -645,15 +645,15 @@ class DeleteWalletPage extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium!,
             child: BulletList(const [
               Text(
-                'This only deletes the wallet from this app.',
+                'This only deletes knowledge of the wallet from this app.',
                 softWrap: true,
               ),
               Text(
-                'No secret keys will be deleted from devices',
+                'No secret keys will be deleted from devices.',
                 softWrap: true,
               ),
               Text(
-                'The wallet can still be restored from Frostsnap devices and/or backups.',
+                'The wallet can be restored from Frostsnap devices and/or backups.',
                 softWrap: true,
               ),
             ]),
