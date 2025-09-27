@@ -21,7 +21,10 @@ pub const FACTORY_PUBLIC_KEY: [u8; 32] = [
     0x7c, 0x4f, 0x70, 0x0c, 0x38, 0xfa, 0xe4, 0xeb, 0xac, 0x03, 0x40, 0x9d, 0x7d, 0x46, 0xea, 0x0b,
 ];
 
-pub const BAUDRATE: u32 = 115_200;
+/// We choose this baudrate because esp32c3 freezes interrupts during flash
+/// erase cycles somtimes ~30ms. This is slow enough that the 128 byte uart
+/// FIFOs don't overlfow in that time.
+pub const BAUDRATE: u32 = 19_200;
 /// Magic bytes are 7 bytes in length so when the bincode prefixes it with `00` it is 8 bytes long.
 /// A nice round number here is desirable (but not strictly necessary) because TX and TX buffers
 /// will be some multiple of 8 and so it should overflow the ring buffers neatly.
