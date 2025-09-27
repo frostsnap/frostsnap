@@ -12,7 +12,7 @@ pub const QUEUE_CAPACITY: usize = 8192;
 
 /// Type alias for the UART byte receiver
 pub type UartReceiver = Consumer<'static, u8, QUEUE_CAPACITY>;
-pub const RX_FIFO_THRESHOLD: u16 = 96;
+pub const RX_FIFO_THRESHOLD: u16 = 32;
 
 /// Number of UARTs supported
 const NUM_UARTS: usize = 2;
