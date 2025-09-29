@@ -488,7 +488,7 @@ impl CoordSuperWallet {
 
         match cs.run_bnb(metric, 500_000) {
             Err(_) => {
-                event!(Level::ERROR, "unable to find a slection with lowest fee");
+                event!(Level::ERROR, "unable to find a selection with lowest fee");
                 cs.select_until_target_met(target)?;
             }
             Ok(score) => {
