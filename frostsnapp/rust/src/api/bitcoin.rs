@@ -52,8 +52,8 @@ pub trait BitcoinNetworkExt {
     #[frb(sync)]
     fn from_string(string: String) -> Option<BitcoinNetwork>;
 
-    #[frb(sync)]
-    fn validate_destination_address(&self, address: String) -> Option<String>;
+    #[frb(sync, type_64bit_int)]
+    fn validate_destination_address(&self, uri: String) -> Result<(String, Option<u64>), String>;
 
     #[frb(sync)]
     fn default_electrum_server(&self) -> String;
@@ -97,14 +97,24 @@ impl BitcoinNetworkExt for BitcoinNetwork {
         descriptor.to_string()
     }
 
-    #[frb(sync)]
-    fn validate_destination_address(&self, address: String) -> Option<String> {
-        match bitcoin::Address::from_str(&address) {
-            Ok(address) => match address.require_network(*self) {
-                Ok(_) => None,
-                Err(e) => Some(e.to_string()),
-            },
-            Err(e) => Some(e.to_string()),
+    #[frb(sync, type_64bit_int)]
+    fn validate_destination_address(&self, uri: String) -> Result<(String, Option<u64>), String> {
+        // Try parsing as BIP21 URI first
+        if let Ok(parsed) = uri.parse::<bip21::Uri<bitcoin::address::NetworkUnchecked>>() {
+            let amount = parsed.amount.map(|amt| amt.to_sat());
+            let address = parsed
+                .address
+                .require_network(*self)
+                .map_err(|e| format!("Wrong network: {}", e))?;
+            Ok((address.to_string(), amount))
+        } else {
+            // Not a URI -- try as plain address
+            let address = bitcoin::Address::from_str(&uri)
+                // Rust-bitcoin ParseError is generally inappropriate "legacy address base58 string"
+                .map_err(|_| format!("Invalid address"))?
+                .require_network(*self)
+                .map_err(|e| format!("Wrong network: {}", e))?;
+            Ok((address.to_string(), None))
         }
     }
 

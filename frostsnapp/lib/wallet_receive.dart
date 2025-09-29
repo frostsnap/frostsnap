@@ -251,7 +251,8 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   QrImage addressQrImage(AddressInfo address) {
     final qrCode = QrCode(8, QrErrorCorrectLevel.L);
-    qrCode.addData(address.address.toString());
+    // we don't use any other BIP21 params yet
+    qrCode.addData('bitcoin:${address.address}');
     return QrImage(qrCode);
   }
 
