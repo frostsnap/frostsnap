@@ -1,0 +1,12 @@
+name: Free Disk Space
+runs:
+  using: composite
+  steps:
+    - uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: false
+        dotnet: true
+        haskell: true
+        large-packages: false
+        swap-storage: false
