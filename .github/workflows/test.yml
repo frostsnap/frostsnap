@@ -74,6 +74,7 @@ jobs:
     needs: ["build-device-firmware"]
     steps:
       - uses: actions/checkout@v4
+      - uses: "./.github/actions/free-disk-space"
       - uses: "./.github/actions/set-up-app-build"
       - uses: "./.github/actions/cache-rust-target"
         with:
