@@ -12,21 +12,22 @@ import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
 
 const satoshisInOneBtc = 100000000;
 
 class AddressInputController with ChangeNotifier {
   late final TextEditingController controller;
+  late final BuildTxState state;
 
   String? _errorText;
   String? _lastSubmitted;
-  int? _amount;
-  Address? _address;
 
-  AddressInputController() {
+  AddressInputController(BuildTxState state) {
     controller = TextEditingController();
     controller.addListener(onTextEdit);
+    this.state = state;
   }
 
   @override
@@ -42,34 +43,21 @@ class AddressInputController with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> submit(WalletContext walletContext) async {
+  Address? submit(BitcoinNetwork network, int recipient) {
+    // TODO: There is the URI thing we're not doing here.
     _lastSubmitted = controller.text;
-
-    try {
-      final result = await walletContext.network.validateDestinationAddress(
-        uri: controller.text,
-      );
-      _errorText = null;
-      _address = result.address;
-      _amount = result.amount;
-    } catch (e) {
-      _errorText = e.toString();
-      _address = null;
-      _amount = null;
+    final addr = Address.fromString(s: controller.text, network: network);
+    if (addr == null) {
+      _errorText = 'Invalid address';
+      return null;
     }
-
+    state.setAddress(recipient: recipient, address: addr);
+    // We always notify listeners on submit (dont' check for changes) for simplicity and safety.
     notifyListeners();
-    return _errorText == null;
+    return addr;
   }
 
   String? get errorText => _errorText;
-
-  Address? get address => _address;
-
-  int? get amount => _amount;
-
-  String get formattedAddress =>
-      spacedHex(address?.toString() ?? controller.text, groupSize: 4);
 }
 
 final defaultTextInputBorder = OutlineInputBorder(
@@ -127,12 +115,7 @@ class AddressInput extends StatelessWidget {
 
 enum AmountUnit {
   satoshi(suffixText: ' sat', hintText: '0', hasDecimal: false),
-  bitcoin(
-    suffixText: ' \u20BF',
-    //suffixText: ' bitcoin',
-    hintText: '0.0',
-    hasDecimal: true,
-  );
+  bitcoin(suffixText: ' \u20BF', hintText: '0.0', hasDecimal: true);
 
   const AmountUnit({
     required this.suffixText,
@@ -154,209 +137,18 @@ enum AmountUnit {
   }
 }
 
-class FeeRateController with ChangeNotifier {
-  double _satsPerVB;
-  bool _estimateRunning = false;
-  Future<bool>? _estimateFut;
-
-  FeeRateController({double satsPerVB = 5.0}) : _satsPerVB = satsPerVB;
-
-  @override
-  void dispose() {
-    _estimateFut?.ignore();
-    super.dispose();
-  }
-
-  bool get estimateRunning => _estimateRunning;
-  Future<bool> refreshEstimates(
-    BuildContext context,
-    WalletContext walletContext,
-    int? setFeeRateToTargetBlocks,
-  ) async {
-    _estimateFut?.ignore();
-    _estimateFut = _refreshEstimates(
-      context,
-      walletContext,
-      setFeeRateToTargetBlocks,
-    );
-    return await _estimateFut!;
-  }
-
-  Future<bool> _refreshEstimates(
-    BuildContext context,
-    WalletContext walletContext,
-    int? setFeeRateToTargetBlocks,
-  ) async {
-    if (context.mounted) {
-      _estimateRunning = true;
-      notifyListeners();
-    } else {
-      return false;
-    }
-    try {
-      // Map of feerate(sat/vB) to target blocks.
-      var priorityMap = HashMap<int, int>();
-      final list = await walletContext.wallet.superWallet.estimateFee(
-        targetBlocks: [1, 2, 3],
-      );
-      for (final elem in list) {
-        final (target, feerate) = elem;
-        final oldTarget = priorityMap[feerate];
-        if (oldTarget == null || oldTarget > target) {
-          priorityMap[feerate] = target;
-        }
-      }
-      if (context.mounted) {
-        _priorityMap.clear();
-        _priorityMap.addEntries(
-          priorityMap.entries.map((e) => MapEntry(e.value, e.key.toDouble())),
-        );
-        if (setFeeRateToTargetBlocks != null) {
-          final feeRateAtTarget = _priorityMap[setFeeRateToTargetBlocks];
-          if (feeRateAtTarget != null) {
-            _satsPerVB = feeRateAtTarget;
-          }
-        }
-        _estimateRunning = false;
-        notifyListeners();
-      }
-      return true;
-    } catch (e) {
-      if (context.mounted) {
-        _estimateRunning = false;
-        notifyListeners();
-      }
-      return false;
-    }
-  }
-
-  /// Feerate in sats/vb.
-  double get satsPerVB => _satsPerVB;
-  set satsPerVB(double value) {
-    if (value == _satsPerVB) return;
-    _satsPerVB = value;
-    notifyListeners();
-  }
-
-  /// Map of target blocks to feerate (sats/vb).
-  final _priorityMap = SplayTreeMap<int, double>((a, b) => a.compareTo(b));
-
-  Iterable<(int target, double satsPerVB)> get priorityBySatsPerVB =>
-      _priorityMap.entries.map((entry) => (entry.key, entry.value));
-
-  set priorityBySatsPerVB(Iterable<(int target, double satsPerVB)> records) {
-    _priorityMap.clear();
-    for (final record in records) {
-      _priorityMap[record.$1] = record.$2;
-    }
-    notifyListeners();
-  }
-
-  set priorityByBtcPerVB(Iterable<(int target, double btcPerVB)> records) {
-    _priorityMap.clear();
-    for (final record in records) {
-      _priorityMap[record.$1] = record.$2 * satoshisInOneBtc;
-    }
-    notifyListeners();
-  }
-
-  int? targetBlocksFromSatsPerVB(double satsPerVB) {
-    int? targetBlocks;
-    for (final record in priorityBySatsPerVB.toList().reversed) {
-      if (record.$2 <= satsPerVB) {
-        targetBlocks = record.$1;
-      } else {
-        break;
-      }
-    }
-    return targetBlocks;
-  }
-
-  int? get targetBlocks => targetBlocksFromSatsPerVB(_satsPerVB);
-
-  int? get targetTime {
-    final targetBlocks = this.targetBlocks;
-    if (targetBlocks == null) return null;
-    return targetBlocks * 10;
-  }
-}
-
-/// Model that tracks avaliable bitcoin.
-class AmountAvaliableController extends ValueNotifier<int?> {
-  WalletContext? _walletContext;
-  List<Address> _targetAddresses = [];
-  int _targetAmount = 0;
-
-  final FeeRateController feeRateController;
-
-  AmountAvaliableController({required this.feeRateController}) : super(null) {
-    onFeeRateChanged();
-    feeRateController.addListener(onFeeRateChanged);
-  }
-
-  @override
-  void dispose() {
-    isDisposing = true;
-    _calculateAvaliableFut?.ignore();
-    feeRateController.removeListener(onFeeRateChanged);
-    super.dispose();
-  }
-
-  void onFeeRateChanged() => recalculate();
-
-  set walletContext(WalletContext value) {
-    _walletContext = value;
-    recalculate();
-  }
-
-  set targetAddresses(List<Address> value) {
-    _targetAddresses = value;
-    recalculate();
-  }
-
-  /// Only use this for more than 1 recipient.
-  set targetAmount(int value) {
-    _targetAmount = value;
-    recalculate();
-  }
-
-  bool isDisposing = false;
-  Future? _calculateAvaliableFut;
-
-  void recalculate() {
-    _calculateAvaliableFut?.ignore();
-    _calculateAvaliableFut = _calculateAvaliable();
-    _calculateAvaliableFut?.then((maybeNewValue) {
-      if (isDisposing || maybeNewValue == null) return;
-      var newValue = (maybeNewValue < 0) ? 0 : maybeNewValue;
-      if (newValue == value) return;
-      value = newValue;
-    });
-  }
-
-  Future<int?> _calculateAvaliable() async {
-    if (_walletContext == null) return null;
-    return await _walletContext!.wallet.superWallet.calculateAvaliable(
-          masterAppkey: _walletContext!.masterAppkey,
-          targetAddresses: _targetAddresses,
-          feerate: feeRateController.satsPerVB,
-        ) -
-        _targetAmount;
-  }
-}
-
 class AmountInputController with ChangeNotifier {
+  final BuildTxState state;
+
   AmountInputController({
-    required AmountAvaliableController amountAvailableController,
+    required BuildTxState state,
     AmountUnit unit = AmountUnit.satoshi,
     int? amount,
     String? error,
   }) : _unit = unit,
        _amount = amount,
-       _textError = error {
-    _amountAvailableController = amountAvailableController;
-    _amountAvailableController.addListener(onAmountAvailableChanged);
-
+       _textError = error,
+       this.state = state {
     _textEditingController = TextEditingController();
     _textEditingController.addListener(
       () => amountText = _textEditingController.text,
@@ -365,37 +157,9 @@ class AmountInputController with ChangeNotifier {
 
   @override
   void dispose() {
-    _amountAvailableController.removeListener(onAmountAvailableChanged);
     _textEditingController.dispose();
     super.dispose();
   }
-
-  void onAmountAvailableChanged() {
-    final avaliableErrorChanged = updateAvailableError();
-
-    // Clear custom error when avaliable amount changes.
-    final customErrorChanged = _customError != null;
-    _customError = null;
-
-    if (avaliableErrorChanged || customErrorChanged) notifyListeners();
-  }
-
-  bool updateAvailableError() {
-    String? newAvailableError;
-    if (_amountAvailableController.value != null) {
-      final amountAvailable = _amountAvailableController.value!;
-      if (amountAvailable == 0) {
-        newAvailableError = 'No balance avaliable.';
-      } else if (_amount != null && amountAvailable < _amount!) {
-        newAvailableError = 'Exceeds max by ${_amount! - amountAvailable} sat.';
-      }
-    }
-    final isNew = newAvailableError != _availableError;
-    _availableError = newAvailableError;
-    return isNew;
-  }
-
-  late final AmountAvaliableController _amountAvailableController;
 
   late final TextEditingController _textEditingController;
   get textEditingController => _textEditingController;
@@ -412,27 +176,11 @@ class AmountInputController with ChangeNotifier {
 
   // Bitcoin amount in satoshis. The `null` value means user has not yet provided any input.
   int? _amount;
-  int? _oldAmount;
   int? get amount => _amount;
-
-  bool get sendMax =>
-      _amountAvailableController.value != null &&
-      _amountAvailableController.value != 0 &&
-      _amount != null &&
-      _amount != 0 &&
-      _amountAvailableController.value! == _amount!;
-  set sendMax(bool value) {
-    if (_amountAvailableController.value == null) return;
-    if (value) {
-      _oldAmount = _amount;
-      _amount = _amountAvailableController.value;
-      _textEditingController.text = amountText;
-      notifyListeners();
-    } else {
-      _amount = _oldAmount;
-      _textEditingController.text = amountText;
-      notifyListeners();
-    }
+  set amount(int? v) {
+    _amount = v;
+    _textEditingController.text = amountText;
+    notifyListeners();
   }
 
   // Error that can be set externally.
@@ -509,12 +257,16 @@ class AmountInputController with ChangeNotifier {
         }
     }
 
-    var isChanged = newAmount != _amount || newError != _textError;
-    _amount = newAmount;
+    if (newAmount != null) {
+      state.setAmount(recipient: 0, amount: newAmount);
+    } else {
+      state.clearAmount(recipient: 0);
+    }
+
+    var isChanged = newError != _textError;
     _textError = newError;
     _customError = null;
-    var isAvaliableErrorChanged = updateAvailableError();
-    if (isChanged || isAvaliableErrorChanged) notifyListeners();
+    if (isChanged) notifyListeners();
   }
 }
 
@@ -556,7 +308,6 @@ class AmountInput extends StatelessWidget {
         style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
         decoration: (decoration ?? InputDecoration()).copyWith(
           errorText: model.error,
-          //hintText: model.unit.hintText,
           suffixText: model.unit.suffixText,
           suffixIcon: IconButton(
             onPressed: onUnitButtonPressed,

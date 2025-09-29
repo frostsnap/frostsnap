@@ -105,6 +105,7 @@ impl BitcoinNetworkExt for BitcoinNetwork {
         descriptor.to_string()
     }
 
+    #[frb(sync)]
     fn validate_destination_address(&self, uri: String) -> Result<SendToRecipient, String> {
         let uri = uri.trim();
 
@@ -525,6 +526,9 @@ pub trait AddressExt {
 
     #[frb(sync, type_64bit_int)]
     fn bip21_uri(&self, amount: Option<u64>, label: Option<String>) -> String;
+
+    #[frb(sync)]
+    fn from_string(s: &str, network: &BitcoinNetwork) -> Option<Address>;
 }
 
 #[frb(external)]
@@ -552,6 +556,11 @@ impl AddressExt for bitcoin::Address {
         }
 
         uri.to_string()
+    }
+
+    #[frb(sync)]
+    fn from_string(s: &str, network: &BitcoinNetwork) -> Option<Self> {
+        Address::from_str(s).ok()?.require_network(*network).ok()
     }
 }
 
