@@ -281,12 +281,6 @@ impl UnsignedTx {
 }
 
 #[derive(Debug, Clone)]
-pub struct SignedTxDetails {
-    pub session_id: SignSessionId,
-    pub tx: Transaction,
-}
-
-#[derive(Debug, Clone)]
 pub struct SignedTx {
     pub signed_tx: RTransaction,
     pub unsigned_tx: UnsignedTx,
