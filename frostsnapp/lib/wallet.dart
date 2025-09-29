@@ -852,8 +852,13 @@ class WalletBottomBar extends StatelessWidget {
       await showBottomSheetOrDialog(
         context,
         title: Text('Send'),
-        builder: (context, scrollController) =>
-            walletCtx.wrap(WalletSendPage(scrollController: scrollController)),
+        builder: (context, scrollController) => walletCtx.wrap(
+          WalletSendPage(
+            scrollController: scrollController,
+            superWallet: walletCtx.superWallet,
+            masterAppkey: walletCtx.masterAppkey,
+          ),
+        ),
       );
       return;
     }

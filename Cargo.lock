@@ -3886,6 +3886,7 @@ dependencies = [
  "flutter_rust_bridge",
  "frostsnap_coordinator",
  "frostsnap_core",
+ "futures",
  "image 0.24.9",
  "lazy_static",
  "rand",

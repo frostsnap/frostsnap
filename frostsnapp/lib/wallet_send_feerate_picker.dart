@@ -1,23 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:frostsnap/src/rust/api/bitcoin.dart';
-import 'package:frostsnap/wallet_send_controllers.dart';
+import 'package:frostsnap/src/rust/api/broadcast.dart';
+import 'package:frostsnap/src/rust/api/transaction.dart';
 
-enum FeeRatePage { eta, feerate }
+enum FeeratePage { eta, feerate }
+
+enum Eta {
+  low,
+  medium,
+  high;
+
+  int get targetBlocks => switch (this) {
+    Eta.low => 3,
+    Eta.medium => 2,
+    Eta.high => 1,
+  };
+}
 
 class FeeRatePickerDialog extends StatefulWidget {
+  final BuildTxState state;
   final WalletContext walletContext;
-  final AddressInputController addressModel;
-  final FeeRateController feeRateModel;
-  final AmountInputController amountModel;
 
   const FeeRatePickerDialog({
     super.key,
     required this.walletContext,
-    required this.addressModel,
-    required this.feeRateModel,
-    required this.amountModel,
+    required this.state,
   });
 
   @override
@@ -25,161 +33,164 @@ class FeeRatePickerDialog extends StatefulWidget {
 }
 
 class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
-  late final TextEditingController _feeRateEditingController;
-  String? _feeRateEditingError;
+  // Subscription to `BuildTxState` changes.
+  late final UnitBroadcastSubscription sub;
+  // Previous state - in case caller cancels this dialog.
+  late final ConfirmationTarget prevConfirmationTarget;
+  // Custom feerate controller.
+  late final TextEditingController customFeerateController;
 
-  int? _feeAmount;
-  String? _feeAmountError;
+  BuildTxState get state => widget.state;
 
   @override
   initState() {
     super.initState();
 
-    final satsPerVB = widget.feeRateModel.satsPerVB;
-    _feeRateEditingController = TextEditingController(
-      text: satsPerVB.toString(),
-    );
-    _feeRateEditingController.addListener(_onChangedFeeRateInput);
-    _tryCalculateFee();
+    sub = widget.state.subscribe();
+    sub.start().listen((_) => mounted ? setState(() {}) : null);
+
+    prevConfirmationTarget = widget.state.confirmationTarget();
+    final customFeerateStr = switch (prevConfirmationTarget) {
+      ConfirmationTarget_Custom(:final field0) => field0.toStringAsFixed(2),
+      _ => (1.0).toStringAsFixed(2),
+    };
+    customFeerateController = TextEditingController(text: customFeerateStr);
   }
 
   @override
   void dispose() {
-    _feeRateEditingController.dispose();
+    sub.dispose();
     super.dispose();
   }
 
-  _onTapEtaTile(double tileSatsPerVB) {
-    final newText = tileSatsPerVB.toString();
-    _feeRateEditingController.text = newText;
-  }
-
   _onRefresh(BuildContext context) async {
-    await widget.feeRateModel.refreshEstimates(
-      context,
-      widget.walletContext,
-      null,
-    );
+    final _ = await state.refreshConfirmationEstimates();
   }
 
-  _onTapSubmitButton() {
-    if (_feeRateEditingError != null) return;
+  void _onTapTile(BuildContext context, ConfirmationTarget target) {
+    state.setConfirmationTarget(target: target);
+  }
+
+  // Only allow submission if form is valid.
+  bool _canSubmit() {
+    final target = state.confirmationTarget();
+    return switch (target) {
+      ConfirmationTarget_Custom() =>
+        double.tryParse(customFeerateController.text) != null,
+      _ => state.confirmationEstimates() != null,
+    };
+  }
+
+  void _onSubmit(BuildContext context) {
     Navigator.pop(context);
   }
 
-  _onChangedFeeRateInput() {
-    final double newSatsPerVB;
-    try {
-      newSatsPerVB = double.parse(_feeRateEditingController.text);
-    } catch (e) {
-      setState(() => _feeRateEditingError = e.toString());
-      return;
-    }
-    if (newSatsPerVB == widget.feeRateModel.satsPerVB &&
-        _feeRateEditingError == null) {
-      return;
-    }
-    setState(() => _feeRateEditingError = null);
-    widget.feeRateModel.satsPerVB = newSatsPerVB;
-    _tryCalculateFee();
+  double? _parseCustomFeerate() {
+    final feerate = double.tryParse(customFeerateController.text);
+    return feerate;
   }
 
-  _tryCalculateFee() async {
-    if (!context.mounted) return;
-    setState(() {
-      _feeAmountError = null;
-      _feeAmount = null;
-    });
+  Iterable<Widget> _buildEtaTiles(BuildContext context) {
+    final current = state.confirmationTarget();
 
-    final walletCtx = widget.walletContext;
-    final masterAppkey = walletCtx.masterAppkey;
-
-    if (widget.amountModel.amount == null) {
-      setState(() => _feeAmountError = 'Cannot calculate fee: no send amount.');
-      return;
-    }
-    final amount = widget.amountModel.amount!;
-    final feeRate = widget.feeRateModel.satsPerVB;
-    late final Address address;
-
-    // Tru get address
-    if (widget.addressModel.address == null) {
-      setState(() => _feeAmountError = 'Cannot calculate fee: no recipient.');
-    }
-    address = widget.addressModel.address!;
-
-    try {
-      final tx = await walletCtx.wallet.superWallet.sendTo(
-        masterAppkey: masterAppkey,
-        toAddress: address,
-        value: amount,
-        feerate: feeRate,
-      );
-      final fee = tx.fee();
-      if (context.mounted) setState(() => _feeAmount = fee);
-    } catch (e) {
-      if (context.mounted) {
-        setState(() => _feeAmountError = e.toString());
-      }
-    }
+    return [
+      _buildEtaTile(context, eta: Eta.high, isSelected: current.isHigh()),
+      _buildEtaTile(context, eta: Eta.medium, isSelected: current.isMedium()),
+      _buildEtaTile(context, eta: Eta.low, isSelected: current.isLow()),
+      _buildEtaTile(context, eta: null, isSelected: current.isCustom()),
+    ];
   }
 
-  Iterable<Widget> _buildEtaTiles() {
+  Widget _buildEtaTile(
+    BuildContext context, {
+    bool isSelected = false,
+    Eta? eta,
+  }) {
     final theme = Theme.of(context);
 
-    final selectedTargetBlocks = widget.feeRateModel.targetBlocks;
+    final Widget leadingIcon = Icon(
+      isSelected ? Icons.radio_button_on : Icons.radio_button_off,
+    );
 
-    final tiles = widget.feeRateModel.priorityBySatsPerVB.map<Widget>((record) {
-      final targetBlocks = record.$1;
-      final satsPerVB = record.$2;
-      final isPrioritySameAsSelected = selectedTargetBlocks == targetBlocks;
-      final isSelected = widget.feeRateModel.satsPerVB == satsPerVB;
+    final Widget timeText = Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: eta != null ? '${eta.targetBlocks * 10} ' : 'Custom '),
+          TextSpan(
+            text: '${eta != null ? 'min' : ''}ETA',
+            style: TextStyle(fontSize: theme.textTheme.labelMedium!.fontSize),
+          ),
+        ],
+      ),
+    );
 
-      final feeRateText = Text.rich(
+    final Widget feerateTextOrInput;
+    if (eta != null) {
+      final estimates = state.confirmationEstimates();
+      final estimateFeerate =
+          switch (eta) {
+            Eta.low => estimates?.low,
+            Eta.medium => estimates?.medium,
+            Eta.high => estimates?.high,
+          } ??
+          '~';
+      feerateTextOrInput = Text.rich(
         TextSpan(
           children: [
-            TextSpan(text: '$satsPerVB '),
+            TextSpan(text: '$estimateFeerate '),
             TextSpan(
-              text: 'sat/vB',
+              text: ' sat/vB',
               style: TextStyle(fontSize: theme.textTheme.labelMedium!.fontSize),
             ),
           ],
         ),
       );
-
-      final timeText = Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(text: '${targetBlocks * 10} '),
-            TextSpan(
-              text: 'min ETA',
-              style: TextStyle(fontSize: theme.textTheme.labelMedium!.fontSize),
-            ),
+    } else {
+      feerateTextOrInput = SizedBox(
+        width: 200,
+        child: TextField(
+          controller: customFeerateController,
+          // Highlight on tap.
+          onTap: () => customFeerateController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: customFeerateController.text.length,
+          ),
+          onChanged: (v) => _onTapTile(
+            context,
+            ConfirmationTarget.custom(_parseCustomFeerate() ?? 1.0),
+          ),
+          enabled: isSelected,
+          autofocus: true,
+          decoration: InputDecoration(
+            suffixText: 'sat/vB',
+            suffixStyle: theme.textTheme.labelLarge,
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.numberWithOptions(
+            signed: false,
+            decimal: true,
+          ),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
           ],
         ),
       );
+    }
 
-      final leadingIcon = Icon(
-        isSelected
-            ? Icons.radio_button_on
-            : isPrioritySameAsSelected
-            ? Icons.indeterminate_check_box_outlined
-            : Icons.radio_button_off,
-        key: UniqueKey(),
-      );
-
-      final tile = ListTile(
-        onTap: () => _onTapEtaTile(satsPerVB),
-        selected: isSelected,
-        leading: leadingIcon,
-        title: timeText,
-        trailing: feeRateText,
-        leadingAndTrailingTextStyle: theme.textTheme.titleMedium,
-      );
-      return tile;
-    });
-
-    return tiles;
+    return ListTile(
+      onTap: () => _onTapTile(context, switch (eta) {
+        null => ConfirmationTarget.custom(_parseCustomFeerate() ?? 1.0),
+        Eta.low => ConfirmationTarget.low(),
+        Eta.medium => ConfirmationTarget.medium(),
+        Eta.high => ConfirmationTarget.high(),
+      }),
+      selected: isSelected,
+      leading: leadingIcon,
+      title: timeText,
+      trailing: feerateTextOrInput,
+      leadingAndTrailingTextStyle: theme.textTheme.titleMedium,
+      contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+    );
   }
 
   @override
@@ -189,45 +200,16 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     final etaListCard = Card.filled(
       margin: EdgeInsets.all(0.0),
       color: theme.colorScheme.surfaceContainerHigh,
-      child: ListenableBuilder(
-        listenable: widget.feeRateModel,
-        builder: (context, _) =>
-            Column(children: _buildEtaTiles().toList().reversed.toList()),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: _buildEtaTiles(context).toList(growable: false),
+        ),
       ),
-    );
-
-    final feeRateField = TextField(
-      controller: _feeRateEditingController,
-      onSubmitted: _feeRateEditingError == null
-          ? (_) => _onTapSubmitButton()
-          : null,
-      // Highlight on tap.
-      onTap: () => _feeRateEditingController.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: _feeRateEditingController.text.length,
-      ),
-      decoration: InputDecoration(
-        labelText: 'Fee Rate',
-        prefixIcon: Icon(Icons.edit_rounded),
-        suffixText: 'sat/vB',
-        suffixStyle: theme.textTheme.labelLarge,
-        errorText: _feeRateEditingError,
-        helperText: _feeAmountError ?? 'Fee Amount: $_feeAmount sats',
-        border: OutlineInputBorder(borderSide: BorderSide.none),
-      ),
-      keyboardType: TextInputType.numberWithOptions(
-        signed: false,
-        decimal: true,
-      ),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
-      ],
     );
 
     final submitButton = IconButton.filled(
-      onPressed: _feeRateEditingError == null
-          ? () => _onTapSubmitButton()
-          : null,
+      onPressed: _canSubmit() ? () => _onSubmit(context) : null,
       icon: Icon(Icons.done),
       style: IconButton.styleFrom(
         elevation: 3.0,
@@ -244,41 +226,27 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
         height: 32.0,
         width: 192.0,
         child: Center(
-          child: ListenableBuilder(
-            listenable: widget.feeRateModel,
-            builder: (context, _) => AnimatedCrossFade(
-              firstChild: LinearProgressIndicator(
-                borderRadius: BorderRadius.circular(4.0),
-              ),
-              secondChild: Text(
-                'Pull down or tap to refresh.',
-                softWrap: true,
-                style: theme.textTheme.labelSmall,
-              ),
-              crossFadeState: widget.feeRateModel.estimateRunning
-                  ? CrossFadeState.showFirst
-                  : CrossFadeState.showSecond,
-              duration: Durations.medium2,
+          child: AnimatedCrossFade(
+            firstChild: LinearProgressIndicator(
+              borderRadius: BorderRadius.circular(4.0),
             ),
+            secondChild: Text(
+              'Pull down or tap to refresh.',
+              softWrap: true,
+              style: theme.textTheme.labelSmall,
+            ),
+            crossFadeState: state.isRefreshingConfirmationEstimates()
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            duration: Durations.medium2,
           ),
         ),
-      ),
-    );
-
-    final feeRateCard = Card(
-      margin: EdgeInsets.all(0.0),
-      color: theme.colorScheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 16.0),
-        child: feeRateField,
       ),
     );
 
     final columnWidgets = [
       pullDownToRefresh,
       etaListCard,
-      feeRateCard,
       Row(mainAxisAlignment: MainAxisAlignment.end, children: [submitButton]),
     ];
 
