@@ -1,5 +1,6 @@
 pub mod backup_manager;
 pub mod bitcoin;
+pub mod broadcast;
 pub mod coordinator;
 pub mod device_list;
 pub mod firmware;
@@ -15,6 +16,7 @@ pub mod recovery;
 pub mod settings;
 pub mod signing;
 pub mod super_wallet;
+pub mod transaction;
 
 use flutter_rust_bridge::frb;
 
