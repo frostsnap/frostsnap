@@ -143,19 +143,16 @@ fetch-released-firmware:
         echo "Error: Failed to fetch releases from GitHub API"
         exit 1
     fi
-
     mkdir -p target/riscv32imc-unknown-none-elf/release/
-
-    # Iterate through all releases (already sorted by creation date, newest first)
-    for i in $(seq 0 $(($(echo "$releases" | jq length) - 1))); do
+    release_count=$(echo "$releases" | jq 'length')
+    for i in $(seq 0 $((release_count - 1))); do
         firmware_url=$(echo "$releases" | jq -r ".[$i].assets[]? | select(.name==\"firmware.bin\") | .browser_download_url")
         tag_name=$(echo "$releases" | jq -r ".[$i].tag_name")
-
         if [ -n "$firmware_url" ] && [ "$firmware_url" != "null" ]; then
-            echo "Found firmware.bin in release $tag_name"
+            echo "Found most recent firmware.bin in release $tag_name"
             curl -L -o target/riscv32imc-unknown-none-elf/release/firmware.bin "$firmware_url"
             exit $?
         fi
     done
-
     echo "Error: No firmware.bin found in any releases"
+    exit 1
