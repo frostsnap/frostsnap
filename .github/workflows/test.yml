@@ -187,6 +187,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: "./.github/actions/set-up-app-build"
+      - name: Copy firmware to expected location
+        run: |
+          mkdir -p frostsnapp/rust/target/riscv32imc-unknown-none-elf/release/
+          cp target/riscv32imc-unknown-none-elf/release/firmware.bin frostsnapp/rust/target/riscv32imc-unknown-none-elf/release/firmware.bin
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
