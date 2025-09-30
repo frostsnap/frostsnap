@@ -20,6 +20,7 @@ class AddressInputController with ChangeNotifier {
 
   String? _errorText;
   String? _lastSubmitted;
+  int? _amount;
 
   AddressInputController() {
     controller = TextEditingController();
@@ -41,10 +42,19 @@ class AddressInputController with ChangeNotifier {
 
   bool submit(WalletContext walletContext) {
     _lastSubmitted = controller.text;
-    _errorText = walletContext.network.validateDestinationAddress(
-      address: controller.text,
-    );
-    // We always notify listeners on submit (dont' check for changes) for simplicity and safety.
+
+    try {
+      final result = walletContext.network.validateDestinationAddress(
+        uri: controller.text,
+      );
+      _errorText = null;
+      controller.text = result.$1;
+      _amount = result.$2;
+    } catch (e) {
+      _errorText = e.toString();
+      _amount = null;
+    }
+
     notifyListeners();
     return _errorText == null;
   }
@@ -52,6 +62,8 @@ class AddressInputController with ChangeNotifier {
   String? get errorText => _errorText;
 
   String? get address => (_errorText == null) ? controller.text : null;
+
+  int? get amount => _amount;
 
   String get formattedAddress => spacedHex(controller.text, groupSize: 4);
 }

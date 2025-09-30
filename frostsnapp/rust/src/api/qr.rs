@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
-use std::str::FromStr;
 use tracing::{event, Level};
 
 pub struct QrReader {
@@ -24,17 +23,6 @@ impl QrReader {
         let decoded_qr = read_qr_code_bytes(&bytes)?;
         let decoded_ur = self.ingest_ur_strings(decoded_qr)?;
         Ok(decoded_ur)
-    }
-
-    pub fn find_address_from_bytes(&self, bytes: Vec<u8>) -> Result<Option<String>> {
-        let decoded_qr = read_qr_code_bytes(&bytes)?;
-        for maybe_addr in decoded_qr {
-            match bitcoin::Address::from_str(&maybe_addr) {
-                Ok(_) => return Ok(Some(maybe_addr)),
-                Err(_) => continue,
-            }
-        }
-        Ok(None)
     }
 
     pub fn ingest_ur_strings(&mut self, qr_strings: Vec<String>) -> Result<QrDecoderStatus> {
