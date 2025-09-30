@@ -229,18 +229,10 @@ impl FirmwareUpgradeMode<'_> {
                         let mut finished = false;
                         let last_sector_index = partition.n_sectors() - 1;
                         /// So we erase multiple sectors poll (otherwise it's slow).
-                        const ERASE_CHUNK_SIZE: usize = 32;
+                        const ERASE_CHUNK_SIZE: usize = 1;
                         for _ in 0..ERASE_CHUNK_SIZE {
-                            // it's faster to read and check if it's already erased than just to go
-                            // and erase it
-                            if partition
-                                .read_sector(*seq)
-                                .unwrap()
-                                .iter()
-                                .any(|byte| *byte != 0xff)
-                            {
-                                partition.erase_sector(*seq).expect("must erase sector");
-                            }
+                            partition.erase_sector(*seq).expect("must erase sector");
+
                             *seq += 1;
                             if *seq == last_sector_index {
                                 finished = true;

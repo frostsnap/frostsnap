@@ -313,8 +313,10 @@ pub mod interrupt {
             // Read a touch event from the i2c registers.
             // We don't need to read them all, if there's any left over we'll get re-interupted.
             if let Some(event) = cst.read_one_touch_event(
-                // The pin should be low since we just got the interrupt.
-                false,
+                // The pin should be low since we just got the interrupt...But
+                // if interrupts were frozen for a while the controller might have dropped the event.
+                // Reading events when the pin isn't low causes the screen to freeze 😞
+                true,
             ) {
                 let producer = (&raw mut PRODUCER).as_mut().unwrap().as_mut().unwrap();
                 // Try to enqueue the event (drops if queue is full)
