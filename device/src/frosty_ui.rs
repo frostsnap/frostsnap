@@ -11,7 +11,7 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Welcome,
-    Widget, HOLD_TO_CONFIRM_TIME_LONG_MS, HOLD_TO_CONFIRM_TIME_MS,
+    Widget, HOLD_TO_CONFIRM_TIME_MS,
 };
 
 use crate::touch_handler;
@@ -295,22 +295,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         }
                     }
                     Prompt::WipeDevice => {
-                        use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
-                        use u8g2_fonts::U8g2TextStyle;
+                        use frostsnap_widgets::WipeDevice;
 
-                        // Create warning text for device wipe
-                        let prompt_text = "WARNING!\n\nErase all data?\n\nHold to confirm";
-
-                        let text_widget =
-                            Text::new(prompt_text, U8g2TextStyle::new(FONT_MED, PALETTE.error))
-                                .with_alignment(embedded_graphics::text::Alignment::Center);
-
-                        // Create HoldToConfirm widget with 3 second hold time for wipe
-                        let hold_to_confirm =
-                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, text_widget);
+                        let wipe_widget = WipeDevice::new();
 
                         WidgetTree::WipeDevicePrompt {
-                            widget: Box::new(hold_to_confirm),
+                            widget: Box::new(wipe_widget),
                             confirmed: false,
                         }
                     }
@@ -353,8 +343,16 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             } => {
                 use frostsnap_widgets::AddressWithPath;
 
+                // Extract the address index from the last segment of the path
+                // Path format: "0/0/0/3" -> index is 3
+                let index = bip32_path
+                    .split('/')
+                    .last()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(0);
+
                 // Create the address display widget
-                let address_display = AddressWithPath::new(address, bip32_path);
+                let address_display = AddressWithPath::new_with_index(address, bip32_path, index);
                 WidgetTree::AddressDisplay(Box::new(address_display))
             }
 
@@ -479,7 +477,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             }
             WidgetTree::WipeDevicePrompt { widget, confirmed } => {
                 // Check if the wipe device prompt was confirmed and we haven't already sent the event
-                if widget.is_completed() && !*confirmed {
+                if widget.is_confirmed() && !*confirmed {
                     *confirmed = true;
                     return Some(UiEvent::WipeDataConfirm);
                 }

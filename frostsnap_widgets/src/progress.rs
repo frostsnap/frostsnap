@@ -1,15 +1,13 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, FONT_SMALL};
-use alloc::format;
+use crate::{palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT}};
+use alloc::{format, string::ToString};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
     primitives::{Primitive, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
-    text::Alignment,
     Drawable,
 };
-use u8g2_fonts::U8g2TextStyle;
 
 /// A progress bar widget with a rounded rectangle (no text)
 pub struct ProgressBar {
@@ -172,7 +170,7 @@ impl Widget for ProgressBar {
 pub struct ProgressIndicator {
     /// Column containing the progress bar, spacer, and text switcher
     #[widget_delegate]
-    column: Column<(ProgressBar, Switcher<TextWidget<U8g2TextStyle<Rgb565>>>)>,
+    column: Column<(ProgressBar, Switcher<TextWidget<Gray4TextStyle<'static>>>)>,
     /// Last percentage to track changes
     last_percentage: u32,
 }
@@ -187,9 +185,10 @@ impl ProgressIndicator {
     /// Create a new progress indicator
     pub fn new() -> Self {
         let progress_bar = ProgressBar::new();
-        let initial_text =
-            TextWidget::new("00%", U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background))
-                .with_alignment(Alignment::Center);
+        let initial_text = TextWidget::new(
+            "00%".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_14_LIGHT, PALETTE.on_background),
+        );
         let text_switcher = Switcher::new(initial_text);
 
         let column = Column::builder()
@@ -215,9 +214,8 @@ impl ProgressIndicator {
             let percentage_text = format!("{:02}%", percentage);
             let new_text = TextWidget::new(
                 percentage_text,
-                U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background),
-            )
-            .with_alignment(Alignment::Center);
+                Gray4TextStyle::new(&NOTO_SANS_14_LIGHT, PALETTE.on_background),
+            );
             self.column.children.1.switch_to(new_text);
         }
     }

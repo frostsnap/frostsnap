@@ -9,7 +9,7 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
     Center, DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm,
-    Standby, Text, Welcome,
+    Standby, Text, Welcome, WipeDevice,
 };
 use u8g2_fonts::U8g2TextStyle;
 
@@ -72,9 +72,9 @@ pub enum WidgetTree {
         new_name: Option<String>,
     },
 
-    /// Device wipe confirmation prompt  
+    /// Device wipe confirmation prompt
     WipeDevicePrompt {
-        widget: Box<HoldToConfirm<Text<U8g2TextStyle<Rgb565>>>>,
+        widget: Box<WipeDevice>,
         confirmed: bool,
     },
 

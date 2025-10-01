@@ -85,10 +85,6 @@ pub struct AddressPage {
 }
 
 impl AddressPage {
-    fn new(index: usize, address: &bitcoin::Address) -> Self {
-        Self::new_with_seed(index, address, 0)
-    }
-
     fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
         let title = Text::new(
             format!("To Address #{}", index + 1),
