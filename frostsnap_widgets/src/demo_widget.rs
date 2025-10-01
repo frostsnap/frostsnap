@@ -192,7 +192,7 @@ macro_rules! demo_widget {
                 let widget = Column::new((start_container, center_container));
                 $run_macro!(widget);
             }
-            "bip39_backup" => {
+            "backup_display" => {
                 use $crate::backup::BackupDisplay;
                 use embedded_graphics::prelude::*;
 
@@ -284,6 +284,7 @@ macro_rules! demo_widget {
                         // (legacy_address, bitcoin::Amount::from_sat(50_000)), // 0.0005 BTC
                     ],
                     fee: bitcoin::Amount::from_sat(125_000), // 0.00125 BTC (high fee for demo)
+                    fee_rate: Some(50.5), // Example fee rate in sats/vb
                 };
 
                 // Create the sign prompt widget
@@ -909,7 +910,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, gray4_text, wipe_device, standby, standby_recovery", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, backup_display, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, gray4_text, wipe_device, standby, standby_recovery", $demo);
             }
         }
     };
