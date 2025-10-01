@@ -68,6 +68,18 @@ where
         self
     }
 
+    /// Builder method to set custom colors for border and button
+    ///
+    /// # Arguments
+    /// * `border_color` - Color for the progress border
+    /// * `button_fill_color` - Fill color for the button when pressed
+    /// * `button_stroke_color` - Stroke color for the button when pressed
+    pub fn with_custom_colors(mut self, border_color: Rgb565, button_fill_color: Rgb565, button_stroke_color: Rgb565) -> Self {
+        self.content.set_border_color(border_color);
+        self.button_mut().set_pressed_colors(button_fill_color, button_stroke_color);
+        self
+    }
+
     /// Fade in the button
     pub fn fade_in_button(&mut self) {
         if self.button_fader_mut().is_faded_out() {

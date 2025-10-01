@@ -721,12 +721,15 @@ macro_rules! demo_widget {
                 use bitcoin::Address;
                 use core::str::FromStr;
 
-                // Sample Bitcoin address with derivation path
-                let address_str = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
+                // Taproot address for receive (index 3)
+                // Path format: account_kind / account_index / keychain / address_index
+                // For external (receive) addresses: 0/0/0/3
+                let address_str = "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297";
                 let address = Address::from_str(address_str).unwrap().assume_checked();
-                let derivation_path = "m/86'/0'/0'/0/0".to_string();
+                let derivation_path = "0/0/0/3".to_string();
+                let index = 3;
 
-                let widget = AddressWithPath::new(address, derivation_path);
+                let widget = AddressWithPath::new_with_index(address, derivation_path, index);
                 $run_macro!(widget);
             }
             "taproot_address" => {
@@ -753,31 +756,30 @@ macro_rules! demo_widget {
                 let widget = AddressDisplay::new(address);
                 $run_macro!(widget);
             }
-            /*"standby" => {
+            "standby" => {
                 use $crate::Standby;
-                use frostsnap_core::{message::HeldShare, device::KeyPurpose, schnorr_fun::frost::SecretShare};
-                use bitcoin;
 
-                // Create a stub HeldShare for demo purposes
-                let held_share = HeldShare {
-                    access_structure_ref: None,
-                    // ShareImage is just a Point, we can use a generator point for demo
-                    share_image: {
-                        use secp256kfun::{Scalar, marker::*};
-                        SecretShare {
-                            index: Scalar::<Public, NonZero>::one(),
-                            share: Scalar::one(),
-                        }.share_image()
-                    },
-                    threshold: 2,
-                    key_name: "Family Wallet".to_string(),
-                    purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
-                };
-
+                // Use the simple constructor for demo
                 let device_name = "Alice";
-                let widget = Standby::new(device_name, held_share);
+                let key_name = "Family Wallet";
+                let share_index = 2; // This device has key #2 (2-of-3)
+                let is_recovery_mode = false;
+
+                let widget = Standby::new_simple(device_name, key_name, share_index, is_recovery_mode);
                 $run_macro!(widget);
-            }*/
+            }
+            "standby_recovery" => {
+                use $crate::Standby;
+
+                // Standby in recovery mode
+                let device_name = "Bob";
+                let key_name = "Savings Wallet";
+                let share_index = 1;
+                let is_recovery_mode = true; // Shows warning icon
+
+                let widget = Standby::new_simple(device_name, key_name, share_index, is_recovery_mode);
+                $run_macro!(widget);
+            }
             "device_name_cursor" => {
                 use $crate::device_name::DeviceName;
 
@@ -901,8 +903,13 @@ macro_rules! demo_widget {
                 let page_slider = PageSlider::new(page_list, 50);
                 $run_macro!(page_slider);
             }
+            "wipe_device" => {
+                use $crate::wipe_device::WipeDevice;
+                let widget = WipeDevice::new();
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, gray4_text", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, gray4_text, wipe_device, standby, standby_recovery", $demo);
             }
         }
     };

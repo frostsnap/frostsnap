@@ -1,6 +1,6 @@
 use crate::{
     bitmap::EncodedImage, image::Image, vec_framebuffer::VecFramebuffer,
-    fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD, WARNING_ICON},
+    fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD},
     palette::PALETTE, prelude::*, SizedBox,
 };
 use alloc::string::{String, ToString};
@@ -25,7 +25,8 @@ pub struct Standby {
         Column<(
             Image<VecFramebuffer<BinaryColor>, Rgb565>,  // Logo
             SizedBox<Rgb565>,   // Spacer after logo
-            Option<Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>>, // Optional recovery warning
+            Option<Text<Gray4TextStyle<'static>>>, // Optional recovery mode text
+            Option<SizedBox<Rgb565>>,   // Spacer after recovery mode (if present)
             Text<Gray4TextStyle<'static>>,  // "Wallet" label
             SizedBox<Rgb565>,   // Small spacer
             Text<Gray4TextStyle<'static>>,  // Key name
@@ -55,23 +56,25 @@ impl Standby {
 
         // Create spacers
         let spacer_after_logo = SizedBox::new(Size::new(0, 15));
+        let recovery_spacer = SizedBox::new(Size::new(0, 10)); // Space between "Recovery Mode" and "Wallet"
         let small_spacer_1 = SizedBox::new(Size::new(0, 4));
         let small_spacer_2 = SizedBox::new(Size::new(0, 4));
         let large_spacer = SizedBox::new(Size::new(0, 20));
 
-        // Create recovery mode warning if in recovery mode
+        // Create recovery mode text if in recovery mode
         let recovery_warning = if is_recovery_mode {
-            let warning_icon = Text::new(
-                "⚠".to_string(),  // Warning icon from the WARNING_ICON font
-                Gray4TextStyle::new(&WARNING_ICON, PALETTE.warning),
-            );
-            let icon_spacer = SizedBox::<Rgb565>::new(Size::new(5, 0));
             let warning_text = Text::new(
-                "recovery mode".to_string(),
+                "Recovery Mode".to_string(),
                 Gray4TextStyle::new(FONT_WARNING, PALETTE.warning),
             );
-            Some(Row::new((warning_icon, icon_spacer, warning_text))
-                .with_cross_axis_alignment(CrossAxisAlignment::Center))
+            Some(warning_text)
+        } else {
+            None
+        };
+
+        // Spacer after recovery mode (only used if in recovery mode)
+        let recovery_mode_spacer = if is_recovery_mode {
+            Some(recovery_spacer)
         } else {
             None
         };
@@ -105,6 +108,7 @@ impl Standby {
             logo,
             spacer_after_logo,
             recovery_warning,
+            recovery_mode_spacer,
             wallet_label,
             small_spacer_1,
             key_name,

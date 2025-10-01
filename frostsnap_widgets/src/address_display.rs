@@ -67,29 +67,67 @@ impl AddressDisplay {
     }
 }
 
-/// A widget that displays a Bitcoin address with its derivation path
+/// A widget that displays a Bitcoin address with its derivation path for receive flow
 #[derive(Widget)]
 pub struct AddressWithPath {
     #[widget_delegate]
-    container: Column<(AddressDisplay, Text<Gray4TextStyle<'static>>)>,
+    container: Box<
+        crate::Center<
+            crate::Padding<
+                Column<(
+                    Text<Gray4TextStyle<'static>>,
+                    crate::SizedBox<embedded_graphics::pixelcolor::Rgb565>,
+                    AddressDisplay,
+                    crate::SizedBox<embedded_graphics::pixelcolor::Rgb565>,
+                    Text<Gray4TextStyle<'static>>,
+                )>,
+            >,
+        >,
+    >,
 }
 
 impl AddressWithPath {
     pub fn new(address: bitcoin::Address, derivation_path: String) -> Self {
+        Self::new_with_index(address, derivation_path, 0)
+    }
+
+    pub fn new_with_index(
+        address: bitcoin::Address,
+        derivation_path: String,
+        index: usize,
+    ) -> Self {
+        use crate::fonts::NOTO_SANS_18_LIGHT;
+        use embedded_graphics::pixelcolor::Rgb565;
+
+        // Header: "Receive Address #X"
+        let title = Text::new(
+            alloc::format!("Receive Address #{}", index),
+            Gray4TextStyle::new(&NOTO_SANS_18_LIGHT, PALETTE.text_secondary),
+        );
+
+        let spacer1 = crate::SizedBox::<Rgb565>::new(embedded_graphics::geometry::Size::new(1, 10));
+
+        // The taproot address display
         let address_display = AddressDisplay::new(address);
 
-        // Create the derivation path text (secondary, smaller)
+        let spacer2 = crate::SizedBox::<Rgb565>::new(embedded_graphics::geometry::Size::new(1, 15));
+
+        // Derivation path underneath
         let path_text = Text::new(
             derivation_path,
             Gray4TextStyle::new(FONT_DERIVATION_PATH, PALETTE.text_secondary),
         )
         .with_alignment(Alignment::Center);
 
-        // Create a column to stack them vertically
-        let mut container = Column::new((address_display, path_text));
-        container.main_axis_alignment = MainAxisAlignment::Center;
-        container.cross_axis_alignment = CrossAxisAlignment::Center;
+        let column = Column::new((title, spacer1, address_display, spacer2, path_text))
+            .with_main_axis_alignment(MainAxisAlignment::Start)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        Self { container }
+        let padded = crate::Padding::only(column).bottom(40).build();
+        let centered = crate::Center::new(padded);
+
+        Self {
+            container: Box::new(centered),
+        }
     }
 }

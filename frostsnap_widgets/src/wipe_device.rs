@@ -41,7 +41,7 @@ impl WipeWarningPage {
 
         let warning_text = Text::new(
             "Warning".to_string(),
-            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, PALETTE.error),  // Red color
+            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, Rgb565::new(31, 14, 8)),  // Same red as border
         );
 
         // Add a small spacer above the text to compensate for lack of descenders
@@ -119,7 +119,7 @@ impl WipeConfirmationPage {
 
         let warning_label = Text::new(
             "Warning".to_string(),
-            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, PALETTE.error),  // Red color
+            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, Rgb565::new(31, 14, 8)),  // Same red as border
         );
 
         // Add a small spacer above the text to compensate for lack of descenders
@@ -158,8 +158,18 @@ impl WipeConfirmationPage {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // 8 second hold time for safety
+        // 8 second hold time for safety with red colors for the destructive action
+        // Use same color relationship as green: border is brighter than fill
+        // Green: fill(2,34,9) -> border(3,46,16)
+        // Red: fill(25,8,4) -> border calculated proportionally
+        let red_fill = Rgb565::new(25, 8, 4);      // Darker red for button fill
+        let red_border = Rgb565::new(31, 14, 8);   // Brighter red for border (similar ratio to green)
         let hold_confirm = HoldToConfirm::new(8000, confirm_content)
+            .with_custom_colors(
+                red_border,  // Brighter red for border progress
+                red_fill,    // Darker red for button fill
+                red_border   // Brighter red for button outline
+            )
             .with_faded_out_button();
 
         Self {
