@@ -19,6 +19,7 @@ import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
 import 'package:frostsnap/wallet.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/icons.dart';
@@ -172,6 +173,13 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.cloud,
                     bodyBuilder: (context) {
                       return ElectrumServerSettingsPage();
+                    },
+                  ),
+                  SettingsItem(
+                    title: Text('App info'),
+                    icon: Icons.info_outline,
+                    bodyBuilder: (context) {
+                      return AboutPage();
                     },
                   ),
                 ],
@@ -1014,5 +1022,97 @@ Future<void> _showEraseAllDialog(BuildContext context) async {
   if (devicesToErase.isNotEmpty) {
     controller.batchAddActionNeeded(context, devicesToErase);
     await coord.wipeAllDevices();
+  }
+}
+
+class AboutPage extends StatelessWidget {
+  const AboutPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            leading: Icon(Icons.android),
+            title: Text('App version'),
+            subtitle: FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snapshot) {
+                final version = snapshot.hasData
+                    ? '${snapshot.data!.version} (${snapshot.data!.buildNumber})'
+                    : 'Loading...';
+                return Text(version);
+              },
+            ),
+            trailing: Icon(Icons.copy, size: 20),
+            onTap: () async {
+              final packageInfo = await PackageInfo.fromPlatform();
+              final version =
+                  '${packageInfo.version} (${packageInfo.buildNumber})';
+              Clipboard.setData(ClipboardData(text: version));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('Copied to clipboard')));
+            },
+          ),
+          Builder(
+            builder: (context) {
+              final firmwareHash =
+                  coord.upgradeFirmwareDigest() ?? "No firmware bundled";
+              final canCopy = coord.upgradeFirmwareDigest() != null;
+
+              return ListTile(
+                leading: Icon(Icons.memory),
+                title: Text('Bundled firmware hash'),
+                subtitle: Text(firmwareHash, style: monospaceTextStyle),
+                trailing: canCopy ? Icon(Icons.copy, size: 20) : null,
+                onTap: canCopy
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: firmwareHash));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Copied firmware hash to clipboard'),
+                          ),
+                        );
+                      }
+                    : null,
+              );
+            },
+          ),
+          Builder(
+            builder: (context) {
+              const buildCommit = String.fromEnvironment(
+                'BUILD_COMMIT',
+                defaultValue: 'unknown',
+              );
+
+              return ListTile(
+                leading: Icon(Icons.commit),
+                title: Text('Build commit'),
+                subtitle: Text(buildCommit, style: monospaceTextStyle),
+                trailing: buildCommit != 'unknown'
+                    ? Icon(Icons.copy, size: 20)
+                    : null,
+                onTap: buildCommit != 'unknown'
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: buildCommit));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Copied full commit hash to clipboard',
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
