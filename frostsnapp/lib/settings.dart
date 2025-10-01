@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +19,6 @@ import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
 import 'package:frostsnap/wallet.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/icons.dart';
@@ -1035,9 +1033,7 @@ class AboutPage extends StatelessWidget {
               TextSpan(
                 style: Theme.of(context).textTheme.bodyLarge,
                 children: [
-                  TextSpan(
-                    text: 'Frostsnap is an ',
-                  ),
+                  TextSpan(text: 'Frostsnap is an '),
                   TextSpan(
                     text: 'open source',
                     style: TextStyle(
@@ -1046,43 +1042,52 @@ class AboutPage extends StatelessWidget {
                     ),
                     recognizer: TapGestureRecognizer()
                       ..onTap = () async {
-                        final url = Uri.parse('https://github.com/frostsnap/frostsnap');
+                        final url = Uri.parse(
+                          'https://github.com/frostsnap/frostsnap',
+                        );
                         if (await canLaunchUrl(url)) {
-                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                          await launchUrl(
+                            url,
+                            mode: LaunchMode.externalApplication,
+                          );
                         }
                       },
                   ),
                   TextSpan(
-                    text: ' bitcoin wallet that uses FROST threshold signatures to secure your funds across multiple signing devices.',
+                    text:
+                        ' bitcoin wallet that uses FROST threshold signatures to secure your funds across multiple signing devices.',
                   ),
                 ],
               ),
             ),
           ),
-          if (Platform.isAndroid)
-            ListTile(
-              leading: Icon(Icons.android),
-              title: Text('App version'),
-              subtitle: FutureBuilder<PackageInfo>(
-                future: PackageInfo.fromPlatform(),
-                builder: (context, snapshot) {
-                  final version = snapshot.hasData
-                      ? '${snapshot.data!.version} (${snapshot.data!.buildNumber})'
-                      : 'Loading...';
-                  return Text(version);
-                },
-              ),
-              trailing: Icon(Icons.copy, size: 20),
-              onTap: () async {
-                final packageInfo = await PackageInfo.fromPlatform();
-                final version =
-                    '${packageInfo.version} (${packageInfo.buildNumber})';
-                Clipboard.setData(ClipboardData(text: version));
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Copied to clipboard')));
-              },
-            ),
+          Builder(
+            builder: (context) {
+              const buildVersion = String.fromEnvironment(
+                'BUILD_VERSION',
+                defaultValue: 'unknown',
+              );
+
+              return ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('App version'),
+                subtitle: Text(buildVersion, style: monospaceTextStyle),
+                trailing: buildVersion != 'unknown'
+                    ? Icon(Icons.copy, size: 20)
+                    : null,
+                onTap: buildVersion != 'unknown'
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: buildVersion));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Copied version to clipboard'),
+                          ),
+                        );
+                      }
+                    : null,
+              );
+            },
+          ),
           Builder(
             builder: (context) {
               final firmwareHash =
@@ -1113,10 +1118,9 @@ class AboutPage extends StatelessWidget {
                 'BUILD_COMMIT',
                 defaultValue: 'unknown',
               );
-              final commitHash =
-                  buildCommit.endsWith('-modified')
-                      ? buildCommit.substring(0, buildCommit.length - 9)
-                      : buildCommit;
+              final commitHash = buildCommit.endsWith('-modified')
+                  ? buildCommit.substring(0, buildCommit.length - 9)
+                  : buildCommit;
 
               return ListTile(
                 leading: Icon(Icons.commit),
@@ -1137,11 +1141,15 @@ class AboutPage extends StatelessWidget {
                                   leading: Icon(Icons.copy),
                                   title: Text('Copy commit hash'),
                                   onTap: () {
-                                    Clipboard.setData(ClipboardData(text: buildCommit));
+                                    Clipboard.setData(
+                                      ClipboardData(text: buildCommit),
+                                    );
                                     Navigator.pop(context);
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Copied commit hash to clipboard'),
+                                        content: Text(
+                                          'Copied commit hash to clipboard',
+                                        ),
                                       ),
                                     );
                                   },
@@ -1155,7 +1163,10 @@ class AboutPage extends StatelessWidget {
                                       'https://github.com/frostsnap/frostsnap/commit/$commitHash',
                                     );
                                     if (await canLaunchUrl(url)) {
-                                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                                      await launchUrl(
+                                        url,
+                                        mode: LaunchMode.externalApplication,
+                                      );
                                     }
                                   },
                                 ),
