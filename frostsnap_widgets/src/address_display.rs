@@ -26,14 +26,18 @@ pub struct AddressDisplay {
 
 impl AddressDisplay {
     pub fn new(address: bitcoin::Address) -> Self {
+        Self::new_with_seed(address, 0)
+    }
+
+    pub fn new_with_seed(address: bitcoin::Address, seed: u32) -> Self {
         use bitcoin::AddressType;
 
         let address_str = address.to_string();
 
         // Check if this is a taproot address using the proper method
         if address.address_type() == Some(AddressType::P2tr) {
-            // Use P2trAddressDisplay for taproot addresses
-            let container = Box::new(AnyOf::new(P2trAddressDisplay::new(&address_str)));
+            // Use P2trAddressDisplay for taproot addresses with random seed
+            let container = Box::new(AnyOf::new(P2trAddressDisplay::new_with_seed(&address_str, seed)));
             Self { container }
         } else {
             // For non-taproot addresses, format with spaces every 4 characters
@@ -96,6 +100,15 @@ impl AddressWithPath {
         derivation_path: String,
         index: usize,
     ) -> Self {
+        Self::new_with_seed(address, derivation_path, index, 0)
+    }
+
+    pub fn new_with_seed(
+        address: bitcoin::Address,
+        derivation_path: String,
+        index: usize,
+        seed: u32,
+    ) -> Self {
         use crate::fonts::NOTO_SANS_18_LIGHT;
         use embedded_graphics::pixelcolor::Rgb565;
 
@@ -107,8 +120,8 @@ impl AddressWithPath {
 
         let spacer1 = crate::SizedBox::<Rgb565>::new(embedded_graphics::geometry::Size::new(1, 10));
 
-        // The taproot address display
-        let address_display = AddressDisplay::new(address);
+        // The taproot address display with random seed for anti-address-poisoning
+        let address_display = AddressDisplay::new_with_seed(address, seed);
 
         let spacer2 = crate::SizedBox::<Rgb565>::new(embedded_graphics::geometry::Size::new(1, 15));
 

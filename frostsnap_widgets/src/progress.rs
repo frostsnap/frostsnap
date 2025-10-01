@@ -117,6 +117,7 @@ impl Widget for ProgressBar {
                 .build();
 
             background_rect.into_styled(background_style).draw(target)?;
+            self.background_drawn = true;
         }
 
         // Calculate the filled width based on progress

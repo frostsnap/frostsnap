@@ -3,10 +3,10 @@ use embedded_graphics::{
     geometry::Point,
     pixelcolor::Rgb565,
 };
-use embedded_iconoir::{prelude::IconoirNewIcon, size24px::navigation::NavArrowUp};
+use embedded_iconoir::{prelude::IconoirNewIcon, size16px::navigation::NavArrowUp};
 use frostsnap_macros::Widget;
 
-/// A smaller bobbing carat icon (16px) that bobs up and down
+/// A 16px bobbing carat icon that bobs up and down
 /// Specifically for SwipeUpChevron to match the gray4_newdeviceui_backup version
 #[derive(Widget)]
 pub struct SmallBobbingCarat {

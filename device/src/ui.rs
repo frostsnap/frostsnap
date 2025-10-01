@@ -90,6 +90,7 @@ pub enum Prompt {
     },
     Signing {
         phase: Box<SignPhase1>,
+        rand_seed: u32,
     },
     NewName {
         old_name: Option<String>,

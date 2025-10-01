@@ -25,17 +25,10 @@ rand = "0.8"
 time = { version = "0.3.36", features = ["formatting"] }
 
 [dependencies.flutter_rust_bridge]
-version = "=2.11.1"
+version = "=2.10.0"
 default-features = false
 # explicit features since we don't want the `log` feature
-features = [
-    "anyhow",
-    "dart-opaque",
-    "portable-atomic",
-    "rust-async",
-    "thread-pool",
-    "user-utils",
-]
+features = ["anyhow", "dart-opaque", "portable-atomic", "rust-async", "thread-pool", "user-utils"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-logcat = "0.1"

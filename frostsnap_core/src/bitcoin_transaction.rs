@@ -309,9 +309,12 @@ impl TransactionTemplate {
             })
             .collect::<Vec<_>>();
 
+        let fee_rate = self.feerate();
+
         PromptSignBitcoinTx {
             foreign_recipients,
             fee,
+            fee_rate,
         }
     }
 }
@@ -320,6 +323,7 @@ impl TransactionTemplate {
 pub struct PromptSignBitcoinTx {
     pub foreign_recipients: Vec<(bitcoin::Address, bitcoin::Amount)>,
     pub fee: bitcoin::Amount,
+    pub fee_rate: Option<f64>,
 }
 
 impl PromptSignBitcoinTx {

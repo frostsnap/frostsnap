@@ -96,8 +96,8 @@ impl AddressPage {
         // Use our AddressDisplay widget which handles all address types
         // For P2TR addresses, use random seed for chunk highlighting (anti-address-poisoning)
         // Mix the seed with the index to get unique highlighting per address
-        let _mixed_seed = rand_seed.wrapping_add((index as u32).wrapping_mul(0x9e3779b9));
-        let address_display = AddressDisplay::new(address.clone());
+        let mixed_seed = rand_seed.wrapping_add((index as u32).wrapping_mul(0x9e3779b9));
+        let address_display = AddressDisplay::new_with_seed(address.clone(), mixed_seed);
 
         let column = Column::new((title, spacer, address_display))
             .with_main_axis_alignment(MainAxisAlignment::Start);
@@ -127,7 +127,7 @@ pub struct FeePage {
 }
 
 impl FeePage {
-    fn new(fee_sats: u64) -> Self {
+    fn new(fee_sats: u64, fee_rate: Option<f64>) -> Self {
         let title = Text::new(
             "Network Fee".to_string(),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
@@ -139,14 +139,18 @@ impl FeePage {
 
         let btc_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10)); // 10px spacing before sats/vb
 
-        // Estimate sats/vb - typical 2-of-3 multisig transaction is ~250-350 vbytes
-        let estimated_vbytes = 300; // Reasonable estimate for a multisig transaction
-        let sats_per_vbyte = fee_sats / estimated_vbytes;
-
-        let fee_rate_text = Text::new(
-            format!("{} sats/vb", sats_per_vbyte),
-            Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
-        );
+        // Display actual fee rate if available, otherwise show "Unknown"
+        let fee_rate_text = if let Some(rate) = fee_rate {
+            Text::new(
+                format!("{:.1} sats/vb", rate),
+                Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
+            )
+        } else {
+            Text::new(
+                "Unknown sats/vb".to_string(),
+                Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
+            )
+        };
 
         let column = Column::new((title, spacer, fee_amount, btc_spacer, fee_rate_text))
             .with_main_axis_alignment(MainAxisAlignment::Center)
@@ -355,10 +359,6 @@ type SignPromptPage = AnyOf<(
 )>;
 
 impl SignPromptPageList {
-    fn new(prompt: PromptSignBitcoinTx) -> Self {
-        Self::new_with_seed(prompt, 0)
-    }
-
     fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
         let num_recipients = prompt.foreign_recipients.len();
         let has_warning = Self::has_high_fee(&prompt);
@@ -424,11 +424,8 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
                 let (address, _) = &self.prompt.foreign_recipients[recipient_idx];
                 SignPromptPage::new(AddressPage::new_with_seed(recipient_idx, address, self.rand_seed))
             }
-        } else if index == recipient_pages {
-            // Fee page
-            SignPromptPage::new(FeePage::new(self.prompt.fee.to_sat()))
-        } else if has_warning && index == recipient_pages + 1 {
-            // Warning page (if applicable)
+        } else if has_warning && index == recipient_pages {
+            // Warning page (if applicable) - shown before fee page
             let total_sent: u64 = self
                 .prompt
                 .foreign_recipients
@@ -436,6 +433,9 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
             SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent))
+        } else if (has_warning && index == recipient_pages + 1) || (!has_warning && index == recipient_pages) {
+            // Fee page - comes after warning if warning exists, otherwise right after recipients
+            SignPromptPage::new(FeePage::new(self.prompt.fee.to_sat(), self.prompt.fee_rate))
         } else {
             // Confirmation page (last page)
             SignPromptPage::new(ConfirmationPage::new())
@@ -466,7 +466,11 @@ pub struct SignTxPrompt {
 
 impl SignTxPrompt {
     pub fn new(prompt: PromptSignBitcoinTx) -> Self {
-        let page_list = SignPromptPageList::new(prompt);
+        Self::new_with_seed(prompt, 0)
+    }
+
+    pub fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
+        let page_list = SignPromptPageList::new_with_seed(prompt, rand_seed);
         let page_slider = PageSlider::new(page_list, 40)
             .with_on_page_ready(|page| {
                 // Try to downcast to ConfirmationPage
