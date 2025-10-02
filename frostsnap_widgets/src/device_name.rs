@@ -1,8 +1,13 @@
 use super::{Column, Row, Text as TextWidget};
 use crate::{
-    bitmap::EncodedImage, cursor::Cursor, image::Image, palette::PALETTE, prelude::*,
-    vec_framebuffer::VecFramebuffer, Switcher,
+    bitmap::EncodedImage,
+    cursor::Cursor,
     fonts::{Gray4TextStyle, NOTO_SANS_24_BOLD},
+    image::Image,
+    palette::PALETTE,
+    prelude::*,
+    vec_framebuffer::VecFramebuffer,
+    Switcher,
 };
 use alloc::string::String;
 use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
@@ -27,7 +32,7 @@ impl DeviceName {
         let switcher = Switcher::new(row);
         let container = Container::new(switcher)
             .with_width(u32::MAX)
-            .with_height(30);  // Fixed height for 24pt font
+            .with_height(30); // Fixed height for 24pt font
 
         Self {
             text_widget: container,

@@ -168,8 +168,8 @@ impl BackupConfirmationScreen {
 
         let content = Center::new(column);
 
-        let hold_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, content)
-            .with_faded_out_button();
+        let hold_confirm =
+            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, content).with_faded_out_button();
 
         Self { hold_confirm }
     }
@@ -180,8 +180,7 @@ impl BackupConfirmationScreen {
 }
 
 /// A type that can be either a ShareIndexPage, WordsPage, or BackupConfirmationScreen
-type BackupPage =
-    crate::any_of::AnyOf<(ShareIndexPage, WordsPage, BackupConfirmationScreen)>;
+type BackupPage = crate::any_of::AnyOf<(ShareIndexPage, WordsPage, BackupConfirmationScreen)>;
 
 /// Widget list that generates backup pages
 pub struct BackupPageList {

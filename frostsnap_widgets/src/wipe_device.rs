@@ -1,28 +1,32 @@
 use crate::{
-    any_of::AnyOf, fonts::Gray4TextStyle, palette::PALETTE, Center, Column, CrossAxisAlignment, DynWidget, HoldToConfirm, Instant, MainAxisAlignment, PageSlider, Row, SizedBox, SuperDrawTarget, Text, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS
-};
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    geometry::{Point, Size},
-    draw_target::DrawTarget,
+    any_of::AnyOf, fonts::Gray4TextStyle, palette::PALETTE, Center, Column, CrossAxisAlignment,
+    DynWidget, HoldToConfirm, Instant, MainAxisAlignment, PageSlider, Row, SizedBox,
+    SuperDrawTarget, Text, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS,
 };
 use alloc::string::ToString;
+use embedded_graphics::{
+    draw_target::DrawTarget,
+    geometry::{Point, Size},
+    pixelcolor::Rgb565,
+};
 
 /// Warning page for wipe device
 #[derive(frostsnap_macros::Widget)]
 pub struct WipeWarningPage {
     #[widget_delegate]
-    center: Center<Column<(
-        Row<(
-            Text<Gray4TextStyle<'static>>,  // Warning icon
+    center: Center<
+        Column<(
+            Row<(
+                Text<Gray4TextStyle<'static>>, // Warning icon
+                SizedBox<Rgb565>,
+                Column<(SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>, // "Warning" text with spacer
+            )>,
             SizedBox<Rgb565>,
-            Column<(SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,  // "Warning" text with spacer
+            Text<Gray4TextStyle<'static>>, // Title
+            SizedBox<Rgb565>,
+            Column<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>, // Warning message split into two lines
         )>,
-        SizedBox<Rgb565>,
-        Text<Gray4TextStyle<'static>>,  // Title
-        SizedBox<Rgb565>,
-        Column<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>,  // Warning message split into two lines
-    )>>,
+    >,
 }
 
 impl WipeWarningPage {
@@ -37,7 +41,7 @@ impl WipeWarningPage {
 
         let warning_text = Text::new(
             "Warning".to_string(),
-            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, Rgb565::new(31, 14, 8)),  // Same red as border
+            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, Rgb565::new(31, 14, 8)), // Same red as border
         );
 
         // Add a small spacer above the text to compensate for lack of descenders
@@ -70,14 +74,9 @@ impl WipeWarningPage {
         let warning_text = Column::new((warning_line1, warning_line2))
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let column = Column::new((
-            warning_row,
-            spacer1,
-            title_text,
-            spacer2,
-            warning_text,
-        )).with_main_axis_alignment(MainAxisAlignment::Center)
-          .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let column = Column::new((warning_row, spacer1, title_text, spacer2, warning_text))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self {
             center: Center::new(column),
@@ -87,19 +86,21 @@ impl WipeWarningPage {
 
 /// Confirmation page for wipe device with red hold-to-confirm
 pub struct WipeConfirmationPage {
-    hold_confirm: HoldToConfirm<Column<(
-        SizedBox<Rgb565>,  // spacer0
-        Row<(
-            Text<Gray4TextStyle<'static>>,  // Warning icon
-            SizedBox<Rgb565>,
-            Column<(SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,  // "Warning" text with spacer
+    hold_confirm: HoldToConfirm<
+        Column<(
+            SizedBox<Rgb565>, // spacer0
+            Row<(
+                Text<Gray4TextStyle<'static>>, // Warning icon
+                SizedBox<Rgb565>,
+                Column<(SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>, // "Warning" text with spacer
+            )>,
+            SizedBox<Rgb565>,              // spacer1
+            Text<Gray4TextStyle<'static>>, // wipe_text
+            SizedBox<Rgb565>,              // spacer2
+            Column<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>, // press_text split into two lines
+            SizedBox<Rgb565>,                                                       // spacer3
         )>,
-        SizedBox<Rgb565>,  // spacer1
-        Text<Gray4TextStyle<'static>>,  // wipe_text
-        SizedBox<Rgb565>,  // spacer2
-        Column<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>,  // press_text split into two lines
-        SizedBox<Rgb565>,  // spacer3
-    )>>,
+    >,
     fade_started: bool,
 }
 
@@ -115,7 +116,7 @@ impl WipeConfirmationPage {
 
         let warning_label = Text::new(
             "Warning".to_string(),
-            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, Rgb565::new(31, 14, 8)),  // Same red as border
+            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, Rgb565::new(31, 14, 8)), // Same red as border
         );
 
         // Add a small spacer above the text to compensate for lack of descenders
@@ -131,7 +132,7 @@ impl WipeConfirmationPage {
 
         let wipe_text = Text::new(
             "Hold to Wipe Device".to_string(),
-            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, PALETTE.on_background)
+            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_18_MEDIUM, PALETTE.on_background),
         );
 
         let spacer2 = SizedBox::<Rgb565>::new(Size::new(1, 15)); // Match sign_prompt spacing
@@ -139,32 +140,40 @@ impl WipeConfirmationPage {
         // Split press text into two lines (matching sign_prompt style)
         let press_line1 = Text::new(
             "Press and hold".to_string(),
-            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_17_REGULAR, PALETTE.text_secondary)
+            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
         );
         let press_line2 = Text::new(
             "for 8 seconds".to_string(),
-            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_17_REGULAR, PALETTE.text_secondary)
+            Gray4TextStyle::new(&crate::fonts::NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
         );
         let press_text = Column::new((press_line1, press_line2))
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         let spacer3 = SizedBox::<Rgb565>::new(Size::new(1, 40)); // Match sign_prompt spacing
 
-        let confirm_content = Column::new((spacer0, warning_row, spacer1, wipe_text, spacer2, press_text, spacer3))
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let confirm_content = Column::new((
+            spacer0,
+            warning_row,
+            spacer1,
+            wipe_text,
+            spacer2,
+            press_text,
+            spacer3,
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::Center)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         // 8 second hold time for safety with red colors for the destructive action
         // Use same color relationship as green: border is brighter than fill
         // Green: fill(2,34,9) -> border(3,46,16)
         // Red: fill(25,8,4) -> border calculated proportionally
-        let red_fill = Rgb565::new(25, 8, 4);      // Darker red for button fill
-        let red_border = Rgb565::new(31, 14, 8);   // Brighter red for border (similar ratio to green)
+        let red_fill = Rgb565::new(25, 8, 4); // Darker red for button fill
+        let red_border = Rgb565::new(31, 14, 8); // Brighter red for border (similar ratio to green)
         let hold_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, confirm_content)
             .with_custom_colors(
-                red_border,  // Brighter red for border progress
-                red_fill,    // Darker red for button fill
-                red_border   // Brighter red for button outline
+                red_border, // Brighter red for border progress
+                red_fill,   // Darker red for button fill
+                red_border, // Brighter red for button outline
             )
             .with_faded_out_button();
 
@@ -195,12 +204,19 @@ impl DynWidget for WipeConfirmationPage {
         self.hold_confirm.sizing()
     }
 
-    fn handle_touch(&mut self, point: Point, current_time: Instant, is_release: bool) -> Option<crate::KeyTouch> {
-        self.hold_confirm.handle_touch(point, current_time, is_release)
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        self.hold_confirm
+            .handle_touch(point, current_time, is_release)
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
-        self.hold_confirm.handle_vertical_drag(prev_y, new_y, is_release);
+        self.hold_confirm
+            .handle_vertical_drag(prev_y, new_y, is_release);
     }
 
     fn force_full_redraw(&mut self) {
@@ -253,7 +269,7 @@ pub struct WipeDevice {
 impl WipeDevice {
     pub fn new() -> Self {
         let page_list = WipeDevicePageList;
-        let page_slider = PageSlider::new(page_list, 100)  // 100ms animation speed (same as sign_prompt)
+        let page_slider = PageSlider::new(page_list, 100) // 100ms animation speed (same as sign_prompt)
             .with_on_page_ready(|page| {
                 // Try to downcast to WipeConfirmationPage
                 if let Some(confirmation_page) = page.downcast_mut::<WipeConfirmationPage>() {

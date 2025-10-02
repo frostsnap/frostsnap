@@ -1,7 +1,7 @@
 use crate::{
     bobbing_carat_small::SmallBobbingCarat,
     fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT},
-    Column, SizedBox, Text
+    Column, SizedBox, Text,
 };
 use alloc::string::ToString;
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
@@ -16,7 +16,11 @@ const FONT_SWIPE_UP: &crate::fonts::Gray4Font = &NOTO_SANS_14_LIGHT;
 #[derive(Widget)]
 pub struct SwipeUpChevron {
     #[widget_delegate]
-    column: Column<(SmallBobbingCarat, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>)>,
+    column: Column<(
+        SmallBobbingCarat,
+        Text<Gray4TextStyle<'static>>,
+        SizedBox<Rgb565>,
+    )>,
 }
 
 impl SwipeUpChevron {
@@ -25,7 +29,10 @@ impl SwipeUpChevron {
         let bobbing_carat = SmallBobbingCarat::new(color, background_color);
 
         // Create text with smaller Gray4 font (14pt) - works better with smaller chevron
-        let text = Text::new("Swipe up".to_string(), Gray4TextStyle::new(FONT_SWIPE_UP, color));
+        let text = Text::new(
+            "Swipe up".to_string(),
+            Gray4TextStyle::new(FONT_SWIPE_UP, color),
+        );
 
         // Add 8px spacing beneath the text to push it away from screen edge
         let bottom_spacer = SizedBox::<Rgb565>::new(Size::new(1, 8));

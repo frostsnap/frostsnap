@@ -1,10 +1,17 @@
 use crate::{
-    bitmap::EncodedImage, image::Image, vec_framebuffer::VecFramebuffer,
+    bitmap::EncodedImage,
     fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD},
-    palette::PALETTE, prelude::*, SizedBox,
+    image::Image,
+    palette::PALETTE,
+    prelude::*,
+    vec_framebuffer::VecFramebuffer,
+    SizedBox,
 };
 use alloc::string::{String, ToString};
-use embedded_graphics::{geometry::Size, pixelcolor::{BinaryColor, Rgb565}};
+use embedded_graphics::{
+    geometry::Size,
+    pixelcolor::{BinaryColor, Rgb565},
+};
 use frostsnap_core::message::HeldShare;
 
 // Font constants for standby screen
@@ -23,17 +30,17 @@ pub struct Standby {
     #[widget_delegate]
     content: Center<
         Column<(
-            Image<VecFramebuffer<BinaryColor>, Rgb565>,  // Logo
-            SizedBox<Rgb565>,   // Spacer after logo
-            Option<Text<Gray4TextStyle<'static>>>, // Optional recovery mode text
-            Option<SizedBox<Rgb565>>,   // Spacer after recovery mode (if present)
-            Text<Gray4TextStyle<'static>>,  // "Wallet" label
-            SizedBox<Rgb565>,   // Small spacer
-            Text<Gray4TextStyle<'static>>,  // Key name
-            SizedBox<Rgb565>,   // Spacer
-            Text<Gray4TextStyle<'static>>,  // Share index
-            SizedBox<Rgb565>,   // Spacer between sections
-            Text<Gray4TextStyle<'static>>,  // Device name
+            Image<VecFramebuffer<BinaryColor>, Rgb565>, // Logo
+            SizedBox<Rgb565>,                           // Spacer after logo
+            Option<Text<Gray4TextStyle<'static>>>,      // Optional recovery mode text
+            Option<SizedBox<Rgb565>>,                   // Spacer after recovery mode (if present)
+            Text<Gray4TextStyle<'static>>,              // "Wallet" label
+            SizedBox<Rgb565>,                           // Small spacer
+            Text<Gray4TextStyle<'static>>,              // Key name
+            SizedBox<Rgb565>,                           // Spacer
+            Text<Gray4TextStyle<'static>>,              // Share index
+            SizedBox<Rgb565>,                           // Spacer between sections
+            Text<Gray4TextStyle<'static>>,              // Device name
         )>,
     >,
 }
@@ -117,7 +124,7 @@ impl Standby {
             small_spacer_2,
             device_name_text,
         ))
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         let content = Center::new(column);
 

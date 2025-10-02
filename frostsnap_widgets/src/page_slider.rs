@@ -55,10 +55,9 @@ where
         );
 
         // Build stack with transition and optional chevron aligned at bottom center
-        let stack = Stack::builder().push(transition).push_aligned(
-            None::<Fader<SwipeUpChevron>>,
-            Alignment::BottomCenter,
-        );
+        let stack = Stack::builder()
+            .push(transition)
+            .push_aligned(None::<Fader<SwipeUpChevron>>, Alignment::BottomCenter);
 
         Self {
             list,

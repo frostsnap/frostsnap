@@ -1,7 +1,9 @@
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    palette::PALETTE, prelude::*, HoldToConfirm, Padding, ProgressIndicator,
     fonts::{Gray4TextStyle, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_17_REGULAR},
+    palette::PALETTE,
+    prelude::*,
+    HoldToConfirm, Padding, ProgressIndicator,
 };
 use alloc::{format, string::ToString};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
@@ -13,19 +15,19 @@ pub struct FirmwareUpgradeConfirm {
     #[widget_delegate]
     hold_to_confirm: HoldToConfirm<
         Column<(
-            Text<Gray4TextStyle<'static>>,  // Title
+            Text<Gray4TextStyle<'static>>, // Title
             Container<
                 Padding<
                     Column<(
-                        Text<Gray4TextStyle<'static>>,  // Hash line 1
-                        Text<Gray4TextStyle<'static>>,  // Hash line 2
-                        Text<Gray4TextStyle<'static>>,  // Hash line 3
-                        Text<Gray4TextStyle<'static>>,  // Hash line 4
+                        Text<Gray4TextStyle<'static>>, // Hash line 1
+                        Text<Gray4TextStyle<'static>>, // Hash line 2
+                        Text<Gray4TextStyle<'static>>, // Hash line 3
+                        Text<Gray4TextStyle<'static>>, // Hash line 4
                     )>,
                 >,
             >,
-            Text<Gray4TextStyle<'static>>,  // Size text
-            Text<Gray4TextStyle<'static>>,  // "Hold to Update" text
+            Text<Gray4TextStyle<'static>>, // Size text
+            Text<Gray4TextStyle<'static>>, // "Hold to Update" text
         )>,
     >,
 }
@@ -157,10 +159,10 @@ pub enum FirmwareUpgradeProgress {
         widget: Center<
             Padding<
                 Column<(
-                    Text<Gray4TextStyle<'static>>,  // Title
-                    Text<Gray4TextStyle<'static>>,  // Status
-                    SizedBox<Rgb565>,                // Spacer
-                    ProgressIndicator,               // Progress bar
+                    Text<Gray4TextStyle<'static>>, // Title
+                    Text<Gray4TextStyle<'static>>, // Status
+                    SizedBox<Rgb565>,              // Spacer
+                    ProgressIndicator,             // Progress bar
                 )>,
             >,
         >,
@@ -196,9 +198,7 @@ impl FirmwareUpgradeProgress {
         let padded = Padding::symmetric(20, 20, column);
         let centered = Center::new(padded);
 
-        Self::Active {
-            widget: centered,
-        }
+        Self::Active { widget: centered }
     }
 
     /// Create a new firmware upgrade progress widget in downloading state
@@ -225,9 +225,7 @@ impl FirmwareUpgradeProgress {
         let padded = Padding::symmetric(20, 20, column);
         let centered = Center::new(padded);
 
-        Self::Active {
-            widget: centered,
-        }
+        Self::Active { widget: centered }
     }
 
     /// Create a new firmware upgrade progress widget in passive state

@@ -1,7 +1,11 @@
 use super::{Column, Container, HoldToConfirm, Padding, SizedBox};
 use crate::{
-    fonts::{Gray4TextStyle, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_24_BOLD, NOTO_SANS_MONO_28_BOLD},
-    palette::PALETTE, MainAxisAlignment, Text
+    fonts::{
+        Gray4TextStyle, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_24_BOLD,
+        NOTO_SANS_MONO_28_BOLD,
+    },
+    palette::PALETTE,
+    MainAxisAlignment, Text,
 };
 use alloc::{format, string::ToString};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};

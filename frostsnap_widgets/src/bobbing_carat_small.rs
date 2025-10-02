@@ -1,8 +1,5 @@
 use crate::{image::Image, translate::Translate};
-use embedded_graphics::{
-    geometry::Point,
-    pixelcolor::Rgb565,
-};
+use embedded_graphics::{geometry::Point, pixelcolor::Rgb565};
 use embedded_iconoir::{prelude::IconoirNewIcon, size16px::navigation::NavArrowUp};
 use frostsnap_macros::Widget;
 

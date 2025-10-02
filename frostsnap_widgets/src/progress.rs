@@ -1,5 +1,9 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT}};
+use crate::{
+    fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT},
+    palette::PALETTE,
+    Column, Frac, Switcher, Text as TextWidget, Widget,
+};
 use alloc::{format, string::ToString};
 use embedded_graphics::{
     draw_target::DrawTarget,

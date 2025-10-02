@@ -1,8 +1,16 @@
 use crate::{
-    address_display::AddressDisplay, any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay,
-    fonts::{Gray4TextStyle, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD, WARNING_ICON},
-    page_slider::PageSlider, palette::PALETTE, prelude::*,
-    widget_list::WidgetList, HoldToConfirm,
+    address_display::AddressDisplay,
+    any_of::AnyOf,
+    bitcoin_amount_display::BitcoinAmountDisplay,
+    fonts::{
+        Gray4TextStyle, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM,
+        NOTO_SANS_24_BOLD, WARNING_ICON,
+    },
+    page_slider::PageSlider,
+    palette::PALETTE,
+    prelude::*,
+    widget_list::WidgetList,
+    HoldToConfirm,
 };
 use alloc::{format, string::ToString};
 use embedded_graphics::{
@@ -77,11 +85,15 @@ impl AmountPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct AddressPage {
     #[widget_delegate]
-    center: Center<Padding<Column<(
-        Text<Gray4TextStyle<'static>>,
-        SizedBox<Rgb565>,
-        AddressDisplay,
-    )>>>,
+    center: Center<
+        Padding<
+            Column<(
+                Text<Gray4TextStyle<'static>>,
+                SizedBox<Rgb565>,
+                AddressDisplay,
+            )>,
+        >,
+    >,
 }
 
 impl AddressPage {
@@ -168,17 +180,19 @@ impl FeePage {
 #[derive(frostsnap_macros::Widget)]
 pub struct WarningPage {
     #[widget_delegate]
-    center: Center<Column<(
-        Row<(
+    center: Center<
+        Column<(
+            Row<(
+                Text<Gray4TextStyle<'static>>,
+                SizedBox<Rgb565>,
+                Column<(SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+            )>,
+            SizedBox<Rgb565>,
             Text<Gray4TextStyle<'static>>,
             SizedBox<Rgb565>,
-            Column<(SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+            Column<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>,
         )>,
-        SizedBox<Rgb565>,
-        Text<Gray4TextStyle<'static>>,
-        SizedBox<Rgb565>,
-        Column<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>,
-    )>>,
+    >,
 }
 
 impl WarningPage {
@@ -219,7 +233,10 @@ impl WarningPage {
         let (line1, line2) = if fee_sats > 100_000 {
             ("Fee is greater".to_string(), "than 0.001 BTC".to_string())
         } else {
-            ("Fee exceeds 5% of the".to_string(), "amount being sent".to_string())
+            (
+                "Fee exceeds 5% of the".to_string(),
+                "amount being sent".to_string(),
+            )
         };
 
         let warning_line1 = Text::new(
@@ -235,14 +252,9 @@ impl WarningPage {
         let warning_text = Column::new((warning_line1, warning_line2))
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let column = Column::new((
-            caution_row,
-            spacer1,
-            title_text,
-            spacer2,
-            warning_text,
-        )).with_main_axis_alignment(MainAxisAlignment::Center)
-          .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let column = Column::new((caution_row, spacer1, title_text, spacer2, warning_text))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self {
             center: Center::new(column),
@@ -294,7 +306,7 @@ impl ConfirmationPage {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let hold_confirm = HoldToConfirm::new(3000, confirm_content)  // 3000ms (3 seconds)
+        let hold_confirm = HoldToConfirm::new(3000, confirm_content) // 3000ms (3 seconds)
             .with_faded_out_button();
 
         Self { hold_confirm }
@@ -413,7 +425,7 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
         let page = if index < recipient_pages {
             // It's either an amount or address page for a recipient
             let recipient_idx = index / 2;
-            let is_amount = index % 2 == 0;
+            let is_amount = index.is_multiple_of(2);
 
             if is_amount {
                 // Amount page
@@ -422,7 +434,11 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
             } else {
                 // Address page
                 let (address, _) = &self.prompt.foreign_recipients[recipient_idx];
-                SignPromptPage::new(AddressPage::new_with_seed(recipient_idx, address, self.rand_seed))
+                SignPromptPage::new(AddressPage::new_with_seed(
+                    recipient_idx,
+                    address,
+                    self.rand_seed,
+                ))
             }
         } else if has_warning && index == recipient_pages {
             // Warning page (if applicable) - shown before fee page
@@ -433,7 +449,9 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
             SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent))
-        } else if (has_warning && index == recipient_pages + 1) || (!has_warning && index == recipient_pages) {
+        } else if (has_warning && index == recipient_pages + 1)
+            || (!has_warning && index == recipient_pages)
+        {
             // Fee page - comes after warning if warning exists, otherwise right after recipients
             SignPromptPage::new(FeePage::new(self.prompt.fee.to_sat(), self.prompt.fee_rate))
         } else {

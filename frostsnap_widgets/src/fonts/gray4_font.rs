@@ -44,7 +44,7 @@ impl Gray4Font {
         let byte_index = glyph.data_offset + (pixel_index / 2);
         let byte = self.packed_data[byte_index as usize];
 
-        if pixel_index % 2 == 0 {
+        if pixel_index.is_multiple_of(2) {
             (byte >> 4) & 0x0F // High nibble
         } else {
             byte & 0x0F // Low nibble

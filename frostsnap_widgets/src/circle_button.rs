@@ -48,7 +48,7 @@ impl CircleButton {
             state: CircleButtonState::Idle,
             checkmark,
             last_drawn_state: None,
-            idle_stroke_color: PALETTE.outline,  // Default gray stroke when idle
+            idle_stroke_color: PALETTE.outline, // Default gray stroke when idle
             pressed_fill_color: PALETTE.tertiary_container,
             pressed_stroke_color: PALETTE.confirm_progress,
             checkmark_color: PALETTE.on_tertiary_container,
@@ -61,11 +61,13 @@ impl CircleButton {
         self.pressed_stroke_color = pressed_stroke;
         // For danger actions (red), use white checkmark; otherwise use default
         if pressed_fill == PALETTE.error {
-            self.checkmark_color = PALETTE.on_error;  // White/light checkmark on red
+            self.checkmark_color = PALETTE.on_error; // White/light checkmark on red
             self.checkmark.child.set_color(PALETTE.on_error);
         } else {
             self.checkmark_color = PALETTE.on_tertiary_container;
-            self.checkmark.child.set_color(PALETTE.on_tertiary_container);
+            self.checkmark
+                .child
+                .set_color(PALETTE.on_tertiary_container);
         }
         // Force redraw to apply new colors
         self.last_drawn_state = None;

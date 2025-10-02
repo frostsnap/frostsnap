@@ -1,6 +1,6 @@
 use crate::{
     any_of::AnyOf,
-    fonts::{Gray4TextStyle, NOTO_SANS_MONO_24_BOLD, NOTO_SANS_14_LIGHT},
+    fonts::{Gray4TextStyle, NOTO_SANS_14_LIGHT, NOTO_SANS_MONO_24_BOLD},
     layout::{Column, CrossAxisAlignment, MainAxisAlignment},
     p2tr_address_display::P2trAddressDisplay,
     palette::PALETTE,
@@ -37,7 +37,10 @@ impl AddressDisplay {
         // Check if this is a taproot address using the proper method
         if address.address_type() == Some(AddressType::P2tr) {
             // Use P2trAddressDisplay for taproot addresses with random seed
-            let container = Box::new(AnyOf::new(P2trAddressDisplay::new_with_seed(&address_str, seed)));
+            let container = Box::new(AnyOf::new(P2trAddressDisplay::new_with_seed(
+                &address_str,
+                seed,
+            )));
             Self { container }
         } else {
             // For non-taproot addresses, format with spaces every 4 characters

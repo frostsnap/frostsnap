@@ -4,7 +4,7 @@
 //! Characters: 95
 //! Line height: 29px (minimal - actual glyph bounds)
 
-use super::gray4_font::{Gray4Font, GlyphInfo};
+use super::gray4_font::{GlyphInfo, Gray4Font};
 
 /// Packed pixel data (2 pixels per byte, 4 bits each)
 pub const NOTO_SANS_MONO_28_BOLD_DATA: &[u8] = &[

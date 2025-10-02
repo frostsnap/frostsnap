@@ -196,7 +196,8 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 let prompt = tx_template.user_prompt(*network);
 
                                 // Create the SignTxPrompt widget with random seed
-                                let widget = Box::new(SignTxPrompt::new_with_seed(prompt, rand_seed));
+                                let widget =
+                                    Box::new(SignTxPrompt::new_with_seed(prompt, rand_seed));
 
                                 // Store both widget and phase in the WidgetTree
                                 WidgetTree::SignTxPrompt {
@@ -347,12 +348,13 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 // Path format: "0/0/0/3" -> index is 3
                 let index = bip32_path
                     .split('/')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.parse::<usize>().ok())
                     .unwrap_or(0);
 
                 // Create the address display widget with random seed for anti-address-poisoning
-                let address_display = AddressWithPath::new_with_seed(address, bip32_path, index, rand_seed);
+                let address_display =
+                    AddressWithPath::new_with_seed(address, bip32_path, index, rand_seed);
                 WidgetTree::AddressDisplay(Box::new(address_display))
             }
 

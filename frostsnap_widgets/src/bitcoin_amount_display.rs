@@ -1,6 +1,8 @@
 use crate::{
     fonts::{Gray4TextStyle, NOTO_SANS_MONO_28_BOLD},
-    palette::PALETTE, prelude::*, rat::FatRat
+    palette::PALETTE,
+    prelude::*,
+    rat::FatRat,
 };
 use alloc::string::ToString;
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
@@ -13,11 +15,11 @@ type BitcoinAmountRow = Row<(
     Text<Gray4TextStyle<'static>>, // Whole part + decimal point
     Text<Gray4TextStyle<'static>>, // First decimal digit
     Text<Gray4TextStyle<'static>>, // Second decimal digit
-    SizedBox<Rgb565>,               // Half-width space
+    SizedBox<Rgb565>,              // Half-width space
     Text<Gray4TextStyle<'static>>, // Third decimal digit
     Text<Gray4TextStyle<'static>>, // Fourth decimal digit
     Text<Gray4TextStyle<'static>>, // Fifth decimal digit
-    SizedBox<Rgb565>,               // Half-width space
+    SizedBox<Rgb565>,              // Half-width space
     Text<Gray4TextStyle<'static>>, // Sixth decimal digit
     Text<Gray4TextStyle<'static>>, // Seventh decimal digit
     Text<Gray4TextStyle<'static>>, // Eighth decimal digit

@@ -1,6 +1,11 @@
 use crate::{
-    bitmap::EncodedImage, fonts::{Gray4TextStyle, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM},
-    image::Image, palette::PALETTE, prelude::*, vec_framebuffer::VecFramebuffer, SizedBox,
+    bitmap::EncodedImage,
+    fonts::{Gray4TextStyle, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM},
+    image::Image,
+    palette::PALETTE,
+    prelude::*,
+    vec_framebuffer::VecFramebuffer,
+    SizedBox,
 };
 use alloc::string::ToString;
 use embedded_graphics::{
@@ -21,13 +26,13 @@ pub struct Welcome {
     #[widget_delegate]
     content: Center<
         Column<(
-            Image<VecFramebuffer<BinaryColor>, Rgb565>,  // Logo
-            SizedBox<Rgb565>,   // Spacer
-            Text<Gray4TextStyle<'static>>,          // First line of text
-            SizedBox<Rgb565>,   // Small spacer
-            Text<Gray4TextStyle<'static>>,          // Second line of text
-            SizedBox<Rgb565>,   // Spacer
-            Text<Gray4TextStyle<'static>>,          // URL text
+            Image<VecFramebuffer<BinaryColor>, Rgb565>, // Logo
+            SizedBox<Rgb565>,                           // Spacer
+            Text<Gray4TextStyle<'static>>,              // First line of text
+            SizedBox<Rgb565>,                           // Small spacer
+            Text<Gray4TextStyle<'static>>,              // Second line of text
+            SizedBox<Rgb565>,                           // Spacer
+            Text<Gray4TextStyle<'static>>,              // URL text
         )>,
     >,
 }
@@ -59,20 +64,15 @@ impl Welcome {
         );
 
         // Create spacers with fixed heights
-        let spacer1 = SizedBox::new(Size::new(0, 20));  // Space between logo and first text line
-        let spacer2 = SizedBox::new(Size::new(0, 4));   // Space between text lines
-        let spacer3 = SizedBox::new(Size::new(0, 16));  // Space between second text line and URL
+        let spacer1 = SizedBox::new(Size::new(0, 20)); // Space between logo and first text line
+        let spacer2 = SizedBox::new(Size::new(0, 4)); // Space between text lines
+        let spacer3 = SizedBox::new(Size::new(0, 16)); // Space between second text line and URL
 
         // Create column with fixed spacing and center alignment
         let column = Column::new((
-            logo,
-            spacer1,
-            text_line1,
-            spacer2,
-            text_line2,
-            spacer3,
-            url_text
-        )).with_cross_axis_alignment(CrossAxisAlignment::Center);
+            logo, spacer1, text_line1, spacer2, text_line2, spacer3, url_text,
+        ))
+        .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         let content = Center::new(column);
 

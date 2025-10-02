@@ -1,12 +1,15 @@
 use crate::{
     fonts::{Gray4TextStyle, NOTO_SANS_MONO_24_BOLD},
-    palette::PALETTE, text::Text, Column, MainAxisAlignment, Row, SizedBox
+    palette::PALETTE,
+    text::Text,
+    Column, MainAxisAlignment, Row, SizedBox,
 };
-use alloc::{collections::BTreeSet, string::{String, ToString}, vec::Vec};
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    geometry::Size,
+use alloc::{
+    collections::BTreeSet,
+    string::{String, ToString},
+    vec::Vec,
 };
+use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
 
 // Font and spacing constants for addresses
 const FONT_BITCOIN_ADDRESS: &crate::fonts::Gray4Font = &NOTO_SANS_MONO_24_BOLD;
@@ -20,17 +23,53 @@ const ADDRESS_VERTICAL_SPACING: u32 = 3; // Vertical spacing between rows
 pub struct P2shAddressDisplay {
     #[widget_delegate]
     column: Column<(
-        Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+        Row<(
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+        )>,
         SizedBox<Rgb565>,
-        Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+        Row<(
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+        )>,
         SizedBox<Rgb565>,
-        Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+        Row<(
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+        )>,
         SizedBox<Rgb565>,
-        Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+        Row<(
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+        )>,
         SizedBox<Rgb565>,
-        Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+        Row<(
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+        )>,
         SizedBox<Rgb565>,
-        Row<(Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>, SizedBox<Rgb565>, Text<Gray4TextStyle<'static>>)>,
+        Row<(
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+            SizedBox<Rgb565>,
+            Text<Gray4TextStyle<'static>>,
+        )>,
     )>,
 }
 
@@ -76,9 +115,10 @@ impl P2shAddressDisplay {
             highlighted_chunks.insert(first_highlight);
 
             // Select second highlight chunk (different from first)
-            let mut second_highlight = 1 + ((seed.wrapping_mul(7).wrapping_add(3)) % max_idx as u32) as usize;
+            let mut second_highlight =
+                1 + ((seed.wrapping_mul(7).wrapping_add(3)) % max_idx as u32) as usize;
             while second_highlight == first_highlight {
-                second_highlight = 1 + ((second_highlight) % max_idx) as usize;
+                second_highlight = 1 + ((second_highlight) % max_idx);
             }
             highlighted_chunks.insert(second_highlight);
         }
@@ -98,56 +138,116 @@ impl P2shAddressDisplay {
 
         // Create 6 rows with 3 chunks each
         let row0 = Row::new((
-            Text::new(chunks[0].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(0))),
+            Text::new(
+                chunks[0].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(0)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks[1].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(1))),
+            Text::new(
+                chunks[1].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(1)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks[2].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(2))),
-        )).with_main_axis_alignment(MainAxisAlignment::Center);
+            Text::new(
+                chunks[2].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(2)),
+            ),
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::Center);
 
         let row1 = Row::new((
-            Text::new(chunks[3].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(3))),
+            Text::new(
+                chunks[3].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(3)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks[4].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(4))),
+            Text::new(
+                chunks[4].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(4)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks[5].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(5))),
-        )).with_main_axis_alignment(MainAxisAlignment::Center);
+            Text::new(
+                chunks[5].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(5)),
+            ),
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::Center);
 
         let row2 = Row::new((
-            Text::new(chunks[6].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(6))),
+            Text::new(
+                chunks[6].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(6)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks[7].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(7))),
+            Text::new(
+                chunks[7].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(7)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks[8].clone(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(8))),
-        )).with_main_axis_alignment(MainAxisAlignment::Center);
+            Text::new(
+                chunks[8].clone(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(8)),
+            ),
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::Center);
 
         // For a 34-character address, we'll have:
         // Row 0-2: 36 chars (9 chunks × 4 chars)
         // So row 3 will be empty or have minimal content
         let row3 = Row::new((
-            Text::new(chunks.get(9).cloned().unwrap_or("    ".to_string()), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(9))),
+            Text::new(
+                chunks.get(9).cloned().unwrap_or("    ".to_string()),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(9)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks.get(10).cloned().unwrap_or("    ".to_string()), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(10))),
+            Text::new(
+                chunks.get(10).cloned().unwrap_or("    ".to_string()),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(10)),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(chunks.get(11).cloned().unwrap_or("    ".to_string()), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(11))),
-        )).with_main_axis_alignment(MainAxisAlignment::Center);
+            Text::new(
+                chunks.get(11).cloned().unwrap_or("    ".to_string()),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(11)),
+            ),
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::Center);
 
         // Empty rows for consistent 6-row height
         let row4 = Row::new((
-            Text::new("    ".to_string(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color)),
+            Text::new(
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new("    ".to_string(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color)),
+            Text::new(
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new("    ".to_string(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color)),
-        )).with_main_axis_alignment(MainAxisAlignment::Center);
+            Text::new(
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
+            ),
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::Center);
 
         let row5 = Row::new((
-            Text::new("    ".to_string(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color)),
+            Text::new(
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new("    ".to_string(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color)),
+            Text::new(
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new("    ".to_string(), Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color)),
-        )).with_main_axis_alignment(MainAxisAlignment::Center);
+            Text::new(
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
+            ),
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::Center);
 
         // Create column with all rows and vertical spacing
         let column = Column::new((
