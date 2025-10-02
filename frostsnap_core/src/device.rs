@@ -63,6 +63,15 @@ pub enum KeyPurpose {
 }
 
 impl KeyPurpose {
+    /// Returns the appropriate noun to describe what this key is used for
+    pub fn key_type_noun(&self) -> &'static str {
+        match self {
+            KeyPurpose::Bitcoin(_) => "wallet",
+            KeyPurpose::Nostr => "Nostr account",
+            KeyPurpose::Test => "test key",
+        }
+    }
+
     pub fn bitcoin_network(&self) -> Option<bitcoin::Network> {
         match self {
             KeyPurpose::Bitcoin(network) => Some(*network),

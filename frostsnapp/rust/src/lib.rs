@@ -6,7 +6,9 @@ mod frb_generated;
 pub mod logger;
 pub mod sink_wrap;
 
+pub use bitcoin::Network;
 use frostsnap_coordinator::FirmwareBin;
+pub use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::SymmetricKey;
 
 #[cfg(not(bundle_firmware))]

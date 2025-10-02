@@ -67,7 +67,8 @@ impl<'a, S: NorFlash> MutationLog<'a, S> {
             Mutation::Core(device::Mutation::Restoration(
                 device::restoration::RestorationMutation::LegacySave(legacy_saved_backup),
             )) => {
-                self.share_slot.write(&ShareSlot::LegacySavedBackup(legacy_saved_backup));
+                self.share_slot
+                    .write(&ShareSlot::LegacySavedBackup(legacy_saved_backup));
             }
             Mutation::Core(device::Mutation::Restoration(
                 device::restoration::RestorationMutation::Save(saved_backup),

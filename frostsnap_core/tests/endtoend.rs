@@ -601,7 +601,10 @@ fn delete_then_restore_a_key_by_connecting_devices_to_coordinator() {
     let restoration_id = restoration.restoration_id;
 
     assert!(!restoration.is_restorable());
-    assert_eq!(restoration.access_structure.get_access_structure_ref(), Some(access_structure_ref));
+    assert_eq!(
+        restoration.access_structure.access_structure_ref(),
+        Some(access_structure_ref)
+    );
 
     recover_next_share(&mut run, 1, &mut rng);
 

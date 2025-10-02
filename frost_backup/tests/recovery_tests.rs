@@ -259,3 +259,24 @@ fn test_recover_secret_fuzzy_no_valid_shares() {
     let result = recovery::recover_secret_fuzzy(&insufficient_shares, TEST_FINGERPRINT, None);
     assert!(result.is_none());
 }
+
+#[test]
+fn test_find_valid_subset_threshold_one() {
+    // Test that 1-of-1 shares work correctly when threshold is known
+    let secret = s!(42);
+    let mut rng = rand::thread_rng();
+    let (shares, shared_key) =
+        ShareBackup::generate_shares(secret, 1, 3, TEST_FINGERPRINT, &mut rng);
+
+    let share_images: Vec<ShareImage> = shares.iter().map(|s| s.share_image()).collect();
+
+    let result = recovery::find_valid_subset(&share_images, TEST_FINGERPRINT, Some(1));
+    assert!(
+        result.is_some(),
+        "Should be able to recover with 1-of-1 share when threshold is known"
+    );
+
+    let (found_shares, found_key) = result.unwrap();
+    assert_eq!(found_shares.len(), 3);
+    assert_eq!(found_key, shared_key);
+}
