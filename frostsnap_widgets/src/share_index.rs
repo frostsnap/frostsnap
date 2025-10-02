@@ -1,20 +1,15 @@
 use crate::{
+    fonts::{Gray4TextStyle, NOTO_SANS_24_BOLD, NOTO_SANS_MONO_28_BOLD},
     layout::{MainAxisAlignment, Row},
     palette::PALETTE,
     text::Text,
 };
-use embedded_graphics::pixelcolor::Rgb565;
-use u8g2_fonts::{fonts, U8g2TextStyle};
-
-// Font sizes for share index
-const FONT_LARGE: fonts::u8g2_font_inr30_mf = fonts::u8g2_font_inr30_mf;
-const FONT_MEDIUM: fonts::u8g2_font_inr21_mf = fonts::u8g2_font_inr21_mf;
 
 /// A widget that displays a share index with "#" in secondary color and the number in primary
 #[derive(frostsnap_macros::Widget)]
 pub struct ShareIndexWidget {
     #[widget_delegate]
-    row: Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>,
+    row: Row<(Text<Gray4TextStyle<'static>>, Text<Gray4TextStyle<'static>>)>,
 }
 
 impl ShareIndexWidget {
@@ -23,15 +18,18 @@ impl ShareIndexWidget {
         Self::new_large(share_index)
     }
 
-    /// Create with large font
+    /// Create with large font (28pt mono)
     pub fn new_large(share_index: u16) -> Self {
         // "#" in secondary color
-        let hash_text = Text::new("#", U8g2TextStyle::new(FONT_LARGE, PALETTE.text_secondary));
+        let hash_text = Text::new(
+            "#",
+            Gray4TextStyle::new(&NOTO_SANS_MONO_28_BOLD, PALETTE.text_secondary),
+        );
 
         // Index number in primary color
         let index_text = Text::new(
             format!("{}", share_index),
-            U8g2TextStyle::new(FONT_LARGE, PALETTE.primary),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_28_BOLD, PALETTE.primary),
         );
 
         let row = Row::builder()
@@ -42,15 +40,18 @@ impl ShareIndexWidget {
         Self { row }
     }
 
-    /// Create with medium font (for more compact displays)
+    /// Create with medium font (24pt, for more compact displays)
     pub fn new_medium(share_index: u16) -> Self {
         // "#" in secondary color
-        let hash_text = Text::new("#", U8g2TextStyle::new(FONT_MEDIUM, PALETTE.text_secondary));
+        let hash_text = Text::new(
+            "#",
+            Gray4TextStyle::new(&NOTO_SANS_24_BOLD, PALETTE.text_secondary),
+        );
 
         // Index number in primary color
         let index_text = Text::new(
             format!("{}", share_index),
-            U8g2TextStyle::new(FONT_MEDIUM, PALETTE.primary),
+            Gray4TextStyle::new(&NOTO_SANS_24_BOLD, PALETTE.primary),
         );
 
         let row = Row::builder()

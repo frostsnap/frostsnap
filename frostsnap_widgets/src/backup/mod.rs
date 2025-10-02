@@ -10,7 +10,7 @@ mod t9_keyboard;
 mod word_selector;
 
 pub use alphabetic_keyboard::AlphabeticKeyboard;
-pub use backup_display::{AllWordsPage, BackupDisplay};
+pub use backup_display::BackupDisplay;
 pub use backup_model::{BackupModel, FramebufferMutation, MainViewState, ViewState};
 pub use enter_share_screen::EnterShareScreen;
 pub use entered_words::EnteredWords;
