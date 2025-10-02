@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bdk_chain::bitcoin;
+use bdk_chain::{bitcoin, rusqlite_impl::migrate_schema};
 use rusqlite::params;
 use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;
@@ -158,44 +158,46 @@ impl TrustedCertificates {
 const ELECTRUM_FROSTSN_APP_CERT: &[u8] = include_bytes!("certs/electrum.frostsn.app.der");
 const ELECTRUM_FROSTSN_APP_URL: &str = "electrum.frostsn.app";
 
+const SCHEMA_NAME: &str = "frostsnap_electrum_tofu";
+const MIGRATIONS: &[&str] = &[
+    // Version 0 - initial schema
+    "CREATE TABLE IF NOT EXISTS fs_trusted_certificates (
+        network TEXT NOT NULL,
+        server_url TEXT NOT NULL,
+        certificate BLOB NOT NULL,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (network, server_url)
+    )",
+];
+
 impl Persist<rusqlite::Connection> for TrustedCertificates {
     type Update = Vec<CertificateMutation>;
     type LoadParams = bitcoin::Network;
 
     fn migrate(conn: &mut rusqlite::Connection) -> Result<()> {
-        // Check if table exists
-        let table_exists: bool = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='fs_trusted_certificates'",
-            [],
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+
+        // Check if we need to add pre-trusted certificate (only on first run)
+        let needs_init: i64 = db_tx.query_row(
+            "SELECT COUNT(*) FROM fs_trusted_certificates WHERE network = 'bitcoin' AND server_url = ?1",
+            params![ELECTRUM_FROSTSN_APP_URL],
             |row| row.get(0),
-        ).unwrap_or(0) > 0;
+        ).unwrap_or(0);
 
-        // Create table with network column
-        // Note: PRIMARY KEY is now composite (network, server_url)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fs_trusted_certificates (
-                network TEXT NOT NULL,
-                server_url TEXT NOT NULL,
-                certificate BLOB NOT NULL,
-                added_at INTEGER NOT NULL,
-                PRIMARY KEY (network, server_url)
-            )",
-            [],
-        )?;
-
-        // If table was just created, add pre-trusted certificates for appropriate networks
-        if !table_exists {
+        if needs_init == 0 {
             tracing::info!("First time initialization - adding pre-trusted certificate for electrum.frostsn.app");
             let electrum_cert = CertificateDer::from(ELECTRUM_FROSTSN_APP_CERT.to_vec());
             let added_at = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
             // Add the certificate for bitcoin mainnet since electrum.frostsn.app:50002 is used for mainnet
-            conn.execute(
+            db_tx.execute(
                 "INSERT INTO fs_trusted_certificates (network, server_url, certificate, added_at) VALUES (?1, ?2, ?3, ?4)",
                 params!["bitcoin", ELECTRUM_FROSTSN_APP_URL, electrum_cert.as_ref(), added_at],
             )?;
         }
 
+        db_tx.commit()?;
         Ok(())
     }
 
