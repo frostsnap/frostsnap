@@ -8,6 +8,7 @@ use bitcoin::Txid;
 pub use bitcoin::{Address, Network as BitcoinNetwork, Psbt};
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::bitcoin::wallet::AddressInfo;
+pub use frostsnap_coordinator::bitcoin::wallet::PsbtValidationError;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordSuperWallet};
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
@@ -26,6 +27,12 @@ pub struct TxState {
     pub txs: Vec<Transaction>,
     pub balance: i64,
     pub untrusted_pending_balance: i64,
+}
+
+#[frb(external)]
+impl PsbtValidationError {
+    #[frb(sync)]
+    pub fn to_string(&self) -> String {}
 }
 
 #[derive(Clone)]
@@ -259,7 +266,7 @@ impl SuperWallet {
         &self,
         psbt: &Psbt,
         master_appkey: MasterAppkey,
-    ) -> Result<UnsignedTx> {
+    ) -> Result<UnsignedTx, PsbtValidationError> {
         let template = self
             .inner
             .lock()

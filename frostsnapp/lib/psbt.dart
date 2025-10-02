@@ -51,8 +51,13 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     try {
       psbt = Psbt.deserialize(bytes: psbtBytes);
     } catch (e) {
-      if (context.mounted)
-        showErrorSnackbar(context, "Cannot deserialize PSBT: $e");
+      if (context.mounted) {
+        await showExceptionDialog(
+          context,
+          subtitle: 'Invalid PSBT',
+          exception: e,
+        );
+      }
       return false;
     }
 
@@ -61,9 +66,14 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
         psbt: psbt,
         masterAppkey: wallet.masterAppkey,
       );
-    } catch (e) {
-      if (context.mounted)
-        showErrorSnackbar(context, "Cannot extract tx from PSBT: $e");
+    } on PsbtValidationError catch (e) {
+      if (context.mounted) {
+        await showExceptionDialog(
+          context,
+          subtitle: 'Unable to process PSBT',
+          exception: e,
+        );
+      }
       return false;
     }
 

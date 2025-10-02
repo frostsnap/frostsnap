@@ -648,13 +648,17 @@ impl CoordSuperWallet {
         &mut self,
         psbt: &bitcoin::Psbt,
         master_appkey: MasterAppkey,
-    ) -> Result<TransactionTemplate> {
+    ) -> Result<TransactionTemplate, PsbtValidationError> {
         let bitcoin_app_xpub = master_appkey.derive_appkey(AppTweakKind::Bitcoin);
         let our_fingerprint = bitcoin_app_xpub.fingerprint();
         let mut template = frostsnap_core::bitcoin_transaction::TransactionTemplate::new();
         let rust_bitcoin_tx = &psbt.unsigned_tx;
         template.set_version(rust_bitcoin_tx.version);
         template.set_lock_time(rust_bitcoin_tx.lock_time);
+
+        let mut already_signed_count = 0;
+        let mut foreign_count = 0;
+        let mut owned_count = 0;
 
         for (i, input) in psbt.inputs.iter().enumerate() {
             let txin = rust_bitcoin_tx
@@ -677,11 +681,12 @@ impl CoordSuperWallet {
                 PushInput::spend_outpoint(txout, txin.previous_output).with_sequence(txin.sequence);
 
             macro_rules! bail {
-                ($($reason:tt)*) => {{
+                ($category:ident, $($reason:tt)*) => {{
                     event!(
                         Level::INFO,
                         "Skipping signing PSBT input {i} because it {}", $($reason)*
                     );
+                    $category += 1;
                     template.push_foreign_input(input_push);
                     continue;
 
@@ -689,21 +694,30 @@ impl CoordSuperWallet {
             }
 
             if input.final_script_witness.is_some() {
-                bail!("it already has a final_script_witness");
+                bail!(
+                    already_signed_count,
+                    "it already has a final_script_witness"
+                );
             }
 
             let tap_internal_key = match &input.tap_internal_key {
                 Some(tap_internal_key) => tap_internal_key,
-                None => bail!("it doesn't have an tap_internal_key"),
+                None => bail!(foreign_count, "it doesn't have an tap_internal_key"),
             };
 
             let (fingerprint, derivation_path) = match input.tap_key_origins.get(tap_internal_key) {
                 Some(origin) => origin.1.clone(),
-                None => bail!("it doesn't provide a source for the tap_internal_key"),
+                None => bail!(
+                    foreign_count,
+                    "it doesn't provide a source for the tap_internal_key"
+                ),
             };
 
             if fingerprint != our_fingerprint {
-                bail!("it's key fingerprint doesn't match our root key");
+                bail!(
+                    foreign_count,
+                    "it's key fingerprint doesn't match our root key"
+                );
             }
 
             let normal_derivation_path = derivation_path
@@ -717,14 +731,17 @@ impl CoordSuperWallet {
             let bip32_path = match BitcoinBip32Path::from_u32_slice(&normal_derivation_path) {
                 Some(bip32_path) => bip32_path,
                 None => {
-                    bail!(format!(
-                        "it has an unusual derivation path {:?}",
-                        normal_derivation_path
-                            .into_iter()
-                            .map(|n| n.to_string())
-                            .collect::<Vec<String>>()
-                            .join("/")
-                    ));
+                    bail!(
+                        foreign_count,
+                        format!(
+                            "it has an unusual derivation path {:?}",
+                            normal_derivation_path
+                                .into_iter()
+                                .map(|n| n.to_string())
+                                .collect::<Vec<String>>()
+                                .join("/")
+                        )
+                    );
                 }
             };
 
@@ -735,6 +752,7 @@ impl CoordSuperWallet {
                     bip32_path,
                 },
             )?;
+            owned_count += 1;
         }
 
         for (i, _) in psbt.outputs.iter().enumerate() {
@@ -760,9 +778,79 @@ impl CoordSuperWallet {
             }
         }
 
+        // Validate that this PSBT is actually signable by this wallet
+        if owned_count == 0 {
+            return Err(PsbtValidationError::NothingToSign {
+                total_inputs: psbt.inputs.len(),
+                foreign_count,
+                already_signed_count,
+            });
+        }
+
         Ok(template)
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum PsbtValidationError {
+    NothingToSign {
+        total_inputs: usize,
+        foreign_count: usize,
+        already_signed_count: usize,
+    },
+    Other(String),
+}
+
+impl From<Box<bitcoin_transaction::SpkDoesntMatchPathError>> for PsbtValidationError {
+    fn from(e: Box<bitcoin_transaction::SpkDoesntMatchPathError>) -> Self {
+        PsbtValidationError::Other(e.to_string())
+    }
+}
+
+impl From<anyhow::Error> for PsbtValidationError {
+    fn from(e: anyhow::Error) -> Self {
+        PsbtValidationError::Other(e.to_string())
+    }
+}
+
+impl std::fmt::Display for PsbtValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PsbtValidationError::NothingToSign {
+                total_inputs,
+                foreign_count,
+                already_signed_count,
+            } => {
+                let (input_word, pronoun) = if *total_inputs == 1 {
+                    ("input", "it")
+                } else {
+                    ("inputs", "any of them")
+                };
+
+                write!(
+                    f,
+                    "This PSBT has {total_inputs} {input_word} but this wallet can not sign {pronoun}"
+                )?;
+
+                let mut reasons = Vec::new();
+                if *foreign_count > 0 {
+                    reasons.push(format!("{foreign_count} not owned by this wallet"));
+                }
+                if *already_signed_count > 0 {
+                    reasons.push(format!("{already_signed_count} already signed"));
+                }
+
+                if !reasons.is_empty() {
+                    write!(f, " ({})", reasons.join(", "))?;
+                }
+
+                write!(f, ".")
+            }
+            PsbtValidationError::Other(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+impl std::error::Error for PsbtValidationError {}
 
 #[derive(Clone, Debug)]
 pub struct AddressInfo {
