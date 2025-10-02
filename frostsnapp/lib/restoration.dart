@@ -781,6 +781,14 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
               currentStep = RecoveryFlowStep.waitPhysicalBackupDevice;
             });
           },
+          onDisconnected: () {
+            _clearTargetDevice();
+            popOnError(
+              errorTitle: 'Device Disconnected',
+              errorMessage:
+                  'The device was disconnected. Please reconnect and try again.',
+            );
+          },
         );
         break;
 
@@ -835,7 +843,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
             )
             .toBehaviorSubject();
 
-        child = _EnrollmentNonceDialog(
+        child = NonceGenerationPage(
           stream: stream,
           deviceName: coord.getDeviceName(id: targetDevice!.id),
           onDisconnected: targetDevice!.onDisconnected,
@@ -2033,12 +2041,14 @@ class _FirmwareUpgradeView extends StatefulWidget with _TitledWidget {
   final TargetDevice targetDevice;
   final VoidCallback onComplete;
   final VoidCallback onCancel;
+  final VoidCallback onDisconnected;
 
   const _FirmwareUpgradeView({
     super.key,
     required this.targetDevice,
     required this.onComplete,
     required this.onCancel,
+    required this.onDisconnected,
   });
 
   @override
@@ -2056,7 +2066,15 @@ class _FirmwareUpgradeViewState extends State<_FirmwareUpgradeView> {
   void initState() {
     super.initState();
     _controller = DeviceActionUpgradeController();
-    // Don't handle disconnection - firmware upgrade causes device to reset which is normal
+
+    // Listen for device disconnection
+    // Note: During firmware upgrade, the device will reset which is expected.
+    // We only handle unexpected disconnections before the upgrade starts.
+    widget.targetDevice.onDisconnected.then((_) {
+      if (mounted && !_isUpgrading) {
+        widget.onDisconnected();
+      }
+    });
   }
 
   @override
@@ -2204,7 +2222,7 @@ class _ErrorViewState extends State<_ErrorView> {
 }
 
 // Unified nonce dialog for both enrollment and physical backup flows
-class _EnrollmentNonceDialog extends StatefulWidget with _TitledWidget {
+class NonceGenerationPage extends StatefulWidget with _TitledWidget {
   final Stream<NonceReplenishState> stream;
   final String? deviceName;
   final Future<void> onDisconnected;
@@ -2213,7 +2231,7 @@ class _EnrollmentNonceDialog extends StatefulWidget with _TitledWidget {
   final VoidCallback onDeviceDisconnected;
   final Function(String) onError;
 
-  const _EnrollmentNonceDialog({
+  const NonceGenerationPage({
     required this.stream,
     this.deviceName,
     required this.onDisconnected,
@@ -2224,13 +2242,13 @@ class _EnrollmentNonceDialog extends StatefulWidget with _TitledWidget {
   });
 
   @override
-  State<_EnrollmentNonceDialog> createState() => _EnrollmentNonceDialogState();
+  State<NonceGenerationPage> createState() => _NonceGenerationPageState();
 
   @override
   String get titleText => 'Preparing Device';
 }
 
-class _EnrollmentNonceDialogState extends State<_EnrollmentNonceDialog> {
+class _NonceGenerationPageState extends State<NonceGenerationPage> {
   bool _hasCompleted = false;
   bool _hasErrored = false;
   StreamSubscription? _streamSubscription;
