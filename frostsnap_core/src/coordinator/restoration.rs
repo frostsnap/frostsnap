@@ -20,25 +20,44 @@ impl RestorationState {
     }
 
     pub fn status(&self) -> RestorationStatus {
-        // Use fuzzy recovery to find compatible shares and shared key
-        let recovery_result = self.access_structure.try_fuzzy_recovery(self.fingerprint);
+        let shared_key = self.access_structure.shared_key.as_ref();
+        let restoration_access_ref = self.access_structure.access_structure_ref();
 
-        let compatible_indices = recovery_result
-            .as_ref()
-            .map(|(_, indices)| indices.clone())
-            .unwrap_or_default();
-
-        let shares = self.access_structure
+        let shares = self
+            .access_structure
             .held_shares
             .iter()
-            .enumerate()
-            .map(|(i, recover_share)| {
-                let is_compatible = compatible_indices.contains(&i);
+            .map(|recover_share| {
+                let compatibility = if let Some(key) = shared_key {
+                    let expected_image =
+                        key.share_image(recover_share.held_share.share_image.index);
+                    if expected_image == recover_share.held_share.share_image {
+                        ShareCompatibility::Compatible
+                    } else {
+                        ShareCompatibility::Incompatible
+                    }
+                } else if let (Some(restoration_ref), Some(share_ref)) = (
+                    restoration_access_ref,
+                    recover_share.held_share.access_structure_ref,
+                ) {
+                    if restoration_ref == share_ref {
+                        ShareCompatibility::Compatible
+                    } else {
+                        ShareCompatibility::Incompatible
+                    }
+                } else {
+                    ShareCompatibility::Uncertain
+                };
 
                 RestorationShare {
                     device_id: recover_share.held_by,
-                    index: recover_share.held_share.share_image.index.try_into().expect("share index is small"),
-                    is_compatible,
+                    index: recover_share
+                        .held_share
+                        .share_image
+                        .index
+                        .try_into()
+                        .expect("share index is small"),
+                    compatibility,
                 }
             })
             .collect();
@@ -46,7 +65,7 @@ impl RestorationState {
         RestorationStatus {
             threshold: self.access_structure.threshold,
             shares,
-            shared_key: recovery_result.map(|(key, _)| key),
+            shared_key: shared_key.cloned(),
         }
     }
 }
@@ -58,48 +77,18 @@ pub struct RestorationStatus {
     pub shared_key: Option<SharedKey>,
 }
 
-impl RestorationStatus {
-    pub fn problem(&self) -> Option<RestorationProblem> {
-        // Count compatible unique shares
-        let compatible_unique: u16 = self
-            .shares
-            .iter()
-            .filter(|share| share.is_compatible)
-            .map(|share| share.index)
-            .collect::<BTreeSet<_>>()
-            .len()
-            .try_into()
-            .expect("must be small");
-
-        // Check if we have any shares but none are compatible
-        if !self.shares.is_empty() && compatible_unique == 0 {
-            return Some(RestorationProblem::InvalidShares);
-        }
-
-        // If we know the threshold, check if we have enough compatible shares
-        if let Some(threshold) = self.threshold {
-            if compatible_unique < threshold {
-                return Some(RestorationProblem::NotEnoughShares {
-                    need_more: threshold - compatible_unique,
-                });
-            }
-        }
-
-        None
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RestorationProblem {
-    NotEnoughShares { need_more: u16 },
-    InvalidShares,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+pub enum ShareCompatibility {
+    Compatible,
+    Incompatible,
+    Uncertain,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RestorationShare {
     pub device_id: DeviceId,
     pub index: u16,
-    pub is_compatible: bool,
+    pub compatibility: ShareCompatibility,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -135,12 +124,15 @@ impl State {
                 key_purpose,
             } => {
                 // Convert legacy to new and recurse
-                return self.apply_mutation_restoration(NewRestoration {
-                    restoration_id,
-                    key_name: key_name.clone(),
-                    threshold: Some(threshold),
-                    key_purpose,
-                }, fingerprint);
+                return self.apply_mutation_restoration(
+                    NewRestoration {
+                        restoration_id,
+                        key_name: key_name.clone(),
+                        threshold: Some(threshold),
+                        key_purpose,
+                    },
+                    fingerprint,
+                );
             }
             NewRestoration {
                 restoration_id,
@@ -156,6 +148,7 @@ impl State {
                         access_structure: RecoveringAccessStructure {
                             threshold,
                             held_shares: Default::default(),
+                            shared_key: None,
                         },
                         need_to_consolidate: Default::default(),
                         key_purpose,
@@ -174,18 +167,25 @@ impl State {
                     access_structure_ref,
                     share_image,
                     threshold: None, // Legacy didn't have threshold
-                    key_name: self.restorations.get(&restoration_id)
+                    key_name: self
+                        .restorations
+                        .get(&restoration_id)
                         .map(|s| s.key_name.clone())
                         .unwrap_or_default(),
-                    purpose: self.restorations.get(&restoration_id)
+                    purpose: self
+                        .restorations
+                        .get(&restoration_id)
                         .map(|s| s.key_purpose)
                         .unwrap_or(KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin)),
                 };
-                return self.apply_mutation_restoration(RestorationProgress {
-                    restoration_id,
-                    device_id,
-                    held_share,
-                }, fingerprint);
+                return self.apply_mutation_restoration(
+                    RestorationProgress {
+                        restoration_id,
+                        device_id,
+                        held_share,
+                    },
+                    fingerprint,
+                );
             }
             RestorationProgress {
                 restoration_id,
@@ -202,7 +202,7 @@ impl State {
 
                     // Check for AccessStructureRef conflicts
                     if let Some(new_ref) = held_share.access_structure_ref {
-                        if let Some(existing_ref) = state.access_structure.get_access_structure_ref() {
+                        if let Some(existing_ref) = state.access_structure.access_structure_ref() {
                             if existing_ref != new_ref {
                                 fail!("access_structure_ref didn't match");
                             }
@@ -218,7 +218,7 @@ impl State {
                         held_by: device_id,
                         held_share: held_share.clone(),
                     };
-                    state.access_structure.held_shares.push(recover_share);
+                    state.access_structure.add_share(recover_share, fingerprint);
                 } else {
                     fail!("restoration id didn't exist")
                 }
@@ -246,11 +246,12 @@ impl State {
                 share_image,
             } => {
                 if let Some(restoration) = self.restorations.get_mut(&restoration_id) {
-                    let pos = restoration
-                        .access_structure
-                        .held_shares
-                        .iter()
-                        .position(|recover_share| recover_share.held_by == device_id && recover_share.held_share.share_image == share_image)?;
+                    let pos = restoration.access_structure.held_shares.iter().position(
+                        |recover_share| {
+                            recover_share.held_by == device_id
+                                && recover_share.held_share.share_image == share_image
+                        },
+                    )?;
                     restoration.access_structure.held_shares.remove(pos);
                     restoration.need_to_consolidate.remove(&device_id);
                 } else {
@@ -424,8 +425,13 @@ impl FrostCoordinator {
         &mut self,
         restoration_id: RestorationId,
         recover_share: &RecoverShare,
+        encryption_key: SymmetricKey,
     ) -> Result<(), RestoreRecoverShareError> {
-        self.check_recover_share_compatible_with_restoration(restoration_id, recover_share)?;
+        self.check_recover_share_compatible_with_restoration(
+            restoration_id,
+            recover_share,
+            encryption_key,
+        )?;
         self.mutate(Mutation::Restoration(
             RestorationMutation::RestorationProgress {
                 restoration_id,
@@ -441,28 +447,56 @@ impl FrostCoordinator {
         &self,
         restoration_id: RestorationId,
         recover_share: &RecoverShare,
+        encryption_key: SymmetricKey,
     ) -> Result<(), RestoreRecoverShareError> {
-        match self.restoration.restorations.get(&restoration_id) {
-            Some(restoration) => {
-                // Check if we already have this exact share
-                if restoration.access_structure.has_got_share_image(
-                    recover_share.held_by,
-                    recover_share.held_share.share_image,
-                ) {
-                    return Err(RestoreRecoverShareError::AlreadyGotThisShare);
-                }
+        let restoration = self
+            .restoration
+            .restorations
+            .get(&restoration_id)
+            .ok_or(RestoreRecoverShareError::UnknownRestorationId)?;
 
-                // Only reject if AccessStructureRef conflicts
-                let new_ref = recover_share.held_share.access_structure_ref;
-                let existing_ref = restoration.access_structure.get_access_structure_ref();
+        // Check if name matches
+        if restoration.key_name != recover_share.held_share.key_name {
+            return Err(RestoreRecoverShareError::NameMismatch);
+        }
 
-                if let (Some(new), Some(existing)) = (new_ref, existing_ref) {
-                    if new != existing {
-                        return Err(RestoreRecoverShareError::AcccessStructureMismatch);
+        // Check if purpose matches
+        if restoration.key_purpose != recover_share.held_share.purpose {
+            return Err(RestoreRecoverShareError::PurposeNotCompatible);
+        }
+
+        // Use find_share to check if share exists elsewhere
+        if let Some(location) =
+            self.find_share(recover_share.held_share.share_image, encryption_key)
+        {
+            match location.key_state {
+                KeyLocationState::Restoring {
+                    restoration_id: found_id,
+                } if found_id == restoration_id => {
+                    // Found in same restoration
+                    if location.device_ids.contains(&recover_share.held_by) {
+                        // Same device in same restoration
+                        return Err(RestoreRecoverShareError::AlreadyGotThisShare);
                     }
+                    // Different device in same restoration is OK (adding redundancy)
+                }
+                _ => {
+                    // Found in different restoration or complete wallet
+                    return Err(RestoreRecoverShareError::ShareBelongsElsewhere {
+                        location: Box::new(location),
+                    });
                 }
             }
-            None => return Err(RestoreRecoverShareError::UnknownRestorationId),
+        }
+
+        // Check AccessStructureRef compatibility
+        let new_ref = recover_share.held_share.access_structure_ref;
+        let existing_ref = restoration.access_structure.access_structure_ref();
+
+        if let (Some(new), Some(existing)) = (new_ref, existing_ref) {
+            if new != existing {
+                return Err(RestoreRecoverShareError::AcccessStructureMismatch);
+            }
         }
 
         Ok(())
@@ -472,19 +506,33 @@ impl FrostCoordinator {
         &self,
         restoration_id: RestorationId,
         phase: PhysicalBackupPhase,
+        encryption_key: SymmetricKey,
     ) -> Result<(), RestorePhysicalBackupError> {
-        match self.restoration.restorations.get(&restoration_id) {
-            Some(restoration) => {
-                // Only check if we already have this exact share
-                if restoration
-                    .access_structure
-                    .has_got_share_image(phase.from, phase.backup.share_image)
-                {
-                    return Err(RestorePhysicalBackupError::AlreadyGotThisShare);
+        self.restoration
+            .restorations
+            .get(&restoration_id)
+            .ok_or(RestorePhysicalBackupError::UnknownRestorationId)?;
+
+        // Use find_share to check if share exists elsewhere
+        if let Some(location) = self.find_share(phase.backup.share_image, encryption_key) {
+            match location.key_state {
+                KeyLocationState::Restoring {
+                    restoration_id: found_id,
+                } if found_id == restoration_id => {
+                    // Found in same restoration
+                    if location.device_ids.contains(&phase.from) {
+                        // Same device in same restoration
+                        return Err(RestorePhysicalBackupError::AlreadyGotThisShare);
+                    }
+                    // Different device in same restoration is OK (adding redundancy)
                 }
-                // Accept all other shares - fuzzy recovery will determine validity later
+                _ => {
+                    // Found in different restoration or complete wallet
+                    return Err(RestorePhysicalBackupError::ShareBelongsElsewhere {
+                        location: Box::new(location),
+                    });
+                }
             }
-            None => return Err(RestorePhysicalBackupError::UnknownRestorationId),
         }
 
         Ok(())
@@ -503,42 +551,28 @@ impl FrostCoordinator {
             .cloned()
             .ok_or(RestorationError::UnknownRestorationId)?;
 
-        // Use fuzzy recovery to find the valid shared key
-        let (root_shared_key, compatible_indices) = state
+        // Get cached shared key
+        let root_shared_key = state
             .access_structure
-            .try_fuzzy_recovery(state.fingerprint)
-            .ok_or(RestorationError::NotEnoughShares)?;
+            .shared_key
+            .as_ref()
+            .ok_or(RestorationError::NotEnoughShares)?
+            .clone();
 
-        let got_threshold = root_shared_key.threshold();
-
-        // If we have an expected threshold, verify it matches
-        if let Some(expected_threshold) = state.access_structure.threshold {
-            if expected_threshold as usize != got_threshold {
-                return Err(RestorationError::ThresholdDoesntMatch {
-                    expected: expected_threshold,
-                    got: got_threshold as u16,
-                });
-            }
-        }
+        debug_assert!(
+            state
+                .access_structure
+                .threshold
+                .map(|t| t as usize == root_shared_key.threshold())
+                .unwrap_or(true),
+            "shared_key threshold must match state threshold if one was specified"
+        );
 
         let access_structure_ref = AccessStructureRef::from_root_shared_key(&root_shared_key);
 
-        // if we already know about this access structure, check it matches
-        if let Some(expected_ref) = state.access_structure.get_access_structure_ref() {
-            if access_structure_ref != expected_ref {
-                return Err(RestorationError::InterpolationDoesntMatch);
-            }
-        }
-
-        // Build device_to_share_index from compatible shares only
-        let device_to_share_index: BTreeMap<DeviceId, ShareIndex> = compatible_indices
-            .iter()
-            .filter_map(|&i| {
-                state.access_structure.held_shares.get(i).map(|recover_share| {
-                    (recover_share.held_by, recover_share.held_share.share_image.index)
-                })
-            })
-            .collect();
+        let device_to_share_index = state
+            .access_structure
+            .compatible_device_to_share_index(&root_shared_key);
 
         self.mutate_new_key(
             state.key_name.clone(),
@@ -616,37 +650,62 @@ impl FrostCoordinator {
         recover_share: &RecoverShare,
         encryption_key: SymmetricKey,
     ) -> Result<(), RecoverShareError> {
-        let access_structure = self
-            .get_access_structure(access_structure_ref)
-            .ok_or(RecoverShareError::NoSuchAccessStructure)?;
+        let frost_key =
+            self.get_frost_key(access_structure_ref.key_id)
+                .ok_or(RecoverShareError {
+                    key_purpose: self
+                        .keys
+                        .get(&access_structure_ref.key_id)
+                        .map(|k| k.purpose)
+                        .unwrap_or(KeyPurpose::Test),
+                    kind: RecoverShareErrorKind::NoSuchAccessStructure,
+                })?;
+
+        let key_purpose = frost_key.purpose;
+
+        let access_structure =
+            self.get_access_structure(access_structure_ref)
+                .ok_or(RecoverShareError {
+                    key_purpose,
+                    kind: RecoverShareErrorKind::NoSuchAccessStructure,
+                })?;
 
         if let Some(got) = recover_share.held_share.access_structure_ref {
             if got != access_structure_ref {
-                return Err(RecoverShareError::AccessStructureMismatch);
+                return Err(RecoverShareError {
+                    key_purpose,
+                    kind: RecoverShareErrorKind::AccessStructureMismatch,
+                });
             }
         }
-        let frost_key = self
-            .get_frost_key(access_structure_ref.key_id)
-            .ok_or(RecoverShareError::NoSuchAccessStructure)?;
 
         if access_structure
             .device_to_share_index
             .contains_key(&recover_share.held_by)
         {
-            return Err(RecoverShareError::AlreadyGotThisShare);
+            return Err(RecoverShareError {
+                key_purpose,
+                kind: RecoverShareErrorKind::AlreadyGotThisShare,
+            });
         }
 
         let root_shared_key = frost_key
             .complete_key
             .root_shared_key(access_structure_ref.access_structure_id, encryption_key)
-            .ok_or(RecoverShareError::DecryptionError)?;
+            .ok_or(RecoverShareError {
+                key_purpose,
+                kind: RecoverShareErrorKind::DecryptionError,
+            })?;
 
         let share_image = recover_share.held_share.share_image;
 
         let expected_image = root_shared_key.share_image(share_image.index);
 
         if expected_image != share_image {
-            return Err(RecoverShareError::ShareImageIsWrong);
+            return Err(RecoverShareError {
+                key_purpose,
+                kind: RecoverShareErrorKind::ShareImageIsWrong,
+            });
         }
         Ok(())
     }
@@ -1054,6 +1113,16 @@ pub struct PhysicalBackupPhase {
     pub from: DeviceId,
 }
 
+impl PhysicalBackupPhase {
+    pub fn device_id(&self) -> DeviceId {
+        self.from
+    }
+
+    pub fn share_image(&self) -> ShareImage {
+        self.backup.share_image
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TellDeviceConsolidateBackup {
     pub device_id: DeviceId,
@@ -1117,10 +1186,6 @@ pub enum RestorationError {
     UnknownRestorationId,
     /// You can't restore yet since you don't have enough shares
     NotEnoughShares,
-    /// The shares interpolated but didn't match the access structure id expected
-    InterpolationDoesntMatch,
-    /// Threshold doesn't match. The threshold is wrong a backup was entered wrongly.
-    ThresholdDoesntMatch { expected: u16, got: u16 },
 }
 
 impl fmt::Display for RestorationError {
@@ -1130,14 +1195,6 @@ impl fmt::Display for RestorationError {
                 write!(f, "The restoration session no longer exists")
             }
             RestorationError::NotEnoughShares => write!(f, "Not enough shares to restore"),
-            RestorationError::InterpolationDoesntMatch => write!(
-                f,
-                "Interpolated shares did not match the expected access structure ID"
-            ),
-            RestorationError::ThresholdDoesntMatch { expected, got } => write!(
-                f,
-                "The threshold was entered wrongly or one of the shares is wrong. Expected a threshold of {expected}, got {got}",
-            ),
         }
     }
 }
@@ -1157,15 +1214,15 @@ pub enum RestoreRecoverShareError {
     AcccessStructureMismatch,
     /// Already know this device has this share
     AlreadyGotThisShare,
-    /// The share image that this device claims exists at this index contradicts another device in the restoration.
-    ConflictingShareImage { conflicts_with: DeviceId },
+    /// The share belongs to a different key or restoration
+    ShareBelongsElsewhere { location: Box<ShareLocation> },
 }
 
 #[derive(Debug, Clone)]
 pub enum RestorePhysicalBackupError {
     UnknownRestorationId,
     AlreadyGotThisShare,
-    ConflictingShareImage { conflicts_with: DeviceId },
+    ShareBelongsElsewhere { location: Box<ShareLocation> },
 }
 
 impl fmt::Display for RestorePhysicalBackupError {
@@ -1175,10 +1232,10 @@ impl fmt::Display for RestorePhysicalBackupError {
                 write!(f, "Coordinator didn't have the restoration id")
             }
             RestorePhysicalBackupError::AlreadyGotThisShare => {
-                write!(f, "Already know this device has this share")
+                write!(f, "The key on this device has already been restored")
             }
-            RestorePhysicalBackupError::ConflictingShareImage { conflicts_with } => {
-                write!(f, "The device {conflicts_with} has already submitted a backup with that index but with a different share image")
+            RestorePhysicalBackupError::ShareBelongsElsewhere { location } => {
+                write!(f, "This key share already belongs to {} '{}' and cannot be added to this restoration", location.key_purpose.key_type_noun(), location.key_name)
             }
         }
     }
@@ -1199,7 +1256,7 @@ impl fmt::Display for RestoreRecoverShareError {
                 write!(f, "Access structure doesn't match one of the other shares")
             }
             RestoreRecoverShareError::AlreadyGotThisShare => {
-                write!(f, "Already know this device has this share")
+                write!(f, "The key on this device has already been restored")
             }
             RestoreRecoverShareError::NameMismatch => {
                 write!(
@@ -1207,8 +1264,12 @@ impl fmt::Display for RestoreRecoverShareError {
                     "The name of the key being restored and the one in the share is not the same"
                 )
             }
-            RestoreRecoverShareError::ConflictingShareImage { conflicts_with } => {
-                write!(f, "The device {conflicts_with} has already submitted a backup with that index but with a different share image")
+            RestoreRecoverShareError::ShareBelongsElsewhere { location } => {
+                write!(
+                    f,
+                    "This key share belongs to key '{}' and cannot be added to this restoration",
+                    location.key_name
+                )
             }
         }
     }
@@ -1218,7 +1279,13 @@ impl std::error::Error for RestoreRecoverShareError {}
 
 /// An error when you try to recover a share to a known access structure
 #[derive(Debug, Clone)]
-pub enum RecoverShareError {
+pub struct RecoverShareError {
+    pub key_purpose: KeyPurpose,
+    pub kind: RecoverShareErrorKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum RecoverShareErrorKind {
     /// The coordinator already knows about this share
     AlreadyGotThisShare,
     /// The access structure for the share isn't known to the coordinator
@@ -1233,24 +1300,25 @@ pub enum RecoverShareError {
 
 impl fmt::Display for RecoverShareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RecoverShareError::AlreadyGotThisShare => {
-                write!(f, "The coordinator already knows about this share")
+        let noun = self.key_purpose.key_type_noun();
+        match &self.kind {
+            RecoverShareErrorKind::AlreadyGotThisShare => {
+                write!(f, "This {} already has this key share", noun)
             }
-            RecoverShareError::NoSuchAccessStructure => write!(
-                f,
-                "The access structure for the share isn't known to the coordinator"
-            ),
-            RecoverShareError::ShareImageIsWrong => {
-                write!(f, "The share image was not what was expected")
+            RecoverShareErrorKind::NoSuchAccessStructure => {
+                write!(f, "Could not find this {} to add the key share to", noun)
             }
-            RecoverShareError::DecryptionError => {
-                write!(f, "The application provided the wrong decryption key so we couldn't verify the new key share.")
+            RecoverShareErrorKind::ShareImageIsWrong => {
+                write!(f, "This key share doesn't belong to this {}", noun)
             }
-            RecoverShareError::AccessStructureMismatch => {
+            RecoverShareErrorKind::DecryptionError => {
+                write!(f, "The application provided the wrong decryption key so we couldn't verify the key share for this {}.", noun)
+            }
+            RecoverShareErrorKind::AccessStructureMismatch => {
                 write!(
                     f,
-                    "The recoverable share is for a different access structure"
+                    "The key share is for a different access structure of this {}",
+                    noun
                 )
             }
         }
@@ -1263,69 +1331,101 @@ impl std::error::Error for RecoverShareError {}
 pub struct RecoveringAccessStructure {
     pub threshold: Option<u16>,
     pub held_shares: Vec<RecoverShare>,
+    pub shared_key: Option<SharedKey>,
 }
 
 impl RecoveringAccessStructure {
-    pub fn get_access_structure_ref(&self) -> Option<AccessStructureRef> {
-        self.held_shares.iter()
+    pub fn access_structure_ref(&self) -> Option<AccessStructureRef> {
+        if let Some(ref shared_key) = self.shared_key {
+            return Some(AccessStructureRef::from_root_shared_key(shared_key));
+        }
+        self.held_shares
+            .iter()
             .find_map(|recover_share| recover_share.held_share.access_structure_ref)
     }
 
-    pub fn get_effective_threshold(&self) -> Option<u16> {
+    pub fn effective_threshold(&self) -> Option<u16> {
+        if let Some(ref shared_key) = self.shared_key {
+            return Some(shared_key.threshold() as u16);
+        }
         self.threshold.or_else(|| {
-            self.held_shares.iter()
+            self.held_shares
+                .iter()
                 .find_map(|recover_share| recover_share.held_share.threshold)
         })
     }
 
     pub fn has_got_share_image(&self, device_id: DeviceId, share_image: ShareImage) -> bool {
-        self.held_shares.iter()
-            .any(|recover_share| recover_share.held_by == device_id && recover_share.held_share.share_image == share_image)
+        self.held_shares.iter().any(|recover_share| {
+            recover_share.held_by == device_id
+                && recover_share.held_share.share_image == share_image
+        })
     }
 
-    pub fn contradicts(&self, share_image: ShareImage) -> Option<DeviceId> {
-        self.held_shares.iter()
-            .find(|recover_share| recover_share.held_share.share_image.index == share_image.index && recover_share.held_share.share_image != share_image)
-            .map(|recover_share| recover_share.held_by)
+    pub fn share_image_to_devices(&self) -> BTreeMap<ShareImage, Vec<DeviceId>> {
+        let mut map = BTreeMap::new();
+        for recover_share in &self.held_shares {
+            map.entry(recover_share.held_share.share_image)
+                .or_insert_with(Vec::new)
+                .push(recover_share.held_by);
+        }
+        map
+    }
+
+    pub fn compatible_device_to_share_index(
+        &self,
+        shared_key: &SharedKey,
+    ) -> BTreeMap<DeviceId, ShareIndex> {
+        self.held_shares
+            .iter()
+            .filter(|recover_share| {
+                let expected_image =
+                    shared_key.share_image(recover_share.held_share.share_image.index);
+                expected_image == recover_share.held_share.share_image
+            })
+            .map(|recover_share| {
+                (
+                    recover_share.held_by,
+                    recover_share.held_share.share_image.index,
+                )
+            })
+            .collect()
+    }
+
+    pub fn add_share(
+        &mut self,
+        recover_share: RecoverShare,
+        fingerprint: schnorr_fun::frost::Fingerprint,
+    ) {
+        self.held_shares.push(recover_share);
+
+        // Try fuzzy recovery and cache the shared_key if successful
+        if let Some(shared_key) = self.try_fuzzy_recovery(fingerprint) {
+            self.shared_key = Some(shared_key);
+        }
     }
 
     /// Try to recover using frost_backup's find_valid_subset
-    /// Returns the SharedKey and indices of compatible shares
-    pub fn try_fuzzy_recovery(&self, fingerprint: schnorr_fun::frost::Fingerprint) -> Option<(SharedKey, Vec<usize>)> {
-        // We need at least 2 shares for recovery
-        if self.held_shares.len() < 2 {
-            return None;
-        }
-
-        let share_images: Vec<ShareImage> = self.held_shares.iter()
+    fn try_fuzzy_recovery(
+        &self,
+        fingerprint: schnorr_fun::frost::Fingerprint,
+    ) -> Option<SharedKey> {
+        let share_images: Vec<ShareImage> = self
+            .held_shares
+            .iter()
             .map(|recover_share| recover_share.held_share.share_image)
             .collect();
 
-        let threshold = self.get_effective_threshold().map(|t| t as usize);
+        let threshold = self.effective_threshold().map(|t| t as usize);
 
         // Use frost_backup's find_valid_subset to find compatible share images
         // This will try different combinations and thresholds to find a valid set
         use frost_backup::recovery::find_valid_subset;
 
-        let (compatible_images, shared_key) = find_valid_subset(&share_images, fingerprint, threshold)?;
+        let (_compatible_images, shared_key) =
+            find_valid_subset(&share_images, fingerprint, threshold)?;
 
-        // Convert the compatible ShareImages back to indices in our held_shares array
-        let compatible_indices: Vec<usize> = self.held_shares
-            .iter()
-            .enumerate()
-            .filter_map(|(i, recover_share)| {
-                if compatible_images.contains(&recover_share.held_share.share_image) {
-                    Some(i)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Convert to non-zero SharedKey
-        let shared_key = shared_key.non_zero()?;
-
-        Some((shared_key, compatible_indices))
+        shared_key.non_zero()
     }
 
     pub fn progress(&self) -> u16 {
@@ -1338,8 +1438,6 @@ impl RecoveringAccessStructure {
             .unwrap()
     }
 
-
-
     pub fn has_got_share_index(&self, share_index: ShareIndex) -> bool {
         self.held_shares
             .iter()
@@ -1347,9 +1445,10 @@ impl RecoveringAccessStructure {
     }
 
     pub fn has_got_share(&self, device_id: DeviceId, share_image: ShareImage) -> bool {
-        self.held_shares
-            .iter()
-            .any(|recover_share| recover_share.held_by == device_id && recover_share.held_share.share_image == share_image)
+        self.held_shares.iter().any(|recover_share| {
+            recover_share.held_by == device_id
+                && recover_share.held_share.share_image == share_image
+        })
     }
 
     pub fn has_got_from(&self, device_id: DeviceId) -> bool {
