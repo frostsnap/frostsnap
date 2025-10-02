@@ -273,7 +273,7 @@ class WalletCreateController extends ChangeNotifier {
     if (_step != WalletCreateStep.nonceReplenish && !canGoNext) return false;
     switch (_step) {
       case WalletCreateStep.name:
-        _form.name = _nameController.text;
+        _form.name = _nameController.text.trim();
         return true;
       case WalletCreateStep.deviceCount:
         _form.selectedDevices.clear();
@@ -499,10 +499,11 @@ class WalletCreateController extends ChangeNotifier {
   };
 
   void setDeviceName(DeviceId id, String name) async {
-    if (name.isNotEmpty) {
-      _form.deviceNames[id] = name;
+    final trimmedName = name.trim();
+    if (trimmedName.isNotEmpty) {
+      _form.deviceNames[id] = trimmedName;
       notifyListeners();
-      await coord.updateNamePreview(id: id, name: name);
+      await coord.updateNamePreview(id: id, name: trimmedName);
     } else {
       _form.deviceNames.remove(id);
       notifyListeners();

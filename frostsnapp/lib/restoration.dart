@@ -1277,7 +1277,10 @@ class _EnterWalletNameViewState extends State<_EnterWalletNameView> {
 
   void _submitForm() {
     if (_isButtonEnabled && _formKey.currentState!.validate()) {
-      widget.onWalletNameEntered(_walletNameController.text, bitcoinNetwork);
+      widget.onWalletNameEntered(
+        _walletNameController.text.trim(),
+        bitcoinNetwork,
+      );
     }
   }
 

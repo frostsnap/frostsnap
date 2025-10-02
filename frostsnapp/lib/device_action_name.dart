@@ -55,7 +55,7 @@ class DeviceActionNameDialogController with ChangeNotifier {
       return name;
     }
 
-    await coord.finishNaming(id: id, name: name);
+    await coord.finishNaming(id: id, name: name.trim());
 
     final confirmedName = await Stream<String?>.fromFutures([
       GlobalStreams.deviceListChangeStream

@@ -10,9 +10,32 @@ late Coordinator coord;
 late Api api;
 late HostPortHandler? globalHostPortHandler;
 
-final nameInputFormatter = FilteringTextInputFormatter.allow(
-  RegExp(r"[a-zA-Z0-9_\-']"),
-);
+final nameInputFormatter = TextInputFormatter.withFunction((
+  oldValue,
+  newValue,
+) {
+  final text = newValue.text;
+
+  // Allow empty string
+  if (text.isEmpty) return newValue;
+
+  // reject leading spaces (always wrong)
+  if (text.startsWith(' ')) {
+    return oldValue;
+  }
+
+  // reject double spaces
+  if (text.contains('  ')) {
+    return oldValue;
+  }
+
+  // reject disallowed characters
+  if (!RegExp(r"^[a-zA-Z0-9_\-' ]+$").hasMatch(text)) {
+    return oldValue;
+  }
+
+  return newValue;
+});
 
 class GlobalStreams {
   /// Gets new updates from the device list
