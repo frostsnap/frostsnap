@@ -118,12 +118,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       if (context.mounted) setState(() => _feeAmount = fee);
     } catch (e) {
       if (context.mounted) {
-        setState(
-          () => _feeAmountError = e
-              .toString()
-              .replaceAll('FrbAnyhowException(', '')
-              .replaceAll(')', ''),
-        );
+        setState(() => _feeAmountError = e.toString());
       }
     }
   }
