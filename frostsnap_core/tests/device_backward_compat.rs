@@ -3,8 +3,7 @@ mod common;
 
 use frost_backup::ShareBackup;
 use frostsnap_core::device::{
-    restoration::{LegacySavedBackup, RestorationMutation},
-    EncryptedSecretShare, KeyPurpose, Mutation, SaveShareMutation,
+    restoration::*, EncryptedSecretShare, KeyPurpose, Mutation, SaveShareMutation,
 };
 use frostsnap_core::{AccessStructureId, AccessStructureKind, Kind};
 use schnorr_fun::frost::{SecretShare, ShareImage, SharedKey};
@@ -72,8 +71,14 @@ fn test_all_device_mutations() {
         )),
         // Restoration mutations
         Mutation::Restoration(RestorationMutation::LegacySave(LegacySavedBackup {
-            share_backup,
+            share_backup: share_backup.clone(),
             threshold: 2,
+            purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+            key_name: "test_key".to_string(),
+        })),
+        Mutation::Restoration(RestorationMutation::Save(SavedBackup {
+            share_backup,
+            threshold: Some(2),
             purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
             key_name: "test_key".to_string(),
         })),
@@ -103,6 +108,12 @@ fn test_all_device_mutations() {
                     "01000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002aeb02010008746573745f6b6579"
                 );
             }
+            Mutation::Restoration(RestorationMutation::Save(_)) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "01020000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002aeb0102010008746573745f6b6579"
+                );
+            }
             Mutation::Restoration(RestorationMutation::UnSave(_)) => {
                 assert_bincode_hex_eq!(
                     mutation,
@@ -114,9 +125,6 @@ fn test_all_device_mutations() {
                     mutation,
                     "000201010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1afb1dde6fd8607b05ecd33fcdf96eaef828be8955ad2af175f7b4f231e83dac8a2a89393d068530505297b93b9dc5b740d59a1ebee4d9a5924acda8cca"
                 );
-            }
-            _ => {
-                // Other mutations we're not testing yet
             }
         }
     }
