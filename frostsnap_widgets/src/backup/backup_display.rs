@@ -9,7 +9,7 @@ use crate::{
     HoldToConfirm,
 };
 use alloc::{format, string::String, vec::Vec};
-use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
+use embedded_graphics::{pixelcolor::Rgb565, text::Alignment};
 use frost_backup::{bip39_words::BIP39_WORDS, NUM_WORDS};
 
 const WORDS_PER_PAGE: usize = 3;

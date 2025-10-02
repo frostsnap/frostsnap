@@ -1,9 +1,5 @@
 use crate::{
-    PageSlider, WidgetList, Widget, DynWidget, Instant, SuperDrawTarget,
-    HoldToConfirm, Column, Row, Center, SizedBox, Text,
-    fonts::Gray4TextStyle,
-    palette::PALETTE,
-    MainAxisAlignment, CrossAxisAlignment, any_of::AnyOf,
+    any_of::AnyOf, fonts::Gray4TextStyle, palette::PALETTE, Center, Column, CrossAxisAlignment, DynWidget, HoldToConfirm, Instant, MainAxisAlignment, PageSlider, Row, SizedBox, SuperDrawTarget, Text, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS
 };
 use embedded_graphics::{
     pixelcolor::Rgb565,
@@ -164,7 +160,7 @@ impl WipeConfirmationPage {
         // Red: fill(25,8,4) -> border calculated proportionally
         let red_fill = Rgb565::new(25, 8, 4);      // Darker red for button fill
         let red_border = Rgb565::new(31, 14, 8);   // Brighter red for border (similar ratio to green)
-        let hold_confirm = HoldToConfirm::new(8000, confirm_content)
+        let hold_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, confirm_content)
             .with_custom_colors(
                 red_border,  // Brighter red for border progress
                 red_fill,    // Darker red for button fill
