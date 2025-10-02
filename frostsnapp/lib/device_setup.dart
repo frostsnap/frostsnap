@@ -3,6 +3,7 @@ import 'package:frostsnap/device_action_name.dart';
 
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/name.dart';
 
 enum DeviceNameMode {
   /// The name field renames the device and prompts the user for confirmation.
@@ -91,11 +92,12 @@ class _DeviceNameField extends State<DeviceNameField> {
         children: [
           TextField(
             controller: _controller,
-            maxLength: 20,
+            maxLength: DeviceName.maxLength(),
             decoration: InputDecoration(
               border: OutlineInputBorder(),
               labelText: 'Device name',
             ),
+            inputFormatters: [nameInputFormatter],
             onSubmitted: (name) => _onSubmitted(context, name),
             onChanged: (value) async =>
                 await coord.updateNamePreview(id: widget.id, name: value),

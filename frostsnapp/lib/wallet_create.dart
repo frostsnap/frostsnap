@@ -13,6 +13,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
+import 'package:frostsnap/src/rust/api/name.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -69,8 +70,9 @@ class WalletCreateController extends ChangeNotifier {
             nameError = 'Wallet name required';
             return;
           }
-          if (name.length > 21) {
-            nameError = 'Wallet name cannot be over 21 chars';
+          if (name.length > keyNameMaxLength()) {
+            nameError =
+                'Wallet name cannot be over ${keyNameMaxLength()} chars';
             return;
           }
         } else if (name.isNotEmpty) {
@@ -271,7 +273,7 @@ class WalletCreateController extends ChangeNotifier {
     if (_step != WalletCreateStep.nonceReplenish && !canGoNext) return false;
     switch (_step) {
       case WalletCreateStep.name:
-        _form.name = _nameController.text;
+        _form.name = _nameController.text.trim();
         return true;
       case WalletCreateStep.deviceCount:
         _form.selectedDevices.clear();
@@ -497,10 +499,11 @@ class WalletCreateController extends ChangeNotifier {
   };
 
   void setDeviceName(DeviceId id, String name) async {
-    if (name.isNotEmpty) {
-      _form.deviceNames[id] = name;
+    final trimmedName = name.trim();
+    if (trimmedName.isNotEmpty) {
+      _form.deviceNames[id] = trimmedName;
       notifyListeners();
-      await coord.updateNamePreview(id: id, name: name);
+      await coord.updateNamePreview(id: id, name: trimmedName);
     } else {
       _form.deviceNames.remove(id);
       notifyListeners();
@@ -557,7 +560,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           border: OutlineInputBorder(),
           errorText: _controller.nameError,
         ),
-        maxLength: 21,
+        maxLength: keyNameMaxLength(),
+        inputFormatters: [nameInputFormatter],
         textCapitalization: TextCapitalization.words,
         onSubmitted: (_) {
           _controller.next(context);
@@ -751,6 +755,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   border: OutlineInputBorder(),
                   labelText: 'Device Name',
                 ),
+                maxLength: DeviceName.maxLength(),
+                inputFormatters: [nameInputFormatter],
                 initialValue: _controller.form.deviceNames[device.id],
                 onChanged: (name) => _controller.setDeviceName(device.id, name),
                 onFieldSubmitted: (_) => Navigator.pop(context),
@@ -799,6 +805,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             suffixIcon: Icon(Icons.edit_rounded),
             filled: true,
           ),
+          maxLength: DeviceName.maxLength(),
+          inputFormatters: [nameInputFormatter],
           style: monospaceTextStyle,
           controller: textController,
           onChanged: isPart

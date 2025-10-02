@@ -1,4 +1,4 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::prelude::*;
 use esp_hal::prelude::*;
 use frostsnap_cst816s::interrupt::TouchReceiver;
@@ -123,7 +123,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 WidgetTree::DeviceNaming(ref mut device_name_screen),
                 Workflow::NamingDevice { ref new_name },
             ) => {
-                device_name_screen.set_name(new_name.clone());
+                device_name_screen.set_name(new_name.to_string());
                 return;
             }
 
@@ -163,7 +163,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             Workflow::Standby {
                 device_name,
                 held_share,
-            } => WidgetTree::Standby(Box::new(Standby::new(device_name, held_share))),
+            } => WidgetTree::Standby(Box::new(Standby::new(device_name.to_string(), held_share))),
             Workflow::UserPrompt(prompt) => {
                 match prompt {
                     Prompt::KeyGen { phase } => {
@@ -317,7 +317,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             }
 
             Workflow::NamingDevice { new_name } => {
-                let device_name_screen = DeviceNameScreen::new(new_name);
+                let device_name_screen = DeviceNameScreen::new(new_name.to_string());
                 WidgetTree::DeviceNaming(Box::new(device_name_screen))
             }
 
