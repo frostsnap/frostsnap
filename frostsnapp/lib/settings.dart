@@ -19,10 +19,11 @@ import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
 import 'package:frostsnap/wallet.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/icons.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/gestures.dart';
 
 class SettingsContext extends InheritedWidget {
   final Settings settings;
@@ -160,12 +161,10 @@ class SettingsPage extends StatelessWidget {
                 title: 'General',
                 items: [
                   SettingsItem(
-                    title: Text('Theme'),
-                    icon: Icons.color_lens,
+                    title: Text('About'),
+                    icon: Icons.info_outline,
                     bodyBuilder: (context) {
-                      return Todo(
-                        "theme settings like like currency denomination",
-                      );
+                      return AboutPage();
                     },
                   ),
                   SettingsItem(
@@ -173,13 +172,6 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.cloud,
                     bodyBuilder: (context) {
                       return ElectrumServerSettingsPage();
-                    },
-                  ),
-                  SettingsItem(
-                    title: Text('App info'),
-                    icon: Icons.info_outline,
-                    bodyBuilder: (context) {
-                      return AboutPage();
                     },
                   ),
                 ],
@@ -1035,27 +1027,65 @@ class AboutPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ListTile(
-            leading: Icon(Icons.android),
-            title: Text('App version'),
-            subtitle: FutureBuilder<PackageInfo>(
-              future: PackageInfo.fromPlatform(),
-              builder: (context, snapshot) {
-                final version = snapshot.hasData
-                    ? '${snapshot.data!.version} (${snapshot.data!.buildNumber})'
-                    : 'Loading...';
-                return Text(version);
-              },
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Text.rich(
+              TextSpan(
+                style: Theme.of(context).textTheme.bodyLarge,
+                children: [
+                  TextSpan(text: 'Frostsnap is an '),
+                  TextSpan(
+                    text: 'open source',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () async {
+                        final url = Uri.parse(
+                          'https://github.com/frostsnap/frostsnap',
+                        );
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(
+                            url,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      },
+                  ),
+                  TextSpan(
+                    text:
+                        ' bitcoin wallet that uses FROST threshold signatures to secure your funds across multiple signing devices.',
+                  ),
+                ],
+              ),
             ),
-            trailing: Icon(Icons.copy, size: 20),
-            onTap: () async {
-              final packageInfo = await PackageInfo.fromPlatform();
-              final version =
-                  '${packageInfo.version} (${packageInfo.buildNumber})';
-              Clipboard.setData(ClipboardData(text: version));
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text('Copied to clipboard')));
+          ),
+          Builder(
+            builder: (context) {
+              const buildVersion = String.fromEnvironment(
+                'BUILD_VERSION',
+                defaultValue: 'unknown',
+              );
+
+              return ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('App version'),
+                subtitle: Text(buildVersion, style: monospaceTextStyle),
+                trailing: buildVersion != 'unknown'
+                    ? Icon(Icons.copy, size: 20)
+                    : null,
+                onTap: buildVersion != 'unknown'
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: buildVersion));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Copied version to clipboard'),
+                          ),
+                        );
+                      }
+                    : null,
+              );
             },
           ),
           Builder(
@@ -1088,21 +1118,59 @@ class AboutPage extends StatelessWidget {
                 'BUILD_COMMIT',
                 defaultValue: 'unknown',
               );
+              final commitHash = buildCommit.endsWith('-modified')
+                  ? buildCommit.substring(0, buildCommit.length - 9)
+                  : buildCommit;
 
               return ListTile(
                 leading: Icon(Icons.commit),
                 title: Text('Build commit'),
                 subtitle: Text(buildCommit, style: monospaceTextStyle),
                 trailing: buildCommit != 'unknown'
-                    ? Icon(Icons.copy, size: 20)
+                    ? Icon(Icons.more_horiz, size: 20)
                     : null,
                 onTap: buildCommit != 'unknown'
                     ? () {
-                        Clipboard.setData(ClipboardData(text: buildCommit));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Copied full commit hash to clipboard',
+                        showModalBottomSheet(
+                          context: context,
+                          builder: (context) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading: Icon(Icons.copy),
+                                  title: Text('Copy commit hash'),
+                                  onTap: () {
+                                    Clipboard.setData(
+                                      ClipboardData(text: buildCommit),
+                                    );
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Copied commit hash to clipboard',
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                ListTile(
+                                  leading: Icon(Icons.open_in_new),
+                                  title: Text('View on GitHub'),
+                                  onTap: () async {
+                                    Navigator.pop(context);
+                                    final url = Uri.parse(
+                                      'https://github.com/frostsnap/frostsnap/commit/$commitHash',
+                                    );
+                                    if (await canLaunchUrl(url)) {
+                                      await launchUrl(
+                                        url,
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
                             ),
                           ),
                         );

@@ -12,19 +12,22 @@ gen +ARGS="":
 build TARGET="linux" +ARGS="": maybe-gen
     #!/bin/sh
     BUILD_COMMIT=$(just get-build-commit)
-    BUNDLE_FIRMWARE=1 flutter build {{TARGET}} --dart-define=BUILD_COMMIT="$BUILD_COMMIT" {{ARGS}}
+    BUILD_VERSION=$(just get-build-version)
+    BUNDLE_FIRMWARE=1 flutter build {{TARGET}} --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
 run +ARGS="": maybe-gen
     #!/bin/sh
     just ../gen-firmware
     BUILD_COMMIT=$(just get-build-commit)
-    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" {{ARGS}}
+    BUILD_VERSION=$(just get-build-version)
+    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
 run-secure +ARGS="": maybe-gen
     #!/bin/sh
     just ../build-secure
     BUILD_COMMIT=$(just get-build-commit)
-    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" {{ARGS}}
+    BUILD_VERSION=$(just get-build-version)
+    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
 maybe-gen:
     #!/bin/sh
@@ -55,6 +58,14 @@ get-build-commit:
         BUILD_COMMIT="${BUILD_COMMIT}-modified"
     fi
     echo "$BUILD_COMMIT"
+
+get-build-version:
+    #!/bin/sh
+    BUILD_VERSION=$(git describe --tags --always 2>/dev/null || echo "unknown")
+    if [ "$BUILD_VERSION" != "unknown" ] && ! git diff-index --quiet HEAD --; then
+        BUILD_VERSION="${BUILD_VERSION}-modified"
+    fi
+    echo "$BUILD_VERSION"
 
 build-appimage +ARGS="":
     #!/bin/sh
