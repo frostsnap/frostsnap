@@ -34,8 +34,6 @@ enum FadeState {
 pub struct Fader<W> {
     pub child: W,
     state: FadeState,
-    redraw_interval_ms: u64,
-    last_redraw_time: Option<crate::Instant>,
     animation_speed: AnimationSpeed,
     constraints: Option<Size>,
 }
@@ -45,8 +43,6 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
         Self {
             child,
             state: FadeState::Idle,
-            redraw_interval_ms: 0,
-            last_redraw_time: None,
             animation_speed: AnimationSpeed::Linear,
             constraints: None,
         }
@@ -57,8 +53,6 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
         Self {
             child,
             state: FadeState::FadedOut,
-            redraw_interval_ms: 0,
-            last_redraw_time: None,
             animation_speed: AnimationSpeed::Linear,
             constraints: None,
         }
@@ -71,7 +65,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
 
     /// Start fading out over the specified duration
     /// This function is monotonic - it can only make fades happen faster, never slower
-    pub fn start_fade(&mut self, duration_ms: u64, redraw_interval_ms: u64) {
+    pub fn start_fade(&mut self, duration_ms: u64) {
         // If already faded out, do nothing
         if matches!(self.state, FadeState::FadedOut) {
             return;
@@ -86,7 +80,6 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             if duration_ms < *current_duration {
                 // Update to shorter duration, keeping the same start time
                 *current_duration = duration_ms;
-                self.redraw_interval_ms = redraw_interval_ms;
             }
             // Either updated to shorter duration or keeping existing (if new would be longer)
             return;
@@ -97,13 +90,11 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             start_time: None, // Will be set on first draw
             duration_ms,
         };
-        self.redraw_interval_ms = redraw_interval_ms;
-        self.last_redraw_time = None;
     }
 
     /// Start fading in over the specified duration
     /// This function is monotonic - it can only make fades happen faster, never slower
-    pub fn start_fade_in(&mut self, duration_ms: u64, redraw_interval_ms: u64) {
+    pub fn start_fade_in(&mut self, duration_ms: u64) {
         // If already fully visible (Idle state), do nothing
         if matches!(self.state, FadeState::Idle) {
             return;
@@ -118,7 +109,6 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             if duration_ms < *current_duration {
                 // Update to shorter duration, keeping the same start time
                 *current_duration = duration_ms;
-                self.redraw_interval_ms = redraw_interval_ms;
             }
             // Either updated to shorter duration or keeping existing (if new would be longer)
             return;
@@ -129,8 +119,6 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
             start_time: None, // Will be set on first draw
             duration_ms,
         };
-        self.redraw_interval_ms = redraw_interval_ms;
-        self.last_redraw_time = None;
     }
 
     /// Stop fading
@@ -139,7 +127,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     }
 
     pub fn instant_fade(&mut self) {
-        self.start_fade(0, 0);
+        self.start_fade(0);
     }
 
     /// Check if fading is complete
@@ -163,7 +151,7 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
     }
 
     pub fn is_visible(&self) -> bool {
-        self.is_not_faded() || (self.is_fading_in() && self.last_redraw_time.is_some())
+        self.is_not_faded() || self.is_fading_in()
     }
 
     pub fn is_fading(&self) -> bool {
@@ -313,48 +301,37 @@ impl<W: Widget<Color = Rgb565>> Widget for Fader<W> {
                 }
                 let actual_start_time = start_time.unwrap();
 
-                // Check if we should redraw based on interval
-                let should_redraw = if let Some(last_redraw) = self.last_redraw_time {
-                    current_time.saturating_duration_since(last_redraw) >= self.redraw_interval_ms
+                // Calculate fade progress using Frac (automatically clamped to [0, 1])
+                let elapsed = current_time.saturating_duration_since(actual_start_time) as u32;
+                let linear_progress = Frac::from_ratio(elapsed, duration_ms as u32);
+                let eased_progress = self.animation_speed.apply(linear_progress);
+
+                // For fade-in, reverse the progress (1.0 -> 0.0)
+                let fade_progress = if is_fade_in {
+                    Frac::ONE - eased_progress
                 } else {
-                    true // First redraw
+                    eased_progress
                 };
 
-                if should_redraw {
-                    // Calculate fade progress using Frac (automatically clamped to [0, 1])
-                    let elapsed = current_time.saturating_duration_since(actual_start_time) as u32;
-                    let linear_progress = Frac::from_ratio(elapsed, duration_ms as u32);
-                    let eased_progress = self.animation_speed.apply(linear_progress);
+                self.child.force_full_redraw();
 
-                    // For fade-in, reverse the progress (1.0 -> 0.0)
-                    let fade_progress = if is_fade_in {
-                        Frac::ONE - eased_progress
+                // Use SuperDrawTarget's opacity method for fading
+                let mut fading_target = target.clone().opacity(Frac::ONE - fade_progress);
+                self.child.draw(&mut fading_target, current_time)?;
+
+                // Check if fade is complete
+                let is_complete = if is_fade_in {
+                    fade_progress == Frac::ZERO
+                } else {
+                    fade_progress == Frac::ONE
+                };
+
+                if is_complete {
+                    self.state = if is_fade_in {
+                        FadeState::Idle
                     } else {
-                        eased_progress
+                        FadeState::FadedOut
                     };
-
-                    self.child.force_full_redraw();
-
-                    // Use SuperDrawTarget's opacity method for fading
-                    let mut fading_target = target.clone().opacity(Frac::ONE - fade_progress);
-                    self.child.draw(&mut fading_target, current_time)?;
-
-                    self.last_redraw_time = Some(current_time);
-
-                    // Check if fade is complete
-                    let is_complete = if is_fade_in {
-                        fade_progress == Frac::ZERO
-                    } else {
-                        fade_progress == Frac::ONE
-                    };
-
-                    if is_complete {
-                        self.state = if is_fade_in {
-                            FadeState::Idle
-                        } else {
-                            FadeState::FadedOut
-                        };
-                    }
                 }
 
                 Ok(())

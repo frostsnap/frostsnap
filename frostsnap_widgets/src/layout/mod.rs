@@ -20,7 +20,7 @@ pub use stack::{Positioned, Positioning, Stack};
 /// Trait for types that have an associated array type for storing auxiliary data
 pub trait AssociatedArray {
     /// Generic associated type for auxiliary arrays (for storing rectangles, spacing, etc)
-    type Array<T>: AsRef<[T]> + AsMut<[T]>;
+    type Array<T: Clone>: AsRef<[T]> + AsMut<[T]> + Clone + IntoIterator<Item = T>;
 
     /// Create an array filled with a specific value, sized according to self
     fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T>;
@@ -84,6 +84,40 @@ pub enum MainAxisSize {
     Max,
     /// Take up only as much space as needed by the children
     Min,
+}
+
+/// Calculate the bounding rectangle of a collection of rectangles
+/// Returns None if no rectangles have non-zero area
+pub(crate) fn bounding_rect(
+    rects: impl IntoIterator<Item = embedded_graphics::primitives::Rectangle>,
+) -> Option<embedded_graphics::primitives::Rectangle> {
+    use embedded_graphics::geometry::Point;
+    use embedded_graphics::primitives::Rectangle;
+
+    let mut min_top_left: Option<Point> = None;
+    let mut max_bottom_right: Option<Point> = None;
+
+    for rect in rects {
+        min_top_left = Some(match min_top_left {
+            None => rect.top_left,
+            Some(p) => p.component_min(rect.top_left),
+        });
+
+        match (&max_bottom_right, rect.bottom_right()) {
+            (Some(mbr), Some(br)) => {
+                max_bottom_right = Some(mbr.component_max(br));
+            }
+            (None, Some(br)) => {
+                max_bottom_right = Some(br);
+            }
+            _ => { /* do nothing */ }
+        }
+    }
+
+    match (min_top_left, max_bottom_right) {
+        (Some(tl), Some(br)) => Some(Rectangle::with_corners(tl, br)),
+        _ => None,
+    }
 }
 
 /// Helper function to draw debug borders around rectangles

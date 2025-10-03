@@ -12,7 +12,7 @@ impl<W: Widget<Color = Rgb565>> Switcher<W> {
     /// Create a new Switcher with an initial widget
     pub fn new(initial: W) -> Self {
         Self {
-            fade_switcher: FadeSwitcher::new(initial, 0, 0, PALETTE.background),
+            fade_switcher: FadeSwitcher::new(initial, 0, PALETTE.background),
         }
     }
 

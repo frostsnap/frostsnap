@@ -220,6 +220,7 @@ impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
         crate::Sizing {
             width: self.check_width,
             height: self.check_height,
+            ..Default::default()
         }
     }
 

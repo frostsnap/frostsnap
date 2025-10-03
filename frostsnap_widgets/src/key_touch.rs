@@ -55,7 +55,7 @@ impl KeyTouch {
         }
         self.let_go = Some(current_time);
         // Start fade out animation
-        self.widget.start_fade(500, 10);
+        self.widget.start_fade(500);
         Some(self.key)
     }
 

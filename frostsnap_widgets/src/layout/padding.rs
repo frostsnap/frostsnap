@@ -124,9 +124,22 @@ impl<W: Widget> crate::DynWidget for Padding<W> {
 
         // Get child sizing and compute our own sizing
         let child_sizing = self.child.sizing();
+
+        // The dirty rect for padding is the area given to the child,
+        // offset by the padding amounts
+        let dirty_rect = if child_sizing.width > 0 && child_sizing.height > 0 {
+            Some(Rectangle::new(
+                Point::new(self.left as i32, self.top as i32),
+                Size::new(child_sizing.width, child_sizing.height),
+            ))
+        } else {
+            None
+        };
+
         self.sizing = Some(crate::Sizing {
             width: child_sizing.width + self.left + self.right,
             height: child_sizing.height + self.top + self.bottom,
+            dirty_rect,
         });
 
         // Cache the child rectangle

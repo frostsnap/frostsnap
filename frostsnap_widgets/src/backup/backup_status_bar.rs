@@ -1,9 +1,9 @@
 use crate::palette::PALETTE;
+use crate::DefaultTextStyle;
 use crate::{any_of::AnyOf, prelude::*, FONT_MED, FONT_SMALL};
 use alloc::string::ToString;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+use embedded_graphics::prelude::*;
 use frost_backup::NUM_WORDS;
-use u8g2_fonts::U8g2TextStyle;
 
 pub const STATUS_BAR_HEIGHT: u32 = 55;
 const CORNER_RADIUS: Size = Size::new(40, 5);
@@ -16,15 +16,13 @@ pub enum BackupStatus {
 }
 
 // Widget for incomplete status
-type IncompleteWidget =
-    Container<Center<Column<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>>>;
+type IncompleteWidget = Container<Center<Column<(Text, Text)>>>;
 
 // Widget for invalid checksum status
-type InvalidChecksumWidget =
-    Container<Center<Column<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>>>;
+type InvalidChecksumWidget = Container<Center<Column<(Text, Text)>>>;
 
 // Widget for valid status
-type ValidWidget = Container<Center<Text<U8g2TextStyle<Rgb565>>>>;
+type ValidWidget = Container<Center<Text>>;
 
 #[derive(frostsnap_macros::Widget)]
 pub struct BackupStatusBar {
@@ -43,13 +41,13 @@ impl BackupStatusBar {
 
                 let main_text = Text::new(
                     text,
-                    U8g2TextStyle::new(FONT_MED, PALETTE.on_surface_variant),
+                    DefaultTextStyle::new(FONT_MED, PALETTE.on_surface_variant),
                 )
                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
                 let hint_text = Text::new(
                     "tap word to edit",
-                    U8g2TextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
+                    DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
                 )
                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
@@ -71,13 +69,13 @@ impl BackupStatusBar {
                 // Create column with two text elements
                 let invalid_text = Text::new(
                     "Invalid backup",
-                    U8g2TextStyle::new(FONT_MED, PALETTE.on_error),
+                    DefaultTextStyle::new(FONT_MED, PALETTE.on_error),
                 )
                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
                 let tap_text = Text::new(
                     "tap word to edit",
-                    U8g2TextStyle::new(FONT_SMALL, PALETTE.on_error),
+                    DefaultTextStyle::new(FONT_SMALL, PALETTE.on_error),
                 )
                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
@@ -96,7 +94,7 @@ impl BackupStatusBar {
                 }
             }
             BackupStatus::Valid => {
-                let text_style = U8g2TextStyle::new(FONT_MED, PALETTE.on_tertiary_container);
+                let text_style = DefaultTextStyle::new(FONT_MED, PALETTE.on_tertiary_container);
                 let text_widget = Text::new("Backup valid", text_style)
                     .with_alignment(embedded_graphics::text::Alignment::Center);
                 let center = Center::new(text_widget);
