@@ -703,7 +703,7 @@ impl FfiCoordinator {
     pub fn start_restoring_wallet(
         &self,
         name: String,
-        threshold: u16,
+        threshold: Option<u16>,
         key_purpose: KeyPurpose,
     ) -> Result<RestorationId> {
         let restoration_id = {
@@ -757,6 +757,7 @@ impl FfiCoordinator {
         &self,
         restoration_id: RestorationId,
         mut recover_share: &RecoverShare,
+        encryption_key: SymmetricKey,
     ) -> Result<()> {
         {
             let mut db = self.db.lock().unwrap();
@@ -778,7 +779,11 @@ impl FfiCoordinator {
                 held_share.key_name = restoration_state.key_name.clone();
             }
             coordinator.staged_mutate(&mut *db, |coordinator| {
-                coordinator.add_recovery_share_to_restoration(restoration_id, recover_share)?;
+                coordinator.add_recovery_share_to_restoration(
+                    restoration_id,
+                    recover_share,
+                    encryption_key,
+                )?;
                 Ok(())
             })?;
         }
@@ -1200,20 +1205,7 @@ fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {
         .map(api::coordinator::FrostKey)
         .collect();
 
-    let restoring = coordinator
-        .restoring()
-        .map(|restoring| {
-            let status = restoring.status();
-            api::recovery::RestoringKey {
-                problem: status.problem(),
-                shares_obtained: status.shares,
-                restoration_id: restoring.restoration_id,
-                name: restoring.key_name,
-                threshold: restoring.access_structure.threshold,
-                bitcoin_network: restoring.key_purpose.bitcoin_network(),
-            }
-        })
-        .collect();
+    let restoring = coordinator.restoring().collect();
 
     api::coordinator::KeyState { keys, restoring }
 }
