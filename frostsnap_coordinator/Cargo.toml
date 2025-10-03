@@ -19,14 +19,19 @@ rand.workspace = true
 nusb = { version = "0.2", features = ["tokio"] }
 sha2 = { workspace = true, features = ["oid"] }
 rsa.workspace = true
-
+serde = { version = "1.0", features = ["derive"] }
 
 bdk_chain = { version = "0.23", features = ["rusqlite"] }
 bdk_electrum_streaming = { version = "0.5.2" }
 bdk_coin_select = { version = "0.4.1" }
 
-webpki-roots = { version = "0.26" }
 
-tokio = { version = "1.45", features = ["net", "rt", "time"] }
+tokio = { version = "1.45", features = ["net", "rt", "time", "macros"] }
+rustls = { version = "0.23", default-features = false, features = ["tls12", "ring"] }
+rustls-pki-types = { version = "1" }
 tokio-rustls = { version = "0.26", default-features = false, features = ["tls12", "ring"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+webpki-roots = "0.26"
+
+[dev-dependencies]
+tempfile = "3.8"
