@@ -76,6 +76,10 @@ impl WireSignTask {
                     });
                 }
 
+                if !tx_template.has_any_inputs_to_sign() {
+                    return Err(SignTaskError::NothingToSign);
+                }
+
                 if tx_template.fee().is_none() {
                     return Err(SignTaskError::InvalidBitcoinTransaction);
                 }
@@ -170,6 +174,7 @@ pub enum SignTaskError {
     },
     WrongPurpose,
     InvalidBitcoinTransaction,
+    NothingToSign,
 }
 
 impl core::fmt::Display for SignTaskError {
@@ -181,6 +186,9 @@ impl core::fmt::Display for SignTaskError {
             ),
             SignTaskError::InvalidBitcoinTransaction => {
                 write!(f, "Bitcoin transaction input value was less than outputs")
+            }
+            SignTaskError::NothingToSign => {
+                write!(f, "Transaction has no inputs that belong to this wallet")
             }
             SignTaskError::WrongPurpose => {
                 write!(

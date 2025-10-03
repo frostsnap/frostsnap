@@ -1378,11 +1378,17 @@ impl ActiveSignSession {
 
     pub fn received_from(&self) -> impl Iterator<Item = DeviceId> + '_ {
         // all sessions make progress at the same time
-        self.progress[0].received_from()
+        self.progress
+            .first()
+            .into_iter()
+            .flat_map(|p| p.received_from())
     }
 
     pub fn has_received_from(&self, device_id: DeviceId) -> bool {
-        self.progress[0].signature_shares.contains_key(&device_id)
+        self.progress
+            .first()
+            .map(|p| p.signature_shares.contains_key(&device_id))
+            .unwrap_or(false)
     }
 
     pub fn session_id(&self) -> SignSessionId {

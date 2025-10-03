@@ -119,8 +119,8 @@ pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_m
 pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 
 pub const HOLD_TO_CONFIRM_TIME_SHORT_MS: u32 = 1000;
-pub const HOLD_TO_CONFIRM_TIME_MS: u32 = 2000;
-pub const HOLD_TO_CONFIRM_TIME_LONG_MS: u32 = 6000;
+pub const HOLD_TO_CONFIRM_TIME_MS: u32 = 1000;
+pub const HOLD_TO_CONFIRM_TIME_LONG_MS: u32 = 1000;
 
 /// Sizing information for a widget
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
