@@ -1,14 +1,14 @@
-use crate::{palette::PALETTE, text::Text, Column, MainAxisAlignment, Row};
+use crate::{
+    fonts::Gray4Font, palette::PALETTE, text::Text, Column, DefaultTextStyle, MainAxisAlignment,
+    Row, FONT_HUGE_MONO,
+};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use embedded_graphics::pixelcolor::Rgb565;
-use u8g2_fonts::U8g2TextStyle;
+
+// Font for displaying addresses - uses monospace for better readability
+const ADDRESS_FONT: &Gray4Font = FONT_HUGE_MONO;
 
 // Type alias for a row with three text chunks
-type AddressRow = Row<(
-    Text<U8g2TextStyle<Rgb565>>,
-    Text<U8g2TextStyle<Rgb565>>,
-    Text<U8g2TextStyle<Rgb565>>,
-)>;
+type AddressRow = Row<(Text, Text, Text)>;
 
 /// A widget for displaying P2TR (Taproot) addresses in a specific format:
 /// - 1 row with the first chunk (grayed out)
@@ -19,7 +19,7 @@ pub struct P2trAddressDisplay {
     #[widget_delegate]
     column: Column<
         Box<(
-            Row<(Text<U8g2TextStyle<Rgb565>>,)>,
+            Row<(Text,)>,
             AddressRow,
             AddressRow,
             AddressRow,
@@ -43,8 +43,8 @@ impl P2trAddressDisplay {
             })
             .collect();
 
-        // Use a light grey color for the address text
-        let text_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_surface);
+        // Use monospace font for the address text
+        let text_style = DefaultTextStyle::new(ADDRESS_FONT, PALETTE.on_surface);
 
         // First chunk on its own row (grayed out)
         let type_indicator = Row::new((Text::new(chunks[0].clone(), text_style.clone()),));
@@ -67,7 +67,8 @@ impl P2trAddressDisplay {
             row_iter.next().unwrap(),
             row_iter.next().unwrap(),
             row_iter.next().unwrap(),
-        )));
+        )))
+        .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
         Self { column }
     }

@@ -1,13 +1,10 @@
+use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
     palette::PALETTE, prelude::*, HoldToConfirm, Padding, ProgressIndicator, FONT_MED, FONT_SMALL,
 };
 use alloc::{boxed::Box, format};
-use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, text::Alignment};
-use u8g2_fonts::{fonts, U8g2TextStyle};
-
-// Use small font (17px) for the hash
-const HASH_FONT: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+use embedded_graphics::{geometry::Size, text::Alignment};
 
 /// Hold to confirm widget for firmware upgrades
 /// Displays the firmware hash and size
@@ -16,18 +13,9 @@ pub struct FirmwareUpgradeConfirm {
     #[widget_delegate]
     hold_to_confirm: HoldToConfirm<
         Column<(
-            Text<U8g2TextStyle<Rgb565>>,
-            Container<
-                Padding<
-                    Column<(
-                        Text<U8g2TextStyle<Rgb565>>,
-                        Text<U8g2TextStyle<Rgb565>>,
-                        Text<U8g2TextStyle<Rgb565>>,
-                        Text<U8g2TextStyle<Rgb565>>,
-                    )>,
-                >,
-            >,
-            Text<U8g2TextStyle<Rgb565>>,
+            Text,
+            Container<Padding<Column<(Text, Text, Text, Text)>>>,
+            Text,
         )>,
     >,
 }
@@ -90,37 +78,37 @@ impl FirmwareUpgradeConfirm {
         // Create the content with title, hash lines, and size
         let title = Text::new(
             "Upgrade firmware?",
-            U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
         )
         .with_alignment(Alignment::Center);
 
         let hash1 = Text::new(
             hash_line1,
-            U8g2TextStyle::new(HASH_FONT, PALETTE.on_surface),
+            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
         )
         .with_alignment(Alignment::Center);
 
         let hash2 = Text::new(
             hash_line2,
-            U8g2TextStyle::new(HASH_FONT, PALETTE.on_surface),
+            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
         )
         .with_alignment(Alignment::Center);
 
         let hash3 = Text::new(
             hash_line3,
-            U8g2TextStyle::new(HASH_FONT, PALETTE.on_surface),
+            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
         )
         .with_alignment(Alignment::Center);
 
         let hash4 = Text::new(
             hash_line4,
-            U8g2TextStyle::new(HASH_FONT, PALETTE.on_surface),
+            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
         )
         .with_alignment(Alignment::Center);
 
         let size = Text::new(
             size_text,
-            U8g2TextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
+            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
         )
         .with_alignment(Alignment::Center);
 
@@ -158,12 +146,10 @@ impl FirmwareUpgradeConfirm {
 pub enum FirmwareUpgradeProgress {
     /// Actively erasing or downloading with progress
     Active {
-        widget: Box<Column<(Text<U8g2TextStyle<Rgb565>>, Padding<ProgressIndicator>)>>,
+        widget: Box<Column<(Text, Padding<ProgressIndicator>)>>,
     },
     /// Passive state - just show text
-    Passive {
-        widget: Center<Text<U8g2TextStyle<Rgb565>>>,
-    },
+    Passive { widget: Center<Text> },
 }
 
 impl FirmwareUpgradeProgress {
@@ -171,7 +157,7 @@ impl FirmwareUpgradeProgress {
     pub fn erasing(progress: f32) -> Self {
         let title = Text::new(
             "Preparing for\nupgrade...",
-            U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
         )
         .with_alignment(Alignment::Center);
 
@@ -193,7 +179,7 @@ impl FirmwareUpgradeProgress {
     pub fn downloading(progress: f32) -> Self {
         let title = Text::new(
             "Downloading\nupgrade...",
-            U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
         )
         .with_alignment(Alignment::Center);
 
@@ -216,7 +202,7 @@ impl FirmwareUpgradeProgress {
         // Show "Firmware Upgrade" text in passive state
         let text = Text::new(
             "Firmware\nUpgrade",
-            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
+            DefaultTextStyle::new(FONT_MED, PALETTE.primary),
         )
         .with_alignment(Alignment::Center);
         let widget = Center::new(text);

@@ -17,6 +17,7 @@ build TARGET="linux" +ARGS="": maybe-gen
 
 run +ARGS="": maybe-gen
     #!/bin/sh
+    set -e
     just ../gen-firmware
     BUILD_COMMIT=$(just get-build-commit)
     BUILD_VERSION=$(just get-build-version)

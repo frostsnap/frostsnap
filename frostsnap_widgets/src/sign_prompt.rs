@@ -1,3 +1,4 @@
+use crate::DefaultTextStyle;
 use crate::{
     address_display::AddressDisplay, any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay,
     icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
@@ -10,7 +11,6 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
 };
 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
-use u8g2_fonts::U8g2TextStyle;
 
 /// Widget list that generates sign prompt pages
 pub struct SignPromptPageList {
@@ -24,11 +24,11 @@ pub struct AmountPage {
     #[widget_delegate]
     center: Center<
         Column<(
-            Text<U8g2TextStyle<Rgb565>>,
+            Text,
             SizedBox<Rgb565>,
             BitcoinAmountDisplay,
             SizedBox<Rgb565>,
-            Text<U8g2TextStyle<Rgb565>>,
+            Text,
         )>,
     >,
 }
@@ -37,7 +37,7 @@ impl AmountPage {
     pub fn new(index: usize, amount_sats: u64) -> Self {
         let title = Text::new(
             format!("Send Amount #{}", index + 1),
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
+            DefaultTextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
         );
 
         let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15)); // 15px height spacing
@@ -48,7 +48,7 @@ impl AmountPage {
 
         let btc_text = Text::new(
             "BTC".to_string(),
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
+            DefaultTextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
         );
 
         let column = Column::new((title, spacer, amount_display, btc_spacer, btc_text))
@@ -67,14 +67,14 @@ impl AmountPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct AddressPage {
     #[widget_delegate]
-    center: Center<Padding<Column<(Text<U8g2TextStyle<Rgb565>>, AddressDisplay)>>>,
+    center: Center<Padding<Column<(Text, AddressDisplay)>>>,
 }
 
 impl AddressPage {
     fn new(index: usize, address: &bitcoin::Address) -> Self {
         let title = Text::new(
             format!("Address #{}", index + 1),
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
+            DefaultTextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
         );
 
         // Use our AddressDisplay widget which handles all address types
@@ -82,7 +82,7 @@ impl AddressPage {
 
         let column = Column::new((title, address_display))
             .with_main_axis_alignment(MainAxisAlignment::SpaceAround);
-        let padded = Padding::only(column).bottom(40).build();
+        let padded = Padding::only(column).top(8).bottom(40).build();
 
         Self {
             center: Center::new(padded),
@@ -96,27 +96,21 @@ impl AddressPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct FeePage {
     #[widget_delegate]
-    center: Center<
-        Column<(
-            Text<U8g2TextStyle<Rgb565>>,
-            BitcoinAmountDisplay,
-            Text<U8g2TextStyle<Rgb565>>,
-        )>,
-    >,
+    center: Center<Column<(Text, BitcoinAmountDisplay, Text)>>,
 }
 
 impl FeePage {
     fn new(fee_sats: u64) -> Self {
         let title = Text::new(
             "Network Fee".to_string(),
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
+            DefaultTextStyle::new(crate::FONT_MED, PALETTE.text_secondary),
         );
 
         let fee_amount = BitcoinAmountDisplay::new(fee_sats);
 
         let fee_sats_text = Text::new(
             format!("{} sats", fee_sats),
-            U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
+            DefaultTextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
         );
 
         let column = Column::new((title, fee_amount, fee_sats_text))
@@ -142,8 +136,8 @@ pub struct WarningPage {
                     embedded_iconoir::icons::size48px::actions::WarningTriangle,
                 >,
             >,
-            Text<U8g2TextStyle<Rgb565>>,
-            Text<U8g2TextStyle<Rgb565>>,
+            Text,
+            Text,
         )>,
     >,
 }
@@ -158,7 +152,7 @@ impl WarningPage {
 
         let caution_text = Text::new(
             "Caution".to_string(),
-            U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.error),
+            DefaultTextStyle::new(crate::FONT_LARGE, PALETTE.error),
         );
 
         let warning_msg = if fee_sats > 100_000 {
@@ -169,7 +163,7 @@ impl WarningPage {
 
         let warning_text = Text::new(
             warning_msg.to_string(),
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_surface),
+            DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface),
         );
 
         let column = Column::new((warning_icon, caution_text, warning_text))
@@ -185,30 +179,23 @@ impl WarningPage {
 
 /// Confirmation page with HoldToConfirm
 pub struct ConfirmationPage {
-    hold_confirm: HoldToConfirm<
-        Column<(
-            Text<U8g2TextStyle<Rgb565>>,
-            Text<U8g2TextStyle<Rgb565>>,
-            BitcoinAmountDisplay,
-            Text<U8g2TextStyle<Rgb565>>,
-        )>,
-    >,
+    hold_confirm: HoldToConfirm<Column<(Text, Text, BitcoinAmountDisplay, Text)>>,
 }
 
 impl ConfirmationPage {
     fn new(total_sats: u64) -> Self {
         let sign_text = Text::new(
             "Sign transaction?",
-            U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background),
+            DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_background),
         );
         let sending_text = Text::new(
             "sending",
-            U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
+            DefaultTextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
         );
         let amount_display = BitcoinAmountDisplay::new(total_sats);
         let btc_text = Text::new(
             "BTC",
-            U8g2TextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
+            DefaultTextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
         );
 
         let confirm_content = Column::new((sign_text, sending_text, amount_display, btc_text))

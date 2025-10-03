@@ -1,18 +1,17 @@
-use crate::{palette::PALETTE, prelude::*, touch_listener::TouchListener, Key, FONT_MED};
+use crate::{
+    palette::PALETTE, prelude::*, touch_listener::TouchListener, DefaultTextStyle, Key, FONT_MED,
+};
 use alloc::{string::String, vec::Vec};
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+use embedded_graphics::prelude::*;
 use frostsnap_macros::Widget;
-use u8g2_fonts::U8g2TextStyle;
 
 // Type aliases to simplify the complex type
-type StyledText = Text<U8g2TextStyle<Rgb565>>;
-
 /// A button widget that displays a BIP39 word with prefix highlighting
 #[derive(Widget)]
 pub struct WordButton {
     word: &'static str,
     #[widget_delegate]
-    inner: Container<Padding<Row<(StyledText, StyledText)>>>,
+    inner: Container<Padding<Row<(Text, Text)>>>,
 }
 
 impl WordButton {
@@ -23,12 +22,12 @@ impl WordButton {
         // Create two text widgets - prefix in secondary color, suffix in primary
         let prefix_text = Text::new(
             String::from(prefix),
-            U8g2TextStyle::new(FONT_MED, PALETTE.text_secondary),
+            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
         );
 
         let suffix_text = Text::new(
             String::from(suffix),
-            U8g2TextStyle::new(FONT_MED, PALETTE.primary),
+            DefaultTextStyle::new(FONT_MED, PALETTE.primary),
         );
 
         // Create a row with the text elements, centered vertically

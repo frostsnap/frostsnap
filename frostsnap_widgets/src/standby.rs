@@ -2,11 +2,11 @@ use crate::{
     bitmap::EncodedImage, device_name::DeviceName, icons::IconWidget, image::Image,
     palette::PALETTE, prelude::*, share_index::ShareIndexWidget, vec_framebuffer::VecFramebuffer,
 };
+use crate::{DefaultTextStyle, FONT_LARGE};
 use alloc::string::{String, ToString};
 use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
 use embedded_iconoir::prelude::IconoirNewIcon;
 use frostsnap_core::message::HeldShare;
-use u8g2_fonts::U8g2TextStyle;
 
 const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 
@@ -25,7 +25,7 @@ pub struct Standby {
                             embedded_iconoir::icons::size24px::actions::WarningTriangle,
                         >,
                     >,
-                    Text<U8g2TextStyle<Rgb565>>,
+                    Text,
                 )>,
             >,
             Row<(
@@ -35,7 +35,7 @@ pub struct Standby {
                         embedded_iconoir::icons::size24px::finance::Wallet,
                     >,
                 >,
-                Text<U8g2TextStyle<Rgb565>>,
+                Text,
             )>,
             ShareIndexWidget,
             DeviceName,
@@ -47,7 +47,7 @@ impl Standby {
     pub fn new(device_name: impl Into<String>, held_share: HeldShare) -> Self {
         // Create text styles
         // Medium emphasis grey for key name (medium size)
-        let key_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_surface_variant);
+        let key_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface_variant);
 
         // Create wallet icon and key name row
         let wallet_icon = IconWidget::new(embedded_iconoir::icons::size24px::finance::Wallet::new(
@@ -59,7 +59,7 @@ impl Standby {
 
         // Create recovery mode warning if access structure is missing
         let recovery_warning = if held_share.access_structure_ref.is_none() {
-            let warning_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.warning);
+            let warning_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.warning);
             let warning_icon = IconWidget::new(
                 embedded_iconoir::icons::size24px::actions::WarningTriangle::new(PALETTE.warning),
             );
@@ -71,7 +71,7 @@ impl Standby {
 
         // Extract share index and create the widget with medium font
         let share_index: u16 = held_share.share_image.index.try_into().unwrap();
-        let share_index_widget = ShareIndexWidget::new_medium(share_index);
+        let share_index_widget = ShareIndexWidget::new(share_index, FONT_LARGE);
 
         // Create DeviceName widget
         let device_name_widget = DeviceName::new(device_name);

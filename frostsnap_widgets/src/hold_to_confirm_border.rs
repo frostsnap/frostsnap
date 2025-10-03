@@ -59,6 +59,7 @@ where
             sizing: crate::Sizing {
                 width: 0,
                 height: 0,
+                ..Default::default()
             },
             border_pixels: Vec::new(),
             border_width,
@@ -174,6 +175,7 @@ where
         self.sizing = crate::Sizing {
             width: child_sizing.width + 2 * self.border_width,
             height: child_sizing.height + 2 * self.border_width,
+            ..Default::default()
         };
 
         self.record_border_pixels(max_size);
