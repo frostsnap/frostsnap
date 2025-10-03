@@ -83,9 +83,7 @@ where
         self.pin_rst.set_low().map_err(Error::Pin)?;
         delay_source.delay_us(20_000);
         self.pin_rst.set_high().map_err(Error::Pin)?;
-        // ❗ This probably doesn't need to be so long. We changed it and
-        // started to get issues with other things (not the touch sensor).
-        delay_source.delay_us(400_000);
+        delay_source.delay_us(20_000);
 
         Ok(())
     }
