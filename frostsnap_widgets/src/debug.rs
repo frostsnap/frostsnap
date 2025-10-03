@@ -1,3 +1,4 @@
+use crate::DefaultTextStyle;
 use crate::{palette::PALETTE, prelude::*, string_ext::StringWrap, switcher::Switcher, Fps};
 use alloc::collections::VecDeque;
 use alloc::string::String;
@@ -7,7 +8,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     prelude::{Point, Size},
 };
-use u8g2_fonts::{fonts, U8g2TextStyle};
 
 // ============================================================================
 // Configuration
@@ -90,14 +90,13 @@ pub fn log_stack_usage(label: &str) {
 }
 
 // Font for logging - profont17 is monospace
-const LOG_FONT: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 // Font dimensions for profont17 (monospace)
 const FONT_HEIGHT: u32 = 17; // From font name
 const FONT_WIDTH: u32 = 9; // Actual width for profont17 monospace
 
 pub struct DebugLogWidget {
     // Cache of formatted text widgets wrapped in expanded container
-    display_cache: Container<Switcher<Column<Vec<Text<U8g2TextStyle<Rgb565>, StringWrap>>>>>,
+    display_cache: Container<Switcher<Column<Vec<Text<DefaultTextStyle, StringWrap>>>>>,
     max_lines: usize,
     chars_per_line: usize,
 }
@@ -145,7 +144,7 @@ impl DebugLogWidget {
 
                     let text = Text::new_with(
                         wrapped,
-                        U8g2TextStyle::new(LOG_FONT, PALETTE.text_secondary),
+                        DefaultTextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
                     )
                     .with_underline(PALETTE.on_background);
                     text_widgets.push(text);
@@ -211,7 +210,7 @@ impl DynWidget for DebugLogWidget {
 const MEM_TEXT_SIZE: usize = 13; // Size for "U:123456 F:123456"
 
 #[cfg(target_arch = "riscv32")]
-type MemText = Text<U8g2TextStyle<Rgb565>, crate::string_ext::StringFixed<MEM_TEXT_SIZE>>;
+type MemText = Text<DefaultTextStyle, crate::string_ext::StringFixed<MEM_TEXT_SIZE>>;
 
 /// Memory usage indicator component that polls esp_alloc directly
 #[cfg(target_arch = "riscv32")]
@@ -231,7 +230,7 @@ impl Default for MemoryIndicator {
 impl MemoryIndicator {
     fn new() -> Self {
         use embedded_graphics::pixelcolor::RgbColor;
-        let text_style = U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::CYAN);
+        let text_style = DefaultTextStyle::new(crate::FONT_SMALL, Rgb565::CYAN);
         let initial_text = Text::new_with(
             crate::string_ext::StringFixed::from_string("MEM_DEBUG"),
             text_style,
@@ -302,7 +301,7 @@ impl Widget for MemoryIndicator {
 
             // Create a new text widget with the updated text
             use embedded_graphics::pixelcolor::RgbColor;
-            let text_style = U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::CYAN);
+            let text_style = DefaultTextStyle::new(crate::FONT_SMALL, Rgb565::CYAN);
             let text_widget = Text::new_with(buf, text_style);
             self.display.child.switch_to(text_widget);
         }

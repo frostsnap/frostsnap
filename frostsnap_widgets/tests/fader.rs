@@ -26,10 +26,11 @@ impl DynWidget for SinglePixelWidget {
     }
 
     fn sizing(&self) -> frostsnap_widgets::Sizing {
-        frostsnap_widgets::Sizing {
+        Size {
             width: 1,
             height: 1,
         }
+        .into()
     }
 
     fn handle_touch(
@@ -122,7 +123,7 @@ proptest! {
 
         // Create the fader in faded-out state and start it fading in from bg_color
         let mut fader = Fader::new_faded_out(widget);
-        fader.start_fade_in(fade_duration_ms, redraw_interval_ms);
+        fader.start_fade_in(fade_duration_ms);
 
         // Test at t=0 (should draw bg_color exclusively when fading in from it)
         let capture_t0 = SinglePixelCapture::new();
@@ -194,7 +195,7 @@ proptest! {
         );
 
         // Now test fading out back to bg_color
-        fader.start_fade(fade_duration_ms, redraw_interval_ms);
+        fader.start_fade(fade_duration_ms);
 
         // Draw at t=0 relative to fade out start (should still show color_a)
         let fade_out_start = fade_duration_ms + 1000;

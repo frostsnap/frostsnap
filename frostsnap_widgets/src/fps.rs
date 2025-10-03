@@ -12,7 +12,9 @@ use embedded_graphics::{
 // Constants for FPS text dimensions - "FPS: 999" is max 8 chars
 const FPS_MAX_CHARS: usize = 3;
 
-type FpsDisplay = Container<Switcher<TextWidget<u8g2_fonts::U8g2TextStyle<Rgb565>>>>;
+use crate::DefaultTextStyle;
+
+type FpsDisplay = Container<Switcher<TextWidget>>;
 
 /// A widget that displays frames per second using simple frame counting
 pub struct Fps {
@@ -27,7 +29,7 @@ pub struct Fps {
 impl Fps {
     /// Create a new FPS counter widget with green text
     pub fn new(update_interval_ms: u64) -> Self {
-        let text_style = u8g2_fonts::U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
+        let text_style = DefaultTextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
         let text = TextWidget::new("000", text_style);
         let switcher = Switcher::new(text);
         let display = Container::new(switcher);
@@ -118,7 +120,7 @@ impl Widget for Fps {
             write!(&mut buf, "{}", self.current_fps).ok();
 
             // Create new text widget with updated text
-            let text_style = u8g2_fonts::U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
+            let text_style = DefaultTextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
             let text = TextWidget::new(buf.as_str(), text_style);
             self.display.child.switch_to(text);
 

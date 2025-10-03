@@ -16,6 +16,7 @@ build TARGET="linux" +ARGS="": maybe-gen
 
 run +ARGS="": maybe-gen
     #!/bin/sh
+    set -e
     just ../gen-firmware
     BUILD_COMMIT=$(just get-build-commit)
     BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" {{ARGS}}

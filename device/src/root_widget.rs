@@ -17,8 +17,7 @@ impl RootWidget {
         fade_duration_ms: u32,
         background_color: Rgb565,
     ) -> Self {
-        let page_switcher =
-            FadeSwitcher::new(initial_widget, fade_duration_ms, 30, background_color);
+        let page_switcher = FadeSwitcher::new(initial_widget, fade_duration_ms, background_color);
 
         Self { page_switcher }
     }
