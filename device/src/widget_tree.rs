@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, string::String};
+use alloc::boxed::Box;
 use embedded_graphics::pixelcolor::Rgb565;
 use frostsnap_core::device::{
     restoration::{BackupDisplayPhase, EnterBackupPhase},
@@ -69,7 +69,7 @@ pub enum WidgetTree {
     /// New name confirmation prompt
     NewNamePrompt {
         widget: Box<HoldToConfirm<Text<U8g2TextStyle<Rgb565>>>>,
-        new_name: Option<String>,
+        new_name: Option<frostsnap_comms::DeviceName>,
     },
 
     /// Device wipe confirmation prompt  

@@ -6,6 +6,7 @@ use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
 use frostsnap_comms::genuine_certificate::CertificateVerifier;
+use frostsnap_comms::DeviceName;
 use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorUpgradeMessage, Destination, DeviceSendBody, Sha256Digest,
@@ -330,11 +331,12 @@ impl UsbSerialManager {
                                     }
                                 }
                                 DeviceSendBody::SetName { name } => {
+                                    let name_string = name.to_string();
                                     let existing_name = self.device_names.get(&message.from);
-                                    if existing_name != Some(&name) {
+                                    if existing_name != Some(&name_string) {
                                         device_changes.push(DeviceChange::NameChange {
                                             id: message.from,
-                                            name,
+                                            name: name_string,
                                         });
                                     }
                                 }
@@ -734,26 +736,26 @@ impl UsbSender {
             .expect("receiver exists");
     }
 
-    pub fn update_name_preview(&self, device_id: DeviceId, name: &str) {
+    pub fn update_name_preview(&self, device_id: DeviceId, name: DeviceName) {
         self.sender
             .send(CoordinatorSendMessage::to(
                 device_id,
-                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(name.into())),
+                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Preview(name)),
             ))
             .expect("receiver exists");
     }
 
-    pub fn finish_naming(&self, device_id: DeviceId, name: &str) {
+    pub fn finish_naming(&self, device_id: DeviceId, name: DeviceName) {
         event!(
             Level::INFO,
-            name = name,
+            name = %name,
             device_id = device_id.to_string(),
             "Named device"
         );
         self.sender
             .send(CoordinatorSendMessage::to(
                 device_id,
-                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Prompt(name.into())),
+                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Prompt(name)),
             ))
             .expect("receiver exists");
     }

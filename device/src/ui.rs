@@ -1,7 +1,7 @@
 // Imports removed - legacy screens are not used in stateless Workflow
 use alloc::{boxed::Box, string::String};
 use frost_backup::ShareBackup;
-use frostsnap_comms::Sha256Digest;
+use frostsnap_comms::{DeviceName, Sha256Digest};
 use frostsnap_core::{
     device::{
         restoration::{BackupDisplayPhase, EnterBackupPhase},
@@ -50,12 +50,12 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
 pub enum Workflow {
     None,
     Standby {
-        device_name: String,
+        device_name: DeviceName,
         held_share: HeldShare,
     },
     UserPrompt(Prompt),
     NamingDevice {
-        new_name: String,
+        new_name: DeviceName,
     },
     DisplayBackup {
         key_name: String,
@@ -92,8 +92,8 @@ pub enum Prompt {
         phase: Box<SignPhase1>,
     },
     NewName {
-        old_name: Option<String>,
-        new_name: String,
+        old_name: Option<DeviceName>,
+        new_name: DeviceName,
     },
     DisplayBackupRequest {
         phase: Box<BackupDisplayPhase>,
@@ -129,7 +129,7 @@ pub enum UiEvent {
     SigningConfirm {
         phase: Box<SignPhase1>,
     },
-    NameConfirm(String),
+    NameConfirm(frostsnap_comms::DeviceName),
     EnteredShareBackup {
         phase: EnterBackupPhase,
         share_backup: ShareBackup,
