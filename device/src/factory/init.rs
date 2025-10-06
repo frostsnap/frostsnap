@@ -1,4 +1,3 @@
-use crate::factory::screen_test;
 use crate::flash::VersionedFactoryData;
 use crate::peripherals::DevicePeripherals;
 use alloc::boxed::Box;
@@ -133,7 +132,6 @@ pub fn run_factory_provisioning(
     // Destructure what we need
     let DevicePeripherals {
         mut display,
-        mut touch_receiver,
         efuse,
         jtag,
         timer,
@@ -145,9 +143,6 @@ pub fn run_factory_provisioning(
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
-
-    // Run screen test
-    screen_test::run(&mut display, &mut touch_receiver);
 
     text_display!(
         &mut display,
