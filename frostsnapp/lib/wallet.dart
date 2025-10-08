@@ -375,18 +375,18 @@ class _TxListState extends State<TxList> {
           builder: (context, _) {
             final chainTipHeight = walletCtx.wallet.superWallet.height();
             final now = DateTime.now();
-            final uncanonicalTiles = coord
-                .uncanonicalTxs(
+            final unbroadcastedTiles = coord
+                .unbroadcastedTxs(
                   sWallet: walletCtx.wallet.superWallet,
                   masterAppkey: walletCtx.masterAppkey,
                 )
-                .map((uncanonicalTx) {
+                .map((unbroadcastedTx) {
                   final txDetails = TxDetailsModel(
-                    tx: uncanonicalTx.tx,
+                    tx: unbroadcastedTx.tx,
                     chainTipHeight: chainTipHeight,
                     now: now,
                   );
-                  final session = uncanonicalTx.activeSession;
+                  final session = unbroadcastedTx.activeSession;
                   if (session != null) {
                     final signingState = session.state();
                     return TxSentOrReceivedTile(
@@ -416,7 +416,7 @@ class _TxListState extends State<TxList> {
                             scrollController: scrollController,
                             txStates: walletCtx.txStream,
                             txDetails: txDetails,
-                            finishedSigningSessionId: uncanonicalTx.sessionId,
+                            finishedSigningSessionId: unbroadcastedTx.sessionId,
                             psbtMan: fsCtx.psbtManager,
                           ),
                         ),
@@ -428,12 +428,12 @@ class _TxListState extends State<TxList> {
 
             // Avoid marking for rebuild while already rebuilding.
             WidgetsBinding.instance.addPostFrameCallback(
-              (_) => canCreate.value = uncanonicalTiles.length,
+              (_) => canCreate.value = unbroadcastedTiles.length,
             );
 
             return SliverVisibility(
-              visible: uncanonicalTiles.isNotEmpty,
-              sliver: SliverList.list(children: uncanonicalTiles.toList()),
+              visible: unbroadcastedTiles.isNotEmpty,
+              sliver: SliverList.list(children: unbroadcastedTiles.toList()),
             );
           },
         ),
@@ -745,7 +745,7 @@ class WalletBottomBar extends StatelessWidget {
 
         return Badge.count(
           count: value,
-          // Only show count badge if we have more than one uncanonical outgoing tx.
+          // Only show count badge if we have more than one unbroadcasted outgoing tx.
           isLabelVisible: value > 1,
           child: button,
         );
@@ -801,17 +801,17 @@ class WalletBottomBar extends StatelessWidget {
 
   Future<void> showTxDetailsDialog(
     BuildContext context,
-    UncanonicalTx uncanonicalTx,
+    UnbroadcastedTx unbroadcastedTx,
   ) async {
     final walletCtx = WalletContext.of(context)!;
     final fsCtx = FrostsnapContext.of(context)!;
 
     final txDetails = TxDetailsModel(
-      tx: uncanonicalTx.tx,
+      tx: unbroadcastedTx.tx,
       chainTipHeight: walletCtx.wallet.superWallet.height(),
       now: DateTime.now(),
     );
-    final session = uncanonicalTx.activeSession;
+    final session = unbroadcastedTx.activeSession;
     if (session != null) {
       await showBottomSheetOrDialog(
         context,
@@ -835,7 +835,7 @@ class WalletBottomBar extends StatelessWidget {
             scrollController: scrollController,
             txStates: walletCtx.txStream,
             txDetails: txDetails,
-            finishedSigningSessionId: uncanonicalTx.sessionId,
+            finishedSigningSessionId: unbroadcastedTx.sessionId,
             psbtMan: fsCtx.psbtManager,
           ),
         ),
@@ -845,12 +845,12 @@ class WalletBottomBar extends StatelessWidget {
 
   Future<void> showPickOutgoingTxDialog(BuildContext context) async {
     final walletCtx = WalletContext.of(context)!;
-    final uncanonicalTxs = coord.uncanonicalTxs(
+    final unbroadcastedTxs = coord.unbroadcastedTxs(
       sWallet: walletCtx.wallet.superWallet,
       masterAppkey: walletCtx.masterAppkey,
     );
 
-    if (uncanonicalTxs.length == 0) {
+    if (unbroadcastedTxs.length == 0) {
       await showBottomSheetOrDialog(
         context,
         title: Text('Send'),
@@ -860,8 +860,8 @@ class WalletBottomBar extends StatelessWidget {
       return;
     }
 
-    if (uncanonicalTxs.length == 1) {
-      await showTxDetailsDialog(context, uncanonicalTxs.first);
+    if (unbroadcastedTxs.length == 1) {
+      await showTxDetailsDialog(context, unbroadcastedTxs.first);
       return;
     }
 
@@ -876,20 +876,20 @@ class WalletBottomBar extends StatelessWidget {
           slivers: [
             SliverSafeArea(
               sliver: SliverList.builder(
-                itemCount: uncanonicalTxs.length,
+                itemCount: unbroadcastedTxs.length,
                 itemBuilder: (BuildContext context, int index) {
-                  final uncanonicalTx = uncanonicalTxs[index];
+                  final unbroadcastedTx = unbroadcastedTxs[index];
                   final txDetails = TxDetailsModel(
-                    tx: uncanonicalTx.tx,
+                    tx: unbroadcastedTx.tx,
                     chainTipHeight: walletCtx.superWallet.height(),
                     now: DateTime.now(),
                   );
                   return TxSentOrReceivedTile(
                     txDetails: txDetails,
-                    signingState: uncanonicalTx.activeSession?.state(),
+                    signingState: unbroadcastedTx.activeSession?.state(),
                     onTap: () {
                       Navigator.popUntil(context, (r) => r.isFirst);
-                      showTxDetailsDialog(parentCtx, uncanonicalTx);
+                      showTxDetailsDialog(parentCtx, unbroadcastedTx);
                     },
                   );
                 },

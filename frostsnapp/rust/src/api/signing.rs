@@ -19,21 +19,19 @@ use frostsnap_core::{
 };
 use std::collections::{HashMap, HashSet};
 
-/// An outgoing Bitcoin transaction that is not canonical.
+/// An outgoing Bitcoin transaction that has not been broadcast.
 ///
 /// May be signed or unsigned, but is guaranteed to have a signing session associated with it.
 #[derive(Debug, Clone)]
 #[frb]
-pub struct UncanonicalTx {
+pub struct UnbroadcastedTx {
     pub tx: Transaction,
     pub session_id: SignSessionId,
     /// Some for active (incomplete) sign sessions.
     pub active_session: Option<ActiveSignSession>,
-    /// Whether this tx was successfully broadcast at some point.
-    pub was_broadcast: bool,
 }
 
-impl UncanonicalTx {
+impl UnbroadcastedTx {
     #[frb(sync)]
     pub fn is_signed(&self) -> bool {
         self.active_session.is_none()
@@ -368,20 +366,15 @@ impl Coordinator {
     }
 
     #[frb(sync)]
-    pub fn uncanonical_txs(
+    pub fn unbroadcasted_txs(
         &self,
         s_wallet: &SuperWallet,
         master_appkey: MasterAppkey,
-    ) -> Vec<UncanonicalTx> {
+    ) -> Vec<UnbroadcastedTx> {
         let key_id = master_appkey.key_id();
         let coord = self.0.inner();
 
         let s_wallet = &mut *s_wallet.inner.lock().unwrap();
-        let canonical_txids = s_wallet
-            .list_transactions(master_appkey)
-            .into_iter()
-            .map(|tx| tx.txid)
-            .collect::<HashSet<bitcoin::Txid>>();
 
         let unsigned_txs = coord
             .active_signing_sessions()
@@ -392,18 +385,17 @@ impl Coordinator {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
                         let tx = Transaction::from_template(tx_temp);
                         let session_id = session.session_id();
-                        Some(UncanonicalTx {
+                        Some(UnbroadcastedTx {
                             tx,
                             session_id,
                             active_session: Some(session),
-                            was_broadcast: false,
                         })
                     }
                     _ => None,
                 }
             });
 
-        let unbroadcasted_txs = coord
+        let signed_unbroadcasted_txs = coord
             .finished_signing_sessions()
             .iter()
             .filter(|(_, session)| session.key_id == key_id)
@@ -412,25 +404,23 @@ impl Coordinator {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
                         let mut tx = Transaction::from_template(tx_temp);
                         tx.fill_signatures(&session.signatures);
-                        let was_broadcast = s_wallet.get_tx(tx.raw_txid()).is_some();
-                        Some(UncanonicalTx {
+
+                        // Skip if already in BDK (was broadcast)
+                        if s_wallet.get_tx(tx.raw_txid()).is_some() {
+                            return None;
+                        }
+
+                        Some(UnbroadcastedTx {
                             tx,
                             session_id,
                             active_session: None,
-                            was_broadcast,
                         })
                     }
                     _ => None,
                 },
             );
 
-        unsigned_txs
-            .chain(unbroadcasted_txs)
-            .filter(move |uncanonical_tx| {
-                let txid = uncanonical_tx.tx.raw_txid();
-                !canonical_txids.contains(&txid)
-            })
-            .collect()
+        unsigned_txs.chain(signed_unbroadcasted_txs).collect()
     }
 
     #[frb(sync)]

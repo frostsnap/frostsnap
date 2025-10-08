@@ -89,7 +89,6 @@ class SuperWalletContext extends InheritedWidget {
     // Get or create tx stream
     var stream = _txStreams[keyId];
     if (stream == null) {
-      print('Made tx stream for ${masterAppkey.field0.inner}');
       stream = superWallet
           .subTxState(masterAppkey: masterAppkey)
           .toBehaviorSubject();
