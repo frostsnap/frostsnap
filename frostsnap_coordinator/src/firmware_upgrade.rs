@@ -1,28 +1,29 @@
 use crate::{Completion, FirmwareBin, Sink, UiProtocol};
 
 use frostsnap_comms::{
-    CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage,
+    CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage, Sha256Digest,
 };
 use frostsnap_core::DeviceId;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 pub struct FirmwareUpgradeProtocol {
     state: FirmwareUpgradeConfirmState,
     sent_first_message: bool,
     firmware_bin: FirmwareBin,
+    devices: HashMap<DeviceId, Sha256Digest>,
     sink: Box<dyn Sink<FirmwareUpgradeConfirmState>>,
 }
 
 impl FirmwareUpgradeProtocol {
     pub fn new(
-        devices: BTreeSet<DeviceId>,
+        devices: HashMap<DeviceId, Sha256Digest>,
         need_upgrade: BTreeSet<DeviceId>,
         firmware_bin: FirmwareBin,
         sink: impl Sink<FirmwareUpgradeConfirmState> + 'static,
     ) -> Self {
         Self {
             state: FirmwareUpgradeConfirmState {
-                devices: devices.into_iter().collect(),
+                devices: devices.keys().copied().collect(),
                 need_upgrade: need_upgrade.into_iter().collect(),
                 confirmations: Default::default(),
                 abort: false,
@@ -30,6 +31,7 @@ impl FirmwareUpgradeProtocol {
             },
             sent_first_message: false,
             firmware_bin,
+            devices,
             sink: Box::new(sink),
         }
     }
@@ -60,14 +62,14 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     }
 
     fn disconnected(&mut self, id: DeviceId) {
-        if self.state.devices.contains(&id) {
+        if self.devices.contains_key(&id) {
             self.state.abort = true;
             self.emit_state();
         }
     }
 
     fn process_comms_message(&mut self, from: DeviceId, message: CommsMisc) -> bool {
-        if !self.state.devices.contains(&from) {
+        if !self.devices.contains_key(&from) {
             return false;
         }
         if let CommsMisc::AckUpgradeMode = message {
@@ -84,14 +86,26 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut to_devices = vec![];
         if !self.sent_first_message {
+            let any_device_needs_legacy = self
+                .devices
+                .values()
+                .any(|digest| !digest.capabilities().upgrade_digest_no_sig);
+
+            let upgrade_message = if any_device_needs_legacy {
+                CoordinatorUpgradeMessage::PrepareUpgrade {
+                    size: self.firmware_bin.size(),
+                    firmware_digest: self.firmware_bin.cached_digest(),
+                }
+            } else {
+                CoordinatorUpgradeMessage::PrepareUpgrade2 {
+                    size: self.firmware_bin.size(),
+                    firmware_digest: self.firmware_bin.firmware_only_digest(),
+                }
+            };
+
             to_devices.push(CoordinatorSendMessage {
                 target_destinations: frostsnap_comms::Destination::All,
-                message_body: CoordinatorSendBody::Upgrade(
-                    CoordinatorUpgradeMessage::PrepareUpgrade {
-                        size: self.firmware_bin.size(),
-                        firmware_digest: self.firmware_bin.cached_digest(),
-                    },
-                ),
+                message_body: CoordinatorSendBody::Upgrade(upgrade_message),
             });
             self.sent_first_message = true;
         }

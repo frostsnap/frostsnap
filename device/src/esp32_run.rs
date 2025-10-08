@@ -414,6 +414,17 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         );
                         upgrade = Some(upgrade_);
                     }
+                    CoordinatorUpgradeMessage::PrepareUpgrade2 {
+                        size,
+                        firmware_digest,
+                    } => {
+                        let upgrade_ = ota_partitions.start_upgrade(
+                            *size,
+                            *firmware_digest,
+                            active_firmware_digest,
+                        );
+                        upgrade = Some(upgrade_);
+                    }
                     CoordinatorUpgradeMessage::EnterUpgradeMode => {}
                 },
                 CoordinatorSendBody::DataWipe => {

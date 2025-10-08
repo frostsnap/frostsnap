@@ -425,10 +425,25 @@ impl FirmwareUpgradeMode<'_> {
             let (firmware_size, firmware_and_signature_block_size) =
                 partition.firmware_size().unwrap();
 
-            // New digest approach: without signature block
+            // Verify firmware digest - we accept BOTH digest types:
+            //
+            // 1. Deterministic firmware digest (PrepareUpgrade2): Hash of firmware only,
+            //    excluding padding and signature block. Displayed on device screen so users
+            //    can verify it matches their locally-built reproducible firmware.
+            //
+            // 2. Legacy full digest (PrepareUpgrade): Hash of entire signed firmware including
+            //    padding and signature block. Used by v0.0.1 and earlier coordinators.
+            //
+            // Why accept both?
+            // - SHA256 collision resistance (~2^-256) makes accidental matches impossible
+            // - Simplifies code - no need to track which message variant was received
+            // - Provides backwards compatibility with older coordinators
+            // - Allows graceful fallback if coordinator sends wrong digest type
+            //
+            // See frostsnap_comms::CoordinatorUpgradeMessage for protocol documentation.
+
             let digest_without_signature = partition.sha256_digest(sha, Some(firmware_size));
             if digest_without_signature != *expected_digest {
-                // Old approach: digest with signature block (for backwards compatibility)
                 let digest_with_signature =
                     partition.sha256_digest(sha, Some(firmware_and_signature_block_size));
                 if digest_with_signature != *expected_digest {
