@@ -132,6 +132,7 @@ pub fn run_factory_provisioning(
     // Destructure what we need
     let DevicePeripherals {
         mut display,
+        mut touch_receiver,
         efuse,
         jtag,
         timer,
@@ -143,6 +144,9 @@ pub fn run_factory_provisioning(
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
+
+    // Run screen test
+    crate::screen_test::run(&mut display, &mut touch_receiver, &timer);
 
     text_display!(
         &mut display,

@@ -32,6 +32,7 @@ pub mod partitions;
 pub mod peripherals;
 pub mod resources;
 pub mod root_widget;
+pub mod screen_test;
 pub mod secure_boot;
 pub mod stack_guard;
 pub mod touch_calibration;
