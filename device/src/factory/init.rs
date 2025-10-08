@@ -132,11 +132,15 @@ pub fn run_factory_provisioning(
     // Destructure what we need
     let DevicePeripherals {
         mut display,
+        mut touch_receiver,
         efuse,
         jtag,
         timer,
         ..
     } = *peripherals;
+
+    // Run screen test
+    display = crate::screen_test::run(display, &mut touch_receiver, timer);
 
     // Initialize serial interface for factory communication
     let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(jtag, timer);
