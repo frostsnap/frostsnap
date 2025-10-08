@@ -21,8 +21,8 @@ use frostsnap_coordinator::wait_for_recovery_share::{
     WaitForRecoveryShare, WaitForRecoveryShareState,
 };
 use frostsnap_coordinator::{
-    AppMessageBody, DeviceChange, DeviceMode, FirmwareBin, Sink, UiProtocol, UiStack, UsbSender,
-    UsbSerialManager, WaitForToUserMessage,
+    AppMessageBody, DeviceChange, DeviceMode, Sink, UiProtocol, UiStack, UsbSender,
+    UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
 };
 use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
@@ -52,7 +52,7 @@ pub struct FfiCoordinator {
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_stack: Arc<Mutex<UiStack>>,
     pub(crate) usb_sender: UsbSender,
-    firmware_bin: Option<FirmwareBin>,
+    firmware_bin: Option<ValidatedFirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<Box<dyn Sink<f32>>>>>,
     device_list: Arc<Mutex<DeviceList>>,
     device_list_stream: Arc<Mutex<Option<Box<dyn Sink<DeviceListUpdate>>>>>,

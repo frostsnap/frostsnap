@@ -2,7 +2,7 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-use crate::firmware_bin::FirmwareBin;
+use crate::firmware_bin::ValidatedFirmwareBin;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
@@ -55,7 +55,7 @@ pub struct UsbSerialManager {
     /// sometimes we need to put things in the outbox internally
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
-    firmware_bin: Option<FirmwareBin>,
+    firmware_bin: Option<ValidatedFirmwareBin>,
     /// Ongoing genuine check challenges to devices
     challenges: HashMap<DeviceId, [u8; 32]>,
 }
@@ -75,7 +75,7 @@ struct AwaitingMagic {
 
 impl UsbSerialManager {
     /// Returns self and a `UsbSender` which can be used to queue messages
-    pub fn new(serial_impl: Box<dyn Serial>, firmware_bin: Option<FirmwareBin>) -> Self {
+    pub fn new(serial_impl: Box<dyn Serial>, firmware_bin: Option<ValidatedFirmwareBin>) -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
         Self {
             serial_impl,
@@ -571,9 +571,7 @@ impl UsbSerialManager {
             None => device_changes.push(DeviceChange::Connected {
                 id: from,
                 firmware_digest,
-                latest_firmware_digest: self
-                    .firmware_bin
-                    .map(|mut firmware_bin| firmware_bin.cached_digest()),
+                latest_firmware_digest: self.firmware_bin.map(|firmware_bin| firmware_bin.digest()),
             }),
         }
 
@@ -624,7 +622,7 @@ impl UsbSerialManager {
             .map(|device_port| device_port.firmware_digest)
     }
 
-    pub fn upgrade_bin(&self) -> Option<FirmwareBin> {
+    pub fn upgrade_bin(&self) -> Option<ValidatedFirmwareBin> {
         self.firmware_bin
     }
 

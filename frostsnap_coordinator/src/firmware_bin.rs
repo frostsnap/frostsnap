@@ -3,7 +3,6 @@ use frostsnap_comms::{Sha256Digest, FIRMWARE_UPGRADE_CHUNK_LEN};
 #[derive(Clone, Copy)]
 pub struct FirmwareBin {
     bin: &'static [u8],
-    digest_cache: Option<Sha256Digest>,
 }
 
 impl frostsnap_comms::firmware_reader::FirmwareReader for FirmwareBin {
@@ -43,10 +42,7 @@ impl FirmwareBin {
     }
 
     pub const fn new(bin: &'static [u8]) -> Self {
-        Self {
-            bin,
-            digest_cache: None,
-        }
+        Self { bin }
     }
 
     pub fn num_chunks(&self) -> u32 {
@@ -61,53 +57,102 @@ impl FirmwareBin {
         self.bin
     }
 
-    pub fn cached_digest(&mut self) -> Sha256Digest {
-        let digest_cache = self.digest_cache.take();
-        let digest = digest_cache.unwrap_or_else(|| self.digest());
-        self.digest_cache = Some(digest);
-        digest
+    pub fn validate(self) -> Result<ValidatedFirmwareBin, FirmwareValidationError> {
+        ValidatedFirmwareBin::new(self)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum FirmwareValidationError {
+    InvalidFormat(frostsnap_comms::firmware_reader::FirmwareSizeError),
+    SizeMismatch { expected: u32, actual: u32 },
+}
+
+impl std::fmt::Display for FirmwareValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FirmwareValidationError::InvalidFormat(err) => {
+                write!(f, "Invalid firmware format: {}", err)
+            }
+            FirmwareValidationError::SizeMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "Firmware size mismatch: expected {} bytes, got {} bytes",
+                    expected, actual
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for FirmwareValidationError {}
+
+#[derive(Clone, Copy)]
+pub struct ValidatedFirmwareBin {
+    firmware: FirmwareBin,
+    digest: Sha256Digest,
+    firmware_only_digest: Sha256Digest,
+    firmware_size: u32,
+    total_size: u32,
+}
+
+impl ValidatedFirmwareBin {
+    pub fn new(firmware: FirmwareBin) -> Result<Self, FirmwareValidationError> {
+        use frostsnap_core::sha2::digest::Digest;
+
+        let (firmware_size, total_size) =
+            frostsnap_comms::firmware_reader::firmware_size(&firmware)
+                .map_err(FirmwareValidationError::InvalidFormat)?;
+
+        if total_size != firmware.size() {
+            return Err(FirmwareValidationError::SizeMismatch {
+                expected: total_size,
+                actual: firmware.size(),
+            });
+        }
+
+        let mut digest_state = sha2::Sha256::default();
+        digest_state.update(firmware.as_bytes());
+        let digest = Sha256Digest(digest_state.finalize().into());
+
+        let mut firmware_only_state = sha2::Sha256::default();
+        firmware_only_state.update(&firmware.as_bytes()[..firmware_size as usize]);
+        let firmware_only_digest = Sha256Digest(firmware_only_state.finalize().into());
+
+        Ok(Self {
+            firmware,
+            digest,
+            firmware_only_digest,
+            firmware_size,
+            total_size,
+        })
     }
 
     pub fn digest(&self) -> Sha256Digest {
-        use frostsnap_core::sha2::digest::Digest;
-        let mut state = sha2::Sha256::default();
-        state.update(self.bin);
-        Sha256Digest(state.finalize().into())
-    }
-
-    pub fn find_signature_block(&self) -> Option<usize> {
-        use frostsnap_comms::{SIGNATURE_BLOCK_MAGIC, SIGNATURE_BLOCK_SIZE};
-
-        if self.bin.len() < SIGNATURE_BLOCK_SIZE {
-            return None;
-        }
-
-        let potential_sig_start = self.bin.len() - SIGNATURE_BLOCK_SIZE;
-        if self.bin[potential_sig_start..].starts_with(&SIGNATURE_BLOCK_MAGIC) {
-            Some(potential_sig_start)
-        } else {
-            None
-        }
+        self.digest
     }
 
     pub fn firmware_only_digest(&self) -> Sha256Digest {
-        use frostsnap_core::sha2::digest::Digest;
+        self.firmware_only_digest
+    }
 
-        match frostsnap_comms::firmware_reader::firmware_size(self) {
-            Ok((firmware_only_size, _total_size)) => {
-                let mut state = sha2::Sha256::default();
-                state.update(&self.bin[..firmware_only_size as usize]);
-                Sha256Digest(state.finalize().into())
-            }
-            Err(_) => {
-                let firmware_only = match self.find_signature_block() {
-                    Some(sig_start) => &self.bin[..sig_start],
-                    None => self.bin,
-                };
-                let mut state = sha2::Sha256::default();
-                state.update(firmware_only);
-                Sha256Digest(state.finalize().into())
-            }
-        }
+    pub fn size(&self) -> u32 {
+        self.total_size
+    }
+
+    pub fn firmware_size(&self) -> u32 {
+        self.firmware_size
+    }
+
+    pub fn total_size(&self) -> u32 {
+        self.total_size
+    }
+
+    pub fn as_bytes(&self) -> &'static [u8] {
+        self.firmware.as_bytes()
+    }
+
+    pub fn num_chunks(&self) -> u32 {
+        self.firmware.num_chunks()
     }
 }

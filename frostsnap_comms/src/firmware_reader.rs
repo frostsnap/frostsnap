@@ -46,7 +46,7 @@ struct SegmentHeader {
     length: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FirmwareSizeError {
     IoError(String),
     InvalidMagic(u8),

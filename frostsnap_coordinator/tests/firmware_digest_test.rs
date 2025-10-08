@@ -6,8 +6,12 @@ fn test_v0_0_1_firmware_digests() {
     let firmware_signed_bytes = include_bytes!("v0.0.1-firmware-signed.bin");
     let firmware_unsigned_bytes = include_bytes!("v0.0.1-firmware-unsigned.bin");
 
-    let firmware_signed = FirmwareBin::new(firmware_signed_bytes);
-    let firmware_unsigned = FirmwareBin::new(firmware_unsigned_bytes);
+    let firmware_signed = FirmwareBin::new(firmware_signed_bytes)
+        .validate()
+        .expect("Failed to validate signed firmware");
+    let firmware_unsigned = FirmwareBin::new(firmware_unsigned_bytes)
+        .validate()
+        .expect("Failed to validate unsigned firmware");
 
     // Expected digests from the release
     const EXPECTED_SIGNED_DIGEST: &str =
@@ -31,36 +35,27 @@ fn test_v0_0_1_firmware_digests() {
         "Unsigned firmware digest doesn't match"
     );
 
-    // Test 3: find_signature_block should find signature at end of signed firmware
-    let sig_block_start = firmware_signed
-        .find_signature_block()
-        .expect("Should find signature block in signed firmware");
-
-    println!(
-        "Signature block starts at: 0x{:x} ({} bytes)",
-        sig_block_start, sig_block_start
-    );
-    println!(
-        "Unsigned firmware size: {} bytes",
-        firmware_unsigned_bytes.len()
-    );
-    println!(
-        "Signed firmware size: {} bytes",
-        firmware_signed_bytes.len()
-    );
-
-    // The signature should be at the last 4096 bytes
+    // Test 3: Signed firmware should have total_size > firmware_size
     assert_eq!(
-        sig_block_start,
-        firmware_signed_bytes.len() - 4096,
-        "Signature block should be at the end"
+        firmware_signed.total_size(),
+        firmware_signed_bytes.len() as u32,
+        "Signed firmware total_size should match actual bytes"
+    );
+    assert!(
+        firmware_signed.firmware_size() < firmware_signed.total_size(),
+        "Signed firmware should have signature block (firmware_size < total_size)"
     );
 
-    // Test 4: Unsigned firmware should NOT have a signature block
+    // Test 4: Unsigned firmware should have firmware_size == total_size
     assert_eq!(
-        firmware_unsigned.find_signature_block(),
-        None,
-        "Unsigned firmware should not have a signature block"
+        firmware_unsigned.firmware_size(),
+        firmware_unsigned.total_size(),
+        "Unsigned firmware should have firmware_size == total_size"
+    );
+    assert_eq!(
+        firmware_unsigned.total_size(),
+        firmware_unsigned_bytes.len() as u32,
+        "Unsigned firmware total_size should match actual bytes"
     );
 
     // Test 5: For unsigned firmware, firmware_only_digest() should equal digest()

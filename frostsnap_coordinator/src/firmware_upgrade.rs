@@ -1,4 +1,4 @@
-use crate::{Completion, FirmwareBin, Sink, UiProtocol};
+use crate::{Completion, Sink, UiProtocol, ValidatedFirmwareBin};
 
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage, Sha256Digest,
@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 pub struct FirmwareUpgradeProtocol {
     state: FirmwareUpgradeConfirmState,
     sent_first_message: bool,
-    firmware_bin: FirmwareBin,
+    firmware_bin: ValidatedFirmwareBin,
     devices: HashMap<DeviceId, Sha256Digest>,
     sink: Box<dyn Sink<FirmwareUpgradeConfirmState>>,
 }
@@ -18,7 +18,7 @@ impl FirmwareUpgradeProtocol {
     pub fn new(
         devices: HashMap<DeviceId, Sha256Digest>,
         need_upgrade: BTreeSet<DeviceId>,
-        firmware_bin: FirmwareBin,
+        firmware_bin: ValidatedFirmwareBin,
         sink: impl Sink<FirmwareUpgradeConfirmState> + 'static,
     ) -> Self {
         Self {
@@ -94,7 +94,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
             let upgrade_message = if any_device_needs_legacy {
                 CoordinatorUpgradeMessage::PrepareUpgrade {
                     size: self.firmware_bin.size(),
-                    firmware_digest: self.firmware_bin.cached_digest(),
+                    firmware_digest: self.firmware_bin.digest(),
                 }
             } else {
                 CoordinatorUpgradeMessage::PrepareUpgrade2 {
