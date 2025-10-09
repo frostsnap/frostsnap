@@ -27,6 +27,9 @@ mod device_to_user;
 pub mod restoration;
 pub use device_to_user::*;
 
+/// The number of nonces the device will give out at a time.
+pub const NONCE_BATCH_SIZE: u32 = 30;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrostSigner<S = MemoryNonceSlot> {
     keypair: KeyPair,
@@ -220,7 +223,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             tmp_keygen_pending_finalize: Default::default(),
             restoration: Default::default(),
             keygen_fingerprint: Fingerprint::FROST_V0,
-            nonce_batch_size: crate::NONCE_BATCH_SIZE,
+            nonce_batch_size: NONCE_BATCH_SIZE,
         }
     }
 
@@ -896,7 +899,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 impl FrostSigner<MemoryNonceSlot> {
     /// For testing only
     pub fn new_random(rng: &mut impl rand_core::RngCore, nonce_streams: usize) -> Self {
-        Self::new_random_with_nonce_batch_size(rng, nonce_streams, crate::NONCE_BATCH_SIZE)
+        Self::new_random_with_nonce_batch_size(rng, nonce_streams, NONCE_BATCH_SIZE)
     }
 
     /// For testing only - with configurable nonce_batch_size
