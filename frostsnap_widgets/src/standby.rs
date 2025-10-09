@@ -1,14 +1,14 @@
 use crate::{
-    bitmap::EncodedImage, device_name::DeviceName, icons::IconWidget, image::Image,
-    palette::PALETTE, prelude::*, share_index::ShareIndexWidget, vec_framebuffer::VecFramebuffer,
+    device_name::DeviceName, icons::IconWidget, palette::PALETTE, prelude::*,
+    share_index::ShareIndexWidget, BmpImage,
 };
 use crate::{DefaultTextStyle, FONT_LARGE};
 use alloc::string::{String, ToString};
-use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
+use embedded_graphics::pixelcolor::Rgb565;
 use embedded_iconoir::prelude::IconoirNewIcon;
 use frostsnap_core::message::HeldShare;
 
-const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
+const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
 
 /// A widget that displays the Frostsnap logo with a key name and device name
 #[derive(frostsnap_macros::Widget)]
@@ -16,7 +16,7 @@ pub struct Standby {
     #[widget_delegate]
     content: Center<
         Column<(
-            Image<VecFramebuffer<BinaryColor>, Rgb565>,
+            BmpImage,
             Option<
                 Row<(
                     IconWidget<
@@ -70,12 +70,8 @@ impl Standby {
 
         let device_name_widget = DeviceName::new(device_name);
 
-        let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
-        let logo = Image::with_color_map(framebuffer, |color| match color {
-            BinaryColor::On => PALETTE.logo,
-            BinaryColor::Off => PALETTE.background,
-        });
+        // Load BMP logo with color mapping
+        let logo = BmpImage::new(LOGO_DATA, PALETTE.logo);
 
         let column = Column::new((
             logo,

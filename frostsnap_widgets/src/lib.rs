@@ -19,6 +19,7 @@ pub mod address_display;
 pub mod animation_speed;
 pub mod backup;
 pub mod bitmap;
+pub mod bmp_image;
 pub mod checkmark;
 pub mod cursor;
 pub mod debug;
@@ -84,6 +85,7 @@ pub use widget_list::*;
 // Re-export all widget items
 pub use address_display::{AddressDisplay, AddressWithPath};
 pub use backup::*;
+pub use bmp_image::BmpImage;
 pub use checkmark::*;
 pub use cursor::*;
 pub use fader::*;
