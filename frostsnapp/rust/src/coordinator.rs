@@ -21,8 +21,8 @@ use frostsnap_coordinator::wait_for_recovery_share::{
     WaitForRecoveryShare, WaitForRecoveryShareState,
 };
 use frostsnap_coordinator::{
-    AppMessageBody, DeviceChange, DeviceMode, Sink, UiProtocol, UiStack, UsbSender,
-    UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
+    AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
+    UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
 };
 use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
@@ -565,13 +565,10 @@ impl FfiCoordinator {
         let ui_protocol = {
             let device_list = self.device_list.lock().unwrap();
 
-            let devices: HashMap<DeviceId, Sha256Digest> = device_list
+            let devices: HashMap<DeviceId, FirmwareVersion> = device_list
                 .devices()
                 .into_iter()
-                .map(|device| {
-                    let digest = Sha256Digest::from_str(&device.firmware_digest).unwrap();
-                    (device.id, digest)
-                })
+                .map(|device| (device.id, device.firmware))
                 .collect();
 
             let need_upgrade = device_list
@@ -593,6 +590,11 @@ impl FfiCoordinator {
 
     pub fn upgrade_firmware_digest(&self) -> Option<Sha256Digest> {
         self.firmware_bin.map(|firmware_bin| firmware_bin.digest())
+    }
+
+    pub fn upgrade_firmware_version_name(&self) -> Option<String> {
+        self.firmware_bin
+            .map(|firmware_bin| firmware_bin.firmware_version().version_name())
     }
 
     fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {

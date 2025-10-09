@@ -1,7 +1,7 @@
-use crate::{firmware::VersionNumber, Completion, Sink, UiProtocol, ValidatedFirmwareBin};
+use crate::{Completion, FirmwareVersion, Sink, UiProtocol, ValidatedFirmwareBin};
 
 use frostsnap_comms::{
-    CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage, Sha256Digest,
+    CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage,
 };
 use frostsnap_core::DeviceId;
 use std::collections::{BTreeSet, HashMap};
@@ -10,13 +10,13 @@ pub struct FirmwareUpgradeProtocol {
     state: FirmwareUpgradeConfirmState,
     sent_first_message: bool,
     firmware_bin: ValidatedFirmwareBin,
-    devices: HashMap<DeviceId, Sha256Digest>,
+    devices: HashMap<DeviceId, FirmwareVersion>,
     sink: Box<dyn Sink<FirmwareUpgradeConfirmState>>,
 }
 
 impl FirmwareUpgradeProtocol {
     pub fn new(
-        devices: HashMap<DeviceId, Sha256Digest>,
+        devices: HashMap<DeviceId, FirmwareVersion>,
         need_upgrade: BTreeSet<DeviceId>,
         firmware_bin: ValidatedFirmwareBin,
         sink: impl Sink<FirmwareUpgradeConfirmState> + 'static,
@@ -86,10 +86,10 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut to_devices = vec![];
         if !self.sent_first_message {
-            let any_device_needs_legacy = self.devices.values().any(|digest| {
-                VersionNumber::from_digest(digest)
-                    .is_none_or(|v| !v.capabilities().upgrade_digest_no_sig)
-            });
+            let any_device_needs_legacy = self
+                .devices
+                .values()
+                .any(|fw| !fw.features().upgrade_digest_no_sig);
 
             let upgrade_message = if any_device_needs_legacy {
                 CoordinatorUpgradeMessage::PrepareUpgrade {
