@@ -9,7 +9,7 @@ use frostsnap_widgets::{
     layout::*,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm,
-    SignMessageConfirm, Standby, Text, Welcome,
+    SignMessageConfirm, Standby, Text,
 };
 
 use crate::ui::FirmwareUpgradeStatus;
@@ -22,10 +22,7 @@ type BackupRequestPromptWidget =
 #[derive(frostsnap_macros::Widget)]
 #[widget_crate(frostsnap_widgets)]
 pub enum WidgetTree {
-    /// Default welcome screen
-    Welcome(Box<Welcome>),
-
-    /// Standby screen showing key and device name
+    /// Standby screen (can show startup/empty, welcome, or key info)
     Standby(Box<Standby>),
 
     /// Device naming screen
@@ -96,6 +93,6 @@ pub enum WidgetTree {
 
 impl Default for WidgetTree {
     fn default() -> Self {
-        WidgetTree::Welcome(Box::new(Welcome::new()))
+        WidgetTree::Standby(Box::new(Standby::new()))
     }
 }

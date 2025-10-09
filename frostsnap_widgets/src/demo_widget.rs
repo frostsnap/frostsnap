@@ -86,8 +86,9 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "welcome" => {
-                use $crate::welcome::Welcome;
-                let widget = Welcome::new();
+                use $crate::Standby;
+                let mut widget = Standby::new();
+                widget.set_welcome();
                 $run_macro!(widget);
             }
             "column_cross_axis" => {
@@ -858,7 +859,37 @@ macro_rules! demo_widget {
                 use frostsnap_core::{message::HeldShare2, device::KeyPurpose, schnorr_fun::frost::SecretShare};
                 use bitcoin;
 
-                // Create a stub HeldShare for demo purposes
+                // Create a stub HeldShare for demo purposes (normal mode with access structure)
+                let held_share = HeldShare2 {
+                    access_structure_ref: Some(frostsnap_core::AccessStructureRef {
+                        key_id: frostsnap_core::KeyId([0u8; 32]),
+                        access_structure_id: frostsnap_core::AccessStructureId([1u8; 32]),
+                    }),
+                    // ShareImage is just a Point, we can use a generator point for demo
+                    share_image: {
+                        use frostsnap_core::schnorr_fun::fun::prelude::*;
+                        SecretShare {
+                            index: Scalar::<Public, NonZero>::one(),
+                            share: Scalar::<Secret, Zero>::zero(),
+                        }.share_image()
+                    },
+                    threshold: Some(2),
+                    key_name: Some("Family Wallet".to_string()),
+                    purpose: Some(KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin)),
+                    needs_consolidation: false,
+                };
+
+                let device_name = "Alice";
+                let mut widget = Standby::new();
+                widget.set_key(device_name, held_share);
+                $run_macro!(widget);
+            }
+            "standby_recovery" => {
+                use $crate::Standby;
+                use frostsnap_core::{message::HeldShare2, device::KeyPurpose, schnorr_fun::frost::SecretShare};
+                use bitcoin;
+
+                // Create a stub HeldShare for demo purposes (recovery mode - no access structure)
                 let held_share = HeldShare2 {
                     access_structure_ref: None,
                     // ShareImage is just a Point, we can use a generator point for demo
@@ -876,7 +907,8 @@ macro_rules! demo_widget {
                 };
 
                 let device_name = "Alice";
-                let widget = Standby::new(device_name, held_share);
+                let mut widget = Standby::new();
+                widget.set_key(device_name, held_share);
                 $run_macro!(widget);
             }
             "device_name_cursor" => {
@@ -909,8 +941,200 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
+            "logo_colors" => {
+                use $crate::{FadeSwitcher, GrayToAlpha, Image, LOGO_DATA, tinybmp};
+                use embedded_graphics::pixelcolor::{Gray8, RgbColor};
+
+                type LogoWidget = Center<Image<GrayToAlpha<tinybmp::Bmp<'static, Gray8>, Rgb565>>>;
+
+                struct LogoColorDemo {
+                    fade_switcher: FadeSwitcher<LogoWidget>,
+                    last_switch_time: Option<Instant>,
+                    color_index: usize,
+                }
+
+                impl LogoColorDemo {
+                    fn new() -> Self {
+                        // 5 high contrast colors
+                        let colors = [
+                            Rgb565::new(31, 0, 0),    // Bright red
+                            Rgb565::new(0, 63, 0),    // Bright green
+                            Rgb565::new(0, 0, 31),    // Bright blue
+                            Rgb565::new(31, 63, 0),   // Yellow
+                            Rgb565::new(31, 0, 31),   // Magenta
+                        ];
+
+                        let bmp = tinybmp::Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
+                        let logo = Image::new(GrayToAlpha::new(bmp, colors[0]));
+                        let centered = Center::new(logo);
+
+                        Self {
+                            fade_switcher: FadeSwitcher::new(centered, 500),
+                            last_switch_time: None,
+                            color_index: 0,
+                        }
+                    }
+                }
+
+                impl $crate::DynWidget for LogoColorDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.fade_switcher.set_constraints(max_size);
+                    }
+
+                    fn sizing(&self) -> $crate::Sizing {
+                        self.fade_switcher.sizing()
+                    }
+
+                    fn force_full_redraw(&mut self) {
+                        self.fade_switcher.force_full_redraw();
+                    }
+                }
+
+                impl $crate::Widget for LogoColorDemo {
+                    type Color = Rgb565;
+
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut SuperDrawTarget<D, Self::Color>,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: DrawTarget<Color = Self::Color>,
+                    {
+                        if self.last_switch_time.is_none() {
+                            self.last_switch_time = Some(current_time);
+                        }
+
+                        let elapsed = current_time.saturating_duration_since(self.last_switch_time.unwrap());
+
+                        if elapsed >= 1500 {
+                            // Switch to next color
+                            self.color_index = (self.color_index + 1) % 5;
+
+                            let colors = [
+                                Rgb565::new(31, 0, 0),    // Bright red
+                                Rgb565::new(0, 63, 0),    // Bright green
+                                Rgb565::new(0, 0, 31),    // Bright blue
+                                Rgb565::new(31, 63, 0),   // Yellow
+                                Rgb565::new(31, 0, 31),   // Magenta
+                            ];
+
+                            let bmp = tinybmp::Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
+                            let logo = Image::new(GrayToAlpha::new(bmp, colors[self.color_index]));
+                            let centered = Center::new(logo);
+
+                            self.fade_switcher.switch_to(centered);
+                            self.last_switch_time = Some(current_time);
+                        }
+
+                        self.fade_switcher.draw(target, current_time)
+                    }
+                }
+
+                let widget = LogoColorDemo::new();
+                $run_macro!(widget);
+            }
+            "standby_transitions" => {
+                use $crate::Standby;
+                use frostsnap_core::{message::HeldShare2, device::KeyPurpose, schnorr_fun::frost::SecretShare};
+                use bitcoin;
+
+                struct StandbyTransitionsDemo {
+                    widget: Standby,
+                    last_switch_time: Option<Instant>,
+                    state_index: usize,
+                }
+
+                impl StandbyTransitionsDemo {
+                    fn new() -> Self {
+                        Self {
+                            widget: Standby::new(),
+                            last_switch_time: None,
+                            state_index: 0,
+                        }
+                    }
+                }
+
+                impl $crate::DynWidget for StandbyTransitionsDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.widget.set_constraints(max_size);
+                    }
+
+                    fn sizing(&self) -> $crate::Sizing {
+                        self.widget.sizing()
+                    }
+
+                    fn force_full_redraw(&mut self) {
+                        self.widget.force_full_redraw();
+                    }
+                }
+
+                impl $crate::Widget for StandbyTransitionsDemo {
+                    type Color = Rgb565;
+
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut SuperDrawTarget<D, Self::Color>,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: DrawTarget<Color = Self::Color>,
+                    {
+                        if self.last_switch_time.is_none() {
+                            self.last_switch_time = Some(current_time);
+                        }
+
+                        let elapsed = current_time.saturating_duration_since(self.last_switch_time.unwrap());
+
+                        if elapsed >= 2000 {
+                            // Cycle through states: startup (0) -> blank (1) -> has-key (2) -> back to startup
+                            self.state_index = (self.state_index + 1) % 3;
+
+                            match self.state_index {
+                                0 => {
+                                    // Startup: clear content back to just logo
+                                    self.widget.clear_content();
+                                }
+                                1 => {
+                                    // Blank/welcome mode
+                                    self.widget.set_welcome();
+                                }
+                                2 => {
+                                    // Has-key mode
+                                    let held_share = HeldShare2 {
+                                        access_structure_ref: Some(frostsnap_core::AccessStructureRef {
+                                            key_id: frostsnap_core::KeyId([0u8; 32]),
+                                            access_structure_id: frostsnap_core::AccessStructureId([1u8; 32]),
+                                        }),
+                                        share_image: {
+                                            use frostsnap_core::schnorr_fun::fun::prelude::*;
+                                            SecretShare {
+                                                index: Scalar::<Public, NonZero>::one(),
+                                                share: Scalar::<Secret, Zero>::zero(),
+                                            }.share_image()
+                                        },
+                                        threshold: Some(2),
+                                        key_name: Some("Family Wallet".to_string()),
+                                        purpose: Some(KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin)),
+                                        needs_consolidation: false,
+                                    };
+                                    self.widget.set_key("Alice", held_share);
+                                }
+                                _ => unreachable!(),
+                            }
+
+                            self.last_switch_time = Some(current_time);
+                        }
+
+                        self.widget.draw(target, current_time)
+                    }
+                }
+
+                let widget = StandbyTransitionsDemo::new();
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, screen_test, multiline_string", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions", $demo);
             }
         }
     };

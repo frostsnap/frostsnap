@@ -1,96 +1,172 @@
+use crate::DefaultTextStyle;
 use crate::{
-    bitmap::EncodedImage, device_name::DeviceName, icons::IconWidget, image::Image,
-    palette::PALETTE, prelude::*, share_index::ShareIndexWidget, vec_framebuffer::VecFramebuffer,
+    any_of::AnyOf, device_name::DeviceName, palette::PALETTE, prelude::*, FadeSwitcher, GrayToAlpha,
 };
-use crate::{DefaultTextStyle, FONT_LARGE};
-use alloc::string::String;
-use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
-use embedded_iconoir::prelude::IconoirNewIcon;
+use alloc::string::{String, ToString};
+use embedded_graphics::{
+    pixelcolor::{Gray8, Rgb565},
+    text::Alignment,
+};
 use frostsnap_core::message::HeldShare2;
+use tinybmp::Bmp;
 
-const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
+pub const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
+const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
-/// A widget that displays the Frostsnap logo with a key name and device name
+type Image = crate::Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>;
+
+/// Blank standby content - shows welcome message
+#[derive(frostsnap_macros::Widget)]
+pub struct StandbyBlank {
+    #[widget_delegate]
+    content: Center<Column<(Text, Text, Text)>>,
+}
+
+impl Default for StandbyBlank {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StandbyBlank {
+    pub fn new() -> Self {
+        let text_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_background);
+        let url_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.primary);
+
+        let text_line1 = Text::new("Get started with", text_style.clone());
+        let text_line2 = Text::new("Frostsnap", text_style);
+        let url_text = Text::new("frostsnap.com/start", url_style);
+
+        let column = Column::builder()
+            .push(text_line1)
+            .gap(4)
+            .push(text_line2)
+            .gap(16)
+            .push(url_text)
+            .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
+
+        let content = Center::new(column);
+
+        Self { content }
+    }
+}
+
+/// Standby content showing key information
+#[derive(frostsnap_macros::Widget)]
+pub struct StandbyHasKey {
+    #[widget_delegate]
+    content: Column<(Option<Row<(Image, Text)>>, Text, Text, DeviceName)>,
+}
+
+impl StandbyHasKey {
+    pub fn new(device_name: impl Into<String>, held_share: HeldShare2) -> Self {
+        let recovery_warning = if held_share.access_structure_ref.is_none() {
+            let warning_bmp =
+                Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning BMP");
+            let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
+
+            let warning_text = Text::new(
+                "Recovery Mode",
+                DefaultTextStyle::new(crate::FONT_MED, PALETTE.warning),
+            );
+
+            Some(
+                Row::builder()
+                    .push(warning_icon)
+                    .gap(4)
+                    .push(warning_text)
+                    .with_cross_axis_alignment(crate::CrossAxisAlignment::End),
+            )
+        } else {
+            None
+        };
+
+        let key_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface_variant);
+        let key_text = Text::new(held_share.key_name.unwrap_or("??".to_string()), key_style)
+            .with_alignment(Alignment::Center);
+
+        let share_index: u16 = held_share.share_image.index.try_into().unwrap();
+        let key_index_text = Text::new(
+            format!("Key #{}", share_index),
+            DefaultTextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
+        )
+        .with_alignment(Alignment::Center);
+
+        let device_name_widget = DeviceName::new(device_name);
+
+        let content = Column::builder()
+            .push(recovery_warning)
+            .gap(8)
+            .push(key_text)
+            .gap(12)
+            .push(key_index_text)
+            .gap(4)
+            .push(device_name_widget)
+            .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
+
+        Self { content }
+    }
+}
+
+/// Main standby widget that can show startup (empty), blank (welcome), or has-key content
 #[derive(frostsnap_macros::Widget)]
 pub struct Standby {
     #[widget_delegate]
     content: Center<
         Column<(
-            Image<VecFramebuffer<BinaryColor>, Rgb565>,
-            Option<
-                Row<(
-                    IconWidget<
-                        embedded_iconoir::Icon<
-                            Rgb565,
-                            embedded_iconoir::icons::size24px::actions::WarningTriangle,
-                        >,
-                    >,
-                    Text,
-                )>,
-            >,
-            Option<
-                Row<(
-                    IconWidget<
-                        embedded_iconoir::Icon<
-                            Rgb565,
-                            embedded_iconoir::icons::size24px::finance::Wallet,
-                        >,
-                    >,
-                    Text,
-                )>,
-            >,
-            ShareIndexWidget,
-            DeviceName,
+            Padding<Image>,
+            FadeSwitcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>>,
         )>,
     >,
 }
 
+impl Default for Standby {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Standby {
-    pub fn new(device_name: impl Into<String>, held_share: HeldShare2) -> Self {
-        let key_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface_variant);
+    /// Create a new Standby widget in startup mode (just logo, empty body)
+    pub fn new() -> Self {
+        let logo_bmp = Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
+        let logo = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
+        let padded_logo = Padding::only(logo).top(30).bottom(20).build();
 
-        let key_row = held_share.key_name.as_ref().map(|key_name| {
-            let wallet_icon = IconWidget::new(
-                embedded_iconoir::icons::size24px::finance::Wallet::new(PALETTE.on_surface_variant),
-            );
-            let key_text = Text::new(key_name.clone(), key_style);
-            Row::builder().push(wallet_icon).gap(8).push(key_text)
-        });
+        let fade_switcher = FadeSwitcher::new(None, 500);
 
-        let recovery_warning = if held_share.access_structure_ref.is_none() {
-            let warning_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.warning);
-            let warning_icon = IconWidget::new(
-                embedded_iconoir::icons::size24px::actions::WarningTriangle::new(PALETTE.warning),
-            );
-            let warning_text = Text::new("recovery mode", warning_style);
-            Some(Row::builder().push(warning_icon).gap(8).push(warning_text))
-        } else {
-            None
-        };
-
-        let share_index: u16 = held_share.share_image.index.try_into().unwrap();
-        let share_index_widget = ShareIndexWidget::new(share_index, FONT_LARGE);
-
-        let device_name_widget = DeviceName::new(device_name);
-
-        let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
-        let logo = Image::with_color_map(framebuffer, |color| match color {
-            BinaryColor::On => PALETTE.logo,
-            BinaryColor::Off => PALETTE.background,
-        });
-
-        let column = Column::new((
-            logo,
-            recovery_warning,
-            key_row,
-            share_index_widget,
-            device_name_widget,
-        ))
-        .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+        let column = Column::builder()
+            .push(padded_logo)
+            .push(fade_switcher)
+            .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
         let content = Center::new(column);
 
         Self { content }
+    }
+
+    /// Clear content (back to startup mode - just logo)
+    pub fn clear_content(&mut self) {
+        self.content.child.children.1.switch_to(None);
+    }
+
+    /// Set to welcome mode (blank with welcome message)
+    pub fn set_welcome(&mut self) {
+        let blank_content = StandbyBlank::new();
+        self.content
+            .child
+            .children
+            .1
+            .switch_to(Some(AnyOf::new(blank_content)));
+    }
+
+    /// Set to has-key mode with key information
+    pub fn set_key(&mut self, device_name: impl Into<String>, held_share: HeldShare2) {
+        let has_key_content = StandbyHasKey::new(device_name, held_share);
+        self.content
+            .child
+            .children
+            .1
+            .switch_to(Some(AnyOf::new(has_key_content)));
     }
 }

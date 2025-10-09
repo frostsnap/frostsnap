@@ -9,8 +9,8 @@ use frostsnap_widgets::{
     debug::OverlayDebug,
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
-    DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Welcome,
-    Widget, HOLD_TO_CONFIRM_TIME_LONG_MS, HOLD_TO_CONFIRM_TIME_MS,
+    DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Widget,
+    HOLD_TO_CONFIRM_TIME_LONG_MS, HOLD_TO_CONFIRM_TIME_MS,
 };
 
 use crate::touch_handler;
@@ -66,7 +66,7 @@ impl<'a> FrostyUi<'a> {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
-        let root_widget = RootWidget::new(WidgetTree::Welcome(Box::new(Welcome::new())), 200);
+        let root_widget = RootWidget::new(WidgetTree::Standby(Box::new(Standby::new())), 200);
         let debug_config = EnabledDebug {
             logs: cfg!(feature = "debug_log"),
             memory: cfg!(feature = "debug_mem"),
@@ -108,9 +108,23 @@ impl<'a> UserInteraction for FrostyUi<'a> {
         let current_widget = self.widget.inner_mut().current_mut();
 
         match (current_widget, &workflow) {
-            // If we're already showing a Welcome screen and need a Welcome screen, just leave it
-            (WidgetTree::Welcome(_), Workflow::None) => {
-                // Already showing Welcome, no need to change
+            // If we're already showing Standby, just update its mode
+            (WidgetTree::Standby(ref mut standby), Workflow::Startup) => {
+                standby.clear_content();
+                return;
+            }
+            (WidgetTree::Standby(ref mut standby), Workflow::None) => {
+                standby.set_welcome();
+                return;
+            }
+            (
+                WidgetTree::Standby(ref mut standby),
+                Workflow::Standby {
+                    device_name,
+                    held_share,
+                },
+            ) => {
+                standby.set_key(device_name.to_string(), held_share.clone());
                 return;
             }
 
@@ -155,11 +169,20 @@ impl<'a> UserInteraction for FrostyUi<'a> {
 
         // Convert workflow to widget tree
         let new_page = match workflow {
-            Workflow::None => WidgetTree::Welcome(Box::new(Welcome::new())),
+            Workflow::Startup => WidgetTree::Standby(Box::new(Standby::new())),
+            Workflow::None => {
+                let mut standby = Standby::new();
+                standby.set_welcome();
+                WidgetTree::Standby(Box::new(standby))
+            }
             Workflow::Standby {
                 device_name,
                 held_share,
-            } => WidgetTree::Standby(Box::new(Standby::new(device_name.to_string(), held_share))),
+            } => {
+                let mut standby = Standby::new();
+                standby.set_key(device_name.to_string(), held_share);
+                WidgetTree::Standby(Box::new(standby))
+            }
             Workflow::UserPrompt(prompt) => {
                 match prompt {
                     Prompt::KeyGen { phase } => {
@@ -211,7 +234,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             }
                             frostsnap_core::SignTask::Nostr { .. } => {
                                 // Nostr signing not implemented yet
-                                WidgetTree::Welcome(Box::new(Welcome::new()))
+                                let mut standby = Standby::new();
+                                standby.set_welcome();
+                                WidgetTree::Standby(Box::new(standby))
                             }
                         }
                     }

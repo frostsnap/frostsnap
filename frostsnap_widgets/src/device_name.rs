@@ -1,12 +1,12 @@
 use super::{Column, Row, Text as TextWidget};
 use crate::DefaultTextStyle;
-use crate::{
-    bitmap::EncodedImage, cursor::Cursor, image::Image, palette::PALETTE, prelude::*,
-    vec_framebuffer::VecFramebuffer, Switcher,
-};
+use crate::{cursor::Cursor, palette::PALETTE, prelude::*, GrayToAlpha, Image, Switcher};
 use alloc::string::String;
-use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
-use embedded_graphics::text::renderer::TextRenderer;
+use embedded_graphics::{
+    pixelcolor::{Gray8, Rgb565},
+    text::renderer::TextRenderer,
+};
+use tinybmp::Bmp;
 
 /// A widget for displaying device name with optional edit mode cursor
 
@@ -85,13 +85,13 @@ impl DeviceName {
     }
 }
 
-const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
+const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
 
 /// A screen showing the Frostsnap logo and the DeviceName widget
 #[derive(frostsnap_macros::Widget)]
 pub struct DeviceNameScreen {
     #[widget_delegate]
-    column: Column<(Image<VecFramebuffer<BinaryColor>, Rgb565>, DeviceName)>,
+    column: Column<(Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>, DeviceName)>,
 }
 
 impl DeviceNameScreen {
@@ -106,13 +106,8 @@ impl DeviceNameScreen {
     }
 
     pub fn new(device_name: String) -> Self {
-        // Load logo
-        let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
-        let logo_colored = Image::with_color_map(framebuffer, |c| match c {
-            BinaryColor::On => PALETTE.logo,
-            BinaryColor::Off => PALETTE.background,
-        });
+        let logo_bmp = Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
+        let logo_colored = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
 
         // Create DeviceName widget
         let device_name_widget = DeviceName::new(device_name);
