@@ -89,7 +89,7 @@ impl CdcAcmSerial {
             .endpoint::<Bulk, In>(ep_in)?
             .reader(4096)
             .with_num_transfers(4)
-            .with_read_timeout(Duration::from_millis(1_000));
+            .with_read_timeout(Duration::from_millis(10_000));
 
         // ---------------- mandatory CDC setup packets ---------------------
         send_cdc_setup(&if_comm, baud)?;

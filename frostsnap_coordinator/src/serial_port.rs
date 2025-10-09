@@ -255,7 +255,7 @@ impl Serial for DesktopSerial {
             // This timeout should never be hit in any normal circumstance but it's important to
             // have in case a device is bisbehaving. Note: 10ms is too low and leads to errors when
             // writing.
-            .timeout(Duration::from_millis(5_000))
+            .timeout(Duration::from_millis(10_000))
             .open()
             .map_err(|e| {
                 if e.to_string() == "Device or resource busy" {
