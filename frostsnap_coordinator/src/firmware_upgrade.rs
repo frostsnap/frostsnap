@@ -1,4 +1,4 @@
-use crate::{Completion, Sink, UiProtocol, ValidatedFirmwareBin};
+use crate::{firmware::VersionNumber, Completion, Sink, UiProtocol, ValidatedFirmwareBin};
 
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage, Sha256Digest,
@@ -86,20 +86,20 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut to_devices = vec![];
         if !self.sent_first_message {
-            let any_device_needs_legacy = self
-                .devices
-                .values()
-                .any(|digest| !digest.capabilities().upgrade_digest_no_sig);
+            let any_device_needs_legacy = self.devices.values().any(|digest| {
+                VersionNumber::from_digest(digest)
+                    .is_none_or(|v| !v.capabilities().upgrade_digest_no_sig)
+            });
 
             let upgrade_message = if any_device_needs_legacy {
                 CoordinatorUpgradeMessage::PrepareUpgrade {
                     size: self.firmware_bin.size(),
-                    firmware_digest: self.firmware_bin.digest(),
+                    firmware_digest: self.firmware_bin.digest_with_signature(),
                 }
             } else {
                 CoordinatorUpgradeMessage::PrepareUpgrade2 {
                     size: self.firmware_bin.size(),
-                    firmware_digest: self.firmware_bin.firmware_only_digest(),
+                    firmware_digest: self.firmware_bin.digest(),
                 }
             };
 

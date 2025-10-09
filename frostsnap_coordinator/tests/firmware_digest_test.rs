@@ -1,4 +1,4 @@
-use frostsnap_coordinator::FirmwareBin;
+use frostsnap_coordinator::{firmware::VersionNumber, FirmwareBin};
 use frostsnap_core::hex;
 
 #[test]
@@ -19,15 +19,15 @@ fn test_v0_0_1_firmware_digests() {
     const EXPECTED_UNSIGNED_DIGEST: &str =
         "8f45ae6b72c241a20798acbd3c6d3e54071cae73e335df1785f2d485a915da4c";
 
-    // Test 1: Hash of entire signed firmware
-    let signed_hex = hex::encode(&firmware_signed.digest().0);
+    // Test 1: Hash of entire signed firmware (with signature block)
+    let signed_hex = hex::encode(&firmware_signed.digest_with_signature().0);
 
     assert_eq!(
         signed_hex, EXPECTED_SIGNED_DIGEST,
         "Signed firmware digest doesn't match"
     );
 
-    // Test 2: Hash of unsigned firmware (deterministic build)
+    // Test 2: Hash of unsigned firmware (deterministic build, firmware-only)
     let unsigned_hex = hex::encode(&firmware_unsigned.digest().0);
 
     assert_eq!(
@@ -58,37 +58,73 @@ fn test_v0_0_1_firmware_digests() {
         "Unsigned firmware total_size should match actual bytes"
     );
 
-    // Test 5: For unsigned firmware, firmware_only_digest() should equal digest()
-    let unsigned_firmware_only_hex = hex::encode(&firmware_unsigned.firmware_only_digest().0);
+    // Test 5: For unsigned firmware, digest() should equal the deterministic build digest
+    let unsigned_firmware_only_hex = hex::encode(&firmware_unsigned.digest().0);
     assert_eq!(
         unsigned_firmware_only_hex, EXPECTED_UNSIGNED_DIGEST,
-        "firmware_only_digest() should return same digest for unsigned firmware"
+        "digest() should return firmware-only digest for unsigned firmware"
     );
 
-    // Test 6: firmware_only_digest() should return the unsigned digest for signed firmware
-    let firmware_only_hex = hex::encode(&firmware_signed.firmware_only_digest().0);
+    // Test 6: For signed firmware, digest() should return firmware-only (deterministic) digest
+    let firmware_only_hex = hex::encode(&firmware_signed.digest().0);
     assert_eq!(
         firmware_only_hex, EXPECTED_UNSIGNED_DIGEST,
-        "firmware_only_digest() should extract unsigned digest from signed firmware"
+        "digest() should return firmware-only digest (excluding signature) for signed firmware"
     );
 
     // Test 7: Old firmware (v0.0.1) should report upgrade_digest_no_sig capability as false
-    let signed_capabilities = firmware_signed.digest().capabilities();
-    let unsigned_capabilities = firmware_unsigned.digest().capabilities();
+    let signed_version = VersionNumber::from_digest(&firmware_signed.digest_with_signature())
+        .expect("Should find v0.0.1 signed firmware");
+    let unsigned_version = VersionNumber::from_digest(&firmware_unsigned.digest())
+        .expect("Should find v0.0.1 unsigned firmware");
 
     assert!(
-        !signed_capabilities.upgrade_digest_no_sig,
+        !signed_version.capabilities().upgrade_digest_no_sig,
         "v0.0.1 signed firmware should not support upgrade_digest_no_sig"
     );
 
     assert!(
-        !unsigned_capabilities.upgrade_digest_no_sig,
+        !unsigned_version.capabilities().upgrade_digest_no_sig,
         "v0.0.1 unsigned firmware should not support upgrade_digest_no_sig"
     );
 
+    // Test 8: Signed firmware should have is_signed() == true
+    assert!(
+        firmware_signed.is_signed(),
+        "Signed firmware should have is_signed() == true"
+    );
+
+    // Test 9: Unsigned firmware should have is_signed() == false
+    assert!(
+        !firmware_unsigned.is_signed(),
+        "Unsigned firmware should have is_signed() == false"
+    );
+
+    // Test 10: Both firmwares should have version information
+    assert!(
+        firmware_signed.version().is_some(),
+        "Signed firmware should have version information"
+    );
+    assert!(
+        firmware_unsigned.version().is_some(),
+        "Unsigned firmware should have version information"
+    );
+
+    // Test 11: Version information should be v0.0.1
+    assert_eq!(firmware_signed.version().unwrap().to_string(), "0.0.1");
+    assert_eq!(firmware_unsigned.version().unwrap().to_string(), "0.0.1");
+
     println!("✓ All firmware digest tests passed!");
-    println!("  - Signed firmware digest: {}", EXPECTED_SIGNED_DIGEST);
-    println!("  - Unsigned firmware digest: {}", EXPECTED_UNSIGNED_DIGEST);
-    println!("  - firmware_only_digest() correctly extracts unsigned digest from signed firmware");
+    println!(
+        "  - Signed firmware digest (with sig): {}",
+        EXPECTED_SIGNED_DIGEST
+    );
+    println!(
+        "  - Firmware-only digest (deterministic): {}",
+        EXPECTED_UNSIGNED_DIGEST
+    );
+    println!("  - digest() now returns firmware-only digest by default");
     println!("  - v0.0.1 firmware correctly reports upgrade_digest_no_sig capability as false");
+    println!("  - is_signed() correctly identifies signed vs unsigned firmware");
+    println!("  - version() correctly returns v0.0.1 for both signed and unsigned");
 }

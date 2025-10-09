@@ -599,7 +599,7 @@ fn _find_and_remove_magic_bytes(
     found
 }
 
-#[derive(Encode, Decode, Debug, Clone, Default, PartialEq)]
+#[derive(Encode, Decode, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FirmwareCapabilities {
     /// Device supports firmware digest verification without signature block
     pub upgrade_digest_no_sig: bool,
@@ -618,30 +618,6 @@ frostsnap_core::impl_fromstr_deserialize! {
     name => "sha256 digest",
     fn from_bytes(bytes: [u8;32]) -> Sha256Digest {
         Sha256Digest(bytes)
-    }
-}
-
-impl Sha256Digest {
-    /// Returns capabilities based on known firmware versions
-    pub fn capabilities(&self) -> FirmwareCapabilities {
-        // v0.0.1 signed firmware digest
-        const V0_0_1_SIGNED_DIGEST: [u8; 32] = [
-            0x57, 0x16, 0x1f, 0x80, 0xb4, 0x14, 0x13, 0xb1, 0x05, 0x3e, 0x27, 0x2f, 0x9c, 0x3d,
-            0xa8, 0xd1, 0x6e, 0xcf, 0xce, 0x44, 0x79, 0x33, 0x45, 0xbe, 0x69, 0xf7, 0xfe, 0x03,
-            0xd9, 0x3f, 0x4e, 0xb0,
-        ];
-
-        // v0.0.1 unsigned firmware digest (deterministic build)
-        const V0_0_1_UNSIGNED_DIGEST: [u8; 32] = [
-            0x8f, 0x45, 0xae, 0x6b, 0x72, 0xc2, 0x41, 0xa2, 0x07, 0x98, 0xac, 0xbd, 0x3c, 0x6d,
-            0x3e, 0x54, 0x07, 0x1c, 0xae, 0x73, 0xe3, 0x35, 0xdf, 0x17, 0x85, 0xf2, 0xd4, 0x85,
-            0xa9, 0x15, 0xda, 0x4c,
-        ];
-
-        FirmwareCapabilities {
-            upgrade_digest_no_sig: self.0 != V0_0_1_SIGNED_DIGEST
-                && self.0 != V0_0_1_UNSIGNED_DIGEST,
-        }
     }
 }
 

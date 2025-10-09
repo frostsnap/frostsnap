@@ -2,7 +2,7 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-use crate::firmware_bin::ValidatedFirmwareBin;
+use crate::firmware::ValidatedFirmwareBin;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
