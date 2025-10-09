@@ -1,20 +1,14 @@
 use crate::DefaultTextStyle;
-use crate::{
-    bitmap::EncodedImage, image::Image, palette::PALETTE, prelude::*,
-    vec_framebuffer::VecFramebuffer,
-};
-use embedded_graphics::{
-    pixelcolor::{BinaryColor, Rgb565},
-    text::Alignment,
-};
+use crate::{palette::PALETTE, prelude::*, BmpImage};
+use embedded_graphics::text::Alignment;
 
-const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
+const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
 
 /// A welcome screen widget showing the Frostsnap logo and getting started text
 #[derive(frostsnap_macros::Widget)]
 pub struct Welcome {
     #[widget_delegate]
-    content: Center<Column<(Image<VecFramebuffer<BinaryColor>, Rgb565>, Text, Text)>>,
+    content: Center<Column<(BmpImage, Text, Text)>>,
 }
 
 impl Welcome {
@@ -28,13 +22,8 @@ impl Welcome {
             .with_alignment(Alignment::Center);
         let url_text = Text::new("frostsnap.com/start", url_style).with_underline(PALETTE.primary);
 
-        // Load logo
-        let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
-        let logo = Image::with_color_map(framebuffer, |color| match color {
-            BinaryColor::On => PALETTE.logo,
-            BinaryColor::Off => PALETTE.background,
-        });
+        // Load BMP logo with color mapping
+        let logo = BmpImage::new(LOGO_DATA, PALETTE.logo);
 
         // Create column with spacing
         let column = Column::new((logo, text1, url_text))

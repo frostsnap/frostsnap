@@ -1913,6 +1913,7 @@ dependencies = [
  "frostsnap_macros",
  "micromath 0.2.2",
  "proptest",
+ "tinybmp",
  "u8g2-fonts",
 ]
 
@@ -4614,6 +4615,15 @@ checksum = "30cfb0125f12d9c277f35663a0a33f8c30190f4e4574868a330595412d34ebf3"
 dependencies = [
  "num-conv",
  "time-core",
+]
+
+[[package]]
+name = "tinybmp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df43af2cb7b369009aa14144959bb4f2720ab62034c9073242f2d3a186c2edb6"
+dependencies = [
+ "embedded-graphics",
 ]
 
 [[package]]
