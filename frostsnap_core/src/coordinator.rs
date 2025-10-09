@@ -1,6 +1,6 @@
 use crate::{
     coord_nonces::{NonceCache, NotEnoughNonces},
-    device::KeyPurpose,
+    device::{KeyPurpose, NONCE_BATCH_SIZE},
     map_ext::*,
     message::*,
     nonce_stream::{CoordNonceStreamState, NonceStreamId},
@@ -9,7 +9,7 @@ use crate::{
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
     CoordShareDecryptionContrib, DeviceId, Error, Gist, KeyId, KeygenId, Kind, MasterAppkey,
     MessageResult, RestorationId, SessionHash, ShareImage, SignItem, SignSessionId, SignTaskError,
-    WireSignTask, NONCE_BATCH_SIZE,
+    WireSignTask,
 };
 use alloc::{
     borrow::ToOwned,
