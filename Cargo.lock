@@ -1842,6 +1842,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "embedded-storage",
+ "frostsnap_comms",
  "frostsnap_core",
  "proptest",
  "rand_core",

@@ -1090,14 +1090,28 @@ class AboutPage extends StatelessWidget {
           ),
           Builder(
             builder: (context) {
-              final firmwareHash =
-                  coord.upgradeFirmwareDigest() ?? "No firmware bundled";
-              final canCopy = coord.upgradeFirmwareDigest() != null;
+              final firmwareVersion =
+                  coord.upgradeFirmwareVersionName() ?? "No firmware bundled";
+              final firmwareHash = coord.upgradeFirmwareDigest();
+              final canCopy = firmwareHash != null;
 
               return ListTile(
                 leading: Icon(Icons.memory),
-                title: Text('Bundled firmware hash'),
-                subtitle: Text(firmwareHash, style: monospaceTextStyle),
+                title: Text('Bundled firmware version'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(firmwareVersion, style: monospaceTextStyle),
+                    if (firmwareHash != null) ...[
+                      SizedBox(height: 4),
+                      Text(
+                        firmwareHash,
+                        style: monospaceTextStyle.copyWith(fontSize: 11),
+                      ),
+                    ],
+                  ],
+                ),
                 trailing: canCopy ? Icon(Icons.copy, size: 20) : null,
                 onTap: canCopy
                     ? () {

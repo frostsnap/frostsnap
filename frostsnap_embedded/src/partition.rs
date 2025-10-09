@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use core::cell::RefCell;
 use embedded_storage::nor_flash::{NorFlash, NorFlashError, NorFlashErrorKind, ReadNorFlash};
+use frostsnap_comms::firmware_reader::{FirmwareReader, SECTOR_SIZE as FIRMWARE_SECTOR_SIZE};
 
 use crate::ABWRITE_BINCODE_CONFIG;
 
@@ -195,6 +196,21 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
             .map_err(|_| NorFlashErrorKind::Other)?;
         let bytes_written = writer.flush()?;
         Ok(bytes_written)
+    }
+}
+
+impl<'a, S: NorFlash> FirmwareReader for FlashPartition<'a, S> {
+    type Error = NorFlashErrorKind;
+
+    fn read_sector(
+        &self,
+        sector: u32,
+    ) -> Result<Box<[u8; FIRMWARE_SECTOR_SIZE]>, NorFlashErrorKind> {
+        FlashPartition::read_sector(self, sector)
+    }
+
+    fn n_sectors(&self) -> u32 {
+        FlashPartition::n_sectors(self)
     }
 }
 
