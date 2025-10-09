@@ -64,16 +64,26 @@ class DeviceActionUpgradeController with ChangeNotifier {
 
     _dialogController = FullscreenActionDialogController(
       title: 'Upgrade Firmware',
-      body: (context) => Card(
-        margin: EdgeInsets.zero,
-        child: ListTile(
-          title: Text('New Firmware Digest'),
-          subtitle: Text(
-            coord.upgradeFirmwareDigest() ?? '',
-            style: monospaceTextStyle,
+      body: (context) {
+        final versionName = coord.upgradeFirmwareVersionName() ?? '';
+        return Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            title: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: 'New Firmware '),
+                  TextSpan(text: versionName, style: monospaceTextStyle),
+                ],
+              ),
+            ),
+            subtitle: Text(
+              coord.upgradeFirmwareDigest() ?? '',
+              style: monospaceTextStyle.copyWith(fontSize: 11),
+            ),
           ),
-        ),
-      ),
+        );
+      },
       actionButtons: [
         StreamBuilder(
           stream: replayStream,
@@ -212,10 +222,20 @@ class DeviceActionUpgradeController with ChangeNotifier {
                 ? Card(
                     margin: EdgeInsets.zero,
                     child: ListTile(
-                      title: Text('Upgraded to Latest Firmware'),
+                      title: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(text: 'Upgraded to Firmware '),
+                            TextSpan(
+                              text: coord.upgradeFirmwareVersionName() ?? '',
+                              style: monospaceTextStyle,
+                            ),
+                          ],
+                        ),
+                      ),
                       subtitle: Text(
                         coord.upgradeFirmwareDigest() ?? '',
-                        style: monospaceTextStyle,
+                        style: monospaceTextStyle.copyWith(fontSize: 11),
                       ),
                     ),
                   )

@@ -599,12 +599,6 @@ fn _find_and_remove_magic_bytes(
     found
 }
 
-#[derive(Encode, Decode, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct FirmwareCapabilities {
-    /// Device supports firmware digest verification without signature block
-    pub upgrade_digest_no_sig: bool,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Sha256Digest(pub [u8; 32]);
 

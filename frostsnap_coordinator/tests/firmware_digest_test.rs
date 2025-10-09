@@ -72,19 +72,19 @@ fn test_v0_0_1_firmware_digests() {
         "digest() should return firmware-only digest (excluding signature) for signed firmware"
     );
 
-    // Test 7: Old firmware (v0.0.1) should report upgrade_digest_no_sig capability as false
+    // Test 7: Old firmware (v0.0.1) should report upgrade_digest_no_sig feature as false
     let signed_version = VersionNumber::from_digest(&firmware_signed.digest_with_signature())
         .expect("Should find v0.0.1 signed firmware");
     let unsigned_version = VersionNumber::from_digest(&firmware_unsigned.digest())
         .expect("Should find v0.0.1 unsigned firmware");
 
     assert!(
-        !signed_version.capabilities().upgrade_digest_no_sig,
+        !signed_version.features().upgrade_digest_no_sig,
         "v0.0.1 signed firmware should not support upgrade_digest_no_sig"
     );
 
     assert!(
-        !unsigned_version.capabilities().upgrade_digest_no_sig,
+        !unsigned_version.features().upgrade_digest_no_sig,
         "v0.0.1 unsigned firmware should not support upgrade_digest_no_sig"
     );
 
@@ -124,7 +124,7 @@ fn test_v0_0_1_firmware_digests() {
         EXPECTED_UNSIGNED_DIGEST
     );
     println!("  - digest() now returns firmware-only digest by default");
-    println!("  - v0.0.1 firmware correctly reports upgrade_digest_no_sig capability as false");
+    println!("  - v0.0.1 firmware correctly reports upgrade_digest_no_sig feature as false");
     println!("  - is_signed() correctly identifies signed vs unsigned firmware");
     println!("  - version() correctly returns v0.0.1 for both signed and unsigned");
 }

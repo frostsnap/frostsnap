@@ -1,8 +1,70 @@
-use frostsnap_comms::{FirmwareCapabilities, Sha256Digest, FIRMWARE_UPGRADE_CHUNK_LEN};
+use bincode::{Decode, Encode};
+use frostsnap_comms::{Sha256Digest, FIRMWARE_UPGRADE_CHUNK_LEN};
+
+#[derive(Encode, Decode, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FirmwareFeatures {
+    /// Device supports firmware digest verification without signature block
+    pub upgrade_digest_no_sig: bool,
+}
+
+impl FirmwareFeatures {
+    pub const fn all() -> Self {
+        Self {
+            upgrade_digest_no_sig: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirmwareVersion {
+    pub digest: Sha256Digest,
+    pub version: Option<VersionNumber>,
+}
+
+impl FirmwareVersion {
+    pub fn new(digest: Sha256Digest) -> Self {
+        Self {
+            digest,
+            version: VersionNumber::from_digest(&digest),
+        }
+    }
+
+    pub fn features(&self) -> FirmwareFeatures {
+        match self.version {
+            Some(version) => version.features(),
+            None => FirmwareFeatures::all(),
+        }
+    }
+
+    pub fn version_name(&self) -> String {
+        match self.version {
+            Some(version) => format!("v{}", version),
+            None => {
+                let short_hash = frostsnap_core::hex::encode(&self.digest.0[..3]);
+                format!("dev-{}", short_hash)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FirmwareUpgradeEligibility {
+    UpToDate,
+    CanUpgrade,
+    CannotUpgrade { reason: String },
+}
 
 #[derive(Clone, Copy)]
 pub struct FirmwareBin {
     bin: &'static [u8],
+}
+
+impl std::fmt::Debug for FirmwareBin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FirmwareBin")
+            .field("size", &self.bin.len())
+            .finish()
+    }
 }
 
 impl frostsnap_comms::firmware_reader::FirmwareReader for FirmwareBin {
@@ -95,14 +157,13 @@ impl std::fmt::Display for FirmwareValidationError {
 
 impl std::error::Error for FirmwareValidationError {}
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ValidatedFirmwareBin {
     firmware: FirmwareBin,
     digest_with_signature: Sha256Digest,
-    firmware_only_digest: Sha256Digest,
+    firmware_version: FirmwareVersion,
     firmware_size: u32,
     total_size: u32,
-    version: Option<VersionNumber>,
 }
 
 impl ValidatedFirmwareBin {
@@ -130,31 +191,32 @@ impl ValidatedFirmwareBin {
 
         let is_signed = firmware_size < total_size;
 
-        let version = if is_signed {
+        if is_signed {
             // Signed firmware MUST be in KNOWN_FIRMWARE_VERSIONS
             VersionNumber::from_digest(&digest_with_signature).ok_or(
                 FirmwareValidationError::UnknownSignedFirmware {
                     digest: digest_with_signature,
                 },
             )?;
-            VersionNumber::from_digest(&digest_with_signature)
-        } else {
-            // Unsigned firmware might be a dev build, so it's optional
-            VersionNumber::from_digest(&firmware_only_digest)
-        };
+        }
+
+        let firmware_version = FirmwareVersion::new(firmware_only_digest);
 
         Ok(Self {
             firmware,
             digest_with_signature,
-            firmware_only_digest,
+            firmware_version,
             firmware_size,
             total_size,
-            version,
         })
     }
 
+    pub fn firmware_version(&self) -> FirmwareVersion {
+        self.firmware_version
+    }
+
     pub fn digest(&self) -> Sha256Digest {
-        self.firmware_only_digest
+        self.firmware_version.digest
     }
 
     pub fn digest_with_signature(&self) -> Sha256Digest {
@@ -186,7 +248,43 @@ impl ValidatedFirmwareBin {
     }
 
     pub fn version(&self) -> Option<VersionNumber> {
-        self.version
+        self.firmware_version.version
+    }
+
+    pub fn check_upgrade_eligibility(
+        &self,
+        device_digest: &Sha256Digest,
+    ) -> FirmwareUpgradeEligibility {
+        if *device_digest == self.firmware_version.digest {
+            return FirmwareUpgradeEligibility::UpToDate;
+        }
+
+        let device_version = VersionNumber::from_digest(device_digest);
+        let app_version = self.firmware_version.version;
+
+        match (device_version, app_version) {
+            (None, None) => FirmwareUpgradeEligibility::CanUpgrade,
+            (None, Some(_)) => FirmwareUpgradeEligibility::CannotUpgrade {
+                reason:
+                    "Device firmware version newer app. Cannot downgrade firmware. Upgrade the app."
+                        .to_string(),
+            },
+            (Some(_), None) => FirmwareUpgradeEligibility::CannotUpgrade {
+                reason: "This is a development app. Cannot upgrade proper device.".to_string(),
+            },
+            (Some(device_ver), Some(app_ver)) => {
+                if app_ver > device_ver {
+                    FirmwareUpgradeEligibility::CanUpgrade
+                } else if app_ver == device_ver {
+                    // This should be unreachable -- if they have the same version then they should have the same digest
+                    FirmwareUpgradeEligibility::UpToDate
+                } else {
+                    FirmwareUpgradeEligibility::CannotUpgrade {
+                        reason: "Device firmware version newer app. Cannot downgrade firmware. Upgrade the app.".to_string(),
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -219,10 +317,10 @@ impl VersionNumber {
             .map(|(_, v)| *v)
     }
 
-    pub fn capabilities(&self) -> FirmwareCapabilities {
+    pub fn features(&self) -> FirmwareFeatures {
         const V0_0_1: VersionNumber = VersionNumber::new(0, 0, 1);
 
-        FirmwareCapabilities {
+        FirmwareFeatures {
             upgrade_digest_no_sig: *self > V0_0_1,
         }
     }

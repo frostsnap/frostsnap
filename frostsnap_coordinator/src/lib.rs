@@ -21,7 +21,10 @@ pub use frostsnap_comms;
 pub use frostsnap_core;
 pub use serial_port::*;
 pub mod settings;
-pub use firmware::{FirmwareBin, FirmwareValidationError, ValidatedFirmwareBin};
+pub use firmware::{
+    FirmwareBin, FirmwareUpgradeEligibility, FirmwareValidationError, FirmwareVersion,
+    ValidatedFirmwareBin, VersionNumber,
+};
 pub use ui_protocol::*;
 pub use usb_serial_manager::*;
 pub mod bitcoin;
