@@ -49,6 +49,7 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
 
 #[derive(Debug)]
 pub enum Workflow {
+    Startup,
     None,
     Standby {
         device_name: DeviceName,
@@ -80,7 +81,7 @@ impl Workflow {
 
 impl Default for Workflow {
     fn default() -> Self {
-        Self::None
+        Self::Startup
     }
 }
 
