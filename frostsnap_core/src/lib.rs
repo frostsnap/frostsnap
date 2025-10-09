@@ -47,8 +47,6 @@ use alloc::{string::String, string::ToString, vec::Vec};
 // rexport hex module so serialization impl macros work outside this crate
 pub use schnorr_fun::fun::hex;
 
-const NONCE_BATCH_SIZE: u32 = 10;
-
 #[derive(Clone, Copy, PartialEq, Hash, Eq, Ord, PartialOrd)]
 pub struct DeviceId(pub [u8; 33]);
 

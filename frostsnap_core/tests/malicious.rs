@@ -69,11 +69,7 @@ fn keygen_maliciously_replace_public_poly() {
                 // receives with a different one generated with different randomness. This should
                 // cause the device to detect the switch and abort.
                 let malicious_messages = shadow_device
-                    .recv_coordinator_message(
-                        do_keygen.clone(),
-                        &mut other_rng,
-                        &mut common::TestDeviceKeyGen,
-                    )
+                    .recv_coordinator_message(do_keygen.clone(), &mut other_rng)
                     .unwrap();
                 let malicious_keygen_response = malicious_messages
                     .into_iter()
