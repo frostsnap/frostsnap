@@ -1,4 +1,3 @@
-use crate::factory::screen_test;
 use crate::flash::VersionedFactoryData;
 use crate::peripherals::DevicePeripherals;
 use alloc::boxed::Box;
@@ -140,14 +139,14 @@ pub fn run_factory_provisioning(
         ..
     } = *peripherals;
 
+    // Run screen test
+    display = crate::screen_test::run(display, &mut touch_receiver, timer);
+
     // Initialize serial interface for factory communication
     let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(jtag, timer);
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
-
-    // Run screen test
-    screen_test::run(&mut display, &mut touch_receiver);
 
     text_display!(
         &mut display,
