@@ -415,12 +415,11 @@ impl FfiCoordinator {
     }
 
     pub fn nonce_replenish_request(&self, devices: BTreeSet<DeviceId>) -> NonceReplenishRequest {
-        frostsnap_coordinator::nonce_replenish::NonceReplenishProtocol::create_nonce_request(
-            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
-            devices,
-            N_NONCE_STREAMS,
-            &mut rand::thread_rng(),
-        )
+        self.coordinator
+            .lock()
+            .unwrap()
+            .MUTATE_NO_PERSIST()
+            .maybe_request_nonce_replenishment(&devices, N_NONCE_STREAMS, &mut rand::thread_rng())
     }
 
     pub fn replenish_nonces(

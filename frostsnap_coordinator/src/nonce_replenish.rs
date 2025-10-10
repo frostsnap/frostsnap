@@ -2,10 +2,10 @@ use crate::{Completion, Sink, UiProtocol};
 
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
-    coordinator::{CoordinatorToUserMessage, FrostCoordinator, NonceReplenishRequest},
+    coordinator::{CoordinatorToUserMessage, NonceReplenishRequest},
     DeviceId,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 pub struct NonceReplenishProtocol {
     state: NonceReplenishState,
@@ -14,15 +14,6 @@ pub struct NonceReplenishProtocol {
 }
 
 impl NonceReplenishProtocol {
-    pub fn create_nonce_request(
-        coordinator: &mut FrostCoordinator,
-        devices: BTreeSet<DeviceId>,
-        desired_nonce_streams: usize,
-        rng: &mut impl rand_core::RngCore,
-    ) -> NonceReplenishRequest {
-        coordinator.maybe_request_nonce_replenishment(&devices, desired_nonce_streams, rng)
-    }
-
     pub fn new(
         devices: BTreeSet<DeviceId>,
         nonce_request: NonceReplenishRequest,
@@ -36,7 +27,7 @@ impl NonceReplenishProtocol {
             .collect();
 
         // devices that don't need messages are considered complete
-        let received_from: Vec<DeviceId> = devices
+        let received_from: HashSet<DeviceId> = devices
             .difference(&devices_with_messages)
             .copied()
             .collect();
@@ -73,9 +64,7 @@ impl UiProtocol for NonceReplenishProtocol {
     }
 
     fn is_complete(&self) -> Option<Completion> {
-        if BTreeSet::from_iter(self.state.received_from.iter())
-            == BTreeSet::from_iter(self.state.devices.iter())
-        {
+        if self.state.received_from == self.state.devices {
             Some(Completion::Success)
         } else if self.state.abort {
             Some(Completion::Abort {
@@ -95,8 +84,7 @@ impl UiProtocol for NonceReplenishProtocol {
 
     fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         if let CoordinatorToUserMessage::ReplenishedNonces { device_id } = message {
-            if !self.state.received_from.contains(&device_id) {
-                self.state.received_from.push(device_id);
+            if self.state.received_from.insert(device_id) {
                 self.emit_state()
             }
             true
@@ -120,7 +108,13 @@ impl UiProtocol for NonceReplenishProtocol {
 
 #[derive(Clone, Debug)]
 pub struct NonceReplenishState {
-    pub received_from: Vec<DeviceId>,
-    pub devices: Vec<DeviceId>,
+    pub received_from: HashSet<DeviceId>,
+    pub devices: HashSet<DeviceId>,
     pub abort: bool,
+}
+
+impl NonceReplenishState {
+    pub fn is_finished(&self) -> bool {
+        self.received_from == self.devices
+    }
 }
