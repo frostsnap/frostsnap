@@ -29,11 +29,13 @@ class SettingsContext extends InheritedWidget {
   final Settings settings;
   late final Stream<DeveloperSettings> developerSettings;
   late final Stream<ElectrumSettings> electrumSettings;
+  late final Stream<DisplaySettings> displaySettings;
   late final List<(BitcoinNetwork, Stream<ChainStatus>)> chainStatuses;
 
   SettingsContext({super.key, required this.settings, required super.child}) {
     developerSettings = settings.subDeveloperSettings().toBehaviorSubject();
     electrumSettings = settings.subElectrumSettings().toBehaviorSubject();
+    displaySettings = settings.subDisplaySettings().toBehaviorSubject();
     chainStatuses = [];
   }
 
@@ -592,13 +594,13 @@ class ChainStatusIcon extends StatelessWidget {
     switch (chainStatus.state) {
       case ChainStatusState.connected:
         statusName = "Connected";
-        iconData = Icons.link_rounded;
+        iconData = Icons.link;
         iconColor = theme.colorScheme.primary;
         break;
       case ChainStatusState.connecting:
       case ChainStatusState.disconnected:
         statusName = "Disconnected";
-        iconData = Icons.link_off_rounded;
+        iconData = Icons.link_off;
         iconColor = theme.colorScheme.error;
         break;
     }
