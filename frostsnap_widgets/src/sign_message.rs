@@ -1,7 +1,7 @@
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    palette::PALETTE, prelude::*, string_ext::StringWrap, HoldToConfirm, Padding, FONT_MED,
-    FONT_SMALL,
+    palette::PALETTE, prelude::*, scrollable_text::ScrollableText, string_ext::StringWrap,
+    HoldToConfirm, Padding, FONT_MED, FONT_SMALL,
 };
 use alloc::string::String;
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, text::Alignment};
@@ -14,7 +14,7 @@ pub struct SignMessageConfirm {
     hold_to_confirm: HoldToConfirm<
         Column<(
             Text<U8g2TextStyle<Rgb565>>,
-            Container<Padding<Text<U8g2TextStyle<Rgb565>>>>,
+            Container<Padding<ScrollableText<U8g2TextStyle<Rgb565>>>>,
         )>,
     >,
 }
@@ -28,13 +28,13 @@ impl SignMessageConfirm {
         .with_alignment(Alignment::Center);
 
         let wrapped_message = StringWrap::from_str(&message, 23);
-        let message_text = Text::new(
-            wrapped_message.as_str(),
+        let scrollable_message = ScrollableText::new(
+            wrapped_message.into(),
             U8g2TextStyle::new(FONT_SMALL, PALETTE.on_surface),
         )
         .with_alignment(Alignment::Center);
 
-        let message_with_padding = Padding::all(8, message_text);
+        let message_with_padding = Padding::all(8, scrollable_message);
         let message_container = Container::new(message_with_padding)
             .with_border(PALETTE.outline, 2)
             .with_fill(PALETTE.surface)

@@ -52,6 +52,7 @@ pub mod p2tr_address_display;
 pub mod prelude;
 pub mod screen_test;
 pub mod scroll_bar;
+pub mod scrollable_text;
 pub mod share_index;
 pub mod sign_message;
 pub mod sign_prompt;

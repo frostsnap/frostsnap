@@ -483,7 +483,7 @@ macro_rules! demo_widget {
             "sign_test_message" => {
                 use $crate::SignMessageConfirm;
 
-                let test_message = "This is a very long test message that will be wrapped across multiple lines to demonstrate the StringWrap functionality and visual clipping in the container box.";
+                let test_message = "This is a very long test message that will be wrapped across multiple lines to demonstrate the StringWrap functionality and scrolling capability in the container box. It needs to be quite long to overflow the available space so we can test that the scrollbar appears and the user can scroll up and down through the entire message. Let's add even more text to make absolutely sure this will require scrolling to read the entire message content.";
                 let widget = SignMessageConfirm::new(test_message.to_string());
 
                 $run_macro!(widget);

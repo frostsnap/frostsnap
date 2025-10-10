@@ -180,7 +180,12 @@ where
         self.content.handle_touch(point, current_time, is_release)
     }
 
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        // Only pass drag events if not holding the button
+        if !self.is_holding() {
+            self.content.handle_vertical_drag(prev_y, new_y, is_release);
+        }
+    }
 
     fn force_full_redraw(&mut self) {
         self.content.force_full_redraw();

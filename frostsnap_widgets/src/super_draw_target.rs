@@ -119,7 +119,13 @@ where
             // Cache with invalidation based on source color
             let mut cache: Option<(C, C)> = None; // (source_color, interpolated_color)
 
-            let pixels = pixels.into_iter().map(|Pixel(point, color)| {
+            let pixels = pixels.into_iter().filter_map(|Pixel(point, color)| {
+                // Clip pixels to crop area
+                if point.x < 0 || point.y < 0 ||
+                   point.x >= crop.size.width as i32 || point.y >= crop.size.height as i32 {
+                    return None;
+                }
+
                 let translated_point = point + crop.top_left;
 
                 let final_color = match cache {
@@ -135,14 +141,19 @@ where
                     }
                 };
 
-                Pixel(translated_point, final_color)
+                Some(Pixel(translated_point, final_color))
             });
             display.draw_iter(pixels)
         } else {
-            // Just translate points
-            let pixels = pixels.into_iter().map(|Pixel(point, color)| {
+            // Just translate points and clip
+            let pixels = pixels.into_iter().filter_map(|Pixel(point, color)| {
+                // Clip pixels to crop area
+                if point.x < 0 || point.y < 0 ||
+                   point.x >= crop.size.width as i32 || point.y >= crop.size.height as i32 {
+                    return None;
+                }
                 let translated_point = point + crop.top_left;
-                Pixel(translated_point, color)
+                Some(Pixel(translated_point, color))
             });
             display.draw_iter(pixels)
         }
