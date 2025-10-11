@@ -57,13 +57,6 @@ Future<void> main() async {
     appDirPath = appDir.path;
   }
 
-  if (!Platform.isAndroid) {
-    final appDir = await getApplicationSupportDirectory();
-
-    await api.checkAndApplyPendingRekey(appDir: appDir.path);
-    // Note that we could directly launch the app with the new password read from rekey file^,
-    // but this could be confusing to users: "i thought i just applied a password".
-  }
 
   runApp(FrostsnapAppInitializer(appDirPath: appDirPath, logStream: logStream));
 }

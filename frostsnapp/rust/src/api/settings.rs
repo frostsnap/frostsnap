@@ -7,10 +7,12 @@ pub use frostsnap_coordinator::bitcoin::chain_sync::{ChainStatus, ChainStatusSta
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::settings::Settings as RSettings;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::api::database_encryption;
+use crate::api::database_encryption::DbEncryptionState;
 use crate::frb_generated::StreamSink;
 use crate::sink_wrap::SinkWrap;
 
@@ -184,6 +186,67 @@ impl Settings {
             .to_str()
             .expect("app path shouldn't have non-utf8 chars")
             .to_string()
+    }
+
+    /// Apply password change with all database locks held
+    /// This ensures no concurrent writes happen during the rekey operation
+    pub fn apply_password_change(&self, old_password: String, new_password: String) -> Result<()> {
+        use tracing::{event, Level};
+
+        // Determine encryption state from main database (assumes all databases have the same state)
+        let main_db_state = database_encryption::get_db_state(&self.app_directory())?;
+
+        // Validate old password first if database is encrypted
+        if main_db_state == DbEncryptionState::ExistingEncrypted {
+            let db_file = Path::new(&self.app_directory()).join("frostsnap.sqlite");
+            database_encryption::open_database(&db_file, Some(&old_password))
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            event!(Level::DEBUG, "Old password validated successfully");
+        }
+
+        event!(Level::INFO, "Acquiring db locks for password change");
+
+        // Acquire lock on main database connection
+        let _main_db_lock = self.db.lock().unwrap();
+
+        // Acquire locks on all BDK wallet database connections
+        let mut _bdk_locks = Vec::new();
+        for (network, wallet) in &self.loaded_wallets {
+            // Lock the CoordSuperWallet, which prevents access to its db field
+            let coord_wallet_lock = wallet.inner.lock().unwrap();
+            // Now also lock the actual DB connection inside it
+            // We need to access the db field through the locked CoordSuperWallet
+            // But db is private, so we can't access it directly
+            // The MutexGuard on CoordSuperWallet should be sufficient
+            _bdk_locks.push(coord_wallet_lock);
+        }
+
+        event!(
+            Level::INFO,
+            "All database locks acquired, proceeding with rekey"
+        );
+
+        // Now call the rekey logic from database_encryption
+        // This will open NEW connections to do the actual rekeying
+        database_encryption::apply_password_change(
+            main_db_state,
+            self.app_directory(),
+            old_password,
+            new_password,
+        )?;
+
+        event!(
+            Level::INFO,
+            "Password change completed successfully - Holding all db locks."
+        );
+
+        // Do not release locks as old connections have the wrong password cached.
+        // Hold these locks until the app exits to prevent any code from attempting to use the old
+        // connections, which would fail with "not a database" errors.
+        std::mem::forget(_main_db_lock);
+        std::mem::forget(_bdk_locks);
+
+        Ok(())
     }
 }
 

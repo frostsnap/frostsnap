@@ -1039,10 +1039,40 @@ Future<void> _showPasswordChangeDialog(
       appDir: appDir,
       hasExistingPassword: hasExistingPassword,
       onPasswordChanged: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Restart app to apply password change")),
-        );
+        _showPasswordChangeExitDialog(context);
       },
+    ),
+  );
+}
+
+Future<void> _showPasswordChangeExitDialog(BuildContext context) async {
+  await showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: Text("Password Changed"),
+      content: Text(
+        "Your password has been changed successfully. "
+        "You'll need to exit and re-open the app to use your new password."
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () {
+            if (Platform.isAndroid || Platform.isIOS) {
+              SystemNavigator.pop();
+            } else {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Please close and restart the app"),
+                  duration: Duration(seconds: 10),
+                ),
+              );
+            }
+          },
+          child: Text("Exit"),
+        ),
+      ],
     ),
   );
 }
@@ -1095,21 +1125,17 @@ class _PasswordChangeBottomSheetState
     });
 
     try {
-      if (widget.hasExistingPassword) {
-        await api.attemptDatabasePassword(
-          appDir: widget.appDir,
-          password: _oldController.text.trim(),
-        );
-      }
-
-      await api.scheduleRekey(
-        appDir: widget.appDir,
+      // Apply password change with all database locks held
+      // This ensures no concurrent writes happen during the rekey
+      final settingsCtx = SettingsContext.of(context)!;
+      await settingsCtx.settings.applyPasswordChangeWithLocks(
         oldPassword: widget.hasExistingPassword
             ? _oldController.text.trim()
             : "",
         newPassword: _newController.text.trim(),
       );
 
+      // Success! Close dialog and show exit dialog
       Navigator.pop(context);
       widget.onPasswordChanged?.call();
     } catch (e) {

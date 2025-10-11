@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::path::Path;
 use tracing::{event, Level};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DbEncryptionState {
     Fresh,               // No database exists
     ExistingUnencrypted, // Database exists and not encrypted
@@ -15,12 +15,6 @@ pub enum DbEncryptionState {
 pub enum DatabaseError {
     WrongPassword,
     Other(String),
-}
-
-#[derive(bincode::Encode, bincode::Decode)]
-struct ReKeyContents {
-    old_password: String,
-    new_password: String,
 }
 
 impl std::fmt::Display for DatabaseError {
@@ -195,30 +189,8 @@ fn decrypt_database(db_path: &Path, old_password: &str) -> Result<(), DatabaseEr
 
 impl super::Api {
     pub fn get_database_state(&self, app_dir: &str) -> Result<DbEncryptionState> {
-        let db_file = Path::new(app_dir).join("frostsnap.sqlite");
-        if !db_file.exists() {
-            return Ok(DbEncryptionState::Fresh);
-        }
-
-        match rusqlite::Connection::open(&db_file) {
-            Ok(conn) => {
-                match conn.pragma_query_value(None, "page_count", |row| row.get::<_, i32>(0)) {
-                    Ok(_) => Ok(DbEncryptionState::ExistingUnencrypted),
-                    Err(rusqlite::Error::SqliteFailure(err, _))
-                        if err.code == rusqlite::ErrorCode::NotADatabase =>
-                    {
-                        Ok(DbEncryptionState::ExistingEncrypted)
-                    }
-                    Err(e) => {
-                        event!(Level::ERROR, "Database check failed: {}", e);
-                        Ok(DbEncryptionState::ExistingUnencrypted)
-                    }
-                }
-            }
-            Err(_) => Ok(DbEncryptionState::ExistingUnencrypted),
-        }
+        get_db_state(app_dir)
     }
-
     pub fn attempt_database_password(
         &self,
         app_dir: String,
@@ -227,140 +199,135 @@ impl super::Api {
         let db_file = Path::new(&app_dir).join("frostsnap.sqlite");
         open_database(&db_file, Some(&password)).map(|_| ())
     }
+}
 
-    pub fn schedule_rekey(
-        &self,
-        app_dir: String,
-        old_password: String,
-        new_password: String,
-    ) -> Result<()> {
-        let rekey_file = Path::new(&app_dir).join(".pending_rekey");
-        let data = ReKeyContents {
-            old_password,
-            new_password,
-        };
-        let encoded = bincode::encode_to_vec(&data, bincode::config::standard())?;
-        std::fs::write(rekey_file, encoded)?;
-        Ok(())
+pub fn get_db_state(app_dir: &str) -> Result<DbEncryptionState> {
+    let db_file = Path::new(app_dir).join("frostsnap.sqlite");
+    if !db_file.exists() {
+        return Ok(DbEncryptionState::Fresh);
     }
 
-    pub fn check_and_apply_pending_rekey(&self, app_dir: String) -> Result<()> {
-        let rekey_file = Path::new(&app_dir).join(".pending_rekey");
+    match rusqlite::Connection::open(&db_file) {
+        Ok(conn) => match conn.pragma_query_value(None, "page_count", |row| row.get::<_, i32>(0)) {
+            Ok(_) => Ok(DbEncryptionState::ExistingUnencrypted),
+            Err(rusqlite::Error::SqliteFailure(err, _))
+                if err.code == rusqlite::ErrorCode::NotADatabase =>
+            {
+                Ok(DbEncryptionState::ExistingEncrypted)
+            }
+            Err(e) => {
+                event!(Level::ERROR, "Database check failed: {}", e);
+                Ok(DbEncryptionState::ExistingUnencrypted)
+            }
+        },
+        Err(_) => Ok(DbEncryptionState::ExistingUnencrypted),
+    }
+}
 
-        // Find backup files from previous failed attempt
-        let backup_files = get_all_backup_files(&app_dir);
+pub fn apply_password_change(
+    main_db_state: DbEncryptionState,
+    app_dir: String,
+    old_password: String,
+    new_password: String,
+) -> Result<()> {
+    event!(Level::INFO, "Starting password change operation");
 
-        // Restore from backups if any exist
-        if !backup_files.is_empty() {
+    // Find backup files from previous failed attempt and restore if needed
+    let backup_files = get_all_backup_files(&app_dir);
+    if !backup_files.is_empty() {
+        event!(
+            Level::WARN,
+            "Found backup files from previous failed attempt - restoring"
+        );
+        for backup_file in backup_files {
+            let original_file = backup_file.with_extension("sqlite");
             event!(
-                Level::WARN,
-                "Found backup files - restoring from previous failed rekey"
+                Level::INFO,
+                "Restoring {} from backup",
+                original_file.display()
             );
-            for backup_file in backup_files {
-                let original_file = backup_file.with_extension("sqlite");
-                event!(
-                    Level::INFO,
-                    "Restoring {} from backup",
-                    original_file.display()
-                );
 
-                if original_file.exists() {
-                    std::fs::remove_file(&original_file)?;
-                }
-                std::fs::rename(&backup_file, &original_file)?;
+            if original_file.exists() {
+                std::fs::remove_file(&original_file)?;
             }
+            std::fs::rename(&backup_file, &original_file)?;
         }
-
-        // Check if there's a rekey to do
-        if !rekey_file.exists() {
-            return Ok(());
-        }
-
-        event!(Level::INFO, "Starting rekey operation");
-
-        let content = std::fs::read(&rekey_file)?;
-        let ReKeyContents {
-            old_password,
-            new_password,
-        } = bincode::decode_from_slice(&content, bincode::config::standard())?.0;
-
-        // Get all database files that exist
-        let all_dbs = get_all_database_files(&app_dir);
-
-        // Create backups for all databases first
-        for db_file in &all_dbs {
-            let backup_file = db_file.with_extension("backup");
-            std::fs::copy(db_file, &backup_file)?;
-            event!(Level::DEBUG, "Created backup for {}", db_file.display());
-        }
-
-        // Determine encryption state from main database (assume all databases have same state)
-        let main_db_state = self.get_database_state(&app_dir)?;
-
-        // Now rekey all databases using the same operation
-        for db_path in &all_dbs {
-            let result = match main_db_state {
-                DbEncryptionState::ExistingUnencrypted => {
-                    if new_password.is_empty() {
-                        Ok(()) // No encryption needed
-                    } else {
-                        encrypt_database(db_path, &new_password)
-                    }
-                }
-                DbEncryptionState::ExistingEncrypted => {
-                    if new_password.is_empty() {
-                        decrypt_database(db_path, &old_password)
-                    } else {
-                        change_password(db_path, &old_password, &new_password)
-                    }
-                }
-                DbEncryptionState::Fresh => {
-                    if !new_password.is_empty() {
-                        // Create new encrypted database
-                        let db = rusqlite::Connection::open(db_path).map_err(|e| {
-                            DatabaseError::Other(format!("Failed to create db: {}", e))
-                        })?;
-                        db.pragma_update(None, "key", &new_password).map_err(|e| {
-                            DatabaseError::Other(format!("Failed to set key: {}", e))
-                        })?;
-                        Ok(())
-                    } else {
-                        Ok(()) // Create unencrypted database (default behavior)
-                    }
-                }
-            };
-
-            if let Err(e) = result {
-                event!(Level::ERROR, "Failed to rekey {}: {}", db_path.display(), e);
-
-                // Restore all databases from backups
-                for db_file in &all_dbs {
-                    let backup_file = db_file.with_extension("backup");
-                    if backup_file.exists() {
-                        let _ = std::fs::remove_file(db_file);
-                        let _ = std::fs::rename(&backup_file, db_file);
-                    }
-                }
-
-                return Err(anyhow::anyhow!(
-                    "Rekey failed on {}: {}",
-                    db_path.display(),
-                    e
-                ));
-            }
-
-            event!(Level::INFO, "Successfully rekeyed {}", db_path.display());
-        }
-
-        // Success! Clean up backups and rekey file
-        for db_file in &all_dbs {
-            let backup_file = db_file.with_extension("backup");
-            let _ = std::fs::remove_file(&backup_file);
-        }
-
-        std::fs::remove_file(&rekey_file)?;
-        event!(Level::INFO, "Rekey operation completed successfully");
-
-        Ok(())
     }
+
+    // Get all database files that exist
+    let all_dbs = get_all_database_files(&app_dir);
+
+    // Create backups for all databases first
+    for db_file in &all_dbs {
+        let backup_file = db_file.with_extension("backup");
+        std::fs::copy(db_file, &backup_file)?;
+        event!(Level::DEBUG, "Created backup for {}", db_file.display());
+    }
+
+    // Now rekey all databases using the same operation
+    for db_path in &all_dbs {
+        let result = match main_db_state {
+            DbEncryptionState::ExistingUnencrypted => {
+                if new_password.is_empty() {
+                    Ok(()) // No encryption needed
+                } else {
+                    encrypt_database(db_path, &new_password)
+                }
+            }
+            DbEncryptionState::ExistingEncrypted => {
+                if new_password.is_empty() {
+                    decrypt_database(db_path, &old_password)
+                } else {
+                    change_password(db_path, &old_password, &new_password)
+                }
+            }
+            DbEncryptionState::Fresh => {
+                if !new_password.is_empty() {
+                    // Create new encrypted database
+                    match rusqlite::Connection::open(db_path) {
+                        Ok(db) => db
+                            .pragma_update(None, "key", &new_password)
+                            .map_err(|e| DatabaseError::Other(format!("Failed to set key: {}", e))),
+                        Err(e) => Err(DatabaseError::Other(format!("Failed to create db: {}", e))),
+                    }
+                } else {
+                    Ok(()) // Create unencrypted database (default behavior)
+                }
+            }
+        };
+
+        if let Err(e) = result {
+            event!(Level::ERROR, "Failed to rekey {}: {}", db_path.display(), e);
+
+            // Restore all databases from backups
+            for db_file in &all_dbs {
+                let backup_file = db_file.with_extension("backup");
+                if backup_file.exists() {
+                    let _ = std::fs::remove_file(db_file);
+                    let _ = std::fs::rename(&backup_file, db_file);
+                }
+            }
+
+            return Err(anyhow::anyhow!(
+                "Rekey failed on {}: {}",
+                db_path.display(),
+                e
+            ));
+        }
+
+        event!(Level::INFO, "Successfully rekeyed {}", db_path.display());
+    }
+
+    // Success! Clean up backups
+    for db_file in &all_dbs {
+        let backup_file = db_file.with_extension("backup");
+        let _ = std::fs::remove_file(&backup_file);
+    }
+
+    event!(
+        Level::INFO,
+        "Password change operation completed successfully"
+    );
+
+    Ok(())
 }
