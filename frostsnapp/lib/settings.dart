@@ -1049,30 +1049,30 @@ Future<void> _showPasswordChangeExitDialog(BuildContext context) async {
   await showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      title: Text("Password Changed"),
-      content: Text(
-        "Your password has been changed successfully. "
-        "You'll need to exit and re-open the app to use your new password."
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () {
-            if (Platform.isAndroid || Platform.isIOS) {
-              SystemNavigator.pop();
-            } else {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text("Please close and restart the app"),
-                  duration: Duration(seconds: 10),
-                ),
-              );
-            }
-          },
-          child: Text("Exit"),
+    builder: (context) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Text("Password Changed Successfully"),
+          ],
         ),
-      ],
+        content: Text(
+          "The app must now close, reopen Frostsnap and decrypt it with your new password.",
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () {
+              // On desktop, exit the Dart VM
+              // Note: android/ios would use SystemNavigator.pop();
+              exit(0);
+            },
+            child: Text("Exit App"),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -1128,7 +1128,7 @@ class _PasswordChangeBottomSheetState
       // Apply password change with all database locks held
       // This ensures no concurrent writes happen during the rekey
       final settingsCtx = SettingsContext.of(context)!;
-      await settingsCtx.settings.applyPasswordChangeWithLocks(
+      await settingsCtx.settings.applyPasswordChange(
         oldPassword: widget.hasExistingPassword
             ? _oldController.text.trim()
             : "",
