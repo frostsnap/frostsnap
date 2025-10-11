@@ -6,8 +6,9 @@ use crate::super_draw_target::SuperDrawTarget;
 use crate::text::Text as TextWidget;
 use crate::{
     icons, Align, Alignment as WidgetAlignment, Container, DynWidget, FadeSwitcher, Key, KeyTouch,
-    Widget, FONT_LARGE, FONT_MED,
+    Widget,
 };
+use crate::{DefaultTextStyle, U8g2TextStyle, FONT_LARGE, LEGACY_FONT_LARGE};
 use alloc::{
     rc::Rc,
     string::{String, ToString},
@@ -26,10 +27,9 @@ use embedded_graphics::{
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use frost_backup::NUM_WORDS;
-use u8g2_fonts::U8g2TextStyle;
 
 // Type alias for the placeholder text widget (boxed to reduce stack usage)
-type PlaceholderText = alloc::boxed::Box<Container<Align<TextWidget<U8g2TextStyle<Rgb565>>>>>;
+type PlaceholderText = alloc::boxed::Box<Container<Align<TextWidget>>>;
 
 // Constants for vertical BIP39 word display
 pub(super) const TOTAL_WORDS: usize = NUM_WORDS;
@@ -63,7 +63,7 @@ pub struct InputPreview {
     framebuf: Framebuf,
     init_draw: bool,
     cursor: Cursor,
-    hint_switcher: alloc::boxed::Box<FadeSwitcher<PlaceholderText>>,
+    hint_switcher: alloc::boxed::Box<FadeSwitcher<Option<PlaceholderText>>>,
     placeholder_text: Option<PlaceholderText>,
     current_view_state: Option<ViewState>,
 }
@@ -85,21 +85,8 @@ impl InputPreview {
         let progress = ProgressBars::new(NUM_WORDS + 1);
         let framebuf = Framebuf::new();
 
-        // Initialize hint switcher with minimal default size - will be updated in set_constraints
-        let hint_text = TextWidget::new("", U8g2TextStyle::new(FONT_MED, PALETTE.text_disabled))
-            .with_alignment(Alignment::Center);
-        let aligned_text = Align::new(hint_text).alignment(WidgetAlignment::Center);
-        let hint_container = alloc::boxed::Box::new(Container::with_size(
-            aligned_text,
-            Size::zero(), // Will be updated in set_constraints
-        ));
-        // Use FadeSwitcher with 300ms fade-in, 0ms fade-out
-        let hint_switcher = alloc::boxed::Box::new(FadeSwitcher::new(
-            hint_container,
-            300,
-            0,
-            PALETTE.background,
-        ));
+        // Use FadeSwitcher with 300ms fade-in, 0ms fade-out, starting with None
+        let hint_switcher = alloc::boxed::Box::new(FadeSwitcher::new(None, 300));
 
         Self {
             area: Rectangle::zero(),
@@ -196,19 +183,13 @@ impl InputPreview {
         };
 
         self.placeholder_text = hint_text.map(|text| {
-            // Calculate text area size (same as in new())
-            let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as u32;
-            let text_area_size = Size::new(
-                self.preview_rect.size.width.saturating_sub(text_offset),
-                self.preview_rect.size.height,
-            );
-
-            let text_widget =
-                TextWidget::new(text, U8g2TextStyle::new(FONT_MED, PALETTE.surface_variant))
-                    .with_alignment(Alignment::Center);
+            let text_widget = TextWidget::new(
+                text,
+                DefaultTextStyle::new(FONT_LARGE, PALETTE.surface_variant),
+            )
+            .with_alignment(Alignment::Center);
             let aligned = Align::new(text_widget).alignment(WidgetAlignment::Center);
-            let mut container = Container::with_size(aligned, text_area_size);
-            container.set_constraints(text_area_size);
+            let container = Container::new(aligned).with_expanded();
             alloc::boxed::Box::new(container)
         });
     }
@@ -345,7 +326,7 @@ impl Widget for InputPreview {
         if !self.is_scrolling() {
             // Switch to placeholder text if we have one, otherwise empty container
             if let Some(placeholder) = self.placeholder_text.take() {
-                self.hint_switcher.switch_to(placeholder);
+                self.hint_switcher.switch_to(Some(placeholder));
             }
         }
 
@@ -389,7 +370,7 @@ impl Framebuf {
         let _ = Text::with_text_style(
             " #",
             Point::new(0, share_y),
-            U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x01)),
+            U8g2TextStyle::new(LEGACY_FONT_LARGE, Gray2::new(0x01)),
             TextStyleBuilder::new()
                 .alignment(Alignment::Left)
                 .baseline(Baseline::Top)
@@ -422,7 +403,7 @@ impl Framebuf {
             let _ = Text::with_text_style(
                 &number,
                 Point::new(number_x, y),
-                U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x01)), // Use Gray level 1 for numbers
+                U8g2TextStyle::new(LEGACY_FONT_LARGE, Gray2::new(0x01)),
                 TextStyleBuilder::new()
                     .alignment(Alignment::Left)
                     .baseline(Baseline::Top)
@@ -462,7 +443,7 @@ impl Framebuf {
                     let _ = Text::with_text_style(
                         &ch.to_string(),
                         Point::zero(),
-                        U8g2TextStyle::new(FONT_LARGE, Gray2::new(0x02)),
+                        U8g2TextStyle::new(LEGACY_FONT_LARGE, Gray2::new(0x02)),
                         TextStyleBuilder::new()
                             .alignment(Alignment::Left)
                             .baseline(Baseline::Top)
@@ -535,6 +516,7 @@ impl crate::DynWidget for Framebuf {
         crate::Sizing {
             width: FB_WIDTH,
             height: self.viewport_height,
+            ..Default::default()
         }
     }
 }

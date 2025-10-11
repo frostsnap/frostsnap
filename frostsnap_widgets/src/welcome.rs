@@ -1,3 +1,4 @@
+use crate::DefaultTextStyle;
 use crate::{
     bitmap::EncodedImage, image::Image, palette::PALETTE, prelude::*,
     vec_framebuffer::VecFramebuffer,
@@ -6,7 +7,6 @@ use embedded_graphics::{
     pixelcolor::{BinaryColor, Rgb565},
     text::Alignment,
 };
-use u8g2_fonts::U8g2TextStyle;
 
 const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 
@@ -14,20 +14,14 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 #[derive(frostsnap_macros::Widget)]
 pub struct Welcome {
     #[widget_delegate]
-    content: Center<
-        Column<(
-            Image<VecFramebuffer<BinaryColor>, Rgb565>,
-            Text<U8g2TextStyle<Rgb565>>,
-            Text<U8g2TextStyle<Rgb565>>,
-        )>,
-    >,
+    content: Center<Column<(Image<VecFramebuffer<BinaryColor>, Rgb565>, Text, Text)>>,
 }
 
 impl Welcome {
     pub fn new() -> Self {
         // Create text styles with colors directly
-        let text_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background);
-        let url_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.primary);
+        let text_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_background);
+        let url_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.primary);
 
         // Create text widgets with colored styles
         let text1 = Text::new("Get started with\nFrostsnap at", text_style.clone())
