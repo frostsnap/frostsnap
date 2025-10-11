@@ -430,6 +430,10 @@ class _FrostsnapAppInitializerState extends State<FrostsnapAppInitializer> {
         });
         return;
       }
+      // If encrypted with empty password, set password to empty string
+      if (databaseState == DbEncryptionState.existingEncryptedEmpty) {
+        _password = "";
+      }
     }
 
     await _loadMainApp();

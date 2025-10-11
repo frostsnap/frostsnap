@@ -6,9 +6,10 @@ use tracing::{event, Level};
 
 #[derive(Debug, PartialEq)]
 pub enum DbEncryptionState {
-    Fresh,               // No database exists
-    ExistingUnencrypted, // Database exists and not encrypted
-    ExistingEncrypted,   // Database exists and encrypted
+    Fresh,                  // No database exists
+    ExistingUnencrypted,    // Database exists and truly unencrypted (no SQLCipher)
+    ExistingEncryptedEmpty, // Database exists, encrypted with empty password (treated as unencrypted for UX)
+    ExistingEncrypted,      // Database exists and encrypted with real password
 }
 
 #[derive(Debug)]
@@ -73,7 +74,9 @@ pub(crate) fn open_database(
     #[cfg(not(target_os = "android"))]
     {
         if let Some(password) = password {
-            conn.pragma_update(None, "key", password)
+            // For empty password, use x'' syntax to match what we use in REKEY
+            let key_value = if password.is_empty() { "x''" } else { password };
+            conn.pragma_update(None, "key", key_value)
                 .map_err(|e| DatabaseError::Other(format!("Failed to set key: {}", e)))?;
 
             // Validate password
@@ -95,7 +98,45 @@ pub(crate) fn open_database(
     Ok(conn)
 }
 
-fn encrypt_database(db_path: &Path, new_password: &str) -> Result<(), DatabaseError> {
+/// Change database encryption: unencrypted → encrypted, encrypted → encrypted, or encrypted → unencrypted
+/// Uses SQLCipher REKEY for encrypted databases, export method for unencrypted source
+fn change_database_encryption(
+    db_path: &Path,
+    old_password: Option<&str>,
+    new_password: &str,
+) -> Result<(), DatabaseError> {
+    // If source is encrypted, use REKEY (simplest and fastest)
+    if let Some(old_pwd) = old_password {
+        event!(
+            Level::DEBUG,
+            "Rekeying database with old_pwd={:?}, new_password={:?}",
+            if old_pwd.is_empty() {
+                "<empty>"
+            } else {
+                "<set>"
+            },
+            if new_password.is_empty() {
+                "<empty>"
+            } else {
+                "<set>"
+            }
+        );
+        let db = open_database(db_path, Some(old_pwd))?;
+
+        // For empty password, use x'' syntax with pragma_update
+        if new_password.is_empty() {
+            // SQLCipher requires x'' for empty/null keys
+            db.pragma_update(None, "rekey", "x''")
+                .map_err(|e| DatabaseError::Other(format!("Failed to rekey to empty: {}", e)))?;
+        } else {
+            db.pragma_update(None, "rekey", new_password)
+                .map_err(|e| DatabaseError::Other(format!("Failed to rekey: {}", e)))?;
+        }
+        event!(Level::DEBUG, "Rekey completed successfully");
+        return Ok(());
+    }
+
+    // Source is unencrypted, must use export method
     let temp_path = db_path.with_extension("tmp");
 
     // Remove any existing temp file from previous failed attempts
@@ -139,54 +180,6 @@ fn encrypt_database(db_path: &Path, new_password: &str) -> Result<(), DatabaseEr
     Ok(())
 }
 
-fn change_password(
-    db_path: &Path,
-    old_password: &str,
-    new_password: &str,
-) -> Result<(), DatabaseError> {
-    let db = open_database(db_path, Some(old_password))?;
-    db.pragma_update(None, "rekey", new_password)
-        .map_err(|e| DatabaseError::Other(format!("Failed to rekey: {}", e)))?;
-    Ok(())
-}
-
-fn decrypt_database(db_path: &Path, old_password: &str) -> Result<(), DatabaseError> {
-    let temp_path = db_path.with_extension("tmp");
-
-    // Remove any existing temp file from previous failed attempts
-    let _ = std::fs::remove_file(&temp_path);
-
-    let new_db = rusqlite::Connection::open(&temp_path)
-        .map_err(|e| DatabaseError::Other(format!("Failed to create temp db: {}", e)))?;
-    drop(new_db);
-
-    let old_db = open_database(db_path, Some(old_password))?;
-
-    old_db
-        .execute(
-            "ATTACH DATABASE ?1 AS unencrypted",
-            rusqlite::params![temp_path.to_string_lossy()],
-        )
-        .map_err(|e| DatabaseError::Other(format!("Failed to attach db: {}", e)))?;
-
-    old_db
-        .query_row("SELECT sqlcipher_export('unencrypted')", [], |_| Ok(()))
-        .map_err(|e| DatabaseError::Other(format!("Failed to export data: {}", e)))?;
-
-    old_db
-        .execute("DETACH DATABASE unencrypted", [])
-        .map_err(|e| DatabaseError::Other(format!("Failed to detach db: {}", e)))?;
-
-    drop(old_db);
-
-    std::fs::remove_file(db_path)
-        .map_err(|e| DatabaseError::Other(format!("Failed to remove original: {}", e)))?;
-    std::fs::rename(&temp_path, db_path)
-        .map_err(|e| DatabaseError::Other(format!("Failed to rename temp file: {}", e)))?;
-
-    Ok(())
-}
-
 impl super::Api {
     pub fn get_database_state(&self, app_dir: &str) -> Result<DbEncryptionState> {
         get_db_state(app_dir)
@@ -207,13 +200,28 @@ pub fn get_db_state(app_dir: &str) -> Result<DbEncryptionState> {
         return Ok(DbEncryptionState::Fresh);
     }
 
+    // Try opening without password
     match rusqlite::Connection::open(&db_file) {
         Ok(conn) => match conn.pragma_query_value(None, "page_count", |row| row.get::<_, i32>(0)) {
-            Ok(_) => Ok(DbEncryptionState::ExistingUnencrypted),
+            Ok(_) => {
+                // Successfully opened without password - truly unencrypted
+                Ok(DbEncryptionState::ExistingUnencrypted)
+            }
             Err(rusqlite::Error::SqliteFailure(err, _))
                 if err.code == rusqlite::ErrorCode::NotADatabase =>
             {
-                Ok(DbEncryptionState::ExistingEncrypted)
+                // Failed without password - try with empty password
+                match open_database(&db_file, Some("")) {
+                    Ok(_) => {
+                        // Opens with empty password
+                        event!(Level::DEBUG, "Database encrypted with empty password");
+                        Ok(DbEncryptionState::ExistingEncryptedEmpty)
+                    }
+                    Err(_) => {
+                        // Doesn't open with empty password - encrypted with real password
+                        Ok(DbEncryptionState::ExistingEncrypted)
+                    }
+                }
             }
             Err(e) => {
                 event!(Level::ERROR, "Database check failed: {}", e);
@@ -271,15 +279,19 @@ pub fn apply_password_change(
                 if new_password.is_empty() {
                     Ok(()) // No encryption needed
                 } else {
-                    encrypt_database(db_path, &new_password)
+                    change_database_encryption(db_path, None, &new_password)
+                }
+            }
+            DbEncryptionState::ExistingEncryptedEmpty => {
+                // Encrypted with empty password - use REKEY with old_password=""
+                if new_password.is_empty() {
+                    Ok(()) // Already encrypted with empty password
+                } else {
+                    change_database_encryption(db_path, Some(&old_password), &new_password)
                 }
             }
             DbEncryptionState::ExistingEncrypted => {
-                if new_password.is_empty() {
-                    decrypt_database(db_path, &old_password)
-                } else {
-                    change_password(db_path, &old_password, &new_password)
-                }
+                change_database_encryption(db_path, Some(&old_password), &new_password)
             }
             DbEncryptionState::Fresh => {
                 if !new_password.is_empty() {

@@ -196,14 +196,6 @@ impl Settings {
         // Determine encryption state from main database (assumes all databases have the same state)
         let main_db_state = database_encryption::get_db_state(&self.app_directory())?;
 
-        // Validate old password first if database is encrypted
-        if main_db_state == DbEncryptionState::ExistingEncrypted {
-            let db_file = Path::new(&self.app_directory()).join("frostsnap.sqlite");
-            database_encryption::open_database(&db_file, Some(&old_password))
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            event!(Level::DEBUG, "Old password validated successfully");
-        }
-
         event!(Level::INFO, "Acquiring db locks for password change");
 
         // Acquire lock on main database connection

@@ -192,8 +192,8 @@ class SettingsPage extends StatelessWidget {
                               appDir: appDir,
                             );
                             final hasExistingPassword =
-                                databaseState !=
-                                DbEncryptionState.existingUnencrypted;
+                                databaseState != DbEncryptionState.existingUnencrypted &&
+                                databaseState != DbEncryptionState.existingEncryptedEmpty;
                             await _showPasswordChangeDialog(
                               context,
                               appDir,
@@ -1125,6 +1125,14 @@ class _PasswordChangeBottomSheetState
     });
 
     try {
+      // Validate current password first if needed
+      if (widget.hasExistingPassword) {
+        await api.attemptDatabasePassword(
+          appDir: widget.appDir,
+          password: _oldController.text.trim(),
+        );
+      }
+
       // Apply password change with all database locks held
       // This ensures no concurrent writes happen during the rekey
       final settingsCtx = SettingsContext.of(context)!;
@@ -1138,11 +1146,14 @@ class _PasswordChangeBottomSheetState
       // Success! Close dialog and show exit dialog
       Navigator.pop(context);
       widget.onPasswordChanged?.call();
+    } on DatabaseError_WrongPassword catch (_) {
+      setState(() {
+        _errorMessage = "Invalid current password";
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() {
-        _errorMessage = widget.hasExistingPassword
-            ? "Invalid current password"
-            : "Failed to change password";
+        _errorMessage = "Failed to change password: ${e.toString()}";
         _isLoading = false;
       });
     }
