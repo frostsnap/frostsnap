@@ -19,7 +19,7 @@ const UNDERLINE_DISTANCE: i32 = 2;
 
 /// A simple text widget that renders text at a specific position
 #[derive(Clone)]
-pub struct Text<S: CharacterStyle, T = String> {
+pub struct Text<S: CharacterStyle = crate::DefaultTextStyle, T = String> {
     text: T,
     character_style: S,
     text_style: TextStyle,
@@ -177,6 +177,10 @@ where
         D: DrawTarget<Color = Self::Color>,
     {
         if !self.drawn {
+            // Set background color on character style for proper alpha blending
+            self.character_style
+                .set_background_color(Some(target.background_color()));
+
             let mut text_obj = self.create_eg_text();
             if text_obj.bounding_box().top_left.x < 0 {
                 text_obj.position.x += text_obj.bounding_box().top_left.x.abs();

@@ -8,16 +8,13 @@ use alloc::{boxed::Box, vec, vec::Vec};
 impl crate::DynWidget for () {
     fn set_constraints(&mut self, _max_size: embedded_graphics::geometry::Size) {}
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing {
-            width: 0,
-            height: 0,
-        }
+        Default::default()
     }
 }
 
 // Implementation of AssociatedArray for empty tuple
 impl AssociatedArray for () {
-    type Array<T> = [T; 0];
+    type Array<T: Clone> = [T; 0];
 
     fn create_array_with<T: Copy>(&self, _value: T) -> Self::Array<T> {
         []
@@ -45,7 +42,7 @@ impl<W: crate::DynWidget> PushWidget<W> for () {
 macro_rules! impl_widget_tuple {
     ($len:literal, $($t:ident),+) => {
         impl<$($t: crate::DynWidget),+> AssociatedArray for ($($t,)+) {
-            type Array<T> = [T; $len];
+            type Array<T: Clone> = [T; $len];
 
             fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
                 [value; $len]
@@ -84,7 +81,7 @@ macro_rules! impl_widget_tuple {
 
         // Box implementation for heap allocation
         impl<$($t: crate::DynWidget),+> AssociatedArray for Box<($($t,)+)> {
-            type Array<T> = Box<[T]>;
+            type Array<T: Clone> = Box<[T]>;
 
             fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
                 vec![value; $len].into_boxed_slice()
@@ -127,7 +124,7 @@ macro_rules! impl_widget_tuple {
 macro_rules! impl_last_widget_tuple {
     ($len:literal, $($t:ident),+) => {
         impl<$($t: crate::DynWidget),+> AssociatedArray for ($($t,)+) {
-            type Array<T> = [T; $len];
+            type Array<T: Clone> = [T; $len];
 
             fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
                 [value; $len]
@@ -157,7 +154,7 @@ macro_rules! impl_last_widget_tuple {
 
         // Box implementation for heap allocation
         impl<$($t: crate::DynWidget),+> AssociatedArray for Box<($($t,)+)> {
-            type Array<T> = Box<[T]>;
+            type Array<T: Clone> = Box<[T]>;
 
             fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
                 vec![value; $len].into_boxed_slice()
@@ -217,7 +214,7 @@ impl_last_widget_tuple!(
 
 /// Implementation of AssociatedArray for Vec<W> to enable dynamic collections
 impl<W: crate::DynWidget> AssociatedArray for Vec<W> {
-    type Array<T> = Vec<T>;
+    type Array<T: Clone> = Vec<T>;
 
     fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
         vec![value; self.len()]
@@ -244,7 +241,7 @@ impl<T: crate::DynWidget> PushWidget<T> for Vec<T> {
 
 /// Implementation of AssociatedArray for fixed-size arrays
 impl<W: crate::DynWidget, const N: usize> AssociatedArray for [W; N] {
-    type Array<T> = [T; N];
+    type Array<T: Clone> = [T; N];
 
     fn create_array_with<T: Copy>(&self, value: T) -> Self::Array<T> {
         [value; N]

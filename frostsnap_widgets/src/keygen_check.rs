@@ -1,17 +1,17 @@
 use super::{Column, Container, HoldToConfirm, Padding, Row, Text};
 use crate::HOLD_TO_CONFIRM_TIME_MS;
 
+use crate::DefaultTextStyle;
 use crate::{palette::PALETTE, MainAxisAlignment};
 use alloc::format;
-use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
-use u8g2_fonts::U8g2TextStyle;
+use embedded_graphics::geometry::Size;
 
-type CodeText = Text<U8g2TextStyle<Rgb565>>;
-type TofNText = Text<U8g2TextStyle<Rgb565>>;
+type CodeText = Text;
+type TofNText = Text;
 type CodeColumn = Column<(TofNText, CodeText)>;
 type PaddedCodeColumn = Padding<CodeColumn>;
 type CodeContainer = Container<PaddedCodeColumn>;
-type ConfirmText = Text<U8g2TextStyle<Rgb565>>;
+type ConfirmText = Text;
 type OnAllDevicesRow = Row<(ConfirmText, ConfirmText)>;
 type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow)>;
 
@@ -39,11 +39,11 @@ impl KeygenCheck {
         );
 
         // Create the t of n text widget
-        let t_of_n_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_surface);
+        let t_of_n_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface);
         let t_of_n_widget = Text::new(t_of_n_text.clone(), t_of_n_style.clone());
 
         // Create the hex code text widget using FONT_LARGE
-        let code_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_surface);
+        let code_style = DefaultTextStyle::new(crate::FONT_HUGE_MONO, PALETTE.on_surface);
         let code_widget = Text::new(hex_code.clone(), code_style);
 
         // Create internal column with t_of_n and code
@@ -57,7 +57,7 @@ impl KeygenCheck {
             .with_corner_radius(Size::new(8, 8));
 
         // Create the "confirm identical" text
-        let confirm_style = U8g2TextStyle::new(crate::FONT_MED, PALETTE.on_background);
+        let confirm_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_background);
         let confirm_identical_widget = Text::new("Confirm identical:", confirm_style.clone());
 
         // Create the "on all devices" text with underline

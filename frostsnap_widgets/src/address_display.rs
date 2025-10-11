@@ -1,24 +1,28 @@
+use crate::DefaultTextStyle;
 use crate::{
     any_of::AnyOf,
+    fonts::Gray4Font,
     layout::{Column, CrossAxisAlignment, MainAxisAlignment},
     p2tr_address_display::P2trAddressDisplay,
     palette::PALETTE,
     text::Text,
-    FONT_MED, FONT_SMALL,
+    FONT_HUGE_MONO, FONT_SMALL,
 };
 use alloc::{
     boxed::Box,
     string::{String, ToString},
 };
-use embedded_graphics::{pixelcolor::Rgb565, text::Alignment};
+use embedded_graphics::text::Alignment;
 use frostsnap_macros::Widget;
-use u8g2_fonts::U8g2TextStyle;
+
+// Font for displaying addresses - uses monospace for better readability
+const ADDRESS_FONT: &Gray4Font = FONT_HUGE_MONO;
 
 /// A widget that displays only a Bitcoin address (without derivation path)
 #[derive(Widget)]
 pub struct AddressDisplay {
     #[widget_delegate]
-    container: Box<AnyOf<(P2trAddressDisplay, Text<U8g2TextStyle<Rgb565>>)>>,
+    container: Box<AnyOf<(P2trAddressDisplay, Text)>>,
 }
 
 impl AddressDisplay {
@@ -54,7 +58,7 @@ impl AddressDisplay {
             // Create the address text
             let address_text = Text::new(
                 formatted,
-                U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+                DefaultTextStyle::new(ADDRESS_FONT, PALETTE.on_background),
             )
             .with_alignment(Alignment::Center);
 
@@ -68,7 +72,7 @@ impl AddressDisplay {
 #[derive(Widget)]
 pub struct AddressWithPath {
     #[widget_delegate]
-    container: Column<(AddressDisplay, Text<U8g2TextStyle<Rgb565>>)>,
+    container: Column<(AddressDisplay, Text)>,
 }
 
 impl AddressWithPath {
@@ -78,7 +82,7 @@ impl AddressWithPath {
         // Create the derivation path text (secondary, smaller)
         let path_text = Text::new(
             derivation_path,
-            U8g2TextStyle::new(FONT_SMALL, PALETTE.text_secondary),
+            DefaultTextStyle::new(FONT_SMALL, PALETTE.text_secondary),
         )
         .with_alignment(Alignment::Center);
 

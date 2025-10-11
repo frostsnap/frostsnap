@@ -303,15 +303,13 @@ where
         let len = self.children.len();
 
         if len == 0 {
-            self.sizing = Some(crate::Sizing {
-                width: 0,
-                height: 0,
-            });
+            self.sizing = Some(Size::new(0, 0).into());
             return;
         }
 
         let mut max_width = 0u32;
         let mut max_height = 0u32;
+        let mut dirty_rects = self.child_rects.clone();
 
         for i in 0..len {
             if let Some(child) = self.children.get_dyn_child(i) {
@@ -335,8 +333,9 @@ where
                     }
                 };
 
-                // Store the child's rectangle
-                self.child_rects.as_mut()[i] = Rectangle::new(position, sizing.into());
+                let rect = Rectangle::new(position, sizing.into());
+                self.child_rects.as_mut()[i] = rect;
+                dirty_rects.as_mut()[i] = sizing.dirty_rect.unwrap_or(rect);
 
                 // Track maximum dimensions for the stack's sizing
                 let right = (position.x as u32).saturating_add(sizing.width);
@@ -346,10 +345,12 @@ where
             }
         }
 
-        // Stack's size is the bounding box of all children
+        let dirty_rect = super::bounding_rect(dirty_rects);
+
         self.sizing = Some(crate::Sizing {
             width: max_width.min(max_size.width),
             height: max_height.min(max_size.height),
+            dirty_rect,
         });
     }
 

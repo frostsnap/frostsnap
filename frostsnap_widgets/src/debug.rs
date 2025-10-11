@@ -3,11 +3,13 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 use embedded_graphics::pixelcolor::Rgb565;
+#[cfg(target_arch = "riscv32")]
+use embedded_graphics::pixelcolor::RgbColor;
 use embedded_graphics::{
     draw_target::DrawTarget,
+    mono_font::{iso_8859_1::FONT_7X13, MonoTextStyle},
     prelude::{Point, Size},
 };
-use u8g2_fonts::{fonts, U8g2TextStyle};
 
 // ============================================================================
 // Configuration
@@ -89,15 +91,14 @@ pub fn log_stack_usage(label: &str) {
     }
 }
 
-// Font for logging - profont17 is monospace
-const LOG_FONT: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
-// Font dimensions for profont17 (monospace)
-const FONT_HEIGHT: u32 = 17; // From font name
-const FONT_WIDTH: u32 = 9; // Actual width for profont17 monospace
+// Font for logging - FONT_7X13 is monospace
+const FONT_HEIGHT: u32 = 13;
+const FONT_WIDTH: u32 = 7;
 
 pub struct DebugLogWidget {
     // Cache of formatted text widgets wrapped in expanded container
-    display_cache: Container<Switcher<Column<Vec<Text<U8g2TextStyle<Rgb565>, StringWrap>>>>>,
+    display_cache:
+        Container<Switcher<Column<Vec<Text<MonoTextStyle<'static, Rgb565>, StringWrap>>>>>,
     max_lines: usize,
     chars_per_line: usize,
 }
@@ -145,7 +146,7 @@ impl DebugLogWidget {
 
                     let text = Text::new_with(
                         wrapped,
-                        U8g2TextStyle::new(LOG_FONT, PALETTE.text_secondary),
+                        MonoTextStyle::new(&FONT_7X13, PALETTE.text_secondary),
                     )
                     .with_underline(PALETTE.on_background);
                     text_widgets.push(text);
@@ -211,7 +212,7 @@ impl DynWidget for DebugLogWidget {
 const MEM_TEXT_SIZE: usize = 13; // Size for "U:123456 F:123456"
 
 #[cfg(target_arch = "riscv32")]
-type MemText = Text<U8g2TextStyle<Rgb565>, crate::string_ext::StringFixed<MEM_TEXT_SIZE>>;
+type MemText = Text<MonoTextStyle<'static, Rgb565>, crate::string_ext::StringFixed<MEM_TEXT_SIZE>>;
 
 /// Memory usage indicator component that polls esp_alloc directly
 #[cfg(target_arch = "riscv32")]
@@ -228,15 +229,16 @@ impl Default for MemoryIndicator {
 }
 
 #[cfg(target_arch = "riscv32")]
+const MEM_TEXT_STYLE: MonoTextStyle<'static, Rgb565> = MonoTextStyle::new(&FONT_7X13, Rgb565::CYAN);
+
+#[cfg(target_arch = "riscv32")]
 impl MemoryIndicator {
     fn new() -> Self {
-        use embedded_graphics::pixelcolor::RgbColor;
-        let text_style = U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::CYAN);
         let initial_text = Text::new_with(
-            crate::string_ext::StringFixed::from_string("MEM_DEBUG"),
-            text_style,
+            crate::string_ext::StringFixed::from_string("000000/000000"),
+            MEM_TEXT_STYLE,
         );
-        let display = Container::new(Switcher::new(initial_text));
+        let display = Container::new(Switcher::new(initial_text).with_shrink_to_fit());
 
         Self {
             display,
@@ -301,9 +303,7 @@ impl Widget for MemoryIndicator {
             let _ = write!(&mut buf, "{}/{}", used, free);
 
             // Create a new text widget with the updated text
-            use embedded_graphics::pixelcolor::RgbColor;
-            let text_style = U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::CYAN);
-            let text_widget = Text::new_with(buf, text_style);
+            let text_widget = Text::new_with(buf, MEM_TEXT_STYLE);
             self.display.child.switch_to(text_widget);
         }
 
@@ -374,8 +374,12 @@ where
 
         // Create stats row if either FPS or memory is enabled
         let stats_row = if config.fps || config.memory {
-            let mut row = Row::builder().push(fps_widget).gap(8).push(mem_widget);
-            row.main_axis_alignment = MainAxisAlignment::Center;
+            let row = Row::builder()
+                .push(fps_widget)
+                .gap(8)
+                .push(mem_widget)
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_main_axis_alignment(MainAxisAlignment::Center);
             Some(row)
         } else {
             None

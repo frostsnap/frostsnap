@@ -1,32 +1,32 @@
+use crate::backup::LEGACY_FONT_SMALL;
+use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_MS;
 use crate::{
     icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
     share_index::ShareIndexWidget, widget_list::WidgetList, FadeSwitcher, HoldToConfirm,
-    FONT_LARGE, FONT_MED, FONT_SMALL,
+    U8g2TextStyle, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
 };
 use alloc::{format, string::String, vec::Vec};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
 use frost_backup::{bip39_words::BIP39_WORDS, NUM_WORDS};
-use u8g2_fonts::{fonts, U8g2TextStyle};
 
 const WORDS_PER_PAGE: usize = 3;
-const FONT_ALL_WORDS: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
 
 /// A single page showing the share index
 #[derive(frostsnap_macros::Widget)]
 pub struct ShareIndexPage {
     #[widget_delegate]
-    center: Center<Column<(Text<U8g2TextStyle<Rgb565>>, ShareIndexWidget)>>,
+    center: Center<Column<(Text, ShareIndexWidget)>>,
 }
 
 impl ShareIndexPage {
     fn new(share_index: u16) -> Self {
         let label = Text::new(
-            "Key index",
-            U8g2TextStyle::new(FONT_MED, PALETTE.text_secondary),
+            "Key number",
+            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
         );
 
-        let share_index_widget = ShareIndexWidget::new(share_index);
+        let share_index_widget = ShareIndexWidget::new(share_index, FONT_HUGE_MONO);
 
         let column = Column::builder()
             .push(label)
@@ -43,24 +43,20 @@ impl ShareIndexPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct WordRow {
     #[widget_delegate]
-    row: Row<(
-        Text<U8g2TextStyle<Rgb565>>,
-        SizedBox<Rgb565>,
-        Text<U8g2TextStyle<Rgb565>>,
-    )>,
+    row: Row<(Text, SizedBox<Rgb565>, Text)>,
 }
 
 impl WordRow {
     fn new(word_number: usize, word: &str) -> Self {
         let number_text = Text::new(
             format!("{}.", word_number),
-            U8g2TextStyle::new(FONT_MED, PALETTE.text_secondary),
+            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
         )
         .with_alignment(Alignment::Left);
 
         let word_text = Text::new(
             String::from(word),
-            U8g2TextStyle::new(FONT_LARGE, PALETTE.primary),
+            DefaultTextStyle::new(FONT_HUGE_MONO, PALETTE.primary),
         )
         .with_alignment(Alignment::Left);
 
@@ -152,11 +148,11 @@ impl AllWordsPage {
             Row::new((
                 Text::new(
                     format!("{:2}.", word_idx + 1),
-                    U8g2TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
+                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
                 ),
                 Text::new(
                     format!("{:<8}", BIP39_WORDS[word_indices[word_idx] as usize]),
-                    U8g2TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
+                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
                 ),
             ))
             .with_main_axis_alignment(MainAxisAlignment::Start)
@@ -168,11 +164,11 @@ impl AllWordsPage {
             let share_row = Row::new((
                 Text::new(
                     " #.",
-                    U8g2TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
+                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
                 ),
                 Text::new(
                     format!("{}", share_index),
-                    U8g2TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
+                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
                 )
                 .with_underline(PALETTE.surface),
             ))
@@ -214,58 +210,44 @@ type ConfirmationContent = crate::any_of::AnyOf<(ConfirmContent, SafetyReminder)
 
 /// A confirmation screen that shows after backup and fades to a security reminder
 pub struct BackupConfirmationScreen {
-    hold_confirm: HoldToConfirm<FadeSwitcher<ConfirmationContent>>,
+    hold_confirm: HoldToConfirm<FadeSwitcher<Center<ConfirmationContent>>>,
     fade_triggered: bool,
 }
 
-/// The initial confirmation content with icon
+/// The initial confirmation content
 #[derive(frostsnap_macros::Widget)]
 pub struct ConfirmContent {
     #[widget_delegate]
-    column: Column<(
-        IconWidget<embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::other::Notes>>,
-        Text<U8g2TextStyle<Rgb565>>,
-        Text<U8g2TextStyle<Rgb565>>,
-    )>,
+    column: Column<(Text, Text)>,
 }
 
 /// The safety reminder that fades in after confirmation
 #[derive(frostsnap_macros::Widget)]
 pub struct SafetyReminder {
     #[widget_delegate]
-    content: Center<
-        Column<(
-            IconWidget<
-                embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::security::Shield>,
-            >,
-            Text<U8g2TextStyle<Rgb565>>,
-            Text<U8g2TextStyle<Rgb565>>,
-        )>,
-    >,
+    content: Column<(
+        IconWidget<
+            embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::security::Shield>,
+        >,
+        Text,
+        Text,
+    )>,
 }
 
 impl ConfirmContent {
     fn new() -> Self {
-        use embedded_iconoir::prelude::*;
-
-        let notes_icon = IconWidget::new(embedded_iconoir::icons::size48px::other::Notes::new(
-            PALETTE.primary,
-        ));
-
         let title = Text::new(
             "Backup\nrecorded?",
-            U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background),
+            DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
         )
         .with_alignment(Alignment::Center);
 
         let subtitle = Text::new(
-            "I've safely written down\nall 25 words",
-            U8g2TextStyle::new(FONT_SMALL, PALETTE.text_secondary),
-        )
-        .with_alignment(Alignment::Center);
+            "I've written down:\n  - The key number\n  - All 25 words",
+            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
+        );
 
         let column = Column::builder()
-            .push(notes_icon)
             .push(title)
             .gap(10)
             .push(subtitle)
@@ -285,13 +267,13 @@ impl SafetyReminder {
 
         let title = Text::new(
             "Keep it secret",
-            U8g2TextStyle::new(FONT_MED, PALETTE.on_surface),
+            DefaultTextStyle::new(FONT_MED, PALETTE.on_surface),
         )
         .with_alignment(Alignment::Center);
 
         let subtitle = Text::new(
             "Keep it safe",
-            U8g2TextStyle::new(FONT_MED, PALETTE.text_secondary),
+            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
         )
         .with_alignment(Alignment::Center);
 
@@ -302,9 +284,7 @@ impl SafetyReminder {
             .push(subtitle)
             .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
 
-        Self {
-            content: Center::new(column),
-        }
+        Self { content: column }
     }
 }
 
@@ -312,15 +292,14 @@ impl BackupConfirmationScreen {
     fn new() -> Self {
         let confirm_content = ConfirmContent::new();
         let initial_content = ConfirmationContent::new(confirm_content);
+        let centered_content = Center::new(initial_content);
 
         let fade_switcher = FadeSwitcher::new(
-            initial_content,
+            centered_content,
             500, // 500ms fade duration
-            50,  // 50ms redraw interval
-            PALETTE.background,
         );
-        let hold_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, fade_switcher) // 2 seconds to confirm
-            .with_faded_out_button();
+        let hold_confirm =
+            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, fade_switcher).with_faded_out_button();
 
         Self {
             hold_confirm,
@@ -376,7 +355,8 @@ impl crate::Widget for BackupConfirmationScreen {
             // Switch to the safety reminder
             let safety_reminder = SafetyReminder::new();
             let safety_content = ConfirmationContent::new(safety_reminder);
-            self.hold_confirm.widget_mut().switch_to(safety_content);
+            let centered_safety = Center::new(safety_content);
+            self.hold_confirm.widget_mut().switch_to(centered_safety);
         }
 
         self.hold_confirm.draw(target, current_time)

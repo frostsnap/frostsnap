@@ -6,13 +6,14 @@ use core::fmt::Write;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
+    mono_font::{iso_8859_1::FONT_7X13, MonoTextStyle},
     pixelcolor::{Rgb565, RgbColor},
 };
 
 // Constants for FPS text dimensions - "FPS: 999" is max 8 chars
 const FPS_MAX_CHARS: usize = 3;
 
-type FpsDisplay = Container<Switcher<TextWidget<u8g2_fonts::U8g2TextStyle<Rgb565>>>>;
+type FpsDisplay = Container<Switcher<TextWidget<MonoTextStyle<'static, Rgb565>>>>;
 
 /// A widget that displays frames per second using simple frame counting
 pub struct Fps {
@@ -27,10 +28,10 @@ pub struct Fps {
 impl Fps {
     /// Create a new FPS counter widget with green text
     pub fn new(update_interval_ms: u64) -> Self {
-        let text_style = u8g2_fonts::U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
+        let text_style = MonoTextStyle::new(&FONT_7X13, Rgb565::GREEN);
         let text = TextWidget::new("000", text_style);
-        let switcher = Switcher::new(text);
-        let display = Container::new(switcher);
+        let switcher = Switcher::new(text).with_shrink_to_fit();
+        let display = Container::new(switcher).with_border(Rgb565::RED, 2);
 
         Self {
             display,
@@ -118,7 +119,7 @@ impl Widget for Fps {
             write!(&mut buf, "{}", self.current_fps).ok();
 
             // Create new text widget with updated text
-            let text_style = u8g2_fonts::U8g2TextStyle::new(crate::FONT_SMALL, Rgb565::GREEN);
+            let text_style = MonoTextStyle::new(&FONT_7X13, Rgb565::GREEN);
             let text = TextWidget::new(buf.as_str(), text_style);
             self.display.child.switch_to(text);
 

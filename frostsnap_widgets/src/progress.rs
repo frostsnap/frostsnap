@@ -1,4 +1,5 @@
 use crate::super_draw_target::SuperDrawTarget;
+use crate::DefaultTextStyle;
 use crate::{palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, FONT_SMALL};
 use alloc::format;
 use embedded_graphics::{
@@ -9,7 +10,6 @@ use embedded_graphics::{
     text::Alignment,
     Drawable,
 };
-use u8g2_fonts::U8g2TextStyle;
 
 /// A progress bar widget with a rounded rectangle (no text)
 pub struct ProgressBar {
@@ -172,7 +172,7 @@ impl Widget for ProgressBar {
 pub struct ProgressIndicator {
     /// Column containing the progress bar, spacer, and text switcher
     #[widget_delegate]
-    column: Column<(ProgressBar, Switcher<TextWidget<U8g2TextStyle<Rgb565>>>)>,
+    column: Column<(ProgressBar, Switcher<TextWidget>)>,
     /// Last percentage to track changes
     last_percentage: u32,
 }
@@ -187,10 +187,12 @@ impl ProgressIndicator {
     /// Create a new progress indicator
     pub fn new() -> Self {
         let progress_bar = ProgressBar::new();
-        let initial_text =
-            TextWidget::new("00%", U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background))
-                .with_alignment(Alignment::Center);
-        let text_switcher = Switcher::new(initial_text);
+        let initial_text = TextWidget::new(
+            "00%",
+            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background),
+        )
+        .with_alignment(Alignment::Center);
+        let text_switcher = Switcher::new(initial_text).with_shrink_to_fit();
 
         let column = Column::builder()
             .push(progress_bar)
@@ -215,7 +217,7 @@ impl ProgressIndicator {
             let percentage_text = format!("{:02}%", percentage);
             let new_text = TextWidget::new(
                 percentage_text,
-                U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background),
+                DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background),
             )
             .with_alignment(Alignment::Center);
             self.column.children.1.switch_to(new_text);

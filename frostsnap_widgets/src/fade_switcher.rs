@@ -14,8 +14,8 @@ where
     current: Fader<T>,
     prev: Option<Fader<T>>,
     fade_duration_ms: u32,
-    fade_redraw_interval_ms: u64,
     constraints: Option<Size>,
+    pub shrink_to_fit: bool,
 }
 
 impl<T> FadeSwitcher<T>
@@ -23,30 +23,26 @@ where
     T: Widget<Color = Rgb565>,
 {
     /// Create a new FadeSwitcher with an initial widget
-    pub fn new(
-        initial: T,
-        fade_duration_ms: u32,
-        fade_redraw_interval_ms: u64,
-        _bg_color: Rgb565,
-    ) -> Self {
+    pub fn new(initial: T, fade_duration_ms: u32) -> Self {
         let mut child = Fader::new_faded_out(initial);
-        child.start_fade_in(fade_duration_ms as _, fade_redraw_interval_ms);
+        child.start_fade_in(fade_duration_ms as _);
         Self {
             current: child,
             prev: None,
             fade_duration_ms,
-            fade_redraw_interval_ms,
             constraints: None,
+            shrink_to_fit: false,
         }
     }
 
-    /// Switch to a new widget with a fade transition
-    pub fn switch_to(&mut self, mut widget: T) {
-        // Apply constraints to the new widget if we have them
-        if let Some(constraints) = self.constraints {
-            widget.set_constraints(constraints);
-        }
+    /// Configure the FadeSwitcher to shrink to fit the first child
+    pub fn with_shrink_to_fit(mut self) -> Self {
+        self.shrink_to_fit = true;
+        self
+    }
 
+    /// Switch to a new widget with a fade transition
+    pub fn switch_to(&mut self, widget: T) {
         let mut new_fader = Fader::new_faded_out(widget);
         // Set constraints on the new fader
         if let Some(constraints) = self.constraints {
@@ -56,7 +52,7 @@ where
         let mut prev_fader = core::mem::replace(&mut self.current, new_fader);
         if self.prev.is_none() {
             // we only care about fading out the old widget if it was ever drawn. An existing `self.prev` means it wasn't.
-            prev_fader.start_fade(self.fade_duration_ms as u64, self.fade_redraw_interval_ms);
+            prev_fader.start_fade(self.fade_duration_ms as u64);
             self.prev = Some(prev_fader);
         }
     }
@@ -88,17 +84,28 @@ where
     T: Widget<Color = Rgb565>,
 {
     fn set_constraints(&mut self, max_size: Size) {
-        // Store the constraints
-        self.constraints = Some(max_size);
-        // Apply to current and previous widgets
-        self.current.set_constraints(max_size);
+        let constraints = if self.shrink_to_fit {
+            self.current.set_constraints(max_size);
+
+            self.current.sizing().into()
+        } else {
+            self.current.set_constraints(max_size);
+            max_size
+        };
+
+        self.constraints = Some(constraints);
         if let Some(ref mut prev) = self.prev {
-            prev.set_constraints(max_size);
+            prev.set_constraints(constraints);
         }
     }
 
     fn sizing(&self) -> crate::Sizing {
-        self.current.sizing()
+        let size = self.constraints.unwrap();
+        crate::Sizing {
+            width: size.width,
+            height: size.height,
+            dirty_rect: None,
+        }
     }
 
     fn handle_touch(
@@ -144,8 +151,7 @@ where
 
             // Remove it once fully faded
             if prev.is_faded_out() && self.current.is_faded_out() {
-                self.current
-                    .start_fade_in(self.fade_duration_ms as u64, self.fade_redraw_interval_ms);
+                self.current.start_fade_in(self.fade_duration_ms as u64);
                 self.prev = None;
             }
         }
