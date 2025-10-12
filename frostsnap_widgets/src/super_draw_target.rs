@@ -74,8 +74,15 @@ where
         self.background_color
     }
 
-    pub fn with_background_color(mut self, background_color: C) -> Self {
-        self.background_color = background_color;
+    pub fn with_background_color(mut self, new_background_color: C) -> Self {
+        // Interpolate the new background toward the existing background based on opacity.
+        // This ensures child widgets (e.g., Text with anti-aliased fonts) blend against
+        // the correct effective background color after opacity is applied.
+        // Without this, text would blend against the raw background color, but pixels
+        // would then be faded toward a different background, causing visible artifacts.
+        self.background_color = self
+            .background_color
+            .interpolate(new_background_color, self.opacity);
         self
     }
 

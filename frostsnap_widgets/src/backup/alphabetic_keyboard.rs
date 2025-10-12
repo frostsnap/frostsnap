@@ -1,4 +1,6 @@
-use crate::{palette::PALETTE, super_draw_target::SuperDrawTarget, Widget, FONT_LARGE};
+use crate::{
+    palette::PALETTE, super_draw_target::SuperDrawTarget, U8g2TextStyle, Widget, LEGACY_FONT_LARGE,
+};
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
@@ -17,7 +19,6 @@ use embedded_iconoir::{
     size32px::navigation::{NavArrowLeft, NavArrowRight},
 };
 use frost_backup::bip39_words::ValidLetters;
-use u8g2_fonts::U8g2TextStyle;
 
 // Constants for framebuffer and keyboard dimensions
 const FRAMEBUFFER_WIDTH: u32 = 240;
@@ -81,7 +82,7 @@ impl AlphabeticKeyboard {
 
         let max_scroll = keyboard_buffer_height.saturating_sub(self.visible_height as usize);
         let new_scroll_position = (self.scroll_position - amount).clamp(0, max_scroll as i32);
-        self.needs_redraw = new_scroll_position != self.scroll_position;
+        self.needs_redraw = self.needs_redraw || new_scroll_position != self.scroll_position;
         self.scroll_position = new_scroll_position;
     }
 
@@ -96,7 +97,8 @@ impl AlphabeticKeyboard {
         // Clear the framebuffer
         let _ = self.framebuffer.clear(BinaryColor::Off);
 
-        let character_style = U8g2TextStyle::new(FONT_LARGE, BinaryColor::On);
+        // Use U8g2TextStyle for monochrome framebuffer
+        let character_style = U8g2TextStyle::new(LEGACY_FONT_LARGE, BinaryColor::On);
 
         // Determine which keys to render
         let keys_to_render = if self.enabled_keys.count_enabled() == 0 {
@@ -154,6 +156,7 @@ impl crate::DynWidget for AlphabeticKeyboard {
         crate::Sizing {
             width: FRAMEBUFFER_WIDTH,
             height: self.visible_height,
+            ..Default::default()
         }
     }
 

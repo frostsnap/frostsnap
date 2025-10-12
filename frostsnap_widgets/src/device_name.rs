@@ -1,4 +1,5 @@
 use super::{Column, Row, Text as TextWidget};
+use crate::DefaultTextStyle;
 use crate::{
     bitmap::EncodedImage, cursor::Cursor, image::Image, palette::PALETTE, prelude::*,
     vec_framebuffer::VecFramebuffer, Switcher,
@@ -6,7 +7,6 @@ use crate::{
 use alloc::string::String;
 use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
 use embedded_graphics::text::renderer::TextRenderer;
-use u8g2_fonts::U8g2TextStyle;
 
 /// A widget for displaying device name with optional edit mode cursor
 
@@ -14,14 +14,14 @@ use u8g2_fonts::U8g2TextStyle;
 pub struct DeviceName {
     /// The device name text widget with optional cursor
     #[widget_delegate]
-    text_widget: Container<Switcher<Row<(TextWidget<U8g2TextStyle<Rgb565>>, Option<Cursor>)>>>,
+    text_widget: Container<Switcher<Row<(TextWidget, Option<Cursor>)>>>,
 }
 
 impl DeviceName {
     /// Create a new device name widget
     pub fn new<S: Into<String>>(name: S) -> Self {
         let name_string = name.into();
-        let char_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_background);
+        let char_style = DefaultTextStyle::new(crate::FONT_LARGE, PALETTE.on_background);
         let text = TextWidget::new(name_string, char_style.clone());
         let row = Row::new((text, None::<Cursor>))
             .with_main_axis_alignment(crate::MainAxisAlignment::Center);
@@ -43,7 +43,7 @@ impl DeviceName {
     /// Set a new device name
     pub fn set_name<S: Into<String>>(&mut self, name: S) {
         let name_string = name.into();
-        let char_style = U8g2TextStyle::new(crate::FONT_LARGE, PALETTE.on_background);
+        let char_style = DefaultTextStyle::new(crate::FONT_LARGE, PALETTE.on_background);
         let text = TextWidget::new(name_string, char_style);
         let row = Row::new((text, None::<Cursor>))
             .with_main_axis_alignment(crate::MainAxisAlignment::Center)

@@ -21,3 +21,17 @@ pub trait WidgetList<T> {
         from_index > 0
     }
 }
+
+// Implementation for Vec<T> where T is Clone
+impl<T> WidgetList<T> for alloc::vec::Vec<T>
+where
+    T: Clone,
+{
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn get(&self, index: usize) -> Option<T> {
+        <[T]>::get(self, index).cloned()
+    }
+}

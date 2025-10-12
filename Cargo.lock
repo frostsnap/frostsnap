@@ -1228,6 +1228,7 @@ dependencies = [
  "az",
  "byteorder",
  "embedded-graphics-core",
+ "fixed",
  "float-cmp",
  "micromath 2.1.0",
 ]
@@ -1616,6 +1617,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fd99930f64d146689264c637b5af2f0233a933bef0d8570e2526bf9e083192d"
 
 [[package]]
+name = "fixed"
+version = "1.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "707070ccf8c4173548210893a0186e29c266901b71ed20cd9e2ca0193dfe95c3"
+dependencies = [
+ "az",
+ "bytemuck",
+ "half",
+ "typenum",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1834,7 +1847,6 @@ dependencies = [
  "rand_chacha",
  "rand_core",
  "reed-solomon",
- "u8g2-fonts",
 ]
 
 [[package]]
@@ -4813,9 +4825,9 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "u8g2-fonts"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c53bd76579dcab4b69ffe77c895b8dffa4a9b3273c0a5105afc4d3768a5064ed"
+checksum = "a68775e2131c88974e3cc1da37060559090319ea140746cc1e7e7797646415c0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-core",
@@ -5112,7 +5124,6 @@ dependencies = [
  "frostsnap_core",
  "frostsnap_widgets",
  "rand",
- "u8g2-fonts",
 ]
 
 [[package]]

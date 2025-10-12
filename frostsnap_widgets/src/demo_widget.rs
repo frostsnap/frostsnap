@@ -1,19 +1,19 @@
 /// Macro for selecting and running demo widgets
 #[macro_export]
 macro_rules! demo_widget {
-    ($demo:expr, $screen_size:expr, $run_macro:ident) => {
+    ($demo:expr,  $run_macro:ident) => {
         // Common imports for all demos
         use $crate::{
             palette::PALETTE,
             HoldToConfirm,
             FONT_SMALL, FONT_MED, FONT_LARGE,
             prelude::*,
+            DefaultTextStyle,
         };
         use embedded_graphics::{
             prelude::*,
             pixelcolor::{Rgb565, BinaryColor},
         };
-        use u8g2_fonts::U8g2TextStyle;
         use $crate::alloc::string::{String, ToString};
         use $crate::HOLD_TO_CONFIRM_TIME_MS;
 
@@ -49,7 +49,7 @@ macro_rules! demo_widget {
         match $demo.as_ref() {
             "hello_world" => {
                 use $crate::text::Text;
-                let widget = Text::new("Hello World!", U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background));
+                let widget = Text::new("Hello World!", DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background));
                 $run_macro!(widget);
             }
             "bip39_entry" => {
@@ -64,7 +64,7 @@ macro_rules! demo_widget {
                 // Debug logging is now in device crate - this demo just shows touch listener
 
                 // Create centered text with instructions
-                let text = Text::new("Touch me!", U8g2TextStyle::new(FONT_LARGE, PALETTE.on_background))
+                let text = Text::new("Touch me!", DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background))
                     .with_alignment(embedded_graphics::text::Alignment::Center);
                 let centered = Center::new(text);
 
@@ -81,7 +81,7 @@ macro_rules! demo_widget {
             "confirm_touch" | "hold_confirm" | "hold_checkmark" | "hold_to_confirm" => {
                 use $crate::{text::Text, HoldToConfirm, palette::PALETTE};
                 use embedded_graphics::pixelcolor::BinaryColor;
-                let prompt_text = Text::new("Confirm\ntransaction", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)).with_alignment(embedded_graphics::text::Alignment::Center);
+                let prompt_text = Text::new("Confirm\ntransaction", DefaultTextStyle::new(FONT_MED, PALETTE.on_background)).with_alignment(embedded_graphics::text::Alignment::Center);
                 let widget = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, prompt_text);
                 $run_macro!(widget);
             }
@@ -94,20 +94,20 @@ macro_rules! demo_widget {
                 use $crate::{text::Text, Column, palette::PALETTE};
 
                 // First column with Start alignment (left-aligned)
-                let text1 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
-                let text2 = Text::new("start", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text1 = Text::new("cross axis", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text2 = Text::new("start", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
                 let inner_column1 = Column::new((text1, text2))
                     .with_cross_axis_alignment($crate::CrossAxisAlignment::Start);
 
                 // Second column with center cross-axis alignment
-                let text3 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
-                let text4 = Text::new("center", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text3 = Text::new("cross axis", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text4 = Text::new("center", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
                 let inner_column2 = Column::new((text3, text4))
                     .with_cross_axis_alignment($crate::CrossAxisAlignment::Center);
 
                 // Third column with End alignment (right-aligned)
-                let text5 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
-                let text6 = Text::new("end", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text5 = Text::new("cross axis", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text6 = Text::new("end", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
                 let inner_column3 = Column::new((text5, text6))
                     .with_cross_axis_alignment($crate::CrossAxisAlignment::End);
 
@@ -119,8 +119,8 @@ macro_rules! demo_widget {
                 use $crate::{text::Text, Row, Column, Container, palette::PALETTE};
 
                 // First row with Start alignment (top-aligned)
-                let text1 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
-                let text2 = Text::new("start", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text1 = Text::new("cross axis", DefaultTextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text2 = Text::new("start", DefaultTextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
                 let inner_row1 = Row::new((text1, text2))
                     .with_cross_axis_alignment($crate::CrossAxisAlignment::Start)
                     .with_debug_borders(true);
@@ -128,8 +128,8 @@ macro_rules! demo_widget {
                     .with_border(PALETTE.primary, 2);
 
                 // Second row with center cross-axis alignment
-                let text3 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
-                let text4 = Text::new("center", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text3 = Text::new("cross axis", DefaultTextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text4 = Text::new("center", DefaultTextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
                 let inner_row2 = Row::new((text3, text4))
                     .with_cross_axis_alignment($crate::CrossAxisAlignment::Center)
                     .with_debug_borders(true);
@@ -137,8 +137,8 @@ macro_rules! demo_widget {
                     .with_border(PALETTE.primary, 2);
 
                 // Third row with End alignment (bottom-aligned)
-                let text5 = Text::new("cross axis", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
-                let text6 = Text::new("end", u8g2_fonts::U8g2TextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text5 = Text::new("cross axis", DefaultTextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
+                let text6 = Text::new("end", DefaultTextStyle::new($crate::FONT_SMALL, PALETTE.on_background));
                 let inner_row3 = Row::new((text5, text6))
                     .with_cross_axis_alignment($crate::CrossAxisAlignment::End)
                     .with_debug_borders(true);
@@ -153,16 +153,16 @@ macro_rules! demo_widget {
                 use $crate::{text::Text, Row, Container, palette::PALETTE};
 
                 // First row with Start alignment
-                let text_a = Text::new("A", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
-                let text_b = Text::new("B", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text_a = Text::new("A", DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text_b = Text::new("B", DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
                 let start_row = Row::new((text_a, text_b))
                     .with_main_axis_alignment($crate::MainAxisAlignment::Start)
                     .with_debug_borders(true);
                 let start_container = Container::new(start_row).with_border(PALETTE.primary, 2);
 
                 // Second row with Center alignment
-                let text_c = Text::new("C", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
-                let text_d = Text::new("D", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text_c = Text::new("C", DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text_d = Text::new("D", DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
                 let center_row = Row::new((text_c, text_d))
                     .with_main_axis_alignment($crate::MainAxisAlignment::Center)
                     .with_debug_borders(true);
@@ -176,14 +176,14 @@ macro_rules! demo_widget {
                 use $crate::{text::Text, Column, Container, palette::PALETTE};
 
                 // First column with Start alignment
-                let text1 = Text::new("main axis alignment", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
-                let text2 = Text::new("start", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text1 = Text::new("main axis alignment", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text2 = Text::new("start", DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
                 let start_column = Column::new((text1, text2)).with_debug_borders(true);
                 let start_container = Container::new(start_column).with_border(PALETTE.primary, 2);
 
                 // Second column with Center alignment
-                let text3 = Text::new("main axis alignment", u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.on_background));
-                let text4 = Text::new("center", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                let text3 = Text::new("main axis alignment", DefaultTextStyle::new($crate::FONT_MED, PALETTE.on_background));
+                let text4 = Text::new("center", DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
                 let center_column = Column::new((text3, text4))
                     .with_main_axis_alignment($crate::MainAxisAlignment::Center).with_debug_borders(true);
                 let center_container = Container::new(center_column).with_border(PALETTE.primary, 2);
@@ -203,18 +203,109 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
-            "fade_in_fade_out" => {
+            "fade_in" => {
                 use $crate::{fader::Fader, text::Text, palette::PALETTE};
 
-                // Simple text widget that will fade in/out
-                let text = Text::new("Fade Demo", u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
+                // Simple text widget that will fade in
+                let text = Text::new("Fade Demo", DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background));
 
                 // Create a fader starting faded out
                 let mut fader = Fader::new_faded_out(text);
                 // Start the fade-in immediately
-                fader.start_fade_in(1000, 50);
+                fader.start_fade_in(1000);
 
                 $run_macro!(fader);
+            }
+            "fade_switcher" => {
+                use $crate::{FadeSwitcher, Container, Padding, palette::PALETTE};
+                use embedded_graphics::prelude::*;
+                use embedded_graphics::pixelcolor::RgbColor;
+
+                struct FadeSwitcherDemo {
+                    fade_switcher: FadeSwitcher<Center<Container<Padding<Text>>>>,
+                    last_switch_time: Option<Instant>,
+                    showing_a: bool,
+                }
+
+                impl FadeSwitcherDemo {
+                    fn new() -> Self {
+                        let text = Text::new(
+                            "Lorem ipsum\ndolor sit\namet,\nconsectetur\nadipiscing",
+                            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background)
+                        );
+                        let padded = Padding::all(10, text);
+                        let widget_a = Container::new(padded)
+                            .with_fill(PALETTE.surface)
+                            .with_border(PALETTE.primary, 2);
+
+                        Self {
+                            fade_switcher: FadeSwitcher::new(Center::new(widget_a), 500),
+                            last_switch_time: None,
+                            showing_a: true,
+                        }
+                    }
+                }
+
+                impl $crate::DynWidget for FadeSwitcherDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.fade_switcher.set_constraints(max_size);
+                    }
+
+                    fn sizing(&self) -> $crate::Sizing {
+                        self.fade_switcher.sizing()
+                    }
+
+                    fn force_full_redraw(&mut self) {
+                        self.fade_switcher.force_full_redraw();
+                    }
+                }
+
+                impl $crate::Widget for FadeSwitcherDemo {
+                    type Color = Rgb565;
+
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut SuperDrawTarget<D, Self::Color>,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: DrawTarget<Color = Self::Color>,
+                    {
+                        if self.last_switch_time.is_none() {
+                            self.last_switch_time = Some(current_time);
+                        }
+
+                        let elapsed = current_time.saturating_duration_since(self.last_switch_time.unwrap());
+
+                        if elapsed >= 3000 {
+                            if self.showing_a {
+                                let pink = Rgb565::new(31, 20, 31);
+                                let text_b = Text::new("", DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background));
+                                let padded_b = Padding::all(0, text_b);
+                                let widget_b = Container::with_size(padded_b, Size::new(20, 20))
+                                    .with_fill(pink);
+                                self.fade_switcher.switch_to(Center::new(widget_b));
+                            } else {
+                                let text = Text::new(
+                                    "Lorem ipsum\ndolor sit\namet,\nconsectetur\nadipiscing",
+                                    DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background)
+                                );
+                                let padded = Padding::all(10, text);
+                                let widget_a = Container::new(padded)
+                                    .with_fill(PALETTE.surface)
+                                    .with_border(PALETTE.primary, 2);
+                                self.fade_switcher.switch_to(Center::new(widget_a));
+                            }
+                            self.showing_a = !self.showing_a;
+                            self.last_switch_time = Some(current_time);
+                        }
+
+                        self.fade_switcher.draw(target, current_time)
+                    }
+                }
+
+                let widget = FadeSwitcherDemo::new();
+                $run_macro!(widget);
             }
             "device_name" => {
                 use $crate::DeviceNameScreen;
@@ -307,10 +398,9 @@ macro_rules! demo_widget {
                 use $crate::{PageSlider, WidgetList};
                 use embedded_graphics::prelude::*;
                 use embedded_graphics::pixelcolor::Rgb565;
-                use u8g2_fonts::U8g2TextStyle;
 
                 // Type aliases to simplify the complex nested types
-                type StyledText = Text<U8g2TextStyle<Rgb565>>;
+                type StyledText = Text;
                 type NumberRow = Row<(StyledText, StyledText)>;
                 type ThreeRowColumn = Column<(NumberRow, NumberRow, NumberRow)>;
                 type PageWidget = Center<Container<ThreeRowColumn>>;
@@ -334,33 +424,33 @@ macro_rules! demo_widget {
                         let row1 = Row::new((
                             Text::new(
                                 $crate::alloc::format!("{}.", start_num),
-                                U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                                DefaultTextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
                             ),
                             Text::new(
                                 number_words.get(start_num).unwrap_or(&"many").to_string(),
-                                U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                                DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                             )
                         ));
 
                         let row2 = Row::new((
                             Text::new(
                                 $crate::alloc::format!("{}.", start_num + 1),
-                                U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                                DefaultTextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
                             ),
                             Text::new(
                                 number_words.get(start_num + 1).unwrap_or(&"many").to_string(),
-                                U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                                DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                             )
                         ));
 
                         let row3 = Row::new((
                             Text::new(
                                 $crate::alloc::format!("{}.", start_num + 2),
-                                U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                                DefaultTextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
                             ),
                             Text::new(
                                 number_words.get(start_num + 2).unwrap_or(&"many").to_string(),
-                                U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                                DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                             )
                         ));
 
@@ -381,7 +471,7 @@ macro_rules! demo_widget {
                 use $crate::{ firmware_upgrade::FirmwareUpgradeProgress, Padding };
 
                 // Show downloading state at 65% progress
-                let widget = Padding::symmetric(20, 0, FirmwareUpgradeProgress::downloading(0.65)) ;
+                let widget = FirmwareUpgradeProgress::downloading(0.65);
                 $run_macro!(widget);
             }
             "firmware_upgrade_erase" => {
@@ -437,12 +527,12 @@ macro_rules! demo_widget {
                     type Color = Rgb565;
 
                     fn draw<D>(
-        &mut self,
-        target: &mut SuperDrawTarget<D, Self::Color>,
-        current_time: $crate::Instant,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = Self::Color>, {
+                        &mut self,
+                        target: &mut SuperDrawTarget<D, Self::Color>,
+                        current_time: $crate::Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: DrawTarget<Color = Self::Color>, {
                         // Initialize start time on first draw
                         if self.start_time.is_none() {
                             self.start_time = Some(current_time);
@@ -502,33 +592,33 @@ macro_rules! demo_widget {
                 let row1 = Row::new((
                     Text::new(
                         "1.",
-                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                        DefaultTextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
                     ),
                     Text::new(
                         "one",
-                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                        DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                     )
                 ));
 
                 let row2 = Row::new((
                     Text::new(
                         "2.",
-                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                        DefaultTextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
                     ),
                     Text::new(
                         "two",
-                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                        DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                     )
                 ));
 
                 let row3 = Row::new((
                     Text::new(
                         "3.",
-                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
+                        DefaultTextStyle::new($crate::FONT_MED, PALETTE.text_secondary)
                     ),
                     Text::new(
                         "three",
-                        u8g2_fonts::U8g2TextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
+                        DefaultTextStyle::new($crate::FONT_LARGE, PALETTE.on_background)
                     )
                 ));
 
@@ -544,7 +634,7 @@ macro_rules! demo_widget {
 
                 // Create a background container
                 let background = Container::with_size(
-                    Text::new("Background", U8g2TextStyle::new(FONT_LARGE, PALETTE.surface_variant)),
+                    Text::new("Background", DefaultTextStyle::new(FONT_LARGE, PALETTE.surface_variant)),
                     Size::new(200, 150)
                 )
                 .with_fill(PALETTE.surface)
@@ -553,12 +643,12 @@ macro_rules! demo_widget {
                 // Create some text to overlay
                 let centered_text = Text::new(
                     "Centered",
-                    U8g2TextStyle::new(FONT_MED, PALETTE.primary)
+                    DefaultTextStyle::new(FONT_MED, PALETTE.primary)
                 ).with_alignment(embedded_graphics::text::Alignment::Center);
 
                 // Create a small icon-like widget positioned at top-right
                 let icon = Container::with_size(
-                    Text::new("!", U8g2TextStyle::new(FONT_SMALL, PALETTE.on_background)),
+                    Text::new("!", DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background)),
                     Size::new(20, 20)
                 )
                 .with_fill(PALETTE.error)
@@ -580,11 +670,11 @@ macro_rules! demo_widget {
 
                 // Create a column from a fixed-size array
                 let texts = [
-                    Text::new("First", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
-                    Text::new("Second", U8g2TextStyle::new(FONT_MED, PALETTE.tertiary)),
-                    Text::new("Third", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
-                    Text::new("Fourth", U8g2TextStyle::new(FONT_MED, PALETTE.tertiary)),
-                    Text::new("Fifth", U8g2TextStyle::new(FONT_MED, PALETTE.on_background)),
+                    Text::new("First", DefaultTextStyle::new(FONT_MED, PALETTE.on_background)),
+                    Text::new("Second", DefaultTextStyle::new(FONT_MED, PALETTE.tertiary)),
+                    Text::new("Third", DefaultTextStyle::new(FONT_MED, PALETTE.on_background)),
+                    Text::new("Fourth", DefaultTextStyle::new(FONT_MED, PALETTE.tertiary)),
+                    Text::new("Fifth", DefaultTextStyle::new(FONT_MED, PALETTE.on_background)),
                 ];
 
                 let widget = Column::new(texts)
@@ -610,8 +700,8 @@ macro_rules! demo_widget {
 
                 // Interactive demo that adds text widgets on touch
                 struct VecColumnDemo {
-                    texts: Vec<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>,
-                    switcher: Switcher<Align<Column<Vec<Text<u8g2_fonts::U8g2TextStyle<Rgb565>>>>>>,
+                    texts: Vec<Text>,
+                    switcher: Switcher<Align<Column<Vec<Text>>>>,
                     touch_count: usize,
                 }
 
@@ -621,7 +711,7 @@ macro_rules! demo_widget {
                         let mut texts = Vec::new();
                         texts.push(Text::new(
                             "Touch to add more!",
-                            U8g2TextStyle::new(FONT_MED, PALETTE.on_background)
+                            DefaultTextStyle::new(FONT_MED, PALETTE.on_background)
                         ));
 
                         // Create initial column
@@ -654,7 +744,7 @@ macro_rules! demo_widget {
                                 9 => "Ninth touch!",
                                 _ => "Many touches!",
                             },
-                            U8g2TextStyle::new(FONT_MED, PALETTE.tertiary)
+                            DefaultTextStyle::new(FONT_MED, PALETTE.tertiary)
                         ));
 
                         // Create NEW column with the updated vec (do not mutate existing!)
@@ -761,7 +851,7 @@ macro_rules! demo_widget {
                 let widget = AddressDisplay::new(address);
                 $run_macro!(widget);
             }
-            /*"standby" => {
+            "standby" => {
                 use $crate::Standby;
                 use frostsnap_core::{message::HeldShare, device::KeyPurpose, schnorr_fun::frost::SecretShare};
                 use bitcoin;
@@ -771,10 +861,10 @@ macro_rules! demo_widget {
                     access_structure_ref: None,
                     // ShareImage is just a Point, we can use a generator point for demo
                     share_image: {
-                        use secp256kfun::{Scalar, marker::*};
+                        use frostsnap_core::schnorr_fun::fun::prelude::*;
                         SecretShare {
                             index: Scalar::<Public, NonZero>::one(),
-                            share: Scalar::one(),
+                            share: Scalar::<Secret, Zero>::zero(),
                         }.share_image()
                     },
                     threshold: 2,
@@ -785,7 +875,7 @@ macro_rules! demo_widget {
                 let device_name = "Alice";
                 let widget = Standby::new(device_name, held_share);
                 $run_macro!(widget);
-            }*/
+            }
             "device_name_cursor" => {
                 use $crate::device_name::DeviceName;
 
@@ -803,8 +893,21 @@ macro_rules! demo_widget {
 
                 $run_macro!(screen_test);
             }
+            "multiline_string" => {
+                use $crate::text::Text;
+
+                let multiline_text = Text::new(
+                    "This is a\nmultiline\nstring      with\nGray4 font",
+                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background)
+                ).with_alignment(embedded_graphics::text::Alignment::Center);
+
+                let container = Container::new(multiline_text).with_border(PALETTE.primary, 2);
+                let widget = Center::new(container);
+
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, sign_test_message, array_column, vec_column, word_selector, address, screen_test", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, screen_test, multiline_string", $demo);
             }
         }
     };

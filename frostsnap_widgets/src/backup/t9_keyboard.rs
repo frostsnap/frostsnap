@@ -1,5 +1,6 @@
 use crate::palette::PALETTE;
 use crate::super_draw_target::SuperDrawTarget;
+use crate::DefaultTextStyle;
 use crate::{Key, KeyTouch, Widget, FONT_LARGE, FONT_SMALL};
 use alloc::string::String;
 use embedded_graphics::{
@@ -9,7 +10,6 @@ use embedded_graphics::{
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use frost_backup::bip39_words::ValidLetters;
-use u8g2_fonts::U8g2TextStyle;
 
 // T9 keyboard layout
 const T9_KEYS: [[&str; 3]; 3] = [
@@ -225,7 +225,7 @@ impl T9Keyboard {
             Text::with_text_style(
                 text,
                 rect.center(),
-                U8g2TextStyle::new(FONT_LARGE, text_color),
+                DefaultTextStyle::new(FONT_LARGE, text_color),
                 TextStyleBuilder::new()
                     .alignment(Alignment::Center)
                     .baseline(Baseline::Middle)
@@ -236,7 +236,7 @@ impl T9Keyboard {
             Text::with_text_style(
                 text,
                 rect.center(),
-                U8g2TextStyle::new(FONT_SMALL, text_color),
+                DefaultTextStyle::new(FONT_SMALL, text_color),
                 TextStyleBuilder::new()
                     .alignment(Alignment::Center)
                     .baseline(Baseline::Middle)
@@ -342,7 +342,7 @@ impl Widget for T9Keyboard {
                         Text::with_text_style(
                             char_str,
                             rect.center(),
-                            U8g2TextStyle::new(FONT_LARGE, PALETTE.on_primary_container),
+                            DefaultTextStyle::new(FONT_LARGE, PALETTE.on_primary_container),
                             TextStyleBuilder::new()
                                 .alignment(Alignment::Center)
                                 .baseline(Baseline::Middle)
