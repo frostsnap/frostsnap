@@ -1,15 +1,15 @@
 use crate::{
     coord_nonces::{NonceCache, NotEnoughNonces},
-    device::KeyPurpose,
+    device::{KeyPurpose, NONCE_BATCH_SIZE},
     map_ext::*,
-    message::*,
+    message::{signing::OpenNonceStreams, *},
     nonce_stream::{CoordNonceStreamState, NonceStreamId},
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
     CoordShareDecryptionContrib, DeviceId, Error, Gist, KeyId, KeygenId, Kind, MasterAppkey,
     MessageResult, RestorationId, SessionHash, ShareImage, SignItem, SignSessionId, SignTaskError,
-    WireSignTask, NONCE_BATCH_SIZE,
+    WireSignTask,
 };
 use alloc::{
     borrow::ToOwned,
@@ -1608,6 +1608,21 @@ impl NonceReplenishRequest {
             .values()
             .any(|streams| streams.iter().any(|stream| stream.remaining == 0))
     }
+
+    /// Convert to an iterator of (DeviceId, OpenNonceStreams)
+    pub fn into_open_nonce_streams(self) -> impl Iterator<Item = (DeviceId, OpenNonceStreams)> {
+        self.replenish_requests
+            .into_iter()
+            .map(|(device_id, streams)| (device_id, OpenNonceStreams { streams }))
+    }
+}
+
+impl From<OpenNonceStreams> for CoordinatorToDeviceMessage {
+    fn from(open: OpenNonceStreams) -> Self {
+        CoordinatorToDeviceMessage::Signing(
+            crate::message::signing::CoordinatorSigning::OpenNonceStreams(open),
+        )
+    }
 }
 
 impl IntoIterator for NonceReplenishRequest {
@@ -1617,9 +1632,7 @@ impl IntoIterator for NonceReplenishRequest {
         self.replenish_requests
             .into_iter()
             .map(|(device_id, streams)| CoordinatorSend::ToDevice {
-                message: CoordinatorToDeviceMessage::Signing(
-                    crate::message::signing::CoordinatorSigning::OpenNonceStreams { streams },
-                ),
+                message: OpenNonceStreams { streams }.into(),
                 destinations: [device_id].into(),
             })
             .collect::<Vec<_>>()
