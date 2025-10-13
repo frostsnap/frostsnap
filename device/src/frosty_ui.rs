@@ -349,13 +349,14 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             Workflow::DisplayAddress {
                 address,
                 bip32_path,
-                ..
+                rand_seed,
             } => {
-                use frostsnap_widgets::AddressWithPath;
+                use frostsnap_widgets::{AddressWithPath, Center};
 
-                // Create the address display widget
-                let address_display = AddressWithPath::new(address, bip32_path);
-                WidgetTree::AddressDisplay(Box::new(address_display))
+                // Create the address display widget with just the address index
+                let mut address_display = AddressWithPath::new(address, bip32_path.index);
+                address_display.set_rand_highlight(rand_seed);
+                WidgetTree::AddressDisplay(Box::new(Center::new(address_display)))
             }
 
             Workflow::FirmwareUpgrade(status) => {

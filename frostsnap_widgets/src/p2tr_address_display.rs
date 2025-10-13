@@ -8,25 +8,16 @@ use frostsnap_fonts::Gray4Font;
 const ADDRESS_FONT: &Gray4Font = FONT_HUGE_MONO;
 
 // Type alias for a row with three text chunks
-type AddressRow = Row<(Text, Text, Text)>;
+type AddressRow = Row<[Text; 3]>;
 
 /// A widget for displaying P2TR (Taproot) addresses in a specific format:
 /// - 1 row with the first chunk (grayed out)
 /// - 5 rows with 3 chunks each (4 chars per chunk)
 /// - Total: 62 characters displayed as 16 chunks
-#[derive(frostsnap_macros::Widget)]
+#[derive(Clone, frostsnap_macros::Widget)]
 pub struct P2trAddressDisplay {
     #[widget_delegate]
-    column: Column<
-        Box<(
-            Row<(Text,)>,
-            AddressRow,
-            AddressRow,
-            AddressRow,
-            AddressRow,
-            AddressRow,
-        )>,
-    >,
+    column: Column<Box<(Row<[Text; 1]>, Column<[AddressRow; 5]>)>>,
 }
 
 impl P2trAddressDisplay {
@@ -47,30 +38,65 @@ impl P2trAddressDisplay {
         let text_style = DefaultTextStyle::new(ADDRESS_FONT, PALETTE.on_surface);
 
         // First chunk on its own row (grayed out)
-        let type_indicator = Row::new((Text::new(chunks[0].clone(), text_style.clone()),));
+        let type_indicator = Row::new([Text::new(chunks[0].clone(), text_style.clone())]);
 
-        // Create an iterator that produces rows of 3 chunks each
-        let mut row_iter = chunks[1..].chunks(3).map(|row_chunks| {
-            Row::new((
-                Text::new(row_chunks[0].clone(), text_style.clone()),
-                Text::new(row_chunks[1].clone(), text_style.clone()),
-                Text::new(row_chunks[2].clone(), text_style.clone()),
-            ))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceAround)
-        });
+        // Create rows of 3 chunks each
+        let mut rows = Vec::new();
+        for row_chunks in chunks[1..].chunks(3) {
+            // Pad with empty text if needed (last row might have fewer than 3)
+            let mut texts = vec![];
+            for i in 0..3 {
+                if i < row_chunks.len() {
+                    texts.push(Text::new(row_chunks[i].clone(), text_style.clone()));
+                } else {
+                    texts.push(Text::new(String::new(), text_style.clone()));
+                }
+            }
+            let row: AddressRow = Row::new([texts[0].clone(), texts[1].clone(), texts[2].clone()])
+                .with_main_axis_alignment(MainAxisAlignment::SpaceAround);
+            rows.push(row);
+        }
 
-        // Create column with all rows
-        let column = Column::new(Box::new((
-            type_indicator,
-            row_iter.next().unwrap(),
-            row_iter.next().unwrap(),
-            row_iter.next().unwrap(),
-            row_iter.next().unwrap(),
-            row_iter.next().unwrap(),
-        )))
-        .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        // Convert Vec to array - we know we have exactly 5 rows
+        let address_rows: [AddressRow; 5] = rows
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected exactly 5 rows for P2TR address"));
+        let address_column = Column::new(address_rows);
+
+        // Create main column with type indicator and address rows
+        let column = Column::new(Box::new((type_indicator, address_column)));
 
         Self { column }
+    }
+
+    pub fn set_rand_highlight(&mut self, rand_highlight: u32) {
+        // Calculate highlight indices
+        let first_u16 = (rand_highlight & 0xFFFF) as u16;
+        let second_u16 = ((rand_highlight >> 16) & 0xFFFF) as u16;
+
+        let first_idx = (first_u16 % 14) as usize;
+        let second_idx = (second_u16 % 13) as usize;
+
+        // Adjust second index if it would collide with or be >= first
+        let second_idx = if second_idx >= first_idx {
+            second_idx + 1
+        } else {
+            second_idx
+        };
+
+        let highlight_style = DefaultTextStyle::new(ADDRESS_FONT, PALETTE.primary);
+
+        // Access the address rows through the box (skip the type indicator)
+        let address_column = &mut self.column.children.1;
+
+        // Update the highlighted chunks
+        for idx in [first_idx, second_idx] {
+            let row = idx / 3;
+            let col = idx % 3;
+
+            // Access the specific text widget and update its style
+            address_column.children[row].children[col].set_character_style(highlight_style.clone());
+        }
     }
 }
 

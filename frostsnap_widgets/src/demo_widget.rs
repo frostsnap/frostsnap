@@ -818,13 +818,15 @@ macro_rules! demo_widget {
                 use $crate::AddressWithPath;
                 use bitcoin::Address;
                 use core::str::FromStr;
+                use frostsnap_core::tweak::BitcoinBip32Path;
 
                 // Sample Bitcoin address with derivation path
-                let address_str = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
+                let address_str = "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297";
                 let address = Address::from_str(address_str).unwrap().assume_checked();
-                let derivation_path = "m/86'/0'/0'/0/0".to_string();
 
-                let widget = AddressWithPath::new(address, derivation_path);
+                let mut widget = AddressWithPath::new(address, 7);
+                // Set a random highlight using some arbitrary value
+                widget.set_rand_highlight(0x12345678);
                 $run_macro!(widget);
             }
             "taproot_address" => {
