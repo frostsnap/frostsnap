@@ -1745,6 +1745,7 @@ dependencies = [
  "bincode",
  "frostsnap_comms",
  "frostsnap_core",
+ "frostsnap_macros",
  "futures",
  "nusb",
  "rand",

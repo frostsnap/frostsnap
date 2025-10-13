@@ -420,3 +420,47 @@ fn generate_match_arms(
         })
         .collect()
 }
+
+#[proc_macro]
+pub fn hex(input: TokenStream) -> TokenStream {
+    let input_str = parse_macro_input!(input as syn::LitStr);
+    let hex_str = input_str.value();
+
+    let hex_str = hex_str.trim();
+
+    if hex_str.len() % 2 != 0 {
+        return syn::Error::new_spanned(
+            input_str,
+            format!(
+                "hex string must have even length, got {} characters",
+                hex_str.len()
+            ),
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let mut bytes = Vec::new();
+    for i in (0..hex_str.len()).step_by(2) {
+        let byte_str = &hex_str[i..i + 2];
+        match u8::from_str_radix(byte_str, 16) {
+            Ok(byte) => bytes.push(byte),
+            Err(_) => {
+                return syn::Error::new_spanned(
+                    input_str,
+                    format!("invalid hex digit in '{}'", byte_str),
+                )
+                .to_compile_error()
+                .into();
+            }
+        }
+    }
+
+    let byte_literals = bytes.iter().map(|b| quote!(#b));
+
+    let expanded = quote! {
+        [#(#byte_literals),*]
+    };
+
+    TokenStream::from(expanded)
+}

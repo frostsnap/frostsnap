@@ -332,23 +332,20 @@ impl VersionNumber {
 // digest-to-version system yet. Devices announced their full digest (including signature),
 // so signed and unsigned builds had different digests. Starting with future versions, we
 // should only track the firmware-only (deterministic) digest.
+use frostsnap_macros::hex;
 pub const KNOWN_FIRMWARE_VERSIONS: &[(Sha256Digest, VersionNumber)] = &[
     /*signed*/
     (
-        Sha256Digest([
-            0x57, 0x16, 0x1f, 0x80, 0xb4, 0x14, 0x13, 0xb1, 0x05, 0x3e, 0x27, 0x2f, 0x9c, 0x3d,
-            0xa8, 0xd1, 0x6e, 0xcf, 0xce, 0x44, 0x79, 0x33, 0x45, 0xbe, 0x69, 0xf7, 0xfe, 0x03,
-            0xd9, 0x3f, 0x4e, 0xb0,
-        ]),
+        Sha256Digest(hex!(
+            "57161f80b41413b1053e272f9c3da8d16ecfce44793345be69f7fe03d93f4eb0"
+        )),
         VersionNumber::new(0, 0, 1),
     ),
     /*unsigned*/
     (
-        Sha256Digest([
-            0x8f, 0x45, 0xae, 0x6b, 0x72, 0xc2, 0x41, 0xa2, 0x07, 0x98, 0xac, 0xbd, 0x3c, 0x6d,
-            0x3e, 0x54, 0x07, 0x1c, 0xae, 0x73, 0xe3, 0x35, 0xdf, 0x17, 0x85, 0xf2, 0xd4, 0x85,
-            0xa9, 0x15, 0xda, 0x4c,
-        ]),
+        Sha256Digest(hex!(
+            "8f45ae6b72c241a20798acbd3c6d3e54071cae73e335df1785f2d485a915da4c"
+        )),
         VersionNumber::new(0, 0, 1),
     ),
 ];
