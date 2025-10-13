@@ -193,7 +193,7 @@ impl ValidatedFirmwareBin {
 
         if is_signed {
             // Signed firmware MUST be in KNOWN_FIRMWARE_VERSIONS
-            VersionNumber::from_digest(&digest_with_signature).ok_or(
+            VersionNumber::from_digest(&firmware_only_digest).ok_or(
                 FirmwareValidationError::UnknownSignedFirmware {
                     digest: digest_with_signature,
                 },
