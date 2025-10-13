@@ -3,7 +3,6 @@ use embedded_graphics::prelude::*;
 use esp_hal::prelude::*;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
-use frostsnap_widgets::Center;
 use frostsnap_widgets::{
     backup::{BackupDisplay, EnterShareScreen},
     debug::OverlayDebug,
@@ -204,23 +203,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 }
                             }
                             frostsnap_core::SignTask::Test { message } => {
-                                use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
-                                use u8g2_fonts::U8g2TextStyle;
+                                use frostsnap_widgets::SignMessageConfirm;
 
-                                // Format the test message for display
-                                let prompt_text = format!("Sign test message:\n\n{}", message);
-
-                                let text_widget = Text::new(
-                                    prompt_text,
-                                    U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
-                                )
-                                .with_alignment(embedded_graphics::text::Alignment::Center);
-
-                                let hold_to_confirm =
-                                    HoldToConfirm::new(1000, Center::new(text_widget));
+                                let widget = Box::new(SignMessageConfirm::new(message.clone()));
 
                                 WidgetTree::SignTestPrompt {
-                                    widget: Box::new(hold_to_confirm),
+                                    widget,
                                     phase: Some(phase),
                                 }
                             }
@@ -431,7 +419,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             }
             WidgetTree::SignTestPrompt { widget, phase } => {
                 // Check if confirmed and we still have the phase
-                if widget.is_completed() {
+                if widget.is_confirmed() {
                     // Take the phase (move it out of the Option)
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });

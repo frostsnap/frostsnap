@@ -480,6 +480,14 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
+            "sign_test_message" => {
+                use $crate::SignMessageConfirm;
+
+                let test_message = "This is a very long test message that will be wrapped across multiple lines to demonstrate the StringWrap functionality and visual clipping in the container box.";
+                let widget = SignMessageConfirm::new(test_message.to_string());
+
+                $run_macro!(widget);
+            }
             "all_words" => {
                 use $crate::backup::AllWordsPage;
 
@@ -796,7 +804,7 @@ macro_rules! demo_widget {
                 $run_macro!(screen_test);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, screen_test", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in_fade_out, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, sign_test_message, array_column, vec_column, word_selector, address, screen_test", $demo);
             }
         }
     };
