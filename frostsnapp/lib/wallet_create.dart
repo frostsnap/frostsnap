@@ -630,9 +630,12 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
-              onPressed: device.needsFirmwareUpgrade()
-                  ? () async => await _upgradeController.run(parentCtx)
-                  : null,
+              onPressed: eligibility.when(
+                upToDate: () => null,
+                canUpgrade: () =>
+                    () async => await _upgradeController.run(parentCtx),
+                cannotUpgrade: (_) => null,
+              ),
             );
           },
         ),

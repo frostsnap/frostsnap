@@ -48,7 +48,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
   Widget _buildDevice(BuildContext context, ConnectedDevice device) {
     final theme = Theme.of(context);
     final homeCtx = HomeContext.of(context)!;
-    final needsUpgrade = device.needsFirmwareUpgrade();
+    final upgradeEligibility = device.firmwareUpgradeEligibility();
     final walletName = coord
         .frostKeysInvolvingDevice(deviceId: device.id)
         .map((key) => key.keyName())
@@ -82,8 +82,17 @@ class _DeviceListPageState extends State<DeviceListPage> {
           mainAxisSize: MainAxisSize.min,
           spacing: 8,
           children: [
-            if (needsUpgrade)
-              Icon(Icons.system_update_alt, color: theme.colorScheme.primary),
+            upgradeEligibility.when(
+              upToDate: () => SizedBox.shrink(),
+              canUpgrade: () => Icon(
+                Icons.system_update_alt,
+                color: theme.colorScheme.primary,
+              ),
+              cannotUpgrade: (reason) => Tooltip(
+                message: reason,
+                child: Icon(Icons.warning, color: theme.colorScheme.onSurface),
+              ),
+            ),
             Icon(Icons.chevron_right),
           ],
         ),
