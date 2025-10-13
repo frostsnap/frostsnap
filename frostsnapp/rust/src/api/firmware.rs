@@ -39,7 +39,7 @@ pub struct _FirmwareUpgradeConfirmState {
     pub confirmations: Vec<DeviceId>,
     pub devices: Vec<DeviceId>,
     pub need_upgrade: Vec<DeviceId>,
-    pub abort: bool,
+    pub abort: Option<String>,
     pub upgrade_ready_to_start: bool,
 }
 

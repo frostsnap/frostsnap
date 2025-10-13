@@ -1,4 +1,6 @@
-use crate::{Completion, FirmwareVersion, Sink, UiProtocol, ValidatedFirmwareBin};
+use crate::{
+    Completion, FirmwareUpgradeEligibility, FirmwareVersion, Sink, UiProtocol, ValidatedFirmwareBin,
+};
 
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage,
@@ -21,12 +23,22 @@ impl FirmwareUpgradeProtocol {
         firmware_bin: ValidatedFirmwareBin,
         sink: impl Sink<FirmwareUpgradeConfirmState> + 'static,
     ) -> Self {
+        // Check if any device has incompatible firmware
+        let abort_reason = devices.values().find_map(|fw| {
+            match firmware_bin.check_upgrade_eligibility(&fw.digest) {
+                FirmwareUpgradeEligibility::CannotUpgrade { reason } => {
+                    Some(format!("One of the devices is incompatible with the upgrade. Unplug it to continue. Problem: {reason}"))
+                }
+                _ => None,
+            }
+        });
+
         Self {
             state: FirmwareUpgradeConfirmState {
                 devices: devices.keys().copied().collect(),
                 need_upgrade: need_upgrade.into_iter().collect(),
                 confirmations: Default::default(),
-                abort: false,
+                abort: abort_reason,
                 upgrade_ready_to_start: false,
             },
             sent_first_message: false,
@@ -43,7 +55,7 @@ impl FirmwareUpgradeProtocol {
 
 impl UiProtocol for FirmwareUpgradeProtocol {
     fn cancel(&mut self) {
-        self.state.abort = true;
+        self.state.abort = Some("canceled".to_string());
         self.emit_state();
     }
 
@@ -52,7 +64,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
             == BTreeSet::from_iter(self.state.devices.iter())
         {
             Some(Completion::Success)
-        } else if self.state.abort {
+        } else if self.state.abort.is_some() {
             Some(Completion::Abort {
                 send_cancel_to_all_devices: true,
             })
@@ -63,7 +75,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
 
     fn disconnected(&mut self, id: DeviceId) {
         if self.devices.contains_key(&id) {
-            self.state.abort = true;
+            self.state.abort = Some("Device disconnected during upgrade".to_string());
             self.emit_state();
         }
     }
@@ -85,7 +97,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
 
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut to_devices = vec![];
-        if !self.sent_first_message {
+        if !self.sent_first_message && self.state.abort.is_none() {
             let any_device_needs_legacy = self
                 .devices
                 .values()
@@ -134,6 +146,6 @@ pub struct FirmwareUpgradeConfirmState {
     pub confirmations: Vec<DeviceId>,
     pub devices: Vec<DeviceId>,
     pub need_upgrade: Vec<DeviceId>,
-    pub abort: bool,
+    pub abort: Option<String>,
     pub upgrade_ready_to_start: bool,
 }

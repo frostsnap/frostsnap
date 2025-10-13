@@ -188,8 +188,25 @@ class DeviceActionUpgradeController with ChangeNotifier {
       for (final id in state.needUpgrade) {
         _dialogController.addActionNeeded(context, id);
       }
-      if (state.abort) {
+      if (state.abort != null) {
         await _dialogController.clearAllActionsNeeded();
+        if (context.mounted && state.abort != "canceled") {
+          await showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: Text('Upgrade Aborted'),
+                content: Text(state.abort!),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('OK'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
         return false;
       }
       if (state.upgradeReadyToStart) {
