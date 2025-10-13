@@ -1829,8 +1829,7 @@ class _CandidateReadyViewState extends State<_CandidateReadyView> {
 
                   // Handle completion
                   if (state != null) {
-                    final isComplete =
-                        state.receivedFrom.length == state.devices.length;
+                    final isComplete = state.isFinished();
                     if (isComplete) {
                       // Add a delay to show completion before proceeding
                       Future.delayed(Durations.long1, () async {
@@ -2269,7 +2268,7 @@ class _EnrollmentNonceDialogState extends State<_EnrollmentNonceDialog> {
 
         // Handle completion
         if (state != null && !_hasCompleted && !_hasErrored) {
-          final isComplete = state.receivedFrom.length == state.devices.length;
+          final isComplete = state.isFinished();
           if (isComplete) {
             _hasCompleted = true;
             // Add a delay to show the completion state before transitioning

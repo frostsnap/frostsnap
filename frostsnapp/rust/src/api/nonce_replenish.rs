@@ -8,8 +8,9 @@ use frostsnap_core::{coordinator::NonceReplenishRequest, DeviceId};
 
 #[frb(mirror(NonceReplenishState), unignore)]
 pub struct _NonceReplenishState {
-    pub received_from: HashSet<DeviceId>,
     pub devices: HashSet<DeviceId>,
+    pub completed_streams: u32,
+    pub total_streams: u32,
     pub abort: bool,
 }
 

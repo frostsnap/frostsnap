@@ -329,11 +329,12 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     ) -> MessageResult<Vec<DeviceSend>> {
         use CoordinatorToDeviceMessage::*;
         match message.clone() {
-            Signing(signing::CoordinatorSigning::OpenNonceStreams { streams }) => {
+            Signing(signing::CoordinatorSigning::OpenNonceStreams(open_nonce_stream)) => {
                 let mut tasks = vec![];
                 // we need to order prioritize streams that already exist since not getting a
                 // response to this message the coordinator will think that everything is ok.
-                let (existing, new): (Vec<_>, Vec<_>) = streams
+                let (existing, new): (Vec<_>, Vec<_>) = open_nonce_stream
+                    .streams
                     .iter()
                     .partition(|stream| self.nonce_slots.get(stream.stream_id).is_some());
                 let ordered_streams = existing
