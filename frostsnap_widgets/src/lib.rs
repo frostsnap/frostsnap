@@ -45,8 +45,8 @@ pub mod demo_widget;
 pub mod device_name;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
-pub mod fonts;
 pub mod fps;
+pub mod gray4_style;
 pub mod keygen_check;
 pub mod layout;
 pub mod p2tr_address_display;
@@ -118,10 +118,10 @@ pub use translate::*;
 pub use welcome::*;
 
 // Font re-exports
-use fonts::{
-    Gray4Font, Gray4TextStyle, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
-    NOTO_SANS_MONO_28_BOLD,
+use frostsnap_fonts::{
+    Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD, NOTO_SANS_MONO_28_BOLD,
 };
+use gray4_style::Gray4TextStyle;
 pub const FONT_HUGE_MONO: &Gray4Font = &NOTO_SANS_MONO_28_BOLD;
 pub const FONT_LARGE: &Gray4Font = &NOTO_SANS_24_BOLD;
 pub const FONT_MED: &Gray4Font = &NOTO_SANS_18_MEDIUM;

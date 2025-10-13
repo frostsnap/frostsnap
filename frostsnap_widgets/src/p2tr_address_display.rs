@@ -1,8 +1,8 @@
 use crate::{
-    fonts::Gray4Font, palette::PALETTE, text::Text, Column, DefaultTextStyle, MainAxisAlignment,
-    Row, FONT_HUGE_MONO,
+    palette::PALETTE, text::Text, Column, DefaultTextStyle, MainAxisAlignment, Row, FONT_HUGE_MONO,
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
+use frostsnap_fonts::Gray4Font;
 
 // Font for displaying addresses - uses monospace for better readability
 const ADDRESS_FONT: &Gray4Font = FONT_HUGE_MONO;

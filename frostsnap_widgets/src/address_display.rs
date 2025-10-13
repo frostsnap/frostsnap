@@ -1,7 +1,6 @@
 use crate::DefaultTextStyle;
 use crate::{
     any_of::AnyOf,
-    fonts::Gray4Font,
     layout::{Column, CrossAxisAlignment, MainAxisAlignment},
     p2tr_address_display::P2trAddressDisplay,
     palette::PALETTE,
@@ -13,6 +12,7 @@ use alloc::{
     string::{String, ToString},
 };
 use embedded_graphics::text::Alignment;
+use frostsnap_fonts::Gray4Font;
 use frostsnap_macros::Widget;
 
 // Font for displaying addresses - uses monospace for better readability

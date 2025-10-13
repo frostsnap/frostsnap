@@ -1,6 +1,7 @@
 //! Gray4 (4-bit, 16-level) anti-aliased font with minimal line height
-//! Generated from: NotoSansMono-Regular.ttf
+//! Generated from: NotoSansMono-Variable.ttf
 //! Size: 15px
+//! Weight: 400
 //! Characters: 95
 //! Line height: 16px (minimal - actual glyph bounds)
 

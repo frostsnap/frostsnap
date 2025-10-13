@@ -1,10 +1,10 @@
-use crate::fonts::Gray4Font;
 use crate::DefaultTextStyle;
 use crate::{
     layout::{MainAxisAlignment, Row},
     palette::PALETTE,
     text::Text,
 };
+use frostsnap_fonts::Gray4Font;
 
 /// A widget that displays a share index with "#" in secondary color and the number in primary
 #[derive(frostsnap_macros::Widget)]

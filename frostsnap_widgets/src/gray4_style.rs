@@ -1,5 +1,3 @@
-/// Gray4TextStyle - implements embedded_graphics TextRenderer for Gray4 fonts
-use super::gray4_font::{GlyphInfo, Gray4Font};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -11,6 +9,8 @@ use embedded_graphics::{
     },
     Drawable, Pixel,
 };
+/// Gray4TextStyle - implements embedded_graphics TextRenderer for Gray4 fonts
+use frostsnap_fonts::{GlyphInfo, Gray4Font};
 
 /// Pre-calculated color cache for all 16 gray levels
 #[derive(Clone, Copy, Debug, PartialEq)]

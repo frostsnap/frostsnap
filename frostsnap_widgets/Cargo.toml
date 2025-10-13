@@ -14,6 +14,7 @@ embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px", "96p
 micromath = "0.2"
 frost_backup = { workspace = true, features = [ "bincode" ] }
 frostsnap_core = { workspace = true }
+frostsnap_fonts = { workspace = true }
 frostsnap_macros = { path = "../macros" }
 bincode = { workspace = true }
 bitcoin = { workspace = true }

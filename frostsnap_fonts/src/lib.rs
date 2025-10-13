@@ -1,5 +1,8 @@
+#![no_std]
+
+// Core font types
 pub mod gray4_font;
-pub mod gray4_style;
+pub use gray4_font::{GlyphInfo, Gray4Font};
 
 // Font modules
 pub mod noto_sans_14_light;
@@ -13,10 +16,6 @@ pub mod noto_sans_mono_17_regular;
 pub mod noto_sans_mono_18_light;
 pub mod noto_sans_mono_24_bold;
 pub mod noto_sans_mono_28_bold;
-
-// Core types
-pub use gray4_font::{GlyphInfo, Gray4Font};
-pub use gray4_style::Gray4TextStyle;
 
 // Font exports
 pub use noto_sans_14_light::NOTO_SANS_14_LIGHT;

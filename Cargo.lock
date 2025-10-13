@@ -1883,6 +1883,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "frostsnap_fonts"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+]
+
+[[package]]
 name = "frostsnap_macros"
 version = "0.0.1"
 dependencies = [
@@ -1902,6 +1909,7 @@ dependencies = [
  "esp-alloc",
  "frost_backup",
  "frostsnap_core",
+ "frostsnap_fonts",
  "frostsnap_macros",
  "micromath 0.2.2",
  "proptest",

@@ -1,0 +1,4 @@
+venv/
+generated/*.rs
+__pycache__/
+*.pyc
