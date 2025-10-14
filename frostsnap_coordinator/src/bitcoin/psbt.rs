@@ -47,12 +47,6 @@ impl Persist<rusqlite::Connection> for Option<SignSessionPsbt> {
     where
         Self: Sized,
     {
-        // let mut stmt_by_ssid =
-        //     conn.prepare_cached("SELECT id, txid, psbt FROM fs_psbt WHERE id=:id")?;
-
-        // let mut stmt_by_txid =
-        //     conn.prepare_cached("SELECT id, txid, psbt FROM fs_psbt WHERE txid=:txid")?;
-
         let mut stmt: CachedStatement<'_>;
         let stmt_param_key: &str;
         let stmt_param_val: Box<dyn ToSql>;

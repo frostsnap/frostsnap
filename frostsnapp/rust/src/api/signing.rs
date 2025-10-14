@@ -19,6 +19,25 @@ use frostsnap_core::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// An outgoing Bitcoin transaction that has not been successfully broadcast.
+///
+/// May be signed or unsigned, but is guaranteed to have a signing session associated with it.
+#[derive(Debug, Clone)]
+#[frb]
+pub struct UnbroadcastedTx {
+    pub tx: Transaction,
+    pub session_id: SignSessionId,
+    /// Some for active (incomplete) sign sessions.
+    pub active_session: Option<ActiveSignSession>,
+}
+
+impl UnbroadcastedTx {
+    #[frb(sync)]
+    pub fn is_signed(&self) -> bool {
+        self.active_session.is_none()
+    }
+}
+
 #[derive(Debug, Clone)]
 #[frb(non_opaque)]
 pub enum SigningDetails {
@@ -260,12 +279,6 @@ impl UnsignedTx {
 }
 
 #[derive(Debug, Clone)]
-pub struct SignedTxDetails {
-    pub session_id: SignSessionId,
-    pub tx: Transaction,
-}
-
-#[derive(Debug, Clone)]
 pub struct SignedTx {
     pub signed_tx: RTransaction,
     pub unsigned_tx: UnsignedTx,
@@ -355,63 +368,64 @@ impl Coordinator {
     #[frb(sync)]
     pub fn unbroadcasted_txs(
         &self,
-        super_wallet: &SuperWallet,
-        key_id: KeyId,
-    ) -> Vec<SignedTxDetails> {
+        s_wallet: &SuperWallet,
+        master_appkey: MasterAppkey,
+    ) -> Vec<UnbroadcastedTx> {
+        let key_id = master_appkey.key_id();
         let coord = self.0.inner();
-        let super_wallet = super_wallet.inner.lock().unwrap();
-        let txs = coord
+
+        let s_wallet = &mut *s_wallet.inner.lock().unwrap();
+        let canonical_txids = s_wallet
+            .list_transactions(master_appkey)
+            .into_iter()
+            .map(|tx| tx.txid)
+            .collect::<HashSet<bitcoin::Txid>>();
+
+        let unsigned_txs = coord
+            .active_signing_sessions()
+            .filter(|session| session.key_id == key_id)
+            .filter_map(|session| {
+                let sign_task = &session.init.group_request.sign_task;
+                match sign_task {
+                    WireSignTask::BitcoinTransaction(tx_temp) => {
+                        let tx = Transaction::from_template(tx_temp);
+                        let session_id = session.session_id();
+                        Some(UnbroadcastedTx {
+                            tx,
+                            session_id,
+                            active_session: Some(session),
+                        })
+                    }
+                    _ => None,
+                }
+            });
+
+        let unbroadcasted_txs = coord
             .finished_signing_sessions()
             .iter()
             .filter(|(_, session)| session.key_id == key_id)
-            .filter_map(|(_, session)| match &session.init.group_request.sign_task {
-                WireSignTask::BitcoinTransaction(tx_temp) => {
-                    let mut raw_tx = tx_temp.to_rust_bitcoin_tx();
-                    let txid = raw_tx.compute_txid();
-                    // Filter out txs that are already broadcasted.
-                    if super_wallet.get_tx(txid).is_some() {
-                        return None;
+            .filter_map(
+                |(&session_id, session)| match &session.init.group_request.sign_task {
+                    WireSignTask::BitcoinTransaction(tx_temp) => {
+                        let mut tx = Transaction::from_template(tx_temp);
+                        tx.fill_signatures(&session.signatures);
+                        Some(UnbroadcastedTx {
+                            tx,
+                            session_id,
+                            active_session: None,
+                        })
                     }
-                    for (txin, signature) in raw_tx.input.iter_mut().zip(&session.signatures) {
-                        let schnorr_sig = bitcoin::taproot::Signature {
-                            signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
-                                &signature.0,
-                            )
-                            .unwrap(),
-                            sighash_type: bitcoin::sighash::TapSighashType::Default,
-                        };
-                        let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-                        txin.witness = witness;
-                    }
-                    let is_mine = tx_temp
-                        .iter_locally_owned_inputs()
-                        .map(|(_, _, spk)| spk.spk())
-                        .chain(
-                            tx_temp
-                                .iter_locally_owned_outputs()
-                                .map(|(_, _, spk)| spk.spk()),
-                        )
-                        .collect::<HashSet<_>>();
-                    let prevouts = tx_temp
-                        .inputs()
-                        .iter()
-                        .map(|input| (input.outpoint(), input.txout()))
-                        .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-                    Some(SignedTxDetails {
-                        session_id: session.init.group_request.session_id(),
-                        tx: Transaction {
-                            inner: raw_tx,
-                            txid: txid.to_string(),
-                            confirmation_time: None,
-                            last_seen: None,
-                            prevouts,
-                            is_mine,
-                        },
-                    })
-                }
-                _ => None,
-            });
-        txs.collect()
+                    _ => None,
+                },
+            );
+
+        unsigned_txs
+            .chain(unbroadcasted_txs)
+            .filter(move |uncanonical_tx| {
+                let txid = uncanonical_tx.tx.raw_txid();
+                !canonical_txids.contains(&txid)
+            })
+            .collect()
     }
 
     #[frb(sync)]
