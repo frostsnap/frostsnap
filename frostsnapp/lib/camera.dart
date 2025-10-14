@@ -1,9 +1,11 @@
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api/qr.dart';
+import 'package:frostsnap/camera_linux.dart';
 
 class QrScanner<T> extends StatefulWidget {
   final String title;
@@ -157,15 +159,31 @@ class _QrScannerState<T> extends State<QrScanner<T>> {
   }
 }
 
-// PSBT-specific scanner with progress overlay
-class PsbtCameraReader extends StatefulWidget {
+// Platform-aware PSBT camera reader
+class PsbtCameraReader extends StatelessWidget {
   const PsbtCameraReader({super.key});
 
+  // Use flutter_lite_camera on Linux/Windows, mobile_scanner elsewhere
+  static bool get _useDesktopCamera => Platform.isLinux || Platform.isWindows;
+
   @override
-  State<PsbtCameraReader> createState() => _PsbtCameraReaderState();
+  Widget build(BuildContext context) {
+    if (_useDesktopCamera) {
+      return const LinuxPsbtCameraReader();
+    }
+    return const _MobilePsbtCameraReader();
+  }
 }
 
-class _PsbtCameraReaderState extends State<PsbtCameraReader> {
+// PSBT-specific scanner with progress overlay (for mobile/macOS/web)
+class _MobilePsbtCameraReader extends StatefulWidget {
+  const _MobilePsbtCameraReader();
+
+  @override
+  State<_MobilePsbtCameraReader> createState() => _MobilePsbtCameraReaderState();
+}
+
+class _MobilePsbtCameraReaderState extends State<_MobilePsbtCameraReader> {
   final qrReader = QrReader();
   double progress = 0.0;
 
@@ -255,8 +273,24 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
   }
 }
 
+// Platform-aware address scanner
 class AddressScanner extends StatelessWidget {
   const AddressScanner({super.key});
+
+  // Use flutter_lite_camera on Linux/Windows, mobile_scanner elsewhere
+  static bool get _useDesktopCamera => Platform.isLinux || Platform.isWindows;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_useDesktopCamera) {
+      return const LinuxAddressScanner();
+    }
+    return const _MobileAddressScanner();
+  }
+}
+
+class _MobileAddressScanner extends StatelessWidget {
+  const _MobileAddressScanner();
 
   Future<String?> _handleAddressDetection(BarcodeCapture capture) async {
     if (capture.barcodes.isNotEmpty) {

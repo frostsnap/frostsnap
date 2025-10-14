@@ -307,6 +307,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.0.0"
+  flutter_lite_camera:
+    dependency: "direct main"
+    description:
+      name: flutter_lite_camera
+      sha256: "511531afa9cd82de77d6f46ca9ecfae062f1d1c25c7c4651eb6cf4879a93277a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.2"
   flutter_native_splash:
     dependency: "direct dev"
     description:
