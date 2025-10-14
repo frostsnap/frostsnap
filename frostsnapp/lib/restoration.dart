@@ -564,15 +564,24 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         break;
       case RecoveryFlowStep.waitPhysicalBackupDevice:
         child = _PlugInBlankView(
+          error: error,
           onBlankDeviceConnected: (device) {
+            final eligibility = device.firmwareUpgradeEligibility();
             setState(() {
               _setTargetDevice(device);
-              // Check if firmware upgrade is needed
-              if (device.needsFirmwareUpgrade()) {
-                currentStep = RecoveryFlowStep.firmwareUpgrade;
-              } else {
-                currentStep = RecoveryFlowStep.enterDeviceName;
-              }
+              eligibility.when(
+                canUpgrade: () {
+                  error = null;
+                  currentStep = RecoveryFlowStep.firmwareUpgrade;
+                },
+                upToDate: () {
+                  error = null;
+                  currentStep = RecoveryFlowStep.enterDeviceName;
+                },
+                cannotUpgrade: (reason) {
+                  error = 'Incompatible firmware: $reason';
+                },
+              );
             });
           },
         );
@@ -1084,8 +1093,9 @@ class _ChooseMethodView extends StatelessWidget with _TitledWidget {
 
 class _PlugInBlankView extends StatefulWidget with _TitledWidget {
   final Function(ConnectedDevice)? onBlankDeviceConnected;
+  final String? error;
 
-  const _PlugInBlankView({this.onBlankDeviceConnected});
+  const _PlugInBlankView({this.onBlankDeviceConnected, this.error});
 
   @override
   State<_PlugInBlankView> createState() => _PlugInBlankViewState();
@@ -1185,14 +1195,35 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
   Widget build(BuildContext context) {
     final List<Widget> children;
     final theme = Theme.of(context);
-    if (_connectedDevice != null && _connectedDevice!.name != null) {
+    if (widget.error != null) {
+      children = [
+        MaterialDialogCard(
+          iconData: Icons.warning_rounded,
+          backgroundColor: theme.colorScheme.errorContainer,
+          textColor: theme.colorScheme.onErrorContainer,
+          iconColor: theme.colorScheme.onErrorContainer,
+          variantTextColor: theme.colorScheme.onErrorContainer,
+          title: Text('Incompatible Firmware'),
+          content: Text(widget.error!),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Close'),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.onErrorContainer,
+              ),
+            ),
+          ],
+        ),
+      ];
+    } else if (_connectedDevice != null && _connectedDevice!.name != null) {
       var name = _connectedDevice!.name!;
       children = [
         MaterialDialogCard(
           iconData: Icons.warning_rounded,
           title: Text('Device not blank'),
           content: Text(
-            'This device already has data on it. To load a physical backup, it must be erased. Erasing will permanently delete all keys on “${name}”.',
+            'This device already has data on it. To load a physical backup, it must be erased. Erasing will permanently delete all keys on "${name}".',
           ),
           actions: [
             FilledButton.icon(
@@ -1201,7 +1232,7 @@ class _PlugInBlankViewState extends State<_PlugInBlankView> {
                 foregroundColor: theme.colorScheme.onError,
               ),
               icon: Icon(Icons.delete),
-              label: Text("Erase “$name”"),
+              label: Text('Erase "$name"'),
               onPressed: () {
                 showEraseDialog(context, _connectedDevice!.id);
               },

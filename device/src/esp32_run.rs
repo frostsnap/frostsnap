@@ -104,10 +104,9 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
 
     // Get active firmware information
     let active_partition = ota_partitions.active_partition();
-    let (_firmware_size, firmware_and_signature_block_size) =
+    let (firmware_size, _firmware_and_signature_block_size) =
         active_partition.firmware_size().unwrap();
-    let active_firmware_digest =
-        active_partition.sha256_digest(sha256, Some(firmware_and_signature_block_size));
+    let active_firmware_digest = active_partition.sha256_digest(sha256, Some(firmware_size));
 
     let device_id = signer.device_id();
 
@@ -400,6 +399,17 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 }
                 CoordinatorSendBody::Upgrade(upgrade_message) => match upgrade_message {
                     CoordinatorUpgradeMessage::PrepareUpgrade {
+                        size,
+                        firmware_digest,
+                    } => {
+                        let upgrade_ = ota_partitions.start_upgrade(
+                            *size,
+                            *firmware_digest,
+                            active_firmware_digest,
+                        );
+                        upgrade = Some(upgrade_);
+                    }
+                    CoordinatorUpgradeMessage::PrepareUpgrade2 {
                         size,
                         firmware_digest,
                     } => {

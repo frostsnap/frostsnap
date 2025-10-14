@@ -64,16 +64,26 @@ class DeviceActionUpgradeController with ChangeNotifier {
 
     _dialogController = FullscreenActionDialogController(
       title: 'Upgrade Firmware',
-      body: (context) => Card(
-        margin: EdgeInsets.zero,
-        child: ListTile(
-          title: Text('New Firmware Digest'),
-          subtitle: Text(
-            coord.upgradeFirmwareDigest() ?? '',
-            style: monospaceTextStyle,
+      body: (context) {
+        final versionName = coord.upgradeFirmwareVersionName() ?? '';
+        return Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            title: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: 'New Firmware '),
+                  TextSpan(text: versionName, style: monospaceTextStyle),
+                ],
+              ),
+            ),
+            subtitle: Text(
+              coord.upgradeFirmwareDigest() ?? '',
+              style: monospaceTextStyle.copyWith(fontSize: 11),
+            ),
           ),
-        ),
-      ),
+        );
+      },
       actionButtons: [
         StreamBuilder(
           stream: replayStream,
@@ -178,8 +188,25 @@ class DeviceActionUpgradeController with ChangeNotifier {
       for (final id in state.needUpgrade) {
         _dialogController.addActionNeeded(context, id);
       }
-      if (state.abort) {
+      if (state.abort != null) {
         await _dialogController.clearAllActionsNeeded();
+        if (context.mounted && state.abort != "canceled") {
+          await showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: Text('Upgrade Aborted'),
+                content: Text(state.abort!),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('OK'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
         return false;
       }
       if (state.upgradeReadyToStart) {
@@ -212,10 +239,20 @@ class DeviceActionUpgradeController with ChangeNotifier {
                 ? Card(
                     margin: EdgeInsets.zero,
                     child: ListTile(
-                      title: Text('Upgraded to Latest Firmware'),
+                      title: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(text: 'Upgraded to Firmware '),
+                            TextSpan(
+                              text: coord.upgradeFirmwareVersionName() ?? '',
+                              style: monospaceTextStyle,
+                            ),
+                          ],
+                        ),
+                      ),
                       subtitle: Text(
                         coord.upgradeFirmwareDigest() ?? '',
-                        style: monospaceTextStyle,
+                        style: monospaceTextStyle.copyWith(fontSize: 11),
                       ),
                     ),
                   )

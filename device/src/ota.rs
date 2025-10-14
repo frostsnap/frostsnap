@@ -410,21 +410,40 @@ impl FirmwareUpgradeMode<'_> {
             ota_slot,
             expected_digest,
             ota,
-            size,
             ..
         } = &self
         {
             let partition = &ota.ota_partitions()[*ota_slot];
-            let (_firmware_size, firmware_and_signature_block_size) =
+            let (firmware_size, firmware_and_signature_block_size) =
                 partition.firmware_size().unwrap();
-            assert_eq!(*size, firmware_and_signature_block_size);
 
-            let digest = partition.sha256_digest(sha, Some(firmware_and_signature_block_size));
-            if digest != *expected_digest {
-                panic!(
-                    "upgrade downloaded did not match intended digest. \nGot:\n{digest}\nExpected:\n{}",
-                    expected_digest
+            // Verify firmware digest - we accept BOTH digest types:
+            //
+            // 1. Deterministic firmware digest (PrepareUpgrade2): Hash of firmware only,
+            //    excluding padding and signature block. Displayed on device screen so users
+            //    can verify it matches their locally-built reproducible firmware.
+            //
+            // 2. Legacy full digest (PrepareUpgrade): Hash of entire signed firmware including
+            //    padding and signature block. Used by v0.0.1 and earlier coordinators.
+            //
+            // Why accept both?
+            // - SHA256 collision resistance (~2^-256) makes accidental matches impossible
+            // - Simplifies code - no need to track which message variant was received
+            // - Provides backwards compatibility with older coordinators
+            // - Allows graceful fallback if coordinator sends wrong digest type
+            //
+            // See frostsnap_comms::CoordinatorUpgradeMessage for protocol documentation.
+
+            let digest_without_signature = partition.sha256_digest(sha, Some(firmware_size));
+            if digest_without_signature != *expected_digest {
+                let digest_with_signature =
+                    partition.sha256_digest(sha, Some(firmware_and_signature_block_size));
+                if digest_with_signature != *expected_digest {
+                    panic!(
+                    "upgrade downloaded did not match intended digest.\n\nGot:\n{}\n\nExpected:\n{}\n\n(Legacy:\n{})",
+                    digest_without_signature, expected_digest, digest_with_signature
                 );
+                }
             }
 
             if secure_boot::is_secure_boot_enabled() {

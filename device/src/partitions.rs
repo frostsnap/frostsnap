@@ -1,9 +1,9 @@
-use crate::firmware_size::FirmwareSizeError;
 use crate::ota::OtaPartitions;
 use core::cell::RefCell;
 use embedded_storage::nor_flash::NorFlash;
 use esp_hal::sha::Sha;
 use esp_storage::FlashStorage;
+use frostsnap_comms::firmware_reader::FirmwareSizeError;
 use frostsnap_comms::Sha256Digest;
 use frostsnap_embedded::FlashPartition;
 
@@ -134,6 +134,6 @@ impl PartitionExt for EspFlashPartition<'_> {
     }
 
     fn firmware_size(&self) -> Result<(u32, u32), FirmwareSizeError> {
-        crate::firmware_size::firmware_size(self)
+        frostsnap_comms::firmware_reader::firmware_size(self)
     }
 }
