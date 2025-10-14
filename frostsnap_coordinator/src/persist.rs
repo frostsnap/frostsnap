@@ -262,8 +262,6 @@ pub struct SqlPsbt(pub bdk_chain::bitcoin::Psbt);
 impl FromSql for SqlPsbt {
     fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
         use bdk_chain::bitcoin::Psbt;
-        let bytes = value.as_bytes()?;
-        println!("PSBT size: {}", bytes.len());
         let psbt =
             Psbt::deserialize(value.as_bytes()?).map_err(|e| FromSqlError::Other(Box::new(e)))?;
         Ok(SqlPsbt(psbt))

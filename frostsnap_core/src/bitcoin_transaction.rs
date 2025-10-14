@@ -244,6 +244,13 @@ impl TransactionTemplate {
             .filter_map(|(i, output)| Some((i, output, output.owner.local_owner()?)))
     }
 
+    /// Returns true if this transaction has any inputs that need signing by this wallet.
+    pub fn has_any_inputs_to_sign(&self) -> bool {
+        self.inputs
+            .iter()
+            .any(|input| input.owner.local_owner().is_some())
+    }
+
     pub fn fee(&self) -> Option<u64> {
         self.inputs
             .iter()

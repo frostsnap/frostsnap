@@ -537,16 +537,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
       value: amount,
       feerate: feerate,
     );
-    unsignedTxFut.then(
-      (unsignedTx) {
-        this.unsignedTx = unsignedTx;
-        nextPageOrPop(null);
-      },
-      onError: (e) => amountModel.customError = e.toString().replaceFirst(
-        'FrbAnyhowException(',
-        '',
-      ),
-    );
+    unsignedTxFut.then((unsignedTx) {
+      this.unsignedTx = unsignedTx;
+      nextPageOrPop(null);
+    }, onError: (e) => amountModel.customError = e.toString());
   }
 
   recipientDone(BuildContext context) {
