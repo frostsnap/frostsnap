@@ -12,6 +12,7 @@ import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
+import 'package:rxdart/rxdart.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
@@ -174,6 +175,18 @@ class WalletContext extends InheritedWidget {
   MasterAppkey get masterAppkey => wallet.masterAppkey;
   KeyId get keyId => wallet.masterAppkey.keyId();
   BitcoinNetwork get network => wallet.superWallet.network;
+
+  /// Stream that emits the count of unbroadcasted transactions. Recomputes
+  /// whenever signing sessions change OR tx state changes (canonicalization)
+  /// because canonicalized txs can actually effect what we consider broadcasted
+  /// if another app broadcasts it for example.
+  Stream<int> unbroadcastedTxCount() {
+    return Rx.merge([signingSessionSignals, txStream.map((_) => null)]).map(
+      (_) => coord
+          .unbroadcastedTxs(sWallet: superWallet, masterAppkey: masterAppkey)
+          .length,
+    );
+  }
 }
 
 class KeyContext extends InheritedWidget {
@@ -232,24 +245,4 @@ class HomeContext extends InheritedWidget {
 
   @override
   bool updateShouldNotify(covariant InheritedWidget oldWidget) => false;
-}
-
-// Context that informs whether we should be able to create a new transaction.
-//
-// The currently policy is we only allow 1 uncanonical outgoing transaction at a time.
-class OutgoingCountContext extends InheritedWidget {
-  final ValueNotifier<int> _canCreate;
-
-  const OutgoingCountContext({
-    super.key,
-    required canCreate,
-    required super.child,
-  }) : _canCreate = canCreate;
-
-  static ValueNotifier<int>? of(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<OutgoingCountContext>()
-      ?._canCreate;
-
-  @override
-  bool updateShouldNotify(covariant InheritedWidget _oldWidget) => false;
 }

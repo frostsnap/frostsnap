@@ -320,7 +320,6 @@ class _TxListState extends State<TxList> {
   @override
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
-    final canCreate = OutgoingCountContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
     final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
@@ -425,11 +424,6 @@ class _TxListState extends State<TxList> {
                     );
                   }
                 });
-
-            // Avoid marking for rebuild while already rebuilding.
-            WidgetsBinding.instance.addPostFrameCallback(
-              (_) => canCreate.value = unbroadcastedTiles.length,
-            );
 
             return SliverVisibility(
               visible: unbroadcastedTiles.isNotEmpty,
@@ -696,7 +690,6 @@ class WalletBottomBar extends StatelessWidget {
     final walletCtx = WalletContext.of(context);
     // final fsCtx = FrostsnapContext.of(context)!;
     if (walletCtx == null) return SizedBox();
-    final outgoingCount = OutgoingCountContext.of(context)!;
 
     final theme = Theme.of(context);
 
@@ -733,9 +726,11 @@ class WalletBottomBar extends StatelessWidget {
       style: textButtonStyle,
     );
 
-    final sendButton = ValueListenableBuilder(
-      valueListenable: outgoingCount,
-      builder: (context, value, _) {
+    final sendButton = StreamBuilder<int>(
+      stream: walletCtx.unbroadcastedTxCount(),
+      initialData: 0,
+      builder: (context, snapshot) {
+        final value = snapshot.data ?? 0;
         final button = TextButton.icon(
           onPressed: () async => await showPickOutgoingTxDialog(context),
           label: value == 0 ? Text('Send') : Text('Continue'),
