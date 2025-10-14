@@ -173,6 +173,11 @@ impl<W: Widget> crate::DynWidget for Align<W> {
         let constraints = self.constraints.unwrap();
         let child_sizing = self.child.sizing();
 
+        // The dirty rect is where the child actually draws, offset by the alignment position
+        let mut child_dirty = child_sizing.dirty_rect();
+        child_dirty.top_left += self.child_rect.top_left;
+        let dirty_rect = Some(child_dirty);
+
         // Only expand when alignment requires it
         crate::Sizing {
             width: match self.horizontal {
@@ -183,6 +188,7 @@ impl<W: Widget> crate::DynWidget for Align<W> {
                 VerticalAlignment::Top => child_sizing.height,
                 _ => constraints.height,
             },
+            dirty_rect,
         }
     }
 

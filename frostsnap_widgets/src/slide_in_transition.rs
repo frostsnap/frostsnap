@@ -176,7 +176,7 @@ impl<T: Widget<Color = Rgb565>> Widget for SlideInTransition<T> {
 
         if let Some(ref mut current) = self.current {
             if current.is_faded_out() {
-                current.start_fade_in(self.transition_duration_ms, 10);
+                current.start_fade_in(self.transition_duration_ms);
             }
 
             current.draw(target, current_time)?;

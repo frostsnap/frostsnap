@@ -1,3 +1,4 @@
+use crate::DISPLAY_REFRESH_MS;
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::prelude::*;
 use esp_hal::prelude::*;
@@ -65,11 +66,7 @@ impl<'a> FrostyUi<'a> {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
-        let root_widget = RootWidget::new(
-            WidgetTree::Welcome(Box::new(Welcome::new())),
-            200,
-            PALETTE.background,
-        );
+        let root_widget = RootWidget::new(WidgetTree::Welcome(Box::new(Welcome::new())), 200);
         let debug_config = EnabledDebug {
             logs: cfg!(feature = "debug_log"),
             memory: cfg!(feature = "debug_mem"),
@@ -234,16 +231,32 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         }
                     }
                     Prompt::DisplayBackupRequest { phase } => {
-                        use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
-                        use u8g2_fonts::U8g2TextStyle;
+                        use frostsnap_widgets::DefaultTextStyle;
+                        use frostsnap_widgets::{
+                            Center, Column, HoldToConfirm, MainAxisAlignment, Text, FONT_LARGE,
+                            FONT_MED,
+                        };
 
                         // Create text for the prompt
                         let key_name = &phase.key_name;
-                        let prompt_text = Text::new(
-                            format!("Display backup\nfor\n{}", key_name),
-                            U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
-                        )
-                        .with_alignment(embedded_graphics::text::Alignment::Center);
+                        let prompt_text = Center::new(
+                            Column::builder()
+                                .push(Text::new(
+                                    "Display backup",
+                                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
+                                ))
+                                .gap(5)
+                                .push(Text::new(
+                                    "for",
+                                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
+                                ))
+                                .gap(20)
+                                .push(Text::new(
+                                    key_name.clone(),
+                                    DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
+                                ))
+                                .with_main_axis_alignment(MainAxisAlignment::Center),
+                        );
 
                         // Create HoldToConfirm widget with 2 second hold time
                         let hold_to_confirm =
@@ -256,8 +269,8 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         }
                     }
                     Prompt::NewName { old_name, new_name } => {
+                        use frostsnap_widgets::DefaultTextStyle;
                         use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
-                        use u8g2_fonts::U8g2TextStyle;
 
                         // Create text for the prompt
                         let prompt_text = if let Some(old_name) = old_name {
@@ -268,7 +281,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
 
                         let text_widget = Text::new(
                             prompt_text,
-                            U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+                            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
                         )
                         .with_alignment(embedded_graphics::text::Alignment::Center);
 
@@ -282,14 +295,14 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         }
                     }
                     Prompt::WipeDevice => {
+                        use frostsnap_widgets::DefaultTextStyle;
                         use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
-                        use u8g2_fonts::U8g2TextStyle;
 
                         // Create warning text for device wipe
                         let prompt_text = "WARNING!\n\nErase all data?\n\nHold to confirm";
 
                         let text_widget =
-                            Text::new(prompt_text, U8g2TextStyle::new(FONT_MED, PALETTE.error))
+                            Text::new(prompt_text, DefaultTextStyle::new(FONT_MED, PALETTE.error))
                                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
                         // Create HoldToConfirm widget with 3 second hold time for wipe
@@ -336,13 +349,14 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             Workflow::DisplayAddress {
                 address,
                 bip32_path,
-                ..
+                rand_seed,
             } => {
-                use frostsnap_widgets::AddressWithPath;
+                use frostsnap_widgets::{AddressWithPath, Center};
 
-                // Create the address display widget
-                let address_display = AddressWithPath::new(address, bip32_path);
-                WidgetTree::AddressDisplay(Box::new(address_display))
+                // Create the address display widget with just the address index
+                let mut address_display = AddressWithPath::new(address, bip32_path.index);
+                address_display.set_rand_highlight(rand_seed);
+                WidgetTree::AddressDisplay(Box::new(Center::new(address_display)))
             }
 
             Workflow::FirmwareUpgrade(status) => {
@@ -380,15 +394,14 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             now_ms,
         );
 
-        // Only redraw if at least 10ms has passed since last redraw
+        // Only redraw if enough time has passed since last redraw
         let elapsed_ms = (now - self.last_redraw_time).to_millis();
-        if elapsed_ms >= 5 {
+        if elapsed_ms >= DISPLAY_REFRESH_MS {
+            // Update last redraw time
+            self.last_redraw_time = now;
             // Draw the widget tree
             // Draw the UI stack (includes debug stats overlay)
             let _ = self.widget.draw(&mut self.display, now_ms);
-
-            // Update last redraw time
-            self.last_redraw_time = now;
         }
 
         // Check widget states and generate UI events

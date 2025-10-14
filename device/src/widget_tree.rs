@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use embedded_graphics::pixelcolor::Rgb565;
 use frostsnap_core::device::{
     restoration::{BackupDisplayPhase, EnterBackupPhase},
     KeyGenPhase3, SignPhase1,
@@ -7,13 +6,17 @@ use frostsnap_core::device::{
 use frostsnap_widgets::{
     backup::{BackupDisplay, EnterShareScreen},
     keygen_check::KeygenCheck,
+    layout::*,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm,
     SignMessageConfirm, Standby, Text, Welcome,
 };
-use u8g2_fonts::U8g2TextStyle;
 
 use crate::ui::FirmwareUpgradeStatus;
+
+// Type alias for the backup request prompt widget
+type BackupRequestPromptWidget =
+    HoldToConfirm<Center<frostsnap_widgets::Column<(Text, Text, Text)>>>;
 
 /// The widget tree represents the current UI state as a tree of widgets
 #[derive(frostsnap_macros::Widget)]
@@ -62,19 +65,19 @@ pub enum WidgetTree {
 
     /// Display backup request prompt
     DisplayBackupRequestPrompt {
-        widget: Box<HoldToConfirm<Text<U8g2TextStyle<Rgb565>>>>,
+        widget: Box<BackupRequestPromptWidget>,
         phase: Option<Box<BackupDisplayPhase>>,
     },
 
     /// New name confirmation prompt
     NewNamePrompt {
-        widget: Box<HoldToConfirm<Text<U8g2TextStyle<Rgb565>>>>,
+        widget: Box<HoldToConfirm<Text>>,
         new_name: Option<frostsnap_comms::DeviceName>,
     },
 
     /// Device wipe confirmation prompt  
     WipeDevicePrompt {
-        widget: Box<HoldToConfirm<Text<U8g2TextStyle<Rgb565>>>>,
+        widget: Box<HoldToConfirm<Text>>,
         confirmed: bool,
     },
 
@@ -82,7 +85,7 @@ pub enum WidgetTree {
     DisplayBackup(Box<BackupDisplay>),
 
     /// Display Bitcoin address screen with derivation path
-    AddressDisplay(Box<frostsnap_widgets::AddressWithPath>),
+    AddressDisplay(Box<Center<frostsnap_widgets::AddressWithPath>>),
 
     /// Enter backup screen
     EnterBackup {

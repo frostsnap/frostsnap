@@ -1,7 +1,7 @@
 import 'fetch.just'
 
 default_board := "dev"
-ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_factory -p frostsnap_widgets -p frost_backup -p frostsnap_macros"
+ordinary_crates := "-p frostsnap_core -p frostsnap_coordinator -p frostsnap_comms -p rust_lib_frostsnapp -p frostsnap_embedded -p frostsnap_macros -p frostsnap_factory -p frostsnap_widgets -p frost_backup -p frostsnap_macros -p frostsnap_fonts"
 device_crates := "-p frostsnap_device -p frostsnap_cst816s"
 
 alias erase := erase-device

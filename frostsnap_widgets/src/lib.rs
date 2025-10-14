@@ -46,6 +46,7 @@ pub mod device_name;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
 pub mod fps;
+pub mod gray4_style;
 pub mod keygen_check;
 pub mod layout;
 pub mod p2tr_address_display;
@@ -78,7 +79,7 @@ pub use sign_message::SignMessageConfirm;
 pub use sign_prompt::SignTxPrompt;
 pub use super_draw_target::SuperDrawTarget;
 pub use widget_color::{ColorInterpolate, WidgetColor};
-pub use widget_list::WidgetList;
+pub use widget_list::*;
 
 // Re-export all widget items
 pub use address_display::{AddressDisplay, AddressWithPath};
@@ -117,10 +118,20 @@ pub use translate::*;
 pub use welcome::*;
 
 // Font re-exports
-use u8g2_fonts::fonts;
-pub const FONT_LARGE: fonts::u8g2_font_profont29_mf = fonts::u8g2_font_profont29_mf;
-pub const FONT_MED: fonts::u8g2_font_profont22_mf = fonts::u8g2_font_profont22_mf;
-pub const FONT_SMALL: fonts::u8g2_font_profont17_mf = fonts::u8g2_font_profont17_mf;
+use frostsnap_fonts::{
+    Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD, NOTO_SANS_MONO_28_BOLD,
+};
+use gray4_style::Gray4TextStyle;
+pub const FONT_HUGE_MONO: &Gray4Font = &NOTO_SANS_MONO_28_BOLD;
+pub const FONT_LARGE: &Gray4Font = &NOTO_SANS_24_BOLD;
+pub const FONT_MED: &Gray4Font = &NOTO_SANS_18_MEDIUM;
+pub const FONT_SMALL: &Gray4Font = &NOTO_SANS_17_REGULAR;
+
+// Type alias for default text styling
+pub type DefaultTextStyle = Gray4TextStyle;
+
+// U8g2 fonts for keyboards (monochrome framebuffers)
+use u8g2_fonts::U8g2TextStyle;
 
 pub const HOLD_TO_CONFIRM_TIME_SHORT_MS: u32 = 1000;
 pub const HOLD_TO_CONFIRM_TIME_MS: u32 = 2000;
@@ -131,7 +142,11 @@ pub const HOLD_TO_CONFIRM_TIME_LONG_MS: u32 = 6000;
 pub struct Sizing {
     pub width: u32,
     pub height: u32,
-    // Future: min_width, min_height, preferred_width, preferred_height, etc.
+    /// The actual area within the sized area where this widget will draw.
+    /// If None, assumes the widget may draw to the entire sized area.
+    /// Widgets like Column, Row, and Padding should set this to the actual area
+    /// they give their children to draw in.
+    pub dirty_rect: Option<embedded_graphics::primitives::Rectangle>,
 }
 
 impl From<Size> for Sizing {
@@ -139,7 +154,20 @@ impl From<Size> for Sizing {
         Sizing {
             width: size.width,
             height: size.height,
+            dirty_rect: None,
         }
+    }
+}
+
+impl Sizing {
+    /// Returns the dirty rectangle, or constructs one from width/height if not set
+    pub fn dirty_rect(&self) -> embedded_graphics::primitives::Rectangle {
+        self.dirty_rect.unwrap_or_else(|| {
+            embedded_graphics::primitives::Rectangle::new(
+                embedded_graphics::prelude::Point::zero(),
+                Size::new(self.width, self.height),
+            )
+        })
     }
 }
 
@@ -276,10 +304,7 @@ impl<T: DynWidget> DynWidget for Option<T> {
         if let Some(widget) = self {
             widget.sizing()
         } else {
-            Sizing {
-                width: 0,
-                height: 0,
-            }
+            Size::new(0, 0).into()
         }
     }
 

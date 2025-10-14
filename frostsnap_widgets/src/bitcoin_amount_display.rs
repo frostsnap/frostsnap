@@ -1,21 +1,21 @@
+use crate::DefaultTextStyle;
 use crate::{palette::PALETTE, prelude::*, rat::FatRat};
 use alloc::string::ToString;
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
-use u8g2_fonts::U8g2TextStyle;
 
 // Type alias to reduce complexity
 type BitcoinAmountRow = Row<(
-    Text<U8g2TextStyle<Rgb565>>, // Whole part + decimal point
-    Text<U8g2TextStyle<Rgb565>>, // First decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Second decimal digit
-    SizedBox<Rgb565>,            // Half-width space
-    Text<U8g2TextStyle<Rgb565>>, // Third decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Fourth decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Fifth decimal digit
-    SizedBox<Rgb565>,            // Half-width space
-    Text<U8g2TextStyle<Rgb565>>, // Sixth decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Seventh decimal digit
-    Text<U8g2TextStyle<Rgb565>>, // Eighth decimal digit
+    Text,             // Whole part + decimal point
+    Text,             // First decimal digit
+    Text,             // Second decimal digit
+    SizedBox<Rgb565>, // Half-width space
+    Text,             // Third decimal digit
+    Text,             // Fourth decimal digit
+    Text,             // Fifth decimal digit
+    SizedBox<Rgb565>, // Half-width space
+    Text,             // Sixth decimal digit
+    Text,             // Seventh decimal digit
+    Text,             // Eighth decimal digit
 )>;
 
 /// A widget that displays a Bitcoin amount with proper formatting and coloring
@@ -37,7 +37,7 @@ impl BitcoinAmountDisplay {
         if btc.whole_part() > 0 {
             color = PALETTE.primary;
         }
-        let whole_text = Text::new(amount_str, U8g2TextStyle::new(crate::FONT_LARGE, color));
+        let whole_text = Text::new(amount_str, DefaultTextStyle::new(crate::FONT_LARGE, color));
 
         // Get decimal digits iterator (take only 8 for Bitcoin)
         let mut after_decimal = btc.decimal_digits().take(8).map(|digit| {
@@ -46,7 +46,7 @@ impl BitcoinAmountDisplay {
             }
             Text::new(
                 digit.to_string(),
-                U8g2TextStyle::new(crate::FONT_LARGE, color),
+                DefaultTextStyle::new(crate::FONT_LARGE, color),
             )
         });
 

@@ -502,11 +502,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                             let rand_seed = rng.next_u32();
                             ui.set_workflow(ui::Workflow::DisplayAddress {
                                 address,
-                                bip32_path: bip32_path
-                                    .path_segments_from_bitcoin_appkey()
-                                    .map(|i| i.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join("/"),
+                                bip32_path,
                                 rand_seed,
                             })
                         }

@@ -1,24 +1,23 @@
 use crate::{
-    any_of::AnyOf,
-    layout::{Column, CrossAxisAlignment, MainAxisAlignment},
-    p2tr_address_display::P2trAddressDisplay,
-    palette::PALETTE,
-    text::Text,
-    FONT_MED, FONT_SMALL,
+    any_of::AnyOf, layout::Column, p2tr_address_display::P2trAddressDisplay, palette::PALETTE,
+    text::Text, DefaultTextStyle, MainAxisAlignment, FONT_HUGE_MONO, FONT_LARGE,
 };
 use alloc::{
     boxed::Box,
     string::{String, ToString},
 };
-use embedded_graphics::{pixelcolor::Rgb565, text::Alignment};
+use embedded_graphics::text::Alignment;
+use frostsnap_fonts::Gray4Font;
 use frostsnap_macros::Widget;
-use u8g2_fonts::U8g2TextStyle;
+
+// Font for displaying addresses - uses monospace for better readability
+const ADDRESS_FONT: &Gray4Font = FONT_HUGE_MONO;
 
 /// A widget that displays only a Bitcoin address (without derivation path)
 #[derive(Widget)]
 pub struct AddressDisplay {
     #[widget_delegate]
-    container: Box<AnyOf<(P2trAddressDisplay, Text<U8g2TextStyle<Rgb565>>)>>,
+    container: Box<AnyOf<(P2trAddressDisplay, Text)>>,
 }
 
 impl AddressDisplay {
@@ -54,7 +53,7 @@ impl AddressDisplay {
             // Create the address text
             let address_text = Text::new(
                 formatted,
-                U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+                DefaultTextStyle::new(ADDRESS_FONT, PALETTE.on_background),
             )
             .with_alignment(Alignment::Center);
 
@@ -62,31 +61,44 @@ impl AddressDisplay {
             Self { container }
         }
     }
+
+    pub fn set_rand_highlight(&mut self, rand_highlight: u32) {
+        // Try to downcast to P2trAddressDisplay and apply highlighting
+        if let Some(p2tr_display) = self.container.downcast_mut::<P2trAddressDisplay>() {
+            p2tr_display.set_rand_highlight(rand_highlight);
+        }
+    }
 }
 
-/// A widget that displays a Bitcoin address with its derivation path
+/// A widget that displays a Bitcoin address with its index
 #[derive(Widget)]
 pub struct AddressWithPath {
     #[widget_delegate]
-    container: Column<(AddressDisplay, Text<U8g2TextStyle<Rgb565>>)>,
+    container: Column<(Text, AddressDisplay)>,
 }
 
 impl AddressWithPath {
-    pub fn new(address: bitcoin::Address, derivation_path: String) -> Self {
+    pub fn new(address: bitcoin::Address, address_index: u32) -> Self {
         let address_display = AddressDisplay::new(address);
 
-        // Create the derivation path text (secondary, smaller)
-        let path_text = Text::new(
-            derivation_path,
-            U8g2TextStyle::new(FONT_SMALL, PALETTE.text_secondary),
+        // Create the address index text (e.g., "Address #5")
+        let index_text = Text::new(
+            alloc::format!("Address #{}", address_index),
+            DefaultTextStyle::new(FONT_LARGE, PALETTE.text_secondary),
         )
         .with_alignment(Alignment::Center);
 
-        // Create a column to stack them vertically
-        let mut container = Column::new((address_display, path_text));
-        container.main_axis_alignment = MainAxisAlignment::Center;
-        container.cross_axis_alignment = CrossAxisAlignment::Center;
-
+        // Create a column to stack them vertically (index above address)
+        let container = Column::builder()
+            .push(index_text)
+            .gap(8)
+            .push(address_display)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
         Self { container }
+    }
+
+    pub fn set_rand_highlight(&mut self, rand_highlight: u32) {
+        // Apply highlighting to the address display
+        self.container.children.1.set_rand_highlight(rand_highlight);
     }
 }

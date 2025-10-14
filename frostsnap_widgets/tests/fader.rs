@@ -5,7 +5,10 @@ use embedded_graphics::{
     primitives::{Primitive, PrimitiveStyle, Rectangle},
     Drawable,
 };
-use frostsnap_widgets::{DynWidget, Fader, Frac, Instant, SuperDrawTarget, Widget};
+use frostsnap_widgets::{
+    palette::PALETTE, vec_framebuffer::VecFramebuffer, Container, DefaultTextStyle, DynWidget,
+    Fader, Frac, Instant, Padding, SuperDrawTarget, Text, Widget, FONT_SMALL,
+};
 use proptest::prelude::*;
 
 /// A simple widget that draws a single pixel of a specific color
@@ -26,10 +29,11 @@ impl DynWidget for SinglePixelWidget {
     }
 
     fn sizing(&self) -> frostsnap_widgets::Sizing {
-        frostsnap_widgets::Sizing {
+        Size {
             width: 1,
             height: 1,
         }
+        .into()
     }
 
     fn handle_touch(
@@ -122,7 +126,7 @@ proptest! {
 
         // Create the fader in faded-out state and start it fading in from bg_color
         let mut fader = Fader::new_faded_out(widget);
-        fader.start_fade_in(fade_duration_ms, redraw_interval_ms);
+        fader.start_fade_in(fade_duration_ms);
 
         // Test at t=0 (should draw bg_color exclusively when fading in from it)
         let capture_t0 = SinglePixelCapture::new();
@@ -194,7 +198,7 @@ proptest! {
         );
 
         // Now test fading out back to bg_color
-        fader.start_fade(fade_duration_ms, redraw_interval_ms);
+        fader.start_fade(fade_duration_ms);
 
         // Draw at t=0 relative to fade out start (should still show color_a)
         let fade_out_start = fade_duration_ms + 1000;
@@ -257,4 +261,47 @@ proptest! {
             "In FadedOut state, should not draw anything"
         );
     }
+}
+
+#[test]
+fn test_container_with_text_fade_out() {
+    // Create the exact widget from the demo
+    let text = Text::new(
+        "Lorem ipsum\ndolor sit\namet,\nconsectetur\nadipiscing",
+        DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background),
+    );
+    let padded = Padding::all(10, text);
+    let widget = Container::new(padded)
+        .with_fill(PALETTE.surface)
+        .with_border(PALETTE.primary, 2);
+
+    let mut fader = Fader::new(widget);
+
+    // Set up a framebuffer
+    let size = Size::new(240, 280);
+
+    // Set constraints on the fader
+    fader.set_constraints(size);
+
+    // Start fading out
+    fader.start_fade(500);
+
+    let framebuffer: VecFramebuffer<Rgb565> = VecFramebuffer::new(240, 280);
+    let mut target = SuperDrawTarget::new(framebuffer, PALETTE.background);
+
+    // Draw in a loop to simulate time passing
+    for t in (0..=600).step_by(16) {
+        fader.draw(&mut target, Instant::from_millis(t)).unwrap();
+    }
+
+    // Check that all pixels are PALETTE.background
+    let framebuffer = target.inner_mut().unwrap();
+    let all_background = framebuffer
+        .contiguous_pixels()
+        .all(|color| color == PALETTE.background);
+
+    assert!(
+        all_background,
+        "All pixels should be background color after fade out completes"
+    );
 }

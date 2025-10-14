@@ -1,6 +1,6 @@
 use crate::{
-    palette::PALETTE, DynWidget, HoldToConfirm, Instant, SuperDrawTarget, Text, Widget, FONT_MED,
-    HOLD_TO_CONFIRM_TIME_SHORT_MS,
+    palette::PALETTE, DefaultTextStyle, DynWidget, HoldToConfirm, Instant, SuperDrawTarget, Text,
+    Widget, FONT_MED, HOLD_TO_CONFIRM_TIME_SHORT_MS,
 };
 use alloc::{format, vec::Vec};
 use embedded_graphics::{
@@ -10,7 +10,6 @@ use embedded_graphics::{
     primitives::{PrimitiveStyleBuilder, Rectangle},
     text::{Baseline, Text as EgText},
 };
-use u8g2_fonts::U8g2TextStyle;
 
 const ACTION_LIFT_UP: u8 = 1;
 
@@ -33,7 +32,7 @@ enum Phase {
     },
     Menu {
         failures: i32,
-        hold_to_confirm: HoldToConfirm<Text<U8g2TextStyle<Rgb565>>>,
+        hold_to_confirm: HoldToConfirm<Text>,
         start_again_rect: Rectangle,
         prev_action: Option<u8>,
         needs_redraw: bool,
@@ -239,7 +238,7 @@ impl DynWidget for ScreenTest {
                     let test_complete_text = format!("Test Complete\n\nFailures: {final_failures}");
                     let text_widget = Text::new(
                         test_complete_text,
-                        U8g2TextStyle::new(FONT_MED, PALETTE.on_background),
+                        DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
                     )
                     .with_alignment(embedded_graphics::text::Alignment::Center);
 

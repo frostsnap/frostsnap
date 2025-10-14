@@ -1,3 +1,4 @@
+use crate::DefaultTextStyle;
 use crate::{
     icons::IconWidget, palette::PALETTE, prelude::*, touch_listener::TouchListener, Key, FONT_MED,
 };
@@ -5,10 +6,9 @@ use alloc::string::String;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_iconoir::prelude::*;
 use frostsnap_macros::Widget;
-use u8g2_fonts::U8g2TextStyle;
 
 // Type alias to simplify the complex type
-type StyledText = Text<U8g2TextStyle<Rgb565>>;
+type StyledText = Text;
 
 /// A button widget that displays a numeric key
 #[derive(Widget)]
@@ -28,7 +28,10 @@ impl NumericButton {
             PALETTE.text_disabled
         };
 
-        let text = Text::new(String::from(key), U8g2TextStyle::new(FONT_MED, text_color));
+        let text = Text::new(
+            String::from(key),
+            DefaultTextStyle::new(FONT_MED, text_color),
+        );
 
         let text = Padding::only(text).top(6).build();
 
@@ -85,7 +88,7 @@ impl NumericButton {
                 .child
                 .child
                 .child
-                .set_character_style(U8g2TextStyle::new(FONT_MED, text_color));
+                .set_character_style(DefaultTextStyle::new(FONT_MED, text_color));
 
             // Update the container fill
             self.inner.set_fill(container_fill);

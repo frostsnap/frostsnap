@@ -20,6 +20,7 @@ use embedded_graphics::{
 ///     .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
 ///     .with_cross_axis_alignment(CrossAxisAlignment::Center);
 /// ```
+#[derive(Clone)]
 pub struct Column<T: AssociatedArray> {
     pub children: T,
     pub cross_axis_alignment: CrossAxisAlignment,
@@ -181,6 +182,7 @@ where
             self.sizing = Some(crate::Sizing {
                 width: 0,
                 height: 0,
+                dirty_rect: None,
             });
             return;
         }
@@ -201,6 +203,9 @@ where
         let flex_scores = self.flex_scores.as_ref();
         let total_flex: u32 = flex_scores.iter().sum();
 
+        // Create dirty_rects array that we'll populate as we go
+        let mut dirty_rects = self.child_rects.clone();
+
         // First pass: set constraints on non-flex children
         for (i, &flex_score) in flex_scores.iter().enumerate() {
             if flex_score == 0 {
@@ -211,6 +216,13 @@ where
                     remaining_height = remaining_height.saturating_sub(sizing.height);
                     max_child_width = max_child_width.max(sizing.width);
                     self.child_rects.as_mut()[i].size = sizing.into();
+
+                    // Set dirty rect based on child's actual dirty rect or full size
+                    if let Some(child_dirty) = sizing.dirty_rect {
+                        dirty_rects.as_mut()[i] = child_dirty;
+                    } else {
+                        dirty_rects.as_mut()[i] = self.child_rects.as_ref()[i];
+                    }
                 }
             }
         }
@@ -229,6 +241,13 @@ where
                     remaining_height = remaining_height.saturating_sub(sizing.height);
                     max_child_width = max_child_width.max(sizing.width);
                     self.child_rects.as_mut()[i].size = sizing.into();
+
+                    // Set dirty rect based on child's actual dirty rect or full size
+                    if let Some(child_dirty) = sizing.dirty_rect {
+                        dirty_rects.as_mut()[i] = child_dirty;
+                    } else {
+                        dirty_rects.as_mut()[i] = self.child_rects.as_ref()[i];
+                    }
                 }
             }
         }
@@ -255,7 +274,7 @@ where
             }
         };
 
-        // Third pass: Set positions for all children
+        // Third pass: Set positions for all children and update dirty_rects positions
         let spacing_after = self.spacing_after.as_ref();
         let child_rects = self.child_rects.as_mut();
 
@@ -275,7 +294,12 @@ where
                     available_width as i32
                 }
             };
-            child_rects[i].top_left = Point::new(x_offset, y_offset as i32);
+            let position = Point::new(x_offset, y_offset as i32);
+            child_rects[i].top_left = position;
+
+            // Update the dirty rect position
+            dirty_rects.as_mut()[i].top_left += position;
+
             // Add the child height
             y_offset = y_offset.saturating_add(size.height);
 
@@ -294,9 +318,13 @@ where
             MainAxisSize::Max => max_size.height, // Take full available height
         };
 
+        // Compute the dirty rect - the actual area where children will draw
+        let dirty_rect = super::bounding_rect(dirty_rects);
+
         self.sizing = Some(crate::Sizing {
             width: max_child_width,
             height,
+            dirty_rect,
         });
     }
 

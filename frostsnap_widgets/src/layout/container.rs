@@ -138,7 +138,20 @@ impl<W: Widget> crate::DynWidget for Container<W> {
             child_sizing.height + 2 * self.border_width
         };
 
-        self.computed_sizing = Some(crate::Sizing { width, height });
+        // If no border, use the child's dirty rect offset by where the child is positioned
+        // If there's a border, the whole container area is dirty
+        let dirty_rect = if self.border_width == 0 {
+            self.child.sizing().dirty_rect
+        } else {
+            // With a border, the whole container is the dirty rect
+            None
+        };
+
+        self.computed_sizing = Some(crate::Sizing {
+            width,
+            height,
+            dirty_rect,
+        });
 
         // Also compute and store the child rectangle
         self.child_rect = Some(Rectangle::new(
@@ -243,8 +256,12 @@ impl<W: Widget> Widget for Container<W> {
         }
 
         // Draw child with proper offset and cropping
-        self.child
-            .draw(&mut target.clone().crop(child_area), current_time)?;
+        // If we have a fill color, set it as the background for the cropped area
+        let mut child_target = target.clone().crop(child_area);
+        if let Some(fill_color) = self.fill_color {
+            child_target = child_target.with_background_color(fill_color);
+        }
+        self.child.draw(&mut child_target, current_time)?;
 
         Ok(())
     }

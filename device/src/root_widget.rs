@@ -12,13 +12,8 @@ pub struct RootWidget {
 }
 
 impl RootWidget {
-    pub fn new(
-        initial_widget: WidgetTree,
-        fade_duration_ms: u32,
-        background_color: Rgb565,
-    ) -> Self {
-        let page_switcher =
-            FadeSwitcher::new(initial_widget, fade_duration_ms, 30, background_color);
+    pub fn new(initial_widget: WidgetTree, fade_duration_ms: u32) -> Self {
+        let page_switcher = FadeSwitcher::new(initial_widget, fade_duration_ms);
 
         Self { page_switcher }
     }

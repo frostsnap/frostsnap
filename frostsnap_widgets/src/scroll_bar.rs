@@ -87,6 +87,7 @@ impl crate::DynWidget for ScrollBar {
             height: self
                 .height
                 .expect("ScrollBar::sizing called before set_constraints"),
+            ..Default::default()
         }
     }
 
