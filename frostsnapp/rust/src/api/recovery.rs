@@ -319,7 +319,6 @@ pub enum _KeyLocationState {
 
 #[frb(mirror(RestoreRecoverShareError))]
 pub enum _RestoreRecoverShareError {
-    NameMismatch,
     UnknownRestorationId,
     PurposeNotCompatible,
     AcccessStructureMismatch,

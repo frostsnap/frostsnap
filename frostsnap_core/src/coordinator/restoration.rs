@@ -63,7 +63,7 @@ impl RestorationState {
             .collect();
 
         RestorationStatus {
-            threshold: self.access_structure.threshold,
+            threshold: self.access_structure.effective_threshold(),
             shares,
             shared_key: shared_key.cloned(),
         }
@@ -454,11 +454,6 @@ impl FrostCoordinator {
             .restorations
             .get(&restoration_id)
             .ok_or(RestoreRecoverShareError::UnknownRestorationId)?;
-
-        // Check if name matches
-        if restoration.key_name != recover_share.held_share.key_name {
-            return Err(RestoreRecoverShareError::NameMismatch);
-        }
 
         // Check if purpose matches
         if restoration.key_purpose != recover_share.held_share.purpose {
@@ -1204,8 +1199,6 @@ impl std::error::Error for RestorationError {}
 /// An error occuring when you try and an a "recover share" to a restoration session
 #[derive(Debug, Clone)]
 pub enum RestoreRecoverShareError {
-    /// The name of the key doesn't match
-    NameMismatch,
     /// The restoration session no longer exists
     UnknownRestorationId,
     /// The key share is use by the device for a different purpose than the restoration session
@@ -1232,7 +1225,10 @@ impl fmt::Display for RestorePhysicalBackupError {
                 write!(f, "Coordinator didn't have the restoration id")
             }
             RestorePhysicalBackupError::AlreadyGotThisShare => {
-                write!(f, "The key on this device has already been restored")
+                write!(
+                    f,
+                    "The key on this device has already been added to the restoration"
+                )
             }
             RestorePhysicalBackupError::ShareBelongsElsewhere { location } => {
                 write!(f, "This key share already belongs to {} '{}' and cannot be added to this restoration", location.key_purpose.key_type_noun(), location.key_name)
@@ -1256,12 +1252,9 @@ impl fmt::Display for RestoreRecoverShareError {
                 write!(f, "Access structure doesn't match one of the other shares")
             }
             RestoreRecoverShareError::AlreadyGotThisShare => {
-                write!(f, "The key on this device has already been restored")
-            }
-            RestoreRecoverShareError::NameMismatch => {
                 write!(
                     f,
-                    "The name of the key being restored and the one in the share is not the same"
+                    "The key share on this device has already been added to the restoration"
                 )
             }
             RestoreRecoverShareError::ShareBelongsElsewhere { location } => {

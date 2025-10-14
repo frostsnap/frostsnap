@@ -632,6 +632,10 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
     if (widget.initialStep != null) {
       currentStep = widget.initialStep!;
+      // Set isPhysical based on which flow we're starting with
+      if (widget.initialStep == RecoveryFlowStep.enterRestorationDetails) {
+        isPhysical = true;
+      }
     }
 
     if (widget.continuing != null) {

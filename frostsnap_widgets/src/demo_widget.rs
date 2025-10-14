@@ -869,7 +869,7 @@ macro_rules! demo_widget {
                             share: Scalar::<Secret, Zero>::zero(),
                         }.share_image()
                     },
-                    threshold: 2,
+                    threshold: Some(2),
                     key_name: "Family Wallet".to_string(),
                     purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
                 };
