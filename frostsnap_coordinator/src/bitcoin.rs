@@ -5,8 +5,6 @@ pub mod tofu;
 pub mod wallet;
 mod wallet_persist;
 
-pub use wallet::PsbtValidationError;
-
 use bdk_chain::{
     bitcoin::{
         self,

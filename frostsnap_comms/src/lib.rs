@@ -6,7 +6,6 @@ extern crate std;
 #[macro_use]
 extern crate alloc;
 pub mod factory;
-pub mod firmware_reader;
 pub mod fixed_string;
 pub mod genuine_certificate;
 use alloc::boxed::Box;
@@ -47,10 +46,6 @@ const MAGICBYTES_RECV_UPSTREAM: [u8; MAGIC_BYTES_LEN] = [0xff, 0x5d, 0xa3, 0x85,
 pub const MAGIC_BYTES_PERIOD: u64 = 100;
 
 pub const FIRMWARE_UPGRADE_CHUNK_LEN: u32 = 4096;
-
-// Secure Boot v2 signature block constants
-pub const SIGNATURE_BLOCK_SIZE: usize = firmware_reader::SECTOR_SIZE;
-pub const SIGNATURE_BLOCK_MAGIC: [u8; 4] = [0xE7, 0x02, 0x00, 0x00];
 
 pub const FIRMWARE_NEXT_CHUNK_READY_SIGNAL: u8 = 0x11;
 
@@ -256,47 +251,13 @@ impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSend
     }
 }
 
-/// Firmware upgrade protocol messages sent by coordinator to devices.
-///
-/// ## Digest Variants
-///
-/// There are two `PrepareUpgrade` variants that differ in which digest they send:
-///
-/// - [`PrepareUpgrade`]: Legacy variant that sends digest of entire signed firmware
-///   (including signature block and padding). Used by v0.0.1 and earlier devices.
-///
-/// - [`PrepareUpgrade2`]: New variant that sends digest of deterministic firmware only
-///   (excluding signature block and padding). The device displays this digest on screen,
-///   allowing users to verify it matches their locally-built reproducible firmware.
-///
-/// ## Device Verification Strategy
-///
-/// Devices accept **both** digest types during verification for backwards compatibility.
-/// This is cryptographically sound because:
-///
-/// 1. SHA256 collision resistance (~2^-256 probability) makes accidental matches impossible
-/// 2. The two digests cover different byte ranges, requiring collision at specific boundaries
-/// 3. Simplifies device code - no need to track which variant was received
-/// 4. Provides graceful fallback if coordinator sends wrong digest type
-///
-/// See `device/src/ota.rs::enter_upgrade_mode()` for verification implementation.
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum CoordinatorUpgradeMessage {
-    /// Legacy upgrade preparation - sends digest of entire signed firmware.
-    /// Digest includes firmware + padding + signature block (if present).
     PrepareUpgrade {
         size: u32,
         firmware_digest: Sha256Digest,
     },
     EnterUpgradeMode,
-    /// New upgrade preparation - sends digest of deterministic firmware only.
-    /// Digest excludes padding and signature block. Device displays this digest,
-    /// allowing users to verify it matches their locally-built reproducible firmware.
-    /// Placed at end of enum for bincode backwards compatibility.
-    PrepareUpgrade2 {
-        size: u32,
-        firmware_digest: Sha256Digest,
-    },
 }
 
 #[derive(Encode, Decode, Debug, Clone)]

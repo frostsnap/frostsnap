@@ -20,7 +20,6 @@ use embedded_graphics::{
 ///     .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
 ///     .with_cross_axis_alignment(CrossAxisAlignment::Center);
 /// ```
-#[derive(Clone)]
 pub struct Column<T: AssociatedArray> {
     pub children: T,
     pub cross_axis_alignment: CrossAxisAlignment,

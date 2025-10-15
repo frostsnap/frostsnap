@@ -144,7 +144,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         .firstOrNull;
     final isEmpty = deviceName == null;
     final hasWallet = wallet != null;
-    final upgradeEligibility = device.firmwareUpgradeEligibility();
+    final needsUpgrade = device.needsFirmwareUpgrade();
     final noncesAvailable = coord.noncesAvailable(id: device.id);
 
     final emptyRows = [
@@ -255,73 +255,28 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         ListTile(
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
           leading: Icon(Icons.system_update_rounded),
-          title: Row(
-            children: [
-              Text('Firmware'),
-              SizedBox(width: 8),
-              Card.filled(
-                color: theme.colorScheme.primaryContainer.withAlpha(80),
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  child: Text(
-                    device.firmware.versionName(),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          title: Text('Firmware'),
           subtitle: Text(
-            device.firmware.digest.toString(),
+            device.firmwareDigest,
             style: monospaceTextStyle,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: upgradeEligibility.when(
-            canUpgrade: () => TextButton.icon(
-              onPressed: () async => await widget.firmwareUpgrade(context),
-              label: Text('Upgrade'),
-            ),
-            upToDate: () => Card.outlined(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 4.0,
-                  horizontal: 8.0,
-                ),
-                child: Text('Latest'),
-              ),
-            ),
-            cannotUpgrade: (reason) => Tooltip(
-              message: reason,
-              child: Card.outlined(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 4.0,
-                    horizontal: 8.0,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.warning_rounded, size: 16),
-                      SizedBox(width: 4),
-                      Text('Incompatible'),
-                    ],
+          trailing: needsUpgrade
+              ? TextButton.icon(
+                  onPressed: () async => await widget.firmwareUpgrade(context),
+                  label: Text('Upgrade'),
+                )
+              : Card.outlined(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4.0,
+                      horizontal: 8.0,
+                    ),
+                    child: Text('Latest'),
                   ),
                 ),
-              ),
-            ),
-          ),
-          onTap: () => copyAction(
-            context,
-            "Device firmware",
-            device.firmware.digest.toString(),
-          ),
+          onTap: () =>
+              copyAction(context, "Device firmware", device.firmwareDigest),
         ),
         if (!isEmpty) ...advancedRows,
       ],

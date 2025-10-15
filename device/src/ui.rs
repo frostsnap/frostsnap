@@ -8,7 +8,6 @@ use frostsnap_core::{
         KeyGenPhase3, SignPhase1,
     },
     message::HeldShare,
-    tweak::BitcoinBip32Path,
 };
 
 pub trait UserInteraction {
@@ -65,7 +64,7 @@ pub enum Workflow {
     EnteringBackup(EnterBackupPhase),
     DisplayAddress {
         address: bitcoin::Address,
-        bip32_path: BitcoinBip32Path,
+        bip32_path: String,
         rand_seed: u32,
     },
     FirmwareUpgrade(FirmwareUpgradeStatus),
@@ -91,6 +90,7 @@ pub enum Prompt {
     },
     Signing {
         phase: Box<SignPhase1>,
+        rand_seed: u32,
     },
     NewName {
         old_name: Option<DeviceName>,

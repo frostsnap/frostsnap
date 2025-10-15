@@ -2,7 +2,7 @@ use crate::common::{Env, Run, TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
 use bitcoin::Address;
 use frostsnap_core::coordinator::restoration::RecoverShare;
 use frostsnap_core::device::{self, DeviceToUserMessage};
-use frostsnap_core::message::{self, DeviceSend, DeviceToCoordinatorMessage, EncodedSignature};
+use frostsnap_core::message::EncodedSignature;
 use frostsnap_core::tweak::BitcoinBip32Path;
 use frostsnap_core::{
     coordinator::{
@@ -267,16 +267,6 @@ impl Env for TestEnv {
             } => {
                 self.verification_requests
                     .insert(from, (address, bip32_path));
-            }
-            DeviceToUserMessage::NonceJobs(mut batch) => {
-                // Run the batch to completion and send a single response
-                batch.run_until_finished(&mut TestDeviceKeyGen);
-                let segments = batch.into_segments();
-                let response =
-                    DeviceSend::ToCoordinator(Box::new(DeviceToCoordinatorMessage::Signing(
-                        message::signing::DeviceSigning::NonceResponse { segments },
-                    )));
-                run.extend_from_device(from, vec![response]);
             }
         }
     }

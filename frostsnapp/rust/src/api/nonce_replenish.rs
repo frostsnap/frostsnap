@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 use anyhow::Result;
 use flutter_rust_bridge::frb;
@@ -8,16 +6,9 @@ use frostsnap_core::{coordinator::NonceReplenishRequest, DeviceId};
 
 #[frb(mirror(NonceReplenishState), unignore)]
 pub struct _NonceReplenishState {
-    pub devices: HashSet<DeviceId>,
-    pub completed_streams: u32,
-    pub total_streams: u32,
+    pub received_from: Vec<DeviceId>,
+    pub devices: Vec<DeviceId>,
     pub abort: bool,
-}
-
-#[frb(external)]
-impl NonceReplenishState {
-    #[frb(sync)]
-    pub fn is_finished(&self) -> bool {}
 }
 
 impl super::coordinator::Coordinator {

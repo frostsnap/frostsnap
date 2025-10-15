@@ -1,10 +1,13 @@
-use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    palette::PALETTE, prelude::*, HoldToConfirm, Padding, ProgressIndicator, FONT_MED, FONT_SMALL,
+    gray4_style::Gray4TextStyle,
+    palette::PALETTE,
+    prelude::*,
+    HoldToConfirm, Padding, ProgressIndicator,
 };
-use alloc::{boxed::Box, format};
-use embedded_graphics::{geometry::Size, text::Alignment};
+use alloc::{format, string::ToString};
+use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
+use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_17_REGULAR};
 
 /// Hold to confirm widget for firmware upgrades
 /// Displays the firmware hash and size
@@ -13,9 +16,19 @@ pub struct FirmwareUpgradeConfirm {
     #[widget_delegate]
     hold_to_confirm: HoldToConfirm<
         Column<(
-            Text,
-            Container<Padding<Column<(Text, Text, Text, Text)>>>,
-            Text,
+            Text<Gray4TextStyle>, // Title
+            Container<
+                Padding<
+                    Column<(
+                        Text<Gray4TextStyle>, // Hash line 1
+                        Text<Gray4TextStyle>, // Hash line 2
+                        Text<Gray4TextStyle>, // Hash line 3
+                        Text<Gray4TextStyle>, // Hash line 4
+                    )>,
+                >,
+            >,
+            Text<Gray4TextStyle>, // Size text
+            Text<Gray4TextStyle>, // "Hold to Update" text
         )>,
     >,
 }
@@ -75,59 +88,57 @@ impl FirmwareUpgradeConfirm {
             format!("{:.1} MB", size_bytes as f32 / (1024.0 * 1024.0))
         };
 
-        // Create the content with title, hash lines, and size
-        let title = Text::new(
-            "Upgrade firmware?",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+        // Create the title text
+        let title_text = Text::new(
+            "Update device firmware".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
 
+        // Create hash display with monospace font
         let hash1 = Text::new(
             hash_line1,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
+        );
 
         let hash2 = Text::new(
             hash_line2,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
+        );
 
         let hash3 = Text::new(
             hash_line3,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
+        );
 
         let hash4 = Text::new(
             hash_line4,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
+        );
 
-        let size = Text::new(
+        // Create size text
+        let version_size_display = Text::new(
             size_text,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
-        )
-        .with_alignment(Alignment::Center);
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
 
-        // Put just the hash lines in a container with rounded border, fill, and padding
-        let hash_column = Column::new((hash1, hash2, hash3, hash4));
-        let hash_with_padding = Padding::all(5, hash_column);
+        // Create "Hold to Update" text at the bottom
+        let hold_text = Text::new(
+            "Hold to Update".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
+        );
+
+        // Put hash lines in a container with rounded border (no fill)
+        let hash_column = Column::new((hash1, hash2, hash3, hash4))
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let hash_with_padding = Padding::symmetric(10, 5, hash_column);
         let hash_container = Container::new(hash_with_padding)
             .with_border(PALETTE.outline, 2)
-            .with_fill(PALETTE.surface)
-            .with_corner_radius(Size::new(10, 10));
+            .with_corner_radius(Size::new(8, 8));
 
-        // Create main column with title, container, and size
-        let content = Column::builder()
-            .push(title)
-            .gap(8)
-            .push(hash_container)
-            .gap(8)
-            .push(size)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        // Create main column with SpaceEvenly alignment
+        let content = Column::new((title_text, hash_container, version_size_display, hold_text))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         // Create hold to confirm with 1 second hold time
         let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_SHORT_MS, content);
@@ -146,65 +157,90 @@ impl FirmwareUpgradeConfirm {
 pub enum FirmwareUpgradeProgress {
     /// Actively erasing or downloading with progress
     Active {
-        widget: Box<Column<(Text, Padding<ProgressIndicator>)>>,
+        widget: alloc::boxed::Box<
+            Center<
+                Padding<
+                    Column<(
+                        Text<Gray4TextStyle>, // Title
+                        Text<Gray4TextStyle>, // Status
+                        SizedBox<Rgb565>,              // Spacer
+                        ProgressIndicator,             // Progress bar
+                    )>,
+                >,
+            >,
+        >,
     },
     /// Passive state - just show text
-    Passive { widget: Center<Text> },
+    Passive {
+        widget: Center<Text<Gray4TextStyle>>,
+    },
 }
 
 impl FirmwareUpgradeProgress {
     /// Create a new firmware upgrade progress widget in erasing state
     pub fn erasing(progress: f32) -> Self {
         let title = Text::new(
-            "Preparing for\nupgrade...",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+            "Firmware Update".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
+        );
+
+        let status = Text::new(
+            "Preparing device".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
+
+        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15));
 
         let mut progress_indicator = ProgressIndicator::new();
         progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
 
-        // Add horizontal padding around the progress indicator
-        let padded_progress = Padding::symmetric(20, 0, progress_indicator);
+        let column = Column::new((title, status, spacer, progress_indicator))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let widget = Column::new((title, padded_progress))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        let padded = Padding::symmetric(20, 20, column);
+        let centered = Center::new(padded);
 
         Self::Active {
-            widget: Box::new(widget),
+            widget: alloc::boxed::Box::new(centered),
         }
     }
 
     /// Create a new firmware upgrade progress widget in downloading state
     pub fn downloading(progress: f32) -> Self {
         let title = Text::new(
-            "Downloading\nupgrade...",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+            "Firmware Update".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
+        );
+
+        let status = Text::new(
+            "Downloading".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
+
+        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15));
 
         let mut progress_indicator = ProgressIndicator::new();
         progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
 
-        // Add horizontal padding around the progress indicator
-        let padded_progress = Padding::symmetric(20, 0, progress_indicator);
+        let column = Column::new((title, status, spacer, progress_indicator))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let widget = Column::new((title, padded_progress))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        let padded = Padding::symmetric(20, 20, column);
+        let centered = Center::new(padded);
 
         Self::Active {
-            widget: Box::new(widget),
+            widget: alloc::boxed::Box::new(centered),
         }
     }
 
     /// Create a new firmware upgrade progress widget in passive state
     pub fn passive() -> Self {
-        // Show "Firmware Upgrade" text in passive state
         let text = Text::new(
-            "Firmware\nUpgrade",
-            DefaultTextStyle::new(FONT_MED, PALETTE.primary),
-        )
-        .with_alignment(Alignment::Center);
+            "Firmware Upgrade".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.primary),
+        );
         let widget = Center::new(text);
 
         Self::Passive { widget }
@@ -213,11 +249,12 @@ impl FirmwareUpgradeProgress {
     /// Update the progress for active states
     pub fn update_progress(&mut self, progress: f32) {
         if let Self::Active { widget } = self {
-            // Update the progress indicator through the padding wrapper
+            // Update the progress indicator through the center -> padding -> column -> progress indicator path
             widget
-                .children
-                .1
                 .child
+                .child
+                .children
+                .3
                 .set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
         }
     }

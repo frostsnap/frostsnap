@@ -10,7 +10,7 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Welcome,
-    Widget, HOLD_TO_CONFIRM_TIME_LONG_MS, HOLD_TO_CONFIRM_TIME_MS,
+    Widget, HOLD_TO_CONFIRM_TIME_MS,
 };
 
 use crate::touch_handler;
@@ -177,7 +177,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             phase: Some(phase),
                         }
                     }
-                    Prompt::Signing { phase } => {
+                    Prompt::Signing { phase, rand_seed } => {
                         // Get the sign task from the phase
                         let sign_task = phase.sign_task();
 
@@ -190,8 +190,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 // Get the user prompt from the transaction template
                                 let prompt = tx_template.user_prompt(*network);
 
-                                // Create the SignTxPrompt widget
-                                let widget = Box::new(SignTxPrompt::new(prompt));
+                                // Create the SignTxPrompt widget with random seed
+                                let widget =
+                                    Box::new(SignTxPrompt::new_with_seed(prompt, rand_seed));
 
                                 // Store both widget and phase in the WidgetTree
                                 WidgetTree::SignTxPrompt {
@@ -200,9 +201,20 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 }
                             }
                             frostsnap_core::SignTask::Test { message } => {
-                                use frostsnap_widgets::SignMessageConfirm;
+                                use frostsnap_widgets::DefaultTextStyle;
+                                use frostsnap_widgets::{Center, HoldToConfirm, Text, FONT_MED};
 
-                                let widget = Box::new(SignMessageConfirm::new(message.clone()));
+                                // Format the test message for display
+                                let prompt_text = format!("Sign test message:\n\n{}", message);
+
+                                let text_widget = Text::new(
+                                    prompt_text,
+                                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
+                                )
+                                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                                let widget =
+                                    Box::new(HoldToConfirm::new(1000, Center::new(text_widget)));
 
                                 WidgetTree::SignTestPrompt {
                                     widget,
@@ -231,32 +243,16 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         }
                     }
                     Prompt::DisplayBackupRequest { phase } => {
+                        use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
                         use frostsnap_widgets::DefaultTextStyle;
-                        use frostsnap_widgets::{
-                            Center, Column, HoldToConfirm, MainAxisAlignment, Text, FONT_LARGE,
-                            FONT_MED,
-                        };
 
                         // Create text for the prompt
                         let key_name = &phase.key_name;
-                        let prompt_text = Center::new(
-                            Column::builder()
-                                .push(Text::new(
-                                    "Display backup",
-                                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-                                ))
-                                .gap(5)
-                                .push(Text::new(
-                                    "for",
-                                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-                                ))
-                                .gap(20)
-                                .push(Text::new(
-                                    key_name.clone(),
-                                    DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
-                                ))
-                                .with_main_axis_alignment(MainAxisAlignment::Center),
-                        );
+                        let prompt_text = Text::new(
+                            format!("Display backup\nfor\n{}", key_name),
+                            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
+                        )
+                        .with_alignment(embedded_graphics::text::Alignment::Center);
 
                         // Create HoldToConfirm widget with 2 second hold time
                         let hold_to_confirm =
@@ -269,8 +265,8 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         }
                     }
                     Prompt::NewName { old_name, new_name } => {
-                        use frostsnap_widgets::DefaultTextStyle;
                         use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
+                        use frostsnap_widgets::DefaultTextStyle;
 
                         // Create text for the prompt
                         let prompt_text = if let Some(old_name) = old_name {
@@ -291,26 +287,16 @@ impl<'a> UserInteraction for FrostyUi<'a> {
 
                         WidgetTree::NewNamePrompt {
                             widget: Box::new(hold_to_confirm),
-                            new_name: Some(new_name.clone()),
+                            new_name: Some(new_name.to_string()),
                         }
                     }
                     Prompt::WipeDevice => {
-                        use frostsnap_widgets::DefaultTextStyle;
-                        use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
+                        use frostsnap_widgets::WipeDevice;
 
-                        // Create warning text for device wipe
-                        let prompt_text = "WARNING!\n\nErase all data?\n\nHold to confirm";
-
-                        let text_widget =
-                            Text::new(prompt_text, DefaultTextStyle::new(FONT_MED, PALETTE.error))
-                                .with_alignment(embedded_graphics::text::Alignment::Center);
-
-                        // Create HoldToConfirm widget with 3 second hold time for wipe
-                        let hold_to_confirm =
-                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, text_widget);
+                        let wipe_widget = WipeDevice::new();
 
                         WidgetTree::WipeDevicePrompt {
-                            widget: Box::new(hold_to_confirm),
+                            widget: Box::new(wipe_widget),
                             confirmed: false,
                         }
                     }
@@ -351,12 +337,20 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 bip32_path,
                 rand_seed,
             } => {
-                use frostsnap_widgets::{AddressWithPath, Center};
+                use frostsnap_widgets::AddressWithPath;
 
-                // Create the address display widget with just the address index
-                let mut address_display = AddressWithPath::new(address, bip32_path.index);
-                address_display.set_rand_highlight(rand_seed);
-                WidgetTree::AddressDisplay(Box::new(Center::new(address_display)))
+                // Extract the address index from the last segment of the path
+                // Path format: "0/0/0/3" -> index is 3
+                let index = bip32_path
+                    .split('/')
+                    .next_back()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(0);
+
+                // Create the address display widget with random seed for anti-address-poisoning
+                let address_display =
+                    AddressWithPath::new_with_seed(address, bip32_path, index, rand_seed);
+                WidgetTree::AddressDisplay(Box::new(address_display))
             }
 
             Workflow::FirmwareUpgrade(status) => {
@@ -432,7 +426,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             }
             WidgetTree::SignTestPrompt { widget, phase } => {
                 // Check if confirmed and we still have the phase
-                if widget.is_confirmed() {
+                if widget.is_completed() {
                     // Take the phase (move it out of the Option)
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });
@@ -474,13 +468,15 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 // Check if the name prompt was confirmed and we haven't already sent the event
                 if widget.is_completed() {
                     if let Some(name) = new_name.take() {
-                        return Some(UiEvent::NameConfirm(name));
+                        return Some(UiEvent::NameConfirm(
+                            name.try_into().expect("name should fit in DeviceName")
+                        ));
                     }
                 }
             }
             WidgetTree::WipeDevicePrompt { widget, confirmed } => {
                 // Check if the wipe device prompt was confirmed and we haven't already sent the event
-                if widget.is_completed() && !*confirmed {
+                if widget.is_confirmed() && !*confirmed {
                     *confirmed = true;
                     return Some(UiEvent::WipeDataConfirm);
                 }

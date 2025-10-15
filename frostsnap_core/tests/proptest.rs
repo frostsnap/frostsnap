@@ -15,7 +15,6 @@ use frostsnap_core::{
         CoordinatorToUserSigningMessage,
     },
     device::{DeviceToUserMessage, KeyGenPhase3, KeyPurpose, SignPhase1},
-    message::{self, DeviceSend, DeviceToCoordinatorMessage},
     tweak::BitcoinBip32Path,
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
@@ -688,16 +687,6 @@ impl Env for ProptestEnv {
             }
             VerifyAddress { .. } => {
                 // we dont actually confirm on the device
-            }
-            NonceJobs(mut batch) => {
-                // Run the batch to completion and send a single response
-                batch.run_until_finished(&mut TestDeviceKeyGen);
-                let segments = batch.into_segments();
-                let response =
-                    DeviceSend::ToCoordinator(Box::new(DeviceToCoordinatorMessage::Signing(
-                        message::signing::DeviceSigning::NonceResponse { segments },
-                    )));
-                run.extend_from_device(from, vec![response]);
             }
         }
     }

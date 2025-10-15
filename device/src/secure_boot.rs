@@ -8,9 +8,10 @@ use esp_hal::efuse::Efuse;
 use esp_hal::rsa::{operand_sizes::Op3072, Rsa, RsaModularExponentiation};
 use esp_hal::sha::{Sha, Sha256};
 use esp_hal::Blocking;
-use frostsnap_comms::firmware_reader::SECTOR_SIZE;
 
 use nb::block;
+
+const SECTOR_SIZE: usize = 4096;
 
 #[derive(Debug)]
 pub enum SecureBootError<'a> {
@@ -279,8 +280,27 @@ pub fn is_secure_boot_enabled() -> bool {
     find_secure_boot_key().is_some()
 }
 
+pub fn find_signature_sector(partition: &EspFlashPartition) -> Option<u32> {
+    // Search backwards from the end - signature blocks are typically at the end of firmware
+    for i in (0..partition.n_sectors()).rev() {
+        match partition.read_sector(i) {
+            Ok(sector_data) => {
+                // Check for signature block magic bytes: 0xE7, 0x02, 0x00, 0x00
+                if sector_data.len() >= 4 && sector_data[0..4] == [0xE7, 0x02, 0x00, 0x00] {
+                    return Some(i);
+                }
+            }
+            Err(_) => {
+                // Skip unreadable sectors
+                continue;
+            }
+        }
+    }
+    None // No signature block found
+}
+
 fn read_signature_sector(partition: &EspFlashPartition) -> Option<(u32, Box<[u8; SECTOR_SIZE]>)> {
-    let sector_idx = frostsnap_comms::firmware_reader::find_signature_sector(partition)?;
+    let sector_idx = find_signature_sector(partition)?;
     let sector_data = partition.read_sector(sector_idx).ok()?;
     Some((sector_idx, sector_data))
 }

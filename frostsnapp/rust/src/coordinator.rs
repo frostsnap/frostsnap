@@ -21,8 +21,8 @@ use frostsnap_coordinator::wait_for_recovery_share::{
     WaitForRecoveryShare, WaitForRecoveryShareState,
 };
 use frostsnap_coordinator::{
-    AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
-    UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
+    AppMessageBody, DeviceChange, DeviceMode, FirmwareBin, Sink, UiProtocol, UiStack, UsbSender,
+    UsbSerialManager, WaitForToUserMessage,
 };
 use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
@@ -36,12 +36,14 @@ use frostsnap_core::{
     message, AccessStructureRef, DeviceId, KeyId, KeygenId, RestorationId, SignSessionId,
     SymmetricKey, WireSignTask,
 };
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 use std::ops::DerefMut;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
@@ -52,7 +54,7 @@ pub struct FfiCoordinator {
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_stack: Arc<Mutex<UiStack>>,
     pub(crate) usb_sender: UsbSender,
-    firmware_bin: Option<ValidatedFirmwareBin>,
+    firmware_bin: Option<FirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<Box<dyn Sink<f32>>>>>,
     device_list: Arc<Mutex<DeviceList>>,
     device_list_stream: Arc<Mutex<Option<Box<dyn Sink<DeviceListUpdate>>>>>,
@@ -413,11 +415,12 @@ impl FfiCoordinator {
     }
 
     pub fn nonce_replenish_request(&self, devices: BTreeSet<DeviceId>) -> NonceReplenishRequest {
-        self.coordinator
-            .lock()
-            .unwrap()
-            .MUTATE_NO_PERSIST()
-            .maybe_request_nonce_replenishment(&devices, N_NONCE_STREAMS, &mut rand::thread_rng())
+        frostsnap_coordinator::nonce_replenish::NonceReplenishProtocol::create_nonce_request(
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            devices,
+            N_NONCE_STREAMS,
+            &mut rand::thread_rng(),
+        )
     }
 
     pub fn replenish_nonces(
@@ -564,10 +567,10 @@ impl FfiCoordinator {
         let ui_protocol = {
             let device_list = self.device_list.lock().unwrap();
 
-            let devices: HashMap<DeviceId, FirmwareVersion> = device_list
+            let devices = device_list
                 .devices()
                 .into_iter()
-                .map(|device| (device.id, device.firmware))
+                .map(|device| device.id)
                 .collect();
 
             let need_upgrade = device_list
@@ -589,11 +592,6 @@ impl FfiCoordinator {
 
     pub fn upgrade_firmware_digest(&self) -> Option<Sha256Digest> {
         self.firmware_bin.map(|firmware_bin| firmware_bin.digest())
-    }
-
-    pub fn upgrade_firmware_version_name(&self) -> Option<String> {
-        self.firmware_bin
-            .map(|firmware_bin| firmware_bin.firmware_version().version_name())
     }
 
     fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {

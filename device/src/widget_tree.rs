@@ -1,4 +1,4 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, string::String};
 use frostsnap_core::device::{
     restoration::{BackupDisplayPhase, EnterBackupPhase},
     KeyGenPhase3, SignPhase1,
@@ -6,17 +6,15 @@ use frostsnap_core::device::{
 use frostsnap_widgets::{
     backup::{BackupDisplay, EnterShareScreen},
     keygen_check::KeygenCheck,
-    layout::*,
     sign_prompt::SignTxPrompt,
-    DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm,
-    SignMessageConfirm, Standby, Text, Welcome,
+    Center, DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm,
+    Standby, Text, Welcome, WipeDevice,
 };
 
 use crate::ui::FirmwareUpgradeStatus;
 
 // Type alias for the backup request prompt widget
-type BackupRequestPromptWidget =
-    HoldToConfirm<Center<frostsnap_widgets::Column<(Text, Text, Text)>>>;
+type BackupRequestPromptWidget = HoldToConfirm<Text>;
 
 /// The widget tree represents the current UI state as a tree of widgets
 #[derive(frostsnap_macros::Widget)]
@@ -45,7 +43,7 @@ pub enum WidgetTree {
 
     /// Sign test message prompt screen
     SignTestPrompt {
-        widget: Box<SignMessageConfirm>,
+        widget: Box<HoldToConfirm<Center<Text>>>,
         phase: Option<Box<SignPhase1>>,
     },
 
@@ -72,12 +70,12 @@ pub enum WidgetTree {
     /// New name confirmation prompt
     NewNamePrompt {
         widget: Box<HoldToConfirm<Text>>,
-        new_name: Option<frostsnap_comms::DeviceName>,
+        new_name: Option<String>,
     },
 
-    /// Device wipe confirmation prompt  
+    /// Device wipe confirmation prompt
     WipeDevicePrompt {
-        widget: Box<HoldToConfirm<Text>>,
+        widget: Box<WipeDevice>,
         confirmed: bool,
     },
 
@@ -85,7 +83,7 @@ pub enum WidgetTree {
     DisplayBackup(Box<BackupDisplay>),
 
     /// Display Bitcoin address screen with derivation path
-    AddressDisplay(Box<Center<frostsnap_widgets::AddressWithPath>>),
+    AddressDisplay(Box<frostsnap_widgets::AddressWithPath>),
 
     /// Enter backup screen
     EnterBackup {

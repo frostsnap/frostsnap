@@ -1,49 +1,35 @@
-use crate::{
-    Completion, FirmwareUpgradeEligibility, FirmwareVersion, Sink, UiProtocol, ValidatedFirmwareBin,
-};
+use crate::{Completion, FirmwareBin, Sink, UiProtocol};
 
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorSendMessage, CoordinatorUpgradeMessage,
 };
 use frostsnap_core::DeviceId;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 pub struct FirmwareUpgradeProtocol {
     state: FirmwareUpgradeConfirmState,
     sent_first_message: bool,
-    firmware_bin: ValidatedFirmwareBin,
-    devices: HashMap<DeviceId, FirmwareVersion>,
+    firmware_bin: FirmwareBin,
     sink: Box<dyn Sink<FirmwareUpgradeConfirmState>>,
 }
 
 impl FirmwareUpgradeProtocol {
     pub fn new(
-        devices: HashMap<DeviceId, FirmwareVersion>,
+        devices: BTreeSet<DeviceId>,
         need_upgrade: BTreeSet<DeviceId>,
-        firmware_bin: ValidatedFirmwareBin,
+        firmware_bin: FirmwareBin,
         sink: impl Sink<FirmwareUpgradeConfirmState> + 'static,
     ) -> Self {
-        // Check if any device has incompatible firmware
-        let abort_reason = devices.values().find_map(|fw| {
-            match firmware_bin.check_upgrade_eligibility(&fw.digest) {
-                FirmwareUpgradeEligibility::CannotUpgrade { reason } => {
-                    Some(format!("One of the devices is incompatible with the upgrade. Unplug it to continue or try upgrading the app. Problem: {reason}"))
-                }
-                _ => None,
-            }
-        });
-
         Self {
             state: FirmwareUpgradeConfirmState {
-                devices: devices.keys().copied().collect(),
+                devices: devices.into_iter().collect(),
                 need_upgrade: need_upgrade.into_iter().collect(),
                 confirmations: Default::default(),
-                abort: abort_reason,
+                abort: false,
                 upgrade_ready_to_start: false,
             },
             sent_first_message: false,
             firmware_bin,
-            devices,
             sink: Box::new(sink),
         }
     }
@@ -55,7 +41,7 @@ impl FirmwareUpgradeProtocol {
 
 impl UiProtocol for FirmwareUpgradeProtocol {
     fn cancel(&mut self) {
-        self.state.abort = Some("canceled".to_string());
+        self.state.abort = true;
         self.emit_state();
     }
 
@@ -64,7 +50,7 @@ impl UiProtocol for FirmwareUpgradeProtocol {
             == BTreeSet::from_iter(self.state.devices.iter())
         {
             Some(Completion::Success)
-        } else if self.state.abort.is_some() {
+        } else if self.state.abort {
             Some(Completion::Abort {
                 send_cancel_to_all_devices: true,
             })
@@ -74,14 +60,14 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     }
 
     fn disconnected(&mut self, id: DeviceId) {
-        if self.devices.contains_key(&id) {
-            self.state.abort = Some("Device disconnected during upgrade".to_string());
+        if self.state.devices.contains(&id) {
+            self.state.abort = true;
             self.emit_state();
         }
     }
 
     fn process_comms_message(&mut self, from: DeviceId, message: CommsMisc) -> bool {
-        if !self.devices.contains_key(&from) {
+        if !self.state.devices.contains(&from) {
             return false;
         }
         if let CommsMisc::AckUpgradeMode = message {
@@ -97,27 +83,15 @@ impl UiProtocol for FirmwareUpgradeProtocol {
 
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut to_devices = vec![];
-        if !self.sent_first_message && self.state.abort.is_none() {
-            let any_device_needs_legacy = self
-                .devices
-                .values()
-                .any(|fw| !fw.features().upgrade_digest_no_sig);
-
-            let upgrade_message = if any_device_needs_legacy {
-                CoordinatorUpgradeMessage::PrepareUpgrade {
-                    size: self.firmware_bin.size(),
-                    firmware_digest: self.firmware_bin.digest_with_signature(),
-                }
-            } else {
-                CoordinatorUpgradeMessage::PrepareUpgrade2 {
-                    size: self.firmware_bin.size(),
-                    firmware_digest: self.firmware_bin.digest(),
-                }
-            };
-
+        if !self.sent_first_message {
             to_devices.push(CoordinatorSendMessage {
                 target_destinations: frostsnap_comms::Destination::All,
-                message_body: CoordinatorSendBody::Upgrade(upgrade_message),
+                message_body: CoordinatorSendBody::Upgrade(
+                    CoordinatorUpgradeMessage::PrepareUpgrade {
+                        size: self.firmware_bin.size(),
+                        firmware_digest: self.firmware_bin.cached_digest(),
+                    },
+                ),
             });
             self.sent_first_message = true;
         }
@@ -146,6 +120,6 @@ pub struct FirmwareUpgradeConfirmState {
     pub confirmations: Vec<DeviceId>,
     pub devices: Vec<DeviceId>,
     pub need_upgrade: Vec<DeviceId>,
-    pub abort: Option<String>,
+    pub abort: bool,
     pub upgrade_ready_to_start: bool,
 }

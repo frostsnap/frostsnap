@@ -222,23 +222,7 @@ class WalletCreateController extends ChangeNotifier {
   int get connectedDeviceCount => _deviceList.devices.length;
   bool get devicesNeedUpgrade =>
       _deviceList.devices.any((dev) => dev.needsFirmwareUpgrade());
-  bool get devicesCanUpgrade => _deviceList.devices.any((dev) {
-    final eligibility = dev.firmwareUpgradeEligibility();
-    return eligibility.when(
-      upToDate: () => false,
-      canUpgrade: () => true,
-      cannotUpgrade: (_) => false,
-    );
-  });
   bool get devicesUsed => _deviceList.devices.any((dev) => dev.name != null);
-  bool get devicesIncompatible => _deviceList.devices.any((dev) {
-    final eligibility = dev.firmwareUpgradeEligibility();
-    return eligibility.when(
-      upToDate: () => false,
-      canUpgrade: () => false,
-      cannotUpgrade: (_) => true,
-    );
-  });
   bool get allWalletDevicesConnected => _form.selectedDevices.every(
     (selectedId) =>
         _deviceList.devices.any((dev) => deviceIdEquals(dev.id, selectedId)),
@@ -260,10 +244,7 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.name =>
       _nameError == null && _nameController.value.text.isNotEmpty,
     WalletCreateStep.deviceCount =>
-      _deviceList.devices.isNotEmpty &&
-          !devicesNeedUpgrade &&
-          !devicesUsed &&
-          !devicesIncompatible,
+      _deviceList.devices.isNotEmpty && !devicesNeedUpgrade && !devicesUsed,
     WalletCreateStep.nonceReplenish => false, // Auto-advances, no manual next
     WalletCreateStep.deviceNames =>
       allWalletDevicesConnected && _form.allDevicesNamed,
@@ -595,52 +576,38 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     return MultiSliver(
       children: [
         SliverDeviceList(
-          deviceBuilder: (context, device) {
-            final eligibility = device.firmwareUpgradeEligibility();
-            return buildDevice(
-              context,
-              device,
-              trailing: device.name != null
-                  ? buildDeviceTrailingInfo(
-                      context,
-                      text: 'Already holds a key',
-                      subText: 'Unplug to continue',
-                      icon: Icons.warning_rounded,
-                      color: Theme.of(context).colorScheme.error,
-                    )
-                  : eligibility.when(
-                      canUpgrade: () => buildDeviceTrailingInfo(
-                        context,
-                        text: 'Old firmware',
-                        subText: "Upgrade to continue",
-                        icon: Icons.system_update_alt_rounded,
-                        color: Colors.orange,
-                      ),
-                      upToDate: () => buildDeviceTrailingInfo(
-                        context,
-                        text: 'Ready',
-                        icon: Icons.check_circle_rounded,
-                        color: Colors.green,
-                      ),
-                      cannotUpgrade: (reason) => buildDeviceTrailingInfo(
-                        context,
-                        text: 'Incompatible firmware',
-                        subText: reason,
-                        icon: Icons.warning_rounded,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-              onPressed: eligibility.when(
-                upToDate: () => null,
-                canUpgrade: () =>
-                    () async => await _upgradeController.run(parentCtx),
-                cannotUpgrade: (_) => null,
-              ),
-            );
-          },
+          deviceBuilder: (context, device) => buildDevice(
+            context,
+            device,
+            trailing: device.name != null
+                ? buildDeviceTrailingInfo(
+                    context,
+                    text: 'Already holds a key',
+                    subText: 'Unplug to continue',
+                    icon: Icons.warning_rounded,
+                    color: Theme.of(context).colorScheme.error,
+                  )
+                : device.needsFirmwareUpgrade()
+                ? buildDeviceTrailingInfo(
+                    context,
+                    text: 'Old firmware',
+                    subText: "Upgrade to continue",
+                    icon: Icons.system_update_alt_rounded,
+                    color: Colors.orange,
+                  )
+                : buildDeviceTrailingInfo(
+                    context,
+                    text: 'Ready',
+                    icon: Icons.check_circle_rounded,
+                    color: Colors.green,
+                  ),
+            onPressed: device.needsFirmwareUpgrade()
+                ? () async => await _upgradeController.run(parentCtx)
+                : null,
+          ),
         ),
 
-        if (_controller.devicesCanUpgrade && !_controller.devicesIncompatible)
+        if (_controller.devicesNeedUpgrade)
           SliverToBoxAdapter(
             child: Card.outlined(
               margin: EdgeInsets.symmetric(vertical: 8),
@@ -666,23 +633,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     onTap: () async => await _upgradeController.run(context),
                   ),
                 ],
-              ),
-            ),
-          ),
-        if (_controller.devicesIncompatible)
-          SliverToBoxAdapter(
-            child: Card.outlined(
-              margin: EdgeInsets.symmetric(vertical: 8),
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                title: Text(
-                  'One or more devices have incompatible firmware. Unplug them to continue.',
-                ),
-                leading: Icon(
-                  Icons.warning_rounded,
-                  color: theme.colorScheme.error,
-                ),
               ),
             ),
           ),

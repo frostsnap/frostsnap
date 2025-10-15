@@ -9,7 +9,6 @@ edition = "2021"
 anyhow = "1"
 frostsnap_comms = { workspace = true, features = ["coordinator"] }
 frostsnap_core = { workspace = true, features = ["coordinator", "rusqlite"] }
-frostsnap_macros.workspace = true
 bincode = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
 serialport = { version = "4.6", default-features = false }            # default-features = false so no libudev

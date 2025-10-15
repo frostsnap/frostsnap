@@ -1,4 +1,3 @@
-pub use crate::api::firmware::{FirmwareUpgradeEligibility, FirmwareVersion, ValidatedFirmwareBin};
 use anyhow::Result;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::DeviceMode;
@@ -34,11 +33,11 @@ pub struct DeviceListState {
 }
 
 #[derive(Clone, Debug)]
-#[frb(opaque)]
 pub struct ConnectedDevice {
     pub name: Option<String>,
-    pub firmware: FirmwareVersion,
-    pub latest_firmware: Option<ValidatedFirmwareBin>,
+    // NOTE: digest should always be present in any device that is actually plugged in
+    pub firmware_digest: String,
+    pub latest_digest: Option<String>,
     pub id: DeviceId,
     pub recovery_mode: bool,
 }
@@ -51,21 +50,9 @@ impl ConnectedDevice {
 
     #[frb(sync)]
     pub fn needs_firmware_upgrade(&self) -> bool {
-        !matches!(
-            self.firmware_upgrade_eligibility(),
-            FirmwareUpgradeEligibility::UpToDate
-        )
-    }
-
-    #[frb(sync)]
-    pub fn firmware_upgrade_eligibility(&self) -> FirmwareUpgradeEligibility {
-        let Some(latest_firmware) = &self.latest_firmware else {
-            return FirmwareUpgradeEligibility::CannotUpgrade {
-                reason: "No firmware available in app".to_string(),
-            };
-        };
-
-        latest_firmware.check_upgrade_eligibility(&self.firmware.digest)
+        // We still want to have this return true even when we don't have firmware in the app so we
+        // know that the device needs a firmware upgrade (even if we can't give it to them).
+        Some(self.firmware_digest.as_str()) != self.latest_digest.as_deref()
     }
 
     #[frb(ignore)]

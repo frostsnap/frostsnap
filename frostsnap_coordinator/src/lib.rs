@@ -1,7 +1,6 @@
 pub mod backup_run;
 pub mod display_backup;
 pub mod enter_physical_backup;
-pub mod firmware;
 pub mod firmware_upgrade;
 pub mod keygen;
 pub mod nonce_replenish;
@@ -21,10 +20,6 @@ pub use frostsnap_comms;
 pub use frostsnap_core;
 pub use serial_port::*;
 pub mod settings;
-pub use firmware::{
-    FirmwareBin, FirmwareUpgradeEligibility, FirmwareValidationError, FirmwareVersion,
-    ValidatedFirmwareBin, VersionNumber,
-};
 pub use ui_protocol::*;
 pub use usb_serial_manager::*;
 pub mod bitcoin;

@@ -7,7 +7,7 @@ use crate::{
     frb_generated::{RustAutoOpaque, StreamSink},
 };
 use anyhow::{Context as _, Result};
-use frostsnap_coordinator::{DesktopSerial, UsbSerialManager, ValidatedFirmwareBin};
+use frostsnap_coordinator::{DesktopSerial, UsbSerialManager};
 use std::{
     path::PathBuf,
     str::FromStr,
@@ -71,8 +71,7 @@ impl super::Api {
         use super::port::FfiSerial;
         let app_dir = PathBuf::from_str(&app_dir)?;
         let ffi_serial = FfiSerial::default();
-        let firmware = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()?;
-        let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), firmware);
+        let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), crate::FIRMWARE);
         let (coord, app_state) = load_internal(app_dir, usb_manager)?;
         Ok((coord, app_state, ffi_serial))
     }
@@ -80,8 +79,7 @@ impl super::Api {
     // Desktop function using DesktopSerial
     pub fn load(&self, app_dir: String) -> anyhow::Result<(Coordinator, AppCtx)> {
         let app_dir = PathBuf::from_str(&app_dir)?;
-        let firmware = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()?;
-        let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), firmware);
+        let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), crate::FIRMWARE);
         load_internal(app_dir, usb_manager)
     }
 }

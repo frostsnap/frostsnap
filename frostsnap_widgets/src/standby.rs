@@ -1,14 +1,18 @@
 use crate::{
-    bitmap::EncodedImage, device_name::DeviceName, icons::IconWidget, image::Image,
-    palette::PALETTE, prelude::*, share_index::ShareIndexWidget, vec_framebuffer::VecFramebuffer,
+    device_name::DeviceName,
+    gray4_style::Gray4TextStyle,
+    palette::PALETTE,
+    prelude::*,
+    share_index::ShareIndexWidget,
+    BmpImage,
 };
-use crate::{DefaultTextStyle, FONT_LARGE};
+use crate::DefaultTextStyle;
 use alloc::string::{String, ToString};
-use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
-use embedded_iconoir::prelude::IconoirNewIcon;
+use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, text::Alignment};
 use frostsnap_core::message::HeldShare;
+use frostsnap_fonts::WARNING_ICON;
 
-const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
+const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
 
 /// A widget that displays the Frostsnap logo with a key name and device name
 #[derive(frostsnap_macros::Widget)]
@@ -16,28 +20,20 @@ pub struct Standby {
     #[widget_delegate]
     content: Center<
         Column<(
-            Image<VecFramebuffer<BinaryColor>, Rgb565>,
+            BmpImage,
+            SizedBox<Rgb565>,
             Option<
                 Row<(
-                    IconWidget<
-                        embedded_iconoir::Icon<
-                            Rgb565,
-                            embedded_iconoir::icons::size24px::actions::WarningTriangle,
-                        >,
-                    >,
-                    Text,
+                    Text<Gray4TextStyle>,
+                    SizedBox<Rgb565>,
+                    Column<(SizedBox<Rgb565>, Text)>,
                 )>,
             >,
-            Row<(
-                IconWidget<
-                    embedded_iconoir::Icon<
-                        Rgb565,
-                        embedded_iconoir::icons::size24px::finance::Wallet,
-                    >,
-                >,
-                Text,
-            )>,
+            SizedBox<Rgb565>,
+            Text,               // Key name
+            SizedBox<Rgb565>,
             ShareIndexWidget,
+            SizedBox<Rgb565>,
             DeviceName,
         )>,
     >,
@@ -45,46 +41,62 @@ pub struct Standby {
 
 impl Standby {
     pub fn new(device_name: impl Into<String>, held_share: HeldShare) -> Self {
-        let key_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface_variant);
-
-        let wallet_icon = IconWidget::new(embedded_iconoir::icons::size24px::finance::Wallet::new(
-            PALETTE.on_surface_variant,
-        ));
-        let key_text = Text::new(held_share.key_name.to_string(), key_style);
-
-        let key_row = Row::builder().push(wallet_icon).gap(8).push(key_text);
+        // Load BMP logo with color mapping
+        let logo = BmpImage::new(LOGO_DATA, PALETTE.logo);
 
         let recovery_warning = if held_share.access_structure_ref.is_none() {
-            let warning_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.warning);
-            let warning_icon = IconWidget::new(
-                embedded_iconoir::icons::size24px::actions::WarningTriangle::new(PALETTE.warning),
+            // Use the warning icon as a Gray4 font glyph
+            let warning_icon = Text::new(
+                "⚠".to_string(),
+                Gray4TextStyle::new(&WARNING_ICON, PALETTE.warning),
             );
-            let warning_text = Text::new("recovery mode", warning_style);
-            Some(Row::builder().push(warning_icon).gap(8).push(warning_text))
+
+            let icon_spacer = SizedBox::new(Size::new(5, 0)); // 5px horizontal spacing
+
+            let warning_text = Text::new(
+                "Recovery Mode",
+                DefaultTextStyle::new(crate::FONT_MED, PALETTE.warning),
+            );
+
+            // Add a small spacer above the text to align it with the icon
+            let text_top_spacer = SizedBox::new(Size::new(0, 5)); // 5px adjustment
+            let text_with_spacer = Column::new((text_top_spacer, warning_text));
+
+            Some(Row::new((warning_icon, icon_spacer, text_with_spacer)))
         } else {
             None
         };
 
+        // Create key name in medium emphasis grey
+        let key_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface_variant);
+        let key_text = Text::new(held_share.key_name.to_string(), key_style)
+            .with_alignment(Alignment::Center);
+
+        // Extract share index and create the widget
         let share_index: u16 = held_share.share_image.index.try_into().unwrap();
-        let share_index_widget = ShareIndexWidget::new(share_index, FONT_LARGE);
+        let share_index_widget = ShareIndexWidget::new(share_index, crate::FONT_SMALL);
 
         let device_name_widget = DeviceName::new(device_name);
 
-        let encoded_image = EncodedImage::from_bytes(LOGO_DATA).expect("Failed to load logo");
-        let framebuffer: VecFramebuffer<BinaryColor> = encoded_image.into();
-        let logo = Image::with_color_map(framebuffer, |color| match color {
-            BinaryColor::On => PALETTE.logo,
-            BinaryColor::Off => PALETTE.background,
-        });
+        // Create spacers with fixed heights
+        let spacer1 = SizedBox::new(Size::new(0, 15)); // Space after logo
+        let spacer2 = SizedBox::new(Size::new(0, 8));  // Space after recovery warning (or before key name if no warning)
+        let spacer3 = SizedBox::new(Size::new(0, 12)); // Space after key name
+        let spacer4 = SizedBox::new(Size::new(0, 4));  // Small space between share index and device name
 
+        // Create column with fixed spacing
         let column = Column::new((
             logo,
+            spacer1,
             recovery_warning,
-            key_row,
+            spacer2,
+            key_text,
+            spacer3,
             share_index_widget,
+            spacer4,
             device_name_widget,
         ))
-        .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+        .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
         let content = Center::new(column);
 

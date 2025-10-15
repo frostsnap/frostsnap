@@ -84,6 +84,16 @@ where
         self.border_width
     }
 
+    pub fn set_border_color(&mut self, color: C) {
+        self.border_color = color;
+        // Force redraw with new color
+        self.last_drawn_progress = Frac::from_ratio(u32::MAX, u32::MAX); // Force redraw
+    }
+
+    pub fn set_background_color(&mut self, color: C) {
+        self.background_color = color;
+    }
+
     pub fn start_fade_out(&mut self, duration_ms: u64) {
         self.is_fading = true;
         self.fade_duration_ms = duration_ms;

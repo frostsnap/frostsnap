@@ -382,7 +382,11 @@ impl Run {
                             self.devices
                                 .get_mut(&destination)
                                 .unwrap()
-                                .recv_coordinator_message(message.clone(), rng)?
+                                .recv_coordinator_message(
+                                    message.clone(),
+                                    rng,
+                                    &mut TestDeviceKeyGen,
+                                )?
                                 .into_iter()
                                 .map(|v| Send::device_send(destination, v)),
                         );

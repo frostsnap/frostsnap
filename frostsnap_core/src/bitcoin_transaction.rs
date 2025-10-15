@@ -244,13 +244,6 @@ impl TransactionTemplate {
             .filter_map(|(i, output)| Some((i, output, output.owner.local_owner()?)))
     }
 
-    /// Returns true if this transaction has any inputs that need signing by this wallet.
-    pub fn has_any_inputs_to_sign(&self) -> bool {
-        self.inputs
-            .iter()
-            .any(|input| input.owner.local_owner().is_some())
-    }
-
     pub fn fee(&self) -> Option<u64> {
         self.inputs
             .iter()
@@ -316,9 +309,13 @@ impl TransactionTemplate {
             })
             .collect::<Vec<_>>();
 
+        // Calculate fee rate in sats/vB
+        let fee_rate_sats_per_vbyte = self.feerate();
+
         PromptSignBitcoinTx {
             foreign_recipients,
             fee,
+            fee_rate_sats_per_vbyte,
         }
     }
 }
@@ -327,6 +324,8 @@ impl TransactionTemplate {
 pub struct PromptSignBitcoinTx {
     pub foreign_recipients: Vec<(bitcoin::Address, bitcoin::Amount)>,
     pub fee: bitcoin::Amount,
+    /// Fee rate in sats/vB
+    pub fee_rate_sats_per_vbyte: Option<f64>,
 }
 
 impl PromptSignBitcoinTx {

@@ -17,7 +17,6 @@ use frostsnap_comms::{
 };
 use frostsnap_core::{
     device::{DeviceToUserMessage, FrostSigner},
-    device_nonces::NonceJobBatch,
     message::{self, DeviceSend},
 };
 use frostsnap_embedded::NonceAbSlot;
@@ -104,9 +103,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
 
     // Get active firmware information
     let active_partition = ota_partitions.active_partition();
-    let (firmware_size, _firmware_and_signature_block_size) =
+    let (_firmware_size, firmware_and_signature_block_size) =
         active_partition.firmware_size().unwrap();
-    let active_firmware_digest = active_partition.sha256_digest(sha256, Some(firmware_size));
+    let active_firmware_digest =
+        active_partition.sha256_digest(sha256, Some(firmware_and_signature_block_size));
 
     let device_id = signer.device_id();
 
@@ -115,7 +115,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let mut downstream_connection_state = DownstreamConnectionState::Disconnected;
     let mut sends_user: Vec<DeviceToUserMessage> = vec![];
     let mut outbox = VecDeque::new();
-    let mut nonce_task_batch: Option<NonceJobBatch> = None;
     let mut inbox: Vec<CoordinatorSendBody> = vec![];
     let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
     let mut magic_bytes_timeout_counter = 0;
@@ -156,7 +155,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             upgrade = None;
             pending_device_name = None;
             outbox.clear();
-            nonce_task_batch = None;
         }
 
         let is_usb_connected_downstream = !downstream_detect.is_high();
@@ -393,23 +391,16 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     }
                     outbox.extend(
                         signer
-                            .recv_coordinator_message(core_message.clone(), rng)
+                            .recv_coordinator_message(
+                                core_message.clone(),
+                                rng,
+                                &mut hmac_keys.share_encryption,
+                            )
                             .expect("failed to process coordinator message"),
                     );
                 }
                 CoordinatorSendBody::Upgrade(upgrade_message) => match upgrade_message {
                     CoordinatorUpgradeMessage::PrepareUpgrade {
-                        size,
-                        firmware_digest,
-                    } => {
-                        let upgrade_ = ota_partitions.start_upgrade(
-                            *size,
-                            *firmware_digest,
-                            active_firmware_digest,
-                        );
-                        upgrade = Some(upgrade_);
-                    }
-                    CoordinatorUpgradeMessage::PrepareUpgrade2 {
                         size,
                         firmware_digest,
                     } => {
@@ -456,23 +447,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             }
         }
 
-        // 🎯 Poll nonce job batch - process one nonce per iteration
-        if let Some(batch) = nonce_task_batch.as_mut() {
-            log!("start");
-            if batch.do_work(&mut hmac_keys.share_encryption) {
-                log!("finish");
-                // Batch completed, send the response with all segments
-                let completed_batch = nonce_task_batch.take().unwrap();
-                let segments = completed_batch.into_segments();
-                outbox.push_back(DeviceSend::ToCoordinator(Box::new(
-                    message::DeviceToCoordinatorMessage::Signing(
-                        message::signing::DeviceSigning::NonceResponse { segments },
-                    ),
-                )));
-            }
-            log!("done");
-        }
-
         // Handle message outbox to send
         while let Some(send) = outbox.pop_front() {
             match send {
@@ -502,12 +476,17 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                             let rand_seed = rng.next_u32();
                             ui.set_workflow(ui::Workflow::DisplayAddress {
                                 address,
-                                bip32_path,
+                                bip32_path: bip32_path
+                                    .path_segments_from_bitcoin_appkey()
+                                    .map(|i| i.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join("/"),
                                 rand_seed,
                             })
                         }
                         DeviceToUserMessage::SignatureRequest { phase } => {
-                            ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing { phase }));
+                            let rand_seed = rng.next_u32();
+                            ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing { phase, rand_seed }));
                         }
                         DeviceToUserMessage::Restoration(to_user_restoration) => {
                             use frostsnap_core::device::restoration::ToUserRestoration::*;
@@ -547,10 +526,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                     ui.set_workflow(default_workflow!(name, signer));
                                 }
                             }
-                        }
-                        DeviceToUserMessage::NonceJobs(batch) => {
-                            // 🚀 Set the batch for processing
-                            nonce_task_batch = Some(batch);
                         }
                     };
                 }

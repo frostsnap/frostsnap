@@ -2,7 +2,6 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-use crate::firmware::ValidatedFirmwareBin;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
@@ -55,7 +54,7 @@ pub struct UsbSerialManager {
     /// sometimes we need to put things in the outbox internally
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
-    firmware_bin: Option<ValidatedFirmwareBin>,
+    firmware_bin: Option<FirmwareBin>,
     /// Ongoing genuine check challenges to devices
     challenges: HashMap<DeviceId, [u8; 32]>,
 }
@@ -75,7 +74,7 @@ struct AwaitingMagic {
 
 impl UsbSerialManager {
     /// Returns self and a `UsbSender` which can be used to queue messages
-    pub fn new(serial_impl: Box<dyn Serial>, firmware_bin: Option<ValidatedFirmwareBin>) -> Self {
+    pub fn new(serial_impl: Box<dyn Serial>, firmware_bin: Option<FirmwareBin>) -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
         Self {
             serial_impl,
@@ -571,7 +570,9 @@ impl UsbSerialManager {
             None => device_changes.push(DeviceChange::Connected {
                 id: from,
                 firmware_digest,
-                latest_firmware_digest: self.firmware_bin.map(|firmware_bin| firmware_bin.digest()),
+                latest_firmware_digest: self
+                    .firmware_bin
+                    .map(|mut firmware_bin| firmware_bin.cached_digest()),
             }),
         }
 
@@ -622,7 +623,7 @@ impl UsbSerialManager {
             .map(|device_port| device_port.firmware_digest)
     }
 
-    pub fn upgrade_bin(&self) -> Option<ValidatedFirmwareBin> {
+    pub fn upgrade_bin(&self) -> Option<FirmwareBin> {
         self.firmware_bin
     }
 
@@ -663,7 +664,7 @@ impl UsbSerialManager {
 
             event!(Level::INFO, port = port, "starting writing firmware");
             let mut chunks = firmware_bin
-                .as_bytes()
+                .bin
                 .chunks(FIRMWARE_UPGRADE_CHUNK_LEN as usize)
                 .enumerate();
 
@@ -844,4 +845,45 @@ pub struct AppMessage {
 pub enum AppMessageBody {
     Core(Box<DeviceToCoordinatorMessage>),
     Misc(CommsMisc),
+}
+
+#[derive(Clone, Copy)]
+pub struct FirmwareBin {
+    bin: &'static [u8],
+    digest_cache: Option<Sha256Digest>,
+}
+
+impl FirmwareBin {
+    pub const fn is_stub(&self) -> bool {
+        self.bin.is_empty()
+    }
+
+    pub const fn new(bin: &'static [u8]) -> Self {
+        Self {
+            bin,
+            digest_cache: None,
+        }
+    }
+
+    pub fn num_chunks(&self) -> u32 {
+        (self.bin.len() as u32).div_ceil(FIRMWARE_UPGRADE_CHUNK_LEN)
+    }
+
+    pub fn size(&self) -> u32 {
+        self.bin.len() as u32
+    }
+
+    pub fn cached_digest(&mut self) -> Sha256Digest {
+        let digest_cache = self.digest_cache.take();
+        let digest = digest_cache.unwrap_or_else(|| self.digest());
+        self.digest_cache = Some(digest);
+        digest
+    }
+
+    pub fn digest(&self) -> Sha256Digest {
+        use frostsnap_core::sha2::digest::Digest;
+        let mut state = sha2::Sha256::default();
+        state.update(self.bin);
+        Sha256Digest(state.finalize().into())
+    }
 }

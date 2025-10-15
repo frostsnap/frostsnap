@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 bincode.workspace = true
 embedded-storage.workspace = true
-frostsnap_comms.workspace = true
 frostsnap_core.workspace = true
 rand_core.workspace = true
 

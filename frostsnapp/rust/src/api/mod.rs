@@ -2,7 +2,7 @@ pub mod backup_manager;
 pub mod bitcoin;
 pub mod coordinator;
 pub mod device_list;
-pub mod firmware;
+pub mod firmware_upgrade;
 pub mod init;
 pub mod keygen;
 pub mod log;

@@ -44,10 +44,9 @@ class MinimalNonceReplenishWidget extends StatelessWidget {
             });
           }
 
-          final progressPercent = state.totalStreams > 0
-              ? (state.completedStreams / state.totalStreams * 100)
-              : 100.0;
-          final isComplete = state.isFinished();
+          final progress = state.receivedFrom.length;
+          final total = state.devices.length;
+          final isComplete = progress == total;
 
           // Auto-advance when complete
           if (isComplete && autoAdvance && onComplete != null) {
@@ -68,14 +67,14 @@ class MinimalNonceReplenishWidget extends StatelessWidget {
                     width: 120,
                     height: 120,
                     child: CircularProgressIndicator(
-                      value: progressPercent / 100.0,
+                      value: total > 0 ? progress / total : null,
                       strokeWidth: 8,
                       backgroundColor:
                           theme.colorScheme.surfaceContainerHighest,
                     ),
                   ),
                   Text(
-                    '${progressPercent.toInt()}%',
+                    '$progress of $total',
                     style: theme.textTheme.headlineSmall,
                   ),
                 ],
@@ -159,7 +158,9 @@ class NonceReplenishDialog extends StatelessWidget {
                   stream: stream,
                   builder: (context, snapshot) {
                     final state = snapshot.data;
-                    final allComplete = state?.isFinished() ?? false;
+                    final allComplete =
+                        state != null &&
+                        state.receivedFrom.length == state.devices.length;
                     final isAborted = state?.abort ?? false;
 
                     return Row(
