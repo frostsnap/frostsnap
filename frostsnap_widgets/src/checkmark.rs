@@ -51,6 +51,14 @@ impl<C: PixelColor> Checkmark<C> {
         checkmark
     }
 
+    pub fn set_color(&mut self, color: C) {
+        if self.color != color {
+            self.color = color;
+            // Re-record pixels with new color
+            self.record_pixels();
+        }
+    }
+
     pub fn start_drawing(&mut self) {
         self.enabled = true;
         self.progress = Frac::ZERO;
@@ -217,11 +225,7 @@ impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
     }
 
     fn sizing(&self) -> crate::Sizing {
-        crate::Sizing {
-            width: self.check_width,
-            height: self.check_height,
-            ..Default::default()
-        }
+        Size::new(self.check_width, self.check_height).into()
     }
 
     fn handle_touch(

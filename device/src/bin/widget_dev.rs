@@ -7,7 +7,7 @@ use frostsnap_device::{peripherals::DevicePeripherals, touch_handler, DISPLAY_RE
 use frostsnap_widgets::debug::{EnabledDebug, OverlayDebug};
 
 // Widget demo selection
-const DEMO: &str = "bip39_backup";
+const DEMO: &str = "sign_prompt";
 
 #[entry]
 fn main() -> ! {

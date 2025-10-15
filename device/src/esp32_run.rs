@@ -507,7 +507,11 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                             })
                         }
                         DeviceToUserMessage::SignatureRequest { phase } => {
-                            ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing { phase }));
+                            let rand_seed = rng.next_u32();
+                            ui.set_workflow(ui::Workflow::prompt(ui::Prompt::Signing {
+                                phase,
+                                rand_seed,
+                            }));
                         }
                         DeviceToUserMessage::Restoration(to_user_restoration) => {
                             use frostsnap_core::device::restoration::ToUserRestoration::*;

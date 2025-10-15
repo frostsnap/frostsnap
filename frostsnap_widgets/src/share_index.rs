@@ -6,23 +6,26 @@ use crate::{
 };
 use frostsnap_fonts::Gray4Font;
 
-/// A widget that displays a share index with "#" in secondary color and the number in primary
+/// A widget that displays a share index with "Key #" in secondary color and the number in primary
 #[derive(frostsnap_macros::Widget)]
 pub struct ShareIndexWidget {
     #[widget_delegate]
-    row: Row<(Text, Text)>,
+    row: Row<(Text, Text, Text)>,
 }
 
 impl ShareIndexWidget {
     pub fn new(share_index: u16, font: &'static Gray4Font) -> Self {
+        let key_text = Text::new("Key ", DefaultTextStyle::new(font, PALETTE.text_secondary));
+
         let hash_text = Text::new("#", DefaultTextStyle::new(font, PALETTE.text_secondary));
 
         let index_text = Text::new(
             format!("{}", share_index),
-            DefaultTextStyle::new(font, PALETTE.primary),
+            DefaultTextStyle::new(font, PALETTE.text_secondary),
         );
 
         let row = Row::builder()
+            .push(key_text)
             .push(hash_text)
             .push(index_text)
             .with_main_axis_alignment(MainAxisAlignment::Center);

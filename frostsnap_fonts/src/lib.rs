@@ -16,6 +16,7 @@ pub mod noto_sans_mono_17_regular;
 pub mod noto_sans_mono_18_light;
 pub mod noto_sans_mono_24_bold;
 pub mod noto_sans_mono_28_bold;
+pub mod warning_icon;
 
 // Font exports
 pub use noto_sans_14_light::NOTO_SANS_14_LIGHT;
@@ -29,3 +30,4 @@ pub use noto_sans_mono_17_regular::NOTO_SANS_MONO_17_REGULAR;
 pub use noto_sans_mono_18_light::NOTO_SANS_MONO_18_LIGHT;
 pub use noto_sans_mono_24_bold::NOTO_SANS_MONO_24_BOLD;
 pub use noto_sans_mono_28_bold::NOTO_SANS_MONO_28_BOLD;
+pub use warning_icon::WARNING_ICON;
