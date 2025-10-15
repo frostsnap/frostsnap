@@ -14,7 +14,7 @@ lazy_static = "1.4"
 tracing-subscriber = { version = "0.3" }
 tracing = { workspace = true, features = ["std"] }
 bincode.workspace = true
-bardecoder = "0.5.0"
+rqrr = "0.10.0"
 bitcoin.workspace = true
 image = "0.24"
 ur = { git = "https://github.com/nickfarrow/ur-rs", rev = "2e267e5e019b6c8129f66efba00327ff3d0ae5a4" }
@@ -38,6 +38,9 @@ features = [
 
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-logcat = "0.1"
+
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+nokhwa = { version = "0.10", features = ["input-native"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

@@ -1,5 +1,6 @@
 pub mod backup_manager;
 pub mod bitcoin;
+pub mod camera;
 pub mod coordinator;
 pub mod device_list;
 pub mod firmware;
