@@ -80,6 +80,22 @@ impl RefState {
             .unwrap_or(0)
     }
 
+    fn cancel_session_and_consume_nonces(&mut self, session_idx: usize) {
+        let session = &mut self.sign_sessions[session_idx];
+        session.canceled = true;
+        let session = session.clone();
+
+        let devices_to_consume: Vec<_> = session
+            .sent_req_to
+            .difference(&session.got_sigs_from)
+            .cloned()
+            .collect();
+        for device_id in devices_to_consume {
+            let stream = self.get_device_stream_for_signing_session(&session, &device_id);
+            stream.nonces_available = stream.nonces_available.saturating_sub(session.n_inputs);
+        }
+    }
+
     pub fn available_signing_devices(&self) -> BTreeSet<DeviceId> {
         // A device is available if it has at least one unlocked stream with at least 1 nonce
         self.device_nonce_streams
@@ -561,21 +577,7 @@ impl ReferenceStateMachine for RefState {
                 // Nonces aren't consumed here - they're only consumed if session is canceled
             }
             Transition::CCancelSignSession { session_index } => {
-                let session = state.sign_sessions.get_mut(session_index).unwrap();
-                session.canceled = true;
-                let session = session.clone();
-
-                // Consume nonces for devices that had requests sent but didn't ack
-                let devices_to_consume: Vec<_> = session
-                    .sent_req_to
-                    .difference(&session.got_sigs_from)
-                    .cloned()
-                    .collect();
-                for device_id in devices_to_consume {
-                    let stream = state.get_device_stream_for_signing_session(&session, &device_id);
-                    stream.nonces_available =
-                        stream.nonces_available.saturating_sub(session.n_inputs);
-                }
+                state.cancel_session_and_consume_nonces(session_index);
             }
             Transition::DAckSignRequest {
                 session_index,
@@ -591,10 +593,16 @@ impl ReferenceStateMachine for RefState {
                 stream.nonces_available = nonce_batch_size;
             }
             Transition::CDeleteKey { key_index } => {
-                for session in &mut state.sign_sessions {
-                    if session.key_index == key_index {
-                        session.canceled = true;
-                    }
+                let sessions_to_cancel: Vec<_> = state
+                    .sign_sessions
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, session)| session.key_index == key_index)
+                    .map(|(idx, _)| idx)
+                    .collect();
+
+                for session_idx in sessions_to_cancel {
+                    state.cancel_session_and_consume_nonces(session_idx);
                 }
                 state.finished_keygens[key_index].deleted = true;
             }
@@ -896,7 +904,7 @@ prop_state_machine! {
         sequential
         // The number of transitions to be generated for each case. This can
         // be a single numerical value or a range as in here.
-        30
+        15..30
         // Macro's boilerplate to separate the following identifier.
         =>
         // The name of the type that implements `StateMachineTest`.
