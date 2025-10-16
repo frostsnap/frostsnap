@@ -23,7 +23,7 @@ impl<T> Persisted<T> {
         U: Into<T::Update>,
     {
         let (ret, update) = (mutator)(&mut self.0)?;
-        T::persist_update(db, update.into())?;
+        self.0.persist_update(db, update.into())?;
         Ok(ret)
     }
 
@@ -38,7 +38,7 @@ impl<T> Persisted<T> {
     {
         let mut update = T::Update::default();
         let result = (mutator)(&mut self.0, &mut update);
-        T::persist_update(db, update)?;
+        self.0.persist_update(db, update)?;
         result
     }
 
@@ -53,7 +53,7 @@ impl<T> Persisted<T> {
         let ret = mutator(&mut self.0)?;
         let update = self.0.take_staged_update();
         if let Some(update) = update {
-            T::persist_update(db, update)?;
+            self.0.persist_update(db, update)?;
         }
         Ok(ret)
     }
@@ -101,7 +101,7 @@ macro_rules! impl_multi {
                 #[allow(non_snake_case)]
                 let (ret, ($($uname),+)) = mutator($(&mut self.0.$index.0),+)?;
                 $(
-                    $name::persist_update(db, $uname.into())?;
+                    self.0.$index.0.persist_update(db, $uname.into())?;
                 )+
                 Ok(ret)
             }
@@ -148,7 +148,7 @@ pub trait Persist<C> {
     fn load(conn: &mut C, params: Self::LoadParams) -> Result<Self>
     where
         Self: Sized;
-    fn persist_update(conn: &mut C, update: Self::Update) -> Result<()>;
+    fn persist_update(&self, conn: &mut C, update: Self::Update) -> Result<()>;
 }
 
 pub trait TakeStaged<U> {

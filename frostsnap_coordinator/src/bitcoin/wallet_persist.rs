@@ -34,7 +34,7 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
         Ok(indexed_tx_graph)
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
+    fn persist_update(&self, conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
         let db_tx = conn.transaction()?;
 
         update.tx_graph.persist_to_sqlite(&db_tx)?;
@@ -69,7 +69,7 @@ impl Persist<rusqlite::Connection> for local_chain::LocalChain {
         Ok(LocalChain::from_changeset(changeset).expect("must have genesis block"))
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
+    fn persist_update(&self, conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
         let db_tx = conn.transaction()?;
 
         update.persist_to_sqlite(&db_tx)?;

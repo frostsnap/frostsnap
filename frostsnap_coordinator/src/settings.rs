@@ -171,7 +171,11 @@ impl Persist<rusqlite::Connection> for Settings {
         Ok(settings)
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
+    fn persist_update(
+        &self,
+        conn: &mut rusqlite::Connection,
+        update: Self::Update,
+    ) -> anyhow::Result<()> {
         for mutation in update {
             match mutation {
                 Mutation::SetDeveloperMode { value } => {

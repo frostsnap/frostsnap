@@ -216,6 +216,7 @@ impl Persist<rusqlite::Connection> for BackupState {
     }
 
     fn persist_update(
+        &self,
         conn: &mut rusqlite::Connection,
         update: Vec<Mutation>,
     ) -> anyhow::Result<()> {

@@ -68,7 +68,11 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
         Ok(coordinator)
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
+    fn persist_update(
+        &self,
+        conn: &mut rusqlite::Connection,
+        update: Self::Update,
+    ) -> anyhow::Result<()> {
         for mutation in update {
             match mutation {
                 coordinator::Mutation::Keygen(coordinator::keys::KeyMutation::DeleteKey(
@@ -90,7 +94,7 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
                 mutation => {
                     conn.execute(
                         "INSERT INTO fs_coordinator_mutations (tied_to_key, tied_to_restoration, mutation, version) VALUES (?1, ?2, ?3, 0)",
-                        params![mutation.tied_to_key(), mutation.tied_to_restoration(), BincodeWrapper(mutation)],
+                        params![mutation.tied_to_key(self), mutation.tied_to_restoration(), BincodeWrapper(mutation)],
                     )?;
                 }
             }
@@ -141,7 +145,11 @@ impl Persist<rusqlite::Connection> for Option<ActiveSignSession> {
         Ok(state)
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
+    fn persist_update(
+        &self,
+        conn: &mut rusqlite::Connection,
+        update: Self::Update,
+    ) -> anyhow::Result<()> {
         match update {
             Some(signing_session_state) => {
                 conn.execute(
@@ -233,7 +241,11 @@ impl Persist<rusqlite::Connection> for DeviceNames {
         Ok(device_names)
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
+    fn persist_update(
+        &self,
+        conn: &mut rusqlite::Connection,
+        update: Self::Update,
+    ) -> anyhow::Result<()> {
         for (id, name) in update {
             conn.execute(
                 "INSERT OR REPLACE INTO fs_devices (id, name) VALUES (?1, ?2)",
