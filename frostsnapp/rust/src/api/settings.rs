@@ -96,7 +96,15 @@ impl Settings {
                             move |master_appkey, txs| {
                                 let wallet_streams = wallet_streams.lock().unwrap();
                                 if let Some(stream) = wallet_streams.get(&master_appkey) {
-                                    stream.add(txs.into()).unwrap();
+                                    if let Err(err) = stream.add(txs.into()) {
+                                        tracing::error!(
+                                            {
+                                                master_appkey = master_appkey.to_redacted_string(),
+                                                err = err.to_string(),
+                                            },
+                                            "Failed to add txs to stream"
+                                        );
+                                    }
                                 }
                             }
                         },

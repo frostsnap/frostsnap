@@ -971,6 +971,15 @@ impl FfiCoordinator {
     }
 
     pub fn sub_signing_session_signals(&self, key_id: KeyId, new_stream: impl Sink<()>) {
+        // Emit an initial signal immediately so that subscribers (especially BehaviorSubjects on
+        // the Dart side) get an initial value. This is important for UI state that needs to show
+        // the correct state immediately on app restart (e.g., the "Continue" button when there
+        // are unbroadcasted transactions).
+        //
+        // NOTE: This signal stream design is a bit annoying because we should really just have a
+        // stream of signing sessions rather than a signal stream that causes consumers to
+        // recompute state.
+        new_stream.send(());
         let mut signal_streams = self.signing_session_signals.lock().unwrap();
         signal_streams.insert(key_id, Box::new(new_stream));
     }

@@ -12,6 +12,7 @@ import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
+import 'package:rxdart/rxdart.dart';
 
 class FrostsnapContext extends InheritedWidget {
   final Stream<String> logStream;
@@ -174,6 +175,18 @@ class WalletContext extends InheritedWidget {
   MasterAppkey get masterAppkey => wallet.masterAppkey;
   KeyId get keyId => wallet.masterAppkey.keyId();
   BitcoinNetwork get network => wallet.superWallet.network;
+
+  /// Stream that emits the count of unbroadcasted transactions. Recomputes
+  /// whenever signing sessions change OR tx state changes (canonicalization)
+  /// because canonicalized txs can actually effect what we consider broadcasted
+  /// if another app broadcasts it for example.
+  Stream<int> unbroadcastedTxCount() {
+    return Rx.merge([signingSessionSignals, txStream.map((_) => null)]).map(
+      (_) => coord
+          .unbroadcastedTxs(sWallet: superWallet, masterAppkey: masterAppkey)
+          .length,
+    );
+  }
 }
 
 class KeyContext extends InheritedWidget {

@@ -408,28 +408,35 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       onDismissed: () {},
     );
 
-    if (widget.isSigning) {
-      devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
-      broadcastDone = false;
-      if (widget.isRestoreSigning) {
-        signingSub = coord
-            .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
-            .listen(onSigningSessionData);
-      } else if (widget.isStartSigning) {
-        late final StreamSubscription<SigningState> sub;
-        sub = coord
-            .startSigningTx(
-              accessStructureRef: widget.accessStructureRef!,
-              unsignedTx: widget.unsignedTx!,
-              devices: widget.devices!,
-            )
-            .listen((state) {
-              // Ensure `onSigningSessionData` is called sequentially.
-              sub.pause();
-              onSigningSessionData(state).whenComplete(sub.resume);
-            });
-        signingSub = sub;
+    try {
+      if (widget.isSigning) {
+        devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
+        broadcastDone = false;
+        if (widget.isRestoreSigning) {
+          signingSub = coord
+              .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
+              .listen(onSigningSessionData);
+        } else if (widget.isStartSigning) {
+          late final StreamSubscription<SigningState> sub;
+          sub = coord
+              .startSigningTx(
+                accessStructureRef: widget.accessStructureRef!,
+                unsignedTx: widget.unsignedTx!,
+                devices: widget.devices!,
+              )
+              .listen((state) {
+                // Ensure `onSigningSessionData` is called sequentially.
+                sub.pause();
+                onSigningSessionData(state).whenComplete(sub.resume);
+              });
+          signingSub = sub;
+        }
       }
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showErrorSnackbar(context, e.toString());
+        Navigator.popUntil(context, (r) => r.isFirst);
+      });
     }
   }
 
@@ -572,7 +579,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: Text('Cancel'),
+            child: Text('Forget'),
           ),
         ),
       ),
@@ -695,15 +702,15 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Cancel Transaction'),
-        content: Text('No Bitcoin will be sent.'),
+        title: Text('Forget Transaction'),
+        content: Text('No Bitcoin will be sent. Transaction will be lost.'),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('Back'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text('I\'m Sure!'),
           ),
@@ -730,12 +737,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
         .timeout(BROADCAST_TIMEOUT)
         .then<bool>(
-          (ssid == null)
-              ? (_) => false
-              : (_) async {
-                  await coord.forgetFinishedSignSession(ssid: ssid!);
-                  return true;
-                },
+          (_) => ssid != null,
           onError: (e) {
             broadcastError = e.toString();
             return false;
@@ -747,9 +749,11 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           isBroadcasting = false;
           broadcastDone = true;
           signingState = null;
-          // TODO: For some reason, we are not getting the txState notification properly
-          // So we do this manually.
         });
+        // Remove signing session on successful broadcast.
+        final finishedSsid = widget.finishedSigningSessionId;
+        if (finishedSsid != null)
+          await coord.forgetFinishedSignSession(ssid: finishedSsid);
         await Future.delayed(
           Durations.medium1,
           () => onTxStateData(
