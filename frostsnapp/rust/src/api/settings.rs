@@ -30,6 +30,7 @@ pub struct Settings {
     loaded_wallets: HashMap<BitcoinNetwork, SuperWallet>,
 
     developer_settings_stream: Option<StreamSink<DeveloperSettings>>,
+    display_settings_stream: Option<StreamSink<DisplaySettings>>,
     electrum_settings_stream: Option<StreamSink<ElectrumSettings>>,
 }
 
@@ -112,6 +113,7 @@ impl Settings {
             app_directory,
             chain_clients: chain_apis,
             developer_settings_stream: Default::default(),
+            display_settings_stream: Default::default(),
             electrum_settings_stream: Default::default(),
             db,
         })
@@ -122,6 +124,13 @@ impl Settings {
         emit_developer_settings,
         sub_developer_settings,
         DeveloperSettings
+    );
+
+    settings_impl!(
+        display_settings_stream,
+        emit_display_settings,
+        sub_display_settings,
+        DisplaySettings
     );
 
     settings_impl!(
@@ -154,6 +163,23 @@ impl Settings {
     #[frb(sync)]
     pub fn is_in_developer_mode(&self) -> bool {
         self.settings.developer_mode
+    }
+
+    pub fn set_hide_balance(&mut self, value: bool) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_hide_balance(value, update);
+            Ok(())
+        })?;
+
+        self.emit_display_settings();
+
+        Ok(())
+    }
+
+    #[frb(sync)]
+    pub fn hide_balance(&self) -> bool {
+        self.settings.hide_balance
     }
 
     pub fn check_and_set_electrum_server(
@@ -228,6 +254,18 @@ impl DeveloperSettings {
     fn from_settings(settings: &RSettings) -> Self {
         DeveloperSettings {
             developer_mode: settings.developer_mode,
+        }
+    }
+}
+
+pub struct DisplaySettings {
+    pub hide_balance: bool,
+}
+
+impl DisplaySettings {
+    fn from_settings(settings: &RSettings) -> Self {
+        DisplaySettings {
+            hide_balance: settings.hide_balance,
         }
     }
 }
