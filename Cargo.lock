@@ -5980,3 +5980,18 @@ checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
 dependencies = [
  "simd-adler32",
 ]
+
+[[patch.unused]]
+name = "mozjpeg-sys"
+version = "2.2.4-beta.1"
+source = "git+https://github.com/kornelski/mozjpeg-sys#e11cc96cfe76680f57a14730b7eca27789e5133f"
+
+[[patch.unused]]
+name = "uvc-src"
+version = "0.3.0"
+source = "git+https://github.com/l1npengtul/libuvc-rs#3d76b71e88ff8ba99dbbbf1d850b0b8fdbb0ebbc"
+
+[[patch.unused]]
+name = "uvc-sys"
+version = "0.3.0"
+source = "git+https://github.com/l1npengtul/libuvc-rs#3d76b71e88ff8ba99dbbbf1d850b0b8fdbb0ebbc"

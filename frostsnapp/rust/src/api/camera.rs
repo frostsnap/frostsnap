@@ -13,7 +13,7 @@ pub struct CameraDevice {
     pub name: String,
     pub width: u32,
     pub height: u32,
-    pub uri: String,  // eye-rs uses URI to identify devices
+    pub uri: String, // eye-rs uses URI to identify devices
 }
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,8 @@ impl CameraDevice {
         #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
         {
             let ctx = PlatformContext::default();
-            let devices = ctx.devices()
+            let devices = ctx
+                .devices()
                 .map_err(|e| anyhow!("Failed to query cameras: {}", e))?;
 
             let camera_devices: Vec<CameraDevice> = devices
@@ -54,13 +55,16 @@ impl CameraDevice {
                         index: index as u32,
                         name,
                         uri: dev.uri.clone(),
-                        width: 1280,  // Default, will be determined when stream starts
+                        width: 1280, // Default, will be determined when stream starts
                         height: 720,
                     }
                 })
                 .collect();
 
-            info!("Camera enumeration complete, found {} devices", camera_devices.len());
+            info!(
+                "Camera enumeration complete, found {} devices",
+                camera_devices.len()
+            );
 
             Ok(camera_devices)
         }
@@ -79,11 +83,13 @@ impl CameraDevice {
             let ctx = PlatformContext::default();
 
             // Open the device using the URI
-            let dev = ctx.open_device(&self.uri)
+            let dev = ctx
+                .open_device(&self.uri)
                 .map_err(|e| anyhow!("Failed to open camera '{}': {}", self.name, e))?;
 
             // Get available streams
-            let streams = dev.streams()
+            let streams = dev
+                .streams()
                 .map_err(|e| anyhow!("Failed to get camera streams: {}", e))?;
 
             if streams.is_empty() {
@@ -91,11 +97,12 @@ impl CameraDevice {
             }
 
             // Try to find an MJPEG stream, otherwise use the first available stream
-            let stream_desc = streams.iter()
+            let stream_desc = streams
+                .iter()
                 .find(|s| {
                     // Check if this stream supports MJPEG
-                    s.pixfmt.to_string().to_lowercase().contains("mjpeg") ||
-                    s.pixfmt.to_string().to_lowercase().contains("jpeg")
+                    s.pixfmt.to_string().to_lowercase().contains("mjpeg")
+                        || s.pixfmt.to_string().to_lowercase().contains("jpeg")
                 })
                 .or_else(|| streams.first())
                 .ok_or_else(|| anyhow!("No suitable stream found"))?
@@ -103,15 +110,12 @@ impl CameraDevice {
 
             info!(
                 "Camera '{}' (index {}) using format: {}x{} {:?}",
-                self.name,
-                self.index,
-                stream_desc.width,
-                stream_desc.height,
-                stream_desc.pixfmt
+                self.name, self.index, stream_desc.width, stream_desc.height, stream_desc.pixfmt
             );
 
             // Start the stream
-            let mut stream = dev.start_stream(&stream_desc)
+            let mut stream = dev
+                .start_stream(&stream_desc)
                 .map_err(|e| anyhow!("Failed to start camera stream: {}", e))?;
 
             loop {

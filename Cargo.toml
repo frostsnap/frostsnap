@@ -18,6 +18,11 @@ resolver = "2"
 [patch.crates-io]
 schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
 secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
+# Patch both uvc-sys and uvc-src to use git versions to avoid yanked mozjpeg-sys
+uvc-sys = { git = "https://github.com/l1npengtul/libuvc-rs" }
+uvc-src = { git = "https://github.com/l1npengtul/libuvc-rs" }
+# Patch mozjpeg-sys to use git version to avoid yanked versions
+mozjpeg-sys = { git = "https://github.com/kornelski/mozjpeg-sys" }
 
 
 [workspace.dependencies]
