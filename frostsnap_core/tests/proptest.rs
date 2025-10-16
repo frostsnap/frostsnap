@@ -125,6 +125,10 @@ impl RefSignSession {
     pub fn finished(&self) -> bool {
         self.devices == self.got_sigs_from
     }
+
+    pub fn active(&self) -> bool {
+        !self.finished() && !self.canceled
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -338,17 +342,23 @@ impl ReferenceStateMachine for RefState {
             }
         }
 
-        for (index, session) in state.sign_sessions.iter().enumerate() {
+        let unfinished_sesssions = state
+            .sign_sessions
+            .iter()
+            .filter(|session| !session.active())
+            .enumerate();
+
+        for (index, session) in unfinished_sesssions {
             // coord send sign request
             {
                 let candidates = session
                     .devices
-                    .difference(&session.got_sigs_from)
-                    .cloned()
+                    .iter()
+                    // NOTE: We allow re-sending sign requests to device we've already sent it to but haven't got it from yet.
+                    .filter(|id| !session.got_sigs_from.contains(id))
+                    .copied()
                     .collect::<Vec<_>>();
-                if candidates.is_empty() {
-                    // TODO
-                } else {
+                if !candidates.is_empty() {
                     let next_to_ask = sample::select(candidates);
                     let sign_req = next_to_ask
                         .prop_map(move |device_id| Transition::CSendSignRequest {
@@ -362,11 +372,7 @@ impl ReferenceStateMachine for RefState {
 
             // device ack sign request
             {
-                let candidates = session
-                    .sent_req_to
-                    .difference(&session.got_sigs_from)
-                    .copied()
-                    .collect::<Vec<_>>();
+                let candidates = session.sent_req_to.clone().into_iter().collect::<Vec<_>>();
                 if !candidates.is_empty() {
                     let selected = sample::select(candidates);
                     let ack_sign = selected
