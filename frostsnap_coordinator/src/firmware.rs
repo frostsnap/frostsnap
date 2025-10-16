@@ -45,6 +45,41 @@ impl FirmwareVersion {
             }
         }
     }
+
+    pub fn check_upgrade_eligibility(
+        &self,
+        device_digest: &Sha256Digest,
+    ) -> FirmwareUpgradeEligibility {
+        if *device_digest == self.digest {
+            return FirmwareUpgradeEligibility::UpToDate;
+        }
+
+        let device_version = VersionNumber::from_digest(device_digest);
+        let app_version = self.version;
+
+        match (device_version, app_version) {
+            (None, None) => FirmwareUpgradeEligibility::CanUpgrade,
+            (None, Some(_)) => FirmwareUpgradeEligibility::CannotUpgrade {
+                reason:
+                    "Device firmware version newer app. Cannot downgrade firmware. Upgrade the app."
+                        .to_string(),
+            },
+            (Some(_), None) => FirmwareUpgradeEligibility::CannotUpgrade {
+                reason: "This is a development app. Cannot upgrade proper device.".to_string(),
+            },
+            (Some(device_ver), Some(app_ver)) => {
+                if app_ver > device_ver {
+                    FirmwareUpgradeEligibility::CanUpgrade
+                } else if app_ver == device_ver {
+                    FirmwareUpgradeEligibility::UpToDate
+                } else {
+                    FirmwareUpgradeEligibility::CannotUpgrade {
+                        reason: "Device firmware version newer app. Cannot downgrade firmware. Upgrade the app.".to_string(),
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -249,42 +284,6 @@ impl ValidatedFirmwareBin {
 
     pub fn version(&self) -> Option<VersionNumber> {
         self.firmware_version.version
-    }
-
-    pub fn check_upgrade_eligibility(
-        &self,
-        device_digest: &Sha256Digest,
-    ) -> FirmwareUpgradeEligibility {
-        if *device_digest == self.firmware_version.digest {
-            return FirmwareUpgradeEligibility::UpToDate;
-        }
-
-        let device_version = VersionNumber::from_digest(device_digest);
-        let app_version = self.firmware_version.version;
-
-        match (device_version, app_version) {
-            (None, None) => FirmwareUpgradeEligibility::CanUpgrade,
-            (None, Some(_)) => FirmwareUpgradeEligibility::CannotUpgrade {
-                reason:
-                    "Device firmware version newer app. Cannot downgrade firmware. Upgrade the app."
-                        .to_string(),
-            },
-            (Some(_), None) => FirmwareUpgradeEligibility::CannotUpgrade {
-                reason: "This is a development app. Cannot upgrade proper device.".to_string(),
-            },
-            (Some(device_ver), Some(app_ver)) => {
-                if app_ver > device_ver {
-                    FirmwareUpgradeEligibility::CanUpgrade
-                } else if app_ver == device_ver {
-                    // This should be unreachable -- if they have the same version then they should have the same digest
-                    FirmwareUpgradeEligibility::UpToDate
-                } else {
-                    FirmwareUpgradeEligibility::CannotUpgrade {
-                        reason: "Device firmware version newer app. Cannot downgrade firmware. Upgrade the app.".to_string(),
-                    }
-                }
-            }
-        }
     }
 }
 

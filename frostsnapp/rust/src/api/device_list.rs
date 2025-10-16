@@ -1,4 +1,4 @@
-pub use crate::api::firmware::{FirmwareUpgradeEligibility, FirmwareVersion, ValidatedFirmwareBin};
+pub use crate::api::firmware::{FirmwareUpgradeEligibility, FirmwareVersion};
 use anyhow::Result;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::DeviceMode;
@@ -34,11 +34,10 @@ pub struct DeviceListState {
 }
 
 #[derive(Clone, Debug)]
-#[frb(opaque)]
 pub struct ConnectedDevice {
     pub name: Option<String>,
     pub firmware: FirmwareVersion,
-    pub latest_firmware: Option<ValidatedFirmwareBin>,
+    pub latest_firmware: Option<FirmwareVersion>,
     pub id: DeviceId,
     pub recovery_mode: bool,
 }

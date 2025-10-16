@@ -74,19 +74,18 @@ impl DeviceList {
                 firmware_digest,
                 latest_firmware_digest,
             } => {
-                use frostsnap_coordinator::frostsnap_comms::Sha256Digest;
                 use frostsnap_coordinator::FirmwareVersion;
 
-                let connected = self.connected.entry(id).or_insert(api::ConnectedDevice {
-                    firmware: FirmwareVersion::new(Sha256Digest([0u8; 32])),
-                    latest_firmware: crate::FIRMWARE.and_then(|fw| fw.validate().ok()),
-                    name: None,
+                self.connected.insert(
                     id,
-                    recovery_mode: false,
-                });
-
-                connected.firmware = FirmwareVersion::new(firmware_digest);
-                connected.latest_firmware = crate::FIRMWARE.and_then(|fw| fw.validate().ok());
+                    api::ConnectedDevice {
+                        firmware: FirmwareVersion::new(firmware_digest),
+                        latest_firmware: latest_firmware_digest.map(FirmwareVersion::new),
+                        name: None,
+                        id,
+                        recovery_mode: false,
+                    },
+                );
             }
             DeviceChange::NameChange { id, name } => {
                 if let Some(index) = self.index_of(id) {
