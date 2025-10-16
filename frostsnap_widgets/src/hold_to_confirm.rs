@@ -18,7 +18,12 @@ pub struct HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
 {
-    content: Box<HoldToConfirmBorder<Container<Center<Column<(W, Fader<CircleButton>)>>>, Rgb565>>,
+    content: Box<
+        HoldToConfirmBorder<
+            Container<Center<Column<(W, Fader<CircleButton>, SizedBox<Rgb565>)>>>,
+            Rgb565,
+        >,
+    >,
     last_update: Option<crate::Instant>,
     hold_duration_ms: u32,
     completed: bool,
@@ -35,11 +40,15 @@ where
         let button = CircleButton::new();
         let faded_button = Fader::new(button);
 
-        // Create column with the widget (flex) and faded button
+        // Create a 10px spacer beneath the button
+        let bottom_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10));
+
+        // Create column with the widget (flex), faded button, and spacer
         let column = Column::builder()
             .push(widget)
             .flex(1)
             .push(faded_button)
+            .push(bottom_spacer)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
 
         // Center the column, then put it in an expanded container to fill available space
@@ -68,10 +77,28 @@ where
         self
     }
 
+    /// Builder method to set custom colors for border and button
+    ///
+    /// # Arguments
+    /// * `border_color` - Color for the progress border
+    /// * `button_fill_color` - Fill color for the button when pressed
+    /// * `button_stroke_color` - Stroke color for the button when pressed
+    pub fn with_custom_colors(
+        mut self,
+        border_color: Rgb565,
+        button_fill_color: Rgb565,
+        button_stroke_color: Rgb565,
+    ) -> Self {
+        self.content.set_border_color(border_color);
+        self.button_mut()
+            .set_pressed_colors(button_fill_color, button_stroke_color);
+        self
+    }
+
     /// Fade in the button
     pub fn fade_in_button(&mut self) {
         if self.button_fader_mut().is_faded_out() {
-            self.button_fader_mut().start_fade_in(300);
+            self.button_fader_mut().start_fade_in(300); // 300ms fade duration
         }
     }
 
