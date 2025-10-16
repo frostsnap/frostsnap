@@ -7,6 +7,7 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
@@ -21,6 +22,7 @@ class AddressInputController with ChangeNotifier {
   String? _errorText;
   String? _lastSubmitted;
   int? _amount;
+  Address? _address;
 
   AddressInputController() {
     controller = TextEditingController();
@@ -40,18 +42,19 @@ class AddressInputController with ChangeNotifier {
     notifyListeners();
   }
 
-  bool submit(WalletContext walletContext) {
+  Future<bool> submit(WalletContext walletContext) async {
     _lastSubmitted = controller.text;
 
     try {
-      final result = walletContext.network.validateDestinationAddress(
+      final result = await walletContext.network.validateDestinationAddress(
         uri: controller.text,
       );
       _errorText = null;
-      controller.text = result.$1;
-      _amount = result.$2;
+      _address = result.address;
+      _amount = result.amount;
     } catch (e) {
       _errorText = e.toString();
+      _address = null;
       _amount = null;
     }
 
@@ -61,11 +64,12 @@ class AddressInputController with ChangeNotifier {
 
   String? get errorText => _errorText;
 
-  String? get address => (_errorText == null) ? controller.text : null;
+  Address? get address => _address;
 
   int? get amount => _amount;
 
-  String get formattedAddress => spacedHex(controller.text, groupSize: 4);
+  String get formattedAddress =>
+      spacedHex(address?.toString() ?? controller.text, groupSize: 4);
 }
 
 final defaultTextInputBorder = OutlineInputBorder(
@@ -280,7 +284,7 @@ class FeeRateController with ChangeNotifier {
 /// Model that tracks avaliable bitcoin.
 class AmountAvaliableController extends ValueNotifier<int?> {
   WalletContext? _walletContext;
-  List<String> _targetAddresses = [];
+  List<Address> _targetAddresses = [];
   int _targetAmount = 0;
 
   final FeeRateController feeRateController;
@@ -305,7 +309,7 @@ class AmountAvaliableController extends ValueNotifier<int?> {
     recalculate();
   }
 
-  set targetAddresses(List<String> value) {
+  set targetAddresses(List<Address> value) {
     _targetAddresses = value;
     recalculate();
   }

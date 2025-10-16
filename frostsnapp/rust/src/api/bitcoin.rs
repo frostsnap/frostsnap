@@ -39,6 +39,13 @@ enum _BitcoinNetwork {
     Regtest,
 }
 
+#[derive(Debug, Clone)]
+#[frb(type_64bit_int)]
+pub struct SendToRecipient {
+    pub address: Address,
+    pub amount: Option<u64>,
+}
+
 pub trait BitcoinNetworkExt {
     #[frb(sync)]
     fn name(&self) -> String;
@@ -52,8 +59,8 @@ pub trait BitcoinNetworkExt {
     #[frb(sync)]
     fn from_string(string: String) -> Option<BitcoinNetwork>;
 
-    #[frb(sync, type_64bit_int)]
-    fn validate_destination_address(&self, uri: String) -> Result<(String, Option<u64>), String>;
+    #[frb(sync)]
+    fn validate_destination_address(&self, uri: String) -> Result<SendToRecipient, String>;
 
     #[frb(sync)]
     fn default_electrum_server(&self) -> String;
@@ -97,8 +104,9 @@ impl BitcoinNetworkExt for BitcoinNetwork {
         descriptor.to_string()
     }
 
-    #[frb(sync, type_64bit_int)]
-    fn validate_destination_address(&self, uri: String) -> Result<(String, Option<u64>), String> {
+    fn validate_destination_address(&self, uri: String) -> Result<SendToRecipient, String> {
+        let uri = uri.trim();
+
         // Try parsing as BIP21 URI first
         if let Ok(parsed) = uri.parse::<bip21::Uri<bitcoin::address::NetworkUnchecked>>() {
             let amount = parsed.amount.map(|amt| amt.to_sat());
@@ -106,15 +114,18 @@ impl BitcoinNetworkExt for BitcoinNetwork {
                 .address
                 .require_network(*self)
                 .map_err(|e| format!("Wrong network: {}", e))?;
-            Ok((address.to_string(), amount))
+            Ok(SendToRecipient { address, amount })
         } else {
             // Not a URI -- try as plain address
-            let address = bitcoin::Address::from_str(&uri)
+            let address = bitcoin::Address::from_str(uri)
                 // Rust-bitcoin ParseError is generally inappropriate "legacy address base58 string"
-                .map_err(|_| format!("Invalid address"))?
+                .map_err(|_| "Invalid address".to_string())?
                 .require_network(*self)
                 .map_err(|e| format!("Wrong network: {}", e))?;
-            Ok((address.to_string(), None))
+            Ok(SendToRecipient {
+                address,
+                amount: None,
+            })
         }
     }
 
@@ -471,6 +482,9 @@ pub struct _Address {}
 pub trait AddressExt {
     #[frb(sync)]
     fn spk(&self) -> ScriptBuf;
+
+    #[frb(sync, type_64bit_int)]
+    fn bip21_uri(&self, amount: Option<u64>, label: Option<String>) -> String;
 }
 
 #[frb(external)]
@@ -483,6 +497,21 @@ impl AddressExt for bitcoin::Address {
     #[frb(sync)]
     fn spk(&self) -> ScriptBuf {
         self.script_pubkey()
+    }
+
+    #[frb(sync, type_64bit_int)]
+    fn bip21_uri(&self, amount: Option<u64>, label: Option<String>) -> String {
+        let mut uri = bip21::Uri::new(self.clone());
+
+        if let Some(sats) = amount {
+            uri.amount = Some(bitcoin::Amount::from_sat(sats));
+        }
+
+        if let Some(label_str) = label {
+            uri.label = Some(label_str.into());
+        }
+
+        uri.to_string()
     }
 }
 

@@ -543,9 +543,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
     }, onError: (e) => amountModel.customError = e.toString());
   }
 
-  recipientDone(BuildContext context) {
+  recipientDone(BuildContext context) async {
     final walletCtx = WalletContext.of(context)!;
-    if (addressModel.submit(walletCtx)) {
+    if (await addressModel.submit(walletCtx)) {
       // Pre-populate amount if existed in URI (user can still edit)
       if (addressModel.amount != null) {
         amountModel.textEditingController.text = addressModel.amount.toString();

@@ -250,9 +250,13 @@ class _ReceiverPageState extends State<ReceivePage> {
   static const sectionHideCurve = Curves.easeInOutCubicEmphasized;
 
   QrImage addressQrImage(AddressInfo address) {
-    final qrCode = QrCode(8, QrErrorCorrectLevel.L);
-    // we don't use any other BIP21 params yet
-    qrCode.addData('bitcoin:${address.address}');
+    final qrCode = QrCode.fromData(
+      // the BIP recommends uppercasing the the string before going into the QR
+      // so it can pack it more efficiently but it doesn't seem to make too much
+      // difference.
+      data: address.address.bip21Uri(),
+      errorCorrectLevel: QrErrorCorrectLevel.M,
+    );
     return QrImage(qrCode);
   }
 
