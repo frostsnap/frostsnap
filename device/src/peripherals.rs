@@ -264,7 +264,7 @@ impl<'a> DevicePeripherals<'a> {
 
         // Clear display and turn on backlight
         let _ = display.clear(Rgb565::BLACK);
-        backlight.start_duty_fade(0, 30, 500).unwrap();
+        backlight.start_duty_fade(0, 50, 500).unwrap();
 
         // Initialize other crypto peripherals
         let efuse = EfuseController::new(&mut peripherals.EFUSE);
