@@ -1252,6 +1252,16 @@ impl FrostCoordinator {
         })
     }
 
+    pub fn get_sign_session(&self, session_id: SignSessionId) -> Option<SignSession> {
+        if let Some(active) = self.active_signing_sessions.get(&session_id) {
+            Some(SignSession::Active(active.clone()))
+        } else {
+            self.finished_signing_sessions
+                .get(&session_id)
+                .map(|finished| SignSession::Finished(finished.clone()))
+        }
+    }
+
     pub fn active_signing_sessions_by_ssid(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
         &self.active_signing_sessions
     }
@@ -1401,6 +1411,21 @@ pub struct FinishedSignSession {
     pub init: StartSign,
     pub signatures: Vec<EncodedSignature>,
     pub key_id: KeyId,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SignSession {
+    Active(ActiveSignSession),
+    Finished(FinishedSignSession),
+}
+
+impl SignSession {
+    pub fn key_id(&self) -> KeyId {
+        match self {
+            SignSession::Active(active) => active.key_id,
+            SignSession::Finished(finished) => finished.key_id,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1562,7 +1587,7 @@ pub enum Mutation {
 }
 
 impl Mutation {
-    pub fn tied_to_key(&self) -> Option<KeyId> {
+    pub fn tied_to_key(&self, coord: &FrostCoordinator) -> Option<KeyId> {
         Some(match self {
             Mutation::Keygen(keys::KeyMutation::NewKey { complete_key, .. }) => {
                 complete_key.master_appkey.key_id()
@@ -1575,8 +1600,8 @@ impl Mutation {
                 ..
             }) => access_structure_ref.key_id,
             Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)) => *key_id,
+            Mutation::Signing(inner) => inner.tied_to_key(coord)?,
             Mutation::Restoration(inner) => inner.tied_to_key()?,
-            _ => return None,
         })
     }
 

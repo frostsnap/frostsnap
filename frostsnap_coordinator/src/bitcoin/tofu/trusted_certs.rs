@@ -255,7 +255,7 @@ impl Persist<rusqlite::Connection> for TrustedCertificates {
         Ok(trusted_certs)
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
+    fn persist_update(&self, conn: &mut rusqlite::Connection, update: Self::Update) -> Result<()> {
         for mutation in update {
             match mutation {
                 CertificateMutation::Add {
@@ -341,7 +341,7 @@ mod tests {
         );
 
         // Persist the mutation
-        TrustedCertificates::persist_update(&mut conn, mutations)?;
+        store.persist_update(&mut conn, mutations)?;
 
         // Load again and verify
         let loaded_store = TrustedCertificates::load(&mut conn, bitcoin::Network::Bitcoin)?;
@@ -369,12 +369,12 @@ mod tests {
             "test.example.com:443".to_string(),
             &mut mutations,
         );
-        TrustedCertificates::persist_update(&mut conn, mutations)?;
+        store.persist_update(&mut conn, mutations)?;
 
         // Remove by server URL
         let mut mutations = Vec::new();
         store.remove_certificate("test.example.com:443".to_string(), &mut mutations);
-        TrustedCertificates::persist_update(&mut conn, mutations)?;
+        store.persist_update(&mut conn, mutations)?;
 
         // Verify it's removed
         let loaded_store = TrustedCertificates::load(&mut conn, bitcoin::Network::Bitcoin)?;

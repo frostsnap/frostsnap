@@ -86,7 +86,11 @@ impl Persist<rusqlite::Connection> for Option<SignSessionPsbt> {
         }?)
     }
 
-    fn persist_update(conn: &mut rusqlite::Connection, update: Self::Update) -> anyhow::Result<()> {
+    fn persist_update(
+        &self,
+        conn: &mut rusqlite::Connection,
+        update: Self::Update,
+    ) -> anyhow::Result<()> {
         let update = match update {
             Some(update) => update,
             None => return Ok(()),
