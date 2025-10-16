@@ -25,7 +25,7 @@ impl FirmwareUpgradeProtocol {
     ) -> Self {
         // Check if any device has incompatible firmware
         let abort_reason = devices.values().find_map(|fw| {
-            match firmware_bin.check_upgrade_eligibility(&fw.digest) {
+            match firmware_bin.firmware_version().check_upgrade_eligibility(&fw.digest) {
                 FirmwareUpgradeEligibility::CannotUpgrade { reason } => {
                     Some(format!("One of the devices is incompatible with the upgrade. Unplug it to continue or try upgrading the app. Problem: {reason}"))
                 }

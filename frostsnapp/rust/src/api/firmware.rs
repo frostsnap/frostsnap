@@ -73,6 +73,13 @@ impl VersionNumber {
 impl FirmwareVersion {
     #[frb(sync)]
     pub fn version_name(&self) -> String {}
+
+    #[frb(sync)]
+    pub fn check_upgrade_eligibility(
+        &self,
+        _device_digest: &Sha256Digest,
+    ) -> FirmwareUpgradeEligibility {
+    }
 }
 
 #[frb(mirror(Sha256Digest))]
