@@ -47,6 +47,7 @@ post_install do |installer|
       config.build_settings['OTHER_LDFLAGS'] << '-framework AVFoundation'
       config.build_settings['OTHER_LDFLAGS'] << '-framework CoreMedia'
       config.build_settings['OTHER_LDFLAGS'] << '-framework CoreVideo'
+      config.build_settings['OTHER_LDFLAGS'] << '-lc++'
     end
   end
 end
