@@ -23,10 +23,7 @@ sha2.workspace = true
 rand = "0.8"
 time = { version = "0.3.36", features = ["formatting"] }
 bip21 = {version = "0.5.0", default-features = false}
-eye = { git = "https://github.com/raymanfx/eye-rs", rev = "5b7e3f7a1e79966091692896c568aab042e449ef" }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-uvc-sys = { version = "0.2", features = ["vendor"] }
+eye = { git = "https://github.com/nickfarrow/eye-rs", branch = "frostsnap-windows-support" }
 
 [dependencies.flutter_rust_bridge]
 version = "=2.11.1"
