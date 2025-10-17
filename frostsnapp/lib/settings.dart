@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/database_encryption.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
@@ -176,6 +178,35 @@ class SettingsPage extends StatelessWidget {
                       return ElectrumServerSettingsPage();
                     },
                   ),
+                  if (!Platform.isAndroid)
+                    SettingsItem(
+                      title: Text("App Password"),
+                      icon: Icons.lock,
+                      builder: (context, title, icon) {
+                        return ListTile(
+                          title: title,
+                          leading: Icon(icon),
+                          onTap: () async {
+                            final appDir = await FrostsnapContext.of(
+                              context,
+                            )!.appCtx.settings.appDirectory();
+                            final databaseState = await api.getDatabaseState(
+                              appDir: appDir,
+                            );
+                            final hasExistingPassword =
+                                databaseState !=
+                                    DbEncryptionState.existingUnencrypted &&
+                                databaseState !=
+                                    DbEncryptionState.existingEncryptedEmpty;
+                            await _showPasswordChangeDialog(
+                              context,
+                              appDir,
+                              hasExistingPassword,
+                            );
+                          },
+                        );
+                      },
+                    ),
                 ],
               ),
               SettingsCategory(
@@ -1194,6 +1225,264 @@ class AboutPage extends StatelessWidget {
                     : null,
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _showPasswordChangeDialog(
+  BuildContext context,
+  String appDir,
+  bool hasExistingPassword,
+) async {
+  await showBottomSheetOrDialog(
+    context,
+    title: Text("App Password"),
+    builder: (context, _) => _PasswordChangeBottomSheet(
+      appDir: appDir,
+      hasExistingPassword: hasExistingPassword,
+      onPasswordChanged: () {
+        _showPasswordChangeExitDialog(context);
+      },
+    ),
+  );
+}
+
+Future<void> _showPasswordChangeExitDialog(BuildContext context) async {
+  await showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Text("Password Changed Successfully"),
+          ],
+        ),
+        content: Text(
+          "Frostsnap needs to close to apply this change, reopen the app and decrypt it with your new password.",
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () {
+              // On desktop, exit the Dart VM
+              // Note: android/ios would use SystemNavigator.pop();
+              exit(0);
+            },
+            child: Text("Exit App"),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PasswordChangeBottomSheet extends StatefulWidget {
+  final String appDir;
+  final bool hasExistingPassword;
+  final VoidCallback? onPasswordChanged;
+
+  const _PasswordChangeBottomSheet({
+    required this.appDir,
+    required this.hasExistingPassword,
+    this.onPasswordChanged,
+  });
+
+  @override
+  State<_PasswordChangeBottomSheet> createState() =>
+      _PasswordChangeBottomSheetState();
+}
+
+class _PasswordChangeBottomSheetState
+    extends State<_PasswordChangeBottomSheet> {
+  final _oldController = TextEditingController();
+  final _newController = TextEditingController();
+  final _confirmController = TextEditingController();
+  String? _errorMessage;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _oldController.dispose();
+    _newController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _changePassword() async {
+    if (_isLoading) return;
+
+    if (_newController.text != _confirmController.text) {
+      setState(() {
+        _errorMessage = "New passwords don't match";
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Validate current password first if needed
+      if (widget.hasExistingPassword) {
+        await api.attemptDatabasePassword(
+          appDir: widget.appDir,
+          password: _oldController.text.trim(),
+        );
+      }
+
+      // Apply password change with all database locks held
+      // This ensures no concurrent writes happen during the rekey
+      final settingsCtx = SettingsContext.of(context)!;
+      await settingsCtx.settings.applyPasswordChange(
+        oldPassword: widget.hasExistingPassword
+            ? _oldController.text.trim()
+            : "",
+        newPassword: _newController.text.trim(),
+      );
+
+      // Success! Close dialog and show exit dialog
+      Navigator.pop(context);
+      widget.onPasswordChanged?.call();
+    } on DatabaseError_WrongPassword catch (_) {
+      setState(() {
+        _errorMessage = "Invalid current password";
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Failed to change password: ${e.toString()}";
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final theme = Theme.of(context);
+
+    return SafeArea(
+      minimum: const EdgeInsets.symmetric(
+        horizontal: 20,
+      ).copyWith(bottom: 32 + mediaQuery.viewInsets.bottom, top: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 16,
+        children: [
+          if (_errorMessage != null) ...[
+            Card.outlined(
+              margin: EdgeInsets.zero,
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      color: theme.colorScheme.onErrorContainer,
+                      size: 20,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (widget.hasExistingPassword) ...[
+            TextFormField(
+              controller: _oldController,
+              obscureText: true,
+              enabled: !_isLoading,
+              decoration: InputDecoration(
+                labelText: "Current Password",
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.lock_outline),
+              ),
+              onChanged: (_) {
+                if (_errorMessage != null) {
+                  setState(() => _errorMessage = null);
+                }
+              },
+            ),
+          ],
+          TextFormField(
+            controller: _newController,
+            obscureText: true,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              labelText: "New Password",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock),
+            ),
+            onChanged: (_) {
+              if (_errorMessage != null) {
+                setState(() => _errorMessage = null);
+              }
+            },
+          ),
+          TextFormField(
+            controller: _confirmController,
+            obscureText: true,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              labelText: "Confirm New Password",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock),
+            ),
+            onChanged: (_) {
+              if (_errorMessage != null) {
+                setState(() => _errorMessage = null);
+              }
+            },
+            onFieldSubmitted: (_) => _isLoading ? null : _changePassword(),
+          ),
+          SizedBox(height: 8),
+          Row(
+            spacing: 12,
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : () => Navigator.pop(context),
+                  child: Text("Cancel"),
+                ),
+              ),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _isLoading ? null : _changePassword,
+                  child: _isLoading
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.colorScheme.onPrimary,
+                          ),
+                        )
+                      : Text(widget.hasExistingPassword ? "Change" : "Set"),
+                ),
+              ),
+            ],
           ),
         ],
       ),
