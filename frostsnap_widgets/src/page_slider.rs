@@ -9,6 +9,7 @@ use embedded_graphics::{
 
 const ANIMATION_DURATION_MS: u64 = 750;
 const MIN_SWIPE_DISTANCE: u32 = 0;
+const DEFAULT_SLIDE_DISTANCE: u32 = 40;
 
 // Type aliases to reduce complexity
 type PageStack<T> = Stack<(SlideInTransition<T>, Option<Fader<SwipeUpChevron>>)>;
@@ -30,7 +31,7 @@ where
     current_index: usize,
     stack: PageStack<T>,
     drag_start: Option<u32>,
-    height: u32,
+    slide_distance: u32,
     on_page_ready: Option<PageReadyCallback<T>>,
     page_ready_triggered: bool,
     screen_size: Option<Size>,
@@ -41,7 +42,13 @@ where
     L: WidgetList<T>,
     T: Widget<Color = Rgb565>,
 {
-    pub fn new(list: L, height: u32) -> Self {
+    /// Create a new PageSlider with the standard slide distance
+    pub fn new(list: L) -> Self {
+        Self::new_with_slide_distance(list, DEFAULT_SLIDE_DISTANCE)
+    }
+
+    /// Create a new PageSlider with a custom slide distance
+    pub fn new_with_slide_distance(list: L, slide_distance: u32) -> Self {
         // Get the initial widget (index 0)
         let initial_widget = list
             .get(0)
@@ -64,7 +71,7 @@ where
             current_index: 0,
             stack,
             drag_start: None,
-            height,
+            slide_distance,
             on_page_ready: None,
             page_ready_triggered: false,
             screen_size: None,
@@ -149,11 +156,11 @@ where
 
         // Get the new widget
         if let Some(new_widget) = self.list.get(target_index) {
-            // Set slide direction based on height
-            let height = self.height as i32;
+            // Set slide direction based on slide_distance
+            let distance = self.slide_distance as i32;
             let slide_from = match direction {
-                Direction::Up => Point::new(0, height), // Slide from bottom
-                Direction::Down => Point::new(0, -height), // Slide from top
+                Direction::Up => Point::new(0, distance), // Slide from bottom
+                Direction::Down => Point::new(0, -distance), // Slide from top
             };
 
             // Update the slide-from position and switch to the new widget
