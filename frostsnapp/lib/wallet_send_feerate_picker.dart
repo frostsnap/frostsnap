@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
 
 enum FeeRatePage { eta, feerate }
@@ -99,7 +100,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     }
     final amount = widget.amountModel.amount!;
     final feeRate = widget.feeRateModel.satsPerVB;
-    late final String address;
+    late final Address address;
 
     // Tru get address
     if (widget.addressModel.address == null) {

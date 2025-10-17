@@ -189,15 +189,11 @@ impl SuperWallet {
     pub fn send_to(
         &self,
         master_appkey: MasterAppkey,
-        to_address: String,
+        to_address: Address,
         value: u64,
         feerate: f64,
     ) -> Result<UnsignedTx> {
         let mut super_wallet = self.inner.lock().unwrap();
-        let to_address = bitcoin::Address::from_str(&to_address)
-            .expect("validation should have checked")
-            .require_network(super_wallet.network)
-            .expect("validation should have checked");
         let signing_task =
             super_wallet.send_to(master_appkey, to_address, value, feerate as f32)?;
         let unsigned_tx = UnsignedTx {
@@ -209,22 +205,11 @@ impl SuperWallet {
     pub fn calculate_avaliable(
         &self,
         master_appkey: MasterAppkey,
-        target_addresses: Vec<String>,
+        target_addresses: Vec<Address>,
         feerate: f64,
     ) -> Result<i64> {
         let mut wallet = self.inner.lock().unwrap();
-        let network = wallet.network;
-        wallet.calculate_avaliable_value(
-            master_appkey,
-            target_addresses.into_iter().map(|s| {
-                bitcoin::Address::from_str(&s)
-                    .expect("validation should have checked")
-                    .require_network(network)
-                    .expect("validation should have checked")
-            }),
-            feerate as f32,
-            true,
-        )
+        wallet.calculate_avaliable_value(master_appkey, target_addresses, feerate as f32, true)
     }
 
     pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: RTransaction) -> Result<()> {
