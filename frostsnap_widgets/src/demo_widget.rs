@@ -463,7 +463,7 @@ macro_rules! demo_widget {
                 }
 
                 // Create the PageSlider with infinite text pages
-                let page_slider = PageSlider::new(InfiniteTextPages, 100);
+                let page_slider = PageSlider::new_with_slide_distance(InfiniteTextPages, 100);
                 let widget = page_slider;
 
                 $run_macro!(widget);
@@ -1133,8 +1133,14 @@ macro_rules! demo_widget {
                 let widget = StandbyTransitionsDemo::new();
                 $run_macro!(widget);
             }
+            "wipe_device" => {
+                use $crate::wipe_device::WipeDevice;
+
+                let widget = WipeDevice::new();
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, wipe_device", $demo);
             }
         }
     };

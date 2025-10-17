@@ -10,7 +10,7 @@ std = []
 
 [dependencies]
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }
-embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px", "96px"] }
+embedded-iconoir = { version = "0.2.3", features = ["16px", "24px", "32px", "48px", "96px"] }
 micromath = "0.2"
 frost_backup = { workspace = true, features = [ "bincode" ] }
 frostsnap_core = { workspace = true }
