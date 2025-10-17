@@ -48,7 +48,7 @@ pub enum CoordinatorRestoration {
     EnterPhysicalBackup {
         enter_physical_id: EnterPhysicalId,
     },
-    SavePhysicalBackup {
+    LegacySavePhysicalBackup {
         share_image: ShareImage,
         key_name: String,
         purpose: KeyPurpose,
@@ -63,6 +63,12 @@ pub enum CoordinatorRestoration {
         root_shared_key: SharedKey,
     },
     RequestHeldShares,
+    SavePhysicalBackup {
+        share_image: ShareImage,
+        key_name: String,
+        purpose: KeyPurpose,
+        threshold: Option<u16>,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -132,16 +138,38 @@ pub enum DeviceRestoration {
         access_structure_ref: AccessStructureRef,
         share_index: ShareIndex,
     },
+    LegacyHeldShares(Vec<LegacyHeldShare>),
     HeldShares(Vec<HeldShare>),
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct LegacyHeldShare {
+    pub access_structure_ref: Option<AccessStructureRef>,
+    pub share_image: ShareImage,
+    pub threshold: u16,
+    pub key_name: String,
+    pub purpose: KeyPurpose,
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct HeldShare {
     pub access_structure_ref: Option<AccessStructureRef>,
     pub share_image: ShareImage,
-    pub threshold: u16,
+    pub threshold: Option<u16>,
     pub key_name: String,
     pub purpose: KeyPurpose,
+}
+
+impl From<LegacyHeldShare> for HeldShare {
+    fn from(legacy: LegacyHeldShare) -> Self {
+        HeldShare {
+            access_structure_ref: legacy.access_structure_ref,
+            share_image: legacy.share_image,
+            threshold: Some(legacy.threshold),
+            key_name: legacy.key_name,
+            purpose: legacy.purpose,
+        }
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

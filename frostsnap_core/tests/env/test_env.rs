@@ -152,7 +152,7 @@ impl Env for TestEnv {
                                 _ => {
                                     let existing_restoration =
                                         run.coordinator.restoring().find(|state| {
-                                            state.access_structure_ref
+                                            state.access_structure.access_structure_ref()
                                                 == held_share.access_structure_ref
                                         });
 
@@ -169,6 +169,7 @@ impl Env for TestEnv {
                                                     .add_recovery_share_to_restoration(
                                                         existing_restoration.restoration_id,
                                                         &recover_share,
+                                                        TEST_ENCRYPTION_KEY,
                                                     )
                                                     .unwrap();
                                             }
