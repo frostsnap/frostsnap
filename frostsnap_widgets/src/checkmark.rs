@@ -51,6 +51,14 @@ impl<C: PixelColor> Checkmark<C> {
         checkmark
     }
 
+    pub fn set_color(&mut self, color: C) {
+        if self.color != color {
+            self.color = color;
+            // Re-record pixels with new color
+            self.record_pixels();
+        }
+    }
+
     pub fn start_drawing(&mut self) {
         self.enabled = true;
         self.progress = Frac::ZERO;
