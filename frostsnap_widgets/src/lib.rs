@@ -68,6 +68,7 @@ pub mod touch_listener;
 pub mod translate;
 pub mod vec_framebuffer;
 pub mod widget_color;
+pub mod wipe_device;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -120,6 +121,7 @@ pub use switcher::Switcher;
 pub use text::*;
 pub use touch_listener::TouchListener;
 pub use translate::*;
+pub use wipe_device::*;
 
 // Font re-exports
 use frostsnap_fonts::{
