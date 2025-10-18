@@ -146,8 +146,8 @@ fetch-released-firmware:
     mkdir -p target/riscv32imc-unknown-none-elf/release/
     release_count=$(echo "$releases" | jq 'length')
     for i in $(seq 0 $((release_count - 1))); do
-        firmware_url=$(echo "$releases" | jq -r ".[$i].assets[]? | select(.name==\"firmware.bin\") | .browser_download_url")
-        tag_name=$(echo "$releases" | jq -r ".[$i].tag_name")
+        firmware_url=$(echo "$releases" | jq --argjson idx "$i" -r '.[$idx].assets[]? | select(.name=="firmware.bin") | .browser_download_url')
+        tag_name=$(echo "$releases" | jq --argjson idx "$i" -r '.[$idx].tag_name')
         if [ -n "$firmware_url" ] && [ "$firmware_url" != "null" ]; then
             echo "Found most recent firmware.bin in release $tag_name"
             curl -L -o target/riscv32imc-unknown-none-elf/release/firmware.bin "$firmware_url"
