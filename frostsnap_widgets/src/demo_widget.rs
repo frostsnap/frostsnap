@@ -858,7 +858,35 @@ macro_rules! demo_widget {
                 use frostsnap_core::{message::HeldShare, device::KeyPurpose, schnorr_fun::frost::SecretShare};
                 use bitcoin;
 
-                // Create a stub HeldShare for demo purposes
+                // Create a stub HeldShare for demo purposes (normal mode with access structure)
+                let held_share = HeldShare {
+                    access_structure_ref: Some(frostsnap_core::AccessStructureRef {
+                        key_id: frostsnap_core::KeyId([0u8; 32]),
+                        access_structure_id: frostsnap_core::AccessStructureId([1u8; 32]),
+                    }),
+                    // ShareImage is just a Point, we can use a generator point for demo
+                    share_image: {
+                        use frostsnap_core::schnorr_fun::fun::prelude::*;
+                        SecretShare {
+                            index: Scalar::<Public, NonZero>::one(),
+                            share: Scalar::<Secret, Zero>::zero(),
+                        }.share_image()
+                    },
+                    threshold: 2,
+                    key_name: "Family Wallet".to_string(),
+                    purpose: KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+                };
+
+                let device_name = "Alice";
+                let widget = Standby::new(device_name, held_share);
+                $run_macro!(widget);
+            }
+            "standby_recovery" => {
+                use $crate::Standby;
+                use frostsnap_core::{message::HeldShare, device::KeyPurpose, schnorr_fun::frost::SecretShare};
+                use bitcoin;
+
+                // Create a stub HeldShare for demo purposes (recovery mode - no access structure)
                 let held_share = HeldShare {
                     access_structure_ref: None,
                     // ShareImage is just a Point, we can use a generator point for demo
@@ -909,7 +937,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, screen_test, multiline_string", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string", $demo);
             }
         }
     };
