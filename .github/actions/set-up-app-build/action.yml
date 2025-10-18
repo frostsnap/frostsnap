@@ -14,6 +14,7 @@ runs:
     - uses: "./.github/actions/fetch-dart-deps"
     - uses: "./.github/actions/generate-frb"
     - uses: "./.github/actions/install-cargo-bins" # needed for espflash
-    - name: Download signed firmware
-      shell: bash
+    - name: Fetch firmware
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: just fetch-released-firmware
