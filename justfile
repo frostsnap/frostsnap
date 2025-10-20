@@ -138,7 +138,15 @@ widget_dev +args="":
 # Download firmware.bin from the most recent GitHub release (that has a firmware release)
 fetch-released-firmware:
     #!/bin/bash
-    releases=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" "https://api.github.com/repos/frostsnap/frostsnap/releases?per_page=100")
+    releases=$(curl -s "https://api.github.com/repos/frostsnap/frostsnap/releases?per_page=100")
+    
+    # Exit early if not an array
+    if ! echo "$releases" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        echo "GitHub API error:"
+        echo "$releases" | jq '.' 2>/dev/null || echo "$releases"
+        exit 1
+    fi
+    
     mkdir -p target/riscv32imc-unknown-none-elf/release/
     release_count=$(echo "$releases" | jq 'length')
     for i in $(seq 0 $((release_count - 1))); do

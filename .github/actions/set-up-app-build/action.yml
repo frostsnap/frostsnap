@@ -15,6 +15,5 @@ runs:
     - uses: "./.github/actions/generate-frb"
     - uses: "./.github/actions/install-cargo-bins" # needed for espflash
     - name: Fetch firmware
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      shell: bash
       run: just fetch-released-firmware
