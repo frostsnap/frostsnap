@@ -296,6 +296,9 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                                 );
                             });
                     });
+                // Clean up any restoration backups with the same share image
+                self.restoration
+                    .remove_backups_with_share_image(encrypted_secret_share.share_image);
             }
             Restoration(restoration_mutation) => {
                 return self

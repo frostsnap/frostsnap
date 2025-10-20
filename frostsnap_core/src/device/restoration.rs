@@ -24,9 +24,8 @@ impl State {
                 let saved_backup: SavedBackup2 = legacy_saved_backup.clone().into();
                 return self.apply_mutation_restoration(Save2(saved_backup));
             }
-            UnSave(share_image) => {
-                self.tmp_loaded_backups.remove(share_image);
-                self.saved_backups.remove(share_image)?;
+            _UnSave(_) => {
+                // No-op: cleanup happens automatically when SaveShare mutation is applied
             }
             Save2(saved_backup) => {
                 let backup_share_image = saved_backup.share_backup.share_image();
@@ -39,6 +38,11 @@ impl State {
 
     pub fn clear_tmp_data(&mut self) {
         self.tmp_loaded_backups.clear();
+    }
+
+    pub fn remove_backups_with_share_image(&mut self, share_image: ShareImage) {
+        self.tmp_loaded_backups.remove(&share_image);
+        self.saved_backups.remove(&share_image);
     }
 }
 
@@ -387,9 +391,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
     ) -> impl IntoIterator<Item = DeviceSend> {
         let share_image = phase.complete_share.secret_share.share_image();
         let access_structure_ref = phase.complete_share.access_structure_ref;
-        self.mutate(Mutation::Restoration(RestorationMutation::UnSave(
-            share_image,
-        )));
+        // No need to explicitly UnSave - cleanup happens automatically in SaveShare mutation
 
         let encrypted_secret_share = EncryptedSecretShare::encrypt(
             phase.complete_share.secret_share,
@@ -419,7 +421,10 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, frostsnap_macros::Kind)]
 pub enum RestorationMutation {
     Save(SavedBackup),
-    UnSave(ShareImage),
+    /// DO NOT USE: This is a no-op. Cleanup of restoration backups happens automatically
+    /// when SaveShare mutation is applied. If you need to delete backups, create a new
+    /// mutation for that specific purpose.
+    _UnSave(ShareImage),
     Save2(SavedBackup2),
 }
 
