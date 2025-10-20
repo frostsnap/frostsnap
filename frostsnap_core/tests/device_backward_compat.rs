@@ -82,7 +82,7 @@ fn test_all_device_mutations() {
             purpose: Some(KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin)),
             key_name: Some("test_key".to_string()),
         })),
-        Mutation::Restoration(RestorationMutation::UnSave(share_image)),
+        Mutation::Restoration(RestorationMutation::_UnSave(share_image)),
     ];
 
     // Test each mutation
@@ -114,7 +114,7 @@ fn test_all_device_mutations() {
                     "01020000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002aeb01020101000108746573745f6b6579"
                 );
             }
-            Mutation::Restoration(RestorationMutation::UnSave(_)) => {
+            Mutation::Restoration(RestorationMutation::_UnSave(_)) => {
                 assert_bincode_hex_eq!(
                     mutation,
                     "0101000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af"
