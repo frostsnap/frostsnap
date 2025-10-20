@@ -1,6 +1,6 @@
 use super::bitcoin::BitcoinNetworkExt as _;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
-use crate::frb_generated::StreamSink;
+use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::sink_wrap::SinkWrap;
 use anyhow::{Context as _, Result};
 use bitcoin::Transaction as RTransaction;
@@ -189,13 +189,13 @@ impl SuperWallet {
     pub fn send_to(
         &self,
         master_appkey: MasterAppkey,
-        to_address: Address,
+        to_address: &Address,
         value: u64,
         feerate: f64,
     ) -> Result<UnsignedTx> {
         let mut super_wallet = self.inner.lock().unwrap();
         let signing_task =
-            super_wallet.send_to(master_appkey, to_address, value, feerate as f32)?;
+            super_wallet.send_to(master_appkey, to_address.clone(), value, feerate as f32)?;
         let unsigned_tx = UnsignedTx {
             template_tx: signing_task,
         };
@@ -205,11 +205,19 @@ impl SuperWallet {
     pub fn calculate_avaliable(
         &self,
         master_appkey: MasterAppkey,
-        target_addresses: Vec<Address>,
+        target_addresses: Vec<RustAutoOpaque<Address>>,
         feerate: f64,
     ) -> Result<i64> {
         let mut wallet = self.inner.lock().unwrap();
-        wallet.calculate_avaliable_value(master_appkey, target_addresses, feerate as f32, true)
+        wallet.calculate_avaliable_value(
+            master_appkey,
+            target_addresses
+                .into_iter()
+                .map(|a| a.blocking_read().clone())
+                .collect::<Vec<Address>>(),
+            feerate as f32,
+            true,
+        )
     }
 
     pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: RTransaction) -> Result<()> {

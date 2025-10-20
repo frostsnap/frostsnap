@@ -551,6 +551,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
         amountModel.textEditingController.text = addressModel.amount.toString();
       }
 
+      amountAvaliable.targetAddresses = [addressModel.address!];
       nextPageOrPop(null);
     }
   }
