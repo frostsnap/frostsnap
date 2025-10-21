@@ -13,6 +13,15 @@ final blurFilter = ImageFilter.blur(sigmaX: 21, sigmaY: 21);
 const seedColor = Color(0xFF1595B2);
 const double iconSize = 20.0;
 
+RoundedRectangleBorder cardShape(BuildContext context) =>
+    RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(28)),
+      side: BorderSide(
+        color: Theme.of(context).colorScheme.outlineVariant,
+        width: 1,
+      ),
+    );
+
 Color tintSurfaceContainer(
   BuildContext context, {
   required Color tint,
