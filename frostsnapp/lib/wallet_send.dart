@@ -270,13 +270,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
     );
 
     final cardColor = theme.colorScheme.surfaceContainerHigh;
-    final cardShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(28)),
-      side: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
-    );
+
     final recipientInputCard = Card.outlined(
       color: cardColor,
-      shape: cardShape,
+      shape: cardShape(context),
       margin: EdgeInsets.all(0.0),
       child: Padding(
         padding: EdgeInsets.all(12.0),
@@ -355,7 +352,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final amountInputCard = Card.outlined(
       color: cardColor,
-      shape: cardShape,
+      shape: cardShape(context),
       margin: EdgeInsets.all(0.0),
       child: Padding(
         padding: EdgeInsets.all(12.0),
@@ -417,7 +414,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final signersInputCard = Card.outlined(
       color: cardColor,
-      shape: cardShape,
+      shape: cardShape(context),
       margin: EdgeInsets.all(0.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
