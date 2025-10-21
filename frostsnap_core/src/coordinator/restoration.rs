@@ -128,9 +128,7 @@ impl RestorationStatus {
             .filter(|s| s.compatibility == ShareCompatibility::Incompatible)
             .count() as u16;
 
-        // When threshold is unknown, count all unique indices (compatibility not determined yet)
-        // When threshold is known, count only compatible unique indices
-        let got = if self.threshold.is_some() {
+        let got = if self.shared_key.is_some() {
             self.shares
                 .iter()
                 .filter(|s| s.compatibility == ShareCompatibility::Compatible)

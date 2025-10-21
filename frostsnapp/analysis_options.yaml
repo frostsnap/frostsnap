@@ -18,6 +18,7 @@ analyzer:
   exclude:
     - "lib/src/rust"
     - "rust_builder"
+    - "**/*.freezed.dart"
   errors:
     prefer_const_constructors: ignore
 # Additional information about this file can be found at

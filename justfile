@@ -80,13 +80,13 @@ lint-device +ARGS="":
     cargo clippy {{device_crates}} --target riscv32imc-unknown-none-elf  {{ARGS}} --all-features -- -Dwarnings
 
 dart-format-check-app:
-    ( cd frostsnapp; dart format --set-exit-if-changed --output=none  $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*") )
+    ( cd frostsnapp; dart format --set-exit-if-changed --output=none  $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*" -not -name "*.freezed.dart") )
 
 lint-app +ARGS="": dart-format-check-app
     ( cd frostsnapp; flutter analyze {{ARGS}} )
 
 fix-dart: maybe-gen
-    ( cd frostsnapp && dart format . && dart fix --apply && flutter analyze )
+    ( cd frostsnapp && dart format $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*" -not -name "*.freezed.dart") && dart fix --apply && flutter analyze )
 
 maybe-gen:
     just "frostsnapp/maybe-gen"
