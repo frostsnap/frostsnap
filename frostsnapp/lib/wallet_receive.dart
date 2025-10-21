@@ -241,11 +241,11 @@ class _ReceiverPageState extends State<ReceivePage> {
   bool get isReady => _address != null;
   Wallet get wallet => widget.wallet;
 
-  static const tilePadding = EdgeInsets.symmetric(horizontal: 20);
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 16);
   static const tileShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.all(Radius.circular(12)),
+    borderRadius: BorderRadius.all(Radius.circular(28)),
   );
-  static const sectionPadding = EdgeInsets.fromLTRB(20, 0, 20, 20);
+  static const sectionPadding = EdgeInsets.fromLTRB(16, 0, 16, 16);
   static const sectionHideDuration = Durations.medium4;
   static const sectionHideCurve = Curves.easeInOutCubicEmphasized;
 
@@ -419,6 +419,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       ],
     );
     final activeCard = Card.outlined(
+      shape: cardShape(context),
       margin: sectionPadding,
       color: theme.colorScheme.surfaceContainerHigh,
       child: Column(
@@ -427,6 +428,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       ),
     );
     final inactiveCard = Card.outlined(
+      shape: cardShape(context),
       // We cannot control the size of the `AnimatedGradientBorder` of the verify card.
       margin: focus == ReceivePageFocus.verify ? tilePadding : sectionPadding,
       color: theme.colorScheme.surfaceContainerLow,
@@ -451,7 +453,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       borderSize: 1,
       glowSize: 6,
       animationTime: 6,
-      borderRadius: BorderRadius.circular(12.0),
+      borderRadius: BorderRadius.circular(28),
       gradientColors: [
         theme.colorScheme.outlineVariant,
         theme.colorScheme.primary,
@@ -461,6 +463,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       child: Card.filled(
         margin: EdgeInsets.zero,
         color: theme.colorScheme.surfaceContainerHigh,
+        shape: cardShape(context),
         child: _verifyStream == null
             ? null
             : StreamBuilder(
@@ -535,6 +538,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       ),
     );
     final inactiveCard = Card.outlined(
+      shape: cardShape(context),
       margin: sectionPadding,
       color: theme.colorScheme.surfaceContainerLow,
       child: ListTile(
@@ -605,6 +609,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     final activeCard = Card.outlined(
       margin: sectionPadding,
       color: theme.colorScheme.surfaceContainerHigh,
+      shape: cardShape(context),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -637,6 +642,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     final inactiveCard = Card.outlined(
       margin: isFocused ? tilePadding : sectionPadding,
       color: theme.colorScheme.surfaceContainerLow,
+      shape: cardShape(context),
       child: Column(mainAxisSize: MainAxisSize.min, children: [header]),
     );
     return AnimatedCrossFade(
