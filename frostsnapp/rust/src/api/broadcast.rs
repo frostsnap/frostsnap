@@ -11,15 +11,16 @@ use tracing::Level;
 
 use crate::frb_generated::{SseEncode, StreamSink};
 
-#[derive(Default)]
-struct BroadcastInner<T> {
-    subscriptions: BTreeMap<u32, StreamSink<T>>,
-}
-
+/// A broadcast stream that can be managed from rust.
 #[derive(Default, Clone)]
 pub struct Broadcast<T> {
     next_id: Arc<AtomicU32>,
     inner: Arc<RwLock<BroadcastInner<T>>>,
+}
+
+#[derive(Default)]
+struct BroadcastInner<T> {
+    subscriptions: BTreeMap<u32, StreamSink<T>>,
 }
 
 impl<T: SseEncode + Clone> Broadcast<T> {

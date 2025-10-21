@@ -64,14 +64,19 @@ class _WalletSendPageState extends State<WalletSendPage> {
     super.initState();
 
     scrollController = widget.scrollController ?? ScrollController();
+
     state = widget.buildTx();
-    sub = state.subscribe();
-    sub.start().listen((_) => mounted ? setState(() {}) : null);
 
     // We only support one access structure for now.
     state.setAccessId(
       accessId: state.accessStructures().first.accessStructureId(),
     );
+    if (state.confirmationEstimates() == null)
+      state.refreshConfirmationEstimates();
+
+    sub = state.subscribe();
+    sub.start().listen((_) => mounted ? setState(() {}) : null);
+
     addrController = AddressInputController(state);
     amountController = AmountInputController(state: state);
   }
@@ -80,7 +85,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
   void dispose() {
     amountController.dispose();
     addrController.dispose();
-
     sub.dispose();
     state.dispose();
     if (widget.scrollController == null) scrollController.dispose();
@@ -222,10 +226,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final estimates = state.confirmationEstimates();
-    if (estimates == null) refreshConfirmationEstimates();
-
     final confirmationBlocks = state.confirmationBlocksOfFeerate();
+    final feerate = state.feerate();
 
     final etaInputCard = TextButton.icon(
       onPressed: pageIndex.index < SendPageIndex.signers.index
@@ -248,23 +250,21 @@ class _WalletSendPageState extends State<WalletSendPage> {
         children: [
           Flexible(
             child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: 'Confirms in '),
-                  TextSpan(
-                    text: confirmationBlocks == null
-                        ? '...'
-                        : '~${confirmationBlocks * 10} min',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
+              confirmationBlocks != null
+                  ? TextSpan(
+                      children: [
+                        TextSpan(text: 'Confirms in '),
+                        TextSpan(
+                          text: '~${confirmationBlocks * 10} min',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    )
+                  : TextSpan(text: 'Feerate'),
             ),
           ),
-          if (pageIndex.index < SendPageIndex.signers.index)
-            Flexible(
-              child: Text('${state.feerate()?.toStringAsFixed(1)} sat/vB'),
-            ),
+          if (pageIndex.index < SendPageIndex.signers.index && feerate != null)
+            Flexible(child: Text('${feerate.toStringAsFixed(1)} sat/vB')),
         ],
       ),
     );
@@ -335,19 +335,16 @@ class _WalletSendPageState extends State<WalletSendPage> {
     try {
       amount = state.amount(recipient: 0);
     } on AmountError catch (e) {
-      switch (e) {
-        case AmountError_UnspecifiedFeerate():
-          amountErr = 'No feerate set.';
-        case AmountError_UnspecifiedAmount():
-          amountErr = 'No amount set.';
-        case AmountError_NoAmountAvailable():
-          amountErr = 'No balance available.';
-        case AmountError_TargetExceedsAvailable(
-          :final target,
-          :final available,
-        ):
-          amountErr = 'Exceeds max by ${target - available}sat.';
-      }
+      amountErr = switch (e) {
+        AmountError_UnspecifiedFeerate() => 'No feerate set.',
+        AmountError_UnspecifiedAmount() => 'No amount set.',
+        AmountError_NoAmountAvailable() => 'No balance available.',
+        AmountError_TargetExceedsAvailable(:final target, :final available) =>
+          'Exceeds max by ${target - available}sat.',
+        AmountError_UnspecifiedAddress() => 'No recipient address.',
+        AmountError_AmountBelowDust(:final minNonDust) =>
+          'Minimum amount is $minNonDust.',
+      };
     }
 
     final amountInputCard = Card.outlined(
@@ -513,11 +510,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget completedCardLabel(BuildContext context, String text) =>
       Text(text, style: Theme.of(context).textTheme.labelLarge);
 
-  void showFeeRateDialog(BuildContext context) async {
+  Future<ConfirmationTarget?> showFeeRateDialog(BuildContext context) async {
     final walletCtx = WalletContext.of(context)!;
 
-    // if (walletCtx == null) return;
-    final _ = await showDialog<double>(
+    final target = await showDialog<ConfirmationTarget>(
       context: context,
       builder: (context) {
         return BackdropFilter(
@@ -526,11 +522,11 @@ class _WalletSendPageState extends State<WalletSendPage> {
         );
       },
     );
-    if (!context.mounted) return;
-    if (pageIndex.index > SendPageIndex.amount.index) {
-      // TODO: Ideally we want to be able to update the review page.
+
+    if (context.mounted && pageIndex.index > SendPageIndex.amount.index) {
       setState(() => pageIndex = SendPageIndex.amount);
     }
+    return target;
   }
 
   signersDone(BuildContext context) async {
@@ -579,18 +575,20 @@ class _WalletSendPageState extends State<WalletSendPage> {
     );
   }
 
-  amountDone(BuildContext context) {
+  void amountDone(BuildContext context) {
     nextPageOrPop(null);
   }
 
-  recipientDone(BuildContext context) async {
-    final walletCtx = WalletContext.of(context)!;
-    final addr = addrController.submit(
-      walletCtx.network,
-      // Hardcoded recipient index for now - since only 1 recipient is supported.
-      0,
-    );
-    if (addr != null) nextPageOrPop(null);
+  void recipientDone(BuildContext context) async {
+    // Hardcoded recipient index for now - since only 1 recipient is supported.
+    final submitOkay = addrController.submit(0);
+    if (!submitOkay) return;
+    if (state.feerate() == null) {
+      final feerate = await showFeeRateDialog(context);
+      if (feerate == null) return;
+    }
+
+    nextPageOrPop(null);
   }
 
   recipientPaste(BuildContext context) async {

@@ -4,8 +4,6 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 
-enum FeeratePage { eta, feerate }
-
 enum Eta {
   low,
   medium,
@@ -33,14 +31,14 @@ class FeeRatePickerDialog extends StatefulWidget {
 }
 
 class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
+  BuildTxState get state => widget.state;
   // Subscription to `BuildTxState` changes.
   late final UnitBroadcastSubscription sub;
-  // Previous state - in case caller cancels this dialog.
-  late final ConfirmationTarget prevConfirmationTarget;
-  // Custom feerate controller.
+  // Current selection.
+  Eta? currentSelection;
+  // Custom feerate input controller.
   late final TextEditingController customFeerateController;
-
-  BuildTxState get state => widget.state;
+  String? customFeerateError;
 
   @override
   initState() {
@@ -49,16 +47,25 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     sub = widget.state.subscribe();
     sub.start().listen((_) => mounted ? setState(() {}) : null);
 
-    prevConfirmationTarget = widget.state.confirmationTarget();
-    final customFeerateStr = switch (prevConfirmationTarget) {
-      ConfirmationTarget_Custom(:final field0) => field0.toStringAsFixed(2),
-      _ => (1.0).toStringAsFixed(2),
+    final currentTarget = state.confirmationTarget();
+
+    currentSelection = switch (currentTarget) {
+      ConfirmationTarget_Low() => Eta.low,
+      ConfirmationTarget_Medium() => Eta.medium,
+      ConfirmationTarget_High() => Eta.high,
+      ConfirmationTarget_Custom() => null,
     };
-    customFeerateController = TextEditingController(text: customFeerateStr);
+    customFeerateController = TextEditingController(
+      text: switch (currentTarget) {
+        ConfirmationTarget_Custom(:final field0) => field0.toStringAsFixed(1),
+        _ => (1.0).toStringAsFixed(1),
+      },
+    );
   }
 
   @override
   void dispose() {
+    customFeerateController.dispose();
     sub.dispose();
     super.dispose();
   }
@@ -67,46 +74,38 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     final _ = await state.refreshConfirmationEstimates();
   }
 
-  void _onTapTile(BuildContext context, ConfirmationTarget target) {
-    state.setConfirmationTarget(target: target);
-  }
+  void _onTapTile(BuildContext context, Eta? eta) {
+    setState(() => currentSelection = eta);
 
-  // Only allow submission if form is valid.
-  bool _canSubmit() {
-    final target = state.confirmationTarget();
-    return switch (target) {
-      ConfirmationTarget_Custom() =>
-        double.tryParse(customFeerateController.text) != null,
-      _ => state.confirmationEstimates() != null,
+    if (eta == null) return;
+
+    final target = switch (eta) {
+      Eta.low => ConfirmationTarget.low(),
+      Eta.medium => ConfirmationTarget.medium(),
+      Eta.high => ConfirmationTarget.high(),
     };
+
+    state.setConfirmationTarget(target: target);
+    Navigator.pop(context, target);
   }
 
-  void _onSubmit(BuildContext context) {
-    Navigator.pop(context);
+  void _onSubmitCustomFeerate(BuildContext, String text) {
+    final feerate = double.tryParse(text);
+    if (feerate == null) {
+      setState(() => customFeerateError = 'Invalid feerate');
+      return;
+    }
+
+    final target = ConfirmationTarget.custom(feerate);
+    state.setConfirmationTarget(target: target);
+    Navigator.pop(context, target);
   }
 
-  double? _parseCustomFeerate() {
-    final feerate = double.tryParse(customFeerateController.text);
-    return feerate;
-  }
-
-  Iterable<Widget> _buildEtaTiles(BuildContext context) {
-    final current = state.confirmationTarget();
-
-    return [
-      _buildEtaTile(context, eta: Eta.high, isSelected: current.isHigh()),
-      _buildEtaTile(context, eta: Eta.medium, isSelected: current.isMedium()),
-      _buildEtaTile(context, eta: Eta.low, isSelected: current.isLow()),
-      _buildEtaTile(context, eta: null, isSelected: current.isCustom()),
-    ];
-  }
-
-  Widget _buildEtaTile(
-    BuildContext context, {
-    bool isSelected = false,
-    Eta? eta,
-  }) {
+  Widget _buildEtaTile(BuildContext context, {Eta? eta}) {
     final theme = Theme.of(context);
+    final estimates = state.confirmationEstimates();
+
+    final isSelected = currentSelection == eta;
 
     final Widget leadingIcon = Icon(
       isSelected ? Icons.radio_button_on : Icons.radio_button_off,
@@ -115,18 +114,18 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     final Widget timeText = Text.rich(
       TextSpan(
         children: [
-          TextSpan(text: eta != null ? '${eta.targetBlocks * 10} ' : 'Custom '),
-          TextSpan(
-            text: '${eta != null ? 'min' : ''}ETA',
-            style: TextStyle(fontSize: theme.textTheme.labelMedium!.fontSize),
-          ),
+          TextSpan(text: eta != null ? '${eta.targetBlocks * 10} ' : 'Custom'),
+          if (eta != null)
+            TextSpan(
+              text: 'min ETA',
+              style: TextStyle(fontSize: theme.textTheme.labelMedium!.fontSize),
+            ),
         ],
       ),
     );
 
     final Widget feerateTextOrInput;
     if (eta != null) {
-      final estimates = state.confirmationEstimates();
       final estimateFeerate =
           switch (eta) {
             Eta.low => estimates?.low,
@@ -147,7 +146,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       );
     } else {
       feerateTextOrInput = SizedBox(
-        width: 200,
+        width: 150,
         child: TextField(
           controller: customFeerateController,
           // Highlight on tap.
@@ -155,16 +154,23 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
             baseOffset: 0,
             extentOffset: customFeerateController.text.length,
           ),
-          onChanged: (v) => _onTapTile(
-            context,
-            ConfirmationTarget.custom(_parseCustomFeerate() ?? 1.0),
-          ),
+          // Reset error when user is actively changing the value.
+          onChanged: (_) {
+            if (customFeerateError != null)
+              setState(() => customFeerateError = null);
+          },
+          onSubmitted: (text) => _onSubmitCustomFeerate(context, text),
           enabled: isSelected,
-          autofocus: true,
           decoration: InputDecoration(
+            suffixIcon: IconButton(
+              icon: Icon(Icons.done),
+              onPressed: () =>
+                  _onSubmitCustomFeerate(context, customFeerateController.text),
+            ),
             suffixText: 'sat/vB',
-            suffixStyle: theme.textTheme.labelLarge,
+            suffixStyle: theme.textTheme.labelMedium,
             border: OutlineInputBorder(),
+            errorText: customFeerateError,
           ),
           keyboardType: TextInputType.numberWithOptions(
             signed: false,
@@ -178,12 +184,11 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
     }
 
     return ListTile(
-      onTap: () => _onTapTile(context, switch (eta) {
-        null => ConfirmationTarget.custom(_parseCustomFeerate() ?? 1.0),
-        Eta.low => ConfirmationTarget.low(),
-        Eta.medium => ConfirmationTarget.medium(),
-        Eta.high => ConfirmationTarget.high(),
-      }),
+      enabled: eta == null || estimates != null,
+      onTap: () => _onTapTile(context, eta),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+      ),
       selected: isSelected,
       leading: leadingIcon,
       title: timeText,
@@ -197,24 +202,9 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final etaListCard = Card.filled(
-      margin: EdgeInsets.all(0.0),
-      color: theme.colorScheme.surfaceContainerHigh,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          children: _buildEtaTiles(context).toList(growable: false),
-        ),
-      ),
-    );
-
-    final submitButton = IconButton.filled(
-      onPressed: _canSubmit() ? () => _onSubmit(context) : null,
-      icon: Icon(Icons.done),
-      style: IconButton.styleFrom(
-        elevation: 3.0,
-        shadowColor: theme.colorScheme.shadow,
-      ),
+    final feerateTitle = Padding(
+      padding: EdgeInsetsGeometry.fromLTRB(16, 16, 16, 0),
+      child: Text('Feerate', style: theme.textTheme.titleLarge),
     );
 
     final pullDownToRefresh = InkWell(
@@ -244,11 +234,17 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
       ),
     );
 
-    final columnWidgets = [
-      pullDownToRefresh,
-      etaListCard,
-      Row(mainAxisAlignment: MainAxisAlignment.end, children: [submitButton]),
-    ];
+    final etaListCard = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          _buildEtaTile(context, eta: Eta.high),
+          _buildEtaTile(context, eta: Eta.medium),
+          _buildEtaTile(context, eta: Eta.low),
+          _buildEtaTile(context, eta: null),
+        ],
+      ),
+    );
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -261,7 +257,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
             child: Column(
               spacing: 12.0,
               mainAxisSize: MainAxisSize.min,
-              children: columnWidgets,
+              children: [feerateTitle, pullDownToRefresh, etaListCard],
             ),
           ),
         ),

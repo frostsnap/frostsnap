@@ -7,7 +7,6 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
@@ -43,18 +42,20 @@ class AddressInputController with ChangeNotifier {
     notifyListeners();
   }
 
-  Address? submit(BitcoinNetwork network, int recipient) {
+  bool submit(int recipient) {
     // TODO: There is the URI thing we're not doing here.
     _lastSubmitted = controller.text;
-    final addr = Address.fromString(s: controller.text, network: network);
-    if (addr == null) {
-      _errorText = 'Invalid address';
-      return null;
+
+    try {
+      state.setRecipientWithUri(recipient: recipient, uri: controller.text);
+    } on String catch (e) {
+      _errorText = e;
+      return false;
     }
-    state.setAddress(recipient: recipient, address: addr);
+
     // We always notify listeners on submit (dont' check for changes) for simplicity and safety.
     notifyListeners();
-    return addr;
+    return true;
   }
 
   String? get errorText => _errorText;
