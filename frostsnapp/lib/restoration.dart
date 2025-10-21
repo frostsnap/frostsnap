@@ -673,9 +673,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                       encryptionKey: encryptionKey,
                     );
                 if (error != null) {
+                  final deviceName =
+                      coord.getDeviceName(id: detectedShare.heldBy) ??
+                      '<empty>';
                   setState(() {
                     this.error = error.toString();
-                    this.errorTitle = 'Cannot add key';
+                    this.errorTitle = 'Cannot add key from $deviceName';
                   });
                   return;
                 }
@@ -687,9 +690,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   encryptionKey: encryptionKey,
                 );
                 if (error != null) {
+                  final deviceName =
+                      coord.getDeviceName(id: detectedShare.heldBy) ??
+                      '<empty>';
                   setState(() {
                     this.error = error.toString();
-                    this.errorTitle = 'Cannot add key';
+                    this.errorTitle = 'Cannot add key from $deviceName';
                   });
                   return;
                 }
