@@ -3,9 +3,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use bitcoin::Address;
-use flutter_rust_bridge::{frb, DartFnFuture};
+use flutter_rust_bridge::frb;
 use frostsnap_core::{AccessStructureId, DeviceId, MasterAppkey};
 
+use crate::api::bitcoin::BitcoinNetworkExt;
 use crate::api::broadcast::{Broadcast, UnitBroadcastSubscription};
 use crate::api::signing::UnsignedTx;
 use crate::frb_generated::RustAutoOpaque;
@@ -14,9 +15,6 @@ use super::{
     coordinator::{AccessStructure, Coordinator, FrostKey},
     super_wallet::SuperWallet,
 };
-
-/// Callback to call after state changes.
-pub type Callback = Arc<dyn Fn() -> DartFnFuture<()> + Send + Sync>;
 
 #[derive(Default, Clone, Copy, PartialEq)]
 pub enum ConfirmationTarget {
@@ -399,6 +397,32 @@ impl BuildTxState {
     }
 
     #[frb(sync)]
+    pub fn set_recipient_with_uri(&self, recipient: u32, uri: &str) -> Result<(), String> {
+        let info = self
+            .super_wallet
+            .network
+            .validate_destination_address(uri)?;
+
+        let mut inner = self.inner.write().unwrap();
+        let r = inner.get_or_create_recipient(recipient);
+
+        let mut changed = false;
+        if r.address.as_ref() != Some(&info.address) {
+            r.address = Some(info.address);
+            changed = true;
+        }
+        if r.amount != info.amount.map(AmountType::Value) {
+            r.amount = info.amount.map(AmountType::Value);
+            changed = true;
+        }
+        if changed {
+            self._trigger_changed();
+        }
+
+        Ok(())
+    }
+
+    #[frb(sync)]
     pub fn remove_recipient(&self, recipient: u32) -> bool {
         let i: usize = recipient
             .try_into()
@@ -438,7 +462,7 @@ impl BuildTxState {
         }
     }
 
-    #[frb(sync, type_64bit_int)]
+    #[frb(sync)]
     pub fn set_amount(&self, recipient: u32, amount: u64) {
         let mut inner = self.inner.write().unwrap();
         let r = inner.get_or_create_recipient(recipient);
@@ -469,8 +493,8 @@ impl BuildTxState {
         }
     }
 
-    /// Only returns `Some` if the amount is valid.
-    #[frb(sync, type_64bit_int)]
+    /// Only returns `Some` if the amount is valid and a recipient address is provided.
+    #[frb(sync)]
     pub fn amount(&self, recipient: u32) -> Result<u64, AmountError> {
         let available = self
             .available_amount(recipient)
@@ -481,20 +505,32 @@ impl BuildTxState {
         }
         let available = available as u64;
 
-        match self
-            .recipient(recipient)
+        let r = self.recipient(recipient);
+
+        let amount = match r
+            .as_ref()
             .and_then(|r| r.amount)
             .ok_or(AmountError::UnspecifiedAmount)?
         {
-            AmountType::SendMax => Ok(available),
+            AmountType::SendMax => available,
             AmountType::Value(target) => {
-                if target <= available {
-                    Ok(target)
-                } else {
-                    Err(AmountError::TargetExceedsAvailable { target, available })
+                if target > available {
+                    return Err(AmountError::TargetExceedsAvailable { target, available });
                 }
+                target
             }
+        };
+
+        let addr = r
+            .and_then(|r| r.address.clone())
+            .ok_or(AmountError::UnspecifiedAddress)?;
+
+        let min_non_dust = addr.script_pubkey().minimal_non_dust().to_sat();
+        if amount < min_non_dust {
+            return Err(AmountError::AmountBelowDust { min_non_dust });
         }
+
+        Ok(amount)
     }
 
     #[frb(sync)]
@@ -557,7 +593,9 @@ impl BuildTxState {
 pub enum AmountError {
     UnspecifiedFeerate,
     UnspecifiedAmount,
+    UnspecifiedAddress,
     NoAmountAvailable,
+    AmountBelowDust { min_non_dust: u64 },
     TargetExceedsAvailable { target: u64, available: u64 },
 }
 
