@@ -1,19 +1,22 @@
-use super::{Column, Container, HoldToConfirm, Padding, Row, Text};
-use crate::HOLD_TO_CONFIRM_TIME_MS;
+use super::{Column, Container, HoldToConfirm, Padding, SizedBox};
+use crate::{gray4_style::Gray4TextStyle, palette::PALETTE, MainAxisAlignment, Text};
+use alloc::{format, string::ToString};
+use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
+use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_28_BOLD};
 
-use crate::DefaultTextStyle;
-use crate::{palette::PALETTE, MainAxisAlignment};
-use alloc::format;
-use embedded_graphics::geometry::Size;
+// Font constants for keygen check
+const FONT_CONFIRM_TITLE: &frostsnap_fonts::Gray4Font = &NOTO_SANS_18_MEDIUM;
+const FONT_CONFIRM_TEXT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_17_REGULAR;
+const FONT_BITCOIN_AMOUNT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_MONO_28_BOLD;
 
-type CodeText = Text;
-type TofNText = Text;
-type CodeColumn = Column<(TofNText, CodeText)>;
+type CodeText = Text<Gray4TextStyle>;
+type TofNText = Text<Gray4TextStyle>;
+type CodeColumn = Column<(SizedBox<Rgb565>, TofNText, SizedBox<Rgb565>, CodeText)>;
 type PaddedCodeColumn = Padding<CodeColumn>;
 type CodeContainer = Container<PaddedCodeColumn>;
-type ConfirmText = Text;
-type OnAllDevicesRow = Row<(ConfirmText, ConfirmText)>;
-type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow)>;
+type ConfirmText = Text<Gray4TextStyle>;
+type SubtitleColumn = Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
+type PromptColumn = Column<(SubtitleColumn, CodeContainer, ConfirmText)>;
 
 /// Widget for checking and confirming key generation
 #[derive(frostsnap_macros::Widget)]
@@ -38,42 +41,63 @@ impl KeygenCheck {
             security_check_code[3]
         );
 
-        // Create the t of n text widget
-        let t_of_n_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface);
-        let t_of_n_widget = Text::new(t_of_n_text.clone(), t_of_n_style.clone());
+        // Create the t of n text widget in blue
+        let t_of_n_widget = Text::new(
+            t_of_n_text.to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.primary),
+        );
 
-        // Create the hex code text widget using FONT_LARGE
-        let code_style = DefaultTextStyle::new(crate::FONT_HUGE_MONO, PALETTE.on_surface);
-        let code_widget = Text::new(hex_code.clone(), code_style);
+        // Create the hex code text widget using monospace font in blue
+        let code_widget = Text::new(
+            hex_code.to_string(),
+            Gray4TextStyle::new(FONT_BITCOIN_AMOUNT, PALETTE.primary),
+        );
 
         // Create internal column with t_of_n and code
-        let code_column = Column::new((t_of_n_widget, code_widget));
+        // Add spacers for vertical balance
+        let spacer_top = SizedBox::new(Size::new(0, 3)); // 3px spacer to balance descender
+        let spacer_middle = SizedBox::new(Size::new(0, 3)); // 3px spacer between texts
+        let code_column = Column::new((spacer_top, t_of_n_widget, spacer_middle, code_widget))
+            .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
-        // Put the column in a container with a border
-        let padded_code_column = Padding::all(10, code_column);
+        // Put the column in a container with a border (no fill for cleaner look)
+        // Padding::symmetric is (horizontal, vertical) - 10px horizontal, 4px vertical to prevent cutoff
+        let padded_code_column = Padding::symmetric(10, 4, code_column);
         let code_container = Container::new(padded_code_column)
             .with_border(PALETTE.outline, 2)
-            .with_fill(PALETTE.surface)
             .with_corner_radius(Size::new(8, 8));
 
-        // Create the "confirm identical" text
-        let confirm_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_background);
-        let confirm_identical_widget = Text::new("Confirm identical:", confirm_style.clone());
+        // Create the subtitle text in smaller grey (now at the top) - split into two lines
+        let subtitle_line1 = Text::new(
+            "Check this code matches".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
 
-        // Create the "on all devices" text with underline
-        let on_text = Text::new("on ", confirm_style.clone());
-        let all_devices_text =
-            Text::new("all devices", confirm_style).with_underline(PALETTE.on_background);
+        let subtitle_line2 = Text::new(
+            "on every device".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
 
-        let on_all_devices_row = Row::new((on_text, all_devices_text));
+        // Create a column for the subtitle with center alignment
+        let subtitle_column = Column::new((subtitle_line1, subtitle_line2))
+            .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
-        // Create the prompt column with SpaceEvenly alignment
-        let prompt_column =
-            Column::new((confirm_identical_widget, code_container, on_all_devices_row))
-                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        // Create the main title "Hold to Confirm" (now at the bottom)
+        let title_text = Text::new(
+            "Hold to Confirm".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
+        );
+
+        // Create the prompt column with SpaceEvenly alignment and center the items horizontally
+        let prompt_column = Column::new((subtitle_column, code_container, title_text))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+            .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
         // Create the hold-to-confirm widget
-        let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, prompt_column);
+        let hold_to_confirm = HoldToConfirm::new(
+            2000, // 2 second hold duration
+            prompt_column,
+        );
 
         Self { hold_to_confirm }
     }
