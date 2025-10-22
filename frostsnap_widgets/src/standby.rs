@@ -1,11 +1,18 @@
 use crate::DefaultTextStyle;
-use crate::{device_name::DeviceName, palette::PALETTE, prelude::*, BmpImage};
+use crate::{device_name::DeviceName, palette::PALETTE, prelude::*, GrayToAlpha, Image};
 use alloc::string::{String, ToString};
-use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, text::Alignment};
+use embedded_graphics::{
+    geometry::Size,
+    pixelcolor::{Gray8, Rgb565},
+    text::Alignment,
+};
 use frostsnap_core::message::HeldShare;
+use tinybmp::Bmp;
 
 const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
 const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
+
+type LogoImage = Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>;
 
 /// A widget that displays the Frostsnap logo with a key name and device name
 #[derive(frostsnap_macros::Widget)]
@@ -13,9 +20,9 @@ pub struct Standby {
     #[widget_delegate]
     content: Center<
         Column<(
-            BmpImage,
+            LogoImage,
             SizedBox<Rgb565>,
-            Option<Row<(BmpImage, SizedBox<Rgb565>, Text)>>,
+            Option<Row<(LogoImage, SizedBox<Rgb565>, Text)>>,
             SizedBox<Rgb565>,
             Text, // Key name
             SizedBox<Rgb565>,
@@ -28,12 +35,13 @@ pub struct Standby {
 
 impl Standby {
     pub fn new(device_name: impl Into<String>, held_share: HeldShare) -> Self {
-        // Load BMP logo with color mapping
-        let logo = BmpImage::new(LOGO_DATA, PALETTE.logo);
+        let logo_bmp = Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
+        let logo = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
 
         let recovery_warning = if held_share.access_structure_ref.is_none() {
-            // Use the warning icon BMP
-            let warning_icon = BmpImage::new(WARNING_ICON_DATA, PALETTE.warning);
+            let warning_bmp =
+                Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning BMP");
+            let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
 
             let icon_spacer = SizedBox::new(Size::new(4, 0)); // 4px horizontal spacing
 

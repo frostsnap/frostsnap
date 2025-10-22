@@ -19,7 +19,6 @@ pub mod address_display;
 pub mod animation_speed;
 pub mod backup;
 pub mod bitmap;
-pub mod bmp_image;
 pub mod checkmark;
 pub mod cursor;
 pub mod debug;
@@ -82,15 +81,18 @@ pub use super_draw_target::SuperDrawTarget;
 pub use widget_color::{ColorInterpolate, WidgetColor};
 pub use widget_list::*;
 
+// Re-export tinybmp for use in demos and public API
+pub use tinybmp;
+
 // Re-export all widget items
 pub use address_display::{AddressDisplay, AddressWithPath};
 pub use backup::*;
-pub use bmp_image::BmpImage;
 pub use checkmark::*;
 pub use cursor::*;
 pub use fader::*;
 pub use hold_to_confirm::HoldToConfirm;
 pub use hold_to_confirm_border::HoldToConfirmBorder;
+pub use image::{GrayToAlpha, Image};
 pub use layout::{
     Align, Alignment, Center, Column, Container, CrossAxisAlignment, MainAxisAlignment,
     MainAxisSize, Padding, Row, SizedBox, Stack,

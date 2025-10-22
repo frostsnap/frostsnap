@@ -1,8 +1,12 @@
 use super::{Column, Row, Text as TextWidget};
 use crate::DefaultTextStyle;
-use crate::{cursor::Cursor, palette::PALETTE, prelude::*, BmpImage, Switcher};
+use crate::{cursor::Cursor, palette::PALETTE, prelude::*, GrayToAlpha, Image, Switcher};
 use alloc::string::String;
-use embedded_graphics::text::renderer::TextRenderer;
+use embedded_graphics::{
+    pixelcolor::{Gray8, Rgb565},
+    text::renderer::TextRenderer,
+};
+use tinybmp::Bmp;
 
 /// A widget for displaying device name with optional edit mode cursor
 
@@ -87,7 +91,7 @@ const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
 #[derive(frostsnap_macros::Widget)]
 pub struct DeviceNameScreen {
     #[widget_delegate]
-    column: Column<(BmpImage, DeviceName)>,
+    column: Column<(Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>, DeviceName)>,
 }
 
 impl DeviceNameScreen {
@@ -102,8 +106,8 @@ impl DeviceNameScreen {
     }
 
     pub fn new(device_name: String) -> Self {
-        // Load BMP logo with color mapping
-        let logo_colored = BmpImage::new(LOGO_DATA, PALETTE.logo);
+        let logo_bmp = Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
+        let logo_colored = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
 
         // Create DeviceName widget
         let device_name_widget = DeviceName::new(device_name);

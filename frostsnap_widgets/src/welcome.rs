@@ -1,8 +1,13 @@
 use crate::DefaultTextStyle;
-use crate::{palette::PALETTE, prelude::*, BmpImage};
-use embedded_graphics::{geometry::Size, text::Alignment};
+use crate::{palette::PALETTE, prelude::*, GrayToAlpha, Image};
+use embedded_graphics::{
+    geometry::Size,
+    pixelcolor::{Gray8, Rgb565},
+    text::Alignment,
+};
+use tinybmp::Bmp;
 
-const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
+pub const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-icon-80x96.bmp");
 
 /// A welcome screen widget showing the Frostsnap logo and getting started text
 #[derive(frostsnap_macros::Widget)]
@@ -10,12 +15,12 @@ pub struct Welcome {
     #[widget_delegate]
     content: Center<
         Column<(
-            BmpImage,
-            SizedBox<embedded_graphics::pixelcolor::Rgb565>,
+            Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>,
+            SizedBox<Rgb565>,
             Text,
-            SizedBox<embedded_graphics::pixelcolor::Rgb565>,
+            SizedBox<Rgb565>,
             Text,
-            SizedBox<embedded_graphics::pixelcolor::Rgb565>,
+            SizedBox<Rgb565>,
             Text,
         )>,
     >,
@@ -23,8 +28,8 @@ pub struct Welcome {
 
 impl Welcome {
     pub fn new() -> Self {
-        // Load BMP logo with color mapping
-        let logo = BmpImage::new(LOGO_DATA, PALETTE.logo);
+        let bmp = Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
+        let logo = Image::new(GrayToAlpha::new(bmp, PALETTE.logo));
 
         // Create spacers with fixed heights
         let spacer1 = SizedBox::new(Size::new(0, 20)); // Space between logo and first text line
