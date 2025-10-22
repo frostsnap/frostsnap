@@ -8,21 +8,20 @@ use alloc::{
     vec::Vec,
 };
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
-use frostsnap_fonts::{Gray4Font, NOTO_SANS_MONO_24_BOLD};
+use frostsnap_fonts::NOTO_SANS_MONO_24_BOLD;
 
 // Font and spacing constants for addresses
-const FONT_BITCOIN_ADDRESS: &Gray4Font = &NOTO_SANS_MONO_24_BOLD;
+const FONT_BITCOIN_ADDRESS: &frostsnap_fonts::Gray4Font = &NOTO_SANS_MONO_24_BOLD;
 const ADDRESS_HORIZONTAL_SPACING: u32 = 15; // Horizontal spacing between chunks
 const ADDRESS_VERTICAL_SPACING: u32 = 3; // Vertical spacing between rows
 
-/// A widget for displaying P2TR (Taproot) addresses in a specific format:
-/// - 6 rows with 3 chunks each (4 chars per chunk)
-/// - Last row has the final 2 characters centered in the middle column
-/// - Total: 62 characters displayed as 16 chunks
+/// A widget for displaying P2SH (Pay-to-Script-Hash) addresses
+/// P2SH addresses start with '3' and are typically 34 characters long
+/// Display format: Simple chunking, left to right, no special handling
 ///
 /// Each row and spacer is boxed individually to minimize stack usage
 #[derive(frostsnap_macros::Widget)]
-pub struct P2trAddressDisplay {
+pub struct P2shAddressDisplay {
     #[widget_delegate]
     column: Column<(
         alloc::boxed::Box<
@@ -87,44 +86,55 @@ pub struct P2trAddressDisplay {
     )>,
 }
 
-impl P2trAddressDisplay {
+impl P2shAddressDisplay {
     pub fn new(address: &str) -> Self {
-        // Use current time as seed for non-deterministic randomness
-        // In a real embedded system, this would come from the system's time counter
-        // For now, we'll use a default seed but the API allows passing time
+        // Use default seed but provide API for passing time/randomness
         Self::new_with_seed(address, 0)
     }
 
     pub fn new_with_seed(address: &str, seed: u32) -> Self {
-        // P2TR addresses are always 62 characters (ASCII)
-        // Split into chunks of 4 characters, padding with spaces as needed
-        let chunks: Vec<String> = (0..address.len())
-            .step_by(4)
-            .map(|start| {
-                let end = (start + 4).min(address.len());
-                let chunk = &address[start..end];
-                // Pad to 4 characters with spaces
-                format!("{:4}", chunk)
-            })
-            .collect();
+        // P2SH addresses are typically 34 characters
+        // Simple chunking: divide into 4-character chunks
+        let mut chunks: Vec<String> = Vec::new();
+        let chars: Vec<char> = address.chars().collect();
 
-        // Select two random chunks to highlight (excluding first, last, and empty chunks)
-        // Valid chunks are indices 1-14 (15 chunks total, excluding 0 and the special last one)
+        // Create chunks of 4 characters each
+        for i in (0..chars.len()).step_by(4) {
+            let end = (i + 4).min(chars.len());
+            let chunk: String = chars[i..end].iter().collect();
+            // Pad to 4 characters with spaces if needed
+            chunks.push(format!("{:4}", chunk));
+        }
+
+        // Count actual non-empty chunks (34 chars = ~9 chunks)
+        let actual_chunks = chunks.len();
+
+        // Ensure we have at least 18 chunks (6 rows × 3 columns) for consistent display
+        while chunks.len() < 18 {
+            chunks.push("    ".to_string());
+        }
+
+        // Select two random chunks to highlight (excluding first chunk and empty chunks)
+        // For 34 chars, we have about 9 chunks (0-8), so valid indices are 1-7
+        // (excluding first chunk at index 0 and partial last chunk at index 8)
         let mut highlighted_chunks = BTreeSet::new();
 
-        // Use provided seed for randomness (e.g., current timestamp)
-        // This prevents address poisoning attacks by making highlights unpredictable
+        if actual_chunks > 2 {
+            // Use provided seed for randomness
+            let max_idx = (actual_chunks - 2).min(7); // Don't highlight last partial chunk
 
-        // Select first highlight chunk (indices 1-14)
-        let first_highlight = 1 + (seed % 14) as usize;
-        highlighted_chunks.insert(first_highlight);
+            // Select first highlight chunk (indices 1 to max_idx)
+            let first_highlight = 1 + (seed % max_idx as u32) as usize;
+            highlighted_chunks.insert(first_highlight);
 
-        // Select second highlight chunk (different from first)
-        let mut second_highlight = 1 + ((seed.wrapping_mul(7).wrapping_add(5)) % 14) as usize;
-        while second_highlight == first_highlight {
-            second_highlight = 1 + ((second_highlight + 1) % 14);
+            // Select second highlight chunk (different from first)
+            let mut second_highlight =
+                1 + ((seed.wrapping_mul(7).wrapping_add(3)) % max_idx as u32) as usize;
+            while second_highlight == first_highlight {
+                second_highlight = 1 + ((second_highlight) % max_idx);
+            }
+            highlighted_chunks.insert(second_highlight);
         }
-        highlighted_chunks.insert(second_highlight);
 
         // Create text colors - blue for normal, white for highlighted
         let normal_color = PALETTE.primary;
@@ -139,8 +149,7 @@ impl P2trAddressDisplay {
             }
         };
 
-        // Create rows with 3 chunks each (except last row with 2 chunks)
-        // Row 0: chunks 0, 1, 2 (bc1p and first two data chunks)
+        // Create 6 rows with 3 chunks each
         let row0 = Row::new((
             Text::new(
                 chunks[0].clone(),
@@ -159,7 +168,6 @@ impl P2trAddressDisplay {
         ))
         .with_main_axis_alignment(MainAxisAlignment::Center);
 
-        // Row 1: chunks 3, 4, 5
         let row1 = Row::new((
             Text::new(
                 chunks[3].clone(),
@@ -178,7 +186,6 @@ impl P2trAddressDisplay {
         ))
         .with_main_axis_alignment(MainAxisAlignment::Center);
 
-        // Row 2: chunks 6, 7, 8
         let row2 = Row::new((
             Text::new(
                 chunks[6].clone(),
@@ -197,65 +204,61 @@ impl P2trAddressDisplay {
         ))
         .with_main_axis_alignment(MainAxisAlignment::Center);
 
-        // Row 3: chunks 9, 10, 11
+        // For a 34-character address, we'll have:
+        // Row 0-2: 36 chars (9 chunks × 4 chars)
+        // So row 3 will be empty or have minimal content
         let row3 = Row::new((
             Text::new(
-                chunks[9].clone(),
+                chunks.get(9).cloned().unwrap_or("    ".to_string()),
                 Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(9)),
             ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
             Text::new(
-                chunks[10].clone(),
+                chunks.get(10).cloned().unwrap_or("    ".to_string()),
                 Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(10)),
             ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
             Text::new(
-                chunks[11].clone(),
+                chunks.get(11).cloned().unwrap_or("    ".to_string()),
                 Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(11)),
             ),
         ))
         .with_main_axis_alignment(MainAxisAlignment::Center);
 
-        // Row 4: chunks 12, 13, 14
+        // Empty rows for consistent 6-row height
         let row4 = Row::new((
             Text::new(
-                chunks[12].clone(),
-                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(12)),
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
             ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
             Text::new(
-                chunks[13].clone(),
-                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(13)),
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
             ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
             Text::new(
-                chunks[14].clone(),
-                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, get_color(14)),
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
             ),
         ))
         .with_main_axis_alignment(MainAxisAlignment::Center);
-
-        // Row 5: Last 2 characters centered within their chunk in middle column
-        // Use empty text for left and right columns
-        // The last chunk (chunks[15]) is already padded to 4 chars, but we want to center it
-        let last_chunk = &address[60..62]; // Get the actual last 2 characters
-        let centered_last_chunk = format!(" {} ", last_chunk); // Center within 4 chars: " XY "
 
         let row5 = Row::new((
             Text::new(
                 "    ".to_string(),
                 Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
-            ), // 4 spaces for empty left column
-            SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
-            Text::new(
-                centered_last_chunk,
-                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
-            ), // Last 2 chars centered in their chunk (never highlighted)
+            ),
             SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
             Text::new(
                 "    ".to_string(),
                 Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
-            ), // 4 spaces for empty right column
+            ),
+            SizedBox::<Rgb565>::new(Size::new(ADDRESS_HORIZONTAL_SPACING, 1)),
+            Text::new(
+                "    ".to_string(),
+                Gray4TextStyle::new(FONT_BITCOIN_ADDRESS, normal_color),
+            ),
         ))
         .with_main_axis_alignment(MainAxisAlignment::Center);
 
