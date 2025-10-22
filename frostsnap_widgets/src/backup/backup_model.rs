@@ -133,13 +133,7 @@ impl BackupModel {
                 });
             }
 
-            // Check for autocomplete
-            let matches = bip39_words::words_with_prefix(current);
-            if matches.len() == 1 {
-                // Auto-complete using complete_row
-                let complete_mutations = self.complete_row(matches[0]);
-                mutations.extend(complete_mutations);
-            }
+            // No auto-complete - always show word selector for consistent UX
         }
 
         mutations
@@ -190,11 +184,8 @@ impl BackupModel {
 
                 let matches = bip39_words::words_with_prefix(current);
 
-                if matches.len() == 1 {
-                    // Only one match, keep deleting
-                    continue;
-                } else if matches.len() >= 2 && matches.len() <= 8 {
-                    // We're in word selector range (2-8 matches)
+                if matches.len() >= 1 && matches.len() <= 8 {
+                    // We're in word selector range (1-8 matches)
                     // Check if next deletion would give us >8 matches (keyboard state)
                     if current.len() > 1 {
                         let peek_prefix = &current[..current.len() - 1];
@@ -209,7 +200,7 @@ impl BackupModel {
                         break;
                     }
                 } else {
-                    // >8 matches or 0 matches, stop
+                    // 0 matches or >8 matches, stop
                     break;
                 }
             } else {
@@ -349,14 +340,14 @@ impl BackupModel {
                 // Check how many words match current prefix
                 let matches = bip39_words::words_with_prefix(current_word);
 
-                if matches.len() > 1 && matches.len() <= 8 {
-                    // Show word selector
+                if matches.len() >= 1 && matches.len() <= 8 {
+                    // Show word selector for 1-8 matches (consistent UX)
                     MainViewState::WordSelect {
                         current,
                         possible_words: matches,
                     }
                 } else {
-                    // Show keyboard with valid next letters
+                    // Show keyboard with valid next letters (>8 matches)
                     let valid_letters = bip39_words::get_valid_next_letters(current_word);
                     MainViewState::EnterWord { valid_letters }
                 }
