@@ -132,14 +132,6 @@ impl BackupModel {
                     char: 'U',
                 });
             }
-
-            // Check for autocomplete
-            let matches = bip39_words::words_with_prefix(current);
-            if matches.len() == 1 {
-                // Auto-complete using complete_row
-                let complete_mutations = self.complete_row(matches[0]);
-                mutations.extend(complete_mutations);
-            }
         }
 
         mutations
@@ -170,30 +162,30 @@ impl BackupModel {
             return self.backspace();
         }
 
-        // Delete characters until we have multiple possibilities
-        loop {
-            if current.pop().is_some() {
+        current.pop();
+        mutations.push(FramebufferMutation::DelCharacter {
+            row,
+            pos: current.len(),
+        });
+
+        // For words, keep deleting to find the widest word-selector state.
+        // Once we overshoot into keyboard territory (>8 matches), undo the
+        // last deletion.
+        if row > 0 && !current.is_empty() && bip39_words::words_with_prefix(current).len() <= 8 {
+            while let Some(popped) = current.pop() {
                 mutations.push(FramebufferMutation::DelCharacter {
                     row,
                     pos: current.len(),
                 });
-
-                // For share index (row 0), just delete one character
-                if row == 0 {
-                    break;
-                }
-
-                // For words, check if we now have multiple possibilities
                 if current.is_empty() {
                     break;
                 }
-
-                let matches = bip39_words::words_with_prefix(current);
-                if matches.len() > 1 {
+                let count = bip39_words::words_with_prefix(current).len();
+                if count > 8 || count == 0 {
+                    current.push(popped);
+                    mutations.pop();
                     break;
                 }
-            } else {
-                break;
             }
         }
 
@@ -329,14 +321,14 @@ impl BackupModel {
                 // Check how many words match current prefix
                 let matches = bip39_words::words_with_prefix(current_word);
 
-                if matches.len() > 1 && matches.len() <= 8 {
-                    // Show word selector
+                if !matches.is_empty() && matches.len() <= 8 {
+                    // Show word selector for 1-8 matches (consistent UX)
                     MainViewState::WordSelect {
                         current,
                         possible_words: matches,
                     }
                 } else {
-                    // Show keyboard with valid next letters
+                    // Show keyboard with valid next letters (>8 matches)
                     let valid_letters = bip39_words::get_valid_next_letters(current_word);
                     MainViewState::EnterWord { valid_letters }
                 }
