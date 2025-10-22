@@ -51,7 +51,6 @@ pub mod fps;
 pub mod gray4_style;
 pub mod keygen_check;
 pub mod layout;
-pub mod p2tr_address_display;
 pub mod prelude;
 pub mod screen_test;
 pub mod scroll_bar;
