@@ -206,7 +206,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             phase: Some(phase),
                         }
                     }
-                    Prompt::Signing { phase } => {
+                    Prompt::Signing { phase, rand_seed } => {
                         // Get the sign task from the phase
                         let sign_task = phase.sign_task();
 
@@ -219,8 +219,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 // Get the user prompt from the transaction template
                                 let prompt = tx_template.user_prompt(*network);
 
-                                // Create the SignTxPrompt widget
-                                let widget = Box::new(SignTxPrompt::new(prompt));
+                                // Create the SignTxPrompt widget with random seed
+                                let widget =
+                                    Box::new(SignTxPrompt::new_with_seed(prompt, rand_seed));
 
                                 // Store both widget and phase in the WidgetTree
                                 WidgetTree::SignTxPrompt {
@@ -350,9 +351,13 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             } => {
                 use frostsnap_widgets::{AddressWithPath, Center};
 
-                // Create the address display widget with just the address index
-                let mut address_display = AddressWithPath::new(address, bip32_path.index);
-                address_display.set_rand_highlight(rand_seed);
+                // Create address display with just the index - use empty string for path since it's not displayed
+                let address_display = AddressWithPath::new_with_seed(
+                    address,
+                    alloc::string::String::new(),
+                    bip32_path.index as usize,
+                    rand_seed,
+                );
                 WidgetTree::AddressDisplay(Box::new(Center::new(address_display)))
             }
 
