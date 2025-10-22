@@ -189,7 +189,27 @@ impl BackupModel {
                 }
 
                 let matches = bip39_words::words_with_prefix(current);
-                if matches.len() > 1 {
+
+                if matches.len() == 1 {
+                    // Only one match, keep deleting
+                    continue;
+                } else if matches.len() >= 2 && matches.len() <= 8 {
+                    // We're in word selector range (2-8 matches)
+                    // Check if next deletion would give us >8 matches (keyboard state)
+                    if current.len() > 1 {
+                        let peek_prefix = &current[..current.len() - 1];
+                        let peek_matches = bip39_words::words_with_prefix(peek_prefix);
+                        if peek_matches.len() > 8 {
+                            // Next deletion would show keyboard, stop here at largest word selector
+                            break;
+                        }
+                        // Otherwise continue deleting to find largest word selector
+                    } else {
+                        // Can't peek further, stop here
+                        break;
+                    }
+                } else {
+                    // >8 matches or 0 matches, stop
                     break;
                 }
             } else {
