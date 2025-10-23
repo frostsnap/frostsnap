@@ -35,10 +35,11 @@ type PlaceholderText = alloc::boxed::Box<Container<Align<TextWidget<U8g2TextStyl
 // Constants for vertical BIP39 word display
 pub(super) const TOTAL_WORDS: usize = NUM_WORDS;
 pub(super) const FONT_SIZE: Size = Size::new(16, 24);
-pub(super) const VERTICAL_PAD: u32 = 12; // 6px top + 6px bottom padding per word
+pub(super) const VERTICAL_PAD: u32 = 18; // 9px top + 9px bottom padding per word
+                                         // Increased to prevent next row number from showing in 60px viewport
                                          // 180 pixels width / 16 pixels per char = 11.25 chars total
                                          // So we can fit 11 chars total
-const INDEX_CHARS: usize = 2; // "25" (no dot)
+const INDEX_CHARS: usize = 3; // "25." (with dot)
 const SPACE_BETWEEN: usize = 1;
 const PREVIEW_LEFT_PAD: i32 = 4; // Left padding for preview rect
 pub(super) const TOP_PADDING: u32 = 10; // Top padding before first word
@@ -366,7 +367,7 @@ impl Framebuf {
         // Clear the framebuffer
         let _ = fb.borrow_mut().clear(Gray2::BLACK);
 
-        // Pre-render share index placeholder with '#' prefix
+        // Pre-render share index placeholder with '#' prefix (no dot for share index)
         let share_y = TOP_PADDING as i32 + (VERTICAL_PAD / 2) as i32;
         let _ = Text::with_text_style(
             " #",
@@ -379,30 +380,30 @@ impl Framebuf {
         )
         .draw(&mut *fb.borrow_mut());
 
-        // Pre-render word indices with aligned dots (starting from second position)
+        // Pre-render word indices with dots
         for i in 0..TOTAL_WORDS {
             // Word i is at row i+1 (row 0 is share index)
             let row = i + 1;
             let y = TOP_PADDING as i32
                 + (row as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as i32
                 + (VERTICAL_PAD / 2) as i32;
-            let number = (i + 1).to_string();
+            let number_with_dot = format!("{}.", i + 1);
 
-            // Right-align numbers at 2 characters from left (no dots)
-            let number_right_edge = 32; // 2 * 16 pixels
+            // Right-align numbers at 3 characters from left (with dots)
+            let number_right_edge = 48; // 3 * 16 pixels
 
             // Calculate number position to right-align
             let number_x = if i < 9 {
-                // Single digit: right-aligned at position
-                number_right_edge - FONT_SIZE.width as i32
+                // Single digit + dot: right-aligned at position (takes 2 chars: "1.")
+                number_right_edge - (2 * FONT_SIZE.width as i32)
             } else {
-                // Double digit: starts at position 0
+                // Double digit + dot: starts at position 0 (takes 3 chars: "25.")
                 0
             };
 
-            // Draw the number with a different gray level
+            // Draw the number with dot in a different gray level
             let _ = Text::with_text_style(
-                &number,
+                &number_with_dot,
                 Point::new(number_x, y),
                 U8g2TextStyle::new(LEGACY_FONT_LARGE, Gray2::new(0x01)),
                 TextStyleBuilder::new()
