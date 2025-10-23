@@ -260,7 +260,7 @@ impl crate::DynWidget for EnterShareScreen {
         self.size = max_size;
 
         // Calculate keyboard rect
-        let preview_height = 60;
+        let preview_height = super::input_preview::PREVIEW_HEIGHT as i32;
         self.keyboard_rect = Rectangle::new(
             Point::new(0, preview_height),
             Size::new(max_size.width, max_size.height - preview_height as u32),
