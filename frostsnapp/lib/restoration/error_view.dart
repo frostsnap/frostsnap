@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
-import 'package:frostsnap/restoration/material_dialog_card.dart';
+import 'package:frostsnap/restoration/recovery_flow.dart';
+import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
 
 class ErrorView extends StatefulWidget with TitledWidget {
   final String title;
@@ -36,63 +36,81 @@ class _ErrorViewState extends State<ErrorView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      physics: NeverScrollableScrollPhysics(),
-      child: MaterialDialogCard(
-        iconData: widget.isWarning
-            ? Icons.warning_amber_rounded
-            : Icons.error_outline_rounded,
-        title: Text(widget.title),
-        content: Container(
-          constraints: BoxConstraints(maxHeight: 200),
-          child: Scrollbar(
-            controller: _scrollController,
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              child: SelectableText(
-                widget.message,
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
+
+    final backgroundColor = widget.isWarning
+        ? null
+        : theme.colorScheme.errorContainer;
+    final textColor = widget.isWarning
+        ? null
+        : theme.colorScheme.onErrorContainer;
+    final iconColor = widget.isWarning
+        ? null
+        : theme.colorScheme.onErrorContainer;
+
+    return DialogContentWithActions(
+      content: Container(
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
         ),
-        backgroundColor: widget.isWarning
-            ? theme.colorScheme.surfaceContainerHigh
-            : theme.colorScheme.errorContainer,
-        textColor: widget.isWarning
-            ? theme.colorScheme.onSurface
-            : theme.colorScheme.onErrorContainer,
-        iconColor: widget.isWarning
-            ? theme.colorScheme.onSurfaceVariant
-            : theme.colorScheme.onErrorContainer,
-        actions: [
-          if (!widget.isWarning)
-            OutlinedButton.icon(
-              icon: Icon(Icons.copy),
-              label: Text('Copy Error'),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: widget.message));
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: theme.colorScheme.onErrorContainer,
-                side: BorderSide(color: theme.colorScheme.onErrorContainer),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              widget.isWarning
+                  ? Icons.warning_amber_rounded
+                  : Icons.error_outline_rounded,
+              size: 64,
+              color: iconColor,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              widget.title,
+              style: theme.textTheme.headlineSmall?.copyWith(color: textColor),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              constraints: BoxConstraints(maxHeight: 200),
+              child: Scrollbar(
+                controller: _scrollController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  child: SelectableText(
+                    widget.message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: textColor),
+                  ),
+                ),
               ),
             ),
-          if (widget.onRetry != null)
-            FilledButton.icon(
-              icon: Icon(Icons.refresh),
-              label: Text('Try Again'),
-              onPressed: widget.onRetry,
-              style: widget.isWarning
-                  ? null
-                  : FilledButton.styleFrom(
-                      backgroundColor: theme.colorScheme.error,
-                      foregroundColor: theme.colorScheme.onError,
-                    ),
-            ),
-        ],
+          ],
+        ),
       ),
+      actions: [
+        if (!widget.isWarning)
+          OutlinedButton.icon(
+            icon: Icon(Icons.copy),
+            label: Text('Copy Error'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: widget.message));
+            },
+          ),
+        if (widget.onRetry != null)
+          FilledButton.icon(
+            icon: Icon(Icons.refresh),
+            label: Text('Try Again'),
+            onPressed: widget.onRetry,
+            style: widget.isWarning
+                ? null
+                : FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: theme.colorScheme.onError,
+                  ),
+          ),
+      ],
     );
   }
 }

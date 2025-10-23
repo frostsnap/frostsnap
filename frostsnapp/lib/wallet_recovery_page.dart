@@ -3,7 +3,6 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration.dart';
-import 'package:frostsnap/restoration/material_dialog_card.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -85,79 +84,114 @@ class WalletRecoveryPage extends StatelessWidget {
       cardTextColor = theme.colorScheme.onSecondaryContainer;
     }
 
-    final progressActionCard = MaterialDialogCard(
-      iconData: cardIcon,
-      title: Text(cardTitle),
-      content: Text(cardMessage),
-      backgroundColor: cardBackgroundColor,
-      textColor: cardTextColor,
-      variantTextColor: cardTextColor,
-      iconColor: cardTextColor,
-      actions: [
-        TextButton.icon(
-          icon: const Icon(Icons.close_rounded),
-          label: const Text('Cancel'),
-          onPressed: () async {
-            if (status.shares.isNotEmpty) {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Cancel restoration?'),
-                  content: Text(
-                    'You have ${status.shares.length} key${status.shares.length > 1 ? 's' : ''} added. '
-                    'Are you sure you want to cancel this restoration?',
+    final progressActionCard = Card(
+      color: cardBackgroundColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 16,
+          children: [
+            Icon(cardIcon, color: cardTextColor, size: 24),
+            DefaultTextStyle(
+              style: theme.textTheme.headlineSmall!.copyWith(
+                color: cardTextColor,
+              ),
+              textAlign: TextAlign.center,
+              child: Text(cardTitle),
+            ),
+            DefaultTextStyle(
+              style: theme.textTheme.bodyLarge!.copyWith(color: cardTextColor),
+              textAlign: TextAlign.start,
+              child: Text(cardMessage),
+            ),
+            Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                spacing: 8,
+                children: [
+                  Flexible(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.close_rounded),
+                      label: const Text('Cancel'),
+                      onPressed: () async {
+                        if (status.shares.isNotEmpty) {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text('Cancel restoration?'),
+                              content: Text(
+                                'You have ${status.shares.length} key${status.shares.length > 1 ? 's' : ''} added. '
+                                'Are you sure you want to cancel this restoration?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(false),
+                                  child: Text('Keep restoring'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(true),
+                                  child: Text('Cancel restoration'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            coord.cancelRestoration(
+                              restorationId: restorationState.restorationId,
+                            );
+                          }
+                        } else {
+                          coord.cancelRestoration(
+                            restorationId: restorationState.restorationId,
+                          );
+                        }
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: cardTextColor,
+                      ),
+                    ),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: Text('Keep restoring'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: Text('Cancel restoration'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                coord.cancelRestoration(
-                  restorationId: restorationState.restorationId,
-                );
-              }
-            } else {
-              coord.cancelRestoration(
-                restorationId: restorationState.restorationId,
-              );
-            }
-          },
-          style: TextButton.styleFrom(foregroundColor: cardTextColor),
-        ),
-        FilledButton.icon(
-          icon: const Icon(Icons.check_rounded),
-          label: const Text('Restore'),
-          onPressed: isReady
-              ? () async {
-                  try {
-                    final encryptionKey =
-                        await SecureKeyProvider.getEncryptionKey();
-                    final accessStructureRef = await coord.finishRestoring(
-                      restorationId: restorationState.restorationId,
-                      encryptionKey: encryptionKey,
-                    );
+                  Flexible(
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.check_rounded),
+                      label: const Text('Restore'),
+                      onPressed: isReady
+                          ? () async {
+                              try {
+                                final encryptionKey =
+                                    await SecureKeyProvider.getEncryptionKey();
+                                final accessStructureRef = await coord
+                                    .finishRestoring(
+                                      restorationId:
+                                          restorationState.restorationId,
+                                      encryptionKey: encryptionKey,
+                                    );
 
-                    onWalletRecovered(accessStructureRef);
-                  } catch (e) {
-                    if (context.mounted) {
-                      showErrorSnackbar(
-                        context,
-                        "Failed to recover wallet: $e",
-                      );
-                    }
-                  }
-                }
-              : null,
+                                onWalletRecovered(accessStructureRef);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  showErrorSnackbar(
+                                    context,
+                                    "Failed to recover wallet: $e",
+                                  );
+                                }
+                              }
+                            }
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
 
     final appBar = SliverAppBar.medium(

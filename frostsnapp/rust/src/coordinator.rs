@@ -17,8 +17,8 @@ use frostsnap_coordinator::nonce_replenish::NonceReplenishState;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::verify_address::{VerifyAddressProtocol, VerifyAddressProtocolState};
-use frostsnap_coordinator::wait_for_recovery_share::{
-    WaitForRecoveryShare, WaitForRecoveryShareState,
+use frostsnap_coordinator::wait_for_single_device::{
+    WaitForSingleDevice, WaitForSingleDeviceState,
 };
 use frostsnap_coordinator::{
     AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
@@ -700,8 +700,8 @@ impl FfiCoordinator {
         key_state(&self.coordinator.lock().unwrap())
     }
 
-    pub fn wait_for_recovery_share(&self, sink: impl Sink<WaitForRecoveryShareState>) {
-        let ui_protocol = WaitForRecoveryShare::new(sink);
+    pub fn wait_for_single_device(&self, sink: impl Sink<WaitForSingleDeviceState>) {
+        let mut ui_protocol = WaitForSingleDevice::new(sink);
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
     }

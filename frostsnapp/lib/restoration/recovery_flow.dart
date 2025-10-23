@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration/candidate_ready_view.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
 import 'package:frostsnap/restoration/enter_backup_view.dart';
 import 'package:frostsnap/restoration/enter_device_name_view.dart';
 import 'package:frostsnap/restoration/enter_threshold_view.dart';
@@ -12,9 +10,9 @@ import 'package:frostsnap/restoration/error_view.dart';
 import 'package:frostsnap/restoration/firmware_upgrade_view.dart';
 import 'package:frostsnap/restoration/nonce_generation_page.dart';
 import 'package:frostsnap/restoration/physical_backup_success_view.dart';
-import 'package:frostsnap/restoration/plug_in_blank_view.dart';
-import 'package:frostsnap/restoration/plug_in_prompt_view.dart';
+import 'package:frostsnap/restoration/start_restoration_info_view.dart';
 import 'package:frostsnap/restoration/state.dart';
+import 'package:frostsnap/restoration/wait_reconnect_device_view.dart';
 import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -22,13 +20,21 @@ import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 
+mixin TitledWidget on Widget {
+  String get titleText;
+}
+
 class WalletRecoveryFlow extends StatefulWidget {
   final RecoveryContext recoveryContext;
+  final TargetDevice targetDevice;
+  final RecoverShare? recoverShare;
   final bool isDialog;
 
   const WalletRecoveryFlow({
     super.key,
     required this.recoveryContext,
+    required this.targetDevice,
+    this.recoverShare,
     this.isDialog = true,
   });
 
@@ -38,22 +44,21 @@ class WalletRecoveryFlow extends StatefulWidget {
 
 class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   late RecoveryContext recoveryContext;
+  late RecoveryFlowState flowState;
 
-  RecoveryFlowState flowState = const RecoveryFlowState.start();
-
-  final prevStates = List<RecoveryFlowState>.empty(growable: true);
+  final prevStates = List<RecoveryFlowStage>.empty(growable: true);
   bool isAnimationForward = true;
 
   void pushPrevState() {
     isAnimationForward = true;
-    prevStates.add(flowState);
+    prevStates.add(flowState.stage);
   }
 
   bool tryPopPrevState(BuildContext context) {
     if (prevStates.isNotEmpty) {
       setState(() {
         isAnimationForward = false;
-        flowState = prevStates.removeLast();
+        flowState.stage = prevStates.removeLast();
       });
       return true;
     }
@@ -67,17 +72,17 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   }) {
     setState(() {
       isAnimationForward = false;
-      RecoveryFlowState returnState;
+      RecoveryFlowStage returnStage;
       if (prevStates.isNotEmpty) {
-        returnState = prevStates.removeLast();
+        returnStage = prevStates.removeLast();
       } else {
-        returnState = flowState;
+        returnStage = flowState.stage;
       }
-      flowState = RecoveryFlowState.error(
+      flowState.stage = RecoveryFlowStage.error(
         title: errorTitle,
         message: errorMessage,
         isWarning: !isException,
-        returnState: returnState,
+        returnStage: returnStage,
       );
     });
   }
@@ -130,117 +135,24 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   void initState() {
     super.initState();
     recoveryContext = widget.recoveryContext;
+
+    // Determine initial stage based on whether we have a share or blank device
+    final initialStage = widget.recoverShare != null
+        ? RecoveryFlowStage.candidateReady(candidate: widget.recoverShare!)
+        : RecoveryFlowStage.startRestorationWithPhysicalBackup();
+
+    flowState = RecoveryFlowState(
+      targetDevice: widget.targetDevice,
+      stage: initialStage,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     TitledWidget child;
 
-    switch (flowState) {
-      case StartState():
-        final kind = switch (recoveryContext) {
-          ContinuingRestorationContext() => MethodChoiceKind.continueRecovery,
-          AddingToWalletContext() => MethodChoiceKind.addToWallet,
-          NewRestorationContext() => MethodChoiceKind.startRecovery,
-        };
-        child = ChooseMethodView(
-          kind: kind,
-          onDeviceChosen: () {
-            setState(() {
-              pushPrevState();
-              flowState = const RecoveryFlowState.waitDevice();
-            });
-          },
-          onPhysicalBackupChosen: () {
-            setState(() {
-              pushPrevState();
-              flowState = switch (recoveryContext) {
-                NewRestorationContext() =>
-                  const RecoveryFlowState.enterRestorationDetails(),
-                _ => const RecoveryFlowState.waitPhysicalBackupDevice(),
-              };
-            });
-          },
-        );
-        break;
-
-      case WaitDeviceState():
-        child = PlugInPromptView(
-          context: recoveryContext,
-          onCandidateDetected: (detectedShare) async {
-            if (mounted) {
-              final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-
-              if (recoveryContext case ContinuingRestorationContext(
-                :final restorationId,
-              )) {
-                final error = await coord
-                    .checkContinueRestoringWalletFromDeviceShare(
-                      restorationId: restorationId,
-                      recoverShare: detectedShare,
-                      encryptionKey: encryptionKey,
-                    );
-                if (error != null) {
-                  final deviceName =
-                      coord.getDeviceName(id: detectedShare.heldBy) ??
-                      '<empty>';
-                  popOnError(
-                    errorMessage: error.toString(),
-                    errorTitle: 'Cannot add key from $deviceName',
-                  );
-                  return;
-                }
-              } else if (recoveryContext case AddingToWalletContext(
-                :final accessStructureRef,
-              )) {
-                final error = await coord.checkRecoverShare(
-                  accessStructureRef: accessStructureRef,
-                  recoverShare: detectedShare,
-                  encryptionKey: encryptionKey,
-                );
-                if (error != null) {
-                  final deviceName =
-                      coord.getDeviceName(id: detectedShare.heldBy) ??
-                      '<empty>';
-                  popOnError(
-                    errorMessage: error.toString(),
-                    errorTitle: 'Cannot add key from $deviceName',
-                  );
-                  return;
-                }
-              } else {
-                final error = await coord.checkStartRestoringKeyFromDeviceShare(
-                  recoverShare: detectedShare,
-                  encryptionKey: encryptionKey,
-                );
-                if (error != null) {
-                  popOnError(
-                    errorMessage: error.toString(),
-                    errorTitle: 'Cannot start restoration',
-                  );
-                  return;
-                }
-              }
-
-              final deviceList = await GlobalStreams.deviceListSubject.first;
-              final device = deviceList.state.getDevice(
-                id: detectedShare.heldBy,
-              );
-
-              if (device != null) {
-                setState(() {
-                  pushPrevState();
-                  flowState = RecoveryFlowState.candidateReady(
-                    candidate: detectedShare,
-                    targetDevice: TargetDevice(device),
-                  );
-                });
-              }
-            }
-          },
-        );
-        break;
-      case CandidateReadyState(:final candidate, :final targetDevice):
+    switch (flowState.stage) {
+      case CandidateReadyStage(:final candidate):
         child = CandidateReadyView(
           candidate: candidate,
           continuing: switch (recoveryContext) {
@@ -255,9 +167,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onConfirm: () {
             setState(() {
               pushPrevState();
-              flowState = RecoveryFlowState.generatingNonces(
-                targetDevice: targetDevice,
-                nextState: RecoveryFlowState.completingDeviceShareEnrollment(
+              flowState.stage = RecoveryFlowStage.generatingNonces(
+                nextStage: RecoveryFlowStage.completingDeviceShareEnrollment(
                   candidate: candidate,
                 ),
               );
@@ -265,117 +176,86 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
         );
         break;
-      case WaitPhysicalBackupDeviceState():
-        child = PlugInBlankView(
-          onBlankDeviceConnected: (device) {
-            final eligibility = device.firmwareUpgradeEligibility();
+
+      case FirmwareUpgradeStage():
+        child = FirmwareUpgradeView(
+          key: ValueKey("firmware-upgrade"),
+          targetDevice: flowState.targetDevice,
+          onComplete: () {
             setState(() {
-              eligibility.when(
-                canUpgrade: () {
-                  flowState = RecoveryFlowState.firmwareUpgrade(
-                    targetDevice: TargetDevice(device),
-                  );
-                },
-                upToDate: () {
-                  flowState = RecoveryFlowState.enterDeviceName(
-                    targetDevice: TargetDevice(device),
-                  );
-                },
-                cannotUpgrade: (reason) {
-                  isAnimationForward = false;
-                  flowState = RecoveryFlowState.error(
-                    title: 'Incompatible Firmware',
-                    message: reason,
-                    isWarning: true,
-                    returnState:
-                        const RecoveryFlowState.waitPhysicalBackupDevice(),
-                  );
-                },
+              flowState.stage = switch (recoveryContext) {
+                NewRestorationContext() =>
+                  const RecoveryFlowStage.enterRestorationDetails(),
+                _ => const RecoveryFlowStage.enterDeviceName(),
+              };
+            });
+          },
+          onCancel: () {
+            Navigator.pop(context);
+          },
+          onDisconnected: () {
+            setState(() {
+              flowState.stage = RecoveryFlowStage.waitReconnectDevice(
+                nextStage: const RecoveryFlowStage.firmwareUpgrade(),
               );
             });
           },
         );
         break;
 
-      case FirmwareUpgradeState(:final targetDevice):
-        child = FirmwareUpgradeView(
-          key: ValueKey("firmware-upgrade"),
-          targetDevice: targetDevice,
-          onComplete: () {
-            setState(() {
-              flowState = const RecoveryFlowState.waitPhysicalBackupDevice();
-            });
-          },
-          onCancel: () {
-            setState(() {
-              flowState = const RecoveryFlowState.waitPhysicalBackupDevice();
-            });
-          },
-          onDisconnected: () {
-            popOnError(
-              errorTitle: 'Device Disconnected',
-              errorMessage:
-                  'The device was disconnected. Please reconnect and try again.',
-            );
-          },
-        );
-        break;
-
-      case EnterDeviceNameState(:final targetDevice):
+      case EnterDeviceNameStage():
         child = EnterDeviceNameView(
-          targetDevice: targetDevice,
+          targetDevice: flowState.targetDevice,
           onDisconnected: () {
-            popOnError(
-              errorTitle: 'Device Disconnected',
-              errorMessage:
-                  'The device was disconnected. Please reconnect and try again.',
-            );
+            setState(() {
+              flowState.stage = RecoveryFlowStage.waitReconnectDevice(
+                nextStage: const RecoveryFlowStage.enterDeviceName(),
+              );
+            });
           },
           onDeviceName: (deviceName) {
             final nonceRequest = coord.createNonceRequest(
-              devices: [targetDevice.id],
-            );
-
-            final enterBackupState = RecoveryFlowState.enterBackup(
-              targetDevice: targetDevice,
-              deviceName: deviceName,
+              devices: [flowState.targetDevice.id],
             );
 
             if (nonceRequest.someNoncesRequested()) {
               setState(() {
                 pushPrevState();
-                flowState = RecoveryFlowState.generatingNonces(
-                  targetDevice: targetDevice,
-                  nextState: enterBackupState,
+                flowState.stage = RecoveryFlowStage.generatingNonces(
+                  nextStage: RecoveryFlowStage.enterBackup(
+                    deviceName: deviceName,
+                  ),
                 );
               });
             } else {
               setState(() {
                 pushPrevState();
-                flowState = enterBackupState;
+                flowState.stage = RecoveryFlowStage.enterBackup(
+                  deviceName: deviceName,
+                );
               });
             }
           },
         );
 
-      case GeneratingNoncesState(:final targetDevice, :final nextState):
+      case GeneratingNoncesStage(:final nextStage):
         final nonceRequest = coord.createNonceRequest(
-          devices: [targetDevice.id],
+          devices: [flowState.targetDevice.id],
         );
         final stream = coord
             .replenishNonces(
               nonceRequest: nonceRequest,
-              devices: [targetDevice.id],
+              devices: [flowState.targetDevice.id],
             )
             .toBehaviorSubject();
 
         child = NonceGenerationPage(
           stream: stream,
-          deviceName: coord.getDeviceName(id: targetDevice.id),
-          onDisconnected: targetDevice.onDisconnected,
+          deviceName: coord.getDeviceName(id: flowState.targetDevice.id),
+          onDisconnected: flowState.targetDevice.onDisconnected(),
           onComplete: () async {
             setState(() {
-              flowState = nextState;
+              flowState.stage = nextStage;
             });
           },
           onCancel: () {
@@ -383,10 +263,13 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
             tryPopPrevState(context);
           },
           onDeviceDisconnected: () {
-            popOnError(
-              errorTitle: 'Device Disconnected',
-              errorMessage: 'The device was disconnected during preparation.',
-            );
+            setState(() {
+              flowState.stage = RecoveryFlowStage.waitReconnectDevice(
+                nextStage: RecoveryFlowStage.generatingNonces(
+                  nextStage: nextStage,
+                ),
+              );
+            });
           },
           onError: (error) {
             popOnError(
@@ -397,19 +280,19 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
         break;
 
-      case CompletingDeviceShareEnrollmentState(:final candidate):
+      case CompletingDeviceShareEnrollmentStage(:final candidate):
         _completeDeviceShareEnrollment(candidate);
         child = const _LoadingView(title: 'Completing enrollment...');
         break;
 
-      case EnterBackupState(:final targetDevice, :final deviceName):
+      case EnterBackupStage(:final deviceName):
         final stream = coord.tellDeviceToEnterPhysicalBackup(
-          deviceId: targetDevice.id,
+          deviceId: flowState.targetDevice.id,
         );
         child = EnterBackupView(
           stream: stream,
-          deviceId: targetDevice.id,
-          deviceName: coord.getDeviceName(id: targetDevice.id),
+          targetDevice: flowState.targetDevice,
+          deviceName: coord.getDeviceName(id: flowState.targetDevice.id),
           onCancel: () {
             tryPopPrevState(context);
           },
@@ -475,8 +358,9 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                     restorationId: restorationId,
                   );
                   setState(() {
-                    flowState = RecoveryFlowState.physicalBackupSuccess(
-                      restorationId: restorationId,
+                    recoveryContext = (recoveryContext as NewRestorationContext)
+                        .copyWith(restorationId: restorationId);
+                    flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
                       deviceName: deviceName,
                     );
                   });
@@ -503,8 +387,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                     restorationId: restorationId,
                   );
                   setState(() {
-                    flowState = RecoveryFlowState.physicalBackupSuccess(
-                      restorationId: restorationId,
+                    flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
                       deviceName: deviceName,
                     );
                   });
@@ -522,7 +405,44 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           },
         );
         break;
-      case EnterRestorationDetailsState():
+      case StartRestorationWithPhysicalBackupStage():
+        child = StartRestorationInfoView(
+          recoveryContext: recoveryContext,
+          onContinue: () {
+            setState(() {
+              pushPrevState();
+              if (flowState.targetDevice.needsFirmwareUpgrade()) {
+                flowState.stage = RecoveryFlowStage.firmwareUpgrade();
+              } else {
+                switch (recoveryContext) {
+                  case NewRestorationContext():
+                    flowState.stage =
+                        RecoveryFlowStage.enterRestorationDetails();
+                    break;
+                  default:
+                    flowState.stage = RecoveryFlowStage.enterDeviceName();
+                }
+              }
+            });
+          },
+        );
+        break;
+
+      case WaitReconnectDeviceStage(:final nextStage):
+        child = WaitReconnectDeviceView(
+          targetDevice: flowState.targetDevice,
+          onReconnected: () {
+            setState(() {
+              flowState.stage = nextStage;
+            });
+          },
+          onCancel: () {
+            Navigator.pop(context);
+          },
+        );
+        break;
+
+      case EnterRestorationDetailsStage():
         child = EnterWalletNameView(
           initialWalletName: null,
           initialBitcoinNetwork: null,
@@ -536,7 +456,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   threshold: null,
                 );
               }
-              flowState = RecoveryFlowState.enterThreshold(
+              flowState.stage = RecoveryFlowStage.enterThreshold(
                 walletName: walletName,
                 network: bitcoinNetwork,
               );
@@ -545,7 +465,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
         break;
 
-      case EnterThresholdState(:final walletName, :final network):
+      case EnterThresholdStage(:final walletName, :final network):
         child = EnterThresholdView(
           walletName: walletName,
           network: network,
@@ -563,12 +483,17 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   threshold: threshold,
                 );
               }
-              flowState = const RecoveryFlowState.waitPhysicalBackupDevice();
+              flowState.stage = const RecoveryFlowStage.enterDeviceName();
             });
           },
         );
         break;
-      case PhysicalBackupSuccessState(:final restorationId, :final deviceName):
+      case PhysicalBackupSuccessStage(:final deviceName):
+        final restorationId = switch (recoveryContext) {
+          NewRestorationContext(:final restorationId) => restorationId,
+          ContinuingRestorationContext(:final restorationId) => restorationId,
+          _ => null,
+        };
         child = PhysicalBackupSuccessView(
           deviceName: deviceName,
           onClose: () {
@@ -577,11 +502,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         );
         break;
 
-      case ErrorState(
+      case ErrorStage(
         :final title,
         :final message,
         :final isWarning,
-        :final returnState,
+        :final returnStage,
       ):
         child = ErrorView(
           title: title,
@@ -590,7 +515,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onRetry: () {
             setState(() {
               isAnimationForward = true;
-              flowState = returnState;
+              flowState.stage = returnStage;
             });
           },
         );
@@ -615,11 +540,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           child: FadeTransition(opacity: animation, child: child),
         );
       },
-      child: Padding(
-        key: ValueKey(flowState),
-        padding: const EdgeInsets.all(16.0),
-        child: child,
-      ),
+      child: child,
     );
 
     final scopedSwitcher = PopScope(
@@ -644,24 +565,17 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         ),
       );
     } else {
-      final windowSize = WindowSizeContext.of(context);
-      final header = TopBarSliver(
+      final header = TopBar(
         title: Text(child.titleText),
-        leading: IconButton(
+        leadingButton: IconButton(
           icon: Icon(Icons.arrow_back_rounded),
           onPressed: () => goBackOrClose(context),
           tooltip: 'Back',
         ),
       );
-      return ConstrainedBox(
-        constraints: BoxConstraints(minHeight: 360),
-        child: CustomScrollView(
-          shrinkWrap: windowSize != WindowSizeClass.compact,
-          slivers: [
-            header,
-            SliverToBoxAdapter(child: scopedSwitcher),
-          ],
-        ),
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [header, scopedSwitcher],
       );
     }
   }

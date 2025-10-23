@@ -199,14 +199,15 @@ class WalletAddColumn extends StatelessWidget {
 
   static void showWalletRecoverDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
+
     final restorationId = await MaybeFullscreenDialog.show<RestorationId>(
       context: context,
       barrierDismissible: true,
-      child: WalletRecoveryFlow(
+      child: RecoveryFlowWithDiscovery(
         recoveryContext: RecoveryContext.newRestoration(),
-        isDialog: false,
       ),
     );
+
     await coord.cancelProtocol();
     if (restorationId == null) return;
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
@@ -218,11 +219,10 @@ class WalletAddColumn extends StatelessWidget {
   ) async {
     await MaybeFullscreenDialog.show<RestorationId>(
       context: context,
-      child: WalletRecoveryFlow(
+      child: RecoveryFlowWithDiscovery(
         recoveryContext: RecoveryContext.addingToWallet(
           accessStructureRef: accessStructureRef,
         ),
-        isDialog: false,
       ),
     );
     await coord.cancelProtocol();

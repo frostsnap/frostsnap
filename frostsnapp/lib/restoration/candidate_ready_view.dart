@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
-import 'package:frostsnap/restoration/material_dialog_card.dart';
+import 'package:frostsnap/restoration/recovery_flow.dart';
+import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 
@@ -24,6 +24,7 @@ class CandidateReadyView extends StatelessWidget with TitledWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final deviceName = coord.getDeviceName(id: candidate.heldBy) ?? '<empty>';
 
     String title;
@@ -39,15 +40,26 @@ class CandidateReadyView extends StatelessWidget with TitledWidget {
     } else {
       message =
           "Key '$deviceName' is part of a wallet called '${candidate.heldShare.keyName}'.";
-      buttonText = 'Start restoring';
+      buttonText = 'Restore';
     }
 
-    return MaterialDialogCard(
+    return DialogContentWithActions(
       key: const ValueKey('candidateReady'),
-      iconData: Icons.check_circle,
-      title: Text(title),
-      content: Text(message, textAlign: TextAlign.center),
-      actions: [FilledButton(child: Text(buttonText), onPressed: onConfirm)],
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 64, color: theme.colorScheme.primary),
+          const SizedBox(height: 24),
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Text(message, textAlign: TextAlign.center),
+        ],
+      ),
+      actions: [FilledButton(onPressed: onConfirm, child: Text(buttonText))],
     );
   }
 }

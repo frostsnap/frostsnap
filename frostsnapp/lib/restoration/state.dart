@@ -14,6 +14,7 @@ sealed class RecoveryContext with _$RecoveryContext {
   /// Starting a brand new restoration from scratch
   /// Fields get filled in as we collect them during the flow
   const factory RecoveryContext.newRestoration({
+    RestorationId? restorationId,
     String? walletName,
     BitcoinNetwork? network,
     int? threshold,
@@ -22,9 +23,6 @@ sealed class RecoveryContext with _$RecoveryContext {
   /// Continuing an existing restoration that's in progress
   const factory RecoveryContext.continuingRestoration({
     required RestorationId restorationId,
-    required String walletName,
-    required BitcoinNetwork network,
-    int? threshold,
   }) = ContinuingRestorationContext;
 
   /// Adding a share to an already complete wallet
@@ -33,106 +31,95 @@ sealed class RecoveryContext with _$RecoveryContext {
   }) = AddingToWalletContext;
 }
 
-/// Represents all possible states in the wallet recovery flow.
-/// Each state contains exactly the data it needs, ensuring type safety.
+/// Composite state representing the recovery flow
+/// Always has a targetDevice and a stage
+class RecoveryFlowState {
+  final TargetDevice targetDevice;
+  RecoveryFlowStage stage;
+
+  RecoveryFlowState({required this.targetDevice, required this.stage});
+
+  /// Dispose resources owned by this state
+  void dispose() {
+    targetDevice.dispose();
+  }
+}
+
+/// Represents the stage/step in the wallet recovery flow
+/// Each stage contains exactly the data it needs, ensuring type safety
 @freezed
-sealed class RecoveryFlowState with _$RecoveryFlowState {
-  const RecoveryFlowState._();
+sealed class RecoveryFlowStage with _$RecoveryFlowStage {
+  const RecoveryFlowStage._();
 
-  /// Initial state when starting any recovery flow
-  const factory RecoveryFlowState.start() = StartState;
-
-  // ============ Device Share Flow States ============
-
-  /// Waiting for a device with an existing share to be connected
-  const factory RecoveryFlowState.waitDevice() = WaitDeviceState;
+  // ============ Device Share Flow Stages ============
 
   /// A candidate device share has been detected and is ready for confirmation
-  const factory RecoveryFlowState.candidateReady({
+  const factory RecoveryFlowStage.candidateReady({
     required RecoverShare candidate,
-    required TargetDevice targetDevice,
-  }) = CandidateReadyState;
+  }) = CandidateReadyStage;
 
-  // ============ Physical Backup Flow States ============
-
-  /// Waiting for a blank device to be connected for physical backup entry
-  const factory RecoveryFlowState.waitPhysicalBackupDevice() =
-      WaitPhysicalBackupDeviceState;
+  // ============ Physical Backup Flow Stages ============
 
   /// Device needs firmware upgrade before it can be used
-  const factory RecoveryFlowState.firmwareUpgrade({
-    required TargetDevice targetDevice,
-  }) = FirmwareUpgradeState;
+  const factory RecoveryFlowStage.firmwareUpgrade() = FirmwareUpgradeStage;
 
   /// Prompting user to enter a name for the device
-  const factory RecoveryFlowState.enterDeviceName({
-    required TargetDevice targetDevice,
-  }) = EnterDeviceNameState;
+  const factory RecoveryFlowStage.enterDeviceName() = EnterDeviceNameStage;
 
-  // ============ Shared Flow States ============
+  // ============ Shared Flow Stages ============
 
   /// Generating nonces on the device
-  const factory RecoveryFlowState.generatingNonces({
-    required TargetDevice targetDevice,
-
-    /// The state to transition to after nonce generation completes
-    required RecoveryFlowState nextState,
-  }) = GeneratingNoncesState;
+  const factory RecoveryFlowStage.generatingNonces({
+    /// The stage to transition to after nonce generation completes
+    required RecoveryFlowStage nextStage,
+  }) = GeneratingNoncesStage;
 
   /// Completing device share enrollment (called after nonce generation for share flow)
-  const factory RecoveryFlowState.completingDeviceShareEnrollment({
+  const factory RecoveryFlowStage.completingDeviceShareEnrollment({
     required RecoverShare candidate,
-  }) = CompletingDeviceShareEnrollmentState;
+  }) = CompletingDeviceShareEnrollmentStage;
 
-  // ============ Physical Backup Entry State ============
+  // ============ Physical Backup Flow Stages ============
+
+  /// Starting a new restoration with a physical backup
+  /// Shows explanation that wallet details are needed first before loading backup
+  /// Only shown for new restorations, not for continuing or adding to wallet
+  const factory RecoveryFlowStage.startRestorationWithPhysicalBackup() =
+      StartRestorationWithPhysicalBackupStage;
+
+  /// User is entering restoration details (wallet name, network)
+  /// For new restorations with physical backup, this happens before loading backup
+  const factory RecoveryFlowStage.enterRestorationDetails() =
+      EnterRestorationDetailsStage;
 
   /// Device is entering physical backup mode
   /// The context determines what happens with the backup (new restoration, continuing, or adding to wallet)
-  const factory RecoveryFlowState.enterBackup({
-    required TargetDevice targetDevice,
-    required String deviceName,
-  }) = EnterBackupState;
-
-  /// User is entering restoration details (wallet name, network)
-  /// This happens BEFORE any physical backup is entered
-  const factory RecoveryFlowState.enterRestorationDetails() =
-      EnterRestorationDetailsState;
+  const factory RecoveryFlowStage.enterBackup({required String deviceName}) =
+      EnterBackupStage;
 
   /// User is setting the threshold for restoration
-  const factory RecoveryFlowState.enterThreshold({
+  /// This happens after wallet name/network entry for new restorations
+  const factory RecoveryFlowStage.enterThreshold({
     required String walletName,
     required BitcoinNetwork network,
-  }) = EnterThresholdState;
+  }) = EnterThresholdStage;
 
-  /// Physical backup has been successfully saved
-  const factory RecoveryFlowState.physicalBackupSuccess({
-    required RestorationId restorationId,
+  /// Physical backup has been successfully loaded
+  /// For new restorations, this transitions to wallet metadata entry
+  const factory RecoveryFlowStage.physicalBackupSuccess({
     required String deviceName,
-  }) = PhysicalBackupSuccessState;
+  }) = PhysicalBackupSuccessStage;
 
-  /// Error state - shows an error message and returns to a previous state on dismiss
-  const factory RecoveryFlowState.error({
+  /// Waiting for device to reconnect after disconnection
+  const factory RecoveryFlowStage.waitReconnectDevice({
+    required RecoveryFlowStage nextStage,
+  }) = WaitReconnectDeviceStage;
+
+  /// Error stage - shows an error message and returns to a previous stage on dismiss
+  const factory RecoveryFlowStage.error({
     required String title,
     required String message,
     required bool isWarning,
-    required RecoveryFlowState returnState,
-  }) = ErrorState;
-
-  // ============ Helper Methods ============
-
-  /// Returns the target device if this state has one
-  TargetDevice? get targetDevice => switch (this) {
-    CandidateReadyState(:final targetDevice) => targetDevice,
-    FirmwareUpgradeState(:final targetDevice) => targetDevice,
-    EnterDeviceNameState(:final targetDevice) => targetDevice,
-    GeneratingNoncesState(:final targetDevice) => targetDevice,
-    EnterBackupState(:final targetDevice) => targetDevice,
-    ErrorState(:final returnState) => returnState.targetDevice,
-    _ => null,
-  };
-
-  /// Dispose any resources owned by this state
-  void dispose() {
-    targetDevice?.dispose();
-  }
+    required RecoveryFlowStage returnStage,
+  }) = ErrorStage;
 }

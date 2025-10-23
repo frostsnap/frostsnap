@@ -82,7 +82,7 @@ lint-device +ARGS="":
 dart-format-check-app:
     ( cd frostsnapp; dart format --set-exit-if-changed --output=none  $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*" -not -name "*.freezed.dart") )
 
-lint-app +ARGS="": dart-format-check-app
+lint-app +ARGS="": maybe-gen dart-format-check-app
     ( cd frostsnapp; flutter analyze {{ARGS}} )
 
 fix-dart: maybe-gen

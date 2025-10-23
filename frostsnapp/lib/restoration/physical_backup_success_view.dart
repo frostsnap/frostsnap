@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
+import 'package:frostsnap/restoration/recovery_flow.dart';
+import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
 
 class PhysicalBackupSuccessView extends StatelessWidget with TitledWidget {
   final VoidCallback onClose;
@@ -14,19 +15,22 @@ class PhysicalBackupSuccessView extends StatelessWidget with TitledWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
+    return DialogContentWithActions(
       key: const ValueKey('physicalBackupSuccess'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.check_circle, size: 48, color: Colors.green),
-        const SizedBox(height: 16),
-        Text(
-          'Physical backup restored successfully on to $deviceName!',
-          style: theme.textTheme.headlineMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 24),
-        ElevatedButton.icon(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 64, color: Colors.green),
+          const SizedBox(height: 24),
+          Text(
+            'Physical backup restored successfully on to $deviceName!',
+            style: theme.textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton.icon(
           icon: const Icon(Icons.arrow_forward),
           label: const Text('Close'),
           onPressed: onClose,
