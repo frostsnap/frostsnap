@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
-import 'package:frostsnap/restoration/material_dialog_card.dart';
+import 'package:frostsnap/restoration/recovery_flow.dart';
+import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
 import 'package:frostsnap/restoration/target_device.dart';
 
 class FirmwareUpgradeView extends StatefulWidget with TitledWidget {
@@ -34,7 +34,7 @@ class _FirmwareUpgradeViewState extends State<FirmwareUpgradeView> {
     super.initState();
     _controller = DeviceActionUpgradeController();
 
-    widget.targetDevice.onDisconnected.then((_) {
+    widget.targetDevice.onDisconnected().then((_) {
       if (mounted && !_isUpgrading) {
         widget.onDisconnected();
       }
@@ -65,12 +65,29 @@ class _FirmwareUpgradeViewState extends State<FirmwareUpgradeView> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialDialogCard(
+    final theme = Theme.of(context);
+    return DialogContentWithActions(
       key: const ValueKey('firmwareUpgradePrompt'),
-      iconData: Icons.system_update_alt_rounded,
-      title: Text('Firmware Update Required'),
-      content: Text(
-        'This device needs a firmware update before it can be used for wallet restoration.',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.system_update_alt_rounded,
+            size: 64,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Firmware Update Required',
+            style: theme.textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'This device needs a firmware update before it can be used for wallet restoration.',
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
       actions: [
         TextButton(

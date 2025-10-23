@@ -38,4 +38,4 @@ bridge_sink!(KeyState);
 bridge_sink!(NonceReplenishState);
 bridge_sink!(());
 bridge_sink!(crate::api::recovery::EnterPhysicalBackupState);
-bridge_sink!(crate::api::recovery::WaitForRecoveryShareState);
+bridge_sink!(crate::api::recovery::WaitForSingleDeviceState);

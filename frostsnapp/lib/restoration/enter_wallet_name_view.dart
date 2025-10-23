@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
+import 'package:frostsnap/restoration/recovery_flow.dart';
+import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
@@ -73,55 +74,55 @@ class _EnterWalletNameViewState extends State<EnterWalletNameView> {
       context,
     )!.settings.isInDeveloperMode();
 
-    return Form(
-      key: _formKey,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            "Enter the wallet name from your physical backup.\nIf it\'s missing or unreadable, choose another name — this won\'t affect your wallet\'s security.",
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-          TextFormField(
-            controller: _walletNameController,
-            maxLength: keyNameMaxLength(),
-            inputFormatters: [nameInputFormatter],
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Wallet Name',
-              border: OutlineInputBorder(),
-              hintText: 'The name of the wallet being restored',
+    return DialogContentWithActions(
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              "Enter the wallet name from your physical backup. If it\'s missing or unreadable, choose another name.",
+              style: theme.textTheme.bodyMedium,
             ),
-            onChanged: (_) => _updateButtonState(),
-            onFieldSubmitted: (_) => _submitForm(),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter a wallet name';
-              }
-              return null;
-            },
-          ),
-          if (developerMode) ...[
-            SizedBox(height: 16),
-            BitcoinNetworkChooser(
-              value: bitcoinNetwork,
-              onChanged: (network) {
-                setState(() => bitcoinNetwork = network);
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _walletNameController,
+              maxLength: keyNameMaxLength(),
+              inputFormatters: [nameInputFormatter],
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Wallet Name',
+                border: OutlineInputBorder(),
+                hintText: 'The name of the wallet being restored',
+              ),
+              onChanged: (_) => _updateButtonState(),
+              onFieldSubmitted: (_) => _submitForm(),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter a wallet name';
+                }
+                return null;
               },
             ),
+            if (developerMode) ...[
+              SizedBox(height: 16),
+              BitcoinNetworkChooser(
+                value: bitcoinNetwork,
+                onChanged: (network) {
+                  setState(() => bitcoinNetwork = network);
+                },
+              ),
+            ],
           ],
-          const SizedBox(height: 24),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: FilledButton(
-              child: const Text('Continue'),
-              onPressed: _isButtonEnabled ? _submitForm : null,
-            ),
-          ),
-        ],
+        ),
       ),
+      actions: [
+        FilledButton(
+          child: const Text('Continue'),
+          onPressed: _isButtonEnabled ? _submitForm : null,
+        ),
+      ],
     );
   }
 }
