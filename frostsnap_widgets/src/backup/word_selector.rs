@@ -1,5 +1,6 @@
 use crate::{
-    palette::PALETTE, prelude::*, touch_listener::TouchListener, DefaultTextStyle, Key, FONT_MED,
+    fader::Fader, palette::PALETTE, prelude::*, touch_listener::TouchListener, DefaultTextStyle,
+    Key, FONT_MED,
 };
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::prelude::*;
@@ -59,7 +60,7 @@ impl WordButton {
     }
 }
 
-type WordColumn = Column<Vec<TouchListener<WordButton>>>;
+type WordColumn = Column<Vec<Fader<TouchListener<WordButton>>>>;
 
 /// A widget that displays BIP39 words in two columns for selection
 #[derive(Widget)]
@@ -72,28 +73,34 @@ pub struct WordSelector {
 
 impl WordSelector {
     pub fn new(words: &'static [&'static str], prefix: &str) -> Self {
-        // Split words into two columns
+        const MAX_WORDS: usize = 8;
+        const WORDS_PER_COLUMN: usize = MAX_WORDS / 2;
+
         let mut left_words = Vec::new();
         let mut right_words = Vec::new();
 
         for (i, &word) in words.iter().enumerate() {
-            // Create a WordButton widget for each word
-            let word_button = WordButton::new(word, prefix);
-
+            let button = Fader::new(WordButton::new(word, prefix));
             if i % 2 == 0 {
-                left_words.push(word_button);
+                left_words.push(button);
             } else {
-                right_words.push(word_button);
+                right_words.push(button);
             }
         }
 
-        // Create columns with flex for each word
+        // 🫥 invisible placeholders that match real button size
+        while left_words.len() < WORDS_PER_COLUMN {
+            left_words.push(Fader::new_faded_out(WordButton::new(words[0], prefix)));
+        }
+        while right_words.len() < WORDS_PER_COLUMN {
+            right_words.push(Fader::new_faded_out(WordButton::new(words[0], prefix)));
+        }
+
         let left_column =
             Column::new(left_words).with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
         let right_column =
             Column::new(right_words).with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
-        // Create a row with the two columns
         let columns = Row::new((left_column, right_column))
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
