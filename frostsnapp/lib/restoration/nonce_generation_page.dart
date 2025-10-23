@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/nonce_replenish.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
-import 'package:frostsnap/restoration/material_dialog_card.dart';
+import 'package:frostsnap/restoration/recovery_flow.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 
 class NonceGenerationPage extends StatefulWidget with TitledWidget {
@@ -95,17 +94,12 @@ class _NonceGenerationPageState extends State<NonceGenerationPage> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            MaterialDialogCard(
-              title: SizedBox.shrink(),
-              content: Container(
-                constraints: BoxConstraints(minHeight: 120),
-                child: MinimalNonceReplenishWidget(
-                  stream: widget.stream,
-                  autoAdvance: false,
-                ),
+            Container(
+              constraints: BoxConstraints(minHeight: 120),
+              child: MinimalNonceReplenishWidget(
+                stream: widget.stream,
+                autoAdvance: false,
               ),
-              actions: [],
-              actionsAlignment: MainAxisAlignment.center,
             ),
           ],
         );

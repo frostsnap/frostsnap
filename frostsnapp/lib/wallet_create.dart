@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/hex.dart';
@@ -18,7 +19,6 @@ import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:glowy_borders/glowy_borders.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
 import 'maybe_fullscreen_dialog.dart';
@@ -687,26 +687,12 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
           ),
         SliverToBoxAdapter(
-          child: AnimatedGradientBorder(
-            stretchAlongAxis: true,
-            borderSize: 1.0,
-            glowSize: 4.0,
-            animationTime: 6,
-            borderRadius: BorderRadius.circular(12.0),
-            gradientColors: [
-              theme.colorScheme.outlineVariant,
-              theme.colorScheme.primary,
-              theme.colorScheme.secondary,
-              theme.colorScheme.tertiary,
-            ],
-            child: Card(
-              margin: EdgeInsets.zero,
-              child: ListTile(
-                dense: true,
-                title: Text('Plug in devices to include them in this wallet.'),
-                contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                leading: Icon(Icons.info_rounded),
-              ),
+          child: AnimatedGradientCard(
+            child: ListTile(
+              dense: true,
+              title: Text('Plug in devices to include them in this wallet.'),
+              contentPadding: EdgeInsets.symmetric(horizontal: 16),
+              leading: Icon(Icons.info_rounded),
             ),
           ),
         ),
@@ -1117,7 +1103,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        print('didPop=$didPop, result=$result');
         if (didPop) return;
         goBackOrClose(context);
       },

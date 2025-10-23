@@ -6,35 +6,47 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
 class TargetDevice {
-  final ConnectedDevice device;
-  final Completer<void> _disconnectionCompleter = Completer<void>();
-  StreamSubscription<DeviceListUpdate>? _subscription;
+  final DeviceId id;
+  final List<StreamSubscription<DeviceListUpdate>> _subscriptions = [];
 
-  TargetDevice(this.device) {
-    _subscription = GlobalStreams.deviceListSubject.listen((update) {
+  TargetDevice(this.id);
+
+  ConnectedDevice? get device => coord.getConnectedDevice(id: id);
+  String? get name => device?.name;
+  bool needsFirmwareUpgrade() => device?.needsFirmwareUpgrade() ?? false;
+
+  Future<void> onDisconnected() {
+    final completer = Completer<void>();
+    final subscription = GlobalStreams.deviceListSubject.listen((update) {
       final stillConnected = update.state.devices.any(
-        (d) => deviceIdEquals(d.id, device.id),
+        (d) => deviceIdEquals(d.id, id),
       );
-      if (!stillConnected) {
-        if (!_disconnectionCompleter.isCompleted) {
-          _disconnectionCompleter.complete();
-        }
-        dispose();
+      if (!stillConnected && !completer.isCompleted) {
+        completer.complete();
       }
     });
+    _subscriptions.add(subscription);
+    return completer.future;
   }
 
-  DeviceId get id => device.id;
-  String? get name => device.name;
-  bool needsFirmwareUpgrade() => device.needsFirmwareUpgrade();
-
-  Future<void> get onDisconnected => _disconnectionCompleter.future;
+  Future<void> waitForReconnection() {
+    final completer = Completer<void>();
+    final subscription = GlobalStreams.deviceListSubject.listen((update) {
+      final isReconnected = update.state.devices.any(
+        (d) => deviceIdEquals(d.id, id),
+      );
+      if (isReconnected && !completer.isCompleted) {
+        completer.complete();
+      }
+    });
+    _subscriptions.add(subscription);
+    return completer.future;
+  }
 
   void dispose() {
-    if (!_disconnectionCompleter.isCompleted) {
-      _disconnectionCompleter.complete();
+    for (final subscription in _subscriptions) {
+      subscription.cancel();
     }
-    _subscription?.cancel();
-    _subscription = null;
+    _subscriptions.clear();
   }
 }

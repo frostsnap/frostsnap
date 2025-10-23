@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
-import 'package:frostsnap/restoration/choose_method_view.dart';
-import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/restoration/recovery_flow.dart';
+import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 
 class EnterBackupView extends StatefulWidget with TitledWidget {
@@ -10,13 +10,13 @@ class EnterBackupView extends StatefulWidget with TitledWidget {
   final Function(PhysicalBackupPhase)? onFinished;
   final Function(String)? onError;
   final VoidCallback? onCancel;
-  final DeviceId deviceId;
   final String? deviceName;
+  final TargetDevice targetDevice;
 
   const EnterBackupView({
     super.key,
     required this.stream,
-    required this.deviceId,
+    required this.targetDevice,
     this.deviceName,
     this.onFinished,
     this.onError,
@@ -87,7 +87,7 @@ class _EnterBackupViewState extends State<EnterBackupView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_dialogShown && mounted) {
         _dialogShown = true;
-        _backupController.addActionNeeded(context, widget.deviceId);
+        _backupController.addActionNeeded(context, widget.targetDevice.id);
       }
     });
   }

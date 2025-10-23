@@ -4,7 +4,7 @@ use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState;
-pub use frostsnap_coordinator::wait_for_recovery_share::WaitForRecoveryShareState;
+pub use frostsnap_coordinator::wait_for_single_device::WaitForSingleDeviceState;
 pub use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RecoverShareError, RecoverShareErrorKind,
     RecoveringAccessStructure, RestorationShare, RestorationState, RestorationStatus,
@@ -16,22 +16,27 @@ pub use frostsnap_core::{
     schnorr_fun::frost::{Fingerprint, ShareImage, ShareIndex, SharedKey},
 };
 use frostsnap_core::{AccessStructureRef, DeviceId, RestorationId, SymmetricKey};
-use std::collections::HashSet;
 use std::fmt;
 
-#[frb(mirror(WaitForRecoveryShareState))]
-pub struct _WaitForRecoveryShareState {
-    pub shares: Vec<RecoverShare>,
-    pub connected: HashSet<DeviceId>,
-    pub blank: HashSet<DeviceId>,
+#[frb(mirror(WaitForSingleDeviceState), non_opaque)]
+pub enum _WaitForSingleDeviceState {
+    NoDevice,
+    TooManyDevices,
+    WaitingForDevice {
+        device_id: DeviceId,
+    },
+    BlankDevice {
+        device_id: DeviceId,
+    },
+    DeviceWithShare {
+        device_id: DeviceId,
+        share: RecoverShare,
+    },
 }
 
 impl super::coordinator::Coordinator {
-    pub fn wait_for_recovery_share(
-        &self,
-        sink: StreamSink<WaitForRecoveryShareState>,
-    ) -> Result<()> {
-        self.0.wait_for_recovery_share(SinkWrap(sink));
+    pub fn wait_for_single_device(&self, sink: StreamSink<WaitForSingleDeviceState>) -> Result<()> {
+        self.0.wait_for_single_device(SinkWrap(sink));
         Ok(())
     }
 
