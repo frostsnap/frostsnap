@@ -1,8 +1,9 @@
 use crate::{
-    palette::PALETTE, prelude::*, touch_listener::TouchListener, DefaultTextStyle, Key, FONT_MED,
+    any_of::AnyOf, palette::PALETTE, prelude::*, touch_listener::TouchListener,
+    DefaultTextStyle, Key, SizedBox, FONT_MED,
 };
 use alloc::{string::String, vec::Vec};
-use embedded_graphics::prelude::*;
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use frostsnap_macros::Widget;
 
 // Type aliases to simplify the complex type
@@ -59,7 +60,9 @@ impl WordButton {
     }
 }
 
-type WordColumn = Column<Vec<TouchListener<WordButton>>>;
+// Type alias for a word button or empty placeholder
+type WordOrEmpty = AnyOf<(TouchListener<WordButton>, SizedBox)>;
+type WordColumn = Column<Vec<WordOrEmpty>>;
 
 /// A widget that displays BIP39 words in two columns for selection
 #[derive(Widget)]
@@ -72,28 +75,45 @@ pub struct WordSelector {
 
 impl WordSelector {
     pub fn new(words: &'static [&'static str], prefix: &str) -> Self {
-        // Split words into two columns
+        // Always create 8 positions (4 per column) for consistent spacing
+        const MAX_WORDS: usize = 8;
+        const WORDS_PER_COLUMN: usize = MAX_WORDS / 2;
+
         let mut left_words = Vec::new();
         let mut right_words = Vec::new();
 
+        // Fill positions with actual word buttons
         for (i, &word) in words.iter().enumerate() {
-            // Create a WordButton widget for each word
             let word_button = WordButton::new(word, prefix);
+            let word_any: WordOrEmpty = AnyOf::new(word_button);
 
             if i % 2 == 0 {
-                left_words.push(word_button);
+                left_words.push(word_any);
             } else {
-                right_words.push(word_button);
+                right_words.push(word_any);
             }
         }
 
-        // Create columns with flex for each word
+        // Fill remaining positions with invisible placeholders
+        // WordButton height: FONT_MED line_height (19px) + padding top(15) + bottom(8) = 42px
+        let placeholder_height = 42;
+        while left_words.len() < WORDS_PER_COLUMN {
+            let placeholder: WordOrEmpty = AnyOf::new(SizedBox::<Rgb565>::new(Size::new(110, placeholder_height)));
+            left_words.push(placeholder);
+        }
+        while right_words.len() < WORDS_PER_COLUMN {
+            let placeholder: WordOrEmpty = AnyOf::new(SizedBox::<Rgb565>::new(Size::new(110, placeholder_height)));
+            right_words.push(placeholder);
+        }
+
+        // Create columns with SpaceEvenly for consistent flex distribution
+        // With always 4 items per column at exactly 42px each, spacing is now consistent
         let left_column =
             Column::new(left_words).with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
         let right_column =
             Column::new(right_words).with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
-        // Create a row with the two columns
+        // Create a row with the two columns, evenly spaced horizontally
         let columns = Row::new((left_column, right_column))
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
