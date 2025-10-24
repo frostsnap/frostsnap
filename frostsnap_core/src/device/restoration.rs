@@ -1,3 +1,4 @@
+use crate::message::HeldShare2;
 use crate::EnterPhysicalId;
 use frost_backup::ShareBackup;
 use schnorr_fun::frost::SharedKey;
@@ -8,7 +9,7 @@ use alloc::fmt::Debug;
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct State {
     tmp_loaded_backups: BTreeMap<ShareImage, ShareBackup>,
-    saved_backups: BTreeMap<ShareImage, SavedBackup>,
+    saved_backups: BTreeMap<ShareImage, SavedBackup2>,
 }
 
 impl State {
@@ -18,14 +19,18 @@ impl State {
     ) -> Option<RestorationMutation> {
         use RestorationMutation::*;
         match &mutation {
-            Save(saved_backup) => {
+            Save(legacy_saved_backup) => {
+                // Convert legacy to new and recurse
+                let saved_backup: SavedBackup2 = legacy_saved_backup.clone().into();
+                return self.apply_mutation_restoration(Save2(saved_backup));
+            }
+            _UnSave(_) => {
+                // No-op: cleanup happens automatically when SaveShare mutation is applied
+            }
+            Save2(saved_backup) => {
                 let backup_share_image = saved_backup.share_backup.share_image();
                 self.saved_backups
                     .insert(backup_share_image, saved_backup.clone());
-            }
-            UnSave(share_image) => {
-                self.tmp_loaded_backups.remove(share_image);
-                self.saved_backups.remove(share_image)?;
             }
         }
         Some(mutation)
@@ -33,6 +38,11 @@ impl State {
 
     pub fn clear_tmp_data(&mut self) {
         self.tmp_loaded_backups.clear();
+    }
+
+    pub fn remove_backups_with_share_image(&mut self, share_image: ShareImage) {
+        self.tmp_loaded_backups.remove(&share_image);
+        self.saved_backups.remove(&share_image);
     }
 }
 
@@ -57,10 +67,28 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 purpose,
                 ref key_name,
             } => {
+                // Convert to new SavePhysicalBackup2 and recurse
+                self.recv_restoration_message(
+                    CoordinatorRestoration::SavePhysicalBackup2(Box::new(HeldShare2 {
+                        access_structure_ref: None,
+                        share_image,
+                        threshold: Some(threshold),
+                        purpose: Some(purpose),
+                        key_name: Some(key_name.clone()),
+                        needs_consolidation: true,
+                    })),
+                    _rng,
+                )
+            }
+            CoordinatorRestoration::SavePhysicalBackup2(held_share) => {
+                let share_image = held_share.share_image;
+                let threshold = held_share.threshold;
+                let purpose = held_share.purpose;
+                let key_name = held_share.key_name.clone();
                 if let Some(share_backup) = self.restoration.tmp_loaded_backups.remove(&share_image)
                 {
-                    self.mutate(Mutation::Restoration(RestorationMutation::Save(
-                        self::SavedBackup {
+                    self.mutate(Mutation::Restoration(RestorationMutation::Save2(
+                        self::SavedBackup2 {
                             share_backup: share_backup.clone(),
                             threshold,
                             purpose,
@@ -72,7 +100,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                         DeviceSend::ToUser(Box::new(DeviceToUserMessage::Restoration(
                             ToUserRestoration::BackupSaved {
                                 share_image,
-                                key_name: key_name.clone(),
+                                key_name,
                                 purpose,
                                 threshold,
                             },
@@ -241,7 +269,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             CoordinatorRestoration::RequestHeldShares => {
                 let held_shares = self.held_shares().collect();
                 let send = Some(DeviceSend::ToCoordinator(Box::new(
-                    DeviceToCoordinatorMessage::Restoration(DeviceRestoration::HeldShares(
+                    DeviceToCoordinatorMessage::Restoration(DeviceRestoration::HeldShares2(
                         held_shares,
                     )),
                 )));
@@ -307,22 +335,23 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         ret
     }
 
-    pub fn held_shares(&self) -> impl Iterator<Item = HeldShare> + '_ {
+    pub fn held_shares(&self) -> impl Iterator<Item = HeldShare2> + '_ {
         // Iterator over shares from keys with master access structures
         let keys_iter = self.keys.iter().flat_map(move |(key_id, key_data)| {
             key_data.access_structures.iter().flat_map(
                 move |(access_structure_id, access_structure)| {
                     access_structure.shares.values().filter_map(move |share| {
                         if access_structure.kind == AccessStructureKind::Master {
-                            Some(HeldShare {
-                                key_name: key_data.key_name.clone(),
+                            Some(HeldShare2 {
+                                key_name: Some(key_data.key_name.clone()),
                                 share_image: share.share_image,
                                 access_structure_ref: Some(AccessStructureRef {
                                     access_structure_id: *access_structure_id,
                                     key_id: *key_id,
                                 }),
-                                threshold: access_structure.threshold,
-                                purpose: key_data.purpose,
+                                threshold: Some(access_structure.threshold),
+                                purpose: Some(key_data.purpose),
+                                needs_consolidation: false,
                             })
                         } else {
                             None
@@ -337,19 +366,20 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             self.restoration
                 .saved_backups
                 .iter()
-                .map(|(&share_image, saved_backup)| HeldShare {
+                .map(|(&share_image, saved_backup)| HeldShare2 {
                     key_name: saved_backup.key_name.clone(),
                     access_structure_ref: None,
                     share_image,
                     threshold: saved_backup.threshold,
                     purpose: saved_backup.purpose,
+                    needs_consolidation: true,
                 });
 
         // Chain both iterators together
         keys_iter.chain(backups_iter)
     }
 
-    pub fn saved_backups(&self) -> &BTreeMap<ShareImage, SavedBackup> {
+    pub fn saved_backups(&self) -> &BTreeMap<ShareImage, SavedBackup2> {
         &self.restoration.saved_backups
     }
 
@@ -361,9 +391,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
     ) -> impl IntoIterator<Item = DeviceSend> {
         let share_image = phase.complete_share.secret_share.share_image();
         let access_structure_ref = phase.complete_share.access_structure_ref;
-        self.mutate(Mutation::Restoration(RestorationMutation::UnSave(
-            share_image,
-        )));
+        // No need to explicitly UnSave - cleanup happens automatically in SaveShare mutation
 
         let encrypted_secret_share = EncryptedSecretShare::encrypt(
             phase.complete_share.secret_share,
@@ -393,7 +421,11 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, frostsnap_macros::Kind)]
 pub enum RestorationMutation {
     Save(SavedBackup),
-    UnSave(ShareImage),
+    /// DO NOT USE: This is a no-op. Cleanup of restoration backups happens automatically
+    /// when SaveShare mutation is applied. If you need to delete backups, create a new
+    /// mutation for that specific purpose.
+    _UnSave(ShareImage),
+    Save2(SavedBackup2),
 }
 
 #[derive(Debug, Clone)]
@@ -403,9 +435,9 @@ pub enum ToUserRestoration {
     },
     BackupSaved {
         share_image: ShareImage,
-        key_name: String,
-        purpose: KeyPurpose,
-        threshold: u16,
+        key_name: Option<String>,
+        purpose: Option<KeyPurpose>,
+        threshold: Option<u16>,
     },
     ConsolidateBackup(ConsolidatePhase),
     DisplayBackupRequest {
@@ -444,4 +476,23 @@ pub struct SavedBackup {
     pub threshold: u16,
     pub purpose: KeyPurpose,
     pub key_name: String,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct SavedBackup2 {
+    pub share_backup: ShareBackup,
+    pub threshold: Option<u16>,
+    pub purpose: Option<KeyPurpose>,
+    pub key_name: Option<String>,
+}
+
+impl From<SavedBackup> for SavedBackup2 {
+    fn from(legacy: SavedBackup) -> Self {
+        SavedBackup2 {
+            share_backup: legacy.share_backup,
+            threshold: Some(legacy.threshold),
+            purpose: Some(legacy.purpose),
+            key_name: Some(legacy.key_name),
+        }
+    }
 }
