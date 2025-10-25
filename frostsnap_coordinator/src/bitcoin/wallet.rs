@@ -402,14 +402,46 @@ impl CoordSuperWallet {
     pub fn send_to(
         &mut self,
         master_appkey: MasterAppkey,
-        to_address: bitcoin::Address,
-        value: u64,
+        recipients: impl IntoIterator<Item = (bitcoin::Address, Option<u64>)>,
         feerate: f32,
     ) -> Result<bitcoin_transaction::TransactionTemplate> {
         self.lazily_initialize_key(master_appkey);
         use bdk_coin_select::{
             metrics, Candidate, ChangePolicy, CoinSelector, DrainWeights, FeeRate, Target,
             TargetFee, TargetOutputs, TR_DUST_RELAY_MIN_VALUE, TR_KEYSPEND_TXIN_WEIGHT,
+        };
+
+        let recipients = recipients.into_iter().collect::<Vec<_>>();
+
+        let target_outputs = {
+            let mut target_outputs = Vec::<bitcoin::TxOut>::with_capacity(recipients.len());
+            let mut available_amount = self.calculate_avaliable_value(
+                master_appkey,
+                recipients.iter().map(|(addr, _)| addr.clone()),
+                feerate,
+                true,
+            );
+            for (i, (addr, amount_opt)) in recipients.iter().enumerate() {
+                let amount: u64 = match amount_opt {
+                    Some(amount) => *amount,
+                    None => available_amount
+                        .try_into()
+                        .map_err(|_| anyhow!("insufficient balance"))?,
+                };
+                available_amount = available_amount
+                    .checked_sub_unsigned(amount)
+                    .expect("specified recipient amount is overly large");
+                if available_amount < 0 {
+                    return Err(anyhow!(
+                        "Insufficient balance: {available_amount}sats left for recipient {i}"
+                    ));
+                }
+                target_outputs.push(TxOut {
+                    value: Amount::from_sat(amount),
+                    script_pubkey: addr.script_pubkey(),
+                });
+            }
+            target_outputs
         };
 
         let utxos: Vec<(_, bdk_chain::FullTxOut<_>)> = self
@@ -435,17 +467,13 @@ impl CoordSuperWallet {
             })
             .collect::<Vec<_>>();
 
-        let target_output = bitcoin::TxOut {
-            script_pubkey: to_address.script_pubkey(),
-            value: Amount::from_sat(value),
-        };
-
         let target = Target {
             fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(feerate)),
-            outputs: TargetOutputs::fund_outputs(vec![(
-                target_output.weight().to_wu(),
-                target_output.value.to_sat(),
-            )]),
+            outputs: TargetOutputs::fund_outputs(
+                target_outputs
+                    .iter()
+                    .map(|txo| (txo.weight().to_wu(), txo.value.to_sat())),
+            ),
         };
 
         // we try and guess the usual feerate from the existing transactions in the graph This is
@@ -550,7 +578,9 @@ impl CoordSuperWallet {
             );
         }
 
-        template_tx.push_foreign_output(target_output);
+        for txo in target_outputs {
+            template_tx.push_foreign_output(txo);
+        }
 
         Ok(template_tx)
     }
@@ -561,7 +591,7 @@ impl CoordSuperWallet {
         target_addresses: impl IntoIterator<Item = bitcoin::Address>,
         feerate: f32,
         effective_only: bool,
-    ) -> Result<i64> {
+    ) -> i64 {
         self.lazily_initialize_key(master_appkey);
         use bdk_coin_select::{
             Candidate, CoinSelector, Drain, FeeRate, Target, TargetFee, TargetOutputs,
@@ -604,7 +634,7 @@ impl CoordSuperWallet {
         } else {
             cs.select_all();
         }
-        Ok(cs.excess(target, Drain::NONE))
+        cs.excess(target, Drain::NONE)
     }
 
     fn key_index_range(
