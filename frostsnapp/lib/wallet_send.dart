@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:frostsnap/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
@@ -16,8 +18,6 @@ import 'package:frostsnap/wallet_send_feerate_picker.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 
 enum SendPageIndex { recipient, amount, signers }
-
-class DeleteSigningSession {}
 
 class WalletSendPage extends StatefulWidget {
   final SuperWallet superWallet;
@@ -297,23 +297,31 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ),
             Row(
               spacing: 8.0,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  spacing: 8.0,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => recipientPaste(context),
-                      label: Text('Paste'),
-                      icon: Icon(Icons.paste),
+                Expanded(
+                  child: SizedBox(
+                    // Constrain height - horizontal ListView requires fixed vertical height.
+                    height: 36,
+                    child: ListView(
+                      shrinkWrap: true,
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        TextButton.icon(
+                          onPressed: () => recipientPaste(context),
+                          label: Text('Paste'),
+                          icon: Icon(Icons.paste),
+                        ),
+                        TextButton.icon(
+                          // TODO: Fix this - scanning on Linux is disabled as it doesn't work.
+                          onPressed: Platform.isLinux
+                              ? null
+                              : () => recipientScan(context),
+                          label: Text('Scan (coming soon)'),
+                          icon: Icon(Icons.qr_code),
+                        ),
+                      ],
                     ),
-                    TextButton.icon(
-                      onPressed: () => recipientScan(context),
-                      label: Text('Scan'),
-                      icon: Icon(Icons.qr_code),
-                    ),
-                  ],
+                  ),
                 ),
                 IconButton.filled(
                   onPressed: addrController.errorText != null
@@ -582,7 +590,11 @@ class _WalletSendPageState extends State<WalletSendPage> {
   void recipientDone(BuildContext context) async {
     // Hardcoded recipient index for now - since only 1 recipient is supported.
     final submitOkay = addrController.submit(0);
-    if (!submitOkay) return;
+    if (!submitOkay) {
+      // So that we see the address input error.
+      setState(() {});
+      return;
+    }
     if (state.feerate() == null) {
       final feerate = await showFeeRateDialog(context);
       if (feerate == null) return;
