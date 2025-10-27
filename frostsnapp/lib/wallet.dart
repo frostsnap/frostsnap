@@ -1175,7 +1175,12 @@ Uri getBlockExplorer(BitcoinNetwork network) {
     return Uri.parse("https://mempool.space/");
   } else {
     // TODO: handle testnet properly
-    return Uri.parse("https://mempool.space/signet/");
+    return switch (network.name()) {
+      "signet" => Uri.parse("https://mempool.space/signet/"),
+      "testnet4" => Uri.parse("https://mempool.space/testnet4/"),
+      "testnet" => Uri.parse("https://mempool.space/testnet/"),
+      _ => Uri.parse("https://mempool.space/signet/"),
+    };
   }
 }
 
