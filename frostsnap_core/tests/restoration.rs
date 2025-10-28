@@ -238,6 +238,151 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
 }
 
 #[test]
+fn deleting_restoration_shares_reverts_state() {
+    let mut test_rng = ChaCha20Rng::from_seed([100u8; 32]);
+    let mut env = TestEnv::default();
+
+    // Create a 2-of-3 key
+    let mut run =
+        Run::start_after_keygen_and_nonces(3, 2, &mut env, &mut test_rng, 2, KeyPurpose::Test);
+
+    let device_set = run.device_set();
+    let key_data = run.coordinator.iter_keys().next().unwrap();
+    let access_structure_ref = key_data
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+
+    // Display backups for all devices
+    for &device_id in &device_set {
+        let display_backup = run
+            .coordinator
+            .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        run.extend(display_backup);
+    }
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    let backups: Vec<_> = env
+        .backups
+        .values()
+        .map(|(_, backup)| backup.clone())
+        .collect();
+
+    // Clear the coordinator and create fresh devices
+    run.clear_coordinator();
+    let devices: Vec<_> = (0..3).map(|_| run.new_device(&mut test_rng)).collect();
+
+    for (i, &device_id) in devices.iter().enumerate() {
+        env.backup_to_enter.insert(device_id, backups[i].clone());
+    }
+
+    // Start restoration
+    let restoration_id = frostsnap_core::RestorationId::new(&mut test_rng);
+    run.coordinator.start_restoring_key(
+        "Test Wallet".to_string(),
+        None,
+        KeyPurpose::Test,
+        restoration_id,
+    );
+
+    // Add all three shares
+    for &device_id in &devices {
+        let enter_physical_id = EnterPhysicalId::new(&mut test_rng);
+        let enter_backup = run
+            .coordinator
+            .tell_device_to_load_physical_backup(enter_physical_id, device_id);
+        run.extend(enter_backup);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+        let physical_backup_phase = *env
+            .physical_backups_entered
+            .last()
+            .expect("Should have a physical backup phase");
+
+        let save_messages = run
+            .coordinator
+            .tell_device_to_save_physical_backup(physical_backup_phase, restoration_id);
+        run.extend(save_messages);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    }
+
+    // Before removal: we have 3 shares and the key is recovered
+    let restoration_state_before = run
+        .coordinator
+        .get_restoration_state(restoration_id)
+        .expect("Restoration should exist");
+
+    assert!(
+        restoration_state_before.is_restorable(),
+        "Should be restorable with 3 shares"
+    );
+    assert_eq!(
+        restoration_state_before.status().shares.len(),
+        3,
+        "Should have 3 shares"
+    );
+    assert!(
+        restoration_state_before.status().shared_key.is_some(),
+        "Shared key should be recovered"
+    );
+
+    // Remove the third share
+    run.coordinator
+        .delete_restoration_share(restoration_id, devices[2]);
+
+    // After removal: we should still have 2 shares and key still recovered (2-of-3 only needs 2)
+    let restoration_state_after_one_removal = run
+        .coordinator
+        .get_restoration_state(restoration_id)
+        .expect("Restoration should exist");
+
+    assert!(
+        restoration_state_after_one_removal.is_restorable(),
+        "Should still be restorable with 2 shares"
+    );
+    assert_eq!(
+        restoration_state_after_one_removal.status().shares.len(),
+        2,
+        "Should have 2 shares after removal"
+    );
+    assert!(
+        restoration_state_after_one_removal
+            .status()
+            .shared_key
+            .is_some(),
+        "Shared key should still be recovered with 2 shares"
+    );
+
+    // Remove another share - now we should lose the shared_key
+    run.coordinator
+        .delete_restoration_share(restoration_id, devices[1]);
+
+    let restoration_state_after_two_removals = run
+        .coordinator
+        .get_restoration_state(restoration_id)
+        .expect("Restoration should exist");
+
+    assert!(
+        !restoration_state_after_two_removals.is_restorable(),
+        "Should NOT be restorable with only 1 share (need 2 for 2-of-3)"
+    );
+    assert_eq!(
+        restoration_state_after_two_removals.status().shares.len(),
+        1,
+        "Should have 1 share after second removal"
+    );
+    assert!(
+        restoration_state_after_two_removals
+            .status()
+            .shared_key
+            .is_none(),
+        "Shared key should be None with only 1 share"
+    );
+}
+
+#[test]
 fn consolidate_backup_with_polynomial_checksum_validation() {
     let mut test_rng = ChaCha20Rng::from_seed([43u8; 32]);
     let mut env = TestEnv::default();
