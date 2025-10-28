@@ -178,11 +178,15 @@ pub fn find_valid_subset(
                 // Try to reconstruct SharedKey from this combination
                 let shared_key = SharedKey::from_share_images(share_combo.clone());
 
-                // For threshold > 1, the poly must have at least 2 coefficients
-                // for us to discover shares that are compatible with each other.
-                // For threshold = 1, we can proceed with a single coefficient.
-                if known_threshold != Some(1) && shared_key.point_polynomial().len() < 2 {
-                    continue;
+                // If threshold was specified, enforce strict matching. You
+                // might think that since we're only generating combinations of
+                // the right size that nothing can go wrong -- but it is
+                // possible to get a threshold 2 poly from a 3 shares if they
+                // lie on the right polynomial.
+                if let Some(expected_threshold) = known_threshold {
+                    if shared_key.point_polynomial().len() != expected_threshold {
+                        continue;
+                    }
                 }
 
                 // Check if it matches the fingerprint

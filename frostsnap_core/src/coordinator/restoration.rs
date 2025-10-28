@@ -634,15 +634,6 @@ impl FrostCoordinator {
             .ok_or(RestorationError::NotEnoughShares)?
             .clone();
 
-        debug_assert!(
-            state
-                .access_structure
-                .starting_threshold
-                .map(|t| t as usize == root_shared_key.threshold())
-                .unwrap_or(true),
-            "shared_key threshold must match starting_threshold if one was specified"
-        );
-
         let access_structure_ref = AccessStructureRef::from_root_shared_key(&root_shared_key);
 
         let device_to_share_index = state
