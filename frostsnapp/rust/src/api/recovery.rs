@@ -304,7 +304,7 @@ impl RestorationStatus {
 
 #[frb(mirror(ShareCount))]
 pub struct _ShareCount {
-    pub got: u16,
+    pub got: Option<u16>,
     pub needed: Option<u16>,
     pub incompatible: u16,
 }

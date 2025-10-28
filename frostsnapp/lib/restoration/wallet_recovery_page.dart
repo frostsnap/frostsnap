@@ -30,8 +30,9 @@ class WalletRecoveryPage extends StatelessWidget {
     final isRecovered = status.sharedKey != null;
     final hasIncompatibleShares = shareCount.incompatible > 0;
 
-    final sharesNeeded = shareCount.needed != null && !isRecovered
-        ? shareCount.needed! - shareCount.got
+    final sharesNeeded =
+        shareCount.needed != null && shareCount.got != null && !isRecovered
+        ? shareCount.needed! - shareCount.got!
         : null;
     final isReady = isRecovered && !hasIncompatibleShares;
 
@@ -318,7 +319,7 @@ class WalletRecoveryPage extends StatelessWidget {
               children: [
                 Flexible(
                   child: Tooltip(
-                    message: "The key number",
+                    message: "key number ${share.index}",
                     child: Text(
                       "#${share.index}",
                       style: TextStyle(
@@ -370,7 +371,7 @@ class WalletRecoveryPage extends StatelessWidget {
                           TextSpan(
                             children: [
                               TextSpan(
-                                text: '${shareCount.got}',
+                                text: '${shareCount.got ?? "??"}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   decoration: TextDecoration.underline,
