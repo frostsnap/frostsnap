@@ -1,3 +1,5 @@
+mod common;
+
 use frost_backup::{recovery, ShareBackup};
 use rand::{rngs::StdRng, SeedableRng};
 use schnorr_fun::frost::{ShareImage, SharedKey};
@@ -279,4 +281,96 @@ fn test_find_valid_subset_threshold_one() {
     let (found_shares, found_key) = result.unwrap();
     assert_eq!(found_shares.len(), 3);
     assert_eq!(found_key, shared_key);
+}
+
+#[test]
+fn test_find_valid_subset_threshold_validation() {
+    // Test that find_valid_subset strictly validates threshold when specified.
+    //
+    // Use TEST_SHARES_2_OF_3 which are from a 2-of-3 wallet (threshold=2, poly length=2)
+    // but specify known_threshold=3. This should be rejected.
+
+    use crate::common::{TEST_SHARES_1_OF_1, TEST_SHARES_2_OF_3, TEST_SHARES_3_OF_5};
+
+    // Parse all 3 test shares from 2-of-3 wallet
+    let shares_2_of_3: Vec<ShareBackup> = TEST_SHARES_2_OF_3
+        .iter()
+        .map(|s| s.parse().expect("Should parse test share"))
+        .collect();
+
+    // Extract share images
+    let share_images_2_of_3: Vec<_> = shares_2_of_3.iter().map(|s| s.share_image()).collect();
+
+    // Try to find valid subset with known_threshold=3
+    // These shares are from a threshold-2 wallet, so this should return None
+    let result =
+        recovery::find_valid_subset(&share_images_2_of_3, frost_backup::FINGERPRINT, Some(3));
+
+    assert!(
+        result.is_none(),
+        "Should reject shares when discovered threshold (2) doesn't match specified threshold (3)"
+    );
+
+    // But it should succeed with the correct threshold
+    let result =
+        recovery::find_valid_subset(&share_images_2_of_3, frost_backup::FINGERPRINT, Some(2));
+    assert!(
+        result.is_some(),
+        "Should accept shares when threshold matches"
+    );
+
+    // Now test with threshold-3 shares
+    let shares_3_of_5: Vec<ShareBackup> = TEST_SHARES_3_OF_5
+        .iter()
+        .map(|s| s.parse().expect("Should parse test share"))
+        .collect();
+
+    // Test with only 2 shares from threshold-3 wallet - should fail
+    let share_images_insufficient: Vec<_> = shares_3_of_5[0..2]
+        .iter()
+        .map(|s| s.share_image())
+        .collect();
+    let result = recovery::find_valid_subset(
+        &share_images_insufficient,
+        frost_backup::FINGERPRINT,
+        Some(3),
+    );
+    assert!(
+        result.is_none(),
+        "Should fail with only 2 shares when threshold is 3"
+    );
+
+    // Test with exactly 3 shares from threshold-3 wallet - should succeed
+    let share_images_exact: Vec<_> = shares_3_of_5[0..3]
+        .iter()
+        .map(|s| s.share_image())
+        .collect();
+    let result =
+        recovery::find_valid_subset(&share_images_exact, frost_backup::FINGERPRINT, Some(3));
+    assert!(
+        result.is_some(),
+        "Should succeed with exactly 3 shares when threshold is 3"
+    );
+
+    // Test with all 5 shares from threshold-3 wallet - should succeed
+    let share_images_all: Vec<_> = shares_3_of_5.iter().map(|s| s.share_image()).collect();
+    let result = recovery::find_valid_subset(&share_images_all, frost_backup::FINGERPRINT, Some(3));
+    assert!(
+        result.is_some(),
+        "Should succeed with all 5 shares when threshold is 3"
+    );
+
+    // Test adding threshold-1 share to the mix - should still succeed (finds threshold-3 subset)
+    let share_1_of_1: ShareBackup = TEST_SHARES_1_OF_1[0]
+        .parse()
+        .expect("Should parse test share");
+    let mut share_images_mixed = share_images_all.clone();
+    share_images_mixed.push(share_1_of_1.share_image());
+
+    let result =
+        recovery::find_valid_subset(&share_images_mixed, frost_backup::FINGERPRINT, Some(3));
+    assert!(
+        result.is_some(),
+        "Should succeed finding threshold-3 subset even with threshold-1 share mixed in"
+    );
 }
