@@ -13,6 +13,7 @@ pub enum Mutation {
 pub enum ShareSlot {
     SecretShare(Box<SaveShareMutation>),
     SavedBackup(device::restoration::SavedBackup),
+    SavedBackup2(device::restoration::SavedBackup2),
 }
 
 impl ShareSlot {
@@ -21,8 +22,11 @@ impl ShareSlot {
             ShareSlot::SecretShare(save_share_mutation) => {
                 device::Mutation::Keygen(device::keys::KeyMutation::SaveShare(save_share_mutation))
             }
-            ShareSlot::SavedBackup(saved_backup) => device::Mutation::Restoration(
-                device::restoration::RestorationMutation::Save(saved_backup),
+            ShareSlot::SavedBackup(legacy_saved_backup) => device::Mutation::Restoration(
+                device::restoration::RestorationMutation::Save(legacy_saved_backup),
+            ),
+            ShareSlot::SavedBackup2(saved_backup) => device::Mutation::Restoration(
+                device::restoration::RestorationMutation::Save2(saved_backup),
             ),
         })
     }
@@ -61,9 +65,20 @@ impl<'a, S: NorFlash> MutationLog<'a, S> {
                     .write(&ShareSlot::SecretShare(save_share_mutation));
             }
             Mutation::Core(device::Mutation::Restoration(
-                device::restoration::RestorationMutation::Save(saved_backup),
+                device::restoration::RestorationMutation::Save(legacy_saved_backup),
             )) => {
-                self.share_slot.write(&ShareSlot::SavedBackup(saved_backup));
+                // Convert legacy SavedBackup to SavedBackup2 before storing.
+                // This code should never be reached. This code should never be
+                // reached.
+                let saved_backup: device::restoration::SavedBackup2 = legacy_saved_backup.into();
+                self.share_slot
+                    .write(&ShareSlot::SavedBackup2(saved_backup));
+            }
+            Mutation::Core(device::Mutation::Restoration(
+                device::restoration::RestorationMutation::Save2(saved_backup),
+            )) => {
+                self.share_slot
+                    .write(&ShareSlot::SavedBackup2(saved_backup));
             }
             value => {
                 self.log.push(value)?;
