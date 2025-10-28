@@ -687,18 +687,8 @@ impl Env for ProptestEnv {
                     .or_default()
                     .insert(from, *phase);
             }
-            Restoration(msg) => {
-                use frostsnap_core::device::restoration::ToUserRestoration::*;
-                match msg {
-                    DisplayBackupRequest { phase } => {
-                        let backup_ack = run
-                            .device(from)
-                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                            .unwrap();
-                        run.extend_from_device(from, backup_ack);
-                    }
-                    _ => { /* ignore */ }
-                }
+            Restoration(_msg) => {
+                // TODO: proptest restoration
             }
             VerifyAddress { .. } => {
                 // we dont actually confirm on the device

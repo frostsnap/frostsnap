@@ -63,13 +63,30 @@ impl BackupManager {
     }
 
     #[frb(sync)]
-    pub fn get_backup_run(&self, key_id: KeyId) -> BackupRun {
+    pub fn get_backup_run(
+        &self,
+        key_id: KeyId,
+        access_structure: &super::coordinator::AccessStructure,
+    ) -> BackupRun {
         let backup_run = self.backup_state.get_backup_run(key_id);
-        let backup_run = BackupRun {
-            devices: backup_run.into_iter().collect(),
-        };
+        let devices = backup_run
+            .into_iter()
+            .map(|(device_id, timestamp)| {
+                let device_name = access_structure
+                    .coordinator()
+                    .get_device_name(device_id)
+                    .unwrap_or_default();
+                let share_index = access_structure.get_device_short_share_index(device_id);
+                BackupDevice {
+                    device_id,
+                    device_name,
+                    share_index,
+                    timestamp,
+                }
+            })
+            .collect();
 
-        backup_run
+        BackupRun { devices }
     }
 
     pub fn backup_stream(
@@ -128,15 +145,23 @@ impl BackupManager {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackupDevice {
+    pub device_id: DeviceId,
+    pub device_name: String,
+    pub share_index: Option<u8>,
+    pub timestamp: Option<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BackupRun {
-    pub devices: Vec<(DeviceId, Option<u32>)>,
+    pub devices: Vec<BackupDevice>,
 }
 
 impl BackupRun {
     pub fn is_run_complete(&self) -> bool {
         self.devices
             .iter()
-            .all(|(_, timestamp)| timestamp.is_some())
+            .all(|device| device.timestamp.is_some())
     }
 }

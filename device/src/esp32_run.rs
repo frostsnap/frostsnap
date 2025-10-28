@@ -513,16 +513,23 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         }
                         DeviceToUserMessage::Restoration(to_user_restoration) => {
                             use frostsnap_core::device::restoration::ToUserRestoration::*;
-                            match to_user_restoration {
-                                DisplayBackupRequest { phase } => {
-                                    ui.set_workflow(ui::Workflow::prompt(
-                                        ui::Prompt::DisplayBackupRequest { phase },
-                                    ));
-                                }
-                                DisplayBackup { key_name, backup } => {
+                            match *to_user_restoration {
+                                // Note: We immediately decrypt and display the backup without prompting.
+                                // The coordinator has already requested this on behalf of the user.
+                                // If we want to add "confirm before showing" in the future, we'd just
+                                // delay calling phase.decrypt_to_backup() until after user confirms.
+                                DisplayBackup {
+                                    key_name,
+                                    access_structure_ref,
+                                    phase,
+                                } => {
+                                    let backup = phase
+                                        .decrypt_to_backup(&mut hmac_keys.share_encryption)
+                                        .expect("state changed while displaying backup");
                                     ui.set_workflow(ui::Workflow::DisplayBackup {
                                         key_name: key_name.to_string(),
                                         backup,
+                                        access_structure_ref,
                                     });
                                 }
                                 EnterBackup { phase } => {
@@ -601,15 +608,11 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         name: new_name.clone(),
                     }]);
                 }
-                UiEvent::BackupRequestConfirm { phase } => {
-                    outbox.extend(
-                        signer
-                            .display_backup_ack(*phase, &mut hmac_keys.share_encryption)
-                            .expect("state changed while displaying backup"),
-                    );
-                    upstream_connection.send_to_coordinator([DeviceSendBody::Misc(
-                        CommsMisc::DisplayBackupConfrimed,
-                    )]);
+                UiEvent::BackupRecorded {
+                    access_structure_ref: _,
+                } => {
+                    upstream_connection
+                        .send_to_coordinator([DeviceSendBody::Misc(CommsMisc::BackupRecorded)]);
                 }
                 UiEvent::UpgradeConfirm => {
                     if let Some(upgrade) = upgrade.as_mut() {
