@@ -115,28 +115,43 @@ pub struct RestorationStatus {
 
 impl RestorationStatus {
     pub fn share_count(&self) -> ShareCount {
-        let incompatible = self
+        let explicitly_incompatible = self
             .shares
             .iter()
             .filter(|s| s.compatibility == ShareCompatibility::Incompatible)
             .count() as u16;
 
-        let got = if self.shared_key.is_some() {
-            self.shares
+        let needed = self.threshold;
+
+        let (got, incompatible) = if self.shared_key.is_some() {
+            let compatible_count = self
+                .shares
                 .iter()
                 .filter(|s| s.compatibility == ShareCompatibility::Compatible)
                 .map(|s| s.index)
                 .collect::<std::collections::BTreeSet<_>>()
-                .len() as u16
+                .len() as u16;
+            (Some(compatible_count), explicitly_incompatible)
         } else {
-            self.shares
+            let total_unique = self
+                .shares
                 .iter()
                 .map(|s| s.index)
                 .collect::<std::collections::BTreeSet<_>>()
-                .len() as u16
-        };
+                .len() as u16;
 
-        let needed = self.threshold;
+            match needed {
+                Some(threshold) if total_unique >= threshold => {
+                    // We haven't recovered the shared key but we have enough
+                    // shares. This means some must be incompatible but we don't
+                    // know which ones or exactly how many are compatible.
+                    let min_incompatible = total_unique - threshold + 1;
+                    let incompatible_lower_bound = min_incompatible.max(explicitly_incompatible);
+                    (None, incompatible_lower_bound)
+                }
+                _ => (Some(total_unique), explicitly_incompatible),
+            }
+        };
 
         ShareCount {
             got,
@@ -148,7 +163,7 @@ impl RestorationStatus {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ShareCount {
-    pub got: u16,
+    pub got: Option<u16>,
     pub needed: Option<u16>,
     pub incompatible: u16,
 }
