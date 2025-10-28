@@ -225,8 +225,15 @@ impl Env for TestEnv {
             }
             DeviceToUserMessage::Restoration(restoration) => {
                 use device::restoration::ToUserRestoration::*;
-                match restoration {
-                    DisplayBackup { key_name, backup } => {
+                match *restoration {
+                    DisplayBackup {
+                        key_name,
+                        access_structure_ref: _,
+                        phase,
+                    } => {
+                        let backup = phase
+                            .decrypt_to_backup(&mut TestDeviceKeyGen)
+                            .expect("failed to decrypt backup");
                         self.backups.insert(from, (key_name, backup));
                     }
                     EnterBackup { phase } => {
@@ -239,13 +246,6 @@ impl Env for TestEnv {
                         let response =
                             device.tell_coordinator_about_backup_load_result(phase, share_backup);
                         run.extend_from_device(from, response);
-                    }
-                    DisplayBackupRequest { phase } => {
-                        let backup_ack = run
-                            .device(from)
-                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                            .unwrap();
-                        run.extend_from_device(from, backup_ack);
                     }
                     ConsolidateBackup(phase) => {
                         let ack = run.device(from).finish_consolidation(
