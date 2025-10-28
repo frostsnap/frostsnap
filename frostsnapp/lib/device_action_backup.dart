@@ -18,8 +18,6 @@ class DeviceActionBackupController with ChangeNotifier {
   late final FullscreenActionDialogController<bool> _dialogController;
   final StreamController<void> _cancelButtonController =
       StreamController.broadcast();
-  final StreamController<void> _backupRecordedButtonController =
-      StreamController.broadcast();
 
   // Currently active device.
   DeviceId? get activeDeviceId => _dialogController.actionsNeeded.firstOrNull;
@@ -27,14 +25,6 @@ class DeviceActionBackupController with ChangeNotifier {
   String? get walletName => coord
       .getFrostKey(keyId: accessStructure.accessStructureRef().keyId)
       ?.keyName();
-
-  bool _isShowingBackup = false;
-
-  void _setIsShowing(bool v) {
-    if (v == _isShowingBackup) return;
-    _isShowingBackup = v;
-    if (hasListeners) notifyListeners();
-  }
 
   DeviceActionBackupController({
     required this.accessStructure,
@@ -61,20 +51,7 @@ class DeviceActionBackupController with ChangeNotifier {
       },
       actionButtons: [
         OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
-        ListenableBuilder(
-          listenable: this,
-          builder: (context, _) {
-            return _isShowingBackup
-                ? OutlinedButton.icon(
-                    label: Text('Mark Backup Recorded'),
-                    onPressed: () {
-                      if (_backupRecordedButtonController.isClosed) return;
-                      _backupRecordedButtonController.add(null);
-                    },
-                  )
-                : DeviceActionHint();
-          },
-        ),
+        DeviceActionHint(),
       ],
       onDismissed: _onCancel,
     );
@@ -83,7 +60,6 @@ class DeviceActionBackupController with ChangeNotifier {
   @override
   void dispose() async {
     await _cancelButtonController.close();
-    await _backupRecordedButtonController.close();
     _dialogController.dispose();
     super.dispose();
   }
@@ -94,7 +70,6 @@ class DeviceActionBackupController with ChangeNotifier {
   }
 
   Future<bool> show(BuildContext context, DeviceId id) async {
-    _setIsShowing(false);
     final exists = accessStructure.devices().any((v) => deviceIdEquals(v, id));
     if (!exists) return false;
     final connected =
@@ -106,7 +81,7 @@ class DeviceActionBackupController with ChangeNotifier {
     await _dialogController.clearAllActionsNeeded();
     final _ = _dialogController.addActionNeeded(context, id)!;
 
-    final isShowing = await Stream<bool>.fromFutures([
+    final isComplete = await Stream<bool>.fromFutures([
       coord
           .displayBackup(
             id: id,
@@ -115,19 +90,6 @@ class DeviceActionBackupController with ChangeNotifier {
           )
           .first,
       _cancelButtonController.stream.first.then((_) => false),
-    ]).first.catchError((_) => false);
-
-    if (!isShowing) {
-      await coord.cancelProtocol();
-      await _dialogController.removeActionNeeded(id);
-      return false;
-    }
-
-    _setIsShowing(true);
-
-    final isComplete = await Stream<bool>.fromFutures([
-      _cancelButtonController.stream.first.then((_) => false),
-      _backupRecordedButtonController.stream.first.then((_) => true),
       GlobalStreams.deviceListChangeStream
           .firstWhere(
             (change) =>
@@ -136,6 +98,7 @@ class DeviceActionBackupController with ChangeNotifier {
           )
           .then((_) => false),
     ]).first.catchError((_) => false);
+
     if (isComplete) {
       final keyId = accessStructure.masterAppkey().keyId();
       await backupManager.markBackupComplete(deviceId: id, keyId: keyId);

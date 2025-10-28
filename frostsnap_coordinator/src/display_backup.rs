@@ -74,11 +74,16 @@ impl UiProtocol for DisplayBackupProtocol {
         if self.device_id != from {
             return false;
         }
-        if let CommsMisc::DisplayBackupConfrimed = message {
-            self.sink.send(true);
-            true
-        } else {
-            false
+        match message {
+            CommsMisc::BackupRecorded => {
+                self.sink.send(true);
+                true
+            }
+            CommsMisc::DisplayBackupConfrimed => {
+                tracing::warn!("Received deprecated DisplayBackupConfrimed message. Device firmware should be updated.");
+                true
+            }
+            _ => false,
         }
     }
 
