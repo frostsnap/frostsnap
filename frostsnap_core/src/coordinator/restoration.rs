@@ -19,11 +19,7 @@ impl RestorationState {
     }
 
     pub fn needs_to_consolidate(&self) -> impl Iterator<Item = DeviceId> + '_ {
-        self.access_structure
-            .held_shares
-            .iter()
-            .filter(|share| share.held_share.needs_consolidation)
-            .map(|share| share.held_by)
+        self.access_structure.needs_to_consolidate()
     }
 
     /// Prepare for saving a physical backup - returns the HeldShare2 to store
@@ -63,7 +59,6 @@ impl RestorationState {
     }
 
     pub fn status(&self) -> RestorationStatus {
-        let shared_key = self.access_structure.shared_key.as_ref();
         let restoration_access_ref = self.access_structure.access_structure_ref();
 
         let shares = self
@@ -71,26 +66,24 @@ impl RestorationState {
             .held_shares
             .iter()
             .map(|recover_share| {
-                let compatibility = if let Some(key) = shared_key {
-                    let expected_image =
-                        key.share_image(recover_share.held_share.share_image.index);
-                    if expected_image == recover_share.held_share.share_image {
-                        ShareCompatibility::Compatible
-                    } else {
-                        ShareCompatibility::Incompatible
+                let mut compatibility = self
+                    .access_structure
+                    .compatibility(recover_share.held_share.share_image);
+
+                // If it's uncertain we try and use the metadata to determine likely compatibility.
+                // This *could* change in the future.
+                if compatibility == ShareCompatibility::Uncertain {
+                    if let (Some(restoration_ref), Some(share_ref)) = (
+                        restoration_access_ref,
+                        recover_share.held_share.access_structure_ref,
+                    ) {
+                        compatibility = if restoration_ref == share_ref {
+                            ShareCompatibility::Compatible
+                        } else {
+                            ShareCompatibility::Incompatible
+                        };
                     }
-                } else if let (Some(restoration_ref), Some(share_ref)) = (
-                    restoration_access_ref,
-                    recover_share.held_share.access_structure_ref,
-                ) {
-                    if restoration_ref == share_ref {
-                        ShareCompatibility::Compatible
-                    } else {
-                        ShareCompatibility::Incompatible
-                    }
-                } else {
-                    ShareCompatibility::Uncertain
-                };
+                }
 
                 RestorationShare {
                     device_id: recover_share.held_by,
@@ -108,7 +101,7 @@ impl RestorationState {
         RestorationStatus {
             threshold: self.access_structure.effective_threshold(),
             shares,
-            shared_key: shared_key.cloned(),
+            shared_key: self.access_structure.shared_key.clone(),
         }
     }
 }
@@ -322,13 +315,13 @@ impl State {
                 share_image,
             } => {
                 if let Some(restoration) = self.restorations.get_mut(&restoration_id) {
-                    let pos = restoration.access_structure.held_shares.iter().position(
-                        |recover_share| {
-                            recover_share.held_by == device_id
-                                && recover_share.held_share.share_image == share_image
-                        },
-                    )?;
-                    restoration.access_structure.held_shares.remove(pos);
+                    if !restoration.access_structure.remove_share(
+                        device_id,
+                        share_image,
+                        restoration.fingerprint,
+                    ) {
+                        return None;
+                    }
                 } else {
                     fail!("restoration id didn't exist");
                 }
@@ -638,7 +631,8 @@ impl FrostCoordinator {
 
         let device_to_share_index = state
             .access_structure
-            .compatible_device_to_share_index(&root_shared_key);
+            .compatible_device_to_share_index()
+            .expect("shared_key is Some so compatible_device_to_share_index should return Some");
 
         self.mutate_new_key(
             state.key_name.clone(),
@@ -649,10 +643,7 @@ impl FrostCoordinator {
             rng,
         );
 
-        for device_id in state
-            .needs_to_consolidate()
-            .filter(|device_id| device_to_share_index.contains_key(device_id))
-        {
+        for device_id in state.needs_to_consolidate() {
             self.mutate(Mutation::Restoration(
                 RestorationMutation::DeviceNeedsConsolidation(PendingConsolidation {
                     device_id,
@@ -1409,6 +1400,30 @@ pub struct RecoveringAccessStructure {
 }
 
 impl RecoveringAccessStructure {
+    pub fn compatibility(&self, share_image: ShareImage) -> ShareCompatibility {
+        if let Some(ref shared_key) = self.shared_key {
+            let expected_image = shared_key.share_image(share_image.index);
+            if expected_image == share_image {
+                ShareCompatibility::Compatible
+            } else {
+                ShareCompatibility::Incompatible
+            }
+        } else {
+            ShareCompatibility::Uncertain
+        }
+    }
+
+    pub fn needs_to_consolidate(&self) -> impl Iterator<Item = DeviceId> + '_ {
+        self.held_shares
+            .iter()
+            .filter(|recover_share| {
+                recover_share.held_share.needs_consolidation
+                    && self.compatibility(recover_share.held_share.share_image)
+                        == ShareCompatibility::Compatible
+            })
+            .map(|share| share.held_by)
+    }
+
     pub fn access_structure_ref(&self) -> Option<AccessStructureRef> {
         if let Some(ref shared_key) = self.shared_key {
             return Some(AccessStructureRef::from_root_shared_key(shared_key));
@@ -1446,24 +1461,24 @@ impl RecoveringAccessStructure {
         map
     }
 
-    pub fn compatible_device_to_share_index(
-        &self,
-        shared_key: &SharedKey,
-    ) -> BTreeMap<DeviceId, ShareIndex> {
-        self.held_shares
-            .iter()
-            .filter(|recover_share| {
-                let expected_image =
-                    shared_key.share_image(recover_share.held_share.share_image.index);
-                expected_image == recover_share.held_share.share_image
-            })
-            .map(|recover_share| {
-                (
-                    recover_share.held_by,
-                    recover_share.held_share.share_image.index,
-                )
-            })
-            .collect()
+    pub fn compatible_device_to_share_index(&self) -> Option<BTreeMap<DeviceId, ShareIndex>> {
+        self.shared_key.as_ref()?;
+
+        Some(
+            self.held_shares
+                .iter()
+                .filter(|recover_share| {
+                    self.compatibility(recover_share.held_share.share_image)
+                        == ShareCompatibility::Compatible
+                })
+                .map(|recover_share| {
+                    (
+                        recover_share.held_by,
+                        recover_share.held_share.share_image.index,
+                    )
+                })
+                .collect(),
+        )
     }
 
     pub fn add_share(
@@ -1473,9 +1488,30 @@ impl RecoveringAccessStructure {
     ) {
         self.held_shares.push(recover_share);
 
-        // Try fuzzy recovery and cache the shared_key if successful
-        if let Some(shared_key) = self.try_fuzzy_recovery(fingerprint) {
-            self.shared_key = Some(shared_key);
+        self.shared_key = self.try_fuzzy_recovery(fingerprint);
+    }
+
+    pub fn remove_share(
+        &mut self,
+        device_id: DeviceId,
+        share_image: ShareImage,
+        fingerprint: schnorr_fun::frost::Fingerprint,
+    ) -> bool {
+        let pos = self.held_shares.iter().position(|recover_share| {
+            recover_share.held_by == device_id
+                && recover_share.held_share.share_image == share_image
+        });
+
+        if let Some(pos) = pos {
+            self.held_shares.remove(pos);
+
+            // Re-run fuzzy recovery since we removed a share
+            // The shared_key might no longer be recoverable
+            self.shared_key = self.try_fuzzy_recovery(fingerprint);
+
+            true
+        } else {
+            false
         }
     }
 
