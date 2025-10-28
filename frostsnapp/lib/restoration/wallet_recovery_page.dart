@@ -269,11 +269,14 @@ class WalletRecoveryPage extends StatelessWidget {
           },
         );
         final deviceName = coord.getDeviceName(id: share.deviceId) ?? '<empty>';
+        final showCompatibility = shareCount.incompatible > 0;
         return Card.filled(
           color: theme.colorScheme.surfaceContainerHigh,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(24)),
-            side: share.compatibility == ShareCompatibility.compatible
+            side:
+                showCompatibility &&
+                    share.compatibility == ShareCompatibility.compatible
                 ? BorderSide(color: theme.colorScheme.primary, width: 2)
                 : BorderSide.none,
           ),
@@ -282,38 +285,43 @@ class WalletRecoveryPage extends StatelessWidget {
             contentPadding: EdgeInsets.symmetric(horizontal: 16),
             leading: Icon(Icons.key),
             trailing: deleteButton,
-            subtitle: () {
-              final icon;
-              final text;
-              final color;
+            subtitle: !showCompatibility
+                ? null
+                : () {
+                    final icon;
+                    final text;
+                    final color;
 
-              switch (share.compatibility) {
-                case ShareCompatibility.compatible:
-                  icon = Icons.check_circle;
-                  text = 'Compatible';
-                  color = Theme.of(context).colorScheme.primary;
-                  break;
-                case ShareCompatibility.incompatible:
-                  icon = Icons.cancel;
-                  text = 'Incompatible';
-                  color = Theme.of(context).colorScheme.error;
-                  break;
-                case ShareCompatibility.uncertain:
-                  icon = Icons.pending;
-                  text = 'Compatibility uncertain';
-                  color = Theme.of(context).colorScheme.onSurfaceVariant;
-                  break;
-              }
+                    switch (share.compatibility) {
+                      case ShareCompatibility.compatible:
+                        icon = Icons.check_circle;
+                        text = 'Compatible';
+                        color = Theme.of(context).colorScheme.primary;
+                        break;
+                      case ShareCompatibility.incompatible:
+                        icon = Icons.cancel;
+                        text = 'Incompatible';
+                        color = Theme.of(context).colorScheme.error;
+                        break;
+                      case ShareCompatibility.uncertain:
+                        icon = Icons.pending;
+                        text = 'Compatibility uncertain';
+                        color = Theme.of(context).colorScheme.onSurfaceVariant;
+                        break;
+                    }
 
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 14, color: color),
-                  SizedBox(width: 4),
-                  Text(text, style: TextStyle(fontSize: 12, color: color)),
-                ],
-              );
-            }(),
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 14, color: color),
+                        SizedBox(width: 4),
+                        Text(
+                          text,
+                          style: TextStyle(fontSize: 12, color: color),
+                        ),
+                      ],
+                    );
+                  }(),
             title: Row(
               spacing: 8,
               children: [
