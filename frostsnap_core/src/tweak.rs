@@ -333,7 +333,7 @@ impl<T: TweakableKey> Xpub<T> {
         Xpub { chaincode, key }
     }
 
-    /// Does non-hardended derivation in place
+    /// Does non-hardened derivation in place
     pub fn derive_bip32_in_place(&mut self, segments: impl IntoIterator<Item = u32>) {
         for child in segments.into_iter() {
             let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(&self.chaincode[..]);

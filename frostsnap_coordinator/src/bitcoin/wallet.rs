@@ -724,7 +724,7 @@ impl CoordSuperWallet {
                 .into_iter()
                 .map(|child_number| match child_number {
                     bip32::ChildNumber::Normal { index } => Ok(*index),
-                    _ => Err(anyhow!("can't sign with hardended derivation")),
+                    _ => Err(anyhow!("can't sign with hardened derivation")),
                 })
                 .collect::<Result<Vec<_>>>()?;
 

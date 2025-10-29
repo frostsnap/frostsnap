@@ -512,7 +512,7 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.deviceCount =>
       'Connect devices to become keys for "${form.name ?? ''}"',
     WalletCreateStep.nonceReplenish => '',
-    WalletCreateStep.deviceNames => 'Each device needs a name to idenitfy it',
+    WalletCreateStep.deviceNames => 'Each device needs a name to identify it',
     WalletCreateStep.threshold =>
       'Decide how many devices will be required to sign transactions or to make changes to this wallet',
   };
