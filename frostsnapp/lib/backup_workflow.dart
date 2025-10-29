@@ -7,7 +7,6 @@ import 'package:frostsnap/device_action_backup_check.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
@@ -45,9 +44,7 @@ class DeviceWithShareIndex extends StatelessWidget {
         Flexible(
           child: Text(
             deviceName,
-            style: defaultTextStyle.style.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
+            style: defaultTextStyle.style.copyWith(fontWeight: FontWeight.w500),
           ),
         ),
       ],
@@ -56,14 +53,12 @@ class DeviceWithShareIndex extends StatelessWidget {
 }
 
 class BackupChecklist extends StatefulWidget {
-  final BackupManager backupManager;
   final AccessStructure accessStructure;
   final ScrollController? scrollController;
   final bool showAppBar;
 
   const BackupChecklist({
     super.key,
-    required this.backupManager,
     required this.accessStructure,
     this.scrollController,
     this.showAppBar = false,
@@ -82,7 +77,6 @@ class _BackupChecklistState extends State<BackupChecklist> {
     super.initState();
     _backupDialogController = DeviceActionBackupController(
       accessStructure: widget.accessStructure,
-      backupManager: widget.backupManager,
     );
     _checkDialogController = DeviceActionBackupCheckController(
       accessStructure: widget.accessStructure,
@@ -140,50 +134,8 @@ class _BackupChecklistState extends State<BackupChecklist> {
     );
   }
 
-  void maybeShowThatWasQuickDialog(
-    BuildContext context,
-    DeviceId deviceId,
-  ) async {
-    final manager = FrostsnapContext.of(context)!.backupManager;
-    final walletCtx = WalletContext.of(context)!;
-
-    final shouldWarn = manager.shouldQuickBackupWarn(
-      keyId: walletCtx.wallet.keyId(),
-      deviceId: deviceId,
-    );
-    if (shouldWarn) {
-      final result = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: Text('That was quick!'),
-          content: const Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 12,
-            children: [
-              Text('A backup of a device was performed recently.'),
-              Text('Make sure your devices are secured in separate locations!'),
-            ],
-          ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text('Back'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text('Show Backup'),
-            ),
-          ],
-        ),
-      );
-      if (context.mounted && result == true) {
-        await _backupDialogController.show(context, deviceId);
-      }
-    } else {
-      await _backupDialogController.show(context, deviceId);
-    }
+  void showBackupDialog(BuildContext context, DeviceId deviceId) async {
+    await _backupDialogController.show(context, deviceId);
   }
 
   @override
@@ -219,39 +171,17 @@ class _BackupChecklistState extends State<BackupChecklist> {
             }
 
             final backupRun = snapshot.data!;
-            final allDevices = accessStructure.devices();
 
-            // Build list of devices with their share indices and completion status
-            final deviceInfoList = allDevices.map((deviceId) {
-              final deviceName = coord.getDeviceName(id: deviceId) ?? "";
-              final shareIndex = accessStructure.getDeviceShortShareIndex(
-                deviceId: deviceId,
-              );
-              final isCompleted =
-                  backupRun.devices.any(
-                    (d) => deviceIdEquals(d.$1, deviceId) && d.$2 != null,
-                  ) ||
-                  backupRun.devices.none((d) => deviceIdEquals(d.$1, deviceId));
-
-              return (
-                deviceId: deviceId,
-                name: deviceName,
-                shareIndex: shareIndex,
-                completed: isCompleted,
-              );
-            }).toList();
-
-            // Sort by share index
-            deviceInfoList.sort(
-              (a, b) => (a.shareIndex ?? 999).compareTo(b.shareIndex ?? 999),
-            );
+            // Devices are already sorted by share index and contain all metadata
+            final deviceInfoList = backupRun.devices;
 
             final completedDevices = deviceInfoList
-                .where((d) => d.completed)
+                .where((d) => d.complete == true)
                 .toList();
-            final allComplete = completedDevices.length == allDevices.length;
+            final allComplete =
+                completedDevices.length == deviceInfoList.length;
             final devicesLeftToBackup =
-                allDevices.length - completedDevices.length;
+                deviceInfoList.length - completedDevices.length;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -337,7 +267,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                   Flexible(
                                     child: DeviceWithShareIndex(
                                       shareIndex: deviceInfo.shareIndex,
-                                      deviceName: deviceInfo.name,
+                                      deviceName: deviceInfo.deviceName,
                                     ),
                                   ),
                                   Text(' detected'),
@@ -345,15 +275,13 @@ class _BackupChecklistState extends State<BackupChecklist> {
                               ),
                             ),
                             FilledButton(
-                              onPressed: () => maybeShowThatWasQuickDialog(
+                              onPressed: () => showBackupDialog(
                                 context,
                                 deviceInfo.deviceId,
                               ),
-                              child: deviceInfo.shareIndex != null
-                                  ? Text(
-                                      'Display Backup #${deviceInfo.shareIndex}',
-                                    )
-                                  : Text('Display Backup'),
+                              child: Text(
+                                'Display Backup #${deviceInfo.shareIndex}',
+                              ),
                             ),
                           ],
                         ),
@@ -373,22 +301,31 @@ class _BackupChecklistState extends State<BackupChecklist> {
 
                 // Scrollable checklist
                 ...deviceInfoList.map((device) {
+                  // Three states: true (complete), false (needs backup), null (unknown)
+                  final IconData icon;
+                  final Color color;
+
+                  if (device.complete == true) {
+                    icon = Icons.check_circle;
+                    color = theme.colorScheme.primary;
+                  } else if (device.complete == false) {
+                    icon = Icons.circle_outlined;
+                    color = theme.colorScheme.onSurfaceVariant;
+                  } else {
+                    // null - unknown state
+                    icon = Icons.help_outline;
+                    color = theme.colorScheme.onSurfaceVariant;
+                  }
+
                   return Card(
                     color: theme.colorScheme.surfaceContainerHighest,
                     margin: EdgeInsets.symmetric(vertical: 4.0),
                     child: ListTile(
                       dense: true,
-                      leading: Icon(
-                        device.completed
-                            ? Icons.check_circle
-                            : Icons.circle_outlined,
-                        color: device.completed
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
+                      leading: Icon(icon, color: color),
                       title: DeviceWithShareIndex(
                         shareIndex: device.shareIndex,
-                        deviceName: device.name,
+                        deviceName: device.deviceName,
                       ),
                     ),
                   );

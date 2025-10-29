@@ -1,9 +1,12 @@
 #![allow(unused)]
 use crate::api;
+use crate::api::backup_run::{BackupDevice, BackupRun};
 use crate::api::coordinator::KeyState;
 use crate::api::device_list::DeviceListUpdate;
 use crate::device_list::DeviceList;
+use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
+use frostsnap_coordinator::backup_run::BackupState;
 use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
 use frostsnap_coordinator::enter_physical_backup::{EnterPhysicalBackup, EnterPhysicalBackupState};
 use frostsnap_coordinator::firmware_upgrade::{
@@ -36,7 +39,7 @@ use frostsnap_core::{
     message, AccessStructureRef, DeviceId, KeyId, KeygenId, RestorationId, SignSessionId,
     SymmetricKey, WireSignTask,
 };
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ops::DerefMut;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -57,9 +60,12 @@ pub struct FfiCoordinator {
     device_list: Arc<Mutex<DeviceList>>,
     device_list_stream: Arc<Mutex<Option<Box<dyn Sink<DeviceListUpdate>>>>>,
     // // persisted things
-    db: Arc<Mutex<rusqlite::Connection>>,
+    pub(crate) db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
     coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
+    // backup management
+    pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
+    pub(crate) backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
 }
 
 type Signal = Box<dyn Sink<()>>;
@@ -75,6 +81,8 @@ impl FfiCoordinator {
         let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
+        event!(Level::DEBUG, "loading backup state");
+        let backup_state = Persisted::<BackupState>::new(&mut db_, ())?;
 
         let usb_sender = usb_manager.usb_sender();
         let firmware_bin = usb_manager.upgrade_bin();
@@ -96,6 +104,8 @@ impl FfiCoordinator {
             db,
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
+            backup_state: Arc::new(Mutex::new(backup_state)),
+            backup_run_streams: Default::default(),
         })
     }
 
@@ -660,6 +670,26 @@ impl FfiCoordinator {
 
         self.emit_key_state();
 
+        // Start backup run for newly created wallet
+        {
+            let coordinator = self.coordinator.lock().unwrap();
+            let access_structure = coordinator
+                .get_access_structure(access_structure_ref)
+                .expect("access structure must exist after keygen");
+            let devices: Vec<_> = access_structure.devices().collect();
+            drop(coordinator);
+
+            let mut backup_state = self.backup_state.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
+            backup_state.mutate2(&mut *db, |state, mutations| {
+                state.start_run(access_structure_ref, devices, mutations);
+                Ok(())
+            })?;
+        }
+
+        // Emit backup stream
+        let _ = self.backup_stream_emit(access_structure_ref.key_id);
+
         Ok(access_structure_ref)
     }
 
@@ -866,6 +896,15 @@ impl FfiCoordinator {
             Ok(())
         })?;
         drop(coordinator);
+
+        // Clean up backup runs for deleted key
+        {
+            let mut backup_state = self.backup_state.lock().unwrap();
+            backup_state.mutate2(&mut *db, |state, mutations| {
+                state.clear_backup_run(key_id, mutations);
+                Ok(())
+            })?;
+        }
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
             stream.send(self.key_state());
@@ -1195,6 +1234,64 @@ impl FfiCoordinator {
         if let Some(key_event_stream) = &*self.key_event_stream.lock().unwrap() {
             key_event_stream.send(state);
         }
+    }
+
+    // Backup management methods
+    pub(crate) fn build_backup_run(&self, key_id: KeyId) -> BackupRun {
+        let backup_state = self.backup_state.lock().unwrap();
+        let device_names = self.device_names.lock().unwrap();
+        let coordinator = self.coordinator.lock().unwrap();
+
+        let frost_key = match coordinator.get_frost_key(key_id) {
+            Some(key) => key,
+            None => return BackupRun::default(),
+        };
+
+        let access_structure = frost_key
+            .complete_key
+            .access_structures
+            .values()
+            .next()
+            .expect("access structure must exist");
+
+        let backup_complete_states = backup_state.get_backup_run(key_id);
+
+        let devices = access_structure
+            .device_to_share_indicies()
+            .iter()
+            .map(|(device_id, share_index)| {
+                let device_name = device_names
+                    .get(*device_id)
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+
+                let share_index_short =
+                    u32::try_from(*share_index).expect("share index should fit in u32");
+
+                let complete = backup_complete_states.get(device_id).copied();
+
+                BackupDevice {
+                    device_id: *device_id,
+                    device_name,
+                    share_index: share_index_short,
+                    complete,
+                }
+            })
+            .collect();
+
+        BackupRun { devices }
+    }
+
+    pub(crate) fn backup_stream_emit(&self, key_id: KeyId) -> Result<()> {
+        let backup_run = self.build_backup_run(key_id);
+        self.backup_run_streams
+            .lock()
+            .unwrap()
+            .get(&key_id)
+            .ok_or(anyhow!("no backup stream found for key: {}", key_id))?
+            .add(backup_run)
+            .unwrap();
+        Ok(())
     }
 }
 
