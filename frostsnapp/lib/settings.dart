@@ -125,11 +125,7 @@ class SettingsPage extends StatelessWidget {
                       bodyBuilder: (context) {
                         final frostKey = walletCtx.wallet.frostKey();
                         if (frostKey != null) {
-                          final backupManager = FrostsnapContext.of(
-                            context,
-                          )!.backupManager;
                           return BackupChecklist(
-                            backupManager: backupManager,
                             accessStructure: frostKey.accessStructures()[0],
                           );
                         }

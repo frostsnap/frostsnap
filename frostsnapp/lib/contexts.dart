@@ -2,7 +2,7 @@ import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/backup_manager.dart';
+import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/init.dart';
@@ -35,7 +35,6 @@ class FrostsnapContext extends InheritedWidget {
     return false;
   }
 
-  BackupManager get backupManager => appCtx.backupManager;
   PsbtManager get psbtManager => appCtx.psbtManager;
 }
 
@@ -56,9 +55,7 @@ class SuperWalletContext extends InheritedWidget {
   Stream<BackupRun> backupStream(KeyId keyId) {
     var stream = _backupStreams[keyId];
     if (stream == null) {
-      stream = appCtx.backupManager
-          .backupStream(keyId: keyId)
-          .toBehaviorSubject();
+      stream = coord.backupStream(keyId: keyId).toBehaviorSubject();
       _backupStreams[keyId] = stream;
     }
     return stream;

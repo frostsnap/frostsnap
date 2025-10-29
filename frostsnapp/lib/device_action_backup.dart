@@ -7,12 +7,10 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
 class DeviceActionBackupController with ChangeNotifier {
-  final BackupManager backupManager;
   final AccessStructure accessStructure;
 
   late final FullscreenActionDialogController<bool> _dialogController;
@@ -26,10 +24,7 @@ class DeviceActionBackupController with ChangeNotifier {
       .getFrostKey(keyId: accessStructure.accessStructureRef().keyId)
       ?.keyName();
 
-  DeviceActionBackupController({
-    required this.accessStructure,
-    required this.backupManager,
-  }) {
+  DeviceActionBackupController({required this.accessStructure}) {
     _dialogController = FullscreenActionDialogController(
       title: 'Display Backup on Device',
       body: (context) {
@@ -101,7 +96,7 @@ class DeviceActionBackupController with ChangeNotifier {
 
     if (isComplete) {
       final keyId = accessStructure.masterAppkey().keyId();
-      await backupManager.markBackupComplete(deviceId: id, keyId: keyId);
+      await coord.markBackupComplete(deviceId: id, keyId: keyId);
     }
     await coord.cancelProtocol();
     await _dialogController.removeActionNeeded(id);

@@ -37,5 +37,6 @@ bridge_sink!(DeviceListUpdate);
 bridge_sink!(KeyState);
 bridge_sink!(NonceReplenishState);
 bridge_sink!(());
+bridge_sink!(crate::api::backup_run::BackupRun);
 bridge_sink!(crate::api::recovery::EnterPhysicalBackupState);
 bridge_sink!(crate::api::recovery::WaitForSingleDeviceState);

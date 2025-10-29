@@ -16,6 +16,8 @@ use tracing::{event, Level};
 
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
+pub use super::backup_run::{BackupDevice, BackupRun};
+
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
