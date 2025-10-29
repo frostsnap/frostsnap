@@ -1257,21 +1257,20 @@ impl FfiCoordinator {
         let backup_complete_states = backup_state.get_backup_run(key_id);
 
         let devices = access_structure
-            .device_to_share_indicies()
-            .iter()
+            .iter_shares()
             .map(|(device_id, share_index)| {
                 let device_name = device_names
-                    .get(*device_id)
+                    .get(device_id)
                     .map(|s| s.to_string())
                     .unwrap_or_default();
 
                 let share_index_short =
-                    u32::try_from(*share_index).expect("share index should fit in u32");
+                    u32::try_from(share_index).expect("share index should fit in u32");
 
-                let complete = backup_complete_states.get(device_id).copied();
+                let complete = backup_complete_states.get(&device_id).copied();
 
                 BackupDevice {
-                    device_id: *device_id,
+                    device_id,
                     device_name,
                     share_index: share_index_short,
                     complete,
