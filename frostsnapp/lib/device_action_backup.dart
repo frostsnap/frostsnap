@@ -26,27 +26,83 @@ class DeviceActionBackupController with ChangeNotifier {
 
   DeviceActionBackupController({required this.accessStructure}) {
     _dialogController = FullscreenActionDialogController(
-      title: 'Display Backup on Device',
+      title: 'Record key backup',
       body: (context) {
-        final deviceId = activeDeviceId;
-        final deviceIndex = accessStructure.getDeviceShortShareIndex(
-          deviceId: deviceId!,
-        )!; // critical that we do not display the wrong value here
+        final theme = Theme.of(context);
 
         return Card(
           margin: EdgeInsets.zero,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
-            child: InfoRow.toColumn(context, [
-              InfoRow('For key', '#$deviceIndex'),
-              InfoRow('Of wallet', walletName ?? ''),
-            ]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'The device is displaying the key backup. Write down:',
+                  style: theme.textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('1. ', style: theme.textTheme.bodyLarge),
+                    Expanded(
+                      child: Text(
+                        'Key number',
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('2. ', style: theme.textTheme.bodyLarge),
+                    Expanded(
+                      child: Text(
+                        'All 25 words in order',
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: theme.colorScheme.error,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'This key backup is secret information. Anyone with access to ${accessStructure.threshold()} of the ${accessStructure.devices().length} keys can steal all your Bitcoin.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onErrorContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
       actionButtons: [
         OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
-        DeviceActionHint(),
+        DeviceActionHint(label: "Write down backup", icon: Icons.edit_note),
       ],
       onDismissed: _onCancel,
     );
