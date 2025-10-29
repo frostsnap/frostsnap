@@ -63,7 +63,6 @@ class _WalletMoreState extends State<WalletMore> {
     final theme = Theme.of(context);
     final tileColor = theme.colorScheme.surfaceContainer;
 
-    final fsCtx = FrostsnapContext.of(context)!;
     final superCtx = SuperWalletContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
@@ -141,13 +140,11 @@ class _WalletMoreState extends State<WalletMore> {
             onTap: frostKey == null
                 ? null
                 : () async {
-                    final backupMan = fsCtx.backupManager;
                     await MaybeFullscreenDialog.show(
                       context: context,
                       child: superCtx.tryWrapInWalletContext(
                         keyId: walletCtx.keyId,
                         child: BackupChecklist(
-                          backupManager: backupMan,
                           accessStructure: frostKey.accessStructures()[0],
                           showAppBar: true,
                         ),

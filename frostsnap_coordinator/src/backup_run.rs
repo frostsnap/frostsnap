@@ -3,13 +3,12 @@ use bdk_chain::rusqlite_impl::migrate_schema;
 use frostsnap_core::{AccessStructureId, AccessStructureRef, DeviceId, Gist, KeyId};
 use rusqlite::params;
 use std::collections::BTreeMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{event, Level};
 
 #[derive(Default, Debug)]
 pub struct BackupState {
-    // Maps each access_structure_ref to a map of device_id -> timestamp.
-    runs: BTreeMap<AccessStructureRef, BTreeMap<DeviceId, Option<u32>>>,
+    // Maps each access_structure_ref to a map of device_id -> complete boolean.
+    runs: BTreeMap<AccessStructureRef, BTreeMap<DeviceId, bool>>,
 }
 
 impl BackupState {
@@ -20,17 +19,16 @@ impl BackupState {
                 device_id,
             } => {
                 let run = self.runs.entry(*access_structure_ref).or_default();
-                run.insert(*device_id, None);
+                run.insert(*device_id, false);
                 true
             }
             Mutation::MarkDeviceComplete {
                 access_structure_ref,
                 device_id,
-                timestamp,
             } => {
                 if let Some(run) = self.runs.get_mut(access_structure_ref) {
                     if let Some(entry) = run.get_mut(device_id) {
-                        *entry = Some(*timestamp);
+                        *entry = true;
                         true
                     } else {
                         false
@@ -80,10 +78,6 @@ impl BackupState {
                 Mutation::MarkDeviceComplete {
                     access_structure_ref,
                     device_id,
-                    timestamp: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs() as u32,
                 },
                 mutations,
             );
@@ -112,7 +106,7 @@ impl BackupState {
         }
     }
 
-    pub fn get_backup_run(&self, key_id: KeyId) -> BTreeMap<DeviceId, Option<u32>> {
+    pub fn get_backup_run(&self, key_id: KeyId) -> BTreeMap<DeviceId, bool> {
         let access_structure_ref = match self.guess_access_structure_ref_for_key(key_id) {
             Some(asref) => asref,
             None => return Default::default(),
@@ -133,7 +127,6 @@ pub enum Mutation {
     MarkDeviceComplete {
         access_structure_ref: AccessStructureRef,
         device_id: DeviceId,
-        timestamp: u32,
     },
     ClearBackupState {
         access_structure_ref: AccessStructureRef,
@@ -166,6 +159,20 @@ impl Persist<rusqlite::Connection> for BackupState {
                 timestamp INTEGER, \
                 PRIMARY KEY (key_id, access_structure_id, device_id) \
             )",
+            // Version 1: Change timestamp to complete boolean
+            "CREATE TABLE backup_runs_new ( \
+                key_id TEXT NOT NULL, \
+                access_structure_id TEXT NOT NULL, \
+                device_id TEXT NOT NULL, \
+                complete BOOLEAN NOT NULL, \
+                PRIMARY KEY (key_id, access_structure_id, device_id) \
+            ); \
+            INSERT INTO backup_runs_new (key_id, access_structure_id, device_id, complete) \
+            SELECT key_id, access_structure_id, device_id, \
+                   CASE WHEN timestamp IS NOT NULL THEN 1 ELSE 0 END \
+            FROM backup_runs; \
+            DROP TABLE backup_runs; \
+            ALTER TABLE backup_runs_new RENAME TO backup_runs;",
         ];
 
         let db_tx = conn.transaction()?;
@@ -177,7 +184,7 @@ impl Persist<rusqlite::Connection> for BackupState {
     fn load(conn: &mut rusqlite::Connection, _: ()) -> anyhow::Result<Self> {
         let mut stmt = conn.prepare(
             r#"
-            SELECT key_id, access_structure_id, device_id, timestamp
+            SELECT key_id, access_structure_id, device_id, complete
             FROM backup_runs
             "#,
         )?;
@@ -187,14 +194,14 @@ impl Persist<rusqlite::Connection> for BackupState {
                 row.get::<_, ToStringWrapper<KeyId>>(0)?.0,
                 row.get::<_, ToStringWrapper<AccessStructureId>>(1)?.0,
                 row.get::<_, ToStringWrapper<DeviceId>>(2)?.0,
-                row.get::<_, Option<u32>>(3)?,
+                row.get::<_, bool>(3)?,
             ))
         })?;
 
         let mut state = BackupState::default();
 
         for row in rows.into_iter() {
-            let (key_id, access_structure_id, device_id, timestamp) = row?;
+            let (key_id, access_structure_id, device_id, complete) = row?;
             let access_structure_ref = AccessStructureRef {
                 key_id,
                 access_structure_id,
@@ -203,11 +210,10 @@ impl Persist<rusqlite::Connection> for BackupState {
                 access_structure_ref,
                 device_id,
             });
-            if let Some(timestamp) = timestamp {
+            if complete {
                 state.apply_mutation(&Mutation::MarkDeviceComplete {
                     access_structure_ref,
                     device_id,
-                    timestamp,
                 });
             }
         }
@@ -229,33 +235,32 @@ impl Persist<rusqlite::Connection> for BackupState {
                 } => {
                     tx.execute(
                         r#"
-                        INSERT INTO backup_runs (key_id, access_structure_id, device_id, timestamp)
+                        INSERT INTO backup_runs (key_id, access_structure_id, device_id, complete)
                         VALUES (?1, ?2, ?3, ?4)
                         "#,
                         params![
                             ToStringWrapper(access_structure_ref.key_id),
                             ToStringWrapper(access_structure_ref.access_structure_id),
                             ToStringWrapper(device_id),
-                            None::<u32>
+                            false
                         ],
                     )?;
                 }
                 Mutation::MarkDeviceComplete {
                     access_structure_ref,
                     device_id,
-                    timestamp,
                 } => {
                     tx.execute(
                         r#"
                         UPDATE backup_runs
-                        SET timestamp=?4
+                        SET complete=?4
                         WHERE key_id=?1 AND access_structure_id=?2 AND device_id=?3
                         "#,
                         params![
                             ToStringWrapper(access_structure_ref.key_id),
                             ToStringWrapper(access_structure_ref.access_structure_id),
                             ToStringWrapper(device_id),
-                            Some(timestamp)
+                            true
                         ],
                     )?;
                 }

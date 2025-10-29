@@ -87,17 +87,13 @@ void showWalletCreatedDialog(
             FilledButton(
               onPressed: () async {
                 Navigator.popUntil(context, (r) => r.isFirst);
-                final backupMan = FrostsnapContext.of(context)!.backupManager;
                 final superCtx = SuperWalletContext.of(context)!;
 
                 await MaybeFullscreenDialog.show(
                   context: context,
                   child: superCtx.tryWrapInWalletContext(
                     keyId: accessStructure.masterAppkey().keyId(),
-                    child: BackupChecklist(
-                      backupManager: backupMan,
-                      accessStructure: accessStructure,
-                    ),
+                    child: BackupChecklist(accessStructure: accessStructure),
                   ),
                 );
               },
