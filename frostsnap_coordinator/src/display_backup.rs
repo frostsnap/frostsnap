@@ -1,3 +1,4 @@
+use crate::backup_run::DisplayBackupState;
 use crate::{Completion, DeviceMode, Sink, UiProtocol};
 use frostsnap_comms::{CommsMisc, CoordinatorSendMessage};
 use frostsnap_core::{coordinator::FrostCoordinator, AccessStructureRef, DeviceId, SymmetricKey};
@@ -7,7 +8,7 @@ pub struct DisplayBackupProtocol {
     abort: bool,
     messages: Vec<CoordinatorSendMessage>,
     should_send: bool,
-    sink: Box<dyn Sink<bool> + Send>,
+    sink: Box<dyn Sink<DisplayBackupState> + Send>,
 }
 
 impl DisplayBackupProtocol {
@@ -16,7 +17,7 @@ impl DisplayBackupProtocol {
         device_id: DeviceId,
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
-        sink: impl Sink<bool> + 'static,
+        sink: impl Sink<DisplayBackupState> + 'static,
     ) -> anyhow::Result<Self> {
         let messages = coord
             .request_device_display_backup(device_id, access_structure_ref, encryption_key)?
@@ -39,7 +40,10 @@ impl DisplayBackupProtocol {
 
     fn abort(&mut self) {
         self.abort = true;
-        self.sink.send(false);
+        self.sink.send(DisplayBackupState {
+            confirmed: false,
+            legacy_display_confirmed: false,
+        });
     }
 }
 
@@ -76,11 +80,18 @@ impl UiProtocol for DisplayBackupProtocol {
         }
         match message {
             CommsMisc::BackupRecorded => {
-                self.sink.send(true);
+                self.sink.send(DisplayBackupState {
+                    confirmed: true,
+                    legacy_display_confirmed: false,
+                });
                 true
             }
             CommsMisc::DisplayBackupConfrimed => {
                 tracing::warn!("Received deprecated DisplayBackupConfrimed message. Device firmware should be updated.");
+                self.sink.send(DisplayBackupState {
+                    confirmed: true,
+                    legacy_display_confirmed: true,
+                });
                 true
             }
             _ => false,
