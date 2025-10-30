@@ -4,8 +4,8 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_backup.dart';
 import 'package:frostsnap/device_action_backup_check.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
@@ -407,6 +407,11 @@ class _BackupChecklistState extends State<BackupChecklist> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Text(
+                  'Connect the devices one at a time to back up their keys.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
                 // Explanatory text
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -475,14 +480,25 @@ class _BackupChecklistState extends State<BackupChecklist> {
                       statusIcon = Icons.warning_sharp;
                       statusIconColor = theme.colorScheme.primary;
                       deviceStatusContent = Text(
-                        'Multiple devices detected. Please connect only the device you want to back up.',
+                        'Multiple devices connect. Connect only one device at a time.',
                       );
                     } else if (deviceCount == 1) {
                       // Single device - show buttons
                       final connectedDevice = connectedDevices.first;
-                      final deviceInfo = deviceInfoList.firstWhereOrNull(
-                        (d) => deviceIdEquals(d.deviceId, connectedDevice.id),
-                      );
+                      final connectedDeviceId = connectedDevice.id;
+
+                      // Find the share index for the connected device
+                      final shareIndex = accessStructure
+                          .getDeviceShortShareIndex(
+                            deviceId: connectedDeviceId,
+                          );
+
+                      // Find backup info for this share index
+                      final deviceInfo = shareIndex != null
+                          ? deviceInfoList.firstWhereOrNull(
+                              (d) => d.shareIndex == shareIndex,
+                            )
+                          : null;
 
                       if (deviceInfo == null) {
                         statusIcon = Icons.info_rounded;
@@ -522,14 +538,14 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                   FilledButton(
                                     onPressed: () => showBackupDialog(
                                       context,
-                                      deviceInfo.deviceId,
+                                      connectedDeviceId,
                                     ),
                                     child: Text('Backup'),
                                   ),
                                   FilledButton(
                                     onPressed: () => showCheckDialog(
                                       context,
-                                      deviceInfo.deviceId,
+                                      connectedDeviceId,
                                     ),
                                     child: Text('Check'),
                                   ),
@@ -539,7 +555,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
                               FilledButton(
                                 onPressed: () => showBackupDialog(
                                   context,
-                                  deviceInfo.deviceId,
+                                  connectedDeviceId,
                                 ),
                                 child: Text('Backup'),
                               ),
@@ -604,34 +620,94 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                     Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.stretch,
-                                      children: deviceInfoList.map((device) {
-                                        IconData icon;
-                                        Color color;
-
-                                        if (device.complete == true) {
-                                          icon = Icons.check_circle;
-                                          color = theme.colorScheme.primary;
-                                        } else if (device.complete == false) {
-                                          icon = Icons.circle_outlined;
-                                          color = theme
-                                              .colorScheme
-                                              .onSurfaceVariant;
-                                        } else {
-                                          icon = Icons.help_outline;
-                                          color = theme
-                                              .colorScheme
-                                              .onSurfaceVariant;
+                                      children: () {
+                                        // Group devices by share index
+                                        final devicesByShareIndex =
+                                            <int, List<BackupDevice>>{};
+                                        for (final device in deviceInfoList) {
+                                          devicesByShareIndex
+                                              .putIfAbsent(
+                                                device.shareIndex,
+                                                () => [],
+                                              )
+                                              .add(device);
                                         }
 
-                                        return ListTile(
-                                          dense: true,
-                                          leading: Icon(icon, color: color),
-                                          title: DeviceWithShareIndex(
-                                            shareIndex: device.shareIndex,
-                                            deviceName: device.deviceName,
-                                          ),
-                                        );
-                                      }).toList(),
+                                        // Create list tiles for each share index
+                                        return devicesByShareIndex.entries.map((
+                                          entry,
+                                        ) {
+                                          final shareIndex = entry.key;
+                                          final devices = entry.value;
+
+                                          // All devices with the same share index have the same completion status
+                                          final complete =
+                                              devices.first.complete;
+
+                                          IconData icon;
+                                          Color color;
+
+                                          if (complete == false) {
+                                            icon = Icons.circle_outlined;
+                                            color = theme
+                                                .colorScheme
+                                                .onSurfaceVariant;
+                                          } else {
+                                            // complete == true or complete == null (treat null as backed up)
+                                            icon = Icons.check_circle;
+                                            color = theme.colorScheme.primary;
+                                          }
+
+                                          return ListTile(
+                                            dense: true,
+                                            leading: Icon(icon, color: color),
+                                            title: Row(
+                                              spacing: 4,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  "#$shareIndex",
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color: theme
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                ),
+                                                Flexible(
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 80,
+                                                        ),
+                                                    child: Text(
+                                                      devices
+                                                          .map(
+                                                            (d) => d.deviceName,
+                                                          )
+                                                          .join(', '),
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w500,
+                                                          ),
+                                                      softWrap: true,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList();
+                                      }(),
                                     ),
                                     Positioned(
                                       top: 12,
