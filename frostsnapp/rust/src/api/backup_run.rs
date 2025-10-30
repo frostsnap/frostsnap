@@ -1,12 +1,26 @@
 use anyhow::Result;
-use frostsnap_core::{DeviceId, KeyId};
+use frostsnap_core::{AccessStructureRef, KeyId};
 use tracing::{event, Level};
 
 use crate::frb_generated::StreamSink;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayBackupState {
+    pub confirmed: bool,
+    pub legacy_display_confirmed: bool,
+}
+
+impl From<frostsnap_coordinator::backup_run::DisplayBackupState> for DisplayBackupState {
+    fn from(state: frostsnap_coordinator::backup_run::DisplayBackupState) -> Self {
+        Self {
+            confirmed: state.confirmed,
+            legacy_display_confirmed: state.legacy_display_confirmed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BackupDevice {
-    pub device_id: DeviceId,
     pub device_name: String,
     pub share_index: u32,
     pub complete: Option<bool>,
@@ -26,19 +40,23 @@ impl BackupRun {
 }
 
 impl crate::api::coordinator::Coordinator {
-    pub fn mark_backup_complete(&self, key_id: KeyId, device_id: DeviceId) -> Result<()> {
+    pub fn mark_backup_complete(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        share_index: u32,
+    ) -> Result<()> {
         let mut backup_state = self.0.backup_state.lock().unwrap();
         let mut db = self.0.db.lock().unwrap();
 
         backup_state.mutate2(&mut *db, |state, mutations| {
-            state.mark_backup_complete(key_id, device_id, mutations);
+            state.mark_backup_complete(access_structure_ref, share_index, mutations);
             Ok(())
         })?;
 
         drop(db);
         drop(backup_state);
 
-        self.0.backup_stream_emit(key_id)?;
+        self.0.backup_stream_emit(access_structure_ref.key_id)?;
         Ok(())
     }
 
