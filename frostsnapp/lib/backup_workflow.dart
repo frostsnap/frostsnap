@@ -4,7 +4,6 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_backup.dart';
 import 'package:frostsnap/device_action_backup_check.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -480,9 +479,15 @@ class _BackupChecklistState extends State<BackupChecklist> {
                     } else if (deviceCount == 1) {
                       // Single device - show buttons
                       final connectedDevice = connectedDevices.first;
-                      final deviceInfo = deviceInfoList.firstWhereOrNull(
-                        (d) => deviceIdEquals(d.deviceId, connectedDevice.id),
-                      );
+                      final connectedDeviceId = connectedDevice.id;
+
+                      // Find the share index for the connected device
+                      final shareIndex = accessStructure.getDeviceShortShareIndex(deviceId: connectedDeviceId);
+
+                      // Find backup info for this share index
+                      final deviceInfo = shareIndex != null
+                        ? deviceInfoList.firstWhereOrNull((d) => d.shareIndex == shareIndex)
+                        : null;
 
                       if (deviceInfo == null) {
                         statusIcon = Icons.info_rounded;
@@ -522,14 +527,14 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                   FilledButton(
                                     onPressed: () => showBackupDialog(
                                       context,
-                                      deviceInfo.deviceId,
+                                      connectedDeviceId,
                                     ),
                                     child: Text('Backup'),
                                   ),
                                   FilledButton(
                                     onPressed: () => showCheckDialog(
                                       context,
-                                      deviceInfo.deviceId,
+                                      connectedDeviceId,
                                     ),
                                     child: Text('Check'),
                                   ),
@@ -539,7 +544,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
                               FilledButton(
                                 onPressed: () => showBackupDialog(
                                   context,
-                                  deviceInfo.deviceId,
+                                  connectedDeviceId,
                                 ),
                                 child: Text('Backup'),
                               ),

@@ -676,13 +676,18 @@ impl FfiCoordinator {
             let access_structure = coordinator
                 .get_access_structure(access_structure_ref)
                 .expect("access structure must exist after keygen");
-            let devices: Vec<_> = access_structure.devices().collect();
+            let share_indices: Vec<u32> = access_structure
+                .iter_shares()
+                .map(|(_, share_index)| {
+                    u32::try_from(share_index).expect("share index should fit in u32")
+                })
+                .collect();
             drop(coordinator);
 
             let mut backup_state = self.backup_state.lock().unwrap();
             let mut db = self.db.lock().unwrap();
             backup_state.mutate2(&mut *db, |state, mutations| {
-                state.start_run(access_structure_ref, devices, mutations);
+                state.start_run(access_structure_ref, share_indices, mutations);
                 Ok(())
             })?;
         }
@@ -1267,10 +1272,9 @@ impl FfiCoordinator {
                 let share_index_short =
                     u32::try_from(share_index).expect("share index should fit in u32");
 
-                let complete = backup_complete_states.get(&device_id).copied();
+                let complete = backup_complete_states.get(&share_index_short).copied();
 
                 BackupDevice {
-                    device_id,
                     device_name,
                     share_index: share_index_short,
                     complete,

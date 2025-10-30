@@ -152,7 +152,8 @@ class DeviceActionBackupController with ChangeNotifier {
 
     if (isComplete) {
       final keyId = accessStructure.masterAppkey().keyId();
-      await coord.markBackupComplete(deviceId: id, keyId: keyId);
+      final shareIndex = accessStructure.getDeviceShortShareIndex(deviceId: id)!;
+      await coord.markBackupComplete(shareIndex: shareIndex, keyId: keyId);
     }
     await coord.cancelProtocol();
     await _dialogController.removeActionNeeded(id);
