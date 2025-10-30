@@ -38,8 +38,8 @@ pub struct TestEnv {
 
     pub verification_requests: BTreeMap<DeviceId, (Address, BitcoinBip32Path)>,
 
-    // options
-    pub enter_invalid_backup: bool,
+    // Explicit mapping of which backup each device should enter
+    pub backup_to_enter: BTreeMap<DeviceId, frost_backup::ShareBackup>,
 }
 
 impl Env for TestEnv {
@@ -152,7 +152,7 @@ impl Env for TestEnv {
                                 _ => {
                                     let existing_restoration =
                                         run.coordinator.restoring().find(|state| {
-                                            state.access_structure_ref
+                                            state.access_structure.access_structure_ref()
                                                 == held_share.access_structure_ref
                                         });
 
@@ -169,16 +169,18 @@ impl Env for TestEnv {
                                                     .add_recovery_share_to_restoration(
                                                         existing_restoration.restoration_id,
                                                         &recover_share,
+                                                        TEST_ENCRYPTION_KEY,
                                                     )
                                                     .unwrap();
                                             }
                                         }
-                                        None => {
-                                            run.coordinator.start_restoring_key_from_recover_share(
+                                        None => run
+                                            .coordinator
+                                            .start_restoring_key_from_recover_share(
                                                 &recover_share,
                                                 RestorationId::new(rng),
                                             )
-                                        }
+                                            .unwrap(),
                                     }
                                 }
                             }
@@ -223,32 +225,27 @@ impl Env for TestEnv {
             }
             DeviceToUserMessage::Restoration(restoration) => {
                 use device::restoration::ToUserRestoration::*;
-                match restoration {
-                    DisplayBackup { key_name, backup } => {
+                match *restoration {
+                    DisplayBackup {
+                        key_name,
+                        access_structure_ref: _,
+                        phase,
+                    } => {
+                        let backup = phase
+                            .decrypt_to_backup(&mut TestDeviceKeyGen)
+                            .expect("failed to decrypt backup");
                         self.backups.insert(from, (key_name, backup));
                     }
                     EnterBackup { phase } => {
                         let device = run.device(from);
-                        let (_, mut share_backup) = self.backups.get(&from).unwrap().clone();
-
-                        if self.enter_invalid_backup {
-                            share_backup = match u16::try_from(share_backup.index()).unwrap() {
-                                1 =>"#1 MISS DRAFT FOLD BRIGHT HURRY CONCERT SOURCE CLUB EQUIP ELEGANT TOY LYRICS CAR CABIN SYRUP LECTURE TEAM EQUIP WET ECHO LINK SILVER PURCHASE LECTURE NEXT",
-                                2 => "#2 BEST MIXTURE FOOT HABIT WORLD OBSERVE ADVICE ANNUAL ISSUE CAUSE PROPERTY GUESS RETURN HURDLE WEASEL CUP ONCE NOVEL MARCH VALVE BLIND TRIGGER CHAIR ACTOR MONTH",
-                                _ => "#3 PANDA SPHERE HAIR BRAVE VIRUS CATTLE LOOP WRAP RAMP READY TIP BODY GIANT OYSTER DIZZY CRUSH DANGER SNOW PLANET SHOVE LIQUID CLAW RICE AMONG JOB",
-                            }.parse().unwrap()
-                        }
+                        let share_backup = self
+                            .backup_to_enter
+                            .remove(&from)
+                            .expect("Test must assign backup for device to enter");
 
                         let response =
                             device.tell_coordinator_about_backup_load_result(phase, share_backup);
                         run.extend_from_device(from, response);
-                    }
-                    DisplayBackupRequest { phase } => {
-                        let backup_ack = run
-                            .device(from)
-                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                            .unwrap();
-                        run.extend_from_device(from, backup_ack);
                     }
                     ConsolidateBackup(phase) => {
                         let ack = run.device(from).finish_consolidation(

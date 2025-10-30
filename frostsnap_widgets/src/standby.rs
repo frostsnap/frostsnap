@@ -3,10 +3,10 @@ use crate::{
     palette::PALETTE, prelude::*, share_index::ShareIndexWidget, vec_framebuffer::VecFramebuffer,
 };
 use crate::{DefaultTextStyle, FONT_LARGE};
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use embedded_graphics::pixelcolor::{BinaryColor, Rgb565};
 use embedded_iconoir::prelude::IconoirNewIcon;
-use frostsnap_core::message::HeldShare;
+use frostsnap_core::message::HeldShare2;
 
 const LOGO_DATA: &[u8] = include_bytes!("../assets/frostsnap-logo-96x96.bin");
 
@@ -28,15 +28,17 @@ pub struct Standby {
                     Text,
                 )>,
             >,
-            Row<(
-                IconWidget<
-                    embedded_iconoir::Icon<
-                        Rgb565,
-                        embedded_iconoir::icons::size24px::finance::Wallet,
+            Option<
+                Row<(
+                    IconWidget<
+                        embedded_iconoir::Icon<
+                            Rgb565,
+                            embedded_iconoir::icons::size24px::finance::Wallet,
+                        >,
                     >,
-                >,
-                Text,
-            )>,
+                    Text,
+                )>,
+            >,
             ShareIndexWidget,
             DeviceName,
         )>,
@@ -44,15 +46,16 @@ pub struct Standby {
 }
 
 impl Standby {
-    pub fn new(device_name: impl Into<String>, held_share: HeldShare) -> Self {
+    pub fn new(device_name: impl Into<String>, held_share: HeldShare2) -> Self {
         let key_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface_variant);
 
-        let wallet_icon = IconWidget::new(embedded_iconoir::icons::size24px::finance::Wallet::new(
-            PALETTE.on_surface_variant,
-        ));
-        let key_text = Text::new(held_share.key_name.to_string(), key_style);
-
-        let key_row = Row::builder().push(wallet_icon).gap(8).push(key_text);
+        let key_row = held_share.key_name.as_ref().map(|key_name| {
+            let wallet_icon = IconWidget::new(
+                embedded_iconoir::icons::size24px::finance::Wallet::new(PALETTE.on_surface_variant),
+            );
+            let key_text = Text::new(key_name.clone(), key_style);
+            Row::builder().push(wallet_icon).gap(8).push(key_text)
+        });
 
         let recovery_warning = if held_share.access_structure_ref.is_none() {
             let warning_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.warning);

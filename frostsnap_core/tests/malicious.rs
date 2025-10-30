@@ -180,6 +180,10 @@ fn malicious_consolidation_wrong_root_shared_key() {
 
     // Pick the first device
     let device_id = *env.backups.keys().next().unwrap();
+    let (_, backup) = env.backups.get(&device_id).unwrap().clone();
+
+    // Assign the backup for this device to enter
+    env.backup_to_enter.insert(device_id, backup);
 
     // Tell the device to enter backup mode
     let enter_physical_id = frostsnap_core::EnterPhysicalId::new(&mut test_rng);

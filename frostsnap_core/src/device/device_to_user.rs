@@ -21,6 +21,6 @@ pub enum DeviceToUserMessage {
         address: Address<NetworkChecked>,
         bip32_path: BitcoinBip32Path,
     },
-    Restoration(restoration::ToUserRestoration),
+    Restoration(Box<restoration::ToUserRestoration>),
     NonceJobs(NonceJobBatch),
 }

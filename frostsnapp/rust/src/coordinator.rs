@@ -1,9 +1,12 @@
 #![allow(unused)]
 use crate::api;
+use crate::api::backup_run::{BackupDevice, BackupRun};
 use crate::api::coordinator::KeyState;
 use crate::api::device_list::DeviceListUpdate;
 use crate::device_list::DeviceList;
+use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
+use frostsnap_coordinator::backup_run::BackupState;
 use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
 use frostsnap_coordinator::enter_physical_backup::{EnterPhysicalBackup, EnterPhysicalBackupState};
 use frostsnap_coordinator::firmware_upgrade::{
@@ -17,8 +20,8 @@ use frostsnap_coordinator::nonce_replenish::NonceReplenishState;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::verify_address::{VerifyAddressProtocol, VerifyAddressProtocolState};
-use frostsnap_coordinator::wait_for_recovery_share::{
-    WaitForRecoveryShare, WaitForRecoveryShareState,
+use frostsnap_coordinator::wait_for_single_device::{
+    WaitForSingleDevice, WaitForSingleDeviceState,
 };
 use frostsnap_coordinator::{
     AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
@@ -36,7 +39,7 @@ use frostsnap_core::{
     message, AccessStructureRef, DeviceId, KeyId, KeygenId, RestorationId, SignSessionId,
     SymmetricKey, WireSignTask,
 };
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ops::DerefMut;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -57,9 +60,12 @@ pub struct FfiCoordinator {
     device_list: Arc<Mutex<DeviceList>>,
     device_list_stream: Arc<Mutex<Option<Box<dyn Sink<DeviceListUpdate>>>>>,
     // // persisted things
-    db: Arc<Mutex<rusqlite::Connection>>,
+    pub(crate) db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
     coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
+    // backup management
+    pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
+    pub(crate) backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
 }
 
 type Signal = Box<dyn Sink<()>>;
@@ -75,6 +81,8 @@ impl FfiCoordinator {
         let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
+        event!(Level::DEBUG, "loading backup state");
+        let backup_state = Persisted::<BackupState>::new(&mut db_, ())?;
 
         let usb_sender = usb_manager.usb_sender();
         let firmware_bin = usb_manager.upgrade_bin();
@@ -96,6 +104,8 @@ impl FfiCoordinator {
             db,
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
+            backup_state: Arc::new(Mutex::new(backup_state)),
+            backup_run_streams: Default::default(),
         })
     }
 
@@ -660,6 +670,31 @@ impl FfiCoordinator {
 
         self.emit_key_state();
 
+        // Start backup run for newly created wallet
+        {
+            let coordinator = self.coordinator.lock().unwrap();
+            let access_structure = coordinator
+                .get_access_structure(access_structure_ref)
+                .expect("access structure must exist after keygen");
+            let share_indices: Vec<u32> = access_structure
+                .iter_shares()
+                .map(|(_, share_index)| {
+                    u32::try_from(share_index).expect("share index should fit in u32")
+                })
+                .collect();
+            drop(coordinator);
+
+            let mut backup_state = self.backup_state.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
+            backup_state.mutate2(&mut *db, |state, mutations| {
+                state.start_run(access_structure_ref, share_indices, mutations);
+                Ok(())
+            })?;
+        }
+
+        // Emit backup stream
+        let _ = self.backup_stream_emit(access_structure_ref.key_id);
+
         Ok(access_structure_ref)
     }
 
@@ -700,8 +735,8 @@ impl FfiCoordinator {
         key_state(&self.coordinator.lock().unwrap())
     }
 
-    pub fn wait_for_recovery_share(&self, sink: impl Sink<WaitForRecoveryShareState>) {
-        let ui_protocol = WaitForRecoveryShare::new(sink);
+    pub fn wait_for_single_device(&self, sink: impl Sink<WaitForSingleDeviceState>) {
+        let mut ui_protocol = WaitForSingleDevice::new(sink);
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
     }
@@ -709,7 +744,7 @@ impl FfiCoordinator {
     pub fn start_restoring_wallet(
         &self,
         name: String,
-        threshold: u16,
+        threshold: Option<u16>,
         key_purpose: KeyPurpose,
     ) -> Result<RestorationId> {
         let restoration_id = {
@@ -762,29 +797,19 @@ impl FfiCoordinator {
     pub fn continue_restoring_wallet_from_device_share(
         &self,
         restoration_id: RestorationId,
-        mut recover_share: &RecoverShare,
+        recover_share: &RecoverShare,
+        encryption_key: SymmetricKey,
     ) -> Result<()> {
         {
             let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
-            let restoration_state = coordinator
-                .get_restoration_state(restoration_id)
-                .ok_or(anyhow!("non-existent restoration"))?;
 
-            let mut held_share = recover_share.held_share.clone();
-
-            // HACK: We overwrite the name of the device share here to contrive compatibility.
-            if restoration_state.key_name != held_share.key_name {
-                event!(
-                    Level::WARN,
-                    recovery_name = %restoration_state.key_name,
-                    device_name = %held_share.key_name,
-                    "had to rename restoration share"
-                );
-                held_share.key_name = restoration_state.key_name.clone();
-            }
             coordinator.staged_mutate(&mut *db, |coordinator| {
-                coordinator.add_recovery_share_to_restoration(restoration_id, recover_share)?;
+                coordinator.add_recovery_share_to_restoration(
+                    restoration_id,
+                    recover_share,
+                    encryption_key,
+                )?;
                 Ok(())
             })?;
         }
@@ -844,7 +869,7 @@ impl FfiCoordinator {
             let restoration_state = coordinator
                 .get_restoration_state(restoration_id)
                 .ok_or(anyhow!("can't finish restoration that doesn't exist"))?;
-            let needs_consolidation = restoration_state.need_to_consolidate;
+            let needs_consolidation: Vec<_> = restoration_state.needs_to_consolidate().collect();
             let assid = coordinator.staged_mutate(&mut *db, |coordinator| {
                 Ok(coordinator.finish_restoring(
                     restoration_id,
@@ -876,6 +901,15 @@ impl FfiCoordinator {
             Ok(())
         })?;
         drop(coordinator);
+
+        // Clean up backup runs for deleted key
+        {
+            let mut backup_state = self.backup_state.lock().unwrap();
+            backup_state.mutate2(&mut *db, |state, mutations| {
+                state.clear_backup_run(key_id, mutations);
+                Ok(())
+            })?;
+        }
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
             stream.send(self.key_state());
@@ -1206,6 +1240,62 @@ impl FfiCoordinator {
             key_event_stream.send(state);
         }
     }
+
+    // Backup management methods
+    pub(crate) fn build_backup_run(&self, key_id: KeyId) -> BackupRun {
+        let backup_state = self.backup_state.lock().unwrap();
+        let device_names = self.device_names.lock().unwrap();
+        let coordinator = self.coordinator.lock().unwrap();
+
+        let frost_key = match coordinator.get_frost_key(key_id) {
+            Some(key) => key,
+            None => return BackupRun::default(),
+        };
+
+        let access_structure = frost_key
+            .complete_key
+            .access_structures
+            .values()
+            .next()
+            .expect("access structure must exist");
+
+        let backup_complete_states = backup_state.get_backup_run(key_id);
+
+        let devices = access_structure
+            .iter_shares()
+            .map(|(device_id, share_index)| {
+                let device_name = device_names
+                    .get(device_id)
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+
+                let share_index_short =
+                    u32::try_from(share_index).expect("share index should fit in u32");
+
+                let complete = backup_complete_states.get(&share_index_short).copied();
+
+                BackupDevice {
+                    device_name,
+                    share_index: share_index_short,
+                    complete,
+                }
+            })
+            .collect();
+
+        BackupRun { devices }
+    }
+
+    pub(crate) fn backup_stream_emit(&self, key_id: KeyId) -> Result<()> {
+        let backup_run = self.build_backup_run(key_id);
+        self.backup_run_streams
+            .lock()
+            .unwrap()
+            .get(&key_id)
+            .ok_or(anyhow!("no backup stream found for key: {}", key_id))?
+            .add(backup_run)
+            .unwrap();
+        Ok(())
+    }
 }
 
 fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {
@@ -1215,20 +1305,7 @@ fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {
         .map(api::coordinator::FrostKey)
         .collect();
 
-    let restoring = coordinator
-        .restoring()
-        .map(|restoring| {
-            let status = restoring.status();
-            api::recovery::RestoringKey {
-                problem: status.problem(),
-                shares_obtained: status.shares,
-                restoration_id: restoring.restoration_id,
-                name: restoring.key_name.to_string(),
-                threshold: restoring.access_structure.threshold,
-                bitcoin_network: restoring.key_purpose.bitcoin_network(),
-            }
-        })
-        .collect();
+    let restoring = coordinator.restoring().collect();
 
     api::coordinator::KeyState { keys, restoring }
 }

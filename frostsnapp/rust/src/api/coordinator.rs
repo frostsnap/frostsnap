@@ -1,9 +1,10 @@
+pub use crate::api::KeyPurpose;
 use crate::sink_wrap::SinkWrap;
 use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
+pub use frostsnap_core::coordinator::restoration::RestorationState;
 pub use frostsnap_core::coordinator::CoordAccessStructure as AccessStructure;
-pub use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
     coordinator::CoordFrostKey,
     schnorr_fun::frost::{ShareIndex, SharedKey},
@@ -15,10 +16,12 @@ use tracing::{event, Level};
 
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
+pub use super::backup_run::{BackupDevice, BackupRun};
+
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
-    pub restoring: Vec<crate::api::recovery::RestoringKey>,
+    pub restoring: Vec<RestorationState>,
 }
 
 #[derive(Clone, Debug)]
@@ -130,12 +133,6 @@ impl AccessStructureExt for AccessStructure {
 }
 
 pub struct Coordinator(pub(crate) FfiCoordinator);
-
-#[frb(external)]
-impl KeyPurpose {
-    #[frb(sync)]
-    pub fn bitcoin_network(&self) -> Option<BitcoinNetwork> {}
-}
 
 impl Coordinator {
     pub fn start_thread(&self) -> Result<()> {

@@ -66,20 +66,22 @@ class DeviceActionUpgradeController with ChangeNotifier {
       title: 'Upgrade Firmware',
       body: (context) {
         final versionName = coord.upgradeFirmwareVersionName() ?? '';
-        return Card(
-          margin: EdgeInsets.zero,
-          child: ListTile(
-            title: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: 'New Firmware '),
-                  TextSpan(text: versionName, style: monospaceTextStyle),
-                ],
+        return SelectionArea(
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              title: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: 'New Firmware '),
+                    TextSpan(text: versionName, style: monospaceTextStyle),
+                  ],
+                ),
               ),
-            ),
-            subtitle: Text(
-              coord.upgradeFirmwareDigest() ?? '',
-              style: monospaceTextStyle.copyWith(fontSize: 11),
+              subtitle: Text(
+                coord.upgradeFirmwareDigest() ?? '',
+                style: monospaceTextStyle.copyWith(fontSize: 11),
+              ),
             ),
           ),
         );
@@ -235,30 +237,32 @@ class DeviceActionUpgradeController with ChangeNotifier {
           title: Text(success ? 'Upgrade Successful' : 'Upgrade Failed'),
           content: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 560, minWidth: 280),
-            child: success
-                ? Card(
-                    margin: EdgeInsets.zero,
-                    child: ListTile(
-                      title: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(text: 'Upgraded to Firmware '),
-                            TextSpan(
-                              text: coord.upgradeFirmwareVersionName() ?? '',
-                              style: monospaceTextStyle,
-                            ),
-                          ],
+            child: SelectionArea(
+              child: success
+                  ? Card(
+                      margin: EdgeInsets.zero,
+                      child: ListTile(
+                        title: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(text: 'Upgraded to Firmware '),
+                              TextSpan(
+                                text: coord.upgradeFirmwareVersionName() ?? '',
+                                style: monospaceTextStyle,
+                              ),
+                            ],
+                          ),
+                        ),
+                        subtitle: Text(
+                          coord.upgradeFirmwareDigest() ?? '',
+                          style: monospaceTextStyle.copyWith(fontSize: 11),
                         ),
                       ),
-                      subtitle: Text(
-                        coord.upgradeFirmwareDigest() ?? '',
-                        style: monospaceTextStyle.copyWith(fontSize: 11),
-                      ),
+                    )
+                  : Text(
+                      'Either a device was disconnected mid-upgrade, or you have encountered a bug!',
                     ),
-                  )
-                : Text(
-                    'Either a device was disconnected mid-upgrade, or you have encountered a bug!',
-                  ),
+            ),
           ),
           actions: [
             TextButton(
