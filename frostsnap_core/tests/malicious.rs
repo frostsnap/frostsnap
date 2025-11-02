@@ -224,7 +224,7 @@ fn malicious_consolidation_wrong_root_shared_key() {
         s!(2).public()
     };
 
-    let malicious_share_images = vec![
+    let malicious_share_images = [
         device_share_image,
         // Use a point that's on the correct polynomial
         consolidate_message.root_shared_key.share_image(other_index),

@@ -7,8 +7,9 @@ use embedded_graphics::{
 };
 
 /// Alignment for positioning widgets
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum Alignment {
+    #[default]
     TopLeft,
     TopCenter,
     TopRight,
@@ -18,12 +19,6 @@ pub enum Alignment {
     BottomLeft,
     BottomCenter,
     BottomRight,
-}
-
-impl Default for Alignment {
-    fn default() -> Self {
-        Self::TopLeft
-    }
 }
 
 impl Alignment {
