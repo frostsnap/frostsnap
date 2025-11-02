@@ -302,11 +302,11 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     if (!widget.isStartSigning) this.isFirstRun = false;
 
-    final hasAllShares = data.gotShares.length >= data.neededFrom.length;
+    final hasSignatures = data.finishedSignatures.isNotEmpty;
 
     var psbt = this.psbt;
     if (psbt != null) {
-      if (hasAllShares) {
+      if (hasSignatures) {
         psbt = txDetails.tx.attachSignaturesToPsbt(
           signatures: data.finishedSignatures,
           psbt: psbt,
@@ -324,10 +324,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         );
       }
 
-      if ((widget.isStartSigning && isFirstRun) || hasAllShares) {
+      if ((widget.isStartSigning && isFirstRun) || hasSignatures) {
         isFirstRun = false;
         widget.psbtMan.insert(ssid: data.sessionId, psbt: psbt);
-        if (!hasAllShares) {
+        if (!hasSignatures) {
           showMessageSnackbar(
             context,
             'PSBT saved: ${psbt.serialize().length} bytes',
