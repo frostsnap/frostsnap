@@ -93,7 +93,7 @@ class _WalletMoreState extends State<WalletMore> {
             tileColor: tileColor,
             shape: tileShapeEnd,
             title: Text('Message'),
-            subtitle: Text('Sign an arbitary message'),
+            subtitle: Text('Sign an arbitrary message'),
             leading: Icon(Icons.edit_note),
             onTap: frostKey == null
                 ? null
