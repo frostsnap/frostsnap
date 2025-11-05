@@ -692,10 +692,9 @@ class SigningSessionController with ChangeNotifier {
     if (_unsignedTx != null || _signingStateSub != null) return false;
     _unsignedTx = unsignedTx;
     _signingStateSub = stream.listen((state) async {
-      if (state.gotShares.length == state.neededFrom.length &&
-          state.finishedSignatures.isNotEmpty &&
-          _unsignedTx != null) {
-        _signedTx = _unsignedTx!.complete(signatures: state.finishedSignatures);
+      final signatures = state.finishedSignatures;
+      if (signatures != null && _unsignedTx != null) {
+        _signedTx = _unsignedTx!.complete(signatures: signatures);
       }
       _state = state;
       if (hasListeners) notifyListeners();

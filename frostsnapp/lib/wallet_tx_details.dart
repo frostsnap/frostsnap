@@ -87,8 +87,7 @@ String humanReadableTimeDifference(DateTime currentTime, DateTime itemTime) {
   }
 }
 
-bool isSigningDone(SigningState state) =>
-    state.gotShares.length >= state.neededFrom.length;
+bool isSigningDone(SigningState state) => state.finishedSignatures != null;
 
 class TxSentOrReceivedTile extends StatelessWidget {
   final TxDetailsModel txDetails;
@@ -302,13 +301,13 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     if (!widget.isStartSigning) this.isFirstRun = false;
 
-    final hasSignatures = data.finishedSignatures.isNotEmpty;
+    final signatures = data.finishedSignatures;
 
     var psbt = this.psbt;
     if (psbt != null) {
-      if (hasSignatures) {
+      if (signatures != null) {
         psbt = txDetails.tx.attachSignaturesToPsbt(
-          signatures: data.finishedSignatures,
+          signatures: signatures,
           psbt: psbt,
         );
         if (psbt == null) {
@@ -324,10 +323,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         );
       }
 
-      if ((widget.isStartSigning && isFirstRun) || hasSignatures) {
+      if ((widget.isStartSigning && isFirstRun) || signatures != null) {
         isFirstRun = false;
         widget.psbtMan.insert(ssid: data.sessionId, psbt: psbt);
-        if (!hasSignatures) {
+        if (signatures == null) {
           showMessageSnackbar(
             context,
             'PSBT saved: ${psbt.serialize().length} bytes',

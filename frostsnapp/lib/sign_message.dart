@@ -223,7 +223,7 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       .asyncMap((event) {
         return event.finishedSignatures;
       })
-      .firstWhere((signatures) => signatures.isNotEmpty);
+      .firstWhere((signatures) => signatures != null);
 
   stream.forEach((signingState) async {
     sessionId = signingState.sessionId;
