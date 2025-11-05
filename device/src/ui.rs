@@ -47,8 +47,9 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Workflow {
+    #[default]
     None,
     Standby {
         device_name: DeviceName,
@@ -75,12 +76,6 @@ impl Workflow {
     #[must_use]
     pub fn prompt(prompt: Prompt) -> Self {
         Self::UserPrompt(prompt)
-    }
-}
-
-impl Default for Workflow {
-    fn default() -> Self {
-        Self::None
     }
 }
 

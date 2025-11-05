@@ -261,7 +261,7 @@ impl Transaction {
         let mut psbt = psbt.clone();
         let mut signatures = signatures.into_iter();
 
-        for i in self.owned_input_indices() {
+        for i in owned_indices {
             let signature = signatures.next();
             // we are assuming the signatures are correct here.
             let input = &mut psbt.inputs[i];

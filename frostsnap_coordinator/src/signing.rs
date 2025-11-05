@@ -71,7 +71,7 @@ impl SigningDispatcher {
             session_id: self.session_id,
             got_shares: self.got_signatures.iter().cloned().collect(),
             needed_from: self.targets.iter().cloned().collect(),
-            finished_signatures: self.finished_signatures.clone().unwrap_or_default(),
+            finished_signatures: self.finished_signatures.clone(),
             aborted: self.aborted.clone(),
             connected_but_need_request: self.connected_but_need_request.iter().cloned().collect(),
         };
@@ -170,8 +170,7 @@ pub struct SigningState {
     pub session_id: SignSessionId,
     pub got_shares: Vec<DeviceId>,
     pub needed_from: Vec<DeviceId>,
-    // for some reason FRB woudln't allow Option here to empty vec implies not being finished
-    pub finished_signatures: Vec<EncodedSignature>,
+    pub finished_signatures: Option<Vec<EncodedSignature>>,
     pub aborted: Option<String>,
     pub connected_but_need_request: Vec<DeviceId>,
 }

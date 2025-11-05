@@ -6,7 +6,7 @@ use super::{
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 use anyhow::{anyhow, Result};
 use bitcoin::hex::DisplayHex;
-use bitcoin::{Psbt, ScriptBuf};
+use bitcoin::ScriptBuf;
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
 pub use frostsnap_core::bitcoin_transaction::TransactionTemplate;
@@ -59,8 +59,7 @@ pub struct _SigningState {
     pub session_id: SignSessionId,
     pub got_shares: Vec<DeviceId>,
     pub needed_from: Vec<DeviceId>,
-    // for some reason FRB woudln't allow Option here to empty vec implies not being finished
-    pub finished_signatures: Vec<EncodedSignature>,
+    pub finished_signatures: Option<Vec<EncodedSignature>>,
     pub aborted: Option<String>,
     pub connected_but_need_request: Vec<DeviceId>,
 }
@@ -90,7 +89,7 @@ impl ActiveSignSessionExt for ActiveSignSession {
             session_id,
             got_shares: got_shares.into_iter().collect(),
             needed_from: session_init.nonces.keys().copied().collect(),
-            finished_signatures: Vec::new(),
+            finished_signatures: None,
             aborted: None,
             connected_but_need_request: Default::default(),
         };
@@ -161,30 +160,6 @@ impl UnsignedTx {
     #[frb(sync)]
     pub fn feerate(&self) -> Option<f64> {
         self.template_tx.feerate()
-    }
-
-    #[frb(sync)]
-    pub fn attach_signatures_to_psbt(
-        &self,
-        signatures: Vec<EncodedSignature>,
-        mut psbt: Psbt,
-    ) -> Psbt {
-        let mut signatures = signatures.into_iter();
-        for (i, _, _) in self.template_tx.iter_locally_owned_inputs() {
-            let signature = signatures.next();
-            // we are assuming the signatures are correct here.
-            let input = &mut psbt.inputs[i];
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
-                    &signature.unwrap().0,
-                )
-                .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            input.tap_key_sig = Some(schnorr_sig);
-        }
-
-        psbt
     }
 
     #[frb(sync)]
