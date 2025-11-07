@@ -724,7 +724,7 @@ class WalletBottomBar extends StatelessWidget {
           ),
         ),
       ),
-      label: Text('Receive'),
+      label: Text('Receive', softWrap: false, overflow: TextOverflow.fade),
       icon: Icon(Icons.south_east),
       style: textButtonStyle,
     );
@@ -734,17 +734,22 @@ class WalletBottomBar extends StatelessWidget {
       initialData: 0,
       builder: (context, snapshot) {
         final value = snapshot.data ?? 0;
+        final hasOutgoing = value > 0;
+
         final button = TextButton.icon(
           onPressed: () async => await showPickOutgoingTxDialog(context),
-          label: value == 0 ? Text('Send') : Text('Continue'),
+          label: Text(
+            hasOutgoing ? 'Continue' : 'Send',
+            softWrap: false,
+            overflow: TextOverflow.fade,
+          ),
           icon: Icon(Icons.north_east),
-          style: value == 0 ? textButtonStyle : highlightTextButtonStyle,
+          style: hasOutgoing ? highlightTextButtonStyle : textButtonStyle,
         );
-
         return Badge.count(
           count: value,
           // Only show count badge if we have more than one uncanonical outgoing tx.
-          isLabelVisible: value > 1,
+          isLabelVisible: hasOutgoing,
           child: button,
         );
       },
@@ -852,8 +857,13 @@ class WalletBottomBar extends StatelessWidget {
       await showBottomSheetOrDialog(
         context,
         title: Text('Send'),
-        builder: (context, scrollController) =>
-            walletCtx.wrap(WalletSendPage(scrollController: scrollController)),
+        builder: (context, scrollController) => walletCtx.wrap(
+          WalletSendPage(
+            scrollController: scrollController,
+            superWallet: walletCtx.superWallet,
+            masterAppkey: walletCtx.masterAppkey,
+          ),
+        ),
       );
       return;
     }

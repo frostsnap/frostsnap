@@ -61,7 +61,7 @@ pub trait BitcoinNetworkExt {
     fn from_string(string: String) -> Option<BitcoinNetwork>;
 
     #[frb(sync)]
-    fn validate_destination_address(&self, uri: String) -> Result<SendToRecipient, String>;
+    fn validate_destination_address(&self, uri: &str) -> Result<SendToRecipient, String>;
 
     #[frb(sync)]
     fn default_electrum_server(&self) -> String;
@@ -73,7 +73,7 @@ pub trait BitcoinNetworkExt {
     fn bdk_file(&self, app_dir: impl AsRef<Path>) -> PathBuf;
 
     #[frb(sync)]
-    fn validate_amount(&self, address: String, value: u64) -> Option<String>;
+    fn validate_amount(&self, address: &str, value: u64) -> Option<String>;
 
     #[frb(sync)]
     fn supported_networks() -> Vec<BitcoinNetwork>;
@@ -105,7 +105,8 @@ impl BitcoinNetworkExt for BitcoinNetwork {
         descriptor.to_string()
     }
 
-    fn validate_destination_address(&self, uri: String) -> Result<SendToRecipient, String> {
+    #[frb(sync)]
+    fn validate_destination_address(&self, uri: &str) -> Result<SendToRecipient, String> {
         let uri = uri.trim();
 
         // Try parsing as BIP21 URI first
@@ -152,8 +153,8 @@ impl BitcoinNetworkExt for BitcoinNetwork {
 
     // FIXME: doesn't need to be on the network. Can get the script pubkey without the network.
     #[frb(sync)]
-    fn validate_amount(&self, address: String, value: u64) -> Option<String> {
-        match bitcoin::Address::from_str(&address) {
+    fn validate_amount(&self, address: &str, value: u64) -> Option<String> {
+        match bitcoin::Address::from_str(address) {
             Ok(address) => match address.require_network(*self) {
                 Ok(address) => {
                     let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
@@ -525,6 +526,9 @@ pub trait AddressExt {
 
     #[frb(sync, type_64bit_int)]
     fn bip21_uri(&self, amount: Option<u64>, label: Option<String>) -> String;
+
+    #[frb(sync)]
+    fn from_string(s: &str, network: &BitcoinNetwork) -> Option<Address>;
 }
 
 #[frb(external)]
@@ -552,6 +556,11 @@ impl AddressExt for bitcoin::Address {
         }
 
         uri.to_string()
+    }
+
+    #[frb(sync)]
+    fn from_string(s: &str, network: &BitcoinNetwork) -> Option<Self> {
+        Address::from_str(s).ok()?.require_network(*network).ok()
     }
 }
 
