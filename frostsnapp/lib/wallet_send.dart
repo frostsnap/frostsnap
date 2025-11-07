@@ -486,15 +486,15 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   ),
                   child: Column(
                     children: [
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12.0),
+                        child: etaInputCard,
+                      ),
                       if (pageIndex == SendPageIndex.recipient)
                         recipientInputCard,
                       if (pageIndex == SendPageIndex.amount) amountInputCard,
                       if (pageIndex == SendPageIndex.signers) signersInputCard,
                       //if (pageIndex == SendPageIndex.sign) signInputCard,
-                      Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12.0),
-                        child: etaInputCard,
-                      ),
                     ],
                   ),
                 ),
