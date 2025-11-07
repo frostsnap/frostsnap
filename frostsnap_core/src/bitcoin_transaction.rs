@@ -24,8 +24,6 @@ pub struct TransactionTemplate {
     outputs: Vec<Output>,
 }
 
-pub const TR_KEYSPEND_SATISFACTION_WEIGHT: u32 = 1 /*witness_len*/ + 1 /*item len*/ +  64 /*signature*/;
-
 pub struct PushInput<'a> {
     pub prev_txout: PrevTxOut<'a>,
     pub sequence: bitcoin::Sequence,
@@ -260,18 +258,17 @@ impl TransactionTemplate {
     }
 
     pub fn feerate(&self) -> Option<f64> {
-        let tx = self.to_rust_bitcoin_tx();
-        let mut weight = tx.weight().to_wu() as u32;
+        let mut tx = self.to_rust_bitcoin_tx();
 
-        for input in &self.inputs {
+        for (i, input) in self.inputs.iter().enumerate() {
             if input.owner().local_owner().is_some() {
-                weight += TR_KEYSPEND_SATISFACTION_WEIGHT;
+                tx.input[i].witness.push([0u8; 64]);
             } else {
                 return None;
             }
         }
 
-        let vbytes = weight as f64 / 4.0;
+        let vbytes = tx.weight().to_vbytes_ceil() as f64;
         Some(self.fee()? as f64 / vbytes)
     }
 
