@@ -38,6 +38,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   Eta? currentSelection;
   // Custom feerate input controller.
   late final TextEditingController customFeerateController;
+  late final FocusNode customFeerateFocusNode;
   String? customFeerateError;
 
   @override
@@ -61,11 +62,13 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
         _ => (1.0).toStringAsFixed(1),
       },
     );
+    customFeerateFocusNode = FocusNode();
   }
 
   @override
   void dispose() {
     customFeerateController.dispose();
+    customFeerateFocusNode.dispose();
     sub.dispose();
     super.dispose();
   }
@@ -77,7 +80,12 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   void _onTapTile(BuildContext context, Eta? eta) {
     setState(() => currentSelection = eta);
 
-    if (eta == null) return;
+    if (eta == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        customFeerateFocusNode.requestFocus();
+      });
+      return;
+    }
 
     final target = switch (eta) {
       Eta.low => ConfirmationTarget.low(),
@@ -133,52 +141,89 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
             Eta.high => estimates?.high,
           } ??
           '~';
-      feerateTextOrInput = Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(text: '$estimateFeerate '),
-            TextSpan(
-              text: ' sat/vB',
-              style: TextStyle(fontSize: theme.textTheme.labelMedium!.fontSize),
-            ),
-          ],
+      feerateTextOrInput = Padding(
+        padding: EdgeInsets.only(right: 16.0),
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: '$estimateFeerate '),
+              TextSpan(
+                text: ' sat/vB',
+                style: TextStyle(
+                  fontSize: theme.textTheme.labelMedium!.fontSize,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     } else {
-      feerateTextOrInput = SizedBox(
-        width: 150,
-        child: TextField(
-          controller: customFeerateController,
-          // Highlight on tap.
-          onTap: () => customFeerateController.selection = TextSelection(
-            baseOffset: 0,
-            extentOffset: customFeerateController.text.length,
+      feerateTextOrInput = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        spacing: 8.0,
+        children: [
+          SizedBox(
+            width: 150,
+            child: TextField(
+              controller: customFeerateController,
+              focusNode: customFeerateFocusNode,
+              textAlign: TextAlign.right,
+              // Highlight on tap.
+              onTap: () => customFeerateController.selection = TextSelection(
+                baseOffset: 0,
+                extentOffset: customFeerateController.text.length,
+              ),
+              // Reset error when user is actively changing the value.
+              onChanged: (_) {
+                if (customFeerateError != null)
+                  setState(() => customFeerateError = null);
+              },
+              onSubmitted: (text) => _onSubmitCustomFeerate(context, text),
+              enabled: isSelected,
+              decoration: InputDecoration(
+                suffixText: ' sat/vB',
+                suffixStyle: theme.textTheme.labelMedium,
+                border: OutlineInputBorder(),
+                errorText: customFeerateError,
+              ),
+              keyboardType: TextInputType.numberWithOptions(
+                signed: false,
+                decimal: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
+              ],
+            ),
           ),
-          // Reset error when user is actively changing the value.
-          onChanged: (_) {
-            if (customFeerateError != null)
-              setState(() => customFeerateError = null);
-          },
-          onSubmitted: (text) => _onSubmitCustomFeerate(context, text),
-          enabled: isSelected,
-          decoration: InputDecoration(
-            suffixIcon: IconButton(
-              icon: Icon(Icons.done),
+          if (isSelected)
+            FilledButton(
               onPressed: () =>
                   _onSubmitCustomFeerate(context, customFeerateController.text),
+              child: Text('Confirm'),
             ),
-            suffixText: 'sat/vB',
-            suffixStyle: theme.textTheme.labelMedium,
-            border: OutlineInputBorder(),
-            errorText: customFeerateError,
+        ],
+      );
+    }
+
+    if (eta == null && isSelected) {
+      return InkWell(
+        onTap: () => _onTapTile(context, eta),
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.all(Radius.circular(16)),
           ),
-          keyboardType: TextInputType.numberWithOptions(
-            signed: false,
-            decimal: true,
+          child: Row(
+            children: [
+              leadingIcon,
+              SizedBox(width: 16),
+              Expanded(child: timeText),
+              feerateTextOrInput,
+            ],
           ),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
-          ],
         ),
       );
     }
