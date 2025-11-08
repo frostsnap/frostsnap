@@ -316,9 +316,13 @@ impl TransactionTemplate {
             })
             .collect::<Vec<_>>();
 
+        // Calculate fee rate in sats/vB
+        let fee_rate_sats_per_vbyte = self.feerate();
+
         PromptSignBitcoinTx {
             foreign_recipients,
             fee,
+            fee_rate_sats_per_vbyte,
         }
     }
 }
@@ -327,6 +331,8 @@ impl TransactionTemplate {
 pub struct PromptSignBitcoinTx {
     pub foreign_recipients: Vec<(bitcoin::Address, bitcoin::Amount)>,
     pub fee: bitcoin::Amount,
+    /// Fee rate in sats/vB
+    pub fee_rate_sats_per_vbyte: Option<f64>,
 }
 
 impl PromptSignBitcoinTx {

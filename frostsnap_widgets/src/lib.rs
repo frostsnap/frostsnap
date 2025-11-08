@@ -19,6 +19,7 @@ pub mod address_display;
 pub mod animation_speed;
 pub mod backup;
 pub mod bitmap;
+pub mod bmp_image;
 pub mod checkmark;
 pub mod cursor;
 pub mod debug;
@@ -49,7 +50,11 @@ pub mod fps;
 pub mod gray4_style;
 pub mod keygen_check;
 pub mod layout;
+pub mod p2pkh_address_display;
+pub mod p2sh_address_display;
 pub mod p2tr_address_display;
+pub mod p2wpkh_address_display;
+pub mod p2wsh_address_display;
 pub mod prelude;
 pub mod screen_test;
 pub mod scroll_bar;
@@ -68,6 +73,7 @@ pub mod translate;
 pub mod vec_framebuffer;
 pub mod welcome;
 pub mod widget_color;
+pub mod wipe_device;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -84,6 +90,7 @@ pub use widget_list::*;
 // Re-export all widget items
 pub use address_display::{AddressDisplay, AddressWithPath};
 pub use backup::*;
+pub use bmp_image::BmpImage;
 pub use checkmark::*;
 pub use cursor::*;
 pub use fader::*;
@@ -116,6 +123,7 @@ pub use text::*;
 pub use touch_listener::TouchListener;
 pub use translate::*;
 pub use welcome::*;
+pub use wipe_device::*;
 
 // Font re-exports
 use frostsnap_fonts::{

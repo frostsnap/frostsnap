@@ -10,7 +10,7 @@ std = []
 
 [dependencies]
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }
-embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px", "96px"] }
+embedded-iconoir = { version = "0.2.3", features = ["16px", "24px", "32px", "48px", "96px"] }
 micromath = "0.2"
 frost_backup = { workspace = true, features = [ "bincode" ] }
 frostsnap_core = { workspace = true }
@@ -19,6 +19,7 @@ frostsnap_macros = { path = "../macros" }
 bincode = { workspace = true }
 bitcoin = { workspace = true }
 u8g2-fonts = { version = "0.4", default-features = false, features = ["embedded_graphics_textstyle"] }
+tinybmp = "0.6"
 
 # Only needed for memory debug on ESP32
 [target.'cfg(target_arch = "riscv32")'.dependencies]
