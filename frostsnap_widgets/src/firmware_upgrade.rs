@@ -3,7 +3,8 @@ use crate::{
     gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, HoldToConfirm, Padding,
     ProgressIndicator,
 };
-use alloc::{format, string::ToString};
+
+use alloc::{boxed::Box, format, string::String, string::ToString};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
 use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_17_REGULAR};
 
@@ -26,7 +27,7 @@ pub struct FirmwareUpgradeConfirm {
                 >,
             >,
             Text<Gray4TextStyle>, // Size text
-            Text<Gray4TextStyle>, // "Hold to Update" text
+            Text<Gray4TextStyle>, // "Hold to Upgrade" text
         )>,
     >,
 }
@@ -34,49 +35,42 @@ pub struct FirmwareUpgradeConfirm {
 impl FirmwareUpgradeConfirm {
     pub fn new(firmware_digest: [u8; 32], size_bytes: u32) -> Self {
         // Format the full hash as 4 lines of 16 hex chars each
-        let hash_line1 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[0],
-            firmware_digest[1],
-            firmware_digest[2],
-            firmware_digest[3],
-            firmware_digest[4],
-            firmware_digest[5],
-            firmware_digest[6],
-            firmware_digest[7]
+        let mut chunks = firmware_digest.chunks(8);
+        let hash1 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
-        let hash_line2 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[8],
-            firmware_digest[9],
-            firmware_digest[10],
-            firmware_digest[11],
-            firmware_digest[12],
-            firmware_digest[13],
-            firmware_digest[14],
-            firmware_digest[15]
+        let hash2 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
-        let hash_line3 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[16],
-            firmware_digest[17],
-            firmware_digest[18],
-            firmware_digest[19],
-            firmware_digest[20],
-            firmware_digest[21],
-            firmware_digest[22],
-            firmware_digest[23]
+        let hash3 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
-        let hash_line4 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[24],
-            firmware_digest[25],
-            firmware_digest[26],
-            firmware_digest[27],
-            firmware_digest[28],
-            firmware_digest[29],
-            firmware_digest[30],
-            firmware_digest[31]
+        let hash4 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
 
         // Format size in KB or MB
@@ -88,29 +82,8 @@ impl FirmwareUpgradeConfirm {
 
         // Create the title text
         let title_text = Text::new(
-            "Update device firmware".to_string(),
+            "Firmware upgrade".to_string(),
             Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
-        );
-
-        // Create hash display with monospace font
-        let hash1 = Text::new(
-            hash_line1,
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
-        );
-
-        let hash2 = Text::new(
-            hash_line2,
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
-        );
-
-        let hash3 = Text::new(
-            hash_line3,
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
-        );
-
-        let hash4 = Text::new(
-            hash_line4,
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
 
         // Create size text
@@ -119,15 +92,16 @@ impl FirmwareUpgradeConfirm {
             Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
         );
 
-        // Create "Hold to Update" text at the bottom
+        // Create "Hold to upgrade" text at the bottom
         let hold_text = Text::new(
-            "Hold to Update".to_string(),
+            "Hold to upgrade".to_string(),
             Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
         );
 
         // Put hash lines in a container with rounded border (no fill)
         let hash_column = Column::new((hash1, hash2, hash3, hash4))
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
         let hash_with_padding = Padding::symmetric(10, 5, hash_column);
         let hash_container = Container::new(hash_with_padding)
             .with_border(PALETTE.outline, 2)
@@ -155,7 +129,7 @@ impl FirmwareUpgradeConfirm {
 pub enum FirmwareUpgradeProgress {
     /// Actively erasing or downloading with progress
     Active {
-        widget: alloc::boxed::Box<
+        widget: Box<
             Center<
                 Padding<
                     Column<(
@@ -178,7 +152,7 @@ impl FirmwareUpgradeProgress {
     /// Create a new firmware upgrade progress widget in erasing state
     pub fn erasing(progress: f32) -> Self {
         let title = Text::new(
-            "Firmware Update".to_string(),
+            "Firmware upgrade".to_string(),
             Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
         );
 
@@ -204,15 +178,14 @@ impl FirmwareUpgradeProgress {
         }
     }
 
-    /// Create a new firmware upgrade progress widget in downloading state
     pub fn downloading(progress: f32) -> Self {
         let title = Text::new(
-            "Firmware Update".to_string(),
+            "Firmware upgrade".to_string(),
             Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
         );
 
         let status = Text::new(
-            "Downloading".to_string(),
+            "Receiving and verifying".to_string(),
             Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
         );
 
@@ -229,7 +202,7 @@ impl FirmwareUpgradeProgress {
         let centered = Center::new(padded);
 
         Self::Active {
-            widget: alloc::boxed::Box::new(centered),
+            widget: Box::new(centered),
         }
     }
 
