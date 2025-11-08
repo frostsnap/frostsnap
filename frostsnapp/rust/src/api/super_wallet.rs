@@ -1,4 +1,5 @@
 use super::bitcoin::BitcoinNetworkExt as _;
+use super::database_encryption::open_database;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::sink_wrap::SinkWrap;
@@ -50,9 +51,10 @@ impl SuperWallet {
         app_dir: impl AsRef<Path>,
         network: BitcoinNetwork,
         chain_sync: ChainClient,
+        password: Option<&str>,
     ) -> Result<SuperWallet> {
         let db_file = network.bdk_file(app_dir);
-        let db = rusqlite::Connection::open(&db_file).context(format!(
+        let db = open_database(&db_file, password).context(format!(
             "failed to load database from {}",
             db_file.display()
         ))?;

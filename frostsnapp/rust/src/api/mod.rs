@@ -1,6 +1,7 @@
 pub mod backup_manager;
 pub mod bitcoin;
 pub mod coordinator;
+pub mod database_encryption;
 pub mod device_list;
 pub mod firmware;
 pub mod init;

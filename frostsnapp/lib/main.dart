@@ -23,6 +23,7 @@ import 'package:frostsnap/wallet_list_controller.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/init.dart';
+import 'package:frostsnap/src/rust/api/database_encryption.dart';
 import 'package:frostsnap/src/rust/api/log.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
 
@@ -45,14 +46,35 @@ Future<void> main() async {
   await RustLib.init();
   api = Api();
 
-  String? startupError;
-  // // set logging up first before doing anything else
   final Stream<String> logStream = api
       .turnLoggingOn(level: LogLevel.debug)
       .toReplaySubject();
-
-  // // wait for first message to appear so that logging is working before we carry on
   await logStream.first;
+
+  String? appDirPath;
+  if (!Platform.isAndroid) {
+    final appDir = await getApplicationSupportDirectory();
+    appDirPath = appDir.path;
+  }
+
+  runApp(FrostsnapAppInitializer(appDirPath: appDirPath, logStream: logStream));
+}
+
+Future<Widget> initializeApp({
+  String? password,
+  Stream<String>? logStream,
+}) async {
+  String? startupError;
+
+  // Use provided logStream or create new one
+  final Stream<String> logStreamToUse =
+      logStream ?? api.turnLoggingOn(level: LogLevel.debug).toReplaySubject();
+
+  // If we created a new stream, wait for first message
+  if (logStream == null) {
+    await logStreamToUse.first;
+  }
+
   AppCtx? appCtx;
 
   try {
@@ -66,7 +88,10 @@ Future<void> main() async {
       coord = coord_;
       appCtx = appCtx_;
     } else {
-      final (coord_, appCtx_) = await api.load(appDir: appDirPath);
+      final (coord_, appCtx_) = await api.load(
+        appDir: appDirPath,
+        password: password,
+      );
       coord = coord_;
       appCtx = appCtx_;
       globalHostPortHandler = null;
@@ -82,7 +107,7 @@ Future<void> main() async {
   }
 
   if (startupError != null) {
-    runApp(MyApp(startupError: startupError));
+    return FrostsnapApp(startupError: startupError);
   } else {
     GlobalStreams.deviceListSubject.forEach((update) {
       // If we detect a device that's in recovery mode we should tell it to exit
@@ -120,8 +145,8 @@ Future<void> main() async {
       SystemUiOverlayStyle(systemNavigationBarColor: Colors.transparent),
     );
 
-    final mainWidget = buildMainWidget(appCtx!, logStream);
-    runApp(mainWidget);
+    final mainWidget = buildMainWidget(appCtx!, logStreamToUse);
+    return mainWidget;
   }
 }
 
@@ -131,21 +156,21 @@ Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
     logStream: logStream,
     child: SettingsContext(
       settings: appCtx.settings,
-      child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
+      child: SuperWalletContext(appCtx: appCtx, child: FrostsnapApp()),
     ),
   );
 }
 
-class MyApp extends StatefulWidget {
+class FrostsnapApp extends StatefulWidget {
   final String? startupError;
 
-  const MyApp({super.key, this.startupError});
+  const FrostsnapApp({super.key, this.startupError});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<FrostsnapApp> createState() => _FrostsnapAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _FrostsnapAppState extends State<FrostsnapApp> {
   late final Future<List<void>> googleFontsPending;
   late ColorScheme colorScheme;
 
@@ -192,7 +217,7 @@ class _MyAppState extends State<MyApp> {
             textTheme: textTheme,
           ),
           home: widget.startupError == null
-              ? const MyHomePage()
+              ? const FrostsnapAppHomePage()
               : StartupErrorWidget(error: widget.startupError!),
           debugShowCheckedModeBanner: false,
         );
@@ -201,14 +226,14 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key});
+class FrostsnapAppHomePage extends StatefulWidget {
+  const FrostsnapAppHomePage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<FrostsnapAppHomePage> createState() => _FrostsnapAppHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _FrostsnapAppHomePageState extends State<FrostsnapAppHomePage> {
   late final GlobalKey<ScaffoldState> scaffoldKey;
   late final WalletListController walletListController;
   late final ConfettiController confettiController;
@@ -358,6 +383,232 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class FrostsnapAppInitializer extends StatefulWidget {
+  final String? appDirPath;
+  final Stream<String> logStream;
+
+  const FrostsnapAppInitializer({
+    super.key,
+    this.appDirPath,
+    required this.logStream,
+  });
+
+  @override
+  State<FrostsnapAppInitializer> createState() =>
+      _FrostsnapAppInitializerState();
+}
+
+class _FrostsnapAppInitializerState extends State<FrostsnapAppInitializer> {
+  String? _password;
+  bool _needsPassword = false;
+  bool _isLoading = true;
+  Widget? _mainWidget;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    if (widget.appDirPath != null && !Platform.isAndroid) {
+      final databaseState = await api.getDatabaseState(
+        appDir: widget.appDirPath!,
+      );
+      if (databaseState == DbEncryptionState.existingEncrypted) {
+        setState(() {
+          _needsPassword = true;
+          _isLoading = false;
+        });
+        return;
+      }
+      // If encrypted with empty password, set password to empty string
+      if (databaseState == DbEncryptionState.existingEncryptedEmpty) {
+        _password = "";
+      }
+    }
+
+    await _loadMainApp();
+  }
+
+  Future<void> _loadMainApp() async {
+    try {
+      // Use the existing initializeApp function with password parameter
+      final appWidget = await initializeApp(
+        password: _password,
+        logStream: widget.logStream,
+      );
+
+      setState(() {
+        _mainWidget = appWidget;
+        _isLoading = false;
+        _needsPassword = false;
+      });
+    } catch (e) {
+      // Handle startup errors by showing the error widget
+      setState(() {
+        _mainWidget = FrostsnapApp(startupError: e.toString());
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _onPasswordSubmitted(String password) async {
+    try {
+      if (widget.appDirPath != null) {
+        await api.attemptDatabasePassword(
+          appDir: widget.appDirPath!,
+          password: password,
+        );
+      }
+
+      setState(() {
+        _password = password;
+        _isLoading = true;
+      });
+
+      await _loadMainApp();
+    } catch (e) {
+      rethrow; // Let PasswordScreen handle the error display
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // basic theme without awaiting custom fonts
+    final colorScheme = ColorScheme.fromSeed(
+      brightness: Brightness.dark,
+      seedColor: seedColor,
+    );
+    final baseTheme = ThemeData(useMaterial3: true, colorScheme: colorScheme);
+    final theme = baseTheme.copyWith(colorScheme: colorScheme);
+
+    if (_isLoading) {
+      return MaterialApp(
+        theme: theme,
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
+
+    if (_needsPassword) {
+      return MaterialApp(
+        theme: theme,
+        home: PasswordScreen(
+          appDirPath: widget.appDirPath!,
+          onPasswordSubmitted: _onPasswordSubmitted,
+        ),
+      );
+    }
+
+    return _mainWidget ??
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(body: Center(child: Text('Loading...'))),
+        );
+  }
+}
+
+class PasswordScreen extends StatefulWidget {
+  final String appDirPath;
+  final Future<void> Function(String) onPasswordSubmitted;
+
+  const PasswordScreen({
+    super.key,
+    required this.appDirPath,
+    required this.onPasswordSubmitted,
+  });
+
+  @override
+  State<PasswordScreen> createState() => _PasswordScreenState();
+}
+
+class _PasswordScreenState extends State<PasswordScreen> {
+  final _passwordController = TextEditingController();
+  String? _error;
+  bool _loading = false;
+
+  Future<void> _attemptUnlock() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await widget.onPasswordSubmitted(_passwordController.text);
+    } catch (e) {
+      setState(() {
+        _error = "Incorrect password";
+        _loading = false;
+      });
+      _passwordController.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Icon(Icons.lock, size: 64),
+              SizedBox(height: 24),
+              Text(
+                "App Password Required",
+                style: Theme.of(context).textTheme.headlineSmall,
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 32),
+              if (_error != null) ...[
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 16),
+              ],
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                autofocus: true,
+                enabled: !_loading,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Password',
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+                onSubmitted: _loading ? null : (_) => _attemptUnlock(),
+              ),
+              SizedBox(height: 24),
+              FilledButton(
+                onPressed: _loading ? null : _attemptUnlock,
+                child: _loading
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text('Unlock'),
+              ),
+            ],
           ),
         ),
       ),

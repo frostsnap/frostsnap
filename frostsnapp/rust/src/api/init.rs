@@ -6,7 +6,7 @@ use crate::{
     coordinator::FfiCoordinator,
     frb_generated::{RustAutoOpaque, StreamSink},
 };
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager, ValidatedFirmwareBin};
 use std::{
     path::PathBuf,
@@ -73,43 +73,38 @@ impl super::Api {
         let ffi_serial = FfiSerial::default();
         let firmware = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()?;
         let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), firmware);
-        let (coord, app_state) = load_internal(app_dir, usb_manager)?;
+        let (coord, app_state) = load_internal(app_dir, usb_manager, None)?;
         Ok((coord, app_state, ffi_serial))
     }
 
     // Desktop function using DesktopSerial
-    pub fn load(&self, app_dir: String) -> anyhow::Result<(Coordinator, AppCtx)> {
+    pub fn load(&self, app_dir: String, password: Option<String>) -> Result<(Coordinator, AppCtx)> {
         let app_dir = PathBuf::from_str(&app_dir)?;
         let firmware = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()?;
         let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), firmware);
-        load_internal(app_dir, usb_manager)
+        load_internal(app_dir, usb_manager, password.as_deref())
     }
 }
 
 fn load_internal(
     app_dir: PathBuf,
     usb_serial_manager: UsbSerialManager,
+    password: Option<&str>,
 ) -> Result<(Coordinator, AppCtx)> {
     let db_file = app_dir.join("frostsnap.sqlite");
     event!(
         Level::INFO,
         path = db_file.display().to_string(),
+        with_password = password.is_some(),
         "initializing database"
     );
-    let db = rusqlite::Connection::open(&db_file).with_context(|| {
-        event!(
-            Level::ERROR,
-            path = db_file.display().to_string(),
-            "failed to load database"
-        );
-        format!("failed to load database from {}", db_file.display())
-    })?;
+    let db = crate::api::database_encryption::open_database(&db_file, password)?;
     let db = Arc::new(Mutex::new(db));
 
     let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
     let coordinator = Coordinator(coordinator);
     let app_state = AppCtx {
-        settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir)?),
+        settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir, password)?),
         backup_manager: RustAutoOpaque::new(BackupManager::new(db.clone())?),
         psbt_manager: RustAutoOpaque::new(PsbtManager::new(db.clone())),
     };
