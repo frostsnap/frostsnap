@@ -9,11 +9,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -21,7 +19,6 @@ import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/init.dart';
 import 'package:frostsnap/src/rust/api/log.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
@@ -81,48 +78,7 @@ Future<void> main() async {
     log(level: LogLevel.info, message: "startup failed with $startupError");
   }
 
-  if (startupError != null) {
-    runApp(MyApp(startupError: startupError));
-  } else {
-    GlobalStreams.deviceListSubject.forEach((update) {
-      // If we detect a device that's in recovery mode we should tell it to exit
-      // ASAP. Right now we don't confirm with the user this action but maybe in
-      // the future we will.
-      for (var change in update.changes) {
-        if (change.kind == DeviceListChangeKind.recoveryMode &&
-            change.device.recoveryMode) {
-          SecureKeyProvider.getEncryptionKey().then((encryptionKey) {
-            coord.exitRecoveryMode(
-              deviceId: change.device.id,
-              encryptionKey: encryptionKey,
-            );
-          });
-        }
-      }
-
-      // we want to stop the app from sleeping on mobile if there's a device plugged in.
-      if (Platform.isLinux) {
-        return; // not supported by wakelock
-      }
-      if (update.state.devices.isNotEmpty) {
-        WakelockPlus.enable();
-      } else {
-        WakelockPlus.disable();
-      }
-    });
-    // Lock orientation to portrait mode only
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(systemNavigationBarColor: Colors.transparent),
-    );
-
-    final mainWidget = buildMainWidget(appCtx!, logStream);
-    runApp(mainWidget);
-  }
+  runApp(MyApp(startupError: startupError));
 }
 
 Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
@@ -309,55 +265,118 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
       appBar: AppBar(title: Text('Startup Error')),
       body: Padding(
         padding: EdgeInsets.all(16.0),
-        child: Center(
-          child: SingleChildScrollView(
-            // To handle overflow if logs are extensive
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  'STARTUP ERROR',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Text(
+                'STARTUP ERROR',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.error,
                 ),
-                SizedBox(height: 8),
-                Text(
-                  "Sorry! Something has gone wrong with the app. Please report this directly to the frostsnap team.",
-                  style: theme.textTheme.titleMedium,
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Sorry! Something has gone wrong with the app. Please report this directly to the frostsnap team.",
+                style: theme.textTheme.titleMedium,
+              ),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12.0),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8.0),
                 ),
-                SizedBox(height: 20),
-                Container(
-                  width:
-                      double.infinity, // Ensure the container takes full width
-                  padding: EdgeInsets.all(8.0),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(4.0),
-                    border: Border.all(),
-                  ),
-                  child: SelectableText(_combinedErrorWithLogs),
-                ),
-                SizedBox(height: 20),
-                IconButton(
-                  icon: Icon(Icons.content_copy),
-                  onPressed: () {
-                    Clipboard.setData(
-                      ClipboardData(text: _combinedErrorWithLogs),
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          "Copied! Only send this to the Frostsnap team.",
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "Try upgrading to the latest version of Frostsnap. This may resolve the issue.",
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer,
                         ),
                       ),
-                    );
-                  },
-                  tooltip: 'Copy to Clipboard',
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text("Contact support: ", style: theme.textTheme.bodyMedium),
+                  InkWell(
+                    onTap: () {
+                      Clipboard.setData(
+                        ClipboardData(text: "support@frostsnap.com"),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Email copied to clipboard"),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      "support@frostsnap.com",
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Builder(
+                builder: (context) {
+                  const buildVersion = String.fromEnvironment(
+                    'BUILD_VERSION',
+                    defaultValue: 'unknown',
+                  );
+                  return Text(
+                    "Current version: $buildVersion",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  );
+                },
+              ),
+              SizedBox(height: 20),
+              Container(
+                width: double.infinity, // Ensure the container takes full width
+                padding: EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(4.0),
+                  border: Border.all(),
+                ),
+                child: SelectableText(_combinedErrorWithLogs),
+              ),
+              SizedBox(height: 20),
+              IconButton(
+                icon: Icon(Icons.content_copy),
+                onPressed: () {
+                  Clipboard.setData(
+                    ClipboardData(text: _combinedErrorWithLogs),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        "Copied! Only send this to the Frostsnap team.",
+                      ),
+                    ),
+                  );
+                },
+                tooltip: 'Copy to Clipboard',
+              ),
+            ],
           ),
         ),
       ),
