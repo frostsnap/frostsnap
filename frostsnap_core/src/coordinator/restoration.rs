@@ -23,7 +23,7 @@ impl RestorationState {
     }
 
     /// Prepare for saving a physical backup - returns the HeldShare2 to store
-    pub fn prepare_save_physical_backup(
+    fn prepare_save_physical_backup(
         &self,
         device_id: DeviceId,
         share_image: ShareImage,
@@ -46,13 +46,20 @@ impl RestorationState {
         trial_access_structure.add_share(trial_recover_share, self.fingerprint);
 
         if let Some(_shared_key) = &trial_access_structure.shared_key {
-            // NOTE: If the restoration has succeeded with this new share we
-            // populate the access structure metadata. Note that we *could*
-            // consolidate at this point if we wanted to by sending the
-            // shared_key over but to keep things simple and predictable we
-            // consolidate only after the user has confirmed the restoration.
-            held_share.threshold = trial_access_structure.effective_threshold();
-            held_share.access_structure_ref = trial_access_structure.access_structure_ref();
+            // Check if this specific share is compatible with the recovered key
+            let compatibility = trial_access_structure.compatibility(share_image);
+
+            if compatibility == ShareCompatibility::Compatible {
+                // NOTE: If the restoration has succeeded with this new share we
+                // populate the access structure metadata. Note that we *could*
+                // consolidate at this point if we wanted to by sending the
+                // shared_key over but to keep things simple and predictable we
+                // consolidate only after the user has confirmed the restoration.
+                held_share.threshold = trial_access_structure.effective_threshold();
+                held_share.access_structure_ref = trial_access_structure.access_structure_ref();
+            }
+            // If incompatible, we don't populate threshold/access_structure_ref to avoid
+            // the metadata incorrectly suggesting compatibility later when shared_key becomes None
         }
 
         held_share
