@@ -225,12 +225,12 @@ pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str 
     // a tooling bug means we need this
     #[allow(unreachable_patterns)]
     match network {
-        bitcoin::Network::Bitcoin => "ssl://electrum.frostsn.app:50002",
+        bitcoin::Network::Bitcoin => "ssl://blockstream.info:700",
         // we're using the tcp:// version since ssl ain't working for some reason
         bitcoin::Network::Testnet => "tcp://electrum.blockstream.info:60001",
         bitcoin::Network::Testnet4 => "ssl://blackie.c3-soft.com:57010",
         bitcoin::Network::Regtest => "tcp://localhost:60401",
-        bitcoin::Network::Signet => "tcp://electrum.frostsn.app:60001",
+        bitcoin::Network::Signet => "ssl://mempool.space:60602",
         _ => panic!("Unknown network"),
     }
 }
@@ -239,7 +239,7 @@ pub const fn default_backup_electrum_server(network: bitcoin::Network) -> &'stat
     // a tooling bug means we need this
     #[allow(unreachable_patterns)]
     match network {
-        bitcoin::Network::Bitcoin => "ssl://blockstream.info:700",
+        bitcoin::Network::Bitcoin => "ssl://electrum.acinq.co:50002",
         bitcoin::Network::Testnet => "ssl://blockstream.info:993",
         bitcoin::Network::Testnet4 => "ssl://mempool.space:40002",
         bitcoin::Network::Signet => "tcp://signet-electrumx.wakiyamap.dev:50001",
