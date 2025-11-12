@@ -50,6 +50,7 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
 #[derive(Debug, Default)]
 pub enum Workflow {
     #[default]
+    Startup,
     None,
     Standby {
         device_name: DeviceName,
