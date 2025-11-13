@@ -155,14 +155,7 @@ pub trait Env {
             }
             DeviceToUserMessage::Restoration(restoration) => {
                 use frostsnap_core::device::restoration::ToUserRestoration::*;
-                match restoration {
-                    DisplayBackupRequest { phase } => {
-                        let backup_ack = run
-                            .device(from)
-                            .display_backup_ack(*phase, &mut TestDeviceKeyGen)
-                            .unwrap();
-                        run.extend_from_device(from, backup_ack);
-                    }
+                match *restoration {
                     ConsolidateBackup(phase) => {
                         let ack = run.device(from).finish_consolidation(
                             &mut TestDeviceKeyGen,

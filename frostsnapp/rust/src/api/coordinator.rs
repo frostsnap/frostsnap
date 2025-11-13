@@ -16,6 +16,8 @@ use tracing::{event, Level};
 
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
+pub use super::backup_run::{BackupDevice, BackupRun, DisplayBackupState};
+
 #[derive(Clone, Debug)]
 pub struct KeyState {
     pub keys: Vec<FrostKey>,
@@ -160,7 +162,7 @@ impl Coordinator {
         id: DeviceId,
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
-        sink: StreamSink<bool>,
+        sink: StreamSink<DisplayBackupState>,
     ) -> Result<()> {
         self.0
             .request_display_backup(id, access_structure_ref, encryption_key, SinkWrap(sink))?;
