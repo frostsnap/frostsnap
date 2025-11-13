@@ -482,12 +482,14 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 DeviceSend::ToUser(boxed) => {
                     match *boxed {
                         DeviceToUserMessage::FinalizeKeyGen { key_name: _ } => {
-                            save_pending_device_name(
-                                &mut pending_device_name,
-                                &mut name,
-                                &mut mutation_log,
-                                &mut upstream_connection,
-                                "must have set pending_device_name before starting keygen",
+                            assert!(
+                                save_pending_device_name(
+                                    &mut pending_device_name,
+                                    &mut name,
+                                    &mut mutation_log,
+                                    &mut upstream_connection,
+                                ),
+                                "must have named device before starting keygen"
                             );
                             ui.clear_busy_task();
                             ui.set_workflow(default_workflow!(name, signer));
@@ -527,12 +529,14 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                     ui.set_workflow(ui::Workflow::EnteringBackup(phase));
                                 }
                                 BackupSaved { .. } => {
-                                    save_pending_device_name(
-                                        &mut pending_device_name,
-                                        &mut name,
-                                        &mut mutation_log,
-                                        &mut upstream_connection,
-                                        "must have set pending_device_name before loading backup",
+                                    assert!(
+                                        save_pending_device_name(
+                                            &mut pending_device_name,
+                                            &mut name,
+                                            &mut mutation_log,
+                                            &mut upstream_connection,
+                                        ),
+                                        "must have named device before loading backup"
                                     );
                                     ui.set_workflow(default_workflow!(name, signer));
                                 }
@@ -544,6 +548,14 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                         phase,
                                         rng,
                                     ));
+
+                                    // The device can have a pending device name here if it was asked to consolidate right away instead of being asked to first save the backup.
+                                    save_pending_device_name(
+                                        &mut pending_device_name,
+                                        &mut name,
+                                        &mut mutation_log,
+                                        &mut upstream_connection,
+                                    );
                                     ui.set_workflow(default_workflow!(name, signer));
                                 }
                             }
@@ -636,19 +648,23 @@ where
 }
 
 /// Save a pending device name to flash and notify the coordinator
+/// Returns true if a pending name was saved, false if there was no pending name
 fn save_pending_device_name<S>(
     pending_device_name: &mut Option<DeviceName>,
     name: &mut Option<DeviceName>,
     mutation_log: &mut MutationLog<S>,
     upstream_connection: &mut UpstreamConnection,
-    expect_msg: &str,
-) where
+) -> bool
+where
     S: embedded_storage::nor_flash::NorFlash,
 {
-    let new_name = pending_device_name.take().expect(expect_msg);
+    let Some(new_name) = pending_device_name.take() else {
+        return false;
+    };
     *name = Some(new_name.clone());
     mutation_log
         .push(Mutation::Name(new_name.to_string()))
         .expect("flash write fail");
     upstream_connection.send_to_coordinator([DeviceSendBody::SetName { name: new_name }]);
+    true
 }

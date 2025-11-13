@@ -63,6 +63,15 @@ pub enum KeyPurpose {
 }
 
 impl KeyPurpose {
+    /// Returns the appropriate noun to describe what this key is used for
+    pub fn key_type_noun(&self) -> &'static str {
+        match self {
+            KeyPurpose::Bitcoin(_) => "wallet",
+            KeyPurpose::Nostr => "Nostr account",
+            KeyPurpose::Test => "test key",
+        }
+    }
+
     pub fn bitcoin_network(&self) -> Option<bitcoin::Network> {
         match self {
             KeyPurpose::Bitcoin(network) => Some(*network),
@@ -287,6 +296,9 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                                 );
                             });
                     });
+                // Clean up any restoration backups with the same share image
+                self.restoration
+                    .remove_backups_with_share_image(encrypted_secret_share.share_image);
             }
             Restoration(restoration_mutation) => {
                 return self

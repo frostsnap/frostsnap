@@ -21,8 +21,8 @@ use flutter_rust_bridge::frb;
 use frostsnap_coordinator::frostsnap_core;
 
 pub use frostsnap_core::{
-    message::EncodedSignature, AccessStructureId, AccessStructureRef, DeviceId, KeyId, KeygenId,
-    MasterAppkey, RestorationId, SessionHash, SignSessionId, SymmetricKey,
+    device::KeyPurpose, message::EncodedSignature, AccessStructureId, AccessStructureRef, DeviceId,
+    KeyId, KeygenId, MasterAppkey, RestorationId, SessionHash, SignSessionId, SymmetricKey,
 };
 
 #[frb(mirror(KeygenId))]
@@ -69,4 +69,11 @@ impl Api {}
 impl MasterAppkey {
     #[frb(sync)]
     pub fn key_id(&self) -> KeyId {}
+}
+
+use bitcoin::BitcoinNetwork;
+#[frb(external)]
+impl KeyPurpose {
+    #[frb(sync)]
+    pub fn bitcoin_network(&self) -> Option<BitcoinNetwork> {}
 }

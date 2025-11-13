@@ -7,7 +7,7 @@ import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/wallet_create.dart';
 
-enum AddType { newWallet, recoverWalletWithDevice, recoverWalletWithBackup }
+enum AddType { newWallet, recoverWallet }
 
 enum VerticalButtonGroupPosition { top, bottom, middle, single }
 
@@ -54,31 +54,14 @@ class WalletAddColumn extends StatelessWidget {
           title: 'Create a multi-sig wallet',
           subtitle: 'Set up a secure wallet using multiple Frostsnap devices',
         ),
-        buildTitle(
-          context,
-          text: 'Restore wallet',
-          subText: 'Select how you\'d like to provide the first key',
-        ),
+        buildTitle(context, text: 'Restore wallet'),
         buildCard(
           context,
-          action: () => onPressed(AddType.recoverWalletWithDevice),
+          action: () => onPressed(AddType.recoverWallet),
           isThreeLine: true,
-          icon: ImageIcon(
-            AssetImage('assets/icons/device2.png'),
-            size: iconSize,
-          ),
-          title: 'Existing device',
-          subtitle: 'Connect a Frostsnap device that already holds a key',
-          groupPosition: VerticalButtonGroupPosition.top,
-        ),
-        buildCard(
-          context,
-          action: () => onPressed(AddType.recoverWalletWithBackup),
-          isThreeLine: true,
-          icon: Icon(Icons.description_outlined, size: iconSize),
-          title: 'Load backup',
-          subtitle: 'Use a blank Frostsnap device to load in a physical backup',
-          groupPosition: VerticalButtonGroupPosition.bottom,
+          icon: Icon(Icons.restore_rounded, size: iconSize),
+          title: 'Restore wallet',
+          subtitle: 'Use an existing device key or load a physical backup',
         ),
       ],
     );
@@ -214,25 +197,17 @@ class WalletAddColumn extends StatelessWidget {
     );
   }
 
-  static void showWalletRecoverWithDeviceDialog(BuildContext context) async {
+  static void showWalletRecoverDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
-    final restorationId = await MaybeFullscreenDialog.show<RestorationId>(
-      context: context,
-      barrierDismissible: true,
-      child: WalletRecoveryFlow.startWithDevice(isDialog: false),
-    );
-    await coord.cancelProtocol();
-    if (restorationId == null) return;
-    homeCtx.walletListController.selectRecoveringWallet(restorationId);
-  }
 
-  static void showWalletRecoverWithBackupDialog(BuildContext context) async {
-    final homeCtx = HomeContext.of(context)!;
     final restorationId = await MaybeFullscreenDialog.show<RestorationId>(
       context: context,
       barrierDismissible: true,
-      child: WalletRecoveryFlow.startWithPhysicalBackup(isDialog: false),
+      child: RecoveryFlowWithDiscovery(
+        recoveryContext: RecoveryContext.newRestoration(),
+      ),
     );
+
     await coord.cancelProtocol();
     if (restorationId == null) return;
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
@@ -244,7 +219,11 @@ class WalletAddColumn extends StatelessWidget {
   ) async {
     await MaybeFullscreenDialog.show<RestorationId>(
       context: context,
-      child: WalletRecoveryFlow(existing: accessStructureRef, isDialog: false),
+      child: RecoveryFlowWithDiscovery(
+        recoveryContext: RecoveryContext.addingToWallet(
+          accessStructureRef: accessStructureRef,
+        ),
+      ),
     );
     await coord.cancelProtocol();
   }
@@ -255,10 +234,8 @@ Function(AddType) makeOnPressed(BuildContext context) {
     switch (addType) {
       case AddType.newWallet:
         WalletAddColumn.showWalletCreateDialog(context);
-      case AddType.recoverWalletWithDevice:
-        WalletAddColumn.showWalletRecoverWithDeviceDialog(context);
-      case AddType.recoverWalletWithBackup:
-        WalletAddColumn.showWalletRecoverWithBackupDialog(context);
+      case AddType.recoverWallet:
+        WalletAddColumn.showWalletRecoverDialog(context);
     }
   };
 }

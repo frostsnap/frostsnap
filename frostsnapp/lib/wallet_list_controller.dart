@@ -36,7 +36,7 @@ class WalletListController extends ChangeNotifier {
 
       final wallets = state.keys.map<WalletItem>((key) => WalletItemKey(key));
       final restoringWallets = state.restoring.map<WalletItem>(
-        (restoringKey) => WalletItemRestoration(restoringKey),
+        (restorationState) => WalletItemRestoration(restorationState),
       );
       _wallets = wallets.followedBy(restoringWallets).toList();
 
@@ -95,7 +95,7 @@ class WalletListController extends ChangeNotifier {
     final walletIndex = wallets.indexWhere(
       (w) => switch (w) {
         WalletItemRestoration item => restorationIdEquals(
-          item.restoringKey.restorationId,
+          item.restorationState.restorationId,
           id,
         ),
         _ => false,
@@ -137,13 +137,13 @@ class WalletItemKey extends WalletItem {
 }
 
 class WalletItemRestoration extends WalletItem {
-  final RestoringKey restoringKey;
-  WalletItemRestoration(this.restoringKey);
+  final RestorationState restorationState;
+  WalletItemRestoration(this.restorationState);
 
   @override
-  BitcoinNetwork? get network => restoringKey.bitcoinNetwork;
+  BitcoinNetwork? get network => restorationState.keyPurpose.bitcoinNetwork();
   @override
-  String get name => restoringKey.name;
+  String get name => restorationState.keyName;
   @override
   Widget? get icon => Icon(Icons.settings_backup_restore);
 }

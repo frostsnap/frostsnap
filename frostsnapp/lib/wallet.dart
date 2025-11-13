@@ -7,7 +7,7 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/nonce_replenish.dart';
-import 'package:frostsnap/restoration.dart';
+import 'package:frostsnap/restoration/wallet_recovery_page.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_manager.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -141,8 +141,8 @@ class WalletHome extends StatelessWidget {
                 child: TxList(key: Key(item.frostKey.keyId().toHex())),
               ),
               WalletItemRestoration item => WalletRecoveryPage(
-                key: Key(item.restoringKey.restorationId.toHex()),
-                restoringKey: item.restoringKey,
+                key: Key(item.restorationState.restorationId.toHex()),
+                restorationState: item.restorationState,
                 onWalletRecovered: (accessStructureRef) async {
                   walletListController.selectWallet(accessStructureRef.keyId);
 

@@ -63,6 +63,7 @@ pub enum CoordinatorRestoration {
         root_shared_key: SharedKey,
     },
     RequestHeldShares,
+    SavePhysicalBackup2(Box<HeldShare2>),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -133,6 +134,7 @@ pub enum DeviceRestoration {
         share_index: ShareIndex,
     },
     HeldShares(Vec<HeldShare>),
+    HeldShares2(Vec<HeldShare2>),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -142,6 +144,29 @@ pub struct HeldShare {
     pub threshold: u16,
     pub key_name: String,
     pub purpose: KeyPurpose,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct HeldShare2 {
+    pub access_structure_ref: Option<AccessStructureRef>,
+    pub share_image: ShareImage,
+    pub threshold: Option<u16>,
+    pub key_name: Option<String>,
+    pub purpose: Option<KeyPurpose>,
+    pub needs_consolidation: bool,
+}
+
+impl From<HeldShare> for HeldShare2 {
+    fn from(legacy: HeldShare) -> Self {
+        HeldShare2 {
+            access_structure_ref: legacy.access_structure_ref,
+            share_image: legacy.share_image,
+            threshold: Some(legacy.threshold),
+            key_name: Some(legacy.key_name),
+            purpose: Some(legacy.purpose),
+            needs_consolidation: legacy.access_structure_ref.is_none(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

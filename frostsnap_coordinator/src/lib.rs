@@ -10,7 +10,7 @@ pub mod signing;
 mod ui_protocol;
 mod usb_serial_manager;
 pub mod verify_address;
-pub mod wait_for_recovery_share;
+pub mod wait_for_single_device;
 mod wait_for_to_user_message;
 pub use wait_for_to_user_message::*;
 

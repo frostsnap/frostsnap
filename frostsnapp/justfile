@@ -9,6 +9,9 @@ gen +ARGS="":
     flutter_rust_bridge_codegen generate {{ARGS}}
     find {{API_DIR}} -type f -exec sha256sum {} + > {{CANARY}}
 
+build-runner:
+    dart run build_runner build --delete-conflicting-outputs
+
 build TARGET="linux" +ARGS="": maybe-gen
     #!/bin/sh
     BUILD_COMMIT=$(just get-build-commit)
@@ -36,6 +39,7 @@ maybe-gen:
        echo "{{CANARY}} changed so re-running bindgen">&2;
        just gen
     fi
+    just build-runner
 
 flutter_rust_bridge_version:
     #!/bin/sh
