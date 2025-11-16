@@ -10,7 +10,7 @@ prefill-words = []
 frostsnap_widgets = { workspace = true, features = ["std"] }
 frostsnap_core.workspace = true
 embedded-graphics.workspace = true
-embedded-graphics-simulator = "0.6.0"
+embedded-graphics-simulator = "0.8.0"
 rand.workspace = true
 bitcoin.workspace = true
 frost_backup.workspace = true
