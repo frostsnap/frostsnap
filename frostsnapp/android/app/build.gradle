@@ -29,11 +29,57 @@ android {
         versionName = flutter.versionName
     }
 
+    // Product flavors separate distribution channels
+    // This allows us to have different signing configs for different use cases
+    flavorDimensions "distribution"
+    productFlavors {
+        // Default flavor for direct APK distribution
+        // Uses debug signing even in release mode for easy testing/distribution
+        direct {
+            dimension "distribution"
+            isDefault = true
+        }
+        
+        // Flavor for Google Play Store distribution
+        // Must remain unsigned - Google signs with their own keys
+        playstore {
+            dimension "distribution"
+        }
+    }
+
+    signingConfigs {
+        debug {
+            // Standard debug keystore - automatically available
+        }
+    }
+
     buildTypes {
+        debug {
+            // Debug builds always use debug signing regardless of flavor
+        }
+        
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Release builds unsigned by default for playstore
+            // Direct flavor will override this below
+        }
+    }
+
+    // Configure signing per flavor
+    productFlavors {
+        // Default flavor for direct APK distribution
+        // Uses debug signing even in release mode for easy testing/distribution
+        direct {
+            dimension "distribution"
+            isDefault = true
+            // Apply debug signing to release builds for this flavor
             signingConfig = signingConfigs.debug
+        }
+        
+        // Flavor for Google Play Store distribution
+        // Must remain unsigned - Google signs with their own keys
+        playstore {
+            dimension "distribution"
+            // No signing config - stays unsigned
         }
     }
 }
