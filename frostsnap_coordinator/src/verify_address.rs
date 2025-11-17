@@ -1,4 +1,7 @@
-use std::{borrow::BorrowMut, collections::BTreeSet};
+use std::{
+    borrow::BorrowMut,
+    collections::{BTreeSet, HashSet},
+};
 
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
@@ -10,6 +13,7 @@ use crate::{Completion, DeviceMode, Sink, UiProtocol};
 #[derive(Clone, Debug, Default)]
 pub struct VerifyAddressProtocolState {
     pub target_devices: Vec<DeviceId>, // not a set for frb compat
+    pub connected_devices: HashSet<DeviceId>,
 }
 
 pub struct VerifyAddressProtocol {
@@ -29,6 +33,7 @@ impl VerifyAddressProtocol {
         Self {
             state: VerifyAddressProtocolState {
                 target_devices: verify_address_message.target_devices.into_iter().collect(),
+                connected_devices: Default::default(),
             },
             master_appkey: verify_address_message.master_appkey,
             derivation_index: verify_address_message.derivation_index,
@@ -55,16 +60,21 @@ impl UiProtocol for VerifyAddressProtocol {
     }
 
     fn connected(&mut self, id: frostsnap_core::DeviceId, state: DeviceMode) {
-        if self.state.target_devices.contains(&id) && state == DeviceMode::Ready {
-            self.need_to_send_to.insert(id);
-            self.emit_state()
+        if self.state.target_devices.contains(&id) {
+            if state == DeviceMode::Ready {
+                self.need_to_send_to.insert(id);
+            }
+            if self.state.connected_devices.insert(id) {
+                self.emit_state();
+            }
         }
     }
 
     fn disconnected(&mut self, device_id: frostsnap_core::DeviceId) {
-        if self.need_to_send_to.remove(&device_id) {
-            self.emit_state()
-        };
+        self.need_to_send_to.remove(&device_id);
+        if self.state.connected_devices.remove(&device_id) {
+            self.emit_state();
+        }
     }
 
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {

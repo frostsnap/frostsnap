@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
@@ -223,9 +224,11 @@ class DeviceActionUpgradeController with ChangeNotifier {
       );
     }
     final success = progress == 1.0;
-    await Future.delayed(Duration(seconds: 1));
     await _dialogController.clearAllActionsNeeded();
-    if (context.mounted) await showUpgradeDoneDialog(context, success);
+
+    if (!context.mounted) return false;
+
+    await showUpgradeDoneDialog(context, success);
     return success;
   }
 

@@ -365,9 +365,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         connectedDevices.clear();
         connectedDevices.addAll(connectedIds);
       });
-
-      // Remove dialogs of devices that are no longer connected.
-      actionDialogController.clearAllExcept(connectedIds);
     }
   }
 
