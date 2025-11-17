@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -24,15 +25,24 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
   Function(BuildContext)? body;
   List<Widget>? actionButtons;
   final Set<DeviceId> _actionNeeded = deviceIdSet([]);
+  Set<DeviceId> _connectedDevices = deviceIdSet([]);
   Function()? onDismissed;
   Future<T?> _fut = Future.value(null);
+  StreamSubscription? _deviceListSubscription;
 
   FullscreenActionDialogController({
     this.title,
     this.body,
     this.actionButtons,
     this.onDismissed,
-  });
+  }) {
+    _deviceListSubscription = GlobalStreams.deviceListSubject.listen((update) {
+      _connectedDevices = deviceIdSet(
+        update.state.devices.map((dev) => dev.id).toList(),
+      );
+      _safeNotify();
+    });
+  }
 
   Future<T?>? addActionNeeded(BuildContext context, DeviceId deviceId) {
     final hadActionsNeeded = _actionNeeded.isNotEmpty;
@@ -92,11 +102,14 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     return null;
   }
 
-  bool get hasActionsNeeded => _actionNeeded.isNotEmpty;
+  bool get hasActionsNeeded =>
+      _actionNeeded.isNotEmpty &&
+      _actionNeeded.any((id) => _connectedDevices.contains(id));
   Iterable<DeviceId> get actionsNeeded => _actionNeeded;
 
   @override
   void dispose() {
+    _deviceListSubscription?.cancel();
     _actionNeeded.clear();
     _safeNotify();
     super.dispose();
