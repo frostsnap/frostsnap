@@ -1,22 +1,16 @@
 use anyhow::Result;
-use frostsnap_core::{AccessStructureRef, DeviceId, KeyId};
+use flutter_rust_bridge::frb;
+pub use frostsnap_coordinator::display_backup::DisplayBackupState;
+use frostsnap_core::{AccessStructureRef, DeviceId, KeyId, SymmetricKey};
 use tracing::{event, Level};
 
 use crate::frb_generated::StreamSink;
+use crate::sink_wrap::SinkWrap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DisplayBackupState {
+#[frb(mirror(DisplayBackupState))]
+pub struct _DisplayBackupState {
     pub confirmed: bool,
-    pub legacy_display_confirmed: bool,
-}
-
-impl From<frostsnap_coordinator::backup_run::DisplayBackupState> for DisplayBackupState {
-    fn from(state: frostsnap_coordinator::backup_run::DisplayBackupState) -> Self {
-        Self {
-            confirmed: state.confirmed,
-            legacy_display_confirmed: state.legacy_display_confirmed,
-        }
-    }
+    pub close_dialog: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +34,28 @@ impl BackupRun {
 }
 
 impl crate::api::coordinator::Coordinator {
+    pub fn display_backup(
+        &self,
+        id: DeviceId,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+        sink: StreamSink<DisplayBackupState>,
+    ) -> Result<()> {
+        use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
+
+        let backup_protocol = DisplayBackupProtocol::new(
+            self.0.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            id,
+            access_structure_ref,
+            encryption_key,
+            SinkWrap(sink),
+        )?;
+
+        self.0.start_protocol(backup_protocol);
+
+        Ok(())
+    }
+
     pub fn mark_backup_complete(
         &self,
         access_structure_ref: AccessStructureRef,
