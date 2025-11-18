@@ -1712,13 +1712,9 @@ impl CoordAccessStructure {
     }
 
     pub fn iter_shares(&self) -> impl Iterator<Item = (DeviceId, ShareIndex)> + '_ {
-        self.share_index_to_devices()
-            .into_iter()
-            .flat_map(|(share_index, device_ids)| {
-                device_ids
-                    .into_iter()
-                    .map(move |device_id| (device_id, share_index))
-            })
+        self.device_to_share_index
+            .iter()
+            .map(|(&device_id, &share_index)| (device_id, share_index))
     }
 }
 
