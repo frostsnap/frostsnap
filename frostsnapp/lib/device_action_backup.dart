@@ -7,16 +7,12 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
-import 'package:frostsnap/src/rust/api/device_list.dart';
 
 class DeviceActionBackupController with ChangeNotifier {
   final AccessStructure accessStructure;
 
   late final FullscreenActionDialogController<bool> _dialogController;
-  final StreamController<void> _cancelButtonController =
-      StreamController.broadcast();
 
   // Currently active device.
   DeviceId? get activeDeviceId => _dialogController.actionsNeeded.firstOrNull;
@@ -111,14 +107,12 @@ class DeviceActionBackupController with ChangeNotifier {
 
   @override
   void dispose() async {
-    await _cancelButtonController.close();
     _dialogController.dispose();
     super.dispose();
   }
 
   void _onCancel() {
-    if (_cancelButtonController.isClosed) return;
-    _cancelButtonController.add(null);
+    coord.cancelProtocol();
   }
 
   Future<bool> show(BuildContext context, DeviceId id) async {
@@ -133,52 +127,29 @@ class DeviceActionBackupController with ChangeNotifier {
     await _dialogController.clearAllActionsNeeded();
     final _ = _dialogController.addActionNeeded(context, id)!;
 
-    final result =
-        await Stream<DisplayBackupState>.fromFutures([
-          coord
-              .displayBackup(
-                id: id,
-                accessStructureRef: accessStructure.accessStructureRef(),
-                encryptionKey: encryptionKey,
-              )
-              .first,
-          _cancelButtonController.stream.first.then(
-            (_) => DisplayBackupState(
-              confirmed: false,
-              legacyDisplayConfirmed: false,
-            ),
-          ),
-          GlobalStreams.deviceListChangeStream
-              .firstWhere(
-                (change) =>
-                    deviceIdEquals(change.device.id, id) &&
-                    change.kind == DeviceListChangeKind.removed,
-              )
-              .then(
-                (_) => DisplayBackupState(
-                  confirmed: false,
-                  legacyDisplayConfirmed: false,
-                ),
-              ),
-        ]).first.catchError(
-          (_) => DisplayBackupState(
-            confirmed: false,
-            legacyDisplayConfirmed: false,
-          ),
+    bool isComplete = false;
+    await for (final state in coord.displayBackup(
+      id: id,
+      accessStructureRef: accessStructure.accessStructureRef(),
+      encryptionKey: encryptionKey,
+    )) {
+      if (state.confirmed) {
+        isComplete = true;
+        final accessStructureRef = accessStructure.accessStructureRef();
+        final shareIndex = accessStructure.getDeviceShortShareIndex(
+          deviceId: id,
+        )!;
+        await coord.markBackupComplete(
+          accessStructureRef: accessStructureRef,
+          shareIndex: shareIndex,
         );
+      }
 
-    final isComplete = result.confirmed;
-    if (isComplete && !result.legacyDisplayConfirmed) {
-      final accessStructureRef = accessStructure.accessStructureRef();
-      final shareIndex = accessStructure.getDeviceShortShareIndex(
-        deviceId: id,
-      )!;
-      await coord.markBackupComplete(
-        accessStructureRef: accessStructureRef,
-        shareIndex: shareIndex,
-      );
+      if (state.closeDialog) {
+        break;
+      }
     }
-    await coord.cancelProtocol();
+
     await _dialogController.removeActionNeeded(id);
     return isComplete;
   }

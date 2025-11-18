@@ -5,12 +5,6 @@ use rusqlite::params;
 use std::collections::BTreeMap;
 use tracing::{event, Level};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DisplayBackupState {
-    pub confirmed: bool,
-    pub legacy_display_confirmed: bool,
-}
-
 #[derive(Default, Debug)]
 pub struct BackupState {
     // Maps each access_structure_ref to a map of share_index -> complete boolean.

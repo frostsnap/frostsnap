@@ -1,7 +1,12 @@
-use crate::backup_run::DisplayBackupState;
 use crate::{Completion, DeviceMode, Sink, UiProtocol};
 use frostsnap_comms::{CommsMisc, CoordinatorSendMessage};
 use frostsnap_core::{coordinator::FrostCoordinator, AccessStructureRef, DeviceId, SymmetricKey};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayBackupState {
+    pub confirmed: bool,
+    pub close_dialog: bool,
+}
 
 pub struct DisplayBackupProtocol {
     device_id: DeviceId,
@@ -42,7 +47,7 @@ impl DisplayBackupProtocol {
         self.abort = true;
         self.sink.send(DisplayBackupState {
             confirmed: false,
-            legacy_display_confirmed: false,
+            close_dialog: true,
         });
     }
 }
@@ -82,7 +87,7 @@ impl UiProtocol for DisplayBackupProtocol {
             CommsMisc::BackupRecorded => {
                 self.sink.send(DisplayBackupState {
                     confirmed: true,
-                    legacy_display_confirmed: false,
+                    close_dialog: true,
                 });
                 true
             }
@@ -90,7 +95,7 @@ impl UiProtocol for DisplayBackupProtocol {
                 tracing::warn!("Received deprecated DisplayBackupConfrimed message. Device firmware should be updated.");
                 self.sink.send(DisplayBackupState {
                     confirmed: true,
-                    legacy_display_confirmed: true,
+                    close_dialog: false,
                 });
                 true
             }

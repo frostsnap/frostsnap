@@ -741,12 +741,16 @@ class _BackupChecklistState extends State<BackupChecklist> {
                 ),
                 const SizedBox(height: 24),
                 Center(
-                  child: FilledButton(
-                    onPressed: allComplete
-                        ? () => Navigator.popUntil(context, (r) => r.isFirst)
-                        : null,
-                    child: const Text('Done'),
-                  ),
+                  child: allComplete
+                      ? FilledButton(
+                          onPressed: () =>
+                              Navigator.popUntil(context, (r) => r.isFirst),
+                          child: const Text('Done'),
+                        )
+                      : TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Finish later'),
+                        ),
                 ),
               ],
             );

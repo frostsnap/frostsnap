@@ -6,8 +6,7 @@ use crate::api::device_list::DeviceListUpdate;
 use crate::device_list::DeviceList;
 use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
-use frostsnap_coordinator::backup_run::{BackupState, DisplayBackupState};
-use frostsnap_coordinator::display_backup::DisplayBackupProtocol;
+use frostsnap_coordinator::backup_run::BackupState;
 use frostsnap_coordinator::enter_physical_backup::{EnterPhysicalBackup, EnterPhysicalBackupState};
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
@@ -62,7 +61,7 @@ pub struct FfiCoordinator {
     // // persisted things
     pub(crate) db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
-    coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
+    pub(crate) coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
     // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
     pub(crate) backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
@@ -543,26 +542,6 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn request_display_backup(
-        &self,
-        device_id: DeviceId,
-        access_structure_ref: AccessStructureRef,
-        encryption_key: SymmetricKey,
-        stream: impl Sink<DisplayBackupState>,
-    ) -> anyhow::Result<()> {
-        let backup_protocol = DisplayBackupProtocol::new(
-            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
-            device_id,
-            access_structure_ref,
-            encryption_key,
-            stream,
-        )?;
-
-        self.start_protocol(backup_protocol);
-
-        Ok(())
-    }
-
     pub fn begin_upgrade_firmware(
         &self,
         sink: impl Sink<FirmwareUpgradeConfirmState>,
@@ -606,7 +585,7 @@ impl FfiCoordinator {
             .map(|firmware_bin| firmware_bin.firmware_version().version_name())
     }
 
-    fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {
+    pub(crate) fn start_protocol<P: UiProtocol + Send + 'static>(&self, mut protocol: P) {
         for device in self.device_list.lock().unwrap().devices() {
             protocol.connected(device.id, device.device_mode());
         }
