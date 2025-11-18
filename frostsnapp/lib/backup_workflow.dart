@@ -519,7 +519,11 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                 children: [
                                   DeviceWithShareIndex(
                                     shareIndex: deviceInfo.shareIndex,
-                                    deviceName: deviceInfo.deviceName,
+                                    deviceName:
+                                        coord.getDeviceName(
+                                          id: deviceInfo.deviceId,
+                                        ) ??
+                                        '',
                                   ),
                                   Text(
                                     'connected',
@@ -689,7 +693,12 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                                     child: Text(
                                                       devices
                                                           .map(
-                                                            (d) => d.deviceName,
+                                                            (d) =>
+                                                                coord.getDeviceName(
+                                                                  id: d
+                                                                      .deviceId,
+                                                                ) ??
+                                                                '',
                                                           )
                                                           .join(', '),
                                                       style: theme

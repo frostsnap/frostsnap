@@ -1,5 +1,5 @@
 use anyhow::Result;
-use frostsnap_core::{AccessStructureRef, KeyId};
+use frostsnap_core::{AccessStructureRef, DeviceId, KeyId};
 use tracing::{event, Level};
 
 use crate::frb_generated::StreamSink;
@@ -21,7 +21,7 @@ impl From<frostsnap_coordinator::backup_run::DisplayBackupState> for DisplayBack
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BackupDevice {
-    pub device_name: String,
+    pub device_id: DeviceId,
     pub share_index: u32,
     pub complete: Option<bool>,
 }
