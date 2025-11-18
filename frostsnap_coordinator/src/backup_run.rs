@@ -27,8 +27,7 @@ impl BackupState {
                 share_index,
             } => {
                 let run = self.runs.entry(*access_structure_ref).or_default();
-                run.insert(*share_index, true);
-                true
+                run.insert(*share_index, true) != Some(true)
             }
             Mutation::ClearBackupState {
                 access_structure_ref,

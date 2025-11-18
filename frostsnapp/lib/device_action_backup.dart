@@ -82,7 +82,7 @@ class DeviceActionBackupController with ChangeNotifier {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'This key backup is secret information. Anyone with access to ${accessStructure.threshold()} of the ${accessStructure.devices().length} keys can steal all your Bitcoin.',
+                          'This key backup is secret information. Anyone with access to ${accessStructure.threshold()} of the ${accessStructure.devices().length} keys can steal all your bitcoin.',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onErrorContainer,
                             fontWeight: FontWeight.bold,

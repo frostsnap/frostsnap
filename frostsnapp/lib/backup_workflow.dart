@@ -480,7 +480,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
                       statusIcon = Icons.warning_sharp;
                       statusIconColor = theme.colorScheme.primary;
                       deviceStatusContent = Text(
-                        'Multiple devices connect. Connect only one device at a time.',
+                        'Multiple devices connected. Connect only one device at a time.',
                       );
                     } else if (deviceCount == 1) {
                       // Single device - show buttons
