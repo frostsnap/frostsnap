@@ -85,7 +85,15 @@ class WalletCreateController extends ChangeNotifier {
     {
       _deviceListSub = GlobalStreams.deviceListSubject.listen((update) {
         _deviceList = update.state;
-        resetDeviceNames(update.state.devices);
+        for (final change in update.changes) {
+          if (change.kind == DeviceListChangeKind.added) {
+            final id = change.device.id;
+            final name = _form.deviceNames[id];
+            if (name != null) {
+              coord.updateNamePreview(id: id, name: name);
+            }
+          }
+        }
         notifyListeners();
       });
     }

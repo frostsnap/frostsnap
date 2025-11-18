@@ -1244,7 +1244,6 @@ impl FfiCoordinator {
     // Backup management methods
     pub(crate) fn build_backup_run(&self, key_id: KeyId) -> BackupRun {
         let backup_state = self.backup_state.lock().unwrap();
-        let device_names = self.device_names.lock().unwrap();
         let coordinator = self.coordinator.lock().unwrap();
 
         let frost_key = match coordinator.get_frost_key(key_id) {
@@ -1264,18 +1263,13 @@ impl FfiCoordinator {
         let devices = access_structure
             .iter_shares()
             .map(|(device_id, share_index)| {
-                let device_name = device_names
-                    .get(device_id)
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
-
                 let share_index_short =
                     u32::try_from(share_index).expect("share index should fit in u32");
 
                 let complete = backup_complete_states.get(&share_index_short).copied();
 
                 BackupDevice {
-                    device_name,
+                    device_id,
                     share_index: share_index_short,
                     complete,
                 }

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
