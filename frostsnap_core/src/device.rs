@@ -457,9 +457,10 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     //XXX: We check the fingerprint so that a (mildly) malicious
                     // coordinator cannot create key generations without the
                     // fingerprint.
-                    if !agg_input
+                    if agg_input
                         .shared_key()
                         .check_fingerprint::<sha2::Sha256>(self.keygen_fingerprint)
+                        .is_none()
                     {
                         return Err(Error::signer_invalid_message(
                             &message,
