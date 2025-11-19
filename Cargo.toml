@@ -15,9 +15,6 @@ members = [
 ]
 resolver = "2"
 
-[patch.crates-io]
-schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "0dfc62151d6f65ebae2012617e33349ee2103e64" }
-secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "0dfc62151d6f65ebae2012617e33349ee2103e64" }
 
 
 [workspace.dependencies]
@@ -48,8 +45,8 @@ proptest = "=1.6.0"
 rand_chacha = { version = "0.3", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 bitcoin = { version = "0.32", features = ["serde"], default-features = false }
-secp256kfun = { version = "0.11", default-features = false }
-schnorr_fun = { version = "0.11", default-features = false }
+secp256kfun = { version = "0.12", default-features = false }
+schnorr_fun = { version = "0.12", default-features = false }
 bdk_coin_select = { version = "0.3" }
 rand_core = "0.6"
 rand = "0.8"

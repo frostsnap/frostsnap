@@ -1742,7 +1742,7 @@ dependencies = [
  "rand",
  "rand_core",
  "schnorr_fun",
- "secp256kfun 0.11.0 (git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64)",
+ "secp256kfun",
  "sha2",
 ]
 
@@ -1810,7 +1810,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "tracing",
- "vrf_fun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
 ]
 
 [[package]]
@@ -4020,13 +4019,14 @@ dependencies = [
 
 [[package]]
 name = "schnorr_fun"
-version = "0.11.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64#0dfc62151d6f65ebae2012617e33349ee2103e64"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c711acb599464e57111c072bf6a9a64b51313f4baa776f4a500926dd4339bd32"
 dependencies = [
  "bech32",
  "bincode",
- "secp256kfun 0.11.0 (git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64)",
- "vrf_fun 0.11.0 (git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64)",
+ "secp256kfun",
+ "vrf_fun",
 ]
 
 [[package]]
@@ -4140,8 +4140,9 @@ dependencies = [
 
 [[package]]
 name = "secp256kfun"
-version = "0.11.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64#0dfc62151d6f65ebae2012617e33349ee2103e64"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17d209307a50f8baee901c4e65ccef0da4185ef2d54834d73d6847369b8fa049"
 dependencies = [
  "bincode",
  "digest 0.10.7",
@@ -4151,36 +4152,16 @@ dependencies = [
  "secp256k1 0.28.2",
  "secp256k1 0.29.1",
  "secp256k1 0.30.0",
- "secp256kfun_arithmetic_macros 0.1.0 (git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64)",
+ "secp256kfun_arithmetic_macros",
  "serde",
  "subtle-ng",
 ]
 
 [[package]]
-name = "secp256kfun"
-version = "0.11.0"
-source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
-dependencies = [
- "bincode",
- "digest 0.10.7",
- "rand_core",
- "secp256kfun_arithmetic_macros 0.1.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
- "subtle-ng",
-]
-
-[[package]]
 name = "secp256kfun_arithmetic_macros"
-version = "0.1.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64#0dfc62151d6f65ebae2012617e33349ee2103e64"
-dependencies = [
- "proc-macro2",
- "quote",
-]
-
-[[package]]
-name = "secp256kfun_arithmetic_macros"
-version = "0.1.0"
-source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d48abcff68cafcdb4469dc1204542c336a748f365a224c6acacea66f98185ff"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4313,28 +4294,17 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "sigma_fun"
-version = "0.8.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64#0dfc62151d6f65ebae2012617e33349ee2103e64"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b81d55dcb214c0cd9b5965a7c1845b8e3d82d813123a634e5494882fe527a6aa"
 dependencies = [
  "bincode",
  "curve25519-dalek-ng",
  "digest 0.10.7",
  "generic-array 0.14.7",
  "rand_core",
- "secp256kfun 0.11.0 (git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64)",
+ "secp256kfun",
  "serde",
-]
-
-[[package]]
-name = "sigma_fun"
-version = "0.8.0"
-source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
-dependencies = [
- "bincode",
- "digest 0.10.7",
- "generic-array 0.14.7",
- "rand_core",
- "secp256kfun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
 ]
 
 [[package]]
@@ -5040,27 +5010,16 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 
 [[package]]
 name = "vrf_fun"
-version = "0.11.0"
-source = "git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64#0dfc62151d6f65ebae2012617e33349ee2103e64"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be412ca5dc1f2d52f39ed47b458b35a7e52bbbe94fdbfa6b2e376ee6afdb3644"
 dependencies = [
  "bincode",
  "generic-array 0.14.7",
  "rand_chacha",
- "secp256kfun 0.11.0 (git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64)",
+ "secp256kfun",
  "serde",
- "sigma_fun 0.8.0 (git+https://github.com/LLFourn/secp256kfun?rev=0dfc62151d6f65ebae2012617e33349ee2103e64)",
-]
-
-[[package]]
-name = "vrf_fun"
-version = "0.11.0"
-source = "git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69#e5cba4691f6d0292d6ae7ee355fe08db19479a69"
-dependencies = [
- "bincode",
- "generic-array 0.14.7",
- "rand_chacha",
- "secp256kfun 0.11.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
- "sigma_fun 0.8.0 (git+https://github.com/llfourn/secp256kfun?rev=e5cba4691f6d0292d6ae7ee355fe08db19479a69)",
+ "sigma_fun",
 ]
 
 [[package]]
