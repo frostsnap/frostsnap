@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnap/camera.dart';
+import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
@@ -117,29 +117,24 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final accessStructure = frostKey.accessStructures()[0];
     final enoughSelected =
         selectedDevices.length == accessStructure.threshold();
-    Widget? scanPsbtButton;
-    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
-      scanPsbtButton = TextButton.icon(
-        onPressed: !enoughSelected
-            ? null
-            : () async {
-                if (context.mounted) {
-                  final psbtBytes = await MaybeFullscreenDialog.show<Uint8List>(
-                    context: context,
-                    child: PsbtCameraReader(),
-                  );
-                  if (psbtBytes == null) return;
-                  if (!context.mounted) return;
-                  final ok = await tryStartSigningPsbt(context, psbtBytes);
-                  if (context.mounted && !ok) Navigator.pop(context);
-                }
-              },
-        label: Text("Scan"),
-        icon: Icon(Icons.qr_code_scanner),
-      );
-    } else {
-      scanPsbtButton = null;
-    }
+    final scanPsbtButton = TextButton.icon(
+      onPressed: !enoughSelected
+          ? null
+          : () async {
+              if (context.mounted) {
+                final psbtBytes = await MaybeFullscreenDialog.show<Uint8List>(
+                  context: context,
+                  child: PsbtCameraReader(),
+                );
+                if (psbtBytes == null) return;
+                if (!context.mounted) return;
+                final ok = await tryStartSigningPsbt(context, psbtBytes);
+                if (context.mounted && !ok) Navigator.pop(context);
+              }
+            },
+      label: Text("Scan"),
+      icon: Icon(Icons.qr_code_scanner),
+    );
     // ...
 
     final loadPsbtFileButton = TextButton.icon(
@@ -215,10 +210,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               spacing: 8,
-              children: [
-                if (scanPsbtButton != null) scanPsbtButton,
-                loadPsbtFileButton,
-              ],
+              children: [scanPsbtButton, loadPsbtFileButton],
             ),
           ),
         ],

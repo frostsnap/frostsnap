@@ -1,13 +1,14 @@
+use crate::api::camera::Frame;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 use tracing::{event, Level};
 
-pub struct QrReader {
+pub struct PsbtQrDecoder {
     decoder: ur::Decoder,
     decoding_progress: DecodingProgress,
 }
 
-impl QrReader {
+impl PsbtQrDecoder {
     #[frb(sync)]
     pub fn new() -> Self {
         Self {
@@ -15,12 +16,33 @@ impl QrReader {
             decoding_progress: DecodingProgress {
                 decoded_frames: 0,
                 sequence_count: 0,
+                progress: 0.0,
             },
         }
     }
 
-    pub fn decode_from_bytes(&mut self, bytes: Vec<u8>) -> Result<QrDecoderStatus> {
+    pub fn decode_qr_image(&mut self, bytes: Vec<u8>) -> Result<QrDecoderStatus> {
         let decoded_qr = read_qr_code_bytes(&bytes)?;
+        let decoded_ur = self.ingest_ur_strings(decoded_qr)?;
+        Ok(decoded_ur)
+    }
+
+    pub fn decode_qr_frame(&mut self, frame: Frame) -> Result<QrDecoderStatus> {
+        let img = image::load_from_memory(&frame.data)
+            .map_err(|e| anyhow!("Failed to decode JPEG frame: {}", e))?;
+
+        let luma_img = img.to_luma8();
+        let mut prepared_img = rqrr::PreparedImage::prepare(luma_img);
+        let grids = prepared_img.detect_grids();
+
+        let decoded_qr: Vec<String> = grids
+            .into_iter()
+            .filter_map(|grid| match grid.decode() {
+                Ok((_meta, content)) => Some(content),
+                Err(_) => None,
+            })
+            .collect();
+
         let decoded_ur = self.ingest_ur_strings(decoded_qr)?;
         Ok(decoded_ur)
     }
@@ -76,9 +98,17 @@ impl QrReader {
             // receive multipart (animated QR code)
             match decoder.receive(&decoding_part) {
                 Ok(_) => {
+                    let sequence_count = decoder.sequence_count() as u32;
+                    let decoded_frames = decoding_progress.decoded_frames + 1_u32;
+                    let progress = if sequence_count > 0 {
+                        ((decoded_frames as f32) / (sequence_count as f32 * 1.75)).min(0.99)
+                    } else {
+                        0.0
+                    };
                     *decoding_progress = DecodingProgress {
-                        sequence_count: decoder.sequence_count() as u32,
-                        decoded_frames: decoding_progress.decoded_frames + 1_u32,
+                        sequence_count,
+                        decoded_frames,
+                        progress,
                     };
                     event!(Level::INFO, "Read part of UR: {}", decoding_part)
                 }
@@ -106,8 +136,10 @@ impl QrReader {
             }
         }
 
-        event!(Level::INFO, "Scanning progress {:?}", decoding_progress);
-        Ok(QrDecoderStatus::Progress(decoding_progress.clone()))
+        event!(Level::TRACE, "Scanning progress {:?}", decoding_progress);
+        Ok(QrDecoderStatus::Progress {
+            progress: decoding_progress.progress,
+        })
     }
 }
 
@@ -139,19 +171,23 @@ pub fn read_qr_code_bytes(bytes: &[u8]) -> Result<Vec<String>> {
         Ok(img) => img,
         Err(e) => {
             return Err(anyhow!(
-                "Failed to read in image: {}, bytes: {:?}",
+                "Failed to read in image: {}, bytes: {:?}..",
                 e,
-                bytes
+                &bytes[..32.min(bytes.len())],
             ))
         }
     };
 
-    let decoder = bardecoder::default_decoder();
-    let decoding_results = decoder.decode(&img);
+    let luma_img = img.to_luma8();
+    let mut prepared_img = rqrr::PreparedImage::prepare(luma_img);
+    let grids = prepared_img.detect_grids();
 
-    let decodings = decoding_results
+    let decodings = grids
         .into_iter()
-        .filter_map(|result| result.ok())
+        .filter_map(|grid| match grid.decode() {
+            Ok((_meta, content)) => Some(content),
+            Err(_) => None,
+        })
         .collect();
 
     Ok(decodings)
@@ -176,11 +212,12 @@ fn trim_until_psbt_magic(bytes: &[u8]) -> Option<Vec<u8>> {
 pub struct DecodingProgress {
     pub decoded_frames: u32,
     pub sequence_count: u32,
+    pub progress: f32,
 }
 
 #[derive(Clone, Debug)]
 pub enum QrDecoderStatus {
-    Progress(DecodingProgress),
+    Progress { progress: f32 },
     Decoded(Vec<u8>),
     Failed(String),
 }

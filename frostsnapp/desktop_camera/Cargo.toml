@@ -1,0 +1,25 @@
+[package]
+name = "frostsnap_desktop_camera"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/frostsnap/frostsnap"
+description = "Simple camera capture library optimized for QR scanning"
+keywords = ["camera", "webcam", "video", "qr"]
+categories = ["multimedia::video", "hardware-support"]
+
+[dependencies]
+image = { workspace = true, features = ["jpeg"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+v4l = "0.14"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Media_MediaFoundation",
+    "Win32_Media_DirectShow",
+    "Win32_System_Com",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+]}
