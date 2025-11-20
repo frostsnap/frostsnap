@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::api::database_encryption;
 use crate::frb_generated::StreamSink;
 use crate::sink_wrap::SinkWrap;
 
@@ -25,7 +26,6 @@ pub struct Settings {
     db: Arc<Mutex<rusqlite::Connection>>,
     chain_clients: HashMap<BitcoinNetwork, ChainClient>,
 
-    #[allow(unused)]
     app_directory: PathBuf,
     loaded_wallets: HashMap<BitcoinNetwork, SuperWallet>,
 
@@ -56,6 +56,7 @@ impl Settings {
     pub(crate) fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
         app_directory: PathBuf,
+        password: Option<&str>,
     ) -> anyhow::Result<Self> {
         let persisted: Persisted<RSettings> = {
             let mut db_ = db.lock().unwrap();
@@ -82,7 +83,7 @@ impl Settings {
             let (chain_api, conn_handler) =
                 ChainClient::new(genesis_hash, trusted_certificates, db.clone());
             let super_wallet =
-                SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
+                SuperWallet::load_or_new(&app_directory, network, chain_api.clone(), password)?;
             // FIXME: the dependency relationship here is overly convoluted.
             thread::spawn({
                 let super_wallet = super_wallet.clone();
@@ -250,6 +251,67 @@ impl Settings {
             .ok_or_else(|| anyhow!("network not supported {}", network))?;
 
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
+        Ok(())
+    }
+
+    #[frb(sync)]
+    pub fn app_directory(&self) -> String {
+        self.app_directory
+            .to_str()
+            .expect("app path shouldn't have non-utf8 chars")
+            .to_string()
+    }
+
+    /// Apply password change with all database locks held
+    /// This ensures no concurrent writes happen during the rekey operation
+    pub fn apply_password_change(&self, old_password: String, new_password: String) -> Result<()> {
+        use tracing::{event, Level};
+
+        // Determine encryption state from main database (assumes all databases have the same state)
+        let main_db_state = database_encryption::get_db_state(&self.app_directory())?;
+
+        event!(Level::INFO, "Acquiring db locks for password change");
+
+        // Acquire lock on main database connection
+        let _main_db_lock = self.db.lock().unwrap();
+
+        // Acquire locks on all BDK wallet database connections
+        let mut _bdk_locks = Vec::new();
+        for wallet in self.loaded_wallets.values() {
+            // Lock the CoordSuperWallet, which prevents access to its db field
+            let coord_wallet_lock = wallet.inner.lock().unwrap();
+            // Now also lock the actual DB connection inside it
+            // We need to access the db field through the locked CoordSuperWallet
+            // But db is private, so we can't access it directly
+            // The MutexGuard on CoordSuperWallet should be sufficient
+            _bdk_locks.push(coord_wallet_lock);
+        }
+
+        event!(
+            Level::INFO,
+            "All database locks acquired, proceeding with rekey"
+        );
+
+        // Now call the rekey logic from database_encryption
+        // This will open NEW connections to do the actual rekeying
+        database_encryption::apply_password_change(
+            main_db_state,
+            self.app_directory(),
+            old_password,
+            new_password,
+        )?;
+
+        event!(
+            Level::INFO,
+            "Password change completed successfully - Holding all db locks."
+        );
+
+        // Do not release locks as old connections have the wrong password cached.
+        // Hold these locks until the app exits to prevent any code from attempting to use the old
+        // connections, which would fail with "not a database" errors.
+        std::mem::forget(_main_db_lock);
+        std::mem::forget(_bdk_locks);
+
         Ok(())
     }
 }
