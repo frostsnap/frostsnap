@@ -7,8 +7,7 @@ edition = "2021"
 
 [dependencies]
 rand_core = { version = "0.6", default-features = false }
-schnorr_fun = {version = "0.11", features = ["bincode", "serde","alloc", "share_backup", "libsecp_compat_0_29", "vrf_cert_keygen"], default-features = false}
-vrf_fun = { git = "https://github.com/llfourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69", features = ["bincode"], default-features = false }
+schnorr_fun = { workspace = true, features = ["bincode", "serde","alloc", "share_backup", "libsecp_compat_0_29", "vrf_cert_keygen"] }
 rand_chacha = { workspace = true }
 frostsnap_macros = { workspace = true }
 frost_backup = { workspace = true, default-features = false }

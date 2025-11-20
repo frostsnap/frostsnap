@@ -6,6 +6,34 @@ use schnorr_fun::{
     fun::prelude::*,
 };
 
+/// Errors that can occur during secret recovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryError {
+    /// No shares were provided
+    NoSharesProvided,
+    /// The polynomial checksum verification failed
+    PolynomialChecksumFailed,
+    /// Failed to extract secret from a share
+    SecretExtractionFailed,
+}
+
+impl core::fmt::Display for RecoveryError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            RecoveryError::NoSharesProvided => write!(f, "No shares provided"),
+            RecoveryError::PolynomialChecksumFailed => {
+                write!(f, "Polynomial checksum verification failed")
+            }
+            RecoveryError::SecretExtractionFailed => {
+                write!(f, "Failed to extract secret from share")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for RecoveryError {}
+
 /// The result of recovering a secret from shares.
 #[derive(Debug, Clone)]
 pub struct RecoveredSecret {
@@ -25,9 +53,9 @@ pub struct RecoveredSecret {
 pub fn recover_secret(
     shares: &[ShareBackup],
     fingerprint: Fingerprint,
-) -> Result<RecoveredSecret, &'static str> {
+) -> Result<RecoveredSecret, RecoveryError> {
     if shares.is_empty() {
-        return Err("No shares provided");
+        return Err(RecoveryError::NoSharesProvided);
     }
 
     // Reconstruct the SharedKey from share images
@@ -35,8 +63,11 @@ pub fn recover_secret(
     let shared_key = SharedKey::from_share_images(share_images);
 
     // Verify the fingerprint matches
-    if !shared_key.check_fingerprint::<sha2::Sha256>(fingerprint) {
-        return Err("Public key fingerprint does not match expected fingerprint");
+    if shared_key
+        .check_fingerprint::<sha2::Sha256>(fingerprint)
+        .is_none()
+    {
+        return Err(RecoveryError::PolynomialChecksumFailed);
     }
 
     // Extract and verify the secret shares against the reconstructed key
@@ -45,7 +76,7 @@ pub fn recover_secret(
         let secret_share = share
             .clone()
             .extract_secret(&shared_key)
-            .map_err(|_| "Failed to extract secret from share")?;
+            .map_err(|_| RecoveryError::SecretExtractionFailed)?;
         secret_shares.push(secret_share);
     }
 
@@ -167,10 +198,10 @@ pub fn find_valid_subset(
         Some(known_threshold) => vec![known_threshold],
         None => (2..=n_indices).collect(),
     };
-    let mut found = None;
+    let mut best_match: Option<(SharedKey<Normal, Zero>, usize)> = None;
 
     // Try subsets from largest to smallest (but at least 2 shares)
-    for subset_size in sizes {
+    'outer: for subset_size in sizes {
         // Generate all combinations of indices of the given size
         for index_combo in generate_combinations(&indices, subset_size) {
             // For this combination of indices, try all possible share selections
@@ -189,15 +220,29 @@ pub fn find_valid_subset(
                     }
                 }
 
-                // Check if it matches the fingerprint
-                if shared_key.check_fingerprint::<sha2::Sha256>(fingerprint) {
-                    found = Some(shared_key);
+                // Check how many fingerprint bits matched
+                if let Some(bits_matched) =
+                    shared_key.check_fingerprint::<sha2::Sha256>(fingerprint)
+                {
+                    // Only update if this is better than our current best
+                    let is_better = match &best_match {
+                        None => true,
+                        Some((_, prev_bits)) => bits_matched > *prev_bits,
+                    };
+
+                    if is_better {
+                        best_match = Some((shared_key, bits_matched));
+                        // Early exit if we found a complete match
+                        if bits_matched >= fingerprint.max_bits_total as usize {
+                            break 'outer;
+                        }
+                    }
                 }
             }
         }
     }
 
-    let shared_key = found?;
+    let shared_key = best_match.map(|(key, _)| key)?;
 
     let compatible = images
         .iter()
