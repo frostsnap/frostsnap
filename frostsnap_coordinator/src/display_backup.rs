@@ -2,12 +2,18 @@ use crate::{Completion, DeviceMode, Sink, UiProtocol};
 use frostsnap_comms::{CommsMisc, CoordinatorSendMessage};
 use frostsnap_core::{coordinator::FrostCoordinator, AccessStructureRef, DeviceId, SymmetricKey};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayBackupState {
+    pub confirmed: bool,
+    pub close_dialog: bool,
+}
+
 pub struct DisplayBackupProtocol {
     device_id: DeviceId,
     abort: bool,
     messages: Vec<CoordinatorSendMessage>,
     should_send: bool,
-    sink: Box<dyn Sink<bool> + Send>,
+    sink: Box<dyn Sink<DisplayBackupState> + Send>,
 }
 
 impl DisplayBackupProtocol {
@@ -16,7 +22,7 @@ impl DisplayBackupProtocol {
         device_id: DeviceId,
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
-        sink: impl Sink<bool> + 'static,
+        sink: impl Sink<DisplayBackupState> + 'static,
     ) -> anyhow::Result<Self> {
         let messages = coord
             .request_device_display_backup(device_id, access_structure_ref, encryption_key)?
@@ -39,7 +45,10 @@ impl DisplayBackupProtocol {
 
     fn abort(&mut self) {
         self.abort = true;
-        self.sink.send(false);
+        self.sink.send(DisplayBackupState {
+            confirmed: false,
+            close_dialog: true,
+        });
     }
 }
 
@@ -74,11 +83,23 @@ impl UiProtocol for DisplayBackupProtocol {
         if self.device_id != from {
             return false;
         }
-        if let CommsMisc::DisplayBackupConfrimed = message {
-            self.sink.send(true);
-            true
-        } else {
-            false
+        match message {
+            CommsMisc::BackupRecorded => {
+                self.sink.send(DisplayBackupState {
+                    confirmed: true,
+                    close_dialog: true,
+                });
+                true
+            }
+            CommsMisc::DisplayBackupConfrimed => {
+                tracing::warn!("Received deprecated DisplayBackupConfrimed message. Device firmware should be updated.");
+                self.sink.send(DisplayBackupState {
+                    confirmed: true,
+                    close_dialog: false,
+                });
+                true
+            }
+            _ => false,
         }
     }
 

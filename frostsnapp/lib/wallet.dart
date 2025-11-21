@@ -9,7 +9,7 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/restoration/wallet_recovery_page.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/backup_manager.dart';
+import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
@@ -1236,13 +1236,10 @@ class BackupWarningBanner extends StatelessWidget {
   }
 
   void onTap(BuildContext context, WalletContext walletContext) async {
-    final backupManager = FrostsnapContext.of(context)!.backupManager;
-
     await MaybeFullscreenDialog.show(
       context: context,
       child: walletContext.wrap(
         BackupChecklist(
-          backupManager: backupManager,
           accessStructure: frostKey.accessStructures()[0],
           showAppBar: true,
         ),
@@ -1251,5 +1248,5 @@ class BackupWarningBanner extends StatelessWidget {
   }
 
   bool isBackupDone(BackupRun backupRun) =>
-      backupRun.devices.every((elem) => elem.$2 != null);
+      backupRun.devices.every((device) => device.complete == true);
 }

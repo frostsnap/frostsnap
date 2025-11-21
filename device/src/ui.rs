@@ -3,12 +3,10 @@ use alloc::{boxed::Box, string::String};
 use frost_backup::ShareBackup;
 use frostsnap_comms::{DeviceName, Sha256Digest};
 use frostsnap_core::{
-    device::{
-        restoration::{BackupDisplayPhase, EnterBackupPhase},
-        KeyGenPhase3, SignPhase1,
-    },
+    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
     message::HeldShare2,
     tweak::BitcoinBip32Path,
+    AccessStructureRef,
 };
 
 pub trait UserInteraction {
@@ -63,6 +61,7 @@ pub enum Workflow {
     DisplayBackup {
         key_name: String,
         backup: ShareBackup,
+        access_structure_ref: AccessStructureRef,
     },
     EnteringBackup(EnterBackupPhase),
     DisplayAddress {
@@ -91,9 +90,6 @@ pub enum Prompt {
     NewName {
         old_name: Option<DeviceName>,
         new_name: DeviceName,
-    },
-    DisplayBackupRequest {
-        phase: Box<BackupDisplayPhase>,
     },
     ConfirmFirmwareUpgrade {
         firmware_digest: Sha256Digest,
@@ -131,8 +127,8 @@ pub enum UiEvent {
         phase: EnterBackupPhase,
         share_backup: ShareBackup,
     },
-    BackupRequestConfirm {
-        phase: Box<BackupDisplayPhase>,
+    BackupRecorded {
+        access_structure_ref: AccessStructureRef,
     },
     UpgradeConfirm,
     WipeDataConfirm,

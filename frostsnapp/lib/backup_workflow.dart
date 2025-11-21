@@ -1,25 +1,247 @@
-import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_backup.dart';
 import 'package:frostsnap/device_action_backup_check.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/backup_manager.dart';
+import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:glowy_borders/glowy_borders.dart';
+
+class BackupConfirmationDialogContent extends StatelessWidget {
+  final int threshold;
+  final int totalDevices;
+  final String walletName;
+  final String deviceName;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  const BackupConfirmationDialogContent({
+    super.key,
+    required this.threshold,
+    required this.totalDevices,
+    required this.walletName,
+    required this.deviceName,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Write down the device information on your backup sheet. If you lose this you will still be able to recover the wallet but it is helpful to have.',
+            style: theme.textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 300),
+              child: Container(
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.colorScheme.outline),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('Threshold:', style: theme.textTheme.bodyLarge),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: theme.colorScheme.outline,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '$threshold',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('of', style: theme.textTheme.bodyLarge),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: theme.colorScheme.outline,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '$totalDevices',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: 400),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              walletName,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              height: 1,
+                              width: double.infinity,
+                              color: theme.colorScheme.outline,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Wallet Name',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: 400),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              deviceName,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              height: 1,
+                              width: double.infinity,
+                              color: theme.colorScheme.outline,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Device Name',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            spacing: 8,
+            children: [
+              TextButton(onPressed: onCancel, child: Text('Cancel')),
+              FilledButton(
+                onPressed: onConfirm,
+                child: Text('Show secret backup'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DeviceWithShareIndex extends StatelessWidget {
+  final int? shareIndex;
+  final String deviceName;
+
+  const DeviceWithShareIndex({
+    super.key,
+    this.shareIndex,
+    required this.deviceName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final defaultTextStyle = DefaultTextStyle.of(context);
+
+    if (shareIndex == null) {
+      return Text(deviceName);
+    }
+
+    return Row(
+      spacing: 4,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          "#$shareIndex",
+          style: defaultTextStyle.style.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Flexible(
+          child: Text(
+            deviceName,
+            style: defaultTextStyle.style.copyWith(fontWeight: FontWeight.w500),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class BackupChecklist extends StatefulWidget {
-  final BackupManager backupManager;
   final AccessStructure accessStructure;
   final ScrollController? scrollController;
   final bool showAppBar;
 
   const BackupChecklist({
     super.key,
-    required this.backupManager,
     required this.accessStructure,
     this.scrollController,
     this.showAppBar = false,
@@ -38,7 +260,6 @@ class _BackupChecklistState extends State<BackupChecklist> {
     super.initState();
     _backupDialogController = DeviceActionBackupController(
       accessStructure: widget.accessStructure,
-      backupManager: widget.backupManager,
     );
     _checkDialogController = DeviceActionBackupCheckController(
       accessStructure: widget.accessStructure,
@@ -96,49 +317,47 @@ class _BackupChecklistState extends State<BackupChecklist> {
     );
   }
 
-  void maybeShowThatWasQuickDialog(
+  void showBackupDialog(BuildContext context, DeviceId deviceId) async {
+    final confirmed = await showBackupConfirmationDialog(context, deviceId);
+    if (confirmed == true) {
+      await _backupDialogController.show(context, deviceId);
+    }
+  }
+
+  Future<bool?> showBackupConfirmationDialog(
     BuildContext context,
     DeviceId deviceId,
   ) async {
-    final manager = FrostsnapContext.of(context)!.backupManager;
     final walletCtx = WalletContext.of(context)!;
+    final accessStructure = widget.accessStructure;
+    final deviceName = coord.getDeviceName(id: deviceId) ?? 'Unknown Device';
+    final walletName = walletCtx.wallet.frostKey()?.keyName() ?? '';
 
-    final shouldWarn = manager.shouldQuickBackupWarn(
-      keyId: walletCtx.wallet.keyId(),
-      deviceId: deviceId,
+    return await showBottomSheetOrDialog<bool>(
+      context,
+      title: Text('Record backup information'),
+      builder: (context, scrollController) {
+        return BackupConfirmationDialogContent(
+          threshold: accessStructure.threshold(),
+          totalDevices: accessStructure.devices().length,
+          walletName: walletName,
+          deviceName: deviceName,
+          onCancel: () => Navigator.pop(context, false),
+          onConfirm: () => Navigator.pop(context, true),
+        );
+      },
     );
-    if (shouldWarn) {
-      final result = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: Text('That was quick!'),
-          content: const Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 12,
-            children: [
-              Text('A backup of a device was performed recently.'),
-              Text('Make sure your devices are secured in separate locations!'),
-            ],
-          ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text('Back'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text('Show Backup'),
-            ),
-          ],
-        ),
-      );
-      if (context.mounted && result == true) {
-        await _backupDialogController.show(context, deviceId);
+  }
+
+  void showCheckDialog(BuildContext context, DeviceId deviceId) async {
+    final result = await _checkDialogController.show(context, deviceId);
+    if (result == true) {
+      await showBackupOkayDialog(context);
+    } else if (result == false) {
+      final tryAgain = await showBackupInvalidDialog(context);
+      if (tryAgain) {
+        showCheckDialog(context, deviceId);
       }
-    } else {
-      await _backupDialogController.show(context, deviceId);
     }
   }
 
@@ -150,92 +369,13 @@ class _BackupChecklistState extends State<BackupChecklist> {
     final accessStructure = frostKey.accessStructures().first;
     final backupStream = walletCtx.backupStream;
 
-    // final appBar = SliverAppBar(
-    //   title: const Text('Backup Checklist'),
-    //   titleTextStyle: theme.textTheme.titleMedium,
-    //   centerTitle: true,
-    //   backgroundColor: theme.colorScheme.surfaceContainerLow,
-    //   pinned: false,
-    //   stretch: true,
-    //   forceMaterialTransparency: true,
-    //   automaticallyImplyLeading: false,
-    //   leading: IconButton(
-    //     onPressed: () => Navigator.pop(context),
-    //     icon: Icon(Icons.close),
-    //   ),
-    // );
-
     final topBar = TopBarSliver(
-      title: Text('Backup checklist'),
+      title: Text('Backup keys'),
       leading: IconButton(
         icon: Icon(Icons.arrow_back),
         onPressed: () => Navigator.pop(context),
       ),
       showClose: false,
-    );
-
-    final toBringList =
-        [
-              'The Frostsnap',
-              Platform.isAndroid || Platform.isIOS
-                  ? 'This phone'
-                  : 'This laptop',
-              'A backup card',
-              'A pencil',
-            ]
-            .map(
-              (item) => ListTile(
-                dense: true,
-                leading: Icon(Icons.check),
-                title: Text(item),
-              ),
-            )
-            .toList();
-
-    final infoColumn = SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: DefaultTextStyle(
-          style:
-              theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ) ??
-              TextStyle(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Travel to the locations where you will store each Frostsnap.',
-              ),
-              const SizedBox(height: 16),
-              Text('Make sure to bring:'),
-              const SizedBox(height: 16),
-              Card(
-                color: theme.colorScheme.surfaceContainerHighest,
-                margin: EdgeInsets.all(0.0),
-                child: Column(children: toBringList),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Icon(Icons.warning),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "Anyone who can access any ${accessStructure.threshold()} of the ${accessStructure.devices().length} Frostsnaps in this wallet can take all the Bitcoin. Secure them carefully.",
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'When you arrive at each location press the button to show the backup:',
-              ),
-            ],
-          ),
-        ),
-      ),
     );
 
     final devicesColumn = SliverToBoxAdapter(
@@ -254,125 +394,363 @@ class _BackupChecklistState extends State<BackupChecklist> {
             }
 
             final backupRun = snapshot.data!;
-            final allDevices = accessStructure.devices();
-            final completedDevices = allDevices
-                .where(
-                  (deviceId) =>
-                      backupRun.devices.any(
-                        (d) => deviceIdEquals(d.$1, deviceId) && d.$2 != null,
-                      ) ||
-                      // if the device is not mentioned in the list assume it's completed
-                      backupRun.devices.none(
-                        (d) => deviceIdEquals(d.$1, deviceId),
-                      ),
-                )
+
+            // Devices are already sorted by share index and contain all metadata
+            final deviceInfoList = backupRun.devices;
+
+            final completedDevices = deviceInfoList
+                .where((d) => d.complete == true)
                 .toList();
-
-            final devicesList = allDevices.map((deviceId) {
-              final deviceName = coord.getDeviceName(id: deviceId) ?? "";
-              final isCompleted = completedDevices.any(
-                (id) => deviceIdEquals(id, deviceId),
-              );
-
-              return Card(
-                color: theme.colorScheme.surfaceContainerHighest,
-                margin: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 8.0,
-                  ),
-                  title: Text(
-                    deviceName,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  leading: Icon(
-                    isCompleted ? Icons.check_circle : Icons.circle_outlined,
-                    color: isCompleted
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  trailing: StreamBuilder(
-                    stream: GlobalStreams.deviceListSubject,
-                    builder: (context, deviceListSnapshot) {
-                      final connectedDevice = deviceListSnapshot.data?.state
-                          .getDevice(id: deviceId);
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: 8,
-                        children: [
-                          if (connectedDevice == null) Text('Disconnected'),
-                          if (isCompleted && connectedDevice != null)
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor:
-                                    theme.colorScheme.surfaceContainerLow,
-                                foregroundColor:
-                                    theme.colorScheme.onSurfaceVariant,
-                              ),
-                              onPressed: () async {
-                                while (true) {
-                                  final isBackupValid =
-                                      await _checkDialogController.show(
-                                        context,
-                                        deviceId,
-                                      );
-                                  if (isBackupValid == null) /* cancelled */
-                                    return;
-                                  if (isBackupValid) {
-                                    await showBackupOkayDialog(context);
-                                    return;
-                                  }
-
-                                  final tryAgain =
-                                      await showBackupInvalidDialog(context);
-                                  if (!tryAgain) return;
-                                }
-                              },
-                              child: const Text('Check'),
-                            ),
-                          if (connectedDevice != null)
-                            FilledButton(
-                              style: isCompleted
-                                  ? FilledButton.styleFrom(
-                                      backgroundColor:
-                                          theme.colorScheme.surfaceContainerLow,
-                                      foregroundColor:
-                                          theme.colorScheme.onSurfaceVariant,
-                                    )
-                                  : FilledButton.styleFrom(
-                                      backgroundColor:
-                                          theme.colorScheme.primary,
-                                    ),
-                              onPressed: () => maybeShowThatWasQuickDialog(
-                                context,
-                                deviceId,
-                              ),
-                              child: isCompleted
-                                  ? const Text('Show')
-                                  : Text("I'm here"),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              );
-            });
+            final allComplete =
+                completedDevices.length == deviceInfoList.length;
 
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ...devicesList,
+                Text(
+                  'Connect the devices one at a time to back up their keys.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                // Explanatory text
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "Each backup is an unencrypted copy of the device's key, allowing you to recover your wallet if the device is lost or damaged.",
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Warning about security
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: theme.colorScheme.error,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "Anyone who can access any ${accessStructure.threshold()} of the ${accessStructure.devices().length} keys for this wallet can take all the bitcoin. Secure them carefully.",
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Combined gradient border with device status and progress
+                StreamBuilder<DeviceListUpdate>(
+                  stream: GlobalStreams.deviceListSubject,
+                  builder: (context, deviceListSnapshot) {
+                    final connectedDevices =
+                        deviceListSnapshot.data?.state.devices ?? [];
+                    final deviceCount = connectedDevices.length;
+
+                    Widget deviceStatusContent;
+                    IconData statusIcon;
+                    Color? statusIconColor;
+
+                    if (deviceCount > 1) {
+                      // Multiple devices warning
+                      statusIcon = Icons.warning_sharp;
+                      statusIconColor = theme.colorScheme.primary;
+                      deviceStatusContent = Text(
+                        'Multiple devices connected. Connect only one device at a time.',
+                      );
+                    } else if (deviceCount == 1) {
+                      // Single device - show buttons
+                      final connectedDevice = connectedDevices.first;
+                      final connectedDeviceId = connectedDevice.id;
+
+                      // Find the share index for the connected device
+                      final shareIndex = accessStructure
+                          .getDeviceShortShareIndex(
+                            deviceId: connectedDeviceId,
+                          );
+
+                      // Find backup info for this share index
+                      final deviceInfo = shareIndex != null
+                          ? deviceInfoList.firstWhereOrNull(
+                              (d) => d.shareIndex == shareIndex,
+                            )
+                          : null;
+
+                      if (deviceInfo == null) {
+                        statusIcon = Icons.info_rounded;
+                        statusIconColor = null;
+                        deviceStatusContent = Text(
+                          'Unknown device connected. Please check your device.',
+                        );
+                      } else {
+                        statusIcon = Icons.usb_rounded;
+                        statusIconColor = theme.colorScheme.primary;
+                        deviceStatusContent = Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  DeviceWithShareIndex(
+                                    shareIndex: deviceInfo.shareIndex,
+                                    deviceName:
+                                        coord.getDeviceName(
+                                          id: deviceInfo.deviceId,
+                                        ) ??
+                                        '',
+                                  ),
+                                  Text(
+                                    'connected',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (deviceInfo.complete != false)
+                              Row(
+                                spacing: 8,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  FilledButton(
+                                    onPressed: () => showBackupDialog(
+                                      context,
+                                      connectedDeviceId,
+                                    ),
+                                    child: Text('Backup'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => showCheckDialog(
+                                      context,
+                                      connectedDeviceId,
+                                    ),
+                                    child: Text('Check'),
+                                  ),
+                                ],
+                              )
+                            else
+                              FilledButton(
+                                onPressed: () => showBackupDialog(
+                                  context,
+                                  connectedDeviceId,
+                                ),
+                                child: Text('Backup'),
+                              ),
+                          ],
+                        );
+                      }
+                    } else {
+                      // No device
+                      statusIcon = Icons.usb_rounded;
+                      statusIconColor = null;
+                      deviceStatusContent = Text(
+                        'Plug in device to back it up',
+                      );
+                    }
+
+                    return AnimatedGradientBorder(
+                      stretchAlongAxis: true,
+                      borderSize: 1.0,
+                      glowSize: 5.0,
+                      animationTime: 6,
+                      borderRadius: BorderRadius.circular(12.0),
+                      gradientColors: [
+                        theme.colorScheme.outlineVariant,
+                        theme.colorScheme.primary,
+                        theme.colorScheme.secondary,
+                        theme.colorScheme.tertiary,
+                      ],
+                      child:
+                          (Widget child) {
+                            return Card.filled(
+                              margin: EdgeInsets.all(0.0),
+                              color: theme.colorScheme.surfaceContainerHigh,
+                              child: child,
+                            );
+                          }(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Device status section
+                                Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(minHeight: 48),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          statusIcon,
+                                          color: statusIconColor,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: deviceStatusContent),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                Divider(height: 1),
+                                // Device checklist with progress counter
+                                Stack(
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: () {
+                                        // Group devices by share index
+                                        final devicesByShareIndex =
+                                            <int, List<BackupDevice>>{};
+                                        for (final device in deviceInfoList) {
+                                          devicesByShareIndex
+                                              .putIfAbsent(
+                                                device.shareIndex,
+                                                () => [],
+                                              )
+                                              .add(device);
+                                        }
+
+                                        // Create list tiles for each share index
+                                        return devicesByShareIndex.entries.map((
+                                          entry,
+                                        ) {
+                                          final shareIndex = entry.key;
+                                          final devices = entry.value;
+
+                                          // All devices with the same share index have the same completion status
+                                          final complete =
+                                              devices.first.complete;
+
+                                          IconData icon;
+                                          Color color;
+
+                                          if (complete == false) {
+                                            icon = Icons.circle_outlined;
+                                            color = theme
+                                                .colorScheme
+                                                .onSurfaceVariant;
+                                          } else {
+                                            // complete == true or complete == null (treat null as backed up)
+                                            icon = Icons.check_circle;
+                                            color = theme.colorScheme.primary;
+                                          }
+
+                                          return ListTile(
+                                            dense: true,
+                                            leading: Icon(icon, color: color),
+                                            title: Row(
+                                              spacing: 4,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  "#$shareIndex",
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color: theme
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                ),
+                                                Flexible(
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 80,
+                                                        ),
+                                                    child: Text(
+                                                      devices
+                                                          .map(
+                                                            (d) =>
+                                                                coord.getDeviceName(
+                                                                  id: d
+                                                                      .deviceId,
+                                                                ) ??
+                                                                '',
+                                                          )
+                                                          .join(', '),
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w500,
+                                                          ),
+                                                      softWrap: true,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList();
+                                      }(),
+                                    ),
+                                    Positioned(
+                                      top: 12,
+                                      right: 16,
+                                      child: Text(
+                                        '${completedDevices.length}/${deviceInfoList.length} complete',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 24),
                 Center(
-                  child: FilledButton(
-                    onPressed: completedDevices.length == allDevices.length
-                        ? () => Navigator.popUntil(context, (r) => r.isFirst)
-                        : null,
-                    child: const Text('Done'),
-                  ),
+                  child: allComplete
+                      ? FilledButton(
+                          onPressed: () =>
+                              Navigator.popUntil(context, (r) => r.isFirst),
+                          child: const Text('Done'),
+                        )
+                      : TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Finish later'),
+                        ),
                 ),
               ],
             );
@@ -387,7 +765,6 @@ class _BackupChecklistState extends State<BackupChecklist> {
       physics: ClampingScrollPhysics(),
       slivers: [
         topBar,
-        infoColumn,
         devicesColumn,
         SliverSafeArea(sliver: SliverToBoxAdapter()),
       ],

@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
-use frostsnap_core::device::{
-    restoration::{BackupDisplayPhase, EnterBackupPhase},
-    KeyGenPhase3, SignPhase1,
+use frostsnap_core::{
+    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
+    AccessStructureRef,
 };
 use frostsnap_widgets::{
     backup::{BackupDisplay, EnterShareScreen},
@@ -13,10 +13,6 @@ use frostsnap_widgets::{
 };
 
 use crate::ui::FirmwareUpgradeStatus;
-
-// Type alias for the backup request prompt widget
-type BackupRequestPromptWidget =
-    HoldToConfirm<Center<frostsnap_widgets::Column<(Text, Text, Text)>>>;
 
 /// The widget tree represents the current UI state as a tree of widgets
 #[derive(frostsnap_macros::Widget)]
@@ -60,26 +56,23 @@ pub enum WidgetTree {
         status: FirmwareUpgradeStatus,
     },
 
-    /// Display backup request prompt
-    DisplayBackupRequestPrompt {
-        widget: Box<BackupRequestPromptWidget>,
-        phase: Option<Box<BackupDisplayPhase>>,
-    },
-
     /// New name confirmation prompt
     NewNamePrompt {
         widget: Box<HoldToConfirm<Text>>,
         new_name: Option<frostsnap_comms::DeviceName>,
     },
 
-    /// Device wipe confirmation prompt  
+    /// Device wipe confirmation prompt
     WipeDevicePrompt {
         widget: Box<HoldToConfirm<Text>>,
         confirmed: bool,
     },
 
     /// Display backup screen
-    DisplayBackup(Box<BackupDisplay>),
+    DisplayBackup {
+        widget: Box<BackupDisplay>,
+        access_structure_ref: Option<AccessStructureRef>,
+    },
 
     /// Display Bitcoin address screen with derivation path
     AddressDisplay(Box<Center<frostsnap_widgets::AddressWithPath>>),

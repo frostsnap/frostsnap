@@ -255,44 +255,6 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             confirmed: false,
                         }
                     }
-                    Prompt::DisplayBackupRequest { phase } => {
-                        use frostsnap_widgets::DefaultTextStyle;
-                        use frostsnap_widgets::{
-                            Center, Column, HoldToConfirm, MainAxisAlignment, Text, FONT_LARGE,
-                            FONT_MED,
-                        };
-
-                        // Create text for the prompt
-                        let key_name = &phase.key_name;
-                        let prompt_text = Center::new(
-                            Column::builder()
-                                .push(Text::new(
-                                    "Display backup",
-                                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-                                ))
-                                .gap(5)
-                                .push(Text::new(
-                                    "for",
-                                    DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-                                ))
-                                .gap(20)
-                                .push(Text::new(
-                                    key_name.clone(),
-                                    DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
-                                ))
-                                .with_main_axis_alignment(MainAxisAlignment::Center),
-                        );
-
-                        // Create HoldToConfirm widget with 2 second hold time
-                        let hold_to_confirm =
-                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, prompt_text);
-
-                        // Store in WidgetTree - we need to add a new variant for this
-                        WidgetTree::DisplayBackupRequestPrompt {
-                            widget: Box::new(hold_to_confirm),
-                            phase: Some(phase),
-                        }
-                    }
                     Prompt::NewName { old_name, new_name } => {
                         use frostsnap_widgets::DefaultTextStyle;
                         use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
@@ -350,6 +312,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             Workflow::DisplayBackup {
                 key_name: _,
                 backup,
+                access_structure_ref,
             } => {
                 let word_indices = backup.to_word_indices();
                 let share_index: u16 = backup
@@ -357,7 +320,10 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     .try_into()
                     .expect("Share index should fit in u16");
                 let backup_display = BackupDisplay::new(word_indices, share_index);
-                WidgetTree::DisplayBackup(Box::new(backup_display))
+                WidgetTree::DisplayBackup {
+                    widget: Box::new(backup_display),
+                    access_structure_ref: Some(access_structure_ref),
+                }
             }
 
             Workflow::EnteringBackup(phase) => {
@@ -473,12 +439,15 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     return Some(UiEvent::UpgradeConfirm);
                 }
             }
-            WidgetTree::DisplayBackupRequestPrompt { widget, phase } => {
-                // Check if completed and we still have the phase
-                if widget.is_completed() {
-                    // Take the phase (move it out of the Option)
-                    if let Some(phase_data) = phase.take() {
-                        return Some(UiEvent::BackupRequestConfirm { phase: phase_data });
+            WidgetTree::DisplayBackup {
+                widget,
+                access_structure_ref,
+            } => {
+                if widget.is_confirmed() {
+                    if let Some(access_structure_ref_data) = access_structure_ref.take() {
+                        return Some(UiEvent::BackupRecorded {
+                            access_structure_ref: access_structure_ref_data,
+                        });
                     }
                 }
             }

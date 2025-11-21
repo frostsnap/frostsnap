@@ -9,12 +9,14 @@ use frostsnap_core::{
     coordinator::CoordFrostKey,
     schnorr_fun::frost::{ShareIndex, SharedKey},
     tweak::Xpub,
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SymmetricKey,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey,
 };
 use std::collections::BTreeMap;
 use tracing::{event, Level};
 
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
+
+pub use super::backup_run::{BackupDevice, BackupRun};
 
 #[derive(Clone, Debug)]
 pub struct KeyState {
@@ -153,18 +155,6 @@ impl Coordinator {
     pub fn send_cancel_all(&self) {
         event!(Level::WARN, "dart sent cancel all");
         self.0.usb_sender.send_cancel_all();
-    }
-
-    pub fn display_backup(
-        &self,
-        id: DeviceId,
-        access_structure_ref: AccessStructureRef,
-        encryption_key: SymmetricKey,
-        sink: StreamSink<bool>,
-    ) -> Result<()> {
-        self.0
-            .request_display_backup(id, access_structure_ref, encryption_key, SinkWrap(sink))?;
-        Ok(())
     }
 
     #[frb(sync)]
