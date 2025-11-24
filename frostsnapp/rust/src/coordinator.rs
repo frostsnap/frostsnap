@@ -736,9 +736,7 @@ impl FfiCoordinator {
             })?
         };
 
-        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-            stream.send(self.key_state());
-        }
+        self.emit_key_state();
 
         Ok(restoration_id)
     }
@@ -766,9 +764,7 @@ impl FfiCoordinator {
             })?
         };
 
-        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-            stream.send(self.key_state());
-        }
+        self.emit_key_state();
 
         Ok(restoration_id)
     }
@@ -793,9 +789,7 @@ impl FfiCoordinator {
             })?;
         }
 
-        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-            stream.send(self.key_state());
-        }
+        self.emit_key_state();
         Ok(())
     }
 
@@ -805,29 +799,21 @@ impl FfiCoordinator {
         recover_share: &RecoverShare,
         encryption_key: SymmetricKey,
     ) -> Result<()> {
+        let held_by = recover_share.held_by;
         {
-            let held_by = recover_share.held_by;
-            {
-                let mut db = self.db.lock().unwrap();
-                let mut coordinator = self.coordinator.lock().unwrap();
-                coordinator.staged_mutate(&mut *db, |coordinator| {
-                    coordinator.recover_share(
-                        access_structure_ref,
-                        recover_share,
-                        encryption_key,
-                    )?;
-                    Ok(())
-                })?;
-            }
-
-            self.exit_recovery_mode(held_by, encryption_key);
-
-            if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-                stream.send(self.key_state());
-            }
-
-            Ok(())
+            let mut db = self.db.lock().unwrap();
+            let mut coordinator = self.coordinator.lock().unwrap();
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                coordinator.recover_share(access_structure_ref, recover_share, encryption_key)?;
+                Ok(())
+            })?;
         }
+
+        self.exit_recovery_mode(held_by, encryption_key);
+
+        self.emit_key_state();
+
+        Ok(())
     }
 
     pub fn get_restoration_state(&self, restoration_id: RestorationId) -> Option<RestorationState> {
@@ -865,24 +851,22 @@ impl FfiCoordinator {
             self.exit_recovery_mode(device_id, encryption_key);
         }
 
-        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-            stream.send(self.key_state());
-        }
+        self.emit_key_state();
 
         Ok(assid)
     }
 
     pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
-        let mut db = self.db.lock().unwrap();
-        let mut coordinator = self.coordinator.lock().unwrap();
-        coordinator.staged_mutate(&mut *db, |coordinator| {
-            coordinator.delete_key(key_id);
-            Ok(())
-        })?;
-        drop(coordinator);
-
-        // Clean up backup runs for deleted key
         {
+            let mut db = self.db.lock().unwrap();
+            let mut coordinator = self.coordinator.lock().unwrap();
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                coordinator.delete_key(key_id);
+                Ok(())
+            })?;
+            drop(coordinator);
+
+            // Clean up backup runs for deleted key
             let mut backup_state = self.backup_state.lock().unwrap();
             backup_state.mutate2(&mut *db, |state, mutations| {
                 state.clear_backup_run(key_id, mutations);
@@ -890,9 +874,7 @@ impl FfiCoordinator {
             })?;
         }
 
-        if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-            stream.send(self.key_state());
-        }
+        self.emit_key_state();
 
         Ok(())
     }
