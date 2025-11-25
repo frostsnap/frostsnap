@@ -578,7 +578,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: Text('Forget'),
+            child: Text('Cancel'),
           ),
         ),
       ),
@@ -622,7 +622,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 flex: 3,
                 child: TextButton(
                   onPressed: () async => showCancelBroadcastDialog(context),
-                  child: Text('Forget'),
+                  child: Text('Cancel'),
                 ),
               ),
               Expanded(child: SizedBox.shrink()),
@@ -676,7 +676,11 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Cancel Transaction'),
-        content: Text('No Bitcoin will be sent.'),
+        content: Text(
+          psbt != null
+              ? 'Transaction canceled. No Bitcoin will be sent unless you have already exported the PSBT.'
+              : 'No Bitcoin will be sent.',
+        ),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
@@ -701,8 +705,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Forget Transaction'),
-        content: Text('No Bitcoin will be sent. Transaction will be lost.'),
+        title: Text('Cancel Transaction'),
+        content: Text('No Bitcoin will be sent.'),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
