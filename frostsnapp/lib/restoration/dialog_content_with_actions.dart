@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 
 /// A simple layout widget for dialog content with action buttons at the bottom.
 /// Provides consistent layout structure with internal scrolling, no visual chrome.
@@ -16,6 +17,10 @@ class DialogContentWithActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 📱 Skip divider on mobile - fullscreen dialog doesn't need visual separation
+    final windowSize = WindowSizeContext.of(context);
+    final isCompact = windowSize == WindowSizeClass.compact;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -27,7 +32,7 @@ class DialogContentWithActions extends StatelessWidget {
             child: SingleChildScrollView(child: content),
           ),
         ),
-        const Divider(height: 0),
+        if (!isCompact) const Divider(height: 0),
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
