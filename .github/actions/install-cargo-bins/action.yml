@@ -26,7 +26,7 @@ runs:
           ~/.cargo/bin
           ~/.cargo/.crates.toml
           ~/.cargo/.crates2.json
-        key: ${{ runner.os }}-rust-bins-${{ inputs.version }}-${{ steps.hash_rust_bins.outputs.hash }}
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ runner.image }}-rust-bins-v0-${{ inputs.version }}-${{ steps.hash_rust_bins.outputs.hash }}
 
     - name: Setup Rust Toolchain
       if: steps.cache-rust-bins.outputs.cache-hit != 'true'

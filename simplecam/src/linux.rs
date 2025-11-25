@@ -38,12 +38,12 @@ impl LinuxCamera {
                 let framesizes = dev.enum_framesizes(fourcc).ok()?;
                 let (width, height) = framesizes
                     .iter()
-                    .filter_map(|fs| match &fs.size {
+                    .map(|fs| match &fs.size {
                         v4l::framesize::FrameSizeEnum::Discrete(size) => {
-                            Some((size.width, size.height))
+                            (size.width, size.height)
                         }
                         v4l::framesize::FrameSizeEnum::Stepwise(stepwise) => {
-                            Some((stepwise.max_width, stepwise.max_height))
+                            (stepwise.max_width, stepwise.max_height)
                         }
                     })
                     .max_by_key(|(w, h)| w * h)?;
@@ -61,7 +61,7 @@ impl LinuxCamera {
     }
 
     pub fn open(device_info: &DeviceInfo, sink: impl CameraSink) -> Result<Self> {
-        let mut device = Device::new(device_info.index).map_err(|e| {
+        let device = Device::new(device_info.index).map_err(|e| {
             CameraError::OpenFailed(format!(
                 "Failed to open device {}: {}",
                 device_info.index, e
@@ -86,31 +86,25 @@ impl LinuxCamera {
 
         let thread = thread::spawn(move || {
             let mut stream =
-                match MmapStream::with_buffers(&mut device, v4l::buffer::Type::VideoCapture, 4) {
+                match MmapStream::with_buffers(&device, v4l::buffer::Type::VideoCapture, 4) {
                     Ok(s) => s,
                     Err(_) => return,
                 };
 
-            loop {
-                match stream.next() {
-                    Ok((buf, _meta)) => {
-                        let jpeg_data =
-                            match crate::decode::raw_to_jpeg(&buf, format, width, height) {
-                                Ok(data) => data,
-                                Err(_) => continue,
-                            };
+            while let Ok((buf, _meta)) = stream.next() {
+                let jpeg_data = match crate::decode::raw_to_jpeg(buf, format, width, height) {
+                    Ok(data) => data,
+                    Err(_) => continue,
+                };
 
-                        let frame = Frame {
-                            data: jpeg_data,
-                            width,
-                            height,
-                        };
+                let frame = Frame {
+                    data: jpeg_data,
+                    width,
+                    height,
+                };
 
-                        if sink.send_frame(frame).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
+                if sink.send_frame(frame).is_err() {
+                    break;
                 }
             }
         });

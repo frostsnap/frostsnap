@@ -268,9 +268,7 @@ void showExportWalletDialog(BuildContext context, String descriptor) async {
         color: theme.colorScheme.onSurface,
       ),
     ),
-    style: TextButton.styleFrom(
-      alignment: Alignment.centerLeft,
-    ),
+    style: TextButton.styleFrom(alignment: Alignment.centerLeft),
   );
 
   final doneButton = FilledButton(
@@ -300,9 +298,7 @@ void showExportWalletDialog(BuildContext context, String descriptor) async {
                     ),
                   ),
                   Flexible(
-                    child: SingleChildScrollView(
-                      child: descriptorButton,
-                    ),
+                    child: SingleChildScrollView(child: descriptorButton),
                   ),
                   doneButton,
                 ],
