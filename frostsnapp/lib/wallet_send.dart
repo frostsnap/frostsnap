@@ -312,11 +312,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
                           icon: Icon(Icons.paste),
                         ),
                         TextButton.icon(
-                          // TODO: Fix this - scanning on Linux is disabled as it doesn't work.
-                          onPressed: Platform.isLinux
-                              ? null
-                              : () => recipientScan(context),
-                          label: Text('Scan (coming soon)'),
+                          onPressed: Platform.isAndroid
+                              ? () => recipientScan(context)
+                              : null,
+                          label: Text(
+                            Platform.isAndroid ? 'Scan' : 'Scan (coming soon)',
+                          ),
                           icon: Icon(Icons.qr_code),
                         ),
                       ],
