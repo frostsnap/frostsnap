@@ -1,8 +1,16 @@
+import 'dart:io';
+
 import 'package:frostsnap/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
+import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
@@ -11,11 +19,25 @@ import 'package:frostsnap/wallet_tx_details.dart';
 
 enum SendPageIndex { recipient, amount, signers }
 
-class DeleteSigningSession {}
-
 class WalletSendPage extends StatefulWidget {
+  final SuperWallet superWallet;
+  final MasterAppkey masterAppkey;
+  final double initialFeerate;
   final ScrollController? scrollController;
-  const WalletSendPage({super.key, this.scrollController});
+  const WalletSendPage({
+    super.key,
+    required this.superWallet,
+    required this.masterAppkey,
+    this.initialFeerate = 3.0,
+    this.scrollController,
+  });
+
+  BuildTxState buildTx() {
+    final state = superWallet.buildTx(coord: coord, masterAppkey: masterAppkey);
+    // This can only fail if the wallet does not have a frost key - in which case, we shouldn't even
+    // be sending from this wallet!
+    return state!;
+  }
 
   @override
   State<WalletSendPage> createState() => _WalletSendPageState();
@@ -24,104 +46,48 @@ class WalletSendPage extends StatefulWidget {
 class _WalletSendPageState extends State<WalletSendPage> {
   static const sectionPadding = EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0);
 
-  late final AddressInputController addressModel;
-  late final FeeRateController feeRateModel;
-  late final AmountAvaliableController amountAvaliable;
-  late final AmountInputController amountModel;
-  UnsignedTx? unsignedTx;
-  final selectedDevicesModel = SelectedDevicesController();
-  final signingSession = SigningSessionController();
+  late final UnitBroadcastSubscription sub;
+
+  late final ScrollController scrollController;
+  late final BuildTxState state;
+
+  late final AddressInputController addrController;
+  String? addrError;
+
+  late final AmountInputController amountController;
+
   var pageIndex = SendPageIndex.recipient;
-  late final ScrollController _scrollController;
-  late final ValueNotifier<bool> _isAtEnd;
-  late final Widget _recipientDoneButton;
-
-  _initRecipientDoneButton() {
-    _recipientDoneButton = ListenableBuilder(
-      listenable: addressModel,
-      builder: (context, _) => IconButton.filled(
-        onPressed: addressModel.errorText != null
-            ? null
-            : () => recipientDone(context),
-        icon: Icon(Icons.done),
-      ),
-    );
-  }
-
-  late final Widget _amountDoneButton;
-  _initAmountDoneButton() {
-    _amountDoneButton = ListenableBuilder(
-      listenable: amountModel,
-      builder: (context, _) => IconButton.filled(
-        // TODO: Create a getter for this.
-        onPressed:
-            (amountModel.error != null ||
-                amountModel.amount == null ||
-                amountModel.textEditingController.text.isEmpty)
-            ? null
-            : () => amountDone(context),
-        icon: Icon(Icons.done),
-      ),
-    );
-  }
-
-  late final Widget _signersDoneButton;
-  _initSignersDoneButton() {
-    _signersDoneButton = ListenableBuilder(
-      listenable: selectedDevicesModel,
-      builder: (context, child) {
-        final isThresholdMet = selectedDevicesModel.isThresholdMet;
-        final remaining = selectedDevicesModel.remaining;
-        final nextText = (isThresholdMet)
-            ? 'Sign Transaction'
-            : 'Select $remaining more';
-        return FilledButton(
-          onPressed: (unsignedTx == null || !isThresholdMet)
-              ? null
-              : () => signersDone(context),
-          child: Text(nextText),
-        );
-      },
-    );
-  }
+  bool estimateRunning = false;
 
   @override
   void initState() {
     super.initState();
-    _isAtEnd = ValueNotifier(true);
-    _scrollController = widget.scrollController ?? ScrollController();
-    _scrollController.addListener(() {
-      _isAtEnd.value =
-          _scrollController.position.atEdge &&
-          _scrollController.position.pixels ==
-              _scrollController.position.maxScrollExtent;
-    });
 
-    addressModel = AddressInputController();
-    feeRateModel = FeeRateController(satsPerVB: 5.0);
+    scrollController = widget.scrollController ?? ScrollController();
 
-    amountAvaliable = AmountAvaliableController(
-      feeRateController: feeRateModel,
+    state = widget.buildTx();
+
+    // We only support one access structure for now.
+    state.setAccessId(
+      accessId: state.accessStructures().first.accessStructureId(),
     );
-    amountModel = AmountInputController(
-      amountAvailableController: amountAvaliable,
-    );
+    if (state.confirmationEstimates() == null)
+      state.refreshConfirmationEstimates();
 
-    _initRecipientDoneButton();
-    _initAmountDoneButton();
-    _initSignersDoneButton();
+    sub = state.subscribe();
+    sub.start().listen((_) => mounted ? setState(() {}) : null);
+
+    addrController = AddressInputController(state);
+    amountController = AmountInputController(state: state);
   }
 
   @override
   void dispose() {
-    amountModel.dispose();
-    amountAvaliable.dispose();
-    feeRateModel.dispose();
-    addressModel.dispose();
-    selectedDevicesModel.dispose();
-    signingSession.dispose();
-    if (widget.scrollController == null) _scrollController.dispose();
-    _isAtEnd.dispose();
+    amountController.dispose();
+    addrController.dispose();
+    sub.dispose();
+    state.dispose();
+    if (widget.scrollController == null) scrollController.dispose();
     super.dispose();
   }
 
@@ -130,21 +96,95 @@ class _WalletSendPageState extends State<WalletSendPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (context.mounted) {
-      final walletCtx = WalletContext.of(context);
-      if (walletCtx != null) {
-        selectedDevicesModel.walletContext = walletCtx;
-        amountAvaliable.walletContext = walletCtx;
-        if (!alreadyRefreshed) {
-          feeRateModel.refreshEstimates(context, walletCtx, 1);
-          alreadyRefreshed = true;
-        }
+    if (!mounted) return;
+    if (state.confirmationEstimates() == null) {
+      try {
+        state.refreshConfirmationEstimates();
+      } catch (e, _) {
+        // Ignore in production, log in debug.
+        assert(() {
+          print('Ignored exception: $e');
+          return true;
+        }());
       }
     }
   }
 
-  Widget _buildCompletedList(BuildContext context) {
+  Widget _buildCompletedAmountAndFee(BuildContext context) {
     final theme = Theme.of(context);
+
+    final isSendMax = state.isSendMax(recipient: 0);
+
+    int? amount;
+    try {
+      amount = state.amount(recipient: 0);
+    } on AmountError catch (e) {
+      assert(() {
+        print('Must have valid amount at this point: $e');
+        return true;
+      }());
+      prevPageOrPop(null);
+    }
+
+    Widget leadingCard(String data) {
+      return Card(
+        color: theme.colorScheme.secondaryContainer,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 6.0),
+          child: Text(
+            data,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSecondaryContainer,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        ListTile(
+          onTap: () => setState(() => pageIndex = SendPageIndex.amount),
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            spacing: 4.0,
+            children: [
+              completedCardLabel(context, 'Amount'),
+              if (isSendMax) Flexible(child: leadingCard('Max')),
+            ],
+          ),
+          title: SatoshiText(value: amount),
+        ),
+        ListTile(
+          onTap: () => showFeeRateDialog(context),
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            spacing: 4.0,
+            children: [
+              completedCardLabel(context, 'Fee'),
+              Flexible(
+                child: leadingCard(
+                  '${state.feerate()?.toStringAsFixed(1) ?? '~'} sat/vB',
+                ),
+              ),
+            ],
+          ),
+          title: SatoshiText(
+            value: state.fee(),
+            style: TextStyle(color: theme.colorScheme.secondary),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompletedList(BuildContext context) {
+    // TODO: We only support one recipient right now!
+    final recipient = state.recipient(recipient: 0);
 
     return AnimatedSize(
       duration: Durations.short4,
@@ -157,59 +197,16 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ListTile(
               onTap: () => setState(() => pageIndex = SendPageIndex.recipient),
               leading: completedCardLabel(context, 'Recipient'),
-              title: ListenableBuilder(
-                listenable: addressModel,
-                builder: (ctx, _) => Text(
-                  addressModel.formattedAddress,
-                  textWidthBasis: TextWidthBasis.longestLine,
-                  textAlign: TextAlign.right,
-                  style: monospaceTextStyle,
-                ),
+              title: Text(
+                // addressModel.formattedAddress,
+                spacedHex(recipient?.address?.toString() ?? '', groupSize: 4),
+                textWidthBasis: TextWidthBasis.longestLine,
+                textAlign: TextAlign.right,
+                style: monospaceTextStyle,
               ),
             ),
           if (pageIndex.index > SendPageIndex.amount.index)
-            Column(
-              children: [
-                ListTile(
-                  onTap: () => setState(() => pageIndex = SendPageIndex.amount),
-                  leading: completedCardLabel(context, 'Amount'),
-                  title: SatoshiText(value: amountModel.amount ?? 0),
-                ),
-                ListTile(
-                  onTap: () => showFeeRateDialog(context),
-                  leading: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    spacing: 4.0,
-                    children: [
-                      completedCardLabel(context, 'Fee'),
-                      Flexible(
-                        child: Card(
-                          color: theme.colorScheme.secondaryContainer,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              vertical: 2.0,
-                              horizontal: 6.0,
-                            ),
-                            child: Text(
-                              '${unsignedTx?.feerate()?.toStringAsFixed(1)} sat/vB',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSecondaryContainer,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  title: SatoshiText(
-                    value: unsignedTx?.fee(),
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
-                ),
-              ],
-            ),
+            _buildCompletedAmountAndFee(context),
           if (pageIndex.index > SendPageIndex.recipient.index)
             SizedBox(height: 24.0),
         ],
@@ -217,59 +214,66 @@ class _WalletSendPageState extends State<WalletSendPage> {
     );
   }
 
+  void refreshConfirmationEstimates() async {
+    if (!mounted) return;
+    if (estimateRunning) return;
+    setState(() => estimateRunning = true);
+    await state.refreshConfirmationEstimates();
+    if (mounted) setState(() => estimateRunning = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final etaInputCard = ListenableBuilder(
-      listenable: feeRateModel,
-      builder: (context, _) {
-        return TextButton.icon(
-          onPressed: pageIndex.index < SendPageIndex.signers.index
-              ? () => showFeeRateDialog(context)
-              : null,
-          icon: Stack(
-            alignment: AlignmentDirectional.bottomCenter,
-            children: [
-              Icon(Icons.speed_rounded),
-              if (feeRateModel.estimateRunning)
-                SizedBox(
-                  height: 2.0,
-                  width: 12.0,
-                  child: LinearProgressIndicator(),
-                ),
-            ],
+    final confirmationBlocks = state.confirmationBlocksOfFeerate();
+    final feerate = state.feerate();
+
+    final etaInputCard = TextButton.icon(
+      onPressed: pageIndex.index < SendPageIndex.signers.index
+          ? () => showFeeRateDialog(context)
+          : null,
+      icon: Stack(
+        alignment: AlignmentDirectional.bottomCenter,
+        children: [
+          Icon(Icons.speed_rounded),
+          if (estimateRunning)
+            SizedBox(
+              height: 2.0,
+              width: 12.0,
+              child: LinearProgressIndicator(),
+            ),
+        ],
+      ),
+      label: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Text.rich(
+              confirmationBlocks != null
+                  ? TextSpan(
+                      children: [
+                        TextSpan(text: 'Confirms in '),
+                        TextSpan(
+                          text: '~${confirmationBlocks * 10} min',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    )
+                  : TextSpan(text: 'Feerate'),
+            ),
           ),
-          label: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(text: 'Confirms in '),
-                      TextSpan(
-                        text: feeRateModel.targetTime == null
-                            ? '...'
-                            : '~${feeRateModel.targetTime} min',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (pageIndex.index < SendPageIndex.signers.index)
-                Flexible(child: Text('${feeRateModel.satsPerVB} sat/vB')),
-            ],
-          ),
-        );
-      },
+          if (pageIndex.index < SendPageIndex.signers.index && feerate != null)
+            Flexible(child: Text('${feerate.toStringAsFixed(1)} sat/vB')),
+        ],
+      ),
     );
 
     final cardColor = theme.colorScheme.surfaceContainerHigh;
 
     final recipientInputCard = Card.outlined(
       color: cardColor,
+      shape: cardShape(context),
       margin: EdgeInsets.all(0.0),
       child: Padding(
         padding: EdgeInsets.all(12.0),
@@ -278,7 +282,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
           spacing: 12.0,
           children: [
             AddressInput(
-              controller: addressModel,
+              controller: addrController,
               onSubmitted: (_) => recipientDone(context),
               decoration: InputDecoration(
                 filled: false,
@@ -287,30 +291,45 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   borderSide: BorderSide.none,
                 ),
                 hintText: 'Recipient',
+                errorText: addrError,
                 errorMaxLines: 2,
               ),
             ),
             Row(
               spacing: 8.0,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  spacing: 8.0,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => recipientPaste(context),
-                      label: Text('Paste'),
-                      icon: Icon(Icons.paste),
+                Expanded(
+                  child: SizedBox(
+                    // Constrain height - horizontal ListView requires fixed vertical height.
+                    height: 36,
+                    child: ListView(
+                      shrinkWrap: true,
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        TextButton.icon(
+                          onPressed: () => recipientPaste(context),
+                          label: Text('Paste'),
+                          icon: Icon(Icons.paste),
+                        ),
+                        TextButton.icon(
+                          onPressed: Platform.isAndroid
+                              ? () => recipientScan(context)
+                              : null,
+                          label: Text(
+                            Platform.isAndroid ? 'Scan' : 'Scan (coming soon)',
+                          ),
+                          icon: Icon(Icons.qr_code),
+                        ),
+                      ],
                     ),
-                    TextButton.icon(
-                      onPressed: () => recipientScan(context),
-                      label: Text('Scan'),
-                      icon: Icon(Icons.qr_code),
-                    ),
-                  ],
+                  ),
                 ),
-                _recipientDoneButton,
+                IconButton.filled(
+                  onPressed: addrController.errorText != null
+                      ? null
+                      : () => recipientDone(context),
+                  icon: Icon(Icons.done),
+                ),
               ],
             ),
           ],
@@ -318,8 +337,28 @@ class _WalletSendPageState extends State<WalletSendPage> {
       ),
     );
 
+    final availableAmount = state.availableAmount(recipient: 0);
+
+    int? amount;
+    String? amountErr;
+    try {
+      amount = state.amount(recipient: 0);
+    } on AmountError catch (e) {
+      amountErr = switch (e) {
+        AmountError_UnspecifiedFeerate() => 'No feerate set.',
+        AmountError_UnspecifiedAmount() => 'No amount set.',
+        AmountError_NoAmountAvailable() => 'No balance available.',
+        AmountError_TargetExceedsAvailable(:final target, :final available) =>
+          'Exceeds max by ${target - available}sat.',
+        AmountError_UnspecifiedAddress() => 'No recipient address.',
+        AmountError_AmountBelowDust(:final minNonDust) =>
+          'Minimum amount is $minNonDust.',
+      };
+    }
+
     final amountInputCard = Card.outlined(
       color: cardColor,
+      shape: cardShape(context),
       margin: EdgeInsets.all(0.0),
       child: Padding(
         padding: EdgeInsets.all(12.0),
@@ -327,42 +366,46 @@ class _WalletSendPageState extends State<WalletSendPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 12.0,
           children: [
-            AmountInput(
-              model: amountModel,
-              onSubmitted: (_) => amountDone(context),
-              decoration: InputDecoration(
-                filled: false,
-                errorMaxLines: 2,
-                hintText: 'Amount',
+            if (!state.isSendMax(recipient: 0))
+              AmountInput(
+                model: amountController,
+                onSubmitted: (_) => amountDone(context),
+                decoration: InputDecoration(
+                  filled: false,
+                  errorMaxLines: 2,
+                  hintText: 'Amount',
+                  errorText: amountErr,
+                ),
               ),
-            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                ListenableBuilder(
-                  listenable: Listenable.merge([amountModel, amountAvaliable]),
-                  builder: (context, _) => TextButton.icon(
-                    onPressed:
-                        (amountAvaliable.value == null ||
-                            amountAvaliable.value! == 0)
-                        ? null
-                        : () => amountModel.sendMax = !amountModel.sendMax,
-                    label: Row(
-                      spacing: 4.0,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Send Max'),
-                        SatoshiText(value: amountAvaliable.value),
-                      ],
-                    ),
-                    icon: Icon(
-                      amountModel.sendMax
-                          ? Icons.check_box
-                          : Icons.check_box_outline_blank,
-                    ),
+                TextButton.icon(
+                  onPressed: (availableAmount ?? 0) == 0
+                      ? null
+                      : () => state.toggleSendMax(
+                          recipient: 0,
+                          fallbackAmount: amountController.amount,
+                        ),
+                  label: Row(
+                    spacing: 4.0,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Send Max'),
+                      SatoshiText(value: availableAmount),
+                    ],
+                  ),
+                  icon: Icon(
+                    (state.recipient(recipient: 0)?.amount?.isSendMax() ??
+                            false)
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
                   ),
                 ),
-                _amountDoneButton,
+                IconButton.filled(
+                  onPressed: amount == null ? null : () => amountDone(context),
+                  icon: Icon(Icons.done),
+                ),
               ],
             ),
           ],
@@ -370,8 +413,14 @@ class _WalletSendPageState extends State<WalletSendPage> {
       ),
     );
 
+    final accessStruct = state.accessStruct()!;
+    final threshold = accessStruct.threshold();
+    final selectedDevices = state.selectedSigners();
+    final remaining = threshold - selectedDevices.length;
+
     final signersInputCard = Card.outlined(
       color: cardColor,
+      shape: cardShape(context),
       margin: EdgeInsets.all(0.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -379,37 +428,42 @@ class _WalletSendPageState extends State<WalletSendPage> {
           ListTile(
             dense: true,
             title: Text('Select Signers'),
-            trailing: Text('${selectedDevicesModel.threshold} required'),
+            trailing: Text('${threshold} required'),
           ),
-          ListenableBuilder(
-            listenable: selectedDevicesModel,
-            builder: (context, child) => Column(
-              children: selectedDevicesModel.devices.map((device) {
-                if (device.nonces == 0) {
-                  selectedDevicesModel.deselect(device.id);
-                }
-                return CheckboxListTile(
-                  value: device.selected,
-                  onChanged: device.canSelect
-                      ? (selected) => selected ?? false
-                            ? selectedDevicesModel.select(device.id)
-                            : selectedDevicesModel.deselect(device.id)
-                      : null,
-                  secondary: Icon(Icons.key),
-                  title: Text(device.name ?? '<unknown>'),
-                  subtitle: device.nonces == 0
-                      ? Text(
-                          'no nonces remaining or too many signing sessions',
-                          style: TextStyle(color: theme.colorScheme.error),
-                        )
-                      : null,
-                );
-              }).toList(),
-            ),
+          Column(
+            children: state.availableSigners().map((device) {
+              final (id, name) = device;
+              final nonces = coord.noncesAvailable(id: id);
+              final isSelected = state.isSignerSelected(dId: id);
+
+              if (nonces == 0) state.deselectSigner(dId: id);
+
+              return CheckboxListTile(
+                value: isSelected,
+                onChanged: remaining > 0 || isSelected
+                    ? (selected) => selected ?? false
+                          ? state.selectSigner(dId: id)
+                          : state.deselectSigner(dId: id)
+                    : null,
+                secondary: Icon(Icons.key),
+                title: Text(name ?? '<unknown>'),
+                subtitle: nonces == 0
+                    ? Text(
+                        'no nonces remaining or too many signing sessions',
+                        style: TextStyle(color: theme.colorScheme.error),
+                      )
+                    : null,
+              );
+            }).toList(),
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
-            child: _signersDoneButton,
+            child: FilledButton(
+              onPressed: remaining == 0 ? () => signersDone(context) : null,
+              child: Text(
+                remaining > 0 ? 'Select ${remaining} more' : 'Sign transaction',
+              ),
+            ),
           ),
         ],
       ),
@@ -417,7 +471,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final mediaQuery = MediaQuery.of(context);
     final scrollView = CustomScrollView(
-      controller: _scrollController,
+      controller: scrollController,
       reverse: true,
       shrinkWrap: true,
       slivers: [
@@ -433,15 +487,15 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   ),
                   child: Column(
                     children: [
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12.0),
+                        child: etaInputCard,
+                      ),
                       if (pageIndex == SendPageIndex.recipient)
                         recipientInputCard,
                       if (pageIndex == SendPageIndex.amount) amountInputCard,
                       if (pageIndex == SendPageIndex.signers) signersInputCard,
                       //if (pageIndex == SendPageIndex.sign) signInputCard,
-                      Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12.0),
-                        child: etaInputCard,
-                      ),
                     ],
                   ),
                 ),
@@ -465,39 +519,44 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget completedCardLabel(BuildContext context, String text) =>
       Text(text, style: Theme.of(context).textTheme.labelLarge);
 
-  showFeeRateDialog(BuildContext context) {
-    final walletCtx = WalletContext.of(context);
-    if (walletCtx == null) return;
-    final fut = showDialog<double>(
+  Future<ConfirmationTarget?> showFeeRateDialog(BuildContext context) async {
+    final walletCtx = WalletContext.of(context)!;
+
+    final target = await showDialog<ConfirmationTarget>(
       context: context,
       builder: (context) {
         return BackdropFilter(
           filter: blurFilter,
-          child: FeeRatePickerDialog(
-            walletContext: walletCtx,
-            addressModel: addressModel,
-            amountModel: amountModel,
-            feeRateModel: feeRateModel,
-          ),
+          child: FeeRatePickerDialog(walletContext: walletCtx, state: state),
         );
       },
     );
-    fut.then((_) {
-      if (context.mounted && pageIndex.index > SendPageIndex.amount.index) {
-        // TODO: Ideally we want to be able to update the review page.
-        setState(() => pageIndex = SendPageIndex.amount);
-      }
-    });
+
+    if (context.mounted && pageIndex.index > SendPageIndex.amount.index) {
+      setState(() => pageIndex = SendPageIndex.amount);
+    }
+    return target;
   }
 
   signersDone(BuildContext context) async {
-    if (unsignedTx == null) return;
+    UnsignedTx? unsignedTx;
+    try {
+      unsignedTx = state.tryFinish();
+    } on TryFinishTxError catch (e) {
+      final why = switch (e) {
+        TryFinishTxError.missingFeerate => 'No feerate',
+        TryFinishTxError.incompleteRecipientValues => 'No recipient amount',
+        TryFinishTxError.insufficientBalance => 'Insufficient Balance',
+      };
+      showErrorSnackbar(context, 'Invalid transaction: $why');
+    }
 
     final fsCtx = FrostsnapContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final access = walletCtx.wallet.frostKey()!.accessStructures()[0];
     final chainTipHeight = walletCtx.wallet.superWallet.height();
     final now = DateTime.now();
+
     final tx = unsignedTx?.details(
       superWallet: walletCtx.superWallet,
       masterAppkey: walletCtx.masterAppkey,
@@ -518,48 +577,37 @@ class _WalletSendPageState extends State<WalletSendPage> {
           txDetails: txDetails,
           accessStructureRef: access.accessStructureRef(),
           unsignedTx: unsignedTx!,
-          devices: selectedDevicesModel.selected.toList(),
+          devices: state.selectedSigners().toList(),
           psbtMan: fsCtx.psbtManager,
         ),
       ),
     );
   }
 
-  amountDone(BuildContext context) {
-    final walletCtx = WalletContext.of(context)!;
-    final address = addressModel.address!;
-    final amount = amountModel.amount!;
-    final feerate = feeRateModel.satsPerVB;
-
-    final unsignedTxFut = walletCtx.wallet.superWallet.sendTo(
-      masterAppkey: walletCtx.masterAppkey,
-      toAddress: address,
-      value: amount,
-      feerate: feerate,
-    );
-    unsignedTxFut.then((unsignedTx) {
-      this.unsignedTx = unsignedTx;
-      nextPageOrPop(null);
-    }, onError: (e) => amountModel.customError = e.toString());
+  void amountDone(BuildContext context) {
+    nextPageOrPop(null);
   }
 
-  recipientDone(BuildContext context) async {
-    final walletCtx = WalletContext.of(context)!;
-    if (await addressModel.submit(walletCtx)) {
-      // Pre-populate amount if existed in URI (user can still edit)
-      if (addressModel.amount != null) {
-        amountModel.textEditingController.text = addressModel.amount.toString();
-      }
-
-      amountAvaliable.targetAddresses = [addressModel.address!];
-      nextPageOrPop(null);
+  void recipientDone(BuildContext context) async {
+    // Hardcoded recipient index for now - since only 1 recipient is supported.
+    final submitOkay = addrController.submit(0);
+    if (!submitOkay) {
+      // So that we see the address input error.
+      setState(() {});
+      return;
     }
+    if (state.feerate() == null) {
+      final feerate = await showFeeRateDialog(context);
+      if (feerate == null) return;
+    }
+
+    nextPageOrPop(null);
   }
 
   recipientPaste(BuildContext context) async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (!context.mounted || data == null || data.text == null) return;
-    addressModel.controller.text = data.text!;
+    addrController.controller.text = data.text!;
     recipientDone(context);
   }
 
@@ -569,14 +617,14 @@ class _WalletSendPageState extends State<WalletSendPage> {
       builder: (context) => AddressScanner(),
     );
     if (!context.mounted || addressResult == null) return;
-    addressModel.controller.text = addressResult;
+    addrController.controller.text = addressResult;
     recipientDone(context);
   }
 
   scrollToTop() {
     Future.delayed(Durations.long3).then((_) async {
       if (context.mounted) {
-        await _scrollController.animateTo(
+        await scrollController.animateTo(
           0,
           duration: Durations.short3,
           curve: Curves.linear,

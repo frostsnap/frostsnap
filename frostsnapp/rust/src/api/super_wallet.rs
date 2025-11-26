@@ -1,5 +1,8 @@
 use super::bitcoin::BitcoinNetworkExt as _;
+use super::coordinator::Coordinator;
+use super::transaction::BuildTxState;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
+use crate::api::broadcast::Broadcast;
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::sink_wrap::SinkWrap;
 use anyhow::{Context as _, Result};
@@ -13,7 +16,10 @@ pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordS
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
+use std::collections::HashSet;
 use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
+use std::sync::RwLock;
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -194,30 +200,64 @@ impl SuperWallet {
         feerate: f64,
     ) -> Result<UnsignedTx> {
         let mut super_wallet = self.inner.lock().unwrap();
-        let signing_task =
-            super_wallet.send_to(master_appkey, to_address.clone(), value, feerate as f32)?;
+        let signing_task = super_wallet.send_to(
+            master_appkey,
+            [(to_address.clone(), Some(value))],
+            feerate as f32,
+        )?;
         let unsigned_tx = UnsignedTx {
             template_tx: signing_task,
         };
         Ok(unsigned_tx)
     }
 
-    pub fn calculate_avaliable(
+    #[frb(sync)]
+    pub fn calculate_available(
         &self,
         master_appkey: MasterAppkey,
         target_addresses: Vec<RustAutoOpaque<Address>>,
-        feerate: f64,
-    ) -> Result<i64> {
+        feerate: f32,
+    ) -> u64 {
         let mut wallet = self.inner.lock().unwrap();
-        wallet.calculate_avaliable_value(
-            master_appkey,
-            target_addresses
-                .into_iter()
-                .map(|a| a.blocking_read().clone())
-                .collect::<Vec<Address>>(),
-            feerate as f32,
-            true,
-        )
+        wallet
+            .calculate_avaliable_value(
+                master_appkey,
+                target_addresses
+                    .into_iter()
+                    .map(|a| a.blocking_read().clone()),
+                feerate,
+                true,
+            )
+            .max(0) as u64
+    }
+
+    /// Start building transaction.
+    ///
+    /// Returns `None` if wallet under `master_appkey` is incomplete.
+    #[frb(sync)]
+    pub fn build_tx(
+        &self,
+        coord: RustAutoOpaque<Coordinator>,
+        master_appkey: MasterAppkey,
+    ) -> Option<BuildTxState> {
+        let frost_key = coord
+            .blocking_read()
+            .get_frost_key(master_appkey.key_id())?;
+        let state = BuildTxState {
+            coord,
+            super_wallet: self.clone(),
+            frost_key,
+            broadcast: Broadcast::default(),
+            is_refreshing: Arc::new(AtomicBool::new(false)),
+            inner: Arc::new(RwLock::new(super::transaction::BuildTxInner {
+                confirmation_estimates: None,
+                confirmation_target: super::transaction::ConfirmationTarget::default(),
+                recipients: Vec::new(),
+                access_id: None,
+                signers: HashSet::new(),
+            })),
+        };
+        Some(state)
     }
 
     pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: RTransaction) -> Result<()> {
