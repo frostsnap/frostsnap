@@ -10,6 +10,20 @@ runs:
   steps:
     - uses: taiki-e/install-action@just
 
+    # runner.image doesn't reliably distinguish between Ubuntu versions,
+    # causing GLIBC mismatches when binaries compiled on newer Ubuntu are
+    # cached and used on older Ubuntu.
+    - name: Get OS Release
+      id: os_release
+      shell: sh
+      run: |
+        if [ -f /etc/os-release ]; then
+          . /etc/os-release
+          echo "os_release=${ID}-${VERSION_ID}" >> $GITHUB_OUTPUT
+        else
+          echo "os_release=unknown" >> $GITHUB_OUTPUT
+        fi
+
     - name: Compute Hash of Cargo Binaries
       id: hash_rust_bins
       shell: sh
@@ -26,7 +40,7 @@ runs:
           ~/.cargo/bin
           ~/.cargo/.crates.toml
           ~/.cargo/.crates2.json
-        key: ${{ runner.os }}-${{ runner.arch }}-${{ runner.image }}-rust-bins-v0-${{ inputs.version }}-${{ steps.hash_rust_bins.outputs.hash }}
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.os_release.outputs.os_release }}-rust-bins-v0-${{ inputs.version }}-${{ steps.hash_rust_bins.outputs.hash }}
 
     - name: Setup Rust Toolchain
       if: steps.cache-rust-bins.outputs.cache-hit != 'true'
