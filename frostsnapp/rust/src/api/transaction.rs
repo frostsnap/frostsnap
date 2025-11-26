@@ -147,7 +147,7 @@ impl BuildTxInner {
         super_wallet: &SuperWallet,
         master_appkey: MasterAppkey,
         recipient: u32,
-    ) -> Option<i64> {
+    ) -> Option<u64> {
         Some(
             super_wallet.calculate_available(
                 master_appkey,
@@ -260,7 +260,7 @@ impl BuildTxState {
     ///
     /// Returns `None` if no feerate is specified.
     #[frb(sync)]
-    pub fn available_amount(&self, recipient: u32) -> Option<i64> {
+    pub fn available_amount(&self, recipient: u32) -> Option<u64> {
         let inner = self.inner.read().unwrap();
         inner.available_amount(
             &self.super_wallet,
@@ -499,11 +499,10 @@ impl BuildTxState {
         let available = self
             .available_amount(recipient)
             .ok_or(AmountError::UnspecifiedFeerate)?;
-        if available.is_negative() || available == 0 {
+        if available == 0 {
             // TODO: Have amount below dust error.
             return Err(AmountError::NoAmountAvailable);
         }
-        let available = available as u64;
 
         let r = self.recipient(recipient);
 
