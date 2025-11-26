@@ -1,4 +1,4 @@
-use crate::common::{CameraError, CameraSink, DeviceInfo, Frame, FrameFormat, Resolution, Result};
+use crate::common::{CameraError, CameraSink, DeviceInfo, Frame, FrameFormat, Resolution, Result, PREFERRED_MAX_WIDTH};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
@@ -247,12 +247,15 @@ fn get_preferred_format(activate: &IMFActivate) -> Result<(FrameFormat, Resoluti
                     let width = (res_u64 >> 32) as u32;
                     let height = res_u64 as u32;
                     let resolution = Resolution::new(width, height);
+                    let preferred = width <= PREFERRED_MAX_WIDTH;
                     let pixels = width * height;
 
                     let is_better = |existing: &Option<(FrameFormat, Resolution)>| {
-                        existing
-                            .as_ref()
-                            .map_or(true, |(_, res)| pixels > res.width * res.height)
+                        existing.as_ref().map_or(true, |(_, res)| {
+                            let existing_preferred = res.width <= PREFERRED_MAX_WIDTH;
+                            let existing_pixels = res.width * res.height;
+                            (preferred, pixels) > (existing_preferred, existing_pixels)
+                        })
                     };
 
                     if ff == FrameFormat::MJPEG && is_better(&best_mjpeg) {

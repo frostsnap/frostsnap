@@ -1,4 +1,4 @@
-use crate::common::{CameraError, CameraSink, DeviceInfo, Frame, FrameFormat, Resolution, Result};
+use crate::common::{CameraError, CameraSink, DeviceInfo, Frame, FrameFormat, Resolution, Result, PREFERRED_MAX_WIDTH};
 use std::thread::{self, JoinHandle};
 use v4l::Device;
 use v4l::context::enum_devices;
@@ -46,7 +46,7 @@ impl LinuxCamera {
                             (stepwise.max_width, stepwise.max_height)
                         }
                     })
-                    .max_by_key(|(w, h)| w * h)?;
+                    .max_by_key(|(w, h)| (*w <= PREFERRED_MAX_WIDTH, w * h))?;
 
                 Some(DeviceInfo {
                     id: format!("/dev/video{}", index),

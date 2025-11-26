@@ -1,5 +1,7 @@
 use std::fmt;
 
+pub const PREFERRED_MAX_WIDTH: u32 = 1920;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceInfo {
     pub id: String,
