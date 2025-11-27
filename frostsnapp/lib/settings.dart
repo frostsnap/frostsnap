@@ -66,6 +66,14 @@ class SettingsContext extends InheritedWidget {
     }
   }
 
+  /// Returns existing chain status stream if one has already been created,
+  /// without triggering a new connection.
+  Stream<ChainStatus>? maybeGetChainStatusStream(BitcoinNetwork network) {
+    return chainStatuses.firstWhereOrNull((record) {
+      return record.$1.name() == network.name();
+    })?.$2;
+  }
+
   Wallet? loadWallet({required KeyId keyId}) {
     final frostKey = coord.getFrostKey(keyId: keyId);
     if (frostKey == null) {
@@ -576,16 +584,11 @@ class ChainStatusIcon extends StatelessWidget {
     Color iconColor;
     final double iconSize = IconTheme.of(context).size ?? 30.0;
     final String statusName;
-    final VoidCallback? onPressed;
     final theme = Theme.of(context);
 
-    if (chainStatus.state == ChainStatusState.connected) {
-      onPressed = () {
-        WalletContext.of(context)?.superWallet.reconnect();
-      };
-    } else {
-      onPressed = null;
-    }
+    final currentUrl = chainStatus.onBackup
+        ? chainStatus.backupUrl
+        : chainStatus.primaryUrl;
 
     switch (chainStatus.state) {
       case ChainStatusState.connected:
@@ -594,21 +597,34 @@ class ChainStatusIcon extends StatelessWidget {
         iconColor = theme.colorScheme.primary;
         break;
       case ChainStatusState.connecting:
+        statusName = "Connecting";
+        iconData = Icons.link_off;
+        iconColor = theme.colorScheme.tertiary;
+        break;
       case ChainStatusState.disconnected:
         statusName = "Disconnected";
         iconData = Icons.link_off;
         iconColor = theme.colorScheme.error;
         break;
+      case ChainStatusState.idle:
+        statusName = "Idle";
+        iconData = Icons.link_off;
+        iconColor = theme.colorScheme.outline;
+        break;
     }
 
+    final onBackup =
+        chainStatus.state == ChainStatusState.connected && chainStatus.onBackup;
+
     return Tooltip(
-      message: "$statusName: ${chainStatus.electrumUrl}",
+      message: "$statusName: $currentUrl",
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           IconButton(
             iconSize: iconSize,
             icon: Icon(iconData, color: iconColor),
-            onPressed: onPressed,
+            onPressed: () => _showServerStatusSheet(context),
           ),
           if (chainStatus.state == ChainStatusState.connecting)
             Positioned(
@@ -616,8 +632,189 @@ class ChainStatusIcon extends StatelessWidget {
               right: 0,
               child: SpinningSyncIcon.always(size: iconSize * 0.7),
             ),
+          if (onBackup)
+            Positioned(
+              top: 2,
+              right: 2,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.tertiary,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.priority_high,
+                  size: iconSize * 0.4,
+                  color: theme.colorScheme.onTertiary,
+                ),
+              ),
+            ),
         ],
       ),
+    );
+  }
+
+  void _showServerStatusSheet(BuildContext context) {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+
+    final network = walletCtx.superWallet.network;
+    final settingsCtx = SettingsContext.of(context);
+    if (settingsCtx == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => StreamBuilder<ChainStatus>(
+        stream: settingsCtx.chainStatusStream(network),
+        initialData: chainStatus,
+        builder: (context, snapshot) {
+          final status = snapshot.data ?? chainStatus;
+          final primaryEnabled = status.enabled != ElectrumEnabled.none;
+          final backupEnabled = status.enabled == ElectrumEnabled.all;
+
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Server Status',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                _ServerStatusTile(
+                  label: 'Primary Server',
+                  url: status.primaryUrl,
+                  status: _getServerStatusFor(status, false),
+                  enabled: primaryEnabled,
+                  onTap: primaryEnabled
+                      ? () {
+                          Navigator.pop(sheetContext);
+                          settingsCtx.settings.connectTo(
+                            network: network,
+                            useBackup: false,
+                          );
+                        }
+                      : null,
+                  onEnabledChanged: (value) async {
+                    final newEnabled = value
+                        ? ElectrumEnabled.primaryOnly
+                        : ElectrumEnabled.none;
+                    await settingsCtx.settings.setElectrumEnabled(
+                      network: network,
+                      enabled: newEnabled,
+                    );
+                  },
+                ),
+                _ServerStatusTile(
+                  label: 'Backup Server',
+                  url: status.backupUrl,
+                  status: _getServerStatusFor(status, true),
+                  enabled: backupEnabled,
+                  onTap: backupEnabled
+                      ? () {
+                          Navigator.pop(sheetContext);
+                          settingsCtx.settings.connectTo(
+                            network: network,
+                            useBackup: true,
+                          );
+                        }
+                      : null,
+                  onEnabledChanged: primaryEnabled
+                      ? (value) async {
+                          final newEnabled = value
+                              ? ElectrumEnabled.all
+                              : ElectrumEnabled.primaryOnly;
+                          await settingsCtx.settings.setElectrumEnabled(
+                            network: network,
+                            enabled: newEnabled,
+                          );
+                        }
+                      : null,
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static ChainStatusState _getServerStatusFor(
+    ChainStatus status,
+    bool isBackup,
+  ) {
+    final state = status.state;
+    if (state == ChainStatusState.idle) return ChainStatusState.idle;
+    if (state == ChainStatusState.connected) {
+      return status.onBackup == isBackup
+          ? ChainStatusState.connected
+          : ChainStatusState.idle;
+    }
+    if (state == ChainStatusState.connecting) {
+      return ChainStatusState.connecting;
+    }
+    return state;
+  }
+}
+
+class _ServerStatusTile extends StatelessWidget {
+  final String label;
+  final String url;
+  final ChainStatusState status;
+  final bool enabled;
+  final VoidCallback? onTap;
+  final ValueChanged<bool>? onEnabledChanged;
+
+  const _ServerStatusTile({
+    required this.label,
+    required this.url,
+    required this.status,
+    required this.enabled,
+    this.onTap,
+    this.onEnabledChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final Color statusColor;
+    if (!enabled) {
+      statusColor = theme.colorScheme.outline;
+    } else {
+      switch (status) {
+        case ChainStatusState.connected:
+          statusColor = theme.colorScheme.primary;
+          break;
+        case ChainStatusState.connecting:
+          statusColor = theme.colorScheme.tertiary;
+          break;
+        case ChainStatusState.disconnected:
+          statusColor = theme.colorScheme.error;
+          break;
+        case ChainStatusState.idle:
+          statusColor = theme.colorScheme.outline;
+          break;
+      }
+    }
+
+    return ListTile(
+      leading: Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: statusColor),
+      ),
+      title: Text(label),
+      subtitle: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: Switch(value: enabled, onChanged: onEnabledChanged),
+      enabled: enabled,
+      onTap: onTap,
     );
   }
 }

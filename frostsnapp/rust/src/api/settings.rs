@@ -8,6 +8,7 @@ pub use frostsnap_coordinator::bitcoin::chain_sync::{
 };
 pub use frostsnap_coordinator::bitcoin::tofu::verifier::UntrustedCertificate;
 use frostsnap_coordinator::persist::Persisted;
+pub use frostsnap_coordinator::settings::ElectrumEnabled;
 use frostsnap_coordinator::settings::Settings as RSettings;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -206,7 +207,11 @@ impl Settings {
                 // Connection succeeded, persist the setting
                 let mut db = self.db.lock().unwrap();
                 self.settings.mutate2(&mut *db, |settings, update| {
-                    settings.set_electrum_server(network, url, update);
+                    if is_backup {
+                        settings.set_backup_electrum_server(network, url, update);
+                    } else {
+                        settings.set_electrum_server(network, url, update);
+                    }
                     Ok(())
                 })?;
                 self.emit_electrum_settings();
@@ -252,6 +257,62 @@ impl Settings {
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
         Ok(())
     }
+
+    pub fn set_electrum_servers(
+        &mut self,
+        network: BitcoinNetwork,
+        primary: String,
+        backup: String,
+    ) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_electrum_server(network, primary.clone(), update);
+            settings.set_backup_electrum_server(network, backup.clone(), update);
+            Ok(())
+        })?;
+
+        let chain_api = self
+            .chain_clients
+            .get(&network)
+            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+
+        chain_api.set_urls(primary, backup);
+
+        self.emit_electrum_settings();
+        Ok(())
+    }
+
+    pub fn set_electrum_enabled(
+        &mut self,
+        network: BitcoinNetwork,
+        enabled: ElectrumEnabled,
+    ) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_electrum_enabled(network, enabled, update);
+            Ok(())
+        })?;
+
+        let chain_api = self
+            .chain_clients
+            .get(&network)
+            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+
+        chain_api.set_enabled(enabled);
+
+        self.emit_electrum_settings();
+        Ok(())
+    }
+
+    pub fn connect_to(&self, network: BitcoinNetwork, use_backup: bool) -> Result<()> {
+        let chain_api = self
+            .chain_clients
+            .get(&network)
+            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+
+        chain_api.connect_to(use_backup);
+        Ok(())
+    }
 }
 
 pub struct DeveloperSettings {
@@ -282,6 +343,7 @@ pub struct ElectrumServer {
     pub network: BitcoinNetwork,
     pub url: String,
     pub backup_url: String,
+    pub enabled: ElectrumEnabled,
 }
 
 pub struct ElectrumSettings {
@@ -295,10 +357,12 @@ impl ElectrumSettings {
             .map(|network| {
                 let url = settings.get_electrum_server(network);
                 let backup_url = settings.get_backup_electrum_server(network);
+                let enabled = settings.get_electrum_enabled(network);
                 ElectrumServer {
                     network,
                     url,
                     backup_url,
+                    enabled,
                 }
             })
             .collect::<Vec<_>>();
@@ -308,15 +372,19 @@ impl ElectrumSettings {
 
 #[frb(mirror(ChainStatus))]
 pub struct _ChainStatus {
-    pub electrum_url: String,
+    pub primary_url: String,
+    pub backup_url: String,
+    pub on_backup: bool,
     pub state: ChainStatusState,
+    pub enabled: ElectrumEnabled,
 }
 
 #[frb(mirror(ChainStatusState))]
 pub enum _ChainStatusState {
+    Idle,
+    Connecting,
     Connected,
     Disconnected,
-    Connecting,
 }
 
 #[frb(mirror(ConnectionResult))]
@@ -334,4 +402,11 @@ pub struct _UntrustedCertificate {
     pub old_fingerprint: Option<String>,
     pub certificate_der: Vec<u8>,
     pub valid_for_names: Option<Vec<String>>,
+}
+
+#[frb(mirror(ElectrumEnabled))]
+pub enum _ElectrumEnabled {
+    All,
+    PrimaryOnly,
+    None,
 }
