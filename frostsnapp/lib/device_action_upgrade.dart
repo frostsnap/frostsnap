@@ -223,9 +223,11 @@ class DeviceActionUpgradeController with ChangeNotifier {
       );
     }
     final success = progress == 1.0;
-    await Future.delayed(Duration(seconds: 1));
     await _dialogController.clearAllActionsNeeded();
-    if (context.mounted) await showUpgradeDoneDialog(context, success);
+
+    if (!context.mounted) return false;
+
+    await showUpgradeDoneDialog(context, success);
     return success;
   }
 

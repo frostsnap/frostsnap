@@ -85,7 +85,15 @@ class WalletCreateController extends ChangeNotifier {
     {
       _deviceListSub = GlobalStreams.deviceListSubject.listen((update) {
         _deviceList = update.state;
-        resetDeviceNames(update.state.devices);
+        for (final change in update.changes) {
+          if (change.kind == DeviceListChangeKind.added) {
+            final id = change.device.id;
+            final name = _form.deviceNames[id];
+            if (name != null) {
+              coord.updateNamePreview(id: id, name: name);
+            }
+          }
+        }
         notifyListeners();
       });
     }
@@ -440,7 +448,30 @@ class WalletCreateController extends ChangeNotifier {
       _step = nextStep;
       notifyListeners();
     } else {
-      Navigator.pop(context, _asRef);
+      final deviceListUpdate = await GlobalStreams.deviceListSubject.first;
+      final connectedDevices = deviceListUpdate.state.devices;
+
+      if (connectedDevices.isNotEmpty) {
+        final controller = FullscreenActionDialogController<void>(
+          title: 'Wallet created!',
+          body: (context) =>
+              Text('Unplug devices to continue', textAlign: TextAlign.center),
+          actionButtons: [
+            DeviceActionHint(label: 'Unplug devices', icon: Icons.usb_off),
+          ],
+          onDismissed: () {},
+        );
+
+        await controller.batchAddActionNeeded(
+          context,
+          connectedDevices.map((d) => d.id).toList(),
+        );
+        controller.dispose();
+      }
+
+      if (context.mounted) {
+        Navigator.pop(context, _asRef);
+      }
     }
   }
 

@@ -325,6 +325,7 @@ pub struct _AddressInfo {
 #[frb(mirror(VerifyAddressProtocolState), unignore)]
 pub struct _VerifyAddressProtocolState {
     pub target_devices: Vec<DeviceId>,
+    pub connected_devices: std::collections::HashSet<DeviceId>,
 }
 
 impl super::coordinator::Coordinator {

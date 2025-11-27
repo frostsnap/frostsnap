@@ -45,7 +45,6 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       final device = update.state.devices.firstWhereOrNull(
         (device) => deviceIdEquals(device.id, widget.deviceId),
       );
-      if (device?.name == null) await _eraseController.clearAllActionsNeeded();
       final _deviceWasSome = _device != null;
       final updateIsNone = device == null;
       if (_deviceWasSome && updateIsNone) {

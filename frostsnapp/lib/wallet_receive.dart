@@ -5,15 +5,12 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
-import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
-import 'package:rxdart/rxdart.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 
 import 'global.dart';
@@ -206,7 +203,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   late final StreamSubscription txStreamSub;
   List<Transaction> allTxs = [];
 
-  BehaviorSubject<VerifyAddressProtocolState>? _verifyStream;
+  StreamSubscription<VerifyAddressProtocolState>? _verifyStreamSub;
   late final FullscreenActionDialogController fullscreenDialogController;
   bool verificationSuccess = false;
 
@@ -215,21 +212,29 @@ class _ReceiverPageState extends State<ReceivePage> {
   set focus(ReceivePageFocus v) {
     if (v == _focus || _address == null) return;
     if (v == ReceivePageFocus.verify) {
-      final stream = coord
+      _verifyStreamSub?.cancel();
+      _verifyStreamSub = coord
           .verifyAddress(
             keyId: widget.wallet.keyId(),
             addressIndex: _address!.index,
           )
-          .toBehaviorSubject();
+          .listen((state) {
+            fullscreenDialogController.batchAddActionNeeded(
+              context,
+              state.connectedDevices,
+            );
+            fullscreenDialogController.clearAllExcept(state.connectedDevices);
+          });
+
       setState(() {
-        _verifyStream = stream;
         _focus = v;
       });
       return;
     }
-    if (_verifyStream != null) coord.cancelProtocol();
+    if (_verifyStreamSub != null) coord.cancelProtocol();
+    _verifyStreamSub?.cancel();
+    _verifyStreamSub = null;
     setState(() {
-      _verifyStream = null;
       _focus = v;
     });
   }
@@ -316,6 +321,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     if (_focus == ReceivePageFocus.verify) {
       coord.cancelProtocol();
     }
+    _verifyStreamSub?.cancel();
     txStreamSub.cancel();
     fullscreenDialogController.dispose();
     super.dispose();
@@ -464,76 +470,36 @@ class _ReceiverPageState extends State<ReceivePage> {
         margin: EdgeInsets.zero,
         color: theme.colorScheme.surfaceContainerHigh,
         shape: cardShape(context),
-        child: _verifyStream == null
+        child: _verifyStreamSub == null
             ? null
-            : StreamBuilder(
-                stream: _verifyStream,
-                builder: (context, targetDevicesSnapshot) {
-                  final targetDevices = deviceIdSet(
-                    targetDevicesSnapshot.data?.targetDevices ?? [],
-                  );
-
-                  final dismissButton = OutlinedButton(
-                    onPressed: () => focus = ReceivePageFocus.awaitTx,
-                    child: Text('Skip'),
-                  );
-
-                  return StreamBuilder(
-                    stream: GlobalStreams.deviceListSubject,
-                    builder: (context, deviceListSnapshot) {
-                      final connectedDevices = deviceIdSet(
-                        deviceListSnapshot.data?.state.devices
-                                .map((dev) => dev.id)
-                                .toList() ??
-                            [],
-                      );
-
-                      final displayingDevices = targetDevices.intersection(
-                        connectedDevices,
-                      );
-
-                      fullscreenDialogController.batchAddActionNeeded(
-                        context,
-                        displayingDevices,
-                      );
-
-                      // collect the list first because we're going to mutate it
-                      fullscreenDialogController.clearAllExcept(
-                        displayingDevices,
-                      );
-
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          ListTile(
-                            shape: tileShape,
-                            title: Text('Verify'),
-                            contentPadding: tilePadding,
-                            minVerticalPadding: 16,
-                          ),
-                          Padding(
-                            padding: sectionPadding.copyWith(
-                              top: 20,
-                              bottom: 36,
-                            ),
-                            child: Text(
-                              'Plug in a device to verify the address on a device screen.',
-                              softWrap: true,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: sectionPadding,
-                            child: dismissButton,
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ListTile(
+                    shape: tileShape,
+                    title: Text('Verify'),
+                    contentPadding: tilePadding,
+                    minVerticalPadding: 16,
+                  ),
+                  Padding(
+                    padding: sectionPadding.copyWith(top: 20, bottom: 36),
+                    child: Text(
+                      'Plug in a device to verify the address on a device screen.',
+                      softWrap: true,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: sectionPadding,
+                    child: OutlinedButton(
+                      onPressed: () => focus = ReceivePageFocus.awaitTx,
+                      child: Text('Skip'),
+                    ),
+                  ),
+                ],
               ),
       ),
     );

@@ -176,7 +176,6 @@ class WalletAddColumn extends StatelessWidget {
 
   static void showWalletCreateDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
-    final backupManager = FrostsnapContext.of(context)!.backupManager;
 
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
@@ -188,13 +187,6 @@ class WalletAddColumn extends StatelessWidget {
     final accessStructure = coord.getAccessStructure(asRef: asRef)!;
     showWalletCreatedDialog(context, accessStructure);
     homeCtx.openNewlyCreatedWallet(asRef.keyId);
-
-    // Delay this to avoid race condition.
-    await Future.delayed(
-      Duration(seconds: 1),
-      () async =>
-          await backupManager.startBackupRun(accessStructure: accessStructure),
-    );
   }
 
   static void showWalletRecoverDialog(BuildContext context) async {

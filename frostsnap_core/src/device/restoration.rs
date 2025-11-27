@@ -56,9 +56,9 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         match &message {
             &CoordinatorRestoration::EnterPhysicalBackup { enter_physical_id } => {
                 Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::Restoration(EnterBackup {
+                    DeviceToUserMessage::Restoration(Box::new(EnterBackup {
                         phase: EnterBackupPhase { enter_physical_id },
-                    }),
+                    })),
                 ))])
             }
             &CoordinatorRestoration::SavePhysicalBackup {
@@ -97,14 +97,14 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                     )));
 
                     Ok(vec![
-                        DeviceSend::ToUser(Box::new(DeviceToUserMessage::Restoration(
+                        DeviceSend::ToUser(Box::new(DeviceToUserMessage::Restoration(Box::new(
                             ToUserRestoration::BackupSaved {
                                 share_image,
                                 key_name,
                                 purpose,
                                 threshold,
                             },
-                        ))),
+                        )))),
                         DeviceSend::ToCoordinator(Box::new(
                             DeviceToCoordinatorMessage::Restoration(
                                 DeviceRestoration::PhysicalSaved(share_image),
@@ -172,11 +172,11 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                         );
 
                         Ok(vec![DeviceSend::ToUser(Box::new(
-                            DeviceToUserMessage::Restoration(ToUserRestoration::ConsolidateBackup(
-                                ConsolidatePhase {
+                            DeviceToUserMessage::Restoration(Box::new(
+                                ToUserRestoration::ConsolidateBackup(ConsolidatePhase {
                                     complete_share,
                                     coord_contrib,
-                                },
+                                }),
                             )),
                         ))])
                     }
@@ -260,9 +260,11 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                     root_shared_key: root_shared_key.clone(),
                 };
                 Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::Restoration(DisplayBackupRequest {
-                        phase: Box::new(phase),
-                    }),
+                    DeviceToUserMessage::Restoration(Box::new(DisplayBackup {
+                        key_name: phase.key_name.clone(),
+                        access_structure_ref: phase.access_structure_ref,
+                        phase,
+                    })),
                 ))])
             }
 
@@ -276,38 +278,6 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 Ok(send.into_iter().collect())
             }
         }
-    }
-
-    pub fn display_backup_ack(
-        &mut self,
-        phase: BackupDisplayPhase,
-        symm_keygen: &mut impl DeviceSecretDerivation,
-    ) -> Result<Vec<DeviceSend>, ActionError> {
-        let key_data = self
-            .keys
-            .get(&phase.access_structure_ref.key_id)
-            .expect("key must exist");
-        let encryption_key = symm_keygen.get_share_encryption_key(
-            phase.access_structure_ref,
-            phase.party_index,
-            phase.coord_share_decryption_contrib,
-        );
-        let secret_share = phase.encrypted_secret_share.decrypt(encryption_key).ok_or(
-            ActionError::StateInconsistent("could not decrypt secret share".into()),
-        )?;
-        let secret = SecretShare {
-            index: phase.party_index,
-            share: secret_share,
-        };
-        // Create BIP39 backup with polynomial checksum
-        let share_backup =
-            ShareBackup::from_secret_share_and_shared_key(secret, &phase.root_shared_key);
-        Ok(vec![DeviceSend::ToUser(Box::new(
-            DeviceToUserMessage::Restoration(ToUserRestoration::DisplayBackup {
-                key_name: key_data.key_name.clone(),
-                backup: share_backup,
-            }),
-        ))])
     }
 
     pub fn tell_coordinator_about_backup_load_result(
@@ -440,12 +410,10 @@ pub enum ToUserRestoration {
         threshold: Option<u16>,
     },
     ConsolidateBackup(ConsolidatePhase),
-    DisplayBackupRequest {
-        phase: Box<BackupDisplayPhase>,
-    },
     DisplayBackup {
         key_name: String,
-        backup: ShareBackup,
+        access_structure_ref: AccessStructureRef,
+        phase: BackupDisplayPhase,
     },
 }
 
@@ -463,6 +431,30 @@ pub struct BackupDisplayPhase {
     pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
     pub key_name: String,
     pub root_shared_key: SharedKey,
+}
+
+impl BackupDisplayPhase {
+    pub fn decrypt_to_backup(
+        &self,
+        symm_keygen: &mut impl DeviceSecretDerivation,
+    ) -> Result<ShareBackup, ActionError> {
+        let encryption_key = symm_keygen.get_share_encryption_key(
+            self.access_structure_ref,
+            self.party_index,
+            self.coord_share_decryption_contrib,
+        );
+        let secret_share = self.encrypted_secret_share.decrypt(encryption_key).ok_or(
+            ActionError::StateInconsistent("could not decrypt secret share".into()),
+        )?;
+        let secret = SecretShare {
+            index: self.party_index,
+            share: secret_share,
+        };
+        Ok(ShareBackup::from_secret_share_and_shared_key(
+            secret,
+            &self.root_shared_key,
+        ))
+    }
 }
 
 #[derive(Clone, Debug)]

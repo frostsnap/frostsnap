@@ -1,4 +1,4 @@
-pub mod backup_manager;
+pub mod backup_run;
 pub mod bitcoin;
 pub mod broadcast;
 pub mod coordinator;

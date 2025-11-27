@@ -465,7 +465,11 @@ pub enum CommsMisc {
     /// Tells the coordinator that a device has confirmed to show it's backup.
     /// core doesn't provide a way to tell the coordinator that showing the backup was confirmed so
     /// we have this here.
+    /// DEPRECATED: Use BackupRecorded instead.
     DisplayBackupConfrimed,
+    /// Tells the coordinator that the user has confirmed they recorded the backup.
+    /// This is sent after the user completes the final "Backup recorded?" hold-to-confirm.
+    BackupRecorded,
 }
 
 impl Gist for CommsMisc {
