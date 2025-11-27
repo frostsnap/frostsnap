@@ -303,6 +303,16 @@ impl Settings {
         self.emit_electrum_settings();
         Ok(())
     }
+
+    pub fn connect_to(&self, network: BitcoinNetwork, use_backup: bool) -> Result<()> {
+        let chain_api = self
+            .chain_clients
+            .get(&network)
+            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+
+        chain_api.connect_to(use_backup);
+        Ok(())
+    }
 }
 
 pub struct DeveloperSettings {
@@ -362,8 +372,11 @@ impl ElectrumSettings {
 
 #[frb(mirror(ChainStatus))]
 pub struct _ChainStatus {
-    pub electrum_url: String,
+    pub primary_url: String,
+    pub backup_url: String,
+    pub on_backup: bool,
     pub state: ChainStatusState,
+    pub enabled: ElectrumEnabled,
 }
 
 #[frb(mirror(ChainStatusState))]

@@ -91,6 +91,10 @@ pub enum Message {
         backup: String,
     },
     SetEnabled(ElectrumEnabled),
+    /// Connect to a specific server (primary or backup)
+    ConnectTo {
+        use_backup: bool,
+    },
 }
 
 /// Result of a connection attempt
@@ -113,6 +117,9 @@ impl std::fmt::Display for Message {
             }
             Message::SetUrls { .. } => write!(f, "Message::SetUrls"),
             Message::SetEnabled(enabled) => write!(f, "Message::SetEnabled({:?})", enabled),
+            Message::ConnectTo { use_backup } => {
+                write!(f, "Message::ConnectTo(use_backup={})", use_backup)
+            }
         }
     }
 }
@@ -252,6 +259,13 @@ impl ChainClient {
     pub fn set_enabled(&self, enabled: ElectrumEnabled) {
         self.req_sender
             .unbounded_send(Message::SetEnabled(enabled))
+            .unwrap();
+    }
+
+    pub fn connect_to(&self, use_backup: bool) {
+        self.start_client();
+        self.req_sender
+            .unbounded_send(Message::ConnectTo { use_backup })
             .unwrap();
     }
 }
@@ -511,17 +525,11 @@ impl ConnectionHandler {
 
 #[derive(Clone)]
 pub struct ChainStatus {
-    pub electrum_url: String,
+    pub primary_url: String,
+    pub backup_url: String,
+    pub on_backup: bool,
     pub state: ChainStatusState,
-}
-
-impl ChainStatus {
-    pub fn new(url: &str, state: ChainStatusState) -> Self {
-        Self {
-            electrum_url: url.to_string(),
-            state,
-        }
-    }
+    pub enabled: ElectrumEnabled,
 }
 
 #[derive(Clone, Copy)]

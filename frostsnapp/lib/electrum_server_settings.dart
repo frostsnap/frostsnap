@@ -66,24 +66,19 @@ class _NetworkServerCard extends StatelessWidget {
     required this.enabled,
   });
 
-  ChainStatusState? _getServerStatus(
-    ChainStatusState? connectionState,
-    String? connectedUrl,
-    String serverUrl,
-  ) {
-    if (connectionState == null) return null;
-    if (connectionState == ChainStatusState.idle) return ChainStatusState.idle;
-    if (connectionState == ChainStatusState.connected &&
-        connectedUrl == serverUrl) {
-      return ChainStatusState.connected;
+  ChainStatusState? _getServerStatus(ChainStatus? chainStatus, bool isBackup) {
+    if (chainStatus == null) return null;
+    final state = chainStatus.state;
+    if (state == ChainStatusState.idle) return ChainStatusState.idle;
+    if (state == ChainStatusState.connected) {
+      return chainStatus.onBackup == isBackup
+          ? ChainStatusState.connected
+          : ChainStatusState.idle;
     }
-    if (connectionState == ChainStatusState.connecting) {
+    if (state == ChainStatusState.connecting) {
       return ChainStatusState.connecting;
     }
-    if (connectionState == ChainStatusState.disconnected) {
-      return ChainStatusState.disconnected;
-    }
-    return ChainStatusState.idle;
+    return state;
   }
 
   @override
@@ -96,8 +91,6 @@ class _NetworkServerCard extends StatelessWidget {
       stream: settings.chainStatusStream(network),
       builder: (context, chainSnap) {
         final chainStatus = chainSnap.data;
-        final connectedUrl = chainStatus?.electrumUrl;
-        final connectionState = chainStatus?.state;
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
@@ -118,11 +111,7 @@ class _NetworkServerCard extends StatelessWidget {
                 network: network,
                 url: primaryUrl,
                 isBackup: false,
-                status: _getServerStatus(
-                  connectionState,
-                  connectedUrl,
-                  primaryUrl,
-                ),
+                status: _getServerStatus(chainStatus, false),
                 enabled: primaryEnabled,
                 onEnabledChanged: (value) async {
                   final newEnabled = value
@@ -151,11 +140,7 @@ class _NetworkServerCard extends StatelessWidget {
                 network: network,
                 url: backupUrl,
                 isBackup: true,
-                status: _getServerStatus(
-                  connectionState,
-                  connectedUrl,
-                  backupUrl,
-                ),
+                status: _getServerStatus(chainStatus, true),
                 enabled: backupEnabled,
                 onEnabledChanged: primaryEnabled
                     ? (value) async {

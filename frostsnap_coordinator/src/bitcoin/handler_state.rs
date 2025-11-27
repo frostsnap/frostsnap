@@ -8,24 +8,20 @@ use crate::persist::Persisted;
 use crate::settings::ElectrumEnabled;
 
 use super::{
-    chain_sync::{ChainStatusState, ConnectionResult, Message},
+    chain_sync::{ChainStatus, ChainStatusState, ConnectionResult, Message},
     status_tracker::StatusTracker,
-    tofu::{
-        connection::{Conn, ElectrumUrls},
-        trusted_certs::TrustedCertificates,
-        verifier::TofuError,
-    },
+    tofu::{connection::Conn, trusted_certs::TrustedCertificates, verifier::TofuError},
 };
 
 /// State needed for message handling and connection attempts.
 pub(super) struct HandlerState {
     pub genesis_hash: BlockHash,
-    pub enabled: ElectrumEnabled,
     pub status: StatusTracker,
-    pub urls: ElectrumUrls,
     pub trusted_certificates: Persisted<TrustedCertificates>,
     pub db: Arc<sync::Mutex<rusqlite::Connection>>,
     pub started: bool,
+    /// One-time preference for which server to try first
+    prefer_backup: bool,
 }
 
 impl HandlerState {
@@ -39,24 +35,29 @@ impl HandlerState {
         trusted_certificates: Persisted<TrustedCertificates>,
         db: Arc<sync::Mutex<rusqlite::Connection>>,
     ) -> Self {
+        let initial_status = ChainStatus {
+            primary_url: url,
+            backup_url,
+            on_backup: false,
+            state: ChainStatusState::Idle,
+            enabled: ElectrumEnabled::default(),
+        };
         Self {
             genesis_hash,
-            enabled: ElectrumEnabled::default(),
-            status: StatusTracker::new(&url),
-            urls: ElectrumUrls { url, backup_url },
+            status: StatusTracker::new(initial_status),
             trusted_certificates,
             db,
             started: false,
+            prefer_backup: false,
         }
     }
 
     pub fn should_connect(&self) -> bool {
-        self.started && self.enabled != ElectrumEnabled::None
+        self.started && self.status.enabled() != ElectrumEnabled::None
     }
 
     pub fn set_disconnected(&mut self) {
-        self.status
-            .update(&self.urls.url, ChainStatusState::Disconnected);
+        self.status.set_state(ChainStatusState::Disconnected);
     }
 
     /// Get a connection by connecting fresh.
@@ -68,30 +69,41 @@ impl HandlerState {
     /// Try to establish a new connection.
     /// Returns Some((connection, url)) if successful, None if all servers fail.
     pub async fn try_connect(&mut self) -> Option<(Conn, String)> {
-        let urls_to_try: Vec<&str> = match self.enabled {
-            ElectrumEnabled::All => vec![&self.urls.url, &self.urls.backup_url],
-            ElectrumEnabled::PrimaryOnly => vec![&self.urls.url],
+        let prefer_backup = std::mem::take(&mut self.prefer_backup);
+        let primary = self.status.primary_url().to_string();
+        let backup = self.status.backup_url().to_string();
+
+        let urls_to_try: Vec<(bool, String)> = match self.status.enabled() {
+            ElectrumEnabled::All if prefer_backup => {
+                vec![(true, backup), (false, primary)]
+            }
+            ElectrumEnabled::All => {
+                vec![(false, primary), (true, backup)]
+            }
+            ElectrumEnabled::PrimaryOnly => vec![(false, primary)],
             ElectrumEnabled::None => return None,
         };
-        for url in urls_to_try {
-            self.status.update(url, ChainStatusState::Connecting);
+
+        for (is_backup, url) in urls_to_try {
+            self.status
+                .set_state_and_server(ChainStatusState::Connecting, is_backup);
             tracing::info!("Connecting to {}.", url);
 
             match Conn::new(
                 self.genesis_hash,
-                url,
+                &url,
                 Self::CONNECT_TIMEOUT,
                 &mut self.trusted_certificates,
             )
             .await
             {
                 Ok(conn) => {
-                    self.status.update(url, ChainStatusState::Connected);
+                    self.status.set_state(ChainStatusState::Connected);
                     tracing::info!("Connection established with {}.", url);
-                    return Some((conn, url.to_string()));
+                    return Some((conn, url));
                 }
                 Err(err) => {
-                    self.status.update(url, ChainStatusState::Disconnected);
+                    self.status.set_state(ChainStatusState::Disconnected);
                     tracing::error!(err = err.to_string(), url, "failed to connect",);
                 }
             }
@@ -125,16 +137,20 @@ impl HandlerState {
                 .await
                 {
                     Ok(_conn) => {
-                        let currently_on_backup =
-                            self.status.current().electrum_url == self.urls.backup_url;
-                        if request.is_backup {
-                            self.urls.backup_url = request.url.clone();
+                        let primary = if request.is_backup {
+                            self.status.primary_url().to_string()
                         } else {
-                            self.urls.url = request.url.clone();
-                        }
+                            request.url.clone()
+                        };
+                        let backup = if request.is_backup {
+                            request.url.clone()
+                        } else {
+                            self.status.backup_url().to_string()
+                        };
+                        self.status.set_urls(primary, backup);
                         let _ = response.send(Ok(ConnectionResult::Success));
                         // Reconnect if we changed the server we're currently connected to
-                        !request.is_backup || currently_on_backup
+                        request.is_backup == self.status.on_backup()
                     }
                     Err(err) => {
                         match err {
@@ -206,23 +222,39 @@ impl HandlerState {
             }
             Message::SetUrls { primary, backup } => {
                 tracing::info!(msg = "SetUrls", primary = %primary, backup = %backup);
-                self.urls.url = primary;
-                self.urls.backup_url = backup;
+                self.status.set_urls(primary, backup);
                 true
             }
             Message::SetEnabled(new_enabled) => {
-                let old_enabled = self.enabled;
-                self.enabled = new_enabled;
+                let old_enabled = self.status.enabled();
+                let on_backup = self.status.on_backup();
+                self.status.set_enabled(new_enabled);
                 tracing::info!(
                     msg = "SetEnabled",
                     old = ?old_enabled,
                     new = ?new_enabled,
                 );
+
+                // Break loop if we disabled the server we're currently on
+                let should_reconnect = match new_enabled {
+                    ElectrumEnabled::None => true,
+                    ElectrumEnabled::PrimaryOnly if on_backup => true,
+                    _ => false,
+                };
+
                 if new_enabled == ElectrumEnabled::None {
-                    self.status
-                        .update(&self.urls.url.clone(), ChainStatusState::Idle);
+                    self.status.set_state(ChainStatusState::Idle);
                 }
-                false
+                should_reconnect
+            }
+            Message::ConnectTo { use_backup } => {
+                tracing::info!(msg = "ConnectTo", use_backup);
+                if use_backup && self.status.enabled() == ElectrumEnabled::PrimaryOnly {
+                    tracing::warn!("Cannot connect to backup server when only primary is enabled");
+                    return false;
+                }
+                self.prefer_backup = use_backup;
+                true
             }
         }
     }

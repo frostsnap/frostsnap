@@ -205,36 +205,6 @@ where
     Ok(())
 }
 
-pub struct TargetServer {
-    pub url: String,
-    pub backup_url: String,
-    pub conn: Option<Conn>,
-    pub backup_conn: Option<Conn>,
-}
-
-impl TargetServer {
-    pub fn take_conn(&mut self) -> Option<(Conn, String)> {
-        if let Some(conn) = self.conn.take() {
-            Some((conn, self.url.clone()))
-        } else if let Some(conn) = self.backup_conn.take() {
-            Some((conn, self.backup_url.clone()))
-        } else {
-            None
-        }
-    }
-
-    /// Returns a reference to a staged connection and its URL if one exists
-    pub fn staged_connection(&self) -> Option<(&Conn, &str)> {
-        if let Some(ref conn) = self.conn {
-            Some((conn, &self.url))
-        } else if let Some(ref conn) = self.backup_conn {
-            Some((conn, &self.backup_url))
-        } else {
-            None
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct TargetServerReq {
     pub url: String,
