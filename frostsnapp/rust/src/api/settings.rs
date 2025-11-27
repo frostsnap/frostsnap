@@ -206,7 +206,11 @@ impl Settings {
                 // Connection succeeded, persist the setting
                 let mut db = self.db.lock().unwrap();
                 self.settings.mutate2(&mut *db, |settings, update| {
-                    settings.set_electrum_server(network, url, update);
+                    if is_backup {
+                        settings.set_backup_electrum_server(network, url, update);
+                    } else {
+                        settings.set_electrum_server(network, url, update);
+                    }
                     Ok(())
                 })?;
                 self.emit_electrum_settings();
@@ -250,6 +254,30 @@ impl Settings {
             .ok_or_else(|| anyhow!("network not supported {}", network))?;
 
         chain_api.set_status_sink(Box::new(SinkWrap(sink)));
+        Ok(())
+    }
+
+    pub fn set_electrum_servers(
+        &mut self,
+        network: BitcoinNetwork,
+        primary: String,
+        backup: String,
+    ) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_electrum_server(network, primary.clone(), update);
+            settings.set_backup_electrum_server(network, backup.clone(), update);
+            Ok(())
+        })?;
+
+        let chain_api = self
+            .chain_clients
+            .get(&network)
+            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+
+        chain_api.set_urls(primary, backup);
+
+        self.emit_electrum_settings();
         Ok(())
     }
 }

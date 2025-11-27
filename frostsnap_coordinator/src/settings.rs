@@ -49,6 +49,18 @@ impl Settings {
         self.mutate(Mutation::SetElectrumServer { network, url }, mutations)
     }
 
+    pub fn set_backup_electrum_server(
+        &mut self,
+        network: bitcoin::Network,
+        url: String,
+        mutations: &mut Vec<Mutation>,
+    ) {
+        self.mutate(
+            Mutation::SetBackupElectrumServer { network, url },
+            mutations,
+        )
+    }
+
     fn mutate(&mut self, mutation: Mutation, mutations: &mut Vec<Mutation>) {
         self.apply_mutation(mutation.clone());
         mutations.push(mutation);
@@ -140,6 +152,23 @@ impl Persist<rusqlite::Connection> for Settings {
                         let network = electrum_server.strip_prefix("electrum_server_").unwrap();
                         match bitcoin::Network::from_str(network) {
                             Ok(network) => Mutation::SetElectrumServer {
+                                network,
+                                url: value.to_string(),
+                            },
+                            Err(_) => {
+                                event!(
+                                    Level::WARN,
+                                    network = network,
+                                    "bitcoin network not supported",
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    backup if backup.starts_with("backup_electrum_server_") => {
+                        let network = backup.strip_prefix("backup_electrum_server_").unwrap();
+                        match bitcoin::Network::from_str(network) {
+                            Ok(network) => Mutation::SetBackupElectrumServer {
                                 network,
                                 url: value.to_string(),
                             },

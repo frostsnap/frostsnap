@@ -85,6 +85,10 @@ pub enum Message {
         server_url: String,
         certificate_der: Vec<u8>,
     },
+    SetUrls {
+        primary: String,
+        backup: String,
+    },
 }
 
 /// Result of a connection attempt
@@ -105,6 +109,7 @@ impl std::fmt::Display for Message {
             Message::TrustCertificate { server_url, .. } => {
                 write!(f, "Message::TrustCertificate({})", server_url)
             }
+            Message::SetUrls { .. } => write!(f, "Message::SetUrls"),
         }
     }
 }
@@ -233,6 +238,12 @@ impl ChainClient {
                 .unbounded_send(Message::BeginClient)
                 .unwrap();
         }
+    }
+
+    pub fn set_urls(&self, primary: String, backup: String) {
+        self.req_sender
+            .unbounded_send(Message::SetUrls { primary, backup })
+            .unwrap();
     }
 }
 
@@ -648,6 +659,12 @@ impl ConnectionHandler {
                     tracing::error!("Failed to trust certificate: {:?}", e);
                 }
                 false
+            }
+            Message::SetUrls { primary, backup } => {
+                tracing::info!(msg = "SetUrls", primary = %primary, backup = %backup);
+                conn_stage.url = primary;
+                conn_stage.backup_url = backup;
+                true
             }
         }
     }

@@ -119,6 +119,19 @@ class _NetworkServerCard extends StatelessWidget {
                   primaryUrl,
                 ),
               ),
+              Center(
+                child: IconButton(
+                  icon: const Icon(Icons.swap_vert),
+                  tooltip: 'Swap primary and backup',
+                  onPressed: () async {
+                    await settings.settings.setElectrumServers(
+                      network: network,
+                      primary: backupUrl,
+                      backup: primaryUrl,
+                    );
+                  },
+                ),
+              ),
               ServerListTile(
                 network: network,
                 url: backupUrl,
