@@ -34,6 +34,7 @@ use tokio::io::AsyncWriteExt;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{event, Level};
 
+use crate::settings::ElectrumEnabled;
 use crate::Sink;
 
 use super::{
@@ -89,6 +90,7 @@ pub enum Message {
         primary: String,
         backup: String,
     },
+    SetEnabled(ElectrumEnabled),
 }
 
 /// Result of a connection attempt
@@ -110,6 +112,7 @@ impl std::fmt::Display for Message {
                 write!(f, "Message::TrustCertificate({})", server_url)
             }
             Message::SetUrls { .. } => write!(f, "Message::SetUrls"),
+            Message::SetEnabled(enabled) => write!(f, "Message::SetEnabled({:?})", enabled),
         }
     }
 }
@@ -245,6 +248,12 @@ impl ChainClient {
             .unbounded_send(Message::SetUrls { primary, backup })
             .unwrap();
     }
+
+    pub fn set_enabled(&self, enabled: ElectrumEnabled) {
+        self.req_sender
+            .unbounded_send(Message::SetEnabled(enabled))
+            .unwrap();
+    }
 }
 
 pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str {
@@ -331,9 +340,10 @@ impl ConnectionHandler {
 
             let mut conn_stage = TargetServer { url, backup_url, conn: None, backup_conn: None };
             let mut status = StatusTracker::new(&conn_stage.url);
+            let mut enabled = ElectrumEnabled::default();
 
             async move {
-                // 🥱 Lazily connect -- handle messages until BeginClient
+                // 🥱 Wait for BeginClient before doing anything (one-time lazy startup)
                 loop {
                     match self.req_recv.next().await {
                         Some(Message::BeginClient) => {
@@ -344,37 +354,40 @@ impl ConnectionHandler {
                             break;
                         }
                         Some(msg) => {
-                            Self::handle_msg(self.genesis_hash, msg, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
+                            Self::handle_msg(self.genesis_hash, msg, &mut enabled, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
                         }
                         None => return,
                     }
                 }
 
-                // Reconnection loop.
-
+                // Main loop - handles both enabled and disabled states
                 loop {
+                    // If disabled, wait for messages until we become enabled
+                    while enabled == ElectrumEnabled::None {
+                        match self.req_recv.next().await {
+                            Some(msg) => {
+                                Self::handle_msg(self.genesis_hash, msg, &mut enabled, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
+                            }
+                            None => return,
+                        }
+                    }
+
                     // Get or establish a connection
                     let mut conn = if let Some((staged_conn, url)) = conn_stage.take_conn() {
-                        // Use the staged connection from a ChangeUrlReq
-                        // Update status to reflect we're using this connection
                         status.update(&url, ChainStatusState::Connected);
                         tracing::info!("Using staged connection with {}.", url);
                         staged_conn
                     } else {
-                        // Try to establish a new connection
                         match Self::try_connect(
                             self.genesis_hash,
                             &conn_stage.url,
                             &conn_stage.backup_url,
+                            enabled,
                             &mut status,
                             &mut self.trusted_certificates,
                         ).await {
-                            Some((new_conn, _connected_url)) => {
-                                // try_connect already updated the status
-                                new_conn
-                            }
+                            Some((new_conn, _connected_url)) => new_conn,
                             None => {
-                                // No connection available, wait before
                                 tokio::time::sleep(Self::RECONNECT_DELAY).await;
                                 continue;
                             }
@@ -382,7 +395,6 @@ impl ConnectionHandler {
                     };
 
                     {
-                        // Now run the connection (doesn't need trusted_certificates)
                         let url = conn_stage.url.clone();
                         let conn_fut = Self::run_connection(
                             &mut conn,
@@ -390,7 +402,7 @@ impl ConnectionHandler {
                             &mut self.client_recv,
                             &mut update_sender,
                         )
-                        .fuse();
+                            .fuse();
                         let ping_fut = async {
                             loop {
                                 tokio::time::sleep(Self::PING_DELAY).await;
@@ -415,7 +427,7 @@ impl ConnectionHandler {
                         pin_mut!(conn_fut);
                         pin_mut!(ping_fut);
 
-                        // Keep handling messages until connection fails
+                        // Handle messages until connection fails or we get disabled
                         loop {
                             select_biased! {
                                 msg_opt = self.req_recv.next() => {
@@ -424,15 +436,18 @@ impl ConnectionHandler {
                                         None => return,
                                     };
                                     tracing::info!(msg = msg.to_string(), "Handling message");
-                                    // Now we can handle the message directly since trusted_certificates is not borrowed
-                                    let should_reconnect = Self::handle_msg(self.genesis_hash, msg, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
+                                    let should_reconnect = Self::handle_msg(self.genesis_hash, msg, &mut enabled, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
+
+                                    if enabled == ElectrumEnabled::None {
+                                        tracing::info!("Electrum disabled");
+                                        break;
+                                    }
 
                                     if should_reconnect {
                                         tracing::info!("Breaking connection loop due to reconnect request");
                                         break;
                                     }
 
-                                    // Check if a new connection was staged (server change)
                                     if let Some((_, new_url)) = conn_stage.staged_connection() {
                                         tracing::info!(
                                             current_url = %url,
@@ -441,32 +456,31 @@ impl ConnectionHandler {
                                         );
                                         break;
                                     }
-                                    // Otherwise continue the inner loop to handle more messages
                                 }
                                 err = ping_fut => {
                                     tracing::error!(error = err.to_string(), "Failed to keep connection alive");
-                                    break; // Exit inner loop on ping failure
+                                    break;
                                 },
                                 _ = conn_fut => {
                                     tracing::debug!("Connection service stopped");
-                                    break; // Exit inner loop when connection stops
+                                    break;
                                 },
                             }
                         }
                     }
 
-                    // Update and send disconnected status after connection ends
-                    status.update(&conn_stage.url, ChainStatusState::Disconnected);
-
                     // Shutdown the connection
+                    status.update(&conn_stage.url, ChainStatusState::Disconnected);
                     let shutdown_result = match conn {
                         Conn::Tcp((rh, wh)) => rh.unsplit(wh).shutdown().await,
                         Conn::Ssl((rh, wh)) => rh.unsplit(wh).shutdown().await,
                     };
                     tracing::info!(result = ?shutdown_result, "Connection shutdown");
 
-                    // Wait before reconnecting
-                    tokio::time::sleep(Self::RECONNECT_DELAY).await;
+                    // If still enabled, wait before reconnecting
+                    if enabled != ElectrumEnabled::None {
+                        tokio::time::sleep(Self::RECONNECT_DELAY).await;
+                    }
                 }
             }
         });
@@ -478,10 +492,16 @@ impl ConnectionHandler {
         genesis_hash: BlockHash,
         url: &str,
         backup_url: &str,
+        enabled: ElectrumEnabled,
         status: &mut StatusTracker,
         trusted_certificates: &mut Persisted<TrustedCertificates>,
     ) -> Option<(Conn, String)> {
-        for url in [url, backup_url] {
+        let urls_to_try: &[&str] = match enabled {
+            ElectrumEnabled::All => &[url, backup_url],
+            ElectrumEnabled::PrimaryOnly => &[url],
+            ElectrumEnabled::None => return None,
+        };
+        for url in urls_to_try {
             status.update(url, ChainStatusState::Connecting);
             tracing::info!("Connecting to {}.", url);
 
@@ -561,6 +581,7 @@ impl ConnectionHandler {
     async fn handle_msg(
         genesis_hash: BlockHash,
         msg: Message,
+        enabled: &mut ElectrumEnabled,
         status: &mut StatusTracker,
         conn_stage: &mut TargetServer,
         trusted_certificates: &mut Persisted<TrustedCertificates>,
@@ -665,6 +686,19 @@ impl ConnectionHandler {
                 conn_stage.url = primary;
                 conn_stage.backup_url = backup;
                 true
+            }
+            Message::SetEnabled(new_enabled) => {
+                let old_enabled = *enabled;
+                *enabled = new_enabled;
+                tracing::info!(
+                    msg = "SetEnabled",
+                    old = ?old_enabled,
+                    new = ?new_enabled,
+                );
+                if new_enabled == ElectrumEnabled::None {
+                    status.update(&conn_stage.url, ChainStatusState::Idle);
+                }
+                false
             }
         }
     }

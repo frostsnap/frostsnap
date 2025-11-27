@@ -43,6 +43,7 @@ class ElectrumServerSettingsPage extends StatelessWidget {
                 network: network,
                 primaryUrl: record.url,
                 backupUrl: record.backupUrl,
+                enabled: record.enabled,
               );
             }).toList(),
           );
@@ -56,11 +57,13 @@ class _NetworkServerCard extends StatelessWidget {
   final BitcoinNetwork network;
   final String primaryUrl;
   final String backupUrl;
+  final ElectrumEnabled enabled;
 
   const _NetworkServerCard({
     required this.network,
     required this.primaryUrl,
     required this.backupUrl,
+    required this.enabled,
   });
 
   ChainStatusState? _getServerStatus(
@@ -86,6 +89,8 @@ class _NetworkServerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = SettingsContext.of(context)!;
+    final primaryEnabled = enabled != ElectrumEnabled.none;
+    final backupEnabled = enabled == ElectrumEnabled.all;
 
     return StreamBuilder<ChainStatus>(
       stream: settings.chainStatusStream(network),
@@ -118,6 +123,16 @@ class _NetworkServerCard extends StatelessWidget {
                   connectedUrl,
                   primaryUrl,
                 ),
+                enabled: primaryEnabled,
+                onEnabledChanged: (value) async {
+                  final newEnabled = value
+                      ? ElectrumEnabled.primaryOnly
+                      : ElectrumEnabled.none;
+                  await settings.settings.setElectrumEnabled(
+                    network: network,
+                    enabled: newEnabled,
+                  );
+                },
               ),
               Center(
                 child: IconButton(
@@ -141,6 +156,18 @@ class _NetworkServerCard extends StatelessWidget {
                   connectedUrl,
                   backupUrl,
                 ),
+                enabled: backupEnabled,
+                onEnabledChanged: primaryEnabled
+                    ? (value) async {
+                        final newEnabled = value
+                            ? ElectrumEnabled.all
+                            : ElectrumEnabled.primaryOnly;
+                        await settings.settings.setElectrumEnabled(
+                          network: network,
+                          enabled: newEnabled,
+                        );
+                      }
+                    : null,
               ),
             ],
           ),
@@ -155,6 +182,8 @@ class ServerListTile extends StatelessWidget {
   final String url;
   final bool isBackup;
   final ChainStatusState? status;
+  final bool enabled;
+  final ValueChanged<bool>? onEnabledChanged;
 
   const ServerListTile({
     super.key,
@@ -162,6 +191,8 @@ class ServerListTile extends StatelessWidget {
     required this.url,
     required this.isBackup,
     required this.status,
+    required this.enabled,
+    this.onEnabledChanged,
   });
 
   @override
@@ -169,20 +200,24 @@ class ServerListTile extends StatelessWidget {
     final theme = Theme.of(context);
 
     final Color statusColor;
-    switch (status) {
-      case ChainStatusState.connected:
-        statusColor = theme.colorScheme.primary;
-        break;
-      case ChainStatusState.connecting:
-        statusColor = theme.colorScheme.tertiary;
-        break;
-      case ChainStatusState.disconnected:
-        statusColor = theme.colorScheme.error;
-        break;
-      case ChainStatusState.idle:
-      case null:
-        statusColor = theme.colorScheme.outline;
-        break;
+    if (!enabled) {
+      statusColor = theme.colorScheme.outline;
+    } else {
+      switch (status) {
+        case ChainStatusState.connected:
+          statusColor = theme.colorScheme.primary;
+          break;
+        case ChainStatusState.connecting:
+          statusColor = theme.colorScheme.tertiary;
+          break;
+        case ChainStatusState.disconnected:
+          statusColor = theme.colorScheme.error;
+          break;
+        case ChainStatusState.idle:
+        case null:
+          statusColor = theme.colorScheme.outline;
+          break;
+      }
     }
 
     return ListTile(
@@ -193,7 +228,13 @@ class ServerListTile extends StatelessWidget {
       ),
       title: Text(isBackup ? 'Backup Server' : 'Primary Server'),
       subtitle: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Switch(value: enabled, onChanged: onEnabledChanged),
+          const Icon(Icons.chevron_right),
+        ],
+      ),
       onTap: () => _showEditDialog(context),
     );
   }

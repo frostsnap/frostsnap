@@ -8,6 +8,7 @@ pub use frostsnap_coordinator::bitcoin::chain_sync::{
 };
 pub use frostsnap_coordinator::bitcoin::tofu::verifier::UntrustedCertificate;
 use frostsnap_coordinator::persist::Persisted;
+pub use frostsnap_coordinator::settings::ElectrumEnabled;
 use frostsnap_coordinator::settings::Settings as RSettings;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -280,6 +281,28 @@ impl Settings {
         self.emit_electrum_settings();
         Ok(())
     }
+
+    pub fn set_electrum_enabled(
+        &mut self,
+        network: BitcoinNetwork,
+        enabled: ElectrumEnabled,
+    ) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_electrum_enabled(network, enabled, update);
+            Ok(())
+        })?;
+
+        let chain_api = self
+            .chain_clients
+            .get(&network)
+            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+
+        chain_api.set_enabled(enabled);
+
+        self.emit_electrum_settings();
+        Ok(())
+    }
 }
 
 pub struct DeveloperSettings {
@@ -310,6 +333,7 @@ pub struct ElectrumServer {
     pub network: BitcoinNetwork,
     pub url: String,
     pub backup_url: String,
+    pub enabled: ElectrumEnabled,
 }
 
 pub struct ElectrumSettings {
@@ -323,10 +347,12 @@ impl ElectrumSettings {
             .map(|network| {
                 let url = settings.get_electrum_server(network);
                 let backup_url = settings.get_backup_electrum_server(network);
+                let enabled = settings.get_electrum_enabled(network);
                 ElectrumServer {
                     network,
                     url,
                     backup_url,
+                    enabled,
                 }
             })
             .collect::<Vec<_>>();
@@ -363,4 +389,11 @@ pub struct _UntrustedCertificate {
     pub old_fingerprint: Option<String>,
     pub certificate_der: Vec<u8>,
     pub valid_for_names: Option<Vec<String>>,
+}
+
+#[frb(mirror(ElectrumEnabled))]
+pub enum _ElectrumEnabled {
+    All,
+    PrimaryOnly,
+    None,
 }

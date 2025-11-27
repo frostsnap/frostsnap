@@ -8,10 +8,42 @@ use rusqlite::params;
 use std::collections::BTreeMap;
 use tracing::{event, Level};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ElectrumEnabled {
+    #[default]
+    All,
+    PrimaryOnly,
+    None,
+}
+
+impl std::fmt::Display for ElectrumEnabled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ElectrumEnabled::All => write!(f, "all"),
+            ElectrumEnabled::PrimaryOnly => write!(f, "primary_only"),
+            ElectrumEnabled::None => write!(f, "none"),
+        }
+    }
+}
+
+impl FromStr for ElectrumEnabled {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "all" => Ok(ElectrumEnabled::All),
+            "primary_only" => Ok(ElectrumEnabled::PrimaryOnly),
+            "none" => Ok(ElectrumEnabled::None),
+            _ => Err(anyhow::anyhow!("invalid electrum enabled value: {}", s)),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Settings {
     pub electrum_servers: BTreeMap<bitcoin::Network, String>,
     pub backup_electrum_servers: BTreeMap<bitcoin::Network, String>,
+    pub electrum_enabled: BTreeMap<bitcoin::Network, ElectrumEnabled>,
     pub developer_mode: bool,
     pub hide_balance: bool,
 }
@@ -61,6 +93,22 @@ impl Settings {
         )
     }
 
+    pub fn get_electrum_enabled(&self, network: bitcoin::Network) -> ElectrumEnabled {
+        self.electrum_enabled
+            .get(&network)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn set_electrum_enabled(
+        &mut self,
+        network: bitcoin::Network,
+        enabled: ElectrumEnabled,
+        mutations: &mut Vec<Mutation>,
+    ) {
+        self.mutate(Mutation::SetElectrumEnabled { network, enabled }, mutations)
+    }
+
     fn mutate(&mut self, mutation: Mutation, mutations: &mut Vec<Mutation>) {
         self.apply_mutation(mutation.clone());
         mutations.push(mutation);
@@ -79,6 +127,9 @@ impl Settings {
             }
             Mutation::SetHideBalance { value } => {
                 self.hide_balance = value;
+            }
+            Mutation::SetElectrumEnabled { network, enabled } => {
+                self.electrum_enabled.insert(network, enabled);
             }
         }
     }
@@ -99,6 +150,10 @@ pub enum Mutation {
     },
     SetHideBalance {
         value: bool,
+    },
+    SetElectrumEnabled {
+        network: bitcoin::Network,
+        enabled: ElectrumEnabled,
     },
 }
 
@@ -182,6 +237,26 @@ impl Persist<rusqlite::Connection> for Settings {
                             }
                         }
                     }
+                    enabled if enabled.starts_with("electrum_enabled_") => {
+                        let network = enabled.strip_prefix("electrum_enabled_").unwrap();
+                        match (
+                            bitcoin::Network::from_str(network),
+                            ElectrumEnabled::from_str(&value),
+                        ) {
+                            (Ok(network), Ok(enabled)) => {
+                                Mutation::SetElectrumEnabled { network, enabled }
+                            }
+                            _ => {
+                                event!(
+                                    Level::WARN,
+                                    key = key,
+                                    value = value,
+                                    "invalid electrum_enabled setting",
+                                );
+                                continue;
+                            }
+                        }
+                    }
                     _ => {
                         event!(
                             Level::WARN,
@@ -243,6 +318,18 @@ impl Persist<rusqlite::Connection> for Settings {
                     conn.execute(
                         "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
                         params!["hide_balance", value.to_string()],
+                    )?;
+                }
+                Mutation::SetElectrumEnabled { network, enabled } => {
+                    event!(
+                        Level::DEBUG,
+                        network = network.to_string(),
+                        enabled = enabled.to_string(),
+                        "set electrum enabled for network"
+                    );
+                    conn.execute(
+                        "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
+                        params![format!("electrum_enabled_{}", network), enabled.to_string()],
                     )?;
                 }
             }
