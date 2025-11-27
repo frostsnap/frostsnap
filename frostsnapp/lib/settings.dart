@@ -66,6 +66,14 @@ class SettingsContext extends InheritedWidget {
     }
   }
 
+  /// Returns existing chain status stream if one has already been created,
+  /// without triggering a new connection.
+  Stream<ChainStatus>? maybeGetChainStatusStream(BitcoinNetwork network) {
+    return chainStatuses.firstWhereOrNull((record) {
+      return record.$1.name() == network.name();
+    })?.$2;
+  }
+
   Wallet? loadWallet({required KeyId keyId}) {
     final frostKey = coord.getFrostKey(keyId: keyId);
     if (frostKey == null) {
@@ -598,10 +606,19 @@ class ChainStatusIcon extends StatelessWidget {
         iconColor = theme.colorScheme.primary;
         break;
       case ChainStatusState.connecting:
+        statusName = "Connecting";
+        iconData = Icons.link_off;
+        iconColor = theme.colorScheme.tertiary;
+        break;
       case ChainStatusState.disconnected:
         statusName = "Disconnected";
         iconData = Icons.link_off;
         iconColor = theme.colorScheme.error;
+        break;
+      case ChainStatusState.idle:
+        statusName = "Idle";
+        iconData = Icons.link_off;
+        iconColor = theme.colorScheme.outline;
         break;
     }
 

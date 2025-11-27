@@ -10,7 +10,7 @@ pub struct StatusTracker {
 impl StatusTracker {
     pub fn new(initial_url: &str) -> Self {
         Self {
-            current: ChainStatus::new(initial_url, ChainStatusState::Disconnected),
+            current: ChainStatus::new(initial_url, ChainStatusState::Idle),
             sink: Box::new(()),
         }
     }

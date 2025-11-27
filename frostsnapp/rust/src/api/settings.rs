@@ -314,9 +314,10 @@ pub struct _ChainStatus {
 
 #[frb(mirror(ChainStatusState))]
 pub enum _ChainStatusState {
+    Idle,
+    Connecting,
     Connected,
     Disconnected,
-    Connecting,
 }
 
 #[frb(mirror(ConnectionResult))]

@@ -23,7 +23,11 @@ use std::{
     collections::BTreeMap,
     fmt::Debug,
     ops::Deref,
-    sync::{self, Arc},
+    sync::{
+        self,
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 use tokio::io::AsyncWriteExt;
@@ -74,6 +78,8 @@ pub type KeychainClientReceiver = bdk_electrum_streaming::AsyncReceiver<Keychain
 pub enum Message {
     ChangeUrlReq(ReqAndResponse<TargetServerReq, Result<ConnectionResult>>),
     SetStatusSink(Box<dyn Sink<ChainStatus>>),
+    /// Start the client loop (sent once when first sync request is made)
+    BeginClient,
     Reconnect,
     TrustCertificate {
         server_url: String,
@@ -94,6 +100,7 @@ impl std::fmt::Display for Message {
         match self {
             Message::ChangeUrlReq(_) => write!(f, "Message::ChangeUrlReq"),
             Message::SetStatusSink(_) => write!(f, "Message::SetStatusSink"),
+            Message::BeginClient => write!(f, "Message::BeginClient"),
             Message::Reconnect => write!(f, "Message::Reconnect"),
             Message::TrustCertificate { server_url, .. } => {
                 write!(f, "Message::TrustCertificate({})", server_url)
@@ -102,17 +109,12 @@ impl std::fmt::Display for Message {
     }
 }
 
-impl Message {
-    pub fn is_status_sink(&self) -> bool {
-        matches!(self, Message::SetStatusSink(_))
-    }
-}
-
 /// Opaque API to the chain
 #[derive(Clone)]
 pub struct ChainClient {
     req_sender: mpsc::UnboundedSender<Message>,
     client: KeychainClient,
+    connection_requested: Arc<AtomicBool>,
 }
 
 impl ChainClient {
@@ -128,6 +130,7 @@ impl ChainClient {
             Self {
                 req_sender,
                 client: client.clone(),
+                connection_requested: Arc::new(AtomicBool::new(false)),
             },
             ConnectionHandler {
                 req_recv,
@@ -146,6 +149,7 @@ impl ChainClient {
         url: String,
         is_backup: bool,
     ) -> Result<ConnectionResult> {
+        self.begin_client();
         let (req, response) = ReqAndResponse::new(TargetServerReq { url, is_backup });
         self.req_sender
             .unbounded_send(Message::ChangeUrlReq(req))
@@ -154,6 +158,7 @@ impl ChainClient {
     }
 
     pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
+        self.begin_client();
         let descriptor = descriptor_for_account_keychain(
             keychain,
             // this does not matter
@@ -165,6 +170,7 @@ impl ChainClient {
     }
 
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<bitcoin::Txid> {
+        self.begin_client();
         let txid = transaction.compute_txid();
         event!(Level::DEBUG, "Broadcasting: {}", transaction.compute_txid());
         block_on(self.client.send_request(request::BroadcastTx(transaction)))
@@ -182,6 +188,7 @@ impl ChainClient {
         &self,
         target_blocks: impl IntoIterator<Item = usize>,
     ) -> Result<BTreeMap<usize, bitcoin::FeeRate>> {
+        self.begin_client();
         use futures::FutureExt;
         block_on_stream(
             target_blocks
@@ -218,6 +225,14 @@ impl ChainClient {
                 certificate_der,
             })
             .unwrap();
+    }
+
+    fn begin_client(&self) {
+        if !self.connection_requested.swap(true, Ordering::Relaxed) {
+            self.req_sender
+                .unbounded_send(Message::BeginClient)
+                .unwrap();
+        }
     }
 }
 
@@ -307,12 +322,21 @@ impl ConnectionHandler {
             let mut status = StatusTracker::new(&conn_stage.url);
 
             async move {
-                // 🥱 Lazily connect to electrum servers -- wait until we actually get a request
-                match self.req_recv.next().await {
-                     Some(msg) => {
-                         Self::handle_msg(self.genesis_hash, msg, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
-                     }
-                     None => return,
+                // 🥱 Lazily connect -- handle messages until BeginClient
+                loop {
+                    match self.req_recv.next().await {
+                        Some(Message::BeginClient) => {
+                            tracing::info!(
+                                network = %network,
+                                "Received BeginClient, starting electrum client loop"
+                            );
+                            break;
+                        }
+                        Some(msg) => {
+                            Self::handle_msg(self.genesis_hash, msg, &mut status, &mut conn_stage, &mut self.trusted_certificates, &self.db).await;
+                        }
+                        None => return,
+                    }
                 }
 
                 // Reconnection loop.
@@ -580,6 +604,7 @@ impl ConnectionHandler {
                 status.set_sink(new_sink);
                 false
             }
+            Message::BeginClient => false,
             Message::Reconnect => {
                 tracing::info!(msg = "Reconnect - forcing reconnection");
                 true // Break the loop to force reconnection
@@ -676,7 +701,9 @@ impl ChainStatus {
 
 #[derive(Clone, Copy)]
 pub enum ChainStatusState {
+    /// No connection has been attempted yet
+    Idle,
+    Connecting,
     Connected,
     Disconnected,
-    Connecting,
 }

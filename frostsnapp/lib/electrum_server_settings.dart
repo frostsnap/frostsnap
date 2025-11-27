@@ -3,6 +3,7 @@ import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/progress_indicator.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
+import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/tofu_certificate_dialog.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -30,39 +31,18 @@ class ElectrumServerSettingsPage extends StatelessWidget {
         builder: (context, snap) {
           final servers = snap.data?.servers ?? [];
           final developerMode = snap.data?.developerMode ?? false;
+
           return ListView(
             children: servers.map((record) {
               final network = record.network;
-              final url = record.url;
-              final backupUrl = record.backupUrl;
-              return Column(
-                children: [
-                  if (network.isMainnet() || developerMode) ...[
-                    SizedBox(height: 10),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 8.0,
-                          horizontal: 12.0,
-                        ),
-                        child: Column(
-                          children: [
-                            ElectrumServerSettingWidget(
-                              network: network,
-                              initialUrl: url,
-                              isBackup: false,
-                            ),
-                            ElectrumServerSettingWidget(
-                              network: network,
-                              initialUrl: backupUrl,
-                              isBackup: true,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+              if (!network.isMainnet() && !developerMode) {
+                return const SizedBox.shrink();
+              }
+
+              return _NetworkServerCard(
+                network: network,
+                primaryUrl: record.url,
+                backupUrl: record.backupUrl,
               );
             }).toList(),
           );
@@ -72,34 +52,185 @@ class ElectrumServerSettingsPage extends StatelessWidget {
   }
 }
 
-class ElectrumServerSettingWidget extends StatefulWidget {
+class _NetworkServerCard extends StatelessWidget {
+  final BitcoinNetwork network;
+  final String primaryUrl;
+  final String backupUrl;
+
+  const _NetworkServerCard({
+    required this.network,
+    required this.primaryUrl,
+    required this.backupUrl,
+  });
+
+  ChainStatusState? _getServerStatus(
+    ChainStatusState? connectionState,
+    String? connectedUrl,
+    String serverUrl,
+  ) {
+    if (connectionState == null) return null;
+    if (connectionState == ChainStatusState.idle) return ChainStatusState.idle;
+    if (connectionState == ChainStatusState.connected &&
+        connectedUrl == serverUrl) {
+      return ChainStatusState.connected;
+    }
+    if (connectionState == ChainStatusState.connecting) {
+      return ChainStatusState.connecting;
+    }
+    if (connectionState == ChainStatusState.disconnected) {
+      return ChainStatusState.disconnected;
+    }
+    return ChainStatusState.idle;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = SettingsContext.of(context)!;
+
+    return StreamBuilder<ChainStatus>(
+      stream: settings.chainStatusStream(network),
+      builder: (context, chainSnap) {
+        final chainStatus = chainSnap.data;
+        final connectedUrl = chainStatus?.electrumUrl;
+        final connectionState = chainStatus?.state;
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Text(
+                  network.name(),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              ServerListTile(
+                network: network,
+                url: primaryUrl,
+                isBackup: false,
+                status: _getServerStatus(
+                  connectionState,
+                  connectedUrl,
+                  primaryUrl,
+                ),
+              ),
+              ServerListTile(
+                network: network,
+                url: backupUrl,
+                isBackup: true,
+                status: _getServerStatus(
+                  connectionState,
+                  connectedUrl,
+                  backupUrl,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class ServerListTile extends StatelessWidget {
+  final BitcoinNetwork network;
+  final String url;
+  final bool isBackup;
+  final ChainStatusState? status;
+
+  const ServerListTile({
+    super.key,
+    required this.network,
+    required this.url,
+    required this.isBackup,
+    required this.status,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final Color statusColor;
+    switch (status) {
+      case ChainStatusState.connected:
+        statusColor = theme.colorScheme.primary;
+        break;
+      case ChainStatusState.connecting:
+        statusColor = theme.colorScheme.tertiary;
+        break;
+      case ChainStatusState.disconnected:
+        statusColor = theme.colorScheme.error;
+        break;
+      case ChainStatusState.idle:
+      case null:
+        statusColor = theme.colorScheme.outline;
+        break;
+    }
+
+    return ListTile(
+      leading: Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: statusColor),
+      ),
+      title: Text(isBackup ? 'Backup Server' : 'Primary Server'),
+      subtitle: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _showEditDialog(context),
+    );
+  }
+
+  void _showEditDialog(BuildContext context) {
+    showBottomSheetOrDialog(
+      context,
+      title: Text(isBackup ? 'Edit Backup Server' : 'Edit Primary Server'),
+      builder: (context, scrollController) {
+        return EditServerDialog(
+          network: network,
+          initialUrl: url,
+          isBackup: isBackup,
+          scrollController: scrollController,
+        );
+      },
+    );
+  }
+}
+
+enum _EditServerState { input, connecting, certificate, success, failure }
+
+class EditServerDialog extends StatefulWidget {
   final BitcoinNetwork network;
   final String initialUrl;
   final bool isBackup;
+  final ScrollController scrollController;
 
-  const ElectrumServerSettingWidget({
+  const EditServerDialog({
     super.key,
     required this.network,
     required this.initialUrl,
     required this.isBackup,
+    required this.scrollController,
   });
 
   @override
-  State<ElectrumServerSettingWidget> createState() =>
-      _ElectrumServerSettingWidgetState();
+  State<EditServerDialog> createState() => _EditServerDialogState();
 }
 
-class _ElectrumServerSettingWidgetState
-    extends State<ElectrumServerSettingWidget> {
+class _EditServerDialogState extends State<EditServerDialog> {
   late TextEditingController _controller;
-  late String _originalUrl;
-  bool _isTestingConnection = false;
+  _EditServerState _state = _EditServerState.input;
+  String? _errorMessage;
+  UntrustedCertificate? _certificateInfo;
 
   @override
   void initState() {
     super.initState();
-    _originalUrl = widget.initialUrl;
-    _controller = TextEditingController(text: _originalUrl);
+    _controller = TextEditingController(text: widget.initialUrl);
   }
 
   @override
@@ -108,9 +239,10 @@ class _ElectrumServerSettingWidgetState
     super.dispose();
   }
 
-  Future<void> _confirmServerUrl() async {
+  Future<void> _connect() async {
     setState(() {
-      _isTestingConnection = true;
+      _state = _EditServerState.connecting;
+      _errorMessage = null;
     });
 
     try {
@@ -120,164 +252,254 @@ class _ElectrumServerSettingWidgetState
         url: _controller.text,
         isBackup: widget.isBackup,
       );
-
-      // Handle the connection result
-      await _handleConnectionResult(result, settingsCtx);
+      await _handleResult(result);
     } catch (e) {
       setState(() {
-        _isTestingConnection = false;
+        _state = _EditServerState.failure;
+        _errorMessage = e.toString();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Theme.of(context).colorScheme.error,
-          content: Text(
-            'Failed to connect. Please check the server URL. ERROR: $e',
-          ),
-        ),
-      );
     }
   }
 
-  Future<void> _handleConnectionResult(
-    ConnectionResult result,
-    SettingsContext settingsCtx,
-  ) async {
+  Future<void> _handleResult(ConnectionResult result) async {
     switch (result) {
       case ConnectionResult_Success():
         setState(() {
-          _isTestingConnection = false;
-          _originalUrl = _controller.text;
+          _state = _EditServerState.success;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connection successful! Electrum server saved.'),
-          ),
-        );
         break;
 
       case ConnectionResult_CertificatePromptNeeded(:final field0):
         setState(() {
-          _isTestingConnection = false;
+          _state = _EditServerState.certificate;
+          _certificateInfo = field0;
         });
-
-        // Show TOFU dialog
-        final accepted = await showTofuCertificateDialog(
-          context: context,
-          certificateInfo: field0,
-          serverUrl: _controller.text,
-        );
-
-        if (accepted == true) {
-          // User accepted the certificate, retry with it
-          setState(() {
-            _isTestingConnection = true;
-          });
-
-          try {
-            final retryResult = await settingsCtx.settings
-                .acceptCertificateAndRetry(
-                  network: widget.network,
-                  serverUrl: _controller.text,
-                  certificate: field0.certificateDer,
-                  isBackup: widget.isBackup,
-                );
-
-            // Recursively handle the retry result
-            await _handleConnectionResult(retryResult, settingsCtx);
-          } catch (e) {
-            setState(() {
-              _isTestingConnection = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                backgroundColor: Theme.of(context).colorScheme.error,
-                content: Text('Failed to accept certificate: $e'),
-              ),
-            );
-          }
-        }
         break;
 
       case ConnectionResult_Failed(:final field0):
         setState(() {
-          _isTestingConnection = false;
+          _state = _EditServerState.failure;
+          _errorMessage = field0;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Theme.of(context).colorScheme.error,
-            content: Text('Failed to connect: $field0'),
-          ),
-        );
         break;
     }
   }
 
-  void _resetToOriginal() {
-    setState(() => _controller.text = _originalUrl);
+  Future<void> _acceptCertificate() async {
+    if (_certificateInfo == null) return;
+
+    setState(() {
+      _state = _EditServerState.connecting;
+    });
+
+    try {
+      final settingsCtx = SettingsContext.of(context)!;
+      final result = await settingsCtx.settings.acceptCertificateAndRetry(
+        network: widget.network,
+        serverUrl: _controller.text,
+        certificate: _certificateInfo!.certificateDer,
+        isBackup: widget.isBackup,
+      );
+      await _handleResult(result);
+    } catch (e) {
+      setState(() {
+        _state = _EditServerState.failure;
+        _errorMessage = e.toString();
+      });
+    }
+  }
+
+  void _rejectCertificate() {
+    setState(() {
+      _state = _EditServerState.input;
+      _certificateInfo = null;
+    });
   }
 
   void _restoreDefault() {
-    if (widget.isBackup) {
-      var defaultBackupServer = widget.network.defaultBackupElectrumServer();
-      setState(() => _controller.text = defaultBackupServer);
-    } else {
-      var defaultElectrumServer = widget.network.defaultElectrumServer();
-      setState(() => _controller.text = defaultElectrumServer);
-    }
+    final defaultUrl = widget.isBackup
+        ? widget.network.defaultBackupElectrumServer()
+        : widget.network.defaultElectrumServer();
+    setState(() => _controller.text = defaultUrl);
+  }
+
+  void _tryAgain() {
+    setState(() {
+      _state = _EditServerState.input;
+      _errorMessage = null;
+    });
+  }
+
+  void _cancel() {
+    setState(() {
+      _state = _EditServerState.input;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.isBackup
-                  ? '${widget.network.name()} (backup)'
-                  : widget.network.name(),
-              style: Theme.of(context).textTheme.titleMedium,
+    return SingleChildScrollView(
+      controller: widget.scrollController,
+      child: AnimatedSwitcher(
+        duration: Durations.medium4,
+        transitionBuilder: (child, animation) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        child: _buildContent(),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    switch (_state) {
+      case _EditServerState.input:
+        return _buildInputContent();
+      case _EditServerState.connecting:
+        return _buildConnectingContent();
+      case _EditServerState.certificate:
+        return _buildCertificateContent();
+      case _EditServerState.success:
+        return _buildSuccessContent();
+      case _EditServerState.failure:
+        return _buildFailureContent();
+    }
+  }
+
+  Widget _buildInputContent() {
+    return Padding(
+      key: const ValueKey(_EditServerState.input),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _controller,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Server URL',
             ),
-            SizedBox(height: 8),
-            TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                border: OutlineInputBorder(),
-                suffixIcon: _controller.text != _originalUrl
-                    ? IconButton(
-                        icon: Icon(Icons.undo),
-                        onPressed: _resetToOriginal,
-                      )
-                    : null,
-              ),
-            ),
-            SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              spacing: 8,
-              children: [
-                TextButton(
-                  onPressed: _isTestingConnection ? null : _restoreDefault,
-                  child: Text("Restore Default"),
-                ),
-                FilledButton(
-                  onPressed: _isTestingConnection ? null : _confirmServerUrl,
-                  child: Text("Connect & Save"),
-                ),
-              ],
-            ),
-            SizedBox(height: 8),
-          ],
-        ),
-        if (_isTestingConnection)
-          Positioned.fill(
-            child: Container(
-              color: Colors.black.withValues(alpha: 127),
-              child: Center(child: FsProgressIndicator()),
-            ),
+            onSubmitted: (_) => _connect(),
           ),
-      ],
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _restoreDefault,
+                child: const Text('Restore Default'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _connect,
+                child: const Text('Connect & Save'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConnectingContent() {
+    final theme = Theme.of(context);
+
+    return Padding(
+      key: const ValueKey(_EditServerState.connecting),
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const FsProgressIndicator(),
+          const SizedBox(height: 24),
+          Text('Connecting to server...', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            _controller.text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          TextButton(onPressed: _cancel, child: const Text('Cancel')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCertificateContent() {
+    if (_certificateInfo == null) {
+      return const SizedBox.shrink();
+    }
+
+    return TofuCertificateDialog(
+      key: const ValueKey(_EditServerState.certificate),
+      certificateInfo: _certificateInfo!,
+      serverUrl: _controller.text,
+      onAccept: _acceptCertificate,
+      onReject: _rejectCertificate,
+    );
+  }
+
+  Widget _buildSuccessContent() {
+    final theme = Theme.of(context);
+
+    return Padding(
+      key: const ValueKey(_EditServerState.success),
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 64,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(height: 16),
+          Text('Server saved', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text(
+            _controller.text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFailureContent() {
+    final theme = Theme.of(context);
+
+    return Padding(
+      key: const ValueKey(_EditServerState.failure),
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
+          const SizedBox(height: 16),
+          Text('Connection failed', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage ?? 'Unknown error',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _tryAgain, child: const Text('Try Again')),
+        ],
+      ),
     );
   }
 }
