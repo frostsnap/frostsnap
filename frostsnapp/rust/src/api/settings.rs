@@ -83,33 +83,16 @@ impl Settings {
                 ChainClient::new(genesis_hash, trusted_certificates, db.clone());
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
+            let super_wallet2 = super_wallet.clone();
+            let super_wallet_inner = super_wallet.inner.clone();
             // FIXME: the dependency relationship here is overly convoluted.
-            thread::spawn({
-                let super_wallet = super_wallet.clone();
-                move || {
-                    conn_handler.run(
-                        electrum_url,
-                        backup_electrum_url,
-                        super_wallet.inner.clone(),
-                        {
-                            let wallet_streams = super_wallet.wallet_streams.clone();
-                            move |master_appkey, txs| {
-                                let wallet_streams = wallet_streams.lock().unwrap();
-                                if let Some(stream) = wallet_streams.get(&master_appkey) {
-                                    if let Err(err) = stream.add(txs.into()) {
-                                        tracing::error!(
-                                            {
-                                                master_appkey = master_appkey.to_redacted_string(),
-                                                err = err.to_string(),
-                                            },
-                                            "Failed to add txs to stream"
-                                        );
-                                    }
-                                }
-                            }
-                        },
-                    )
-                }
+            thread::spawn(move || {
+                conn_handler.run(
+                    electrum_url,
+                    backup_electrum_url,
+                    super_wallet_inner,
+                    move |master_appkey| super_wallet2.notify_wallet(master_appkey),
+                )
             });
             loaded_wallets.insert(network, super_wallet);
             chain_apis.insert(network, chain_api);

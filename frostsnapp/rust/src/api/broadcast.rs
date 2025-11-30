@@ -15,25 +15,20 @@ use crate::frb_generated::{SseEncode, StreamSink};
 #[derive(Default, Clone)]
 pub struct Broadcast<T> {
     next_id: Arc<AtomicU32>,
-    inner: Arc<RwLock<BroadcastInner<T>>>,
+    inner: LockedBroadcastInner<T>,
 }
+
+type LockedBroadcastInner<T> = Arc<RwLock<BroadcastInner<T>>>;
 
 #[derive(Default)]
 struct BroadcastInner<T> {
-    subscriptions: BTreeMap<u32, StreamSink<T>>,
+    subscriptions: BTreeMap<u32, Arc<StreamSink<T>>>,
 }
 
 impl<T: SseEncode + Clone> Broadcast<T> {
     #[frb(sync)]
     pub fn subscribe(&self) -> BroadcastSubscription<T> {
-        let id = self
-            .next_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        BroadcastSubscription {
-            id,
-            is_running: Arc::new(AtomicBool::new(false)),
-            inner: Arc::clone(&self.inner),
-        }
+        BroadcastSubscription::new(self)
     }
 
     #[frb(sync)]
@@ -47,11 +42,14 @@ impl<T: SseEncode + Clone> Broadcast<T> {
     }
 }
 
+/// Tuple of broadcast-subscription-id and broadcast inner.
+type BroadcastSubscriptionInner<T> = (u32, LockedBroadcastInner<T>);
+
+/// A single broadcast subscription can subscribe to multiple broadcasts.
 #[derive(Clone)]
 pub struct BroadcastSubscription<T> {
-    id: u32,
     is_running: Arc<AtomicBool>,
-    inner: Arc<RwLock<BroadcastInner<T>>>,
+    inner: Vec<BroadcastSubscriptionInner<T>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -61,6 +59,22 @@ pub enum StartError {
 }
 
 impl<T> BroadcastSubscription<T> {
+    fn new(broadcast: &Broadcast<T>) -> Self {
+        Self::multi(core::iter::once(broadcast))
+    }
+
+    fn multi(broadcasts: impl IntoIterator<Item = &Broadcast<T>>) -> Self {
+        let is_running = Arc::new(AtomicBool::new(false));
+        let mut inner = Vec::<BroadcastSubscriptionInner<T>>::new();
+        for broadcast in broadcasts {
+            let id = broadcast
+                .next_id
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            inner.push((id, broadcast.inner.clone()));
+        }
+        Self { is_running, inner }
+    }
+
     fn _id(&self) -> u32 {
         self.id
     }
@@ -73,6 +87,8 @@ impl<T> BroadcastSubscription<T> {
     fn _start(&self, sink: StreamSink<T>) -> Result<(), StartError> {
         use std::sync::atomic::Ordering;
 
+        let sink = Arc::new(sink);
+
         if self
             .is_running
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -80,8 +96,10 @@ impl<T> BroadcastSubscription<T> {
         {
             return Err(StartError::AlreadyRunning);
         }
-        let mut inner = self.inner.write().unwrap();
-        inner.subscriptions.insert(self.id, sink);
+        for (id, broadcast) in &self.inner {
+            let mut broadcast_guard = broadcast.write().unwrap();
+            broadcast_guard.subscriptions.insert(*id, Arc::clone(&sink));
+        }
         Ok(())
     }
 
@@ -93,8 +111,10 @@ impl<T> BroadcastSubscription<T> {
             .compare_exchange(true, false, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
-            let mut inner = self.inner.write().unwrap();
-            inner.subscriptions.remove(&self.id);
+            for (id, broadcast) in &self.inner {
+                let mut broadcast_guard = broadcast.write().unwrap();
+                broadcast_guard.subscriptions.remove(id);
+            }
             true
         } else {
             false

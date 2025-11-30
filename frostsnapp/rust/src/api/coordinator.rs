@@ -129,7 +129,8 @@ impl AccessStructureExt for AccessStructure {
     }
 }
 
-pub struct Coordinator(pub(crate) FfiCoordinator);
+#[derive(Clone)]
+pub struct Coordinator(pub(crate) Arc<FfiCoordinator>);
 
 #[frb(external)]
 impl KeyPurpose {

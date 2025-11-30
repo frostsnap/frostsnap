@@ -267,7 +267,7 @@ impl ConnectionHandler {
     pub fn run<SW, F>(mut self, url: String, backup_url: String, super_wallet: SW, update_action: F)
     where
         SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
-        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send + 'static,
+        F: FnMut(MasterAppkey) + Send + 'static,
     {
         let lookahead: u32;
         let chain_tip: CheckPoint;
@@ -633,7 +633,7 @@ impl ConnectionHandler {
         mut action: F,
     ) where
         SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
-        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send,
+        F: FnMut(MasterAppkey) + Send,
     {
         for update in block_on_stream(update_recv) {
             let master_appkeys = update
@@ -651,8 +651,7 @@ impl ConnectionHandler {
             };
             if changed {
                 for master_appkey in master_appkeys {
-                    let txs = wallet.list_transactions(master_appkey);
-                    action(master_appkey, txs);
+                    action(master_appkey);
                 }
             }
         }

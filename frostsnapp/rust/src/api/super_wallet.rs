@@ -3,6 +3,7 @@ use super::coordinator::Coordinator;
 use super::transaction::BuildTxState;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
 use crate::api::broadcast::Broadcast;
+use crate::coordinator::{FfiCoordinator, SigningSessionBroadcasts};
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::sink_wrap::SinkWrap;
 use anyhow::{Context as _, Result};
@@ -13,8 +14,10 @@ use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::bitcoin::wallet::AddressInfo;
 pub use frostsnap_coordinator::bitcoin::wallet::PsbtValidationError;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordSuperWallet};
+use frostsnap_coordinator::persist::Persisted;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
+use frostsnap_core::coordinator::FrostCoordinator;
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -27,12 +30,24 @@ use std::{
 };
 use tracing::{event, Level};
 
-pub type WalletStreams = BTreeMap<MasterAppkey, StreamSink<TxState>>;
+type WalletSignals = BTreeMap<MasterAppkey, Broadcast<()>>;
 
-pub struct TxState {
-    pub txs: Vec<Transaction>,
+pub struct WalletBalance {
     pub balance: i64,
     pub untrusted_pending_balance: i64,
+}
+
+pub struct TxState {
+    inner_wallet: Arc<Mutex<CoordSuperWallet>>,
+    master_appkey: MasterAppkey,
+
+    // This only updates based on changes to bitcoin wallet.
+    //
+    // This does not react to the coordinator.
+    signal: Broadcast<()>,
+    // pub txs: Vec<Transaction>,
+    // pub balance: i64,
+    // pub untrusted_pending_balance: i64,
 }
 
 #[frb(external)]
@@ -44,15 +59,18 @@ impl PsbtValidationError {
 #[derive(Clone)]
 #[frb(opaque)]
 pub struct SuperWallet {
+    pub(crate) coord_inner: Arc<Mutex<Persisted<FrostCoordinator>>>,
+    pub(crate) signing_session_broadcasts: Arc<Mutex<HashMap<KeyId, Broadcast<()>>>>,
     pub(crate) inner: Arc<Mutex<CoordSuperWallet>>,
-    pub(crate) wallet_streams: Arc<Mutex<WalletStreams>>,
+    pub(crate) wallet_signals: Arc<Mutex<WalletSignals>>,
     chain_sync: ChainClient,
-    pub network: BitcoinNetwork,
+    pub(crate) network: BitcoinNetwork,
 }
 
 impl SuperWallet {
     #[allow(unused)]
     pub(crate) fn load_or_new(
+        coord: &Coordinator,
         app_dir: impl AsRef<Path>,
         network: BitcoinNetwork,
         chain_sync: ChainClient,
@@ -69,27 +87,22 @@ impl SuperWallet {
             .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
 
         let wallet = SuperWallet {
+            coord_inner: coord.0.clone_inner(),
+            signing_session_broadcasts: coord.0.signing_session_broadcasts(),
             inner: Arc::new(Mutex::new(super_wallet)),
             chain_sync,
-            wallet_streams: Default::default(),
+            wallet_signals: Default::default(),
             network,
         };
 
         Ok(wallet)
     }
 
-    pub fn sub_tx_state(
-        &self,
-        master_appkey: MasterAppkey,
-        stream: StreamSink<TxState>,
-    ) -> Result<()> {
-        stream.add(self.tx_state(master_appkey)).unwrap();
-        self.wallet_streams
-            .lock()
-            .unwrap()
-            .insert(master_appkey, stream);
-
-        Ok(())
+    pub(crate) fn notify_wallet(&self, master_appkey: MasterAppkey) {
+        let signal_streams = self.wallet_signals.lock().unwrap();
+        if let Some(stream) = signal_streams.get(&master_appkey) {
+            stream.add(&());
+        }
     }
 
     #[frb(sync)]
@@ -97,8 +110,35 @@ impl SuperWallet {
         self.inner.lock().unwrap().chain_tip().height()
     }
 
+    // pub fn sub_tx_state(
+    //     &self,
+    //     master_appkey: MasterAppkey,
+    //     stream: StreamSink<TxState>,
+    // ) -> Result<()> {
+    //     stream.add(self.tx_state(master_appkey)).unwrap();
+    //     self.wallet_streams
+    //         .lock()
+    //         .unwrap()
+    //         .insert(master_appkey, stream);
+
+    //     Ok(())
+    // }
+
+    #[frb(sync)]
+    pub fn relevant_txs(&self, master_appkey: MasterAppkey) -> Vec<Transaction> {
+        let key_id = master_appkey.key_id();
+
+        let mut inner = self.inner.lock().unwrap();
+        let wallet_txs = inner.relevant_txs(master_appkey);
+
+        // Get signing sessions
+    }
+
     #[frb(sync)]
     pub fn tx_state(&self, master_appkey: MasterAppkey) -> TxState {
+        let inner = self.inner.lock().unwrap();
+        let txs = inner.relevant_txs(master_appkey);
+
         let txs = self.inner.lock().unwrap().list_transactions(master_appkey);
         txs.into()
     }
@@ -191,6 +231,11 @@ impl SuperWallet {
             .collect())
     }
 
+    /// Returns balance of the given `master_appkey`.
+    pub fn balance(&self, master_appkey: MasterAppkey) -> WalletBalance {
+        todo!()
+    }
+
     #[frb(type_64bit_int)]
     pub fn send_to(
         &self,
@@ -268,10 +313,9 @@ impl SuperWallet {
                 );
                 let mut inner = self.inner.lock().unwrap();
                 inner.broadcast_success(tx);
-                let wallet_streams = self.wallet_streams.lock().unwrap();
-                if let Some(stream) = wallet_streams.get(&master_appkey) {
-                    let txs = inner.list_transactions(master_appkey);
-                    stream.add(txs.into()).unwrap();
+                let wallet_signals = self.wallet_signals.lock().unwrap();
+                if let Some(stream) = wallet_signals.get(&master_appkey) {
+                    stream.add(&());
                 }
                 Ok(())
             }

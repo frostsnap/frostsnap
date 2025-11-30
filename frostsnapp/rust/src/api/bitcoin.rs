@@ -181,7 +181,6 @@ impl BitcoinNetworkExt for BitcoinNetwork {
 #[frb(type_64bit_int)]
 pub struct Transaction {
     pub inner: RTransaction,
-    pub txid: String,
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
@@ -189,32 +188,33 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub(crate) fn from_template(tx_temp: &TransactionTemplate) -> Self {
-        let raw_tx = tx_temp.to_rust_bitcoin_tx();
-        let txid = tx_temp.txid();
-        let is_mine = tx_temp
-            .iter_locally_owned_inputs()
-            .map(|(_, _, spk)| spk.spk())
-            .chain(
-                tx_temp
-                    .iter_locally_owned_outputs()
-                    .map(|(_, _, spk)| spk.spk()),
-            )
-            .collect::<HashSet<_>>();
-        let prevouts = tx_temp
-            .inputs()
-            .iter()
-            .map(|input| (input.outpoint(), input.txout()))
-            .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-        Self {
-            inner: raw_tx,
-            txid: txid.to_string(),
-            confirmation_time: None,
-            last_seen: None,
-            prevouts,
-            is_mine,
-        }
-    }
+    // TODO: We should never need this. Always grab the tx from the `SuperWallet` again.
+    // pub(crate) fn from_template(tx_temp: &TransactionTemplate) -> Self {
+    //     let raw_tx = tx_temp.to_rust_bitcoin_tx();
+    //     let txid = tx_temp.txid();
+    //     let is_mine = tx_temp
+    //         .iter_locally_owned_inputs()
+    //         .map(|(_, _, spk)| spk.spk())
+    //         .chain(
+    //             tx_temp
+    //                 .iter_locally_owned_outputs()
+    //                 .map(|(_, _, spk)| spk.spk()),
+    //         )
+    //         .collect::<HashSet<_>>();
+    //     let prevouts = tx_temp
+    //         .inputs()
+    //         .iter()
+    //         .map(|input| (input.outpoint(), input.txout()))
+    //         .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
+    //     Self {
+    //         inner: raw_tx,
+    //         txid: txid.to_string(),
+    //         confirmation_time: None,
+    //         last_seen: None,
+    //         prevouts,
+    //         is_mine,
+    //     }
+    // }
 
     pub(crate) fn fill_signatures(&mut self, signatures: &[EncodedSignature]) {
         for (txin, signature) in self.inner.input.iter_mut().zip(signatures) {
@@ -229,7 +229,7 @@ impl Transaction {
     }
 
     #[frb(sync)]
-    pub fn raw_txid(&self) -> Txid {
+    pub fn txid(&self) -> Txid {
         self.inner.compute_txid()
     }
 

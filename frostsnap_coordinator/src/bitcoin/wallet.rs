@@ -5,10 +5,12 @@ use bdk_chain::{
     bitcoin::{self, bip32, Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid},
     indexed_tx_graph::{self},
     indexer::keychain_txout::{self, KeychainTxOutIndex},
-    local_chain,
+    local_chain::{self, LocalChain},
     miniscript::{Descriptor, DescriptorPublicKey},
-    CanonicalizationParams, ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
+    CanonicalTx, CanonicalView, CanonicalizationParams, CheckPoint, ConfirmationBlockTime,
+    FullTxOut, Indexer, Merge,
 };
+use bdk_core::KeychainIndexed;
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
     tweak::{AppTweakKind, BitcoinAccountKeychain, BitcoinBip32Path},
@@ -19,7 +21,7 @@ use frostsnap_core::{
     tweak::BitcoinAccount,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::RangeBounds,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -32,17 +34,28 @@ pub type WalletIndexedTxGraph =
     indexed_tx_graph::IndexedTxGraph<ConfirmationBlockTime, WalletIndexer>;
 pub type WalletIndexedTxGraphChangeSet =
     indexed_tx_graph::ChangeSet<ConfirmationBlockTime, keychain_txout::ChangeSet>;
+pub type WalletUtxo = KeychainIndexed<KeychainId, FullTxOut<ConfirmationBlockTime>>;
+pub type WalletTx = CanonicalTx<ConfirmationBlockTime>;
 
 /// Wallet that manages all the frostsnap keys on the same network in a single transaction graph
 pub struct CoordSuperWallet {
     tx_graph: Persisted<WalletIndexedTxGraph>,
     chain: Persisted<local_chain::LocalChain>,
     chain_client: ChainClient,
+    view: CanonicalView<ConfirmationBlockTime>,
     pub network: bitcoin::Network,
     db: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl CoordSuperWallet {
+    fn _update_view(&mut self) {
+        self.view = self.tx_graph.canonical_view(
+            &*self.chain,
+            self.chain.tip().block_id(),
+            CanonicalizationParams::default(),
+        );
+    }
+
     pub fn load_or_init(
         db: Arc<Mutex<rusqlite::Connection>>,
         network: bitcoin::Network,
@@ -53,10 +66,12 @@ impl CoordSuperWallet {
             network = network.to_string(),
             "initializing super wallet"
         );
+
         let mut db_ = db.lock().unwrap();
-        let tx_graph =
-            Persisted::new(&mut *db_, ()).context("loading transaction from the database")?;
-        let chain = Persisted::new(
+
+        let tx_graph = Persisted::<WalletIndexedTxGraph>::new(&mut *db_, ())
+            .context("loading transaction from the database")?;
+        let chain = Persisted::<LocalChain>::new(
             &mut *db_,
             bitcoin::constants::genesis_block(network).block_hash(),
         )
@@ -64,10 +79,17 @@ impl CoordSuperWallet {
 
         drop(db_);
 
+        let view = tx_graph.canonical_view(
+            &*chain,
+            chain.tip().block_id(),
+            CanonicalizationParams::default(),
+        );
+
         Ok(Self {
             tx_graph,
             chain,
             chain_client,
+            view,
             db,
             network,
         })
@@ -320,54 +342,46 @@ impl CoordSuperWallet {
         found_address_derivation
     }
 
-    pub fn list_transactions(&mut self, master_appkey: MasterAppkey) -> Vec<Transaction> {
-        self.lazily_initialize_key(master_appkey);
-        let mut txs = self
-            .tx_graph
-            .graph()
-            .list_canonical_txs(
-                self.chain.as_ref(),
-                self.chain.tip().block_id(),
-                CanonicalizationParams::default(),
-            )
-            .collect::<Vec<_>>();
+    /// Canonical view of all transactions.
+    pub fn canonical_view(&self) -> CanonicalView<ConfirmationBlockTime> {
+        self.tx_graph.canonical_view(
+            &*self.chain,
+            self.chain.tip().block_id(),
+            CanonicalizationParams::default(),
+        )
+    }
 
-        txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
-        txs.into_iter()
-            .filter_map(|canonical_tx| {
-                let inner = canonical_tx.tx_node.tx.clone();
-                let txid = canonical_tx.tx_node.txid;
-                let confirmation_time = match canonical_tx.chain_position {
-                    ChainPosition::Confirmed { anchor, .. } => Some(ConfirmationTime {
-                        height: anchor.block_id.height,
-                        time: anchor.confirmation_time,
-                    }),
-                    _ => None,
-                };
-                let last_seen = canonical_tx.tx_node.last_seen;
-                let prevouts =
-                    self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
-                let is_mine = inner
-                    .output
-                    .iter()
-                    .chain(prevouts.values())
-                    .map(|txout| txout.script_pubkey.clone())
-                    .filter(|spk| self.is_spk_mine(master_appkey, spk.clone()))
-                    .collect::<HashSet<ScriptBuf>>();
-                if is_mine.is_empty() {
-                    None
-                } else {
-                    Some(Transaction {
-                        inner,
-                        txid,
-                        confirmation_time,
-                        last_seen,
-                        prevouts,
-                        is_mine,
-                    })
-                }
+    /// Determine the tx order of relevant transactions in a canonical `view`.
+    pub fn relevant_txs(&mut self, master_appkey: MasterAppkey) -> Vec<WalletTx> {
+        self.lazily_initialize_key(master_appkey);
+        let mut relevant_txs = self
+            .view
+            .txs()
+            .filter(|canonical_tx| {
+                let is_relevant = self
+                    .tx_graph
+                    .index
+                    .txouts_in_tx(canonical_tx.txid)
+                    .filter(|(((appkey, _), _), _)| *appkey == master_appkey)
+                    .next()
+                    .is_some();
+                is_relevant
             })
-            .collect()
+            .collect::<Vec<_>>();
+        relevant_txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.pos));
+        relevant_txs
+    }
+
+    pub fn relevant_utxos(
+        &mut self,
+        master_appkey: MasterAppkey,
+    ) -> impl Iterator<Item = WalletUtxo> + '_ {
+        self.lazily_initialize_key(master_appkey);
+        let owned_outpoints = self
+            .tx_graph
+            .index
+            .keychain_outpoints_in_range(Self::key_index_range(master_appkey));
+        self.view.filter_unspent_outpoints(owned_outpoints)
     }
 
     pub fn apply_update(
@@ -392,6 +406,10 @@ impl CoordSuperWallet {
                     && tx_changeset.is_empty());
                 Ok((changed, (tx_changeset, chain_changeset)))
             })?;
+        drop(db);
+        if changed {
+            self._update_view();
+        }
         Ok(changed)
     }
 
@@ -444,18 +462,7 @@ impl CoordSuperWallet {
             target_outputs
         };
 
-        let utxos: Vec<(_, bdk_chain::FullTxOut<_>)> = self
-            .tx_graph
-            .graph()
-            .filter_chain_unspents(
-                self.chain.as_ref(),
-                self.chain.tip().block_id(),
-                CanonicalizationParams::default(),
-                self.tx_graph
-                    .index
-                    .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
-            )
-            .collect();
+        let utxos = self.relevant_utxos(master_appkey).collect::<Vec<_>>();
 
         let candidates = utxos
             .iter()
@@ -585,6 +592,9 @@ impl CoordSuperWallet {
         Ok(template_tx)
     }
 
+    // TODO: This method should no longer be a method on `CoordSuperWallet` as we no longer need to
+    // depend on `self`. Instead, create a separate function elsewhere that takes in
+    // `Vec<WalletUtxo>`.
     pub fn calculate_avaliable_value(
         &mut self,
         master_appkey: MasterAppkey,
@@ -592,11 +602,21 @@ impl CoordSuperWallet {
         feerate: f32,
         effective_only: bool,
     ) -> i64 {
-        self.lazily_initialize_key(master_appkey);
         use bdk_coin_select::{
             Candidate, CoinSelector, Drain, FeeRate, Target, TargetFee, TargetOutputs,
             TR_KEYSPEND_TXIN_WEIGHT,
         };
+
+        let candidates = self
+            // `lazy_initialize_key` happens here
+            .relevant_utxos(master_appkey)
+            .map(|(_path, utxo)| Candidate {
+                value: utxo.txout.value.to_sat(),
+                weight: TR_KEYSPEND_TXIN_WEIGHT,
+                input_count: 1,
+                is_segwit: true,
+            })
+            .collect::<Vec<_>>();
 
         let feerate = FeeRate::from_sat_per_vb(feerate);
         let target = Target {
@@ -609,24 +629,6 @@ impl CoordSuperWallet {
                 (txo.weight().to_wu(), 0)
             })),
         };
-        let candidates = self
-            .tx_graph
-            .graph()
-            .filter_chain_unspents(
-                self.chain.as_ref(),
-                self.chain.tip().block_id(),
-                CanonicalizationParams::default(),
-                self.tx_graph
-                    .index
-                    .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
-            )
-            .map(|(_path, utxo)| Candidate {
-                input_count: 1,
-                value: utxo.txout.value.to_sat(),
-                weight: TR_KEYSPEND_TXIN_WEIGHT,
-                is_segwit: true,
-            })
-            .collect::<Vec<_>>();
 
         let mut cs = CoinSelector::new(&candidates);
         if effective_only {
@@ -890,18 +892,6 @@ pub struct AddressInfo {
     pub used: bool,
     pub revealed: bool,
     pub derivation_path: Vec<u32>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Transaction {
-    pub inner: Arc<bitcoin::Transaction>,
-    pub txid: Txid,
-
-    pub confirmation_time: Option<ConfirmationTime>,
-    pub last_seen: Option<u64>,
-
-    pub prevouts: HashMap<OutPoint, TxOut>,
-    pub is_mine: HashSet<ScriptBuf>,
 }
 
 #[derive(Clone, Debug)]

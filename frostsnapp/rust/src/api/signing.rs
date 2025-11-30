@@ -422,7 +422,7 @@ impl Coordinator {
         unsigned_txs
             .chain(unbroadcasted_txs)
             .filter(move |uncanonical_tx| {
-                let txid = uncanonical_tx.tx.raw_txid();
+                let txid = uncanonical_tx.tx.txid();
                 !canonical_txids.contains(&txid)
             })
             .collect()

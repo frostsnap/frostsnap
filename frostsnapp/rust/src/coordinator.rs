@@ -1,5 +1,6 @@
 #![allow(unused)]
 use crate::api;
+use crate::api::broadcast::{Broadcast, UnitBroadcastSubscription};
 use crate::api::coordinator::KeyState;
 use crate::api::device_list::DeviceListUpdate;
 use crate::device_list::DeviceList;
@@ -45,10 +46,12 @@ use std::time::Duration;
 use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
+pub type SigningSessionBroadcasts = Arc<Mutex<HashMap<KeyId, Broadcast<()>>>>;
+
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
     key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
-    signing_session_signals: Arc<Mutex<HashMap<KeyId, Signal>>>,
+    pub(crate) signing_session_broadcasts: SigningSessionBroadcasts,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_stack: Arc<Mutex<UiStack>>,
     pub(crate) usb_sender: UsbSender,
@@ -86,7 +89,7 @@ impl FfiCoordinator {
             usb_manager,
             thread_handle: Default::default(),
             key_event_stream: Default::default(),
-            signing_session_signals: Default::default(),
+            signing_session_broadcasts: Default::default(),
             ui_stack: Default::default(),
             firmware_upgrade_progress: Default::default(),
             device_list: Default::default(),
@@ -101,6 +104,14 @@ impl FfiCoordinator {
 
     pub fn inner(&self) -> impl DerefMut<Target = Persisted<FrostCoordinator>> + '_ {
         self.coordinator.lock().unwrap()
+    }
+
+    pub fn clone_inner(&self) -> Arc<Mutex<Persisted<FrostCoordinator>>> {
+        self.coordinator.clone()
+    }
+
+    pub fn signing_session_broadcasts(&self) -> SigningSessionBroadcasts {
+        self.signing_session_broadcasts.clone()
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
@@ -456,10 +467,12 @@ impl FfiCoordinator {
                 )?)
             })?;
 
-        let signals = self.signing_session_signals.clone();
+        let signals = self.signing_session_broadcasts.clone();
         let sink = sink.inspect(move |_| {
-            if let Some(signal_sink) = signals.lock().unwrap().get(&access_structure_ref.key_id) {
-                signal_sink.send(());
+            if let Some(signal_broadcast) =
+                signals.lock().unwrap().get(&access_structure_ref.key_id)
+            {
+                signal_broadcast.add(&());
             }
         });
 
@@ -516,10 +529,10 @@ impl FfiCoordinator {
 
         let key_id = active_sign_session.key_id;
 
-        let signals = self.signing_session_signals.clone();
+        let signals = self.signing_session_broadcasts.clone();
         let sink = sink.inspect(move |_| {
-            if let Some(signal_sink) = signals.lock().unwrap().get(&key_id) {
-                signal_sink.send(());
+            if let Some(signal_broadcast) = signals.lock().unwrap().get(&key_id) {
+                signal_broadcast.add(&());
             }
         });
 
@@ -970,7 +983,7 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn sub_signing_session_signals(&self, key_id: KeyId, new_stream: impl Sink<()>) {
+    pub fn sub_signing_session_signals(&self, key_id: KeyId) -> UnitBroadcastSubscription {
         // Emit an initial signal immediately so that subscribers (especially BehaviorSubjects on
         // the Dart side) get an initial value. This is important for UI state that needs to show
         // the correct state immediately on app restart (e.g., the "Continue" button when there
@@ -980,12 +993,13 @@ impl FfiCoordinator {
         // stream of signing sessions rather than a signal stream that causes consumers to
         // recompute state.
         new_stream.send(());
-        let mut signal_streams = self.signing_session_signals.lock().unwrap();
+        let mut signal_streams = self.signing_session_broadcasts.lock().unwrap();
+        let broadcast = signal_streams.entry(key_id).or_insert(Broadcast::default());
         signal_streams.insert(key_id, Box::new(new_stream));
     }
 
     pub fn emit_signing_signal(&self, key_id: KeyId) {
-        let signal_streams = self.signing_session_signals.lock().unwrap();
+        let signal_streams = self.signing_session_broadcasts.lock().unwrap();
         if let Some(stream) = signal_streams.get(&key_id) {
             stream.send(())
         }

@@ -19,6 +19,10 @@ resolver = "2"
 schnorr_fun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
 secp256kfun = { git = "https://github.com/LLFourn/secp256kfun", rev = "e5cba4691f6d0292d6ae7ee355fe08db19479a69" }
 
+# Use the BDK version in `master` which has `CanonicalView`.
+bdk_core = { git = "https://github.com/bitcoindevkit/bdk", rev = "d2271ea9" }
+bdk_chain = { git = "https://github.com/bitcoindevkit/bdk", rev = "d2271ea9" }
+bdk_electrum_streaming = { git = "https://github.com/evanlinjin/experiments", rev = "75d8c39" }
 
 [workspace.dependencies]
 bincode = { version = "2.0.1", features = [
@@ -75,3 +79,5 @@ incremental = false
 lto = 'fat'
 opt-level = 's'
 overflow-checks = false
+
+
