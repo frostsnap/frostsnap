@@ -111,6 +111,13 @@ class WalletCreateController extends ChangeNotifier {
             crossAxisAlignment: CrossAxisAlignment.center,
             spacing: 12,
             children: [
+              Text(
+                '${form.threshold}-of-${form.selectedDevices.length}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
               const Text(
                 'Confirm that this code is shown on all devices',
                 textAlign: TextAlign.center,
@@ -119,9 +126,21 @@ class WalletCreateController extends ChangeNotifier {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: AnimatedCrossFade(
-                    firstChild: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: CircularProgressIndicator(),
+                    firstChild: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 12,
+                        children: [
+                          CircularProgressIndicator(),
+                          Text(
+                            'This can take a few seconds...',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     secondChild: Text(
                       keygenChecksum,
