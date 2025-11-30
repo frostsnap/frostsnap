@@ -46,7 +46,6 @@ class _RecoveryFlowWithDiscoveryState extends State<RecoveryFlowWithDiscovery> {
                 recoveryContext: widget.recoveryContext,
                 targetDevice: _targetDevice!,
                 recoverShare: _recoverShare,
-                isDialog: false,
               )
             : DeviceDiscoveryWidget(
                 key: const ValueKey('device_discovery'),

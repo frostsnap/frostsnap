@@ -18,6 +18,7 @@ import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/theme.dart';
 
 mixin TitledWidget on Widget {
@@ -28,14 +29,12 @@ class WalletRecoveryFlow extends StatefulWidget {
   final RecoveryContext recoveryContext;
   final TargetDevice targetDevice;
   final RecoverShare? recoverShare;
-  final bool isDialog;
 
   const WalletRecoveryFlow({
     super.key,
     required this.recoveryContext,
     required this.targetDevice,
     this.recoverShare,
-    this.isDialog = true,
   });
 
   @override
@@ -552,32 +551,25 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       child: switcher,
     );
 
-    if (widget.isDialog) {
-      return Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minWidth: 480,
-            maxWidth: 480,
-            minHeight: 360,
-          ),
-          child: switcher,
-        ),
-      );
-    } else {
-      final header = TopBar(
-        title: Text(child.titleText),
-        leadingButton: IconButton(
-          icon: Icon(Icons.arrow_back_rounded),
-          onPressed: () => goBackOrClose(context),
-          tooltip: 'Back',
-        ),
-      );
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [header, scopedSwitcher],
-      );
+    // 📱 MaybeFullscreenDialog uses Dialog.fullscreen on compact (mobile), which
+    // provides its own navigation chrome - adding TopBar would be redundant.
+    final windowSize = WindowSizeContext.of(context);
+    if (windowSize == WindowSizeClass.compact) {
+      return scopedSwitcher;
     }
+
+    final header = TopBar(
+      title: Text(child.titleText),
+      leadingButton: IconButton(
+        icon: Icon(Icons.arrow_back_rounded),
+        onPressed: () => goBackOrClose(context),
+        tooltip: 'Back',
+      ),
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [header, scopedSwitcher],
+    );
   }
 
   void goBackOrClose(BuildContext context) {
