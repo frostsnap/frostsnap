@@ -1,4 +1,5 @@
 pub mod chain_sync;
+mod handler_state;
 pub mod outgoing;
 pub mod psbt;
 pub mod status_tracker;
