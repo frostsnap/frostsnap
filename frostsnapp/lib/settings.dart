@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -18,12 +19,31 @@ import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
+import 'package:frostsnap/udev_setup.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
+
+const settingsMaxWidth = 580.0;
+
+class SettingsContent extends StatelessWidget {
+  final Widget child;
+
+  const SettingsContent({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        constraints: BoxConstraints(maxWidth: settingsMaxWidth),
+        child: child,
+      ),
+    );
+  }
+}
 
 class SettingsContext extends InheritedWidget {
   final Settings settings;
@@ -99,10 +119,8 @@ class SettingsPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text('Settings')),
-      body: Center(
-        child: Container(
-          constraints: BoxConstraints(maxWidth: 580),
-          child: ListView(
+      body: SettingsContent(
+        child: ListView(
             children: [
               if (walletCtx != null)
                 SettingsCategory(
@@ -180,6 +198,14 @@ class SettingsPage extends StatelessWidget {
                       return ElectrumServerSettingsPage();
                     },
                   ),
+                  if (Platform.isLinux)
+                    SettingsItem(
+                      title: Text('USB device setup'),
+                      icon: Icons.usb,
+                      bodyBuilder: (context) {
+                        return UdevSetupPage();
+                      },
+                    ),
                 ],
               ),
               SettingsCategory(
@@ -254,7 +280,6 @@ class SettingsPage extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }
