@@ -10,6 +10,7 @@ runs:
       with:
         channel: stable
         cache: true
+        cache-key: flutter-stable-v1
     - uses: "./.github/actions/fetch-cargo-deps"
     - uses: "./.github/actions/fetch-dart-deps"
     - uses: "./.github/actions/generate-frb"

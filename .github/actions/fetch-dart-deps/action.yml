@@ -23,6 +23,7 @@ runs:
       with:
         channel: stable
         cache: true
+        cache-key: flutter-stable-v1
 
     - name: Get Flutter Dependencies
       working-directory: frostsnapp
