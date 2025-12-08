@@ -1,4 +1,7 @@
-use crate::{palette::PALETTE, prelude::*, string_ext::StringWrap, switcher::Switcher, Fps};
+use crate::{
+    layout::Padding, palette::PALETTE, prelude::*, string_ext::StringWrap, switcher::Switcher,
+    DynWidget, Fps,
+};
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -98,9 +101,10 @@ const FONT_WIDTH: u32 = 7;
 pub struct DebugLogWidget {
     // Cache of formatted text widgets wrapped in expanded container
     display_cache:
-        Container<Switcher<Column<Vec<Text<MonoTextStyle<'static, Rgb565>, StringWrap>>>>>,
+        Container<Switcher<Padding<Column<Vec<Text<MonoTextStyle<'static, Rgb565>, StringWrap>>>>>>,
     max_lines: usize,
     chars_per_line: usize,
+    max_size: Size,
 }
 
 impl Default for DebugLogWidget {
@@ -111,15 +115,17 @@ impl Default for DebugLogWidget {
 
 impl DebugLogWidget {
     pub fn new() -> Self {
-        // Create empty column
+        // Create empty column with padding
         let column = Column::new(Vec::new());
-        let switcher = Switcher::new(column);
+        let padded = Padding::only(column).bottom(20).build();
+        let switcher = Switcher::new(padded);
         let container = Container::new(switcher).with_expanded();
 
         Self {
             display_cache: container,
             max_lines: 0,
             chars_per_line: 0,
+            max_size: Size::zero(),
         }
     }
 
@@ -130,35 +136,43 @@ impl DebugLogWidget {
             }
 
             if let Some(ref mut buffer) = LOG_BUFFER {
-                let mut text_widgets = Vec::new();
+                loop {
+                    let mut text_widgets = Vec::new();
 
-                // Trim buffer to max_lines if needed
-                if self.max_lines > 0 {
-                    while buffer.len() > self.max_lines {
-                        buffer.pop_front();
+                    // Create text widgets for each log entry with line wrapping
+                    for msg in buffer.iter() {
+                        // Create StringWrap with line wrapping based on character width
+                        let wrapped = StringWrap::from_str(msg, self.chars_per_line);
+
+                        let text = Text::new_with(
+                            wrapped,
+                            MonoTextStyle::new(&FONT_7X13, PALETTE.text_secondary),
+                        )
+                        .with_underline(PALETTE.on_background);
+                        text_widgets.push(text);
                     }
+
+                    // Column with newest messages at bottom, aligned to left
+                    let column = Column::new(text_widgets)
+                        .with_main_axis_alignment(MainAxisAlignment::End)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Start);
+
+                    // Wrap in padding to add 20px bottom padding
+                    let mut padded = Padding::only(column).bottom(20).build();
+
+                    // Set constraints to check for overflow
+                    padded.set_constraints(self.max_size);
+
+                    // If there's no overflow or the buffer is empty, we're done
+                    if !padded.child.has_overflow() || buffer.is_empty() {
+                        self.display_cache.child.switch_to(padded);
+                        LOG_DIRTY = false;
+                        break;
+                    }
+
+                    // Remove the oldest message and try again
+                    buffer.pop_front();
                 }
-
-                // Create text widgets for each log entry with line wrapping
-                for msg in buffer.iter() {
-                    // Create StringWrap with line wrapping based on character width
-                    let wrapped = StringWrap::from_str(msg, self.chars_per_line);
-
-                    let text = Text::new_with(
-                        wrapped,
-                        MonoTextStyle::new(&FONT_7X13, PALETTE.text_secondary),
-                    )
-                    .with_underline(PALETTE.on_background);
-                    text_widgets.push(text);
-                }
-
-                // Column with newest messages at bottom, aligned to left
-                let column = Column::new(text_widgets)
-                    .with_main_axis_alignment(MainAxisAlignment::End)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Start);
-
-                self.display_cache.child.switch_to(column);
-                LOG_DIRTY = false;
             }
         }
     }
@@ -183,10 +197,13 @@ impl Widget for DebugLogWidget {
 
 impl DynWidget for DebugLogWidget {
     fn set_constraints(&mut self, max_size: Size) {
+        // Store the max size for overflow detection
+        self.max_size = max_size;
+
         // Calculate chars per line based on font width constant
         self.chars_per_line = (max_size.width / FONT_WIDTH) as usize;
 
-        // Calculate max lines based on font height constant
+        // Calculate max lines based on font height constant (kept for reference but not used)
         self.max_lines = (max_size.height / FONT_HEIGHT) as usize;
 
         // Update the display cache constraints
@@ -201,6 +218,12 @@ impl DynWidget for DebugLogWidget {
     fn sizing(&self) -> crate::Sizing {
         // Just return the display cache's sizing
         self.display_cache.sizing()
+    }
+
+    fn force_full_redraw(&mut self) {
+        unsafe {
+            LOG_DIRTY = true;
+        }
     }
 }
 

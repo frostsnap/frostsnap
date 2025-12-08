@@ -495,4 +495,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
         self.busy_task = None;
         self.widget.force_full_redraw();
     }
+
+    fn force_redraw(&mut self) {
+        let now = self.timer.now();
+        let now_ms =
+            frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().to_millis());
+        self.last_redraw_time = now;
+        let _ = self.widget.draw(&mut self.display, now_ms);
+    }
 }

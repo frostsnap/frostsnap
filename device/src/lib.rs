@@ -20,6 +20,16 @@ macro_rules! log {
     };
 }
 
+/// Log and immediately redraw UI so log is visible
+#[macro_export]
+macro_rules! log_and_redraw {
+    ($ui:expr, $($arg:tt)*) => {{
+        log!($($arg)*);
+        #[cfg(feature = "debug_log")]
+        $ui.force_redraw();
+    }};
+}
+
 pub mod device_config;
 pub mod ds;
 pub mod efuse;
