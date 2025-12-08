@@ -20,6 +20,8 @@ use frostsnap_core::{
     device_nonces::NonceJobBatch,
     message::{self, DeviceSend},
 };
+#[cfg(feature = "debug_log")]
+use frostsnap_core::{Gist, Kind};
 use frostsnap_embedded::NonceAbSlot;
 use rand_core::RngCore;
 
@@ -244,7 +246,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     upstream_serial
                         .write_magic_bytes()
                         .expect("failed to write magic bytes");
-                    log!("upstream got magic bytes");
+                    log_and_redraw!(ui, "upstream got magic bytes");
 
                     upstream_connection.send_announcement(DeviceSendBody::Announce {
                         firmware_digest: active_firmware_digest,
@@ -282,6 +284,12 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                     }
 
                                     if for_me {
+                                        log_and_redraw!(
+                                            ui,
+                                            "RECV: {}",
+                                            message.message_body.gist()
+                                        );
+
                                         match message.message_body.decode() {
                                             // Upgrade mode must be handled eagerly
                                             Some(CoordinatorSendBody::Upgrade(
@@ -391,11 +399,13 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     } else {
                         ui.clear_busy_task();
                     }
+                    log_and_redraw!(ui, "process: {}", core_message.kind());
                     outbox.extend(
                         signer
                             .recv_coordinator_message(core_message.clone(), rng)
                             .expect("failed to process coordinator message"),
                     );
+                    log_and_redraw!(ui, "done");
                 }
                 CoordinatorSendBody::Upgrade(upgrade_message) => match upgrade_message {
                     CoordinatorUpgradeMessage::PrepareUpgrade {
@@ -458,9 +468,9 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
 
         // 🎯 Poll nonce job batch - process one nonce per iteration
         if let Some(batch) = nonce_task_batch.as_mut() {
-            log!("start");
+            log_and_redraw!(ui, "nonce batch start");
             if batch.do_work(&mut hmac_keys.share_encryption) {
-                log!("finish");
+                log_and_redraw!(ui, "nonce batch finish");
                 // Batch completed, send the response with all segments
                 let completed_batch = nonce_task_batch.take().unwrap();
                 let segments = completed_batch.into_segments();
@@ -470,7 +480,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     ),
                 )));
             }
-            log!("done");
+            log_and_redraw!(ui, "nonce batch done");
         }
 
         // Handle message outbox to send

@@ -33,6 +33,8 @@ pub struct Column<T: AssociatedArray> {
     pub(crate) spacing_after: T::Array<u32>,
     /// Flex scores for each child (0 means not flexible)
     pub(crate) flex_scores: T::Array<u32>,
+    /// Amount by which the total height needed exceeds available space (0 = no overflow)
+    pub(crate) height_overflow: u32,
 }
 
 /// Helper to start building a Column with no children
@@ -83,7 +85,18 @@ impl<T: AssociatedArray> Column<T> {
             main_axis_size: MainAxisSize::Min, // Start alignment defaults to Min
             debug_borders: false,
             sizing: None,
+            height_overflow: 0,
         }
+    }
+
+    /// Check if the total height needed by children exceeds the constraint
+    pub fn has_overflow(&self) -> bool {
+        self.height_overflow > 0
+    }
+
+    /// Get the amount by which content overflows (0 if no overflow)
+    pub fn get_overflow_amount(&self) -> u32 {
+        self.height_overflow
     }
 
     /// Set the gap after a specific child (in pixels)
@@ -166,6 +179,7 @@ impl<T: AssociatedArray> Column<T> {
             main_axis_size: self.main_axis_size,
             debug_borders: self.debug_borders,
             sizing: None,
+            height_overflow: 0,
         }
     }
 }
@@ -184,9 +198,11 @@ where
                 height: 0,
                 dirty_rect: None,
             });
+            self.height_overflow = 0;
             return;
         }
 
+        self.height_overflow = 0;
         let mut remaining_height = max_size.height;
         let mut max_child_width = 0u32;
 
@@ -312,10 +328,13 @@ where
             y_offset = y_offset.saturating_add(spacing);
         }
 
+        // Calculate overflow - how much content exceeds the constraint
+        self.height_overflow = y_offset.saturating_sub(max_size.height);
+
         // Compute and store sizing based on MainAxisSize
         let height = match self.main_axis_size {
-            MainAxisSize::Min => y_offset,        // Only as tall as needed
-            MainAxisSize::Max => max_size.height, // Take full available height
+            MainAxisSize::Min => y_offset, // Only as tall as needed
+            MainAxisSize::Max => max_size.height.max(y_offset), // Take full available height (or more if overflowing)
         };
 
         // Compute the dirty rect - the actual area where children will draw
