@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -18,12 +19,31 @@ import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/todo.dart';
+import 'package:frostsnap/udev_setup.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
+
+const settingsMaxWidth = 580.0;
+
+class SettingsContent extends StatelessWidget {
+  final Widget child;
+
+  const SettingsContent({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        constraints: BoxConstraints(maxWidth: settingsMaxWidth),
+        child: child,
+      ),
+    );
+  }
+}
 
 class SettingsContext extends InheritedWidget {
   final Settings settings;
@@ -99,160 +119,165 @@ class SettingsPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text('Settings')),
-      body: Center(
-        child: Container(
-          constraints: BoxConstraints(maxWidth: 580),
-          child: ListView(
-            children: [
-              if (walletCtx != null)
-                SettingsCategory(
-                  title: "Wallet",
-                  items: [
-                    SettingsItem(
-                      title: Text('External wallet'),
-                      icon: Icons.qr_code,
-                      bodyBuilder: (context) {
-                        final wallet = walletCtx.wallet;
-                        return ExportDescriptorPage(
-                          walletDescriptor: walletCtx.network.descriptorForKey(
-                            masterAppkey: wallet.masterAppkey,
-                          ),
-                        );
-                      },
-                    ),
-                    SettingsItem(
-                      title: Text("Keys"),
-                      icon: Icons.key_sharp,
-                      bodyBuilder: (context) {
-                        return KeysSettings();
-                      },
-                    ),
-                    SettingsItem(
-                      title: Text('Backup Checklist'),
-                      icon: Icons.assignment,
-                      bodyBuilder: (context) {
-                        final frostKey = walletCtx.wallet.frostKey();
-                        if (frostKey != null) {
-                          return BackupChecklist(
-                            accessStructure: frostKey.accessStructures()[0],
-                          );
-                        }
-                      },
-                    ),
-                    SettingsItem(
-                      title: Text('Check address'),
-                      icon: Icons.policy,
-                      bodyBuilder: (context) {
-                        return CheckAddressPage();
-                      },
-                    ),
-                    SettingsItem(
-                      title: Text(
-                        "Delete wallet",
-                        style: TextStyle(color: Colors.redAccent),
-                      ),
-                      icon: Icons.delete_forever,
-                      bodyBuilder: (context) {
-                        return DeleteWalletPage();
-                      },
-                      onClose: () {
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                        }
-                      },
-                    ),
-                  ],
-                ),
+      body: SettingsContent(
+        child: ListView(
+          children: [
+            if (walletCtx != null)
               SettingsCategory(
-                title: 'General',
+                title: "Wallet",
                 items: [
                   SettingsItem(
-                    title: Text('About'),
-                    icon: Icons.info_outline,
+                    title: Text('External wallet'),
+                    icon: Icons.qr_code,
                     bodyBuilder: (context) {
-                      return AboutPage();
-                    },
-                  ),
-                  SettingsItem(
-                    title: Text('Electrum server'),
-                    icon: Icons.cloud,
-                    bodyBuilder: (context) {
-                      return ElectrumServerSettingsPage();
-                    },
-                  ),
-                ],
-              ),
-              SettingsCategory(
-                title: 'Advanced',
-                items: [
-                  if (logCtx != null)
-                    SettingsItem(
-                      title: Text("Logs"),
-                      icon: Icons.list_alt,
-                      bodyBuilder: (context) {
-                        return LogPane(logStream: logCtx.logStream);
-                      },
-                    ),
-                  SettingsItem(
-                    title: Text("Developer mode"),
-                    icon: Icons.developer_mode,
-                    builder: (context, title, icon) {
-                      final settingsCtx = SettingsContext.of(context)!;
-                      return StreamBuilder(
-                        stream: settingsCtx.developerSettings,
-                        builder: (context, snap) {
-                          return Tooltip(
-                            message: "enables wallets on Bitcoin test networks",
-                            child: SwitchListTile(
-                              title: title,
-                              onChanged: (value) async {
-                                await settingsCtx.settings.setDeveloperMode(
-                                  value: value,
-                                );
-                              },
-                              value: snap.data?.developerMode ?? false,
-                            ),
-                          );
-                        },
+                      final wallet = walletCtx.wallet;
+                      return ExportDescriptorPage(
+                        walletDescriptor: walletCtx.network.descriptorForKey(
+                          masterAppkey: wallet.masterAppkey,
+                        ),
                       );
+                    },
+                  ),
+                  SettingsItem(
+                    title: Text("Keys"),
+                    icon: Icons.key_sharp,
+                    bodyBuilder: (context) {
+                      return KeysSettings();
+                    },
+                  ),
+                  SettingsItem(
+                    title: Text('Backup Checklist'),
+                    icon: Icons.assignment,
+                    bodyBuilder: (context) {
+                      final frostKey = walletCtx.wallet.frostKey();
+                      if (frostKey != null) {
+                        return BackupChecklist(
+                          accessStructure: frostKey.accessStructures()[0],
+                        );
+                      }
+                    },
+                  ),
+                  SettingsItem(
+                    title: Text('Check address'),
+                    icon: Icons.policy,
+                    bodyBuilder: (context) {
+                      return CheckAddressPage();
                     },
                   ),
                   SettingsItem(
                     title: Text(
-                      "Erase multiple devices",
+                      "Delete wallet",
                       style: TextStyle(color: Colors.redAccent),
                     ),
-                    icon: Icons.delete_sweep,
-                    builder: (context, title, icon) {
-                      final settingsCtx = SettingsContext.of(context)!;
-                      return StreamBuilder(
-                        stream: settingsCtx.developerSettings,
-                        builder: (context, snap) {
-                          final isDeveloperMode =
-                              snap.data?.developerMode ?? false;
-
-                          if (!isDeveloperMode) {
-                            return SizedBox.shrink();
-                          }
-
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                            ),
-                            leading: Icon(icon, color: Colors.redAccent),
-                            title: title,
-                            onTap: () async {
-                              await _showEraseAllDialog(context);
-                            },
-                          );
-                        },
-                      );
+                    icon: Icons.delete_forever,
+                    bodyBuilder: (context) {
+                      return DeleteWalletPage();
+                    },
+                    onClose: () {
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
                     },
                   ),
                 ],
               ),
-            ],
-          ),
+            SettingsCategory(
+              title: 'General',
+              items: [
+                SettingsItem(
+                  title: Text('About'),
+                  icon: Icons.info_outline,
+                  bodyBuilder: (context) {
+                    return AboutPage();
+                  },
+                ),
+                SettingsItem(
+                  title: Text('Electrum server'),
+                  icon: Icons.cloud,
+                  bodyBuilder: (context) {
+                    return ElectrumServerSettingsPage();
+                  },
+                ),
+                if (Platform.isLinux)
+                  SettingsItem(
+                    title: Text('USB device setup'),
+                    icon: Icons.usb,
+                    bodyBuilder: (context) {
+                      return UdevSetupPage();
+                    },
+                  ),
+              ],
+            ),
+            SettingsCategory(
+              title: 'Advanced',
+              items: [
+                if (logCtx != null)
+                  SettingsItem(
+                    title: Text("Logs"),
+                    icon: Icons.list_alt,
+                    bodyBuilder: (context) {
+                      return LogPane(logStream: logCtx.logStream);
+                    },
+                  ),
+                SettingsItem(
+                  title: Text("Developer mode"),
+                  icon: Icons.developer_mode,
+                  builder: (context, title, icon) {
+                    final settingsCtx = SettingsContext.of(context)!;
+                    return StreamBuilder(
+                      stream: settingsCtx.developerSettings,
+                      builder: (context, snap) {
+                        return Tooltip(
+                          message: "enables wallets on Bitcoin test networks",
+                          child: SwitchListTile(
+                            title: title,
+                            onChanged: (value) async {
+                              await settingsCtx.settings.setDeveloperMode(
+                                value: value,
+                              );
+                            },
+                            value: snap.data?.developerMode ?? false,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                SettingsItem(
+                  title: Text(
+                    "Erase multiple devices",
+                    style: TextStyle(color: Colors.redAccent),
+                  ),
+                  icon: Icons.delete_sweep,
+                  builder: (context, title, icon) {
+                    final settingsCtx = SettingsContext.of(context)!;
+                    return StreamBuilder(
+                      stream: settingsCtx.developerSettings,
+                      builder: (context, snap) {
+                        final isDeveloperMode =
+                            snap.data?.developerMode ?? false;
+
+                        if (!isDeveloperMode) {
+                          return SizedBox.shrink();
+                        }
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                          ),
+                          leading: Icon(icon, color: Colors.redAccent),
+                          title: title,
+                          onTap: () async {
+                            await _showEraseAllDialog(context);
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
