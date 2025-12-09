@@ -30,9 +30,13 @@ jobs:
         with:
           firmware_path: firmware/firmware.bin
       - name: Upload APK to release
-        run: gh release upload ${{ env.TAG_NAME }} "frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk#Frostsnap-${{ env.TAG_NAME }}.apk" --clobber
+        run: |
+          cp frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk "Frostsnap-${{ env.TAG_NAME }}.apk"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.apk#Frostsnap-android.apk" --clobber
       - name: Upload App Bundle to release
-        run: gh release upload ${{ env.TAG_NAME }} "frostsnapp/build/app/outputs/bundle/playstoreRelease/app-playstore-release.aab#Frostsnap-${{ env.TAG_NAME }}.aab" --clobber
+        run: |
+          cp frostsnapp/build/app/outputs/bundle/playstoreRelease/app-playstore-release.aab "Frostsnap-${{ env.TAG_NAME }}.aab"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.aab#Frostsnap-android.aab" --clobber
 
   build-linux:
     name: "Build Linux"
@@ -65,7 +69,9 @@ jobs:
       - uses: taiki-e/install-action@just
       - run: just frostsnapp/build-appimage
       - name: Upload AppImage to release
-        run: gh release upload ${{ env.TAG_NAME }} frostsnapp/Frostsnap-x86_64.AppImage#Frostsnap-${{ env.TAG_NAME }}-x86_64.AppImage --clobber
+        run: |
+          mv frostsnapp/Frostsnap-x86_64.AppImage "Frostsnap-${{ env.TAG_NAME }}.AppImage"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.AppImage#Frostsnap-linux-x86_64.AppImage" --clobber
 
   build-windows:
     name: "Build Windows"
@@ -80,9 +86,9 @@ jobs:
         with:
           firmware_path: firmware/firmware.bin
       - name: Zip Windows build
-        run: Compress-Archive -Path frostsnapp/build/windows/x64/runner/Release/* -DestinationPath Frostsnap-${{ env.TAG_NAME }}-windows.zip
+        run: Compress-Archive -Path frostsnapp/build/windows/x64/runner/Release/* -DestinationPath Frostsnap-${{ env.TAG_NAME }}.zip
       - name: Upload Windows build to release
-        run: gh release upload ${{ env.TAG_NAME }} Frostsnap-${{ env.TAG_NAME }}-windows.zip --clobber
+        run: gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.zip#Frostsnap-windows.zip" --clobber
 
   build-macos:
     name: "Build macOS"
@@ -97,4 +103,6 @@ jobs:
         with:
           firmware_path: firmware/firmware.bin
       - name: Upload DMG to release
-        run: gh release upload ${{ env.TAG_NAME }} "frostsnapp/Frostsnap-${{ github.sha }}-universal.dmg#Frostsnap-${{ env.TAG_NAME }}-macos.dmg" --clobber
+        run: |
+          mv frostsnapp/Frostsnap.dmg "Frostsnap-${{ env.TAG_NAME }}.dmg"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.dmg#Frostsnap-macos.dmg" --clobber

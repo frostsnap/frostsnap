@@ -108,8 +108,7 @@ build-dmg: (build "macos" "--release")
     # Configuration
     APP_NAME="Frostsnap"
     APP_PATH="build/macos/Build/Products/Release/${APP_NAME}.app"
-    VERSION="${GITHUB_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo 'local')}"
-    DMG_NAME="${APP_NAME}-${VERSION}-universal.dmg"
+    DMG_NAME="${APP_NAME}.dmg"
 
     # Check if app exists
     if [ ! -d "$APP_PATH" ]; then
