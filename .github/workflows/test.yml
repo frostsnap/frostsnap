@@ -179,7 +179,7 @@ jobs:
           friendly: Frostsnap.dmg
           description: "Frostsnap for macOS (Intel and Apple Silicon)"
           name: Frostsnap-${{ github.sha }}-macos.dmg
-          path: frostsnapp/Frostsnap-${{ github.sha }}-universal.dmg
+          path: frostsnapp/Frostsnap.dmg
 
   flutter-analyze:
     name: Flutter Analyze
