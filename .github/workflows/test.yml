@@ -74,47 +74,26 @@ jobs:
     needs: ["build-device-firmware"]
     steps:
       - uses: actions/checkout@v4
-      - uses: "./.github/actions/free-disk-space"
-      - uses: "./.github/actions/set-up-app-build"
-      - uses: "./.github/actions/cache-rust-target"
+      - name: Download firmware
+        uses: actions/download-artifact@v4
         with:
-          key: "android-app-v0"
-          path: |
-            target/aarch64-linux-android/release
-            target/armv7-linux-androideabi/release
-      - uses: dtolnay/rust-toolchain@stable
+          name: frostsnap-dev-${{ github.sha }}.bin
+          path: firmware
+      - uses: "./.github/actions/build-android"
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi
-      - name: Install Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: 18
-          cache: gradle
-      - name: Install android
-        uses: android-actions/setup-android@v3
-      - name: Install NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r25c
-          link-to-sdk: true
-          add-to-path: true
-      - name: Build App APK
-        run: just frostsnapp/build apk --release
-      - name: Build appbundle
-        run: just frostsnapp/build appbundle --release
+          firmware_path: firmware/firmware.bin
       - name: Upload APK (Android)
         uses: "./.github/actions/upload-artifact"
         with:
           friendly: "Frostsnap.apk"
           description: "Frostsnap for android"
           name: Frostsnap-${{ github.sha }}.apk
-          path: frostsnapp/build/app/outputs/apk/release/app-release.apk
+          path: frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk
       - name: Upload App Bundle (Android)
         uses: "./.github/actions/upload-artifact"
         with:
           name: frostsnapp-${{ github.sha }}.aab
-          path: frostsnapp/build/app/outputs/bundle/release/app-release.aab
+          path: frostsnapp/build/app/outputs/bundle/playstoreRelease/app-playstore-release.aab
 
   app-build-linux:
     needs: ["build-device-firmware"]
@@ -124,17 +103,14 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: "./.github/actions/set-up-app-build"
-      - uses: "./.github/actions/cache-rust-target"
+      - name: Download firmware
+        uses: actions/download-artifact@v4
         with:
-          key: "app-build-linux-v0"
-      - name: APT install dependencies for linux
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev cmake clang
-      - name: Build App Linux
-        run: just frostsnapp/build linux --release
-
+          name: frostsnap-dev-${{ github.sha }}.bin
+          path: firmware
+      - uses: "./.github/actions/build-linux"
+        with:
+          firmware_path: firmware/firmware.bin
       - uses: "./.github/actions/upload-artifact"
         with:
           name: Frostsnap-${{ github.sha }}-linux-x64
@@ -171,13 +147,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: "./.github/actions/set-up-app-build"
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: "./.github/actions/cache-rust-target"
+      - name: Download firmware
+        uses: actions/download-artifact@v4
         with:
-          key: "app-build-windows-v0"
-      - name: Build App Windows
-        run: just frostsnapp/build windows --release
+          name: frostsnap-dev-${{ github.sha }}.bin
+          path: firmware
+      - uses: "./.github/actions/build-windows"
+        with:
+          firmware_path: firmware/firmware.bin
       - uses: "./.github/actions/upload-artifact"
         with:
           name: Frostsnap-${{ github.sha }}-windows
@@ -189,24 +166,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: "./.github/actions/set-up-app-build"
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Download firmware
+        uses: actions/download-artifact@v4
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: "./.github/actions/cache-rust-target"
+          name: frostsnap-dev-${{ github.sha }}.bin
+          path: firmware
+      - uses: "./.github/actions/build-macos"
         with:
-          key: "app-build-macos-v0"
-          path: |
-            target/aarch64-apple-darwin/release
-            target/x86_64-apple-darwin/release
-      - name: Install CocoaPods
-        run: |
-          gem install cocoapods
-      - name: Install create-dmg
-        run: |
-          brew install create-dmg
-      - name: Build App macOS and Create DMG
-        run: just build-dmg
+          firmware_path: firmware/firmware.bin
       - uses: "./.github/actions/upload-artifact"
         with:
           friendly: Frostsnap.dmg

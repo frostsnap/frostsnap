@@ -1,0 +1,97 @@
+name: Release Build
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to download firmware from (e.g. v0.2.0)'
+        required: true
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  TAG_NAME: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
+
+jobs:
+  build-android:
+    name: "Build Android"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download firmware from release
+        run: |
+          mkdir -p firmware
+          gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
+      - uses: "./.github/actions/build-android"
+        with:
+          firmware_path: firmware/firmware.bin
+      - name: Upload APK to release
+        run: gh release upload ${{ env.TAG_NAME }} "frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk#Frostsnap-${{ env.TAG_NAME }}.apk" --clobber
+      - name: Upload App Bundle to release
+        run: gh release upload ${{ env.TAG_NAME }} "frostsnapp/build/app/outputs/bundle/playstoreRelease/app-playstore-release.aab#Frostsnap-${{ env.TAG_NAME }}.aab" --clobber
+
+  build-linux:
+    name: "Build Linux"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download firmware from release
+        run: |
+          mkdir -p firmware
+          gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
+      - uses: "./.github/actions/build-linux"
+        with:
+          firmware_path: firmware/firmware.bin
+      - name: Upload Linux bundle as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundle
+          path: frostsnapp/build/linux/x64/release/bundle
+
+  app-image:
+    name: "Package AppImage"
+    needs: ["build-linux"]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-bundle
+          path: frostsnapp/build/linux/x64/release/bundle
+      - uses: taiki-e/install-action@just
+      - run: just frostsnapp/build-appimage
+      - name: Upload AppImage to release
+        run: gh release upload ${{ env.TAG_NAME }} frostsnapp/Frostsnap-x86_64.AppImage#Frostsnap-${{ env.TAG_NAME }}-x86_64.AppImage --clobber
+
+  build-windows:
+    name: "Build Windows"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download firmware from release
+        run: |
+          mkdir -p firmware
+          gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
+      - uses: "./.github/actions/build-windows"
+        with:
+          firmware_path: firmware/firmware.bin
+      - name: Zip Windows build
+        run: Compress-Archive -Path frostsnapp/build/windows/x64/runner/Release/* -DestinationPath Frostsnap-${{ env.TAG_NAME }}-windows.zip
+      - name: Upload Windows build to release
+        run: gh release upload ${{ env.TAG_NAME }} Frostsnap-${{ env.TAG_NAME }}-windows.zip --clobber
+
+  build-macos:
+    name: "Build macOS"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download firmware from release
+        run: |
+          mkdir -p firmware
+          gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
+      - uses: "./.github/actions/build-macos"
+        with:
+          firmware_path: firmware/firmware.bin
+      - name: Upload DMG to release
+        run: gh release upload ${{ env.TAG_NAME }} "frostsnapp/Frostsnap-${{ github.sha }}-universal.dmg#Frostsnap-${{ env.TAG_NAME }}-macos.dmg" --clobber

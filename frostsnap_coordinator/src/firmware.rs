@@ -333,6 +333,18 @@ impl VersionNumber {
 // should only track the firmware-only (deterministic) digest.
 use frostsnap_macros::hex;
 pub const KNOWN_FIRMWARE_VERSIONS: &[(Sha256Digest, VersionNumber)] = &[
+    (
+        Sha256Digest(hex!(
+            "e432d313c7698b1e8843b10ba95efa8c28e66a5723b966c56c156687d09d16e0"
+        )),
+        VersionNumber::new(0, 2, 0),
+    ),
+    (
+        Sha256Digest(hex!(
+            "5ff7bd280b96d645b2c739a6b91bfc6c27197e213302770f1a7180678ca4f720"
+        )),
+        VersionNumber::new(0, 1, 0),
+    ),
     /*signed*/
     (
         Sha256Digest(hex!(

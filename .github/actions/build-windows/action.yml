@@ -1,0 +1,21 @@
+name: "Build Windows App"
+description: "Builds Windows app"
+
+inputs:
+  firmware_path:
+    description: "Path to firmware.bin file"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: "./.github/actions/set-up-app-build"
+      with:
+        firmware_path: ${{ inputs.firmware_path }}
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: "./.github/actions/cache-rust-target"
+      with:
+        key: "app-build-windows-v0"
+    - name: Build App Windows
+      shell: bash
+      run: just frostsnapp/build windows --release
