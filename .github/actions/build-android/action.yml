@@ -1,0 +1,44 @@
+name: "Build Android App"
+description: "Builds Android APK and App Bundle"
+
+inputs:
+  firmware_path:
+    description: "Path to firmware.bin file"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: "./.github/actions/free-disk-space"
+    - uses: "./.github/actions/set-up-app-build"
+      with:
+        firmware_path: ${{ inputs.firmware_path }}
+    - uses: "./.github/actions/cache-rust-target"
+      with:
+        key: "android-app-v0"
+        path: |
+          target/aarch64-linux-android/release
+          target/armv7-linux-androideabi/release
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android,armv7-linux-androideabi
+    - name: Install Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: zulu
+        java-version: 18
+        cache: gradle
+    - name: Install android
+      uses: android-actions/setup-android@v3
+    - name: Install NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r25c
+        link-to-sdk: true
+        add-to-path: true
+    - name: Build App APK
+      shell: bash
+      run: just frostsnapp/build apk --release --flavor direct
+    - name: Build appbundle
+      shell: bash
+      run: just frostsnapp/build appbundle --release --flavor playstore

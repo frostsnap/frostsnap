@@ -134,33 +134,3 @@ simulate +ARGS="":
 
 widget_dev +args="":
     cd device && cargo run --bin widget_dev --release {{args}}
-
-# Download firmware.bin from the most recent GitHub release (that has a firmware release)
-fetch-released-firmware:
-    #!/bin/bash
-    if [ -n "$GITHUB_TOKEN" ]; then
-        releases=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/frostsnap/frostsnap/releases?per_page=100")
-    else
-        releases=$(curl -s "https://api.github.com/repos/frostsnap/frostsnap/releases?per_page=100")
-    fi
-    
-    # Exit early if not an array
-    if ! echo "$releases" | jq -e 'type == "array"' >/dev/null 2>&1; then
-        echo "GitHub API error:"
-        echo "$releases" | jq '.' 2>/dev/null || echo "$releases"
-        exit 1
-    fi
-    
-    mkdir -p target/riscv32imc-unknown-none-elf/release/
-    release_count=$(echo "$releases" | jq 'length')
-    for i in $(seq 0 $((release_count - 1))); do
-        firmware_url=$(echo "$releases" | jq --argjson idx "$i" -r '.[$idx].assets[]? | select(.name=="firmware.bin") | .browser_download_url')
-        tag_name=$(echo "$releases" | jq --argjson idx "$i" -r '.[$idx].tag_name')
-        if [ -n "$firmware_url" ] && [ "$firmware_url" != "null" ]; then
-            echo "Found most recent firmware.bin in release $tag_name"
-            curl -L -o target/riscv32imc-unknown-none-elf/release/firmware.bin "$firmware_url"
-            exit 0
-        fi
-    done
-    echo "Error: No firmware.bin found in any releases"
-    exit 1

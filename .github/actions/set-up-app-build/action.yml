@@ -1,6 +1,11 @@
 name: "App build preamble"
 description: "Sets up common stuff for building the flutter app"
 
+inputs:
+  firmware_path:
+    description: "Path to firmware.bin file"
+    required: true
+
 runs:
   using: "composite"
   steps:
@@ -13,9 +18,9 @@ runs:
     - uses: "./.github/actions/fetch-cargo-deps"
     - uses: "./.github/actions/fetch-dart-deps"
     - uses: "./.github/actions/generate-frb"
-    - uses: "./.github/actions/install-cargo-bins" # needed for espflash
-    - name: Fetch firmware
+    - uses: "./.github/actions/install-cargo-bins"
+    - name: Copy firmware to expected location
       shell: bash
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: just fetch-released-firmware
+      run: |
+        mkdir -p target/riscv32imc-unknown-none-elf/release/
+        cp "${{ inputs.firmware_path }}" target/riscv32imc-unknown-none-elf/release/firmware.bin

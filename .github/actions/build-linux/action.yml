@@ -1,0 +1,25 @@
+name: "Build Linux App"
+description: "Builds Linux app bundle"
+
+inputs:
+  firmware_path:
+    description: "Path to firmware.bin file"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: "./.github/actions/set-up-app-build"
+      with:
+        firmware_path: ${{ inputs.firmware_path }}
+    - uses: "./.github/actions/cache-rust-target"
+      with:
+        key: "app-build-linux-v0"
+    - name: APT install dependencies for linux
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev cmake clang
+    - name: Build App Linux
+      shell: bash
+      run: just frostsnapp/build linux --release
