@@ -9,6 +9,9 @@ on:
         description: 'Release tag to download firmware from (e.g. v0.2.0)'
         required: true
 
+permissions:
+  contents: write
+
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TAG_NAME: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
