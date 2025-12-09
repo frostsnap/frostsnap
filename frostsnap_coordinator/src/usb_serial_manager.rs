@@ -190,6 +190,16 @@ impl UsbSerialManager {
                             self.ignored.insert(port_name.clone());
                         }
                     }
+                    PortOpenError::PermissionDenied => {
+                        if !self.ignored.contains(&port_name) {
+                            event!(
+                                Level::ERROR,
+                                port = port_name,
+                                "Could not open port: permission denied (udev rules may not be installed)"
+                            );
+                            self.ignored.insert(port_name.clone());
+                        }
+                    }
                     PortOpenError::Other(e) => {
                         event!(
                             Level::ERROR,

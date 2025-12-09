@@ -24,6 +24,7 @@ pub trait Serial: Send {
 #[derive(Debug)]
 pub enum PortOpenError {
     DeviceBusy,
+    PermissionDenied,
     Other(Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -31,6 +32,7 @@ impl core::fmt::Display for PortOpenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PortOpenError::DeviceBusy => write!(f, "device is busy"),
+            PortOpenError::PermissionDenied => write!(f, "permission denied"),
             PortOpenError::Other(error) => write!(f, "{error}"),
         }
     }
@@ -258,8 +260,11 @@ impl Serial for DesktopSerial {
             .timeout(Duration::from_millis(5_000))
             .open()
             .map_err(|e| {
-                if e.to_string() == "Device or resource busy" {
+                let msg = e.to_string();
+                if msg == "Device or resource busy" {
                     PortOpenError::DeviceBusy
+                } else if msg == "Permission denied" {
+                    PortOpenError::PermissionDenied
                 } else {
                     PortOpenError::Other(Box::new(e))
                 }
