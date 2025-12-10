@@ -225,6 +225,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final mobileScannerSupported =
+        Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
     final confirmationBlocks = state.confirmationBlocksOfFeerate();
     final feerate = state.feerate();
@@ -312,11 +314,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
                           icon: Icon(Icons.paste),
                         ),
                         TextButton.icon(
-                          onPressed: Platform.isAndroid
+                          onPressed: mobileScannerSupported
                               ? () => recipientScan(context)
                               : null,
                           label: Text(
-                            Platform.isAndroid ? 'Scan' : 'Scan (coming soon)',
+                            mobileScannerSupported
+                                ? 'Scan'
+                                : 'Scan (coming soon)',
                           ),
                           icon: Icon(Icons.qr_code),
                         ),

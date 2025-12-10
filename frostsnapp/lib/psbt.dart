@@ -118,7 +118,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final enoughSelected =
         selectedDevices.length == accessStructure.threshold();
     Widget? scanPsbtButton;
-    if (Platform.isAndroid || Platform.isIOS) {
+    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
       scanPsbtButton = TextButton.icon(
         onPressed: !enoughSelected
             ? null
