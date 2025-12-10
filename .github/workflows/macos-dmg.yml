@@ -1,0 +1,35 @@
+name: macOS DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  TAG_NAME: ${{ github.event.inputs.tag_name }}
+
+jobs:
+  package-dmg:
+    name: "Package macOS DMG"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@just
+      - name: Download signed app from release
+        run: |
+          gh release download ${{ env.TAG_NAME }} --pattern "Frostsnap-mac-signed.app.zip"
+          unzip Frostsnap-mac-signed.app.zip
+      - name: Install create-dmg
+        run: brew install create-dmg
+      - name: Create DMG
+        run: just frostsnapp/package-dmg Frostsnap.app
+      - name: Upload DMG to release
+        run: |
+          mv frostsnapp/Frostsnap.dmg "Frostsnap-${{ env.TAG_NAME }}-mac.dmg"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}-mac.dmg" --clobber

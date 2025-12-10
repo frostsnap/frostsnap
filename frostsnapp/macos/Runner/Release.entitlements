@@ -4,5 +4,19 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
+
+	<!-- Hardened Runtime entitlements required for notarization -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!-- Network and device access -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.device.serial</key>
+	<true/>
+	<key>com.apple.security.device.usb</key>
+	<true/>
 </dict>
 </plist>

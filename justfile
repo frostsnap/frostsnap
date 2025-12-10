@@ -110,9 +110,14 @@ run +ARGS="":
 run-secure +ARGS="":
     just frostsnapp/run-secure
 
-# Build macOS DMG
+# Create DMG from an existing .app bundle
+package-dmg +ARGS="":
+    just frostsnapp/package-dmg {{ARGS}}
+
+# Build macOS app and package into DMG
 build-dmg:
-    just frostsnapp/build-dmg
+    just build macos --release
+    just package-dmg
 
 fetch-riscv VERSION="2024.09.03-nightly":
     #!/bin/sh

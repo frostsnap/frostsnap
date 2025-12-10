@@ -1,5 +1,5 @@
 name: "Build macOS App"
-description: "Builds macOS app and creates DMG"
+description: "Builds macOS app"
 
 inputs:
   firmware_path:
@@ -24,9 +24,6 @@ runs:
     - name: Install CocoaPods
       shell: bash
       run: gem install cocoapods
-    - name: Install create-dmg
+    - name: Build macOS App
       shell: bash
-      run: brew install create-dmg
-    - name: Build App macOS and Create DMG
-      shell: bash
-      run: just build-dmg
+      run: just build macos --release
