@@ -176,10 +176,10 @@ jobs:
           firmware_path: firmware/firmware.bin
       - uses: "./.github/actions/upload-artifact"
         with:
-          friendly: Frostsnap.dmg
+          friendly: Frostsnap.app
           description: "Frostsnap for macOS (Intel and Apple Silicon)"
-          name: Frostsnap-${{ github.sha }}-macos.dmg
-          path: frostsnapp/Frostsnap.dmg
+          name: Frostsnap-${{ github.sha }}-macos.app
+          path: frostsnapp/build/macos/Build/Products/Release/Frostsnap.app
 
   flutter-analyze:
     name: Flutter Analyze
