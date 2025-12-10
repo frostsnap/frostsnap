@@ -5,6 +5,7 @@ use crate::Sink;
 /// Manages chain status tracking and updates - single source of truth
 pub struct StatusTracker {
     current: ChainStatus,
+    enabled: ElectrumEnabled,
     sink: Box<dyn Sink<ChainStatus>>,
 }
 
@@ -12,6 +13,7 @@ impl StatusTracker {
     pub fn new(initial_status: ChainStatus) -> Self {
         Self {
             current: initial_status,
+            enabled: ElectrumEnabled::default(),
             sink: Box::new(()),
         }
     }
@@ -47,8 +49,7 @@ impl StatusTracker {
     }
 
     pub fn set_enabled(&mut self, enabled: ElectrumEnabled) {
-        self.current.enabled = enabled;
-        self.emit();
+        self.enabled = enabled;
     }
 
     pub fn primary_url(&self) -> &str {
@@ -60,7 +61,7 @@ impl StatusTracker {
     }
 
     pub fn enabled(&self) -> ElectrumEnabled {
-        self.current.enabled
+        self.enabled
     }
 
     pub fn on_backup(&self) -> bool {

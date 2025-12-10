@@ -40,7 +40,6 @@ impl HandlerState {
             backup_url,
             on_backup: false,
             state: ChainStatusState::Idle,
-            enabled: ElectrumEnabled::default(),
         };
         Self {
             genesis_hash,

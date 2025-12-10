@@ -529,7 +529,6 @@ pub struct ChainStatus {
     pub backup_url: String,
     pub on_backup: bool,
     pub state: ChainStatusState,
-    pub enabled: ElectrumEnabled,
 }
 
 #[derive(Clone, Copy)]
