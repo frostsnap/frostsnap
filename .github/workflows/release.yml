@@ -102,7 +102,8 @@ jobs:
       - uses: "./.github/actions/build-macos"
         with:
           firmware_path: firmware/firmware.bin
-      - name: Upload DMG to release
+      - name: Zip and upload .app to release
         run: |
-          mv frostsnapp/Frostsnap.dmg "Frostsnap-${{ env.TAG_NAME }}.dmg"
-          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.dmg#Frostsnap-macos.dmg" --clobber
+          cd frostsnapp/build/macos/Build/Products/Release
+          zip -ry Frostsnap-mac.app.zip Frostsnap.app
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-mac.app.zip" --clobber

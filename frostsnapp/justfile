@@ -101,34 +101,28 @@ build-appimage +ARGS="":
     --executable "$executable" \
     --output appimage
 
-build-dmg: (build "macos" "--release")
+# Create DMG from an existing .app bundle
+package-dmg APP_PATH="build/macos/Build/Products/Release/Frostsnap.app":
     #!/bin/sh
     set -e
 
-    # Configuration
+    APP_PATH="{{APP_PATH}}"
     APP_NAME="Frostsnap"
-    APP_PATH="build/macos/Build/Products/Release/${APP_NAME}.app"
     DMG_NAME="${APP_NAME}.dmg"
 
-    # Check if app exists
     if [ ! -d "$APP_PATH" ]; then
-        echo "ERROR: macOS build not found at $APP_PATH" >&2
+        echo "ERROR: App not found at $APP_PATH" >&2
         exit 1
     fi
 
-    echo "Creating DMG installer: $DMG_NAME" >&2
-
-    # Clean up any existing DMG
     rm -f "$DMG_NAME"
 
-    # Check if create-dmg is available
     if ! command -v create-dmg &> /dev/null; then
         echo "ERROR: create-dmg is required but not installed" >&2
         echo "Install with: brew install create-dmg" >&2
         exit 1
     fi
 
-    # Create professional DMG with background
     create-dmg \
       --volname "${APP_NAME}" \
       --volicon "macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png" \
@@ -144,7 +138,7 @@ build-dmg: (build "macos" "--release")
       "$DMG_NAME" \
       "$APP_PATH"
 
-    echo "✅ Created installer DMG: $DMG_NAME" >&2
+    echo "Created DMG: $DMG_NAME" >&2
     ls -lh "$DMG_NAME" >&2
 
 clean:
