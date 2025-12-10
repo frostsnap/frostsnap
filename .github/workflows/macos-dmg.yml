@@ -28,7 +28,7 @@ jobs:
       - name: Install create-dmg
         run: brew install create-dmg
       - name: Create DMG
-        run: just frostsnapp/package-dmg Frostsnap.app
+        run: just package-dmg ${{ github.workspace }}/Frostsnap.app
       - name: Upload DMG to release
         run: |
           mv frostsnapp/Frostsnap.dmg "Frostsnap-${{ env.TAG_NAME }}-mac.dmg"
