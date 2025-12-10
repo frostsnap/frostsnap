@@ -106,4 +106,4 @@ jobs:
         run: |
           cd frostsnapp/build/macos/Build/Products/Release
           zip -ry Frostsnap-mac.app.zip Frostsnap.app
-          gh release upload ${{ env.TAG_NAME }} "Frostsnap-mac.app.zip" --clobber
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-mac.app.zip#TEMP-Frostsnap-mac.app.zip" --clobber

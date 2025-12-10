@@ -31,5 +31,5 @@ jobs:
         run: just package-dmg ${{ github.workspace }}/Frostsnap.app
       - name: Upload DMG to release
         run: |
-          mv frostsnapp/Frostsnap.dmg "Frostsnap-${{ env.TAG_NAME }}-mac.dmg"
-          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}-mac.dmg" --clobber
+          mv frostsnapp/Frostsnap.dmg "Frostsnap-${{ env.TAG_NAME }}.dmg"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.dmg#Frostsnap-mac.dmg" --clobber
