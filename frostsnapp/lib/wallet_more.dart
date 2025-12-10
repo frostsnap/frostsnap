@@ -41,6 +41,9 @@ class _WalletMoreState extends State<WalletMore> {
       bottom: Radius.circular(24),
     ),
   );
+  static const tileShapeSingle = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(24)),
+  );
 
   bool expandManage = true;
 
@@ -67,6 +70,9 @@ class _WalletMoreState extends State<WalletMore> {
     final walletCtx = WalletContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
 
+    final isDeveloperMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
+
     final signColumn = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
@@ -76,7 +82,7 @@ class _WalletMoreState extends State<WalletMore> {
           ListTile(
             contentPadding: contentPadding,
             tileColor: tileColor,
-            shape: tileShapeTop,
+            shape: isDeveloperMode ? tileShapeTop : tileShapeSingle,
             title: Text('PSBT'),
             subtitle: Text('Sign a partially signed bitcoin transaction'),
             leading: Icon(Icons.edit_document),
@@ -87,22 +93,23 @@ class _WalletMoreState extends State<WalletMore> {
               );
             },
           ),
-          ListTile(
-            contentPadding: contentPadding,
-            tileColor: tileColor,
-            shape: tileShapeEnd,
-            title: Text('Message'),
-            subtitle: Text('Sign an arbitrary message'),
-            leading: Icon(Icons.edit_note),
-            onTap: frostKey == null
-                ? null
-                : () async {
-                    await MaybeFullscreenDialog.show(
-                      context: context,
-                      child: SignMessagePage(frostKey: frostKey),
-                    );
-                  },
-          ),
+          if (isDeveloperMode)
+            ListTile(
+              contentPadding: contentPadding,
+              tileColor: tileColor,
+              shape: tileShapeEnd,
+              title: Text('Message'),
+              subtitle: Text('Sign an arbitrary message'),
+              leading: Icon(Icons.edit_note),
+              onTap: frostKey == null
+                  ? null
+                  : () async {
+                      await MaybeFullscreenDialog.show(
+                        context: context,
+                        child: SignMessagePage(frostKey: frostKey),
+                      );
+                    },
+            ),
         ],
       ),
     );
