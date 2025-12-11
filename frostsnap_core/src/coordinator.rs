@@ -51,6 +51,7 @@ pub struct FrostCoordinator {
     mutations: VecDeque<Mutation>,
     active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
     active_sign_session_order: Vec<SignSessionId>,
+    // TODO: Maybe finished signing sessions needs to be ordered.
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
     restoration: restoration::State,
     pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
@@ -1266,7 +1267,9 @@ impl FrostCoordinator {
         &self.active_signing_sessions
     }
 
-    pub fn finished_signing_sessions(&self) -> &BTreeMap<SignSessionId, FinishedSignSession> {
+    pub fn finished_signing_sessions_by_ssid(
+        &self,
+    ) -> &BTreeMap<SignSessionId, FinishedSignSession> {
         &self.finished_signing_sessions
     }
 

@@ -3,19 +3,28 @@ pub use bitcoin::{
     psbt::Error as PsbtError, Address, Network as BitcoinNetwork, OutPoint, Psbt, ScriptBuf, TxOut,
     Txid,
 };
-use flutter_rust_bridge::frb; // or, for example, easy_ext's;
+use flutter_rust_bridge::frb;
+use frostsnap_coordinator::bdk_chain::{
+    CanonicalView, ChainPosition, ConfirmationBlockTime, TxGraph,
+};
+// or, for example, easy_ext's;
 use frostsnap_coordinator::bitcoin::chain_sync::{
     default_backup_electrum_server, default_electrum_server, SUPPORTED_NETWORKS,
 };
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
+use frostsnap_coordinator::bitcoin::wallet::{WalletIndexedTxGraph, WalletTx};
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
 use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+use frostsnap_core::coordinator::SignSession;
 use frostsnap_core::message::EncodedSignature;
+use frostsnap_core::SignSessionId;
 use tracing::{event, Level};
 
-use std::collections::HashMap;
+use std::borrow::Cow;
 use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Deref;
+use std::sync::Arc;
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
@@ -178,59 +187,156 @@ impl BitcoinNetworkExt for BitcoinNetwork {
 }
 
 #[derive(Debug, Clone)]
-#[frb(type_64bit_int)]
 pub struct Transaction {
-    pub inner: RTransaction,
-    pub confirmation_time: Option<ConfirmationTime>,
-    pub last_seen: Option<u64>,
-    pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
-    pub is_mine: HashSet<bitcoin::ScriptBuf>,
+    txid: Txid,
+    raw_tx: Arc<RTransaction>,
+    prevouts: BTreeMap<bitcoin::OutPoint, bitcoin::TxOut>,
+    is_mine: BTreeSet<bitcoin::ScriptBuf>,
+
+    /// Signing sessions if they exist.
+    signing_sessions: BTreeMap<SignSessionId, SignSession>,
+    /// PSBT if it exists.
+    ///
+    /// The signed PSBT should be saved before broadcast.
+    psbt: Option<Psbt>,
+    /// When this transaction is confirmed (if ever).
+    confirmation: Option<ConfirmationBlockTime>,
+    /// Whether the `confirmation` is transitive.
+    is_transitive: bool,
+    /// When this transaction is last seen in the mempool (if ever).
+    last_seen: Option<u64>,
+    /// When this transaction is first seen in the mempool (if ever).
+    first_seen: Option<u64>,
+    /// Whether this transaction is network canonical.
+    is_network_canonical: bool,
+    /// Whether this transaction was seen at least once in the network.
+    is_broadcasted: bool,
+}
+
+/// The result of attempting to extract a fully signed tx/psbt from [`Transaction`].
+#[derive(Debug, Clone)]
+pub struct SignedTx {
+    pub signed_tx: RTransaction,
+    pub signed_psbt: Option<Psbt>,
 }
 
 impl Transaction {
-    // TODO: We should never need this. Always grab the tx from the `SuperWallet` again.
-    // pub(crate) fn from_template(tx_temp: &TransactionTemplate) -> Self {
-    //     let raw_tx = tx_temp.to_rust_bitcoin_tx();
-    //     let txid = tx_temp.txid();
-    //     let is_mine = tx_temp
-    //         .iter_locally_owned_inputs()
-    //         .map(|(_, _, spk)| spk.spk())
-    //         .chain(
-    //             tx_temp
-    //                 .iter_locally_owned_outputs()
-    //                 .map(|(_, _, spk)| spk.spk()),
-    //         )
-    //         .collect::<HashSet<_>>();
-    //     let prevouts = tx_temp
-    //         .inputs()
-    //         .iter()
-    //         .map(|input| (input.outpoint(), input.txout()))
-    //         .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-    //     Self {
-    //         inner: raw_tx,
-    //         txid: txid.to_string(),
-    //         confirmation_time: None,
-    //         last_seen: None,
-    //         prevouts,
-    //         is_mine,
-    //     }
-    // }
+    /// Construct [`Transaction`] from a network-canonical transaction.
+    ///
+    /// PSBT and signing-sessions should be filled elsewhere.
+    pub(crate) fn from_wallet_tx(
+        wallet_graph: &WalletIndexedTxGraph,
+        wallet_tx: &WalletTx,
+    ) -> Self {
+        let prevouts = wallet_tx
+            .tx
+            .input
+            .iter()
+            .filter_map(|txin| {
+                let prev_op = txin.previous_output;
+                let prev_txo = wallet_graph.graph().get_txout(prev_op).cloned()?;
+                Some((prev_op, prev_txo))
+            })
+            .collect::<BTreeMap<OutPoint, TxOut>>();
+        let is_mine = prevouts
+            .values()
+            .map(|prev_txo| prev_txo.script_pubkey)
+            .chain(
+                wallet_tx
+                    .tx
+                    .output
+                    .iter()
+                    .map(|txo| txo.script_pubkey.clone()),
+            )
+            .collect::<BTreeSet<ScriptBuf>>();
 
-    pub(crate) fn fill_signatures(&mut self, signatures: &[EncodedSignature]) {
-        for (txin, signature) in self.inner.input.iter_mut().zip(signatures) {
+        let confirmation: Option<ConfirmationBlockTime>;
+        let is_transitive: bool;
+        let fist_seen: Option<u64>;
+        let last_seen: Option<u64>;
+        match wallet_tx.pos {
+            ChainPosition::Confirmed { anchor, transitively } => {
+                confirmation = Some(anchor);
+                is_transitive = true;
+                last_seen = None;
+                first_seen = None;
+            }
+            ChainPosition::Unconfirmed {
+                first_seen: fs,
+                last_seen: ls,
+            } => {
+                confirmation = false,
+                is_transitive = false;
+                first_seen = fs;
+                last_seen =  ls;
+            }
+        };
+
+        Self {
+            txid: wallet_tx.txid,
+            raw_tx: Arc::clone(&wallet_tx.tx),
+            prevouts,
+            is_mine,
+            signing_sessions: BTreeMap::new(), // Fill this later.
+            psbt: None, // Fill this later.
+            confirmation,
+            is_transitive,
+            first_seen,
+            last_seen,
+            is_network_canonical: true,
+            is_broadcasted: true,
+        }
+    }
+
+    pub(crate) fn attach_signing_session(&mut self) {
+        
+    }
+
+    pub fn to_signed(&self, ssid: Option<SignSessionId>) -> Option<RTransaction> {
+        let inner = &self.inner;
+
+        // Either try to find the finished signing session or just return the fully signed
+        // transaction if available. WE assume
+        // TODO: This does not detect if the transaction requires signatures from other wallets.
+        let finished_ss = match ssid {
+            Some(ssid) => match self.signing_sessions.get(&ssid) {
+                Some(SignSession::Finished(finished_ss)) => finished_ss,
+                _ => return None,
+            },
+            // Transaction is guaranteed to be signed if it was once seen in the network.
+            None if self.is_broadcasted => return Some(self.raw_tx.clone()),
+            _ => return None,
+        };
+
+        let temp = match &finished_ss.init.group_request.sign_task {
+            frostsnap_core::WireSignTask::BitcoinTransaction(temp) => temp,
+            _ => panic!("Invariant: Sign task must be bitcoin transaction"),
+        };
+
+        let mut tx = temp.to_rust_bitcoin_tx();
+        let owned_input_indices = temp
+            .inputs()
+            .iter()
+            .enumerate()
+            .filter(|(_, t_in)| t_in.owner().local_owner().is_some())
+            .map(|(i, _)| i);
+
+        for (i, signature) in owned_input_indices.zip(&finished_ss.signatures) {
             let schnorr_sig = bitcoin::taproot::Signature {
                 signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
                     .unwrap(),
                 sighash_type: bitcoin::sighash::TapSighashType::Default,
             };
             let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            txin.witness = witness;
+            tx.input[i].witness = witness;
         }
+
+        Some(tx)
     }
 
     #[frb(sync)]
     pub fn txid(&self) -> Txid {
-        self.inner.compute_txid()
+        self.txid
     }
 
     fn owned_input_indices(&self) -> impl Iterator<Item = usize> + '_ {
@@ -387,7 +493,7 @@ impl Transaction {
 
     #[frb(sync, type_64bit_int)]
     pub fn timestamp(&self) -> Option<u64> {
-        self.confirmation_time
+        self.confirmation
             .as_ref()
             .map(|t| t.time)
             .or(self.last_seen)
@@ -481,7 +587,7 @@ impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState 
                 ._sum_outputs(filter)
                 .try_into()
                 .expect("created value must fit into i64");
-            if net_spent == 0 && tx.confirmation_time.is_none() {
+            if net_spent == 0 && tx.confirmation.is_none() {
                 untrusted_pending_balance += net_created;
             } else {
                 balance += net_created;
@@ -509,7 +615,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
         Self {
             inner: (value.inner).deref().clone(),
             txid: value.txid.to_string(),
-            confirmation_time: value.confirmation_time,
+            confirmation: value.confirmation_time,
             last_seen: value.last_seen,
             prevouts: value.prevouts,
             is_mine: value.is_mine,

@@ -3,7 +3,8 @@ use super::coordinator::Coordinator;
 use super::transaction::BuildTxState;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
 use crate::api::broadcast::Broadcast;
-use crate::coordinator::{FfiCoordinator, SigningSessionBroadcasts};
+use crate::api::psbt_manager::PsbtManager;
+use crate::coordinator::FfiCoordinator;
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::sink_wrap::SinkWrap;
 use anyhow::{Context as _, Result};
@@ -17,9 +18,9 @@ pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordS
 use frostsnap_coordinator::persist::Persisted;
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
-use frostsnap_core::coordinator::FrostCoordinator;
+use frostsnap_core::coordinator::{ActiveSignSession, FinishedSignSession, FrostCoordinator};
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::RwLock;
@@ -61,6 +62,7 @@ impl PsbtValidationError {
 pub struct SuperWallet {
     pub(crate) coord_inner: Arc<Mutex<Persisted<FrostCoordinator>>>,
     pub(crate) signing_session_broadcasts: Arc<Mutex<HashMap<KeyId, Broadcast<()>>>>,
+    pub(crate) psbt_man: PsbtManager,
     pub(crate) inner: Arc<Mutex<CoordSuperWallet>>,
     pub(crate) wallet_signals: Arc<Mutex<WalletSignals>>,
     chain_sync: ChainClient,
@@ -86,9 +88,12 @@ impl SuperWallet {
         let super_wallet = CoordSuperWallet::load_or_init(db.clone(), network, chain_sync.clone())
             .with_context(|| format!("loading wallet from data in {}", db_file.display()))?;
 
+        let psbt_man = PsbtManager::new(db);
+
         let wallet = SuperWallet {
             coord_inner: coord.0.clone_inner(),
             signing_session_broadcasts: coord.0.signing_session_broadcasts(),
+            psbt_man,
             inner: Arc::new(Mutex::new(super_wallet)),
             chain_sync,
             wallet_signals: Default::default(),
@@ -110,28 +115,65 @@ impl SuperWallet {
         self.inner.lock().unwrap().chain_tip().height()
     }
 
-    // pub fn sub_tx_state(
-    //     &self,
-    //     master_appkey: MasterAppkey,
-    //     stream: StreamSink<TxState>,
-    // ) -> Result<()> {
-    //     stream.add(self.tx_state(master_appkey)).unwrap();
-    //     self.wallet_streams
-    //         .lock()
-    //         .unwrap()
-    //         .insert(master_appkey, stream);
+    fn _active_tx_ss<'a>(
+        coord: &'a Persisted<FrostCoordinator>,
+        key_id: KeyId,
+    ) -> impl Iterator<Item = (Txid, ActiveSignSession)> + 'a {
+        coord
+            .active_signing_sessions()
+            .filter(|ss| ss.key_id == key_id)
+            .filter_map(|ss| match &ss.init.group_request.sign_task {
+                frostsnap_core::WireSignTask::BitcoinTransaction(temp) => Some((temp.txid(), ss)),
+                _ => None,
+            })
+    }
 
-    //     Ok(())
-    // }
+    fn _finished_tx_ss<'a>(
+        coord: &'a Persisted<FrostCoordinator>,
+        key_id: KeyId,
+    ) -> impl Iterator<Item = (Txid, FinishedSignSession)> + 'a {
+        coord.finished_signing_sessions_by_ssid().values();
+    }
 
     #[frb(sync)]
     pub fn relevant_txs(&self, master_appkey: MasterAppkey) -> Vec<Transaction> {
         let key_id = master_appkey.key_id();
 
-        let mut inner = self.inner.lock().unwrap();
-        let wallet_txs = inner.relevant_txs(master_appkey);
+        // So we need a list of txids, and also a map of txid -> transaction.
+        let mut relevant_order = Vec::<Txid>::new();
+        let mut relevant_txs = HashMap::<Txid, Transaction>::new();
+
+        let inner = self.inner.lock().unwrap();
+        for wallet_tx in inner.relevant_txs(master_appkey) {
+            relevant_order.push(tx.txid);
+            relevant_txs.insert(
+                tx.txid,
+                Transaction::from_wallet_tx(inner.indexed_tx_graph(), wallet_tx),
+            );
+        }
+        drop(inner);
 
         // Get signing sessions
+        let coord_inner = self.coord_inner.lock().unwrap();
+
+        let active_ss =
+            Self::_active_tx_ss(&*coord_inner, key_id).collect::<Vec<(Txid, ActiveSignSession)>>();
+        let active_ss_map = active_ss
+            .iter()
+            .cloned()
+            .collect::<HashMap<Txid, ActiveSignSession>>();
+
+        let finished_ss = coord_inner
+            .finished_signing_sessions_by_ssid()
+            .values()
+            .filter(|ss| ss.key_id == key_id);
+
+        drop(coord_inner);
+
+        // Fill relevant_order/txs with signing sessions.
+        // If the txid does not exist - create it!
+
+        // Fill relevant_order/txs with psbts.
     }
 
     #[frb(sync)]
@@ -233,6 +275,7 @@ impl SuperWallet {
 
     /// Returns balance of the given `master_appkey`.
     pub fn balance(&self, master_appkey: MasterAppkey) -> WalletBalance {
+        let txs = self.relevant_txs(master_appkey);
         todo!()
     }
 
@@ -303,7 +346,7 @@ impl SuperWallet {
         Some(state)
     }
 
-    pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: RTransaction) -> Result<()> {
+    pub fn broadcast_tx(&self, master_appkey: MasterAppkey, tx: &RTransaction) -> Result<()> {
         match self.chain_sync.broadcast(tx.clone()) {
             Ok(_) => {
                 event!(

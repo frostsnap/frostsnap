@@ -46,12 +46,10 @@ use std::time::Duration;
 use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
-pub type SigningSessionBroadcasts = Arc<Mutex<HashMap<KeyId, Broadcast<()>>>>;
-
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
     key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
-    pub(crate) signing_session_broadcasts: SigningSessionBroadcasts,
+    pub(crate) signing_session_broadcasts: Arc<Mutex<HashMap<KeyId, Broadcast<()>>>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     ui_stack: Arc<Mutex<UiStack>>,
     pub(crate) usb_sender: UsbSender,
@@ -110,7 +108,7 @@ impl FfiCoordinator {
         self.coordinator.clone()
     }
 
-    pub fn signing_session_broadcasts(&self) -> SigningSessionBroadcasts {
+    pub fn signing_session_broadcasts(&self) -> Arc<Mutex<HashMap<KeyId, Broadcast<()>>>> {
         self.signing_session_broadcasts.clone()
     }
 

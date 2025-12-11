@@ -42,18 +42,18 @@ pub struct CoordSuperWallet {
     tx_graph: Persisted<WalletIndexedTxGraph>,
     chain: Persisted<local_chain::LocalChain>,
     chain_client: ChainClient,
-    view: CanonicalView<ConfirmationBlockTime>,
+    view: Arc<CanonicalView<ConfirmationBlockTime>>,
     pub network: bitcoin::Network,
     db: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl CoordSuperWallet {
     fn _update_view(&mut self) {
-        self.view = self.tx_graph.canonical_view(
+        self.view = Arc::new(self.tx_graph.canonical_view(
             &*self.chain,
             self.chain.tip().block_id(),
             CanonicalizationParams::default(),
-        );
+        ));
     }
 
     pub fn load_or_init(
@@ -79,11 +79,11 @@ impl CoordSuperWallet {
 
         drop(db_);
 
-        let view = tx_graph.canonical_view(
+        let view = Arc::new(tx_graph.canonical_view(
             &*chain,
             chain.tip().block_id(),
             CanonicalizationParams::default(),
-        );
+        ));
 
         Ok(Self {
             tx_graph,
@@ -98,6 +98,10 @@ impl CoordSuperWallet {
     /// Get the local chain tip.
     pub fn chain_tip(&self) -> CheckPoint {
         self.chain.tip()
+    }
+
+    pub fn indexed_tx_graph(&self) -> &WalletIndexedTxGraph {
+        self.tx_graph.as_ref()
     }
 
     /// Transaction cache for the chain client.
@@ -349,6 +353,10 @@ impl CoordSuperWallet {
             self.chain.tip().block_id(),
             CanonicalizationParams::default(),
         )
+    }
+
+    pub fn view(&self) -> Arc<CanonicalView<ConfirmationBlockTime>> {
+        Arc::clone(&self.view)
     }
 
     /// Determine the tx order of relevant transactions in a canonical `view`.
