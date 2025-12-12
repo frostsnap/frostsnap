@@ -111,13 +111,6 @@ class WalletCreateController extends ChangeNotifier {
             crossAxisAlignment: CrossAxisAlignment.center,
             spacing: 12,
             children: [
-              Text(
-                '${form.threshold}-of-${form.selectedDevices.length}',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
               const Text(
                 'Confirm that this code is shown on all devices',
                 textAlign: TextAlign.center,
@@ -142,11 +135,20 @@ class WalletCreateController extends ChangeNotifier {
                         ],
                       ),
                     ),
-                    secondChild: Text(
-                      keygenChecksum,
-                      style: theme.textTheme.headlineLarge?.copyWith(
-                        fontFamily: monospaceTextStyle.fontFamily,
-                      ),
+                    secondChild: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${form.threshold}-of-${form.selectedDevices.length}',
+                          style: theme.textTheme.labelLarge,
+                        ),
+                        Text(
+                          keygenChecksum,
+                          style: theme.textTheme.headlineLarge?.copyWith(
+                            fontFamily: monospaceTextStyle.fontFamily,
+                          ),
+                        ),
+                      ],
                     ),
                     crossFadeState: sessionHash == null
                         ? CrossFadeState.showFirst
@@ -390,13 +392,22 @@ class WalletCreateController extends ChangeNotifier {
                                     vertical: 12,
                                     horizontal: 16,
                                   ),
-                                  child: Text(
-                                    keygenChecksum,
-                                    style: theme.textTheme.headlineLarge
-                                        ?.copyWith(
-                                          fontFamily:
-                                              monospaceTextStyle.fontFamily,
-                                        ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '${form.threshold}-of-${form.selectedDevices.length}',
+                                        style: theme.textTheme.labelLarge,
+                                      ),
+                                      Text(
+                                        keygenChecksum,
+                                        style: theme.textTheme.headlineLarge
+                                            ?.copyWith(
+                                              fontFamily:
+                                                  monospaceTextStyle.fontFamily,
+                                            ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
