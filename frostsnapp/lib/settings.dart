@@ -18,6 +18,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:frostsnap/todo.dart';
 import 'package:frostsnap/udev_setup.dart';
 import 'package:frostsnap/wallet.dart';
@@ -687,15 +688,29 @@ class ChainStatusIcon extends StatelessWidget {
     final settingsCtx = SettingsContext.of(context);
     if (settingsCtx == null) return;
 
+    final combinedStream = Rx.combineLatest2(
+      settingsCtx.chainStatusStream(network),
+      settingsCtx.electrumSettings,
+      (ChainStatus status, ElectrumSettings settings) {
+        final server = settings.electrumServers.firstWhereOrNull(
+          (s) => s.network == network,
+        );
+        return (
+          status: status,
+          enabled: server?.enabled ?? ElectrumEnabled.all,
+        );
+      },
+    );
+
     showModalBottomSheet(
       context: context,
-      builder: (sheetContext) => StreamBuilder<ChainStatus>(
-        stream: settingsCtx.chainStatusStream(network),
-        initialData: chainStatus,
+      builder: (sheetContext) => StreamBuilder(
+        stream: combinedStream,
         builder: (context, snapshot) {
-          final status = snapshot.data ?? chainStatus;
-          final primaryEnabled = status.enabled != ElectrumEnabled.none;
-          final backupEnabled = status.enabled == ElectrumEnabled.all;
+          final status = snapshot.data?.status ?? chainStatus;
+          final enabled = snapshot.data?.enabled ?? ElectrumEnabled.all;
+          final primaryEnabled = enabled != ElectrumEnabled.none;
+          final backupEnabled = enabled == ElectrumEnabled.all;
 
           return SafeArea(
             child: Column(
