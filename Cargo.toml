@@ -12,10 +12,9 @@ members = [
     "frostsnap_fonts",
     "frostsnap_widgets", "widget_simulator",
     "cst816s",
+    "frostsnapp/desktop_camera",
 ]
 resolver = "2"
-
-
 
 [workspace.dependencies]
 bincode = { version = "2.0.1", features = [
@@ -37,6 +36,7 @@ frostsnap_widgets = { path = "frostsnap_widgets", default-features = false }
 frostsnap_macros = { path = "macros", default-features = false }
 frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
 frostsnap_cst816s = { path = "cst816s", default-features = false }
+frostsnap_desktop_camera = { path = "frostsnapp/desktop_camera" }
 esp-hal = { git = "https://github.com/frostsnap/esp-hal", rev = "6ecaa2eb75d4d97de877c18d13bfd07d251da971" }
 embedded-hal = "1.0"
 tracing = { version = "0.1", default-features = false }
@@ -55,6 +55,7 @@ futures = "0.3.31"
 # embedded
 embedded-storage = "0.3.1"
 embedded-graphics = "0.8"
+image = { version = "0.25", default-features = false }
 tracing-subscriber = { version = "0.3" }
 rsa = { version = "=0.9.7" }
 
