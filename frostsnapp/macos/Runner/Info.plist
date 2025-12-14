@@ -29,6 +29,6 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Camera access is needed to scan QR codes</string>
+	<string>This app needs camera access to scan QR codes for Bitcoin addresses and PSBTs.</string>
 </dict>
 </plist>

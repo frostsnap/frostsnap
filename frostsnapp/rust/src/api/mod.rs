@@ -1,6 +1,7 @@
 pub mod backup_run;
 pub mod bitcoin;
 pub mod broadcast;
+pub mod camera;
 pub mod coordinator;
 pub mod device_list;
 pub mod firmware;

@@ -259,20 +259,20 @@ void showExportWalletDialog(BuildContext context, String descriptor) async {
   qrCode.addData(descriptor);
   final qr = PrettyQrView(qrImage: QrImage(qrCode));
 
-  final descriptorText = Text(
-    descriptor,
-    style: TextStyle(
-      fontFamily: monospaceTextStyle.fontFamily,
-      color: theme.colorScheme.onSurface,
-    ),
-  );
-
-  final copyButton = TextButton(
+  final descriptorButton = TextButton.icon(
     onPressed: () async {
       await Clipboard.setData(ClipboardData(text: descriptor));
       showMessageSnackbar(context, "Descriptor copied");
     },
-    child: Text('Copy'),
+    icon: Icon(Icons.copy),
+    label: Text(
+      descriptor,
+      style: TextStyle(
+        fontFamily: monospaceTextStyle.fontFamily,
+        color: theme.colorScheme.onSurface,
+      ),
+    ),
+    style: TextButton.styleFrom(alignment: Alignment.centerLeft),
   );
 
   final doneButton = FilledButton(
@@ -289,16 +289,21 @@ void showExportWalletDialog(BuildContext context, String descriptor) async {
         child: Dialog(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: 600),
-            child: SingleChildScrollView(
+            child: Padding(
               padding: EdgeInsets.all(16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 spacing: 16,
                 children: [
-                  AspectRatio(aspectRatio: 1, child: qr),
-                  descriptorText,
-                  copyButton,
+                  Flexible(
+                    child: Center(
+                      child: AspectRatio(aspectRatio: 1, child: qr),
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(child: descriptorButton),
+                  ),
                   doneButton,
                 ],
               ),

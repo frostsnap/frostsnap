@@ -1,10 +1,11 @@
 import 'dart:io';
 
-import 'package:frostsnap/camera.dart';
+import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
@@ -616,9 +617,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
   }
 
   recipientScan(BuildContext context) async {
-    final addressResult = await showDialog<String>(
+    final addressResult = await MaybeFullscreenDialog.show<String>(
       context: context,
-      builder: (context) => AddressScanner(),
+      child: AddressScanner(),
     );
     if (!context.mounted || addressResult == null) return;
     addrController.controller.text = addressResult;
