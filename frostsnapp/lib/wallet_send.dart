@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
@@ -226,9 +224,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final mobileScannerSupported =
-        Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
-
     final confirmationBlocks = state.confirmationBlocksOfFeerate();
     final feerate = state.feerate();
 
@@ -315,14 +310,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
                           icon: Icon(Icons.paste),
                         ),
                         TextButton.icon(
-                          onPressed: mobileScannerSupported
-                              ? () => recipientScan(context)
-                              : null,
-                          label: Text(
-                            mobileScannerSupported
-                                ? 'Scan'
-                                : 'Scan (coming soon)',
-                          ),
+                          onPressed: () => recipientScan(context),
+                          label: Text('Scan'),
                           icon: Icon(Icons.qr_code),
                         ),
                       ],
