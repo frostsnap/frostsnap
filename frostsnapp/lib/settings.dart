@@ -16,6 +16,7 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:rxdart/rxdart.dart';
@@ -1191,6 +1192,21 @@ class BitcoinNetworkChooser extends StatelessWidget {
 }
 
 Future<void> _showEraseAllDialog(BuildContext context) async {
+  final currentUpdate = await GlobalStreams.deviceListSubject.first;
+  final devicesToErase = currentUpdate.state.devices
+      // intentionally erasing all and not filtering out "blank"
+      .map((device) => device.id)
+      .toList();
+
+  if (devicesToErase.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Connect one or more devices to erase')),
+      );
+    }
+    return;
+  }
+
   late final FullscreenActionDialogController controller;
 
   controller = FullscreenActionDialogController(
@@ -1236,20 +1252,26 @@ Future<void> _showEraseAllDialog(BuildContext context) async {
     ],
     onDismissed: () async {
       await coord.sendCancelAll();
-      await controller.clearAllActionsNeeded();
     },
   );
 
-  final currentUpdate = await GlobalStreams.deviceListSubject.first;
-  final devicesToErase = currentUpdate.state.devices
-      // intentionally erasing all and not filtering out "blank"
-      .map((device) => device.id)
-      .toList();
+  // Listen for devices being wiped/disconnected and remove them from action list
+  final subscription = GlobalStreams.deviceListChangeStream.listen((change) {
+    if (change.kind == DeviceListChangeKind.removed) {
+      controller.removeActionNeeded(change.device.id);
+    }
+  });
 
-  if (devicesToErase.isNotEmpty) {
-    controller.batchAddActionNeeded(context, devicesToErase);
-    await coord.wipeAllDevices();
-  }
+  // Show dialog and perform wipe
+  final dialogFuture = controller.batchAddActionNeeded(context, devicesToErase);
+  await coord.wipeAllDevices();
+
+  // Wait for dialog to dismiss
+  await dialogFuture;
+
+  // Clean up
+  await subscription.cancel();
+  controller.dispose();
 }
 
 class AboutPage extends StatelessWidget {

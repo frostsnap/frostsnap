@@ -129,9 +129,7 @@ class TxSentOrReceivedTile extends StatelessWidget {
                   ? needsBroadcast
                         ? 'Signed'
                         : txDetails.isSend
-                        ? (txDetails.isConfirmed
-                              ? 'Confirmed'
-                              : 'Confirming...')
+                        ? (txDetails.isConfirmed ? 'Sent' : 'Sending...')
                         : (txDetails.isConfirmed ? 'Received' : 'Receiving...')
                   : 'Signing...',
               overflow: TextOverflow.fade,
@@ -391,7 +389,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     txStateSub = widget.txStates.listen(onTxStateData);
 
     actionDialogController = FullscreenActionDialogController(
-      title: 'Sign transaction with connected device(s)',
+      title: 'Sign transaction with connected device',
       actionButtons: [
         Builder(
           builder: (context) => OutlinedButton(
