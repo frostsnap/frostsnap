@@ -48,7 +48,7 @@ dependencies:
   pretty_qr_code: ^3.3.0
   google_fonts: ^6.3.2
   url_launcher: ^6.3.1
-  dynamic_color: ^1.7.0
+  dynamic_color: ^1.8.1
   glowy_borders: ^1.0.2
   sliver_tools: ^0.2.12
 

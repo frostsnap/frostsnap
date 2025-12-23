@@ -27,6 +27,22 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Support for 16 KB page sizes (required for Android 15+ devices starting Nov 2025)
+        ndk {
+            // Filter ABIs to only build for 64-bit architectures (16 KB requirement is for 64-bit only)
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    // Configure packaging for 16 KB page size support
+    // AGP 8.5.1+ automatically aligns uncompressed shared libraries to 16 KB boundaries
+    packaging {
+        jniLibs {
+            // Use uncompressed native libraries (default for AGP 8.5.1+)
+            // This allows 16 KB alignment without increasing installed size
+            useLegacyPackaging = false
+        }
     }
 
     // Product flavors separate distribution channels
