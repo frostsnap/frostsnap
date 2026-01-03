@@ -13,6 +13,9 @@ final blurFilter = ImageFilter.blur(sigmaX: 21, sigmaY: 21);
 const seedColor = Color(0xFF1595B2);
 const double iconSize = 20.0;
 
+/// M3 standard dialog constraints
+const dialogConstraints = BoxConstraints(minWidth: 280, maxWidth: 560);
+
 RoundedRectangleBorder cardShape(BuildContext context) =>
     RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(28)),
