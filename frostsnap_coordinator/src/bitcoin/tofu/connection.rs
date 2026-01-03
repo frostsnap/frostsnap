@@ -4,14 +4,94 @@ use futures::{pin_mut, select, FutureExt, StreamExt};
 use rustls::client::WebPkiServerVerifier;
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
+use tokio::net::{lookup_host, TcpStream};
 use tokio_rustls::{client::TlsStream, TlsConnector};
 
 use super::trusted_certs::TrustedCertificates;
 use super::verifier::{TofuCertVerifier, TofuError};
 use crate::persist::Persisted;
+
+/// RFC 8305 Happy Eyeballs: try IPv6 first, start IPv4 after CONNECTION_ATTEMPT_DELAY if needed
+const CONNECTION_ATTEMPT_DELAY: Duration = Duration::from_millis(250);
+
+async fn happy_eyeballs_connect(
+    addr: impl tokio::net::ToSocketAddrs,
+) -> std::io::Result<TcpStream> {
+    let addrs: Vec<SocketAddr> = lookup_host(addr).await?.collect();
+    if addrs.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no addresses found",
+        ));
+    }
+
+    let (mut ipv6, mut ipv4): (Vec<&SocketAddr>, Vec<&SocketAddr>) =
+        addrs.iter().partition(|a| a.is_ipv6());
+
+    //  Shuffle each family for load balancing
+    use rand::seq::SliceRandom;
+    let mut rng = rand::thread_rng();
+    ipv6.shuffle(&mut rng);
+    ipv4.shuffle(&mut rng);
+
+    // Interleave: IPv6, IPv4, IPv6, IPv4, ...
+    let mut sorted = Vec::with_capacity(addrs.len());
+    let mut i6 = ipv6.into_iter();
+    let mut i4 = ipv4.into_iter();
+    loop {
+        match (i6.next(), i4.next()) {
+            (Some(v6), Some(v4)) => {
+                sorted.push(*v6);
+                sorted.push(*v4);
+            }
+            (Some(v6), None) => sorted.push(*v6),
+            (None, Some(v4)) => sorted.push(*v4),
+            (None, None) => break,
+        }
+    }
+
+    use futures::stream::FuturesUnordered;
+
+    let num_addrs = sorted.len() as u32;
+    let mut pending: FuturesUnordered<_> = sorted
+        .into_iter()
+        .enumerate()
+        .map(|(i, addr)| async move {
+            tokio::time::sleep(CONNECTION_ATTEMPT_DELAY * i as u32).await;
+            TcpStream::connect(addr).await
+        })
+        .collect();
+
+    // Last connection starts at (n-1)*250ms, give it 4s to complete
+    let total_timeout =
+        CONNECTION_ATTEMPT_DELAY * num_addrs.saturating_sub(1) + Duration::from_secs(4);
+    let deadline = tokio::time::Instant::now() + total_timeout;
+
+    let mut last_err = None;
+    loop {
+        tokio::select! {
+            biased;
+            result = pending.next() => {
+                match result {
+                    Some(Ok(stream)) => return Ok(stream),
+                    Some(Err(e)) => last_err = Some(e),
+                    None => break,
+                }
+            }
+            _ = tokio::time::sleep_until(deadline) => break,
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "all connection attempts failed",
+        )
+    }))
+}
 
 type SplitConn<T> = (tokio::io::ReadHalf<T>, tokio::io::WriteHalf<T>);
 
@@ -54,12 +134,10 @@ impl Conn {
                     .inspect_err(|e| tracing::error!("Network check failed: {:?}", e))?;
                 Ok(Conn::Ssl((rh, wh)))
             } else {
-                let sock = tokio::net::TcpStream::connect(&socket_addr)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!("TCP connection failed to {}: {}", socket_addr, e);
-                        TofuError::Other(e.into())
-                    })?;
+                let sock = happy_eyeballs_connect(&socket_addr).await.map_err(|e| {
+                    tracing::error!("TCP connection failed to {}: {}", socket_addr, e);
+                    TofuError::Other(e.into())
+                })?;
                 let (mut rh, mut wh) = tokio::io::split(sock);
                 check_conn(&mut rh, &mut wh, genesis_hash)
                     .await
@@ -108,7 +186,7 @@ async fn connect_with_tofu(
     let dnsname = ServerName::try_from(host.to_owned())
         .map_err(|e| TofuError::Other(anyhow!("Invalid DNS name: {}", e)))?;
 
-    let sock = TcpStream::connect(socket_addr).await.map_err(|e| {
+    let sock = happy_eyeballs_connect(socket_addr).await.map_err(|e| {
         tracing::error!("TCP connection failed to {}: {}", socket_addr, e);
         TofuError::Other(anyhow!("TCP connection failed: {}", e))
     })?;
@@ -209,4 +287,21 @@ where
 pub struct TargetServerReq {
     pub url: String,
     pub is_backup: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore] // requires network
+    async fn test_happy_eyeballs_blockstream() {
+        let start = std::time::Instant::now();
+        let stream = happy_eyeballs_connect("electrum.blockstream.info:50002")
+            .await
+            .expect("should connect");
+        let elapsed = start.elapsed();
+        println!("Connected in {:?}", elapsed);
+        drop(stream);
+    }
 }
