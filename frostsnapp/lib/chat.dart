@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api.dart';
 
@@ -30,13 +31,11 @@ class ChatMessage {
 class ChatPage extends StatefulWidget {
   final KeyId keyId;
   final String walletName;
-  final String nsec;
 
   const ChatPage({
     super.key,
     required this.keyId,
     required this.walletName,
-    required this.nsec,
   });
 
   @override
@@ -46,22 +45,38 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final FocusNode _inputFocusNode = FocusNode();
+  late final FocusNode _inputFocusNode;
   final List<ChatMessage> _messages = [];
   final Map<NostrEventId, ChatMessage> _messageById = {};
   StreamSubscription<FfiChannelEvent>? _subscription;
   NostrChannelHandle? _handle;
   FfiConnectionState _connectionState = const FfiConnectionState.connecting();
   String? _channelName;
-  late final Nsec _nsec;
-  late final PublicKey _myPubkey;
+  PublicKey? _myPubkey;
   ChatMessage? _replyingTo;
 
   @override
   void initState() {
     super.initState();
-    _nsec = Nsec.parse(s: widget.nsec);
-    _myPubkey = _nsec.publicKey();
+    _inputFocusNode = FocusNode(onKeyEvent: _handleKeyEvent);
+    _loadPubkeyAndConnect();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _inputFocusNode.requestFocus();
+    });
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.enter &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      _sendMessage();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Future<void> _loadPubkeyAndConnect() async {
+    _myPubkey = getNostrPubkey();
     _connect();
   }
 
@@ -69,7 +84,6 @@ class _ChatPageState extends State<ChatPage> {
     final relays = defaultRelayUrls();
     final stream = connectToChannel(
       keyId: widget.keyId,
-      nsec: _nsec,
       relayUrls: relays,
     );
 
@@ -93,7 +107,7 @@ class _ChatPageState extends State<ChatPage> {
           if (existing != null) {
             return;
           }
-          final isMe = author.equals(other: _myPubkey);
+          final isMe = _myPubkey != null && author.equals(other: _myPubkey!);
           final message = ChatMessage(
             messageId: messageId,
             author: author,
@@ -336,6 +350,7 @@ class _ChatPageState extends State<ChatPage> {
           Padding(
             padding: const EdgeInsets.all(8),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
                   child: TextField(
@@ -343,6 +358,8 @@ class _ChatPageState extends State<ChatPage> {
                     focusNode: _inputFocusNode,
                     autofocus: true,
                     enabled: isConnected,
+                    minLines: 1,
+                    maxLines: 6,
                     decoration: InputDecoration(
                       hintText: isConnected ? 'Type a message...' : 'Connecting...',
                       border: OutlineInputBorder(
@@ -350,11 +367,10 @@ class _ChatPageState extends State<ChatPage> {
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 8,
+                        vertical: 12,
                       ),
                     ),
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _sendMessage(),
+                    textInputAction: TextInputAction.newline,
                   ),
                 ),
                 const SizedBox(width: 8),

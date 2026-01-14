@@ -107,6 +107,9 @@ fn load_internal(
 
     let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
     let coordinator = Coordinator(coordinator);
+
+    crate::api::nostr::init_nostr_db(db.clone())?;
+
     let app_state = AppCtx {
         settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir)?),
         psbt_manager: RustAutoOpaque::new(PsbtManager::new(db.clone())),

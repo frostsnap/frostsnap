@@ -26,7 +26,7 @@ import 'package:frostsnap/src/rust/api/init.dart';
 import 'package:frostsnap/src/rust/api/log.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   // enable this if you're trying to figure out why things are displaying in
   // certain positions/sizes
   debugPaintSizeEnabled = false;
@@ -56,8 +56,15 @@ Future<void> main() async {
   AppCtx? appCtx;
 
   try {
-    final appDir = await getApplicationSupportDirectory();
-    final appDirPath = appDir.path;
+    final String appDirPath;
+    final dataDirArg = args.where((a) => a.startsWith('--data-dir=')).firstOrNull;
+    if (dataDirArg != null) {
+      appDirPath = dataDirArg.substring('--data-dir='.length);
+      await Directory(appDirPath).create(recursive: true);
+    } else {
+      final appDir = await getApplicationSupportDirectory();
+      appDirPath = appDir.path;
+    }
     if (Platform.isAndroid) {
       final (coord_, appCtx_, ffiserial) = await api.loadHostHandlesSerial(
         appDir: appDirPath,

@@ -3,12 +3,79 @@ use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 use frostsnap_core::KeyId;
 use frostsnap_nostr::{ChannelClient, ChannelHandle, Keys, ToBech32};
+use rusqlite::Connection;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
 
 pub use frostsnap_nostr::{ChannelEvent, ConnectionState, EventId, PublicKey};
+
+lazy_static::lazy_static! {
+    static ref NOSTR_DB: Mutex<Option<Arc<Mutex<Connection>>>> = Mutex::new(None);
+}
+
+/// Initialize the nostr module with the database connection.
+/// Called during app startup.
+pub(crate) fn init_nostr_db(db: Arc<Mutex<Connection>>) -> Result<()> {
+    let db_guard = db.lock().unwrap();
+    db_guard.execute(
+        "CREATE TABLE IF NOT EXISTS nostr_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )?;
+    drop(db_guard);
+    *NOSTR_DB.lock().unwrap() = Some(db);
+    Ok(())
+}
+
+/// Get or generate the user's Nostr secret key.
+fn get_or_generate_nsec() -> Result<Nsec> {
+    let db_arc = NOSTR_DB
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| anyhow!("nostr db not initialized"))?;
+    let db = db_arc.lock().unwrap();
+
+    let nsec: Option<String> = db
+        .query_row(
+            "SELECT value FROM nostr_settings WHERE key = 'nsec'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(nsec_str) = nsec {
+        return Nsec::parse(nsec_str);
+    }
+
+    let keys = Keys::generate();
+    let nsec_str = keys.secret_key().to_bech32().expect("valid key");
+    db.execute(
+        "INSERT INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
+        [&nsec_str],
+    )?;
+
+    tracing::info!("Generated new Nostr identity");
+    Ok(Nsec(nsec_str))
+}
+
+/// Get the user's Nostr public key (npub).
+#[frb(sync)]
+pub fn get_nostr_npub() -> Result<String> {
+    let nsec = get_or_generate_nsec()?;
+    Ok(nsec.public_key().to_bech32()?)
+}
+
+/// Get the user's Nostr public key.
+#[frb(sync)]
+pub fn get_nostr_pubkey() -> Result<PublicKey> {
+    let nsec = get_or_generate_nsec()?;
+    Ok(nsec.public_key())
+}
 
 // ============================================================================
 // Nsec - Our newtype wrapper for Nostr secret keys
@@ -220,15 +287,14 @@ impl From<ChannelEvent> for FfiChannelEvent {
 ///
 /// # Arguments
 /// * `key_id` - The wallet's key ID (determines the channel)
-/// * `nsec` - The user's Nostr secret key
 /// * `relay_urls` - List of relay URLs to connect to
 /// * `sink` - Stream sink for receiving channel events
 pub async fn connect_to_channel(
     key_id: KeyId,
-    nsec: Nsec,
     relay_urls: Vec<String>,
     sink: StreamSink<FfiChannelEvent>,
 ) -> Result<()> {
+    let nsec = get_or_generate_nsec()?;
     let user_keys = Keys::parse(&nsec.0)?;
     let client = ChannelClient::new(&key_id, user_keys);
     let handle = client.run(relay_urls, SinkWrap(sink)).await?;

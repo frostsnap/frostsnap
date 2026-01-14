@@ -10,10 +10,8 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
-import 'package:frostsnap/src/rust/api/nostr.dart' as nostr;
 import 'package:frostsnap/theme.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class WalletMore extends StatefulWidget {
   final ScrollController? scrollController;
@@ -238,39 +236,17 @@ class _WalletMoreState extends State<WalletMore> {
     );
   }
 
-  Future<void> _openChat(BuildContext context, WalletContext walletCtx) async {
-    final prefs = await SharedPreferences.getInstance();
-    var nsec = prefs.getString('nostr_nsec');
-
-    if (nsec == null) {
-      final newNsec = nostr.Nsec.generate();
-      nsec = newNsec.asStr();
-      await prefs.setString('nostr_nsec', nsec);
-
-      if (context.mounted) {
-        final npub = newNsec.publicKey().toNpub();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Generated new Nostr identity: ${npub.substring(0, 20)}...'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-
-    if (!context.mounted) return;
-
+  void _openChat(BuildContext context, WalletContext walletCtx) {
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
     final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
 
     Navigator.pop(context);
-    await Navigator.push(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ChatPage(
           keyId: walletCtx.keyId,
           walletName: walletName,
-          nsec: nsec!,
         ),
       ),
     );
