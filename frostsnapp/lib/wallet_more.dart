@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/chat.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
@@ -9,8 +10,10 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/src/rust/api/nostr.dart' as nostr;
 import 'package:frostsnap/theme.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WalletMore extends StatefulWidget {
   final ScrollController? scrollController;
@@ -190,6 +193,15 @@ class _WalletMoreState extends State<WalletMore> {
           ListTile(
             contentPadding: contentPadding,
             tileColor: tileColor,
+            shape: tileShape,
+            title: Text('Chat'),
+            subtitle: Text('Coordinate signing with remote co-signers'),
+            leading: Icon(Icons.chat_bubble_outline),
+            onTap: () => _openChat(context, walletCtx),
+          ),
+          ListTile(
+            contentPadding: contentPadding,
+            tileColor: tileColor,
             shape: tileShapeEnd,
             title: Text('Delete wallet'),
             subtitle: Text('Delete this wallet from the app'),
@@ -223,6 +235,44 @@ class _WalletMoreState extends State<WalletMore> {
       curve: Curves.easeInOutCubicEmphasized,
       alignment: AlignmentGeometry.topCenter,
       child: column,
+    );
+  }
+
+  Future<void> _openChat(BuildContext context, WalletContext walletCtx) async {
+    final prefs = await SharedPreferences.getInstance();
+    var nsec = prefs.getString('nostr_nsec');
+
+    if (nsec == null) {
+      final newNsec = nostr.Nsec.generate();
+      nsec = newNsec.asStr();
+      await prefs.setString('nostr_nsec', nsec);
+
+      if (context.mounted) {
+        final npub = newNsec.publicKey().toNpub();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Generated new Nostr identity: ${npub.substring(0, 20)}...'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+
+    if (!context.mounted) return;
+
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+    final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
+
+    Navigator.pop(context);
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatPage(
+          keyId: walletCtx.keyId,
+          walletName: walletName,
+          nsec: nsec!,
+        ),
+      ),
     );
   }
 

@@ -51,6 +51,7 @@ dependencies:
   dynamic_color: ^1.7.0
   glowy_borders: ^1.0.2
   sliver_tools: ^0.2.12
+  shared_preferences: ^2.2.3
 
   rust_lib_frostsnapp:
     path: rust_builder

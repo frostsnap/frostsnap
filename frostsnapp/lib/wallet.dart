@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/chat.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
@@ -12,6 +13,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/nostr.dart' as nostr;
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
@@ -25,6 +27,7 @@ import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Wallet {
   final SuperWallet superWallet;
@@ -755,6 +758,13 @@ class WalletBottomBar extends StatelessWidget {
       },
     );
 
+    final chatButton = IconButton(
+      onPressed: () => _openChat(context, walletCtx),
+      icon: Icon(Icons.chat_bubble_outline),
+      style: iconButtonStyle,
+      tooltip: 'Chat',
+    );
+
     final moreButton = IconButton(
       onPressed: () => showBottomSheetOrDialog(
         context,
@@ -790,6 +800,7 @@ class WalletBottomBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(child: receiveButton),
+                    Flexible(child: chatButton),
                     Flexible(child: sendButton),
                     Flexible(child: moreButton),
                   ],
@@ -797,6 +808,43 @@ class WalletBottomBar extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openChat(BuildContext context, WalletContext walletCtx) async {
+    final prefs = await SharedPreferences.getInstance();
+    var nsec = prefs.getString('nostr_nsec');
+
+    if (nsec == null) {
+      final newNsec = nostr.Nsec.generate();
+      nsec = newNsec.asStr();
+      await prefs.setString('nostr_nsec', nsec);
+
+      if (context.mounted) {
+        final npub = newNsec.publicKey().toNpub();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Generated new Nostr identity: ${npub.substring(0, 20)}...'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+
+    if (!context.mounted) return;
+
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+    final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatPage(
+          keyId: walletCtx.keyId,
+          walletName: walletName,
+          nsec: nsec!,
         ),
       ),
     );

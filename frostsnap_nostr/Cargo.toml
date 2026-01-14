@@ -1,0 +1,33 @@
+[package]
+name = "frostsnap_nostr"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+frostsnap_core = { workspace = true, features = ["coordinator"] }
+frostsnap_coordinator = { workspace = true }
+nostr-sdk = { version = "0.37", features = ["nip44"] }
+thiserror = "1"
+tokio = { version = "1", features = ["sync", "signal", "rt-multi-thread", "macros"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rusqlite = { workspace = true }
+bdk_chain = { version = "0.23", features = ["rusqlite"] }
+sha2 = { workspace = true }
+hex = "0.4"
+anyhow = "1"
+serde_json = "1"
+base64 = "0.22"
+nostr-relay-builder = "0.37"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "rt-multi-thread", "macros"] }
+tracing-subscriber = { workspace = true }
+
+[[bin]]
+name = "test_relay"
+path = "src/bin/test_relay.rs"
+required-features = []
+
+[features]
+default = []

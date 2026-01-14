@@ -5,6 +5,7 @@ members = [
     "device",
     "frostsnap_coordinator",
     "frostsnap_comms",
+    "frostsnap_nostr",
     "frostsnapp/rust",
     "frostsnap_embedded",
     "frostsnap_factory",
@@ -29,6 +30,7 @@ serde = { version = "1", features = [
 frostsnap_core = { path = "frostsnap_core", default-features = false }
 frostsnap_comms = { path = "frostsnap_comms", default-features = false }
 frostsnap_coordinator = { path = "frostsnap_coordinator" }
+frostsnap_nostr = { path = "frostsnap_nostr" }
 frostsnap_device = { path = "device" }
 frostsnap_embedded = { path = "frostsnap_embedded", default-features = false }
 frostsnap_fonts = { path = "frostsnap_fonts", default-features = false }

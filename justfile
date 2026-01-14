@@ -139,3 +139,54 @@ simulate +ARGS="":
 
 widget_dev +args="":
     cd device && cargo run --bin widget_dev --release {{args}}
+
+# Nostr test relay commands
+RELAY_DIR := "frostsnapp/.relay"
+RELAY_PID_FILE := RELAY_DIR / "relay.pid"
+RELAY_LOG_FILE := RELAY_DIR / "relay.log"
+RELAY_PORT := "7447"
+
+start-relay:
+    #!/bin/sh
+    mkdir -p {{RELAY_DIR}}
+    if [ -f {{RELAY_PID_FILE}} ] && kill -0 $(cat {{RELAY_PID_FILE}}) 2>/dev/null; then
+        echo "Relay already running (PID $(cat {{RELAY_PID_FILE}}))"
+        echo "URL: ws://localhost:{{RELAY_PORT}}"
+        exit 0
+    fi
+    cargo build --package frostsnap_nostr --bin test_relay --release
+    ./target/release/test_relay > {{RELAY_LOG_FILE}} 2>&1 &
+    echo $! > {{RELAY_PID_FILE}}
+    sleep 0.5
+    if kill -0 $(cat {{RELAY_PID_FILE}}) 2>/dev/null; then
+        echo "Relay started (PID $(cat {{RELAY_PID_FILE}}))"
+        echo "URL: ws://localhost:{{RELAY_PORT}}"
+    else
+        echo "Failed to start relay. Check {{RELAY_LOG_FILE}}"
+        rm -f {{RELAY_PID_FILE}}
+        exit 1
+    fi
+
+stop-relay:
+    #!/bin/sh
+    if [ -f {{RELAY_PID_FILE}} ]; then
+        PID=$(cat {{RELAY_PID_FILE}})
+        if kill -0 $PID 2>/dev/null; then
+            kill $PID
+            echo "Relay stopped (PID $PID)"
+        else
+            echo "Relay not running (stale PID file)"
+        fi
+        rm -f {{RELAY_PID_FILE}}
+    else
+        echo "No relay PID file found"
+    fi
+
+relay-status:
+    #!/bin/sh
+    if [ -f {{RELAY_PID_FILE}} ] && kill -0 $(cat {{RELAY_PID_FILE}}) 2>/dev/null; then
+        echo "Relay running (PID $(cat {{RELAY_PID_FILE}}))"
+        echo "URL: ws://localhost:{{RELAY_PORT}}"
+    else
+        echo "Relay not running"
+    fi
