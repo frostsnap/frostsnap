@@ -84,6 +84,7 @@ impl DeviceList {
                         name: None,
                         id,
                         recovery_mode: false,
+                        case_color: None,
                     },
                 );
             }
@@ -143,7 +144,17 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
-            DeviceChange::GenuineDevice { .. } => { /* not displayed in app yet */ }
+            DeviceChange::GenuineDevice { id, case_color } => {
+                if let Some(index) = self.index_of(id) {
+                    let connected = self.connected.get_mut(&id).expect("invariant");
+                    connected.case_color = Some(case_color.into());
+                    self.outbox.push(api::DeviceListChange {
+                        kind: api::DeviceListChangeKind::GenuineVerified,
+                        index: index as u32,
+                        device: connected.clone(),
+                    });
+                }
+            }
         }
     }
 

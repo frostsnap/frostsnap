@@ -6,12 +6,38 @@ use frostsnap_core::DeviceId;
 
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 
+/// The physical case color of a Frostsnap device, as recorded in its genuine certificate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaseColor {
+    Black,
+    Orange,
+    Silver,
+    Blue,
+    Red,
+}
+
+impl From<frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor> for CaseColor {
+    fn from(color: frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor) -> Self {
+        use frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor as CommsCaseColor;
+        match color {
+            CommsCaseColor::Black => CaseColor::Black,
+            CommsCaseColor::Orange => CaseColor::Orange,
+            CommsCaseColor::Silver => CaseColor::Silver,
+            CommsCaseColor::Blue => CaseColor::Blue,
+            CommsCaseColor::Red => CaseColor::Red,
+            // Unused variants map to Black as default
+            _ => CaseColor::Black,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum DeviceListChangeKind {
     Added,
     Removed,
     Named,
     RecoveryMode,
+    GenuineVerified,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +66,8 @@ pub struct ConnectedDevice {
     pub latest_firmware: Option<FirmwareVersion>,
     pub id: DeviceId,
     pub recovery_mode: bool,
+    /// The physical case color, available after genuine verification
+    pub case_color: Option<CaseColor>,
 }
 
 impl ConnectedDevice {

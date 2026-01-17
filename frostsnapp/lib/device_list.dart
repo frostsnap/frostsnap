@@ -56,10 +56,20 @@ class _DeviceListPageState extends State<DeviceListPage> {
     final hasWallet = walletName != null;
     final hasKey = device.name != null;
 
+    // Use device case color for subtle border highlight
+    final caseColor = device.caseColor;
+    final borderColor = caseColor?.toColor();
+
     return Card.filled(
       margin: EdgeInsets.symmetric(vertical: 8),
       color: theme.colorScheme.surfaceContainerHigh,
       clipBehavior: Clip.hardEdge,
+      shape: borderColor != null
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: borderColor.withAlpha(180), width: 2),
+            )
+          : null,
       child: ListTile(
         title: Text(
           device.name ?? 'Unnamed',

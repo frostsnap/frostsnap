@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 
@@ -12,6 +13,19 @@ final monospaceTextStyle = GoogleFonts.notoSansMono();
 final blurFilter = ImageFilter.blur(sigmaX: 21, sigmaY: 21);
 const seedColor = Color(0xFF1595B2);
 const double iconSize = 20.0;
+
+/// Maps device case colors to Flutter colors for UI highlights
+extension CaseColorExtension on CaseColor {
+  Color toColor() {
+    return switch (this) {
+      CaseColor.black => const Color(0xFF2C2C2C),
+      CaseColor.orange => const Color(0xFFE86A33),
+      CaseColor.silver => const Color(0xFFA8A8A8),
+      CaseColor.blue => const Color(0xFF4A90D9),
+      CaseColor.red => const Color(0xFFD64545),
+    };
+  }
+}
 
 RoundedRectangleBorder cardShape(BuildContext context) =>
     RoundedRectangleBorder(

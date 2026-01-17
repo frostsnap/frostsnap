@@ -428,6 +428,8 @@ impl UsbSerialManager {
                                                         device_changes.push(
                                                             DeviceChange::GenuineDevice {
                                                                 id: message.from,
+                                                                case_color: certificate_body
+                                                                    .case_color(),
                                                             },
                                                         )
                                                     } // TODO: probably want to note if a device fails genuine
@@ -841,6 +843,7 @@ pub enum DeviceChange {
     AppMessage(AppMessage),
     GenuineDevice {
         id: DeviceId,
+        case_color: frostsnap_comms::genuine_certificate::CaseColor,
     },
 }
 

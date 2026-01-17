@@ -759,10 +759,19 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     bool enabled = true,
   }) {
     final theme = Theme.of(context);
+    final caseColor = device.caseColor;
+    final borderColor = caseColor?.toColor();
+
     return Card.filled(
       margin: EdgeInsets.symmetric(vertical: 4),
       color: theme.colorScheme.surfaceContainerHigh,
       clipBehavior: Clip.hardEdge,
+      shape: borderColor != null
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: borderColor.withAlpha(180), width: 2),
+            )
+          : null,
       child: ListTile(
         title: Text(
           device.name ?? _controller.form.deviceNames[device.id] ?? '',
