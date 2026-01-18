@@ -48,6 +48,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
   Widget _buildDevice(BuildContext context, ConnectedDevice device) {
     final theme = Theme.of(context);
     final homeCtx = HomeContext.of(context)!;
+
     final upgradeEligibility = device.firmwareUpgradeEligibility();
     final walletName = coord
         .frostKeysInvolvingDevice(deviceId: device.id)
@@ -56,25 +57,34 @@ class _DeviceListPageState extends State<DeviceListPage> {
     final hasWallet = walletName != null;
     final hasKey = device.name != null;
 
-    // Use device case color for subtle border highlight with glow
     final caseColor = device.caseColor;
-    final borderColor = caseColor?.toColor();
+
+    // Explicitly type these as Color to avoid the "Object" error
+    final Color bgColor =
+        caseColor?.toColor() ?? theme.colorScheme.surfaceContainer;
+    final Color activeColor =
+        caseColor?.onColor(context) ?? theme.colorScheme.onSurface;
+
+    // Disabled state should be more muted
+    final Color disabledColor = activeColor.withValues(alpha: 0.45);
 
     final card = Card.filled(
       margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceContainerHigh,
+      color: bgColor,
       clipBehavior: Clip.hardEdge,
-      shape: borderColor != null
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: borderColor, width: 1.5),
-            )
-          : RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: caseColor != null
+            ? BorderSide(color: activeColor.withValues(alpha: 0.1), width: 1.5)
+            : BorderSide.none,
+      ),
       child: ListTile(
+        leading: Icon(Icons.key, color: hasKey ? activeColor : disabledColor),
         title: Text(
           device.name ?? 'Unnamed',
           style: monospaceTextStyle.copyWith(
-            color: hasKey ? null : theme.disabledColor,
+            color: hasKey ? activeColor : disabledColor,
+            fontWeight: FontWeight.bold,
           ),
         ),
         subtitle: Text(
@@ -84,32 +94,34 @@ class _DeviceListPageState extends State<DeviceListPage> {
               ? 'Wallet available for recovery'
               : walletName,
           style: TextStyle(
-            color: hasKey && hasWallet ? null : theme.disabledColor,
+            color: (hasKey && hasWallet)
+                ? activeColor.withValues(alpha: 0.7)
+                : disabledColor,
           ),
         ),
-        leading: Icon(Icons.key),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           spacing: 8,
           children: [
             upgradeEligibility.when(
-              upToDate: () => SizedBox.shrink(),
-              canUpgrade: () => Icon(
-                Icons.system_update_alt,
-                color: theme.colorScheme.primary,
-              ),
+              upToDate: () => const SizedBox.shrink(),
+              canUpgrade: () =>
+                  Icon(Icons.system_update_alt, color: activeColor),
               cannotUpgrade: (reason) => Tooltip(
                 message: reason,
-                child: Icon(Icons.warning, color: theme.colorScheme.onSurface),
+                child: Icon(Icons.warning, color: activeColor),
               ),
             ),
-            Icon(Icons.chevron_right),
+            Icon(
+              Icons.chevron_right,
+              color: activeColor.withValues(alpha: 0.5),
+            ),
           ],
         ),
-        contentPadding: EdgeInsets.symmetric(horizontal: 16),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
         onTap: () async => await showBottomSheetOrDialog(
           context,
-          title: Text('Device Details'),
+          title: const Text('Device Details'),
           builder: (context, controller) => homeCtx.wrap(
             DeviceDetails(
               deviceId: device.id,
@@ -120,17 +132,17 @@ class _DeviceListPageState extends State<DeviceListPage> {
       ),
     );
 
-    // Wrap with glow effect if we have a case color
-    if (caseColor != null && borderColor != null) {
+    if (caseColor != null) {
       final (alpha, blur) = caseColor.glowSettings();
       return Container(
-        margin: EdgeInsets.symmetric(vertical: 8),
+        margin: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: borderColor.withAlpha(alpha),
-              blurRadius: blur,
+              // Use withAlpha if your glowSettings returns an 0-255 integer
+              color: bgColor.withAlpha(alpha.toInt()),
+              blurRadius: blur.toDouble(),
               spreadRadius: 2,
             ),
           ],
@@ -139,7 +151,10 @@ class _DeviceListPageState extends State<DeviceListPage> {
       );
     }
 
-    return Padding(padding: EdgeInsets.symmetric(vertical: 8), child: card);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: card,
+    );
   }
 
   @override

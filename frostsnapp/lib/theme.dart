@@ -18,9 +18,14 @@ const double iconSize = 20.0;
 extension CaseColorExtension on CaseColor {
   Color toColor() {
     return switch (this) {
-      CaseColor.black => const Color(0xFF2E2E2E), // Muted steel (for border)
-      CaseColor.orange => const Color(0xFFFF9900), // Vibrant orange
-      CaseColor.silver => const Color(0xFFF0F4F8), // Bright white-silver
+      CaseColor.black => const Color(0xFF272727), // Muted steel (for border)
+      CaseColor.orange => const Color(0xFFFF7300), // Vibrant orange
+      CaseColor.silver => const Color.fromARGB(
+        255,
+        210,
+        212,
+        214,
+      ), // Bright white-silver
       CaseColor.blue => const Color(0xFF00D4FF), // Electric cyan
       CaseColor.red => const Color(0xFFFF3B3B), // Bright red
     };
@@ -32,6 +37,17 @@ extension CaseColorExtension on CaseColor {
     return switch (this) {
       CaseColor.black => (60, 20.0), // Larger, softer glow for black
       _ => (100, 12.0), // Standard glow for others
+    };
+  }
+
+  Color onColor(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return switch (this) {
+      CaseColor.orange || CaseColor.silver || CaseColor.blue => cs.onSecondary,
+
+      CaseColor.black || CaseColor.red => cs.onSurface,
     };
   }
 }
