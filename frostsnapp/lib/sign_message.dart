@@ -7,8 +7,10 @@ import 'package:frostsnap/device_action.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
@@ -170,6 +172,8 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
       mainAxisSize: MainAxisSize.min,
       children: devices.map((id) {
         final name = coord.getDeviceName(id: id);
+        final colors = DeviceColorScheme.fromDeviceId(context, id);
+
         onChanged(bool? value) {
           setState(() {
             if (value == true) {
@@ -182,14 +186,30 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
         }
 
         final enoughNonces = coord.noncesAvailable(id: id) >= 1;
-        return CheckboxListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          title: Text(
-            "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
+        final isSelected = selected.contains(id);
+
+        final checkbox = colors.buildCard(
+          child: CheckboxListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: Text(
+              "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
+              style: TextStyle(
+                color: enoughNonces ? colors.foreground : colors.disabled,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            secondary: Icon(
+              Icons.key,
+              color: enoughNonces ? colors.foreground : colors.disabled,
+            ),
+            activeColor: colors.foreground,
+            checkColor: colors.background,
+            value: isSelected,
+            onChanged: enoughNonces ? onChanged : null,
           ),
-          value: selected.contains(id),
-          onChanged: enoughNonces ? onChanged : null,
         );
+
+        return colors.withGlow(checkbox);
       }).toList(),
     );
   }

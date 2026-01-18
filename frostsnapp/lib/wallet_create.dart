@@ -892,6 +892,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   }
 
   Widget _buildDeviceForNaming(BuildContext context, ConnectedDevice device) {
+    final theme = Theme.of(context);
     final form = _controller.form;
     final isPart = form.selectedDevices.contains(device.id);
     final currentName = form.deviceNames[device.id] ?? '';
@@ -907,26 +908,43 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       textController.text = currentName;
     }
 
-    return Card.filled(
-      margin: EdgeInsets.symmetric(vertical: 4),
-      color: Theme.of(context).colorScheme.surface,
+    final caseColor = device.caseColor;
+    final Color bgColor =
+        caseColor?.toColor() ?? theme.colorScheme.surfaceContainer;
+    final Color activeColor =
+        caseColor?.onColor(context) ?? theme.colorScheme.onSurface;
+    final Color disabledColor = activeColor.withValues(alpha: 0.45);
+
+    final card = Card.filled(
+      margin: EdgeInsets.zero,
+      color: bgColor,
       clipBehavior: Clip.hardEdge,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: caseColor != null
+            ? BorderSide(color: activeColor.withValues(alpha: 0.1), width: 1.5)
+            : BorderSide.none,
+      ),
       child: ListTile(
-        leading: Icon(Icons.key),
+        leading: Icon(Icons.key, color: isPart ? activeColor : disabledColor),
         contentPadding: EdgeInsets.symmetric(horizontal: 12),
         title: TextField(
           decoration: InputDecoration(
             hintText: 'Enter device name',
+            hintStyle: TextStyle(color: disabledColor),
             border: OutlineInputBorder(
               borderSide: BorderSide.none,
               borderRadius: BorderRadius.all(Radius.circular(8)),
             ),
-            suffixIcon: Icon(Icons.edit_rounded),
+            suffixIcon: Icon(Icons.edit_rounded, color: activeColor),
             filled: true,
+            fillColor: bgColor.withValues(alpha: 0.5),
           ),
           maxLength: DeviceName.maxLength(),
           inputFormatters: [nameInputFormatter],
-          style: monospaceTextStyle,
+          style: monospaceTextStyle.copyWith(
+            color: isPart ? activeColor : disabledColor,
+          ),
           controller: textController,
           onChanged: isPart
               ? (name) => _controller.setDeviceName(device.id, name)
@@ -934,6 +952,29 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           enabled: isPart,
         ),
       ),
+    );
+
+    if (caseColor != null) {
+      final (alpha, blur) = caseColor.glowSettings();
+      return Container(
+        margin: EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: bgColor.withAlpha(alpha.toInt()),
+              blurRadius: blur.toDouble(),
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: card,
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: card,
     );
   }
 

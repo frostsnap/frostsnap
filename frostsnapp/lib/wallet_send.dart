@@ -7,6 +7,7 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
@@ -429,24 +430,84 @@ class _WalletSendPageState extends State<WalletSendPage> {
               final (id, name) = device;
               final nonces = coord.noncesAvailable(id: id);
               final isSelected = state.isSignerSelected(dId: id);
+              final deviceList = coord.deviceListState();
+              final connectedDevice = deviceList.devices
+                  .firstWhere((d) => d.id == id, orElse: () => null as dynamic);
+              final caseColor =
+                  connectedDevice is ConnectedDevice ? connectedDevice.caseColor : null;
 
               if (nonces == 0) state.deselectSigner(dId: id);
 
-              return CheckboxListTile(
-                value: isSelected,
-                onChanged: remaining > 0 || isSelected
-                    ? (selected) => selected ?? false
-                          ? state.selectSigner(dId: id)
-                          : state.deselectSigner(dId: id)
-                    : null,
-                secondary: Icon(Icons.key),
-                title: Text(name ?? '<unknown>'),
-                subtitle: nonces == 0
-                    ? Text(
-                        'no nonces remaining or too many signing sessions',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      )
-                    : null,
+              final enoughNonces = nonces > 0;
+              final Color bgColor =
+                  caseColor?.toColor() ?? theme.colorScheme.surfaceContainer;
+              final Color activeColor =
+                  caseColor?.onColor(context) ?? theme.colorScheme.onSurface;
+              final Color disabledColor = activeColor.withValues(alpha: 0.45);
+
+              final checkbox = Card.filled(
+                margin: EdgeInsets.zero,
+                color: bgColor,
+                clipBehavior: Clip.hardEdge,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: caseColor != null
+                      ? BorderSide(
+                          color: activeColor.withValues(alpha: 0.1),
+                          width: 1.5,
+                        )
+                      : BorderSide.none,
+                ),
+                child: CheckboxListTile(
+                  value: isSelected,
+                  onChanged: remaining > 0 || isSelected
+                      ? (selected) => selected ?? false
+                            ? state.selectSigner(dId: id)
+                            : state.deselectSigner(dId: id)
+                      : null,
+                  secondary: Icon(
+                    Icons.key,
+                    color: enoughNonces ? activeColor : disabledColor,
+                  ),
+                  activeColor: activeColor,
+                  checkColor: bgColor,
+                  title: Text(
+                    name ?? '<unknown>',
+                    style: TextStyle(
+                      color: enoughNonces ? activeColor : disabledColor,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  subtitle: nonces == 0
+                      ? Text(
+                          'no nonces remaining or too many signing sessions',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        )
+                      : null,
+                ),
+              );
+
+              if (caseColor != null) {
+                final (alpha, blur) = caseColor.glowSettings();
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: bgColor.withAlpha(alpha.toInt()),
+                        blurRadius: blur.toDouble(),
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: checkbox,
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: checkbox,
               );
             }).toList(),
           ),

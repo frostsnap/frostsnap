@@ -199,6 +199,14 @@ impl FfiCoordinator {
                                     device_list.set_recovery_mode(id, true);
                                 }
 
+                                // Load persisted case color if available
+                                if let Some(case_color) = device_names.lock().unwrap().get_case_color(id) {
+                                    device_list.consume_manager_event(DeviceChange::GenuineDevice {
+                                        id,
+                                        case_color,
+                                    });
+                                }
+
                                 ui_stack.connected(
                                     id,
                                     device_list
@@ -227,7 +235,7 @@ impl FfiCoordinator {
                                 let mut device_names = device_names.lock().unwrap();
                                 // TODO: Detect name change and prompt user to accept
                                 let result = device_names.staged_mutate(&mut *db, |names| {
-                                    names.insert(id, name.clone());
+                                    names.insert_name(id, name.clone());
                                     Ok(())
                                 });
 
@@ -244,6 +252,22 @@ impl FfiCoordinator {
                                     Ok(_) => {
                                         usb_manager.accept_device_name(id, name.clone());
                                     }
+                                }
+                            }
+                            DeviceChange::GenuineDevice { id, case_color } => {
+                                let mut device_names = device_names.lock().unwrap();
+                                let result = device_names.staged_mutate(&mut *db, |names| {
+                                    names.insert_case_color(id, case_color);
+                                    Ok(())
+                                });
+
+                                if let Err(e) = result {
+                                    event!(
+                                        Level::ERROR,
+                                        id = id.to_string(),
+                                        error = e.to_string(),
+                                        "failed to persist device case color"
+                                    );
                                 }
                             }
                             DeviceChange::AppMessage(message) => {
@@ -617,7 +641,11 @@ impl FfiCoordinator {
     }
 
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
-        self.device_names.lock().unwrap().get(id)
+        self.device_names.lock().unwrap().get_name(id)
+    }
+
+    pub fn get_device_case_color(&self, id: DeviceId) -> Option<frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor> {
+        self.device_names.lock().unwrap().get_case_color(id)
     }
 
     pub fn finalize_keygen(
