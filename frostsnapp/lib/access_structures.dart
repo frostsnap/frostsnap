@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -35,7 +36,6 @@ class AccessStructureWidget extends StatelessWidget {
     final devices = deviceIds
         .map((id) => (id: id, name: coord.getDeviceName(id: id) ?? "??"))
         .toList();
-    final deviceList = coord.deviceListState();
     final threshold = accessStructure.threshold();
     final theme = Theme.of(context);
     return Stack(
@@ -55,32 +55,22 @@ class AccessStructureWidget extends StatelessWidget {
             children: [
               ...devices.map(
                 (device) {
-                  final connectedDevice = deviceList.devices.firstWhere(
-                    (d) => d.id == device.id,
-                    orElse: () => null as dynamic,
-                  );
-                  final caseColor = connectedDevice is ConnectedDevice
-                      ? connectedDevice.caseColor
-                      : null;
-                  final Color bgColor = caseColor?.toColor() ??
-                      theme.colorScheme.surfaceContainer;
-                  final Color textColor = caseColor?.onColor(context) ??
-                      theme.colorScheme.onSurface;
+                  final colors = DeviceColorScheme.fromDeviceId(context, device.id);
 
                   return Chip(
                     label: Text(
                       device.name,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        color: textColor,
+                        color: colors.foreground,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    backgroundColor: bgColor,
+                    backgroundColor: colors.background,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
-                      side: caseColor != null
+                      side: colors.caseColor != null
                           ? BorderSide(
-                              color: textColor.withValues(alpha: 0.2),
+                              color: colors.foreground.withValues(alpha: 0.2),
                               width: 1.5,
                             )
                           : BorderSide.none,

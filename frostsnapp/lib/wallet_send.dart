@@ -1,5 +1,6 @@
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
@@ -430,34 +431,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
               final (id, name) = device;
               final nonces = coord.noncesAvailable(id: id);
               final isSelected = state.isSignerSelected(dId: id);
-              final deviceList = coord.deviceListState();
-              final connectedDevice = deviceList.devices
-                  .firstWhere((d) => d.id == id, orElse: () => null as dynamic);
-              final caseColor =
-                  connectedDevice is ConnectedDevice ? connectedDevice.caseColor : null;
+              final colors = DeviceColorScheme.fromDeviceId(context, id);
 
               if (nonces == 0) state.deselectSigner(dId: id);
 
               final enoughNonces = nonces > 0;
-              final Color bgColor =
-                  caseColor?.toColor() ?? theme.colorScheme.surfaceContainer;
-              final Color activeColor =
-                  caseColor?.onColor(context) ?? theme.colorScheme.onSurface;
-              final Color disabledColor = activeColor.withValues(alpha: 0.45);
 
-              final checkbox = Card.filled(
-                margin: EdgeInsets.zero,
-                color: bgColor,
-                clipBehavior: Clip.hardEdge,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: caseColor != null
-                      ? BorderSide(
-                          color: activeColor.withValues(alpha: 0.1),
-                          width: 1.5,
-                        )
-                      : BorderSide.none,
-                ),
+              final checkbox = colors.buildCard(
                 child: CheckboxListTile(
                   value: isSelected,
                   onChanged: remaining > 0 || isSelected
@@ -467,14 +447,14 @@ class _WalletSendPageState extends State<WalletSendPage> {
                       : null,
                   secondary: Icon(
                     Icons.key,
-                    color: enoughNonces ? activeColor : disabledColor,
+                    color: enoughNonces ? colors.foreground : colors.disabled,
                   ),
-                  activeColor: activeColor,
-                  checkColor: bgColor,
+                  activeColor: colors.foreground,
+                  checkColor: colors.background,
                   title: Text(
                     name ?? '<unknown>',
                     style: TextStyle(
-                      color: enoughNonces ? activeColor : disabledColor,
+                      color: enoughNonces ? colors.foreground : colors.disabled,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
@@ -487,28 +467,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 ),
               );
 
-              if (caseColor != null) {
-                final (alpha, blur) = caseColor.glowSettings();
-                return Container(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: bgColor.withAlpha(alpha.toInt()),
-                        blurRadius: blur.toDouble(),
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: checkbox,
-                );
-              }
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: checkbox,
-              );
+              return colors.withGlow(checkbox);
             }).toList(),
           ),
           Padding(

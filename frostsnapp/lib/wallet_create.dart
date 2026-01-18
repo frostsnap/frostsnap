@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -892,10 +893,10 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   }
 
   Widget _buildDeviceForNaming(BuildContext context, ConnectedDevice device) {
-    final theme = Theme.of(context);
     final form = _controller.form;
     final isPart = form.selectedDevices.contains(device.id);
     final currentName = form.deviceNames[device.id] ?? '';
+    final colors = DeviceColorScheme.fromDevice(context, device);
 
     // obtain or create controller for this device
     final textController = _nameControllers.putIfAbsent(
@@ -908,42 +909,26 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       textController.text = currentName;
     }
 
-    final caseColor = device.caseColor;
-    final Color bgColor =
-        caseColor?.toColor() ?? theme.colorScheme.surfaceContainer;
-    final Color activeColor =
-        caseColor?.onColor(context) ?? theme.colorScheme.onSurface;
-    final Color disabledColor = activeColor.withValues(alpha: 0.45);
-
-    final card = Card.filled(
-      margin: EdgeInsets.zero,
-      color: bgColor,
-      clipBehavior: Clip.hardEdge,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: caseColor != null
-            ? BorderSide(color: activeColor.withValues(alpha: 0.1), width: 1.5)
-            : BorderSide.none,
-      ),
+    final card = colors.buildCard(
       child: ListTile(
-        leading: Icon(Icons.key, color: isPart ? activeColor : disabledColor),
+        leading: Icon(Icons.key, color: isPart ? colors.foreground : colors.disabled),
         contentPadding: EdgeInsets.symmetric(horizontal: 12),
         title: TextField(
           decoration: InputDecoration(
             hintText: 'Enter device name',
-            hintStyle: TextStyle(color: disabledColor),
+            hintStyle: TextStyle(color: colors.disabled),
             border: OutlineInputBorder(
               borderSide: BorderSide.none,
               borderRadius: BorderRadius.all(Radius.circular(8)),
             ),
-            suffixIcon: Icon(Icons.edit_rounded, color: activeColor),
+            suffixIcon: Icon(Icons.edit_rounded, color: colors.foreground),
             filled: true,
-            fillColor: bgColor.withValues(alpha: 0.5),
+            fillColor: colors.background.withValues(alpha: 0.5),
           ),
           maxLength: DeviceName.maxLength(),
           inputFormatters: [nameInputFormatter],
           style: monospaceTextStyle.copyWith(
-            color: isPart ? activeColor : disabledColor,
+            color: isPart ? colors.foreground : colors.disabled,
           ),
           controller: textController,
           onChanged: isPart
@@ -954,28 +939,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       ),
     );
 
-    if (caseColor != null) {
-      final (alpha, blur) = caseColor.glowSettings();
-      return Container(
-        margin: EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: bgColor.withAlpha(alpha.toInt()),
-              blurRadius: blur.toDouble(),
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        child: card,
-      );
-    }
-
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4),
-      child: card,
-    );
+    return colors.withGlow(card);
   }
 
   Widget buildNameDevicesBody(BuildContext context) {
