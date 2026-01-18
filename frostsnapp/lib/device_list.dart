@@ -56,20 +56,20 @@ class _DeviceListPageState extends State<DeviceListPage> {
     final hasWallet = walletName != null;
     final hasKey = device.name != null;
 
-    // Use device case color for subtle border highlight
+    // Use device case color for subtle border highlight with glow
     final caseColor = device.caseColor;
     final borderColor = caseColor?.toColor();
 
-    return Card.filled(
-      margin: EdgeInsets.symmetric(vertical: 8),
+    final card = Card.filled(
+      margin: EdgeInsets.zero,
       color: theme.colorScheme.surfaceContainerHigh,
       clipBehavior: Clip.hardEdge,
       shape: borderColor != null
           ? RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: borderColor.withAlpha(180), width: 2),
+              side: BorderSide(color: borderColor, width: 1.5),
             )
-          : null,
+          : RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         title: Text(
           device.name ?? 'Unnamed',
@@ -119,6 +119,27 @@ class _DeviceListPageState extends State<DeviceListPage> {
         ),
       ),
     );
+
+    // Wrap with glow effect if we have a case color
+    if (caseColor != null && borderColor != null) {
+      final (alpha, blur) = caseColor.glowSettings();
+      return Container(
+        margin: EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: borderColor.withAlpha(alpha),
+              blurRadius: blur,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: card,
+      );
+    }
+
+    return Padding(padding: EdgeInsets.symmetric(vertical: 8), child: card);
   }
 
   @override

@@ -18,11 +18,20 @@ const double iconSize = 20.0;
 extension CaseColorExtension on CaseColor {
   Color toColor() {
     return switch (this) {
-      CaseColor.black => const Color(0xFF2C2C2C),
-      CaseColor.orange => const Color(0xFFE86A33),
-      CaseColor.silver => const Color(0xFFA8A8A8),
-      CaseColor.blue => const Color(0xFF4A90D9),
-      CaseColor.red => const Color(0xFFD64545),
+      CaseColor.black => const Color(0xFF2E2E2E), // Muted steel (for border)
+      CaseColor.orange => const Color(0xFFFF9900), // Vibrant orange
+      CaseColor.silver => const Color(0xFFF0F4F8), // Bright white-silver
+      CaseColor.blue => const Color(0xFF00D4FF), // Electric cyan
+      CaseColor.red => const Color(0xFFFF3B3B), // Bright red
+    };
+  }
+
+  /// Returns custom glow settings for each color
+  /// Returns (alpha, blurRadius) - black gets a larger, more subtle glow
+  (int, double) glowSettings() {
+    return switch (this) {
+      CaseColor.black => (60, 20.0), // Larger, softer glow for black
+      _ => (100, 12.0), // Standard glow for others
     };
   }
 }

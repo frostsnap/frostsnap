@@ -594,6 +594,17 @@ impl UsbSerialManager {
             ))
             .unwrap();
 
+        // Send a challenge for genuine device verification
+        let mut challenge = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut challenge);
+        self.challenges.insert(from, challenge);
+        self.outbox_sender
+            .send(CoordinatorSendMessage::to(
+                from,
+                CoordinatorSendBody::Challenge(Box::new(challenge)),
+            ))
+            .unwrap();
+
         self.reverse_device_ports
             .entry(port_name.to_string())
             .or_default()

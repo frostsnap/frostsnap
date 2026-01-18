@@ -762,16 +762,16 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final caseColor = device.caseColor;
     final borderColor = caseColor?.toColor();
 
-    return Card.filled(
-      margin: EdgeInsets.symmetric(vertical: 4),
+    final card = Card.filled(
+      margin: EdgeInsets.zero,
       color: theme.colorScheme.surfaceContainerHigh,
       clipBehavior: Clip.hardEdge,
       shape: borderColor != null
           ? RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: borderColor.withAlpha(180), width: 2),
+              side: BorderSide(color: borderColor, width: 1.5),
             )
-          : null,
+          : RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         title: Text(
           device.name ?? _controller.form.deviceNames[device.id] ?? '',
@@ -785,6 +785,30 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         onTap: onPressed,
         enabled: enabled,
       ),
+    );
+
+    // Wrap with glow effect if we have a case color
+    if (caseColor != null && borderColor != null) {
+      final (alpha, blur) = caseColor.glowSettings();
+      return Container(
+        margin: EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: borderColor.withAlpha(alpha),
+              blurRadius: blur,
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: card,
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: card,
     );
   }
 
