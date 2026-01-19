@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
-import 'package:frostsnap/chat.dart';
+import 'package:frostsnap/nostr_chat/chat_page.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
@@ -818,10 +818,8 @@ class WalletBottomBar extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatPage(
-          keyId: walletCtx.keyId,
-          walletName: walletName,
-        ),
+        builder: (context) =>
+            ChatPage(keyId: walletCtx.keyId, walletName: walletName),
       ),
     );
   }

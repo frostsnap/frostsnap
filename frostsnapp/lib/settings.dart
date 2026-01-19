@@ -12,6 +12,7 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/nostr_chat/profile_settings_page.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -190,6 +191,13 @@ class SettingsPage extends StatelessWidget {
                   icon: Icons.info_outline,
                   bodyBuilder: (context) {
                     return AboutPage();
+                  },
+                ),
+                SettingsItem(
+                  title: Text('Nostr profile'),
+                  icon: Icons.person,
+                  bodyBuilder: (context) {
+                    return ProfileSettingsPage();
                   },
                 ),
                 SettingsItem(

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/backup_workflow.dart';
-import 'package:frostsnap/chat.dart';
+import 'package:frostsnap/nostr_chat/chat_page.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
@@ -244,10 +244,8 @@ class _WalletMoreState extends State<WalletMore> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatPage(
-          keyId: walletCtx.keyId,
-          walletName: walletName,
-        ),
+        builder: (context) =>
+            ChatPage(keyId: walletCtx.keyId, walletName: walletName),
       ),
     );
   }

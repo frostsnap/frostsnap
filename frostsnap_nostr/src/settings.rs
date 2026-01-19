@@ -62,12 +62,10 @@ impl Persist<rusqlite::Connection> for NostrSettings {
 
     fn migrate(conn: &mut rusqlite::Connection) -> Result<()> {
         const SCHEMA_NAME: &str = "frostsnap_nostr_settings";
-        const MIGRATIONS: &[&str] = &[
-            "CREATE TABLE IF NOT EXISTS fs_nostr_settings ( \
+        const MIGRATIONS: &[&str] = &["CREATE TABLE IF NOT EXISTS fs_nostr_settings ( \
                 key TEXT PRIMARY KEY, \
                 value TEXT \
-            )",
-        ];
+            )"];
 
         let db_tx = conn.transaction()?;
         migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;

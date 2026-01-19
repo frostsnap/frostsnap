@@ -7,8 +7,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let builder = RelayBuilder::default().port(TEST_RELAY_PORT);
-    let relay = LocalRelay::run(builder).await?;
-    println!("Test relay running at: {}", relay.url());
+    let relay = LocalRelay::new(builder);
+    relay.run().await?;
+    println!("Test relay running at: {}", relay.url().await);
 
     tokio::signal::ctrl_c().await?;
     println!("\nShutting down...");

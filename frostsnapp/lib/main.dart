@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
 import 'package:frostsnap/settings.dart';
@@ -57,7 +58,9 @@ Future<void> main(List<String> args) async {
 
   try {
     final String appDirPath;
-    final dataDirArg = args.where((a) => a.startsWith('--data-dir=')).firstOrNull;
+    final dataDirArg = args
+        .where((a) => a.startsWith('--data-dir='))
+        .firstOrNull;
     if (dataDirArg != null) {
       appDirPath = dataDirArg.substring('--data-dir='.length);
       await Directory(appDirPath).create(recursive: true);
@@ -138,7 +141,10 @@ Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
     logStream: logStream,
     child: SettingsContext(
       settings: appCtx.settings,
-      child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
+      child: NostrContext(
+        nostrSettings: appCtx.nostrSettings,
+        child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
+      ),
     ),
   );
 }

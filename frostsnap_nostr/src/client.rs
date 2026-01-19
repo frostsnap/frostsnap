@@ -1,6 +1,6 @@
 use crate::{
     channel::ChannelKeys,
-    events::{ChannelEvent, ConnectionState},
+    events::{ChannelEvent, ConnectionState, GroupMember, NostrProfile},
 };
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -9,64 +9,115 @@ use frostsnap_core::KeyId;
 use nostr_sdk::{
     nips::nip44::v2::{self, ConversationKey},
     Alphabet, Client, Event, EventBuilder, EventId, Filter, Keys, Kind, PublicKey,
-    RelayPoolNotification, SingleLetterTag, Tag, TagKind,
+    RelayPoolNotification, SingleLetterTag, SyncOptions, Tag, TagKind,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
+
+const PROFILE_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Client for connecting to and communicating on a Nostr channel.
 pub struct ChannelClient {
     channel_keys: ChannelKeys,
-    user_keys: Keys,
 }
 
 impl ChannelClient {
-    /// Create a new channel client for the given key_id and user identity.
-    pub fn new(key_id: &KeyId, user_keys: Keys) -> Self {
+    /// Create a new channel client for the given key_id.
+    pub fn new(key_id: &KeyId) -> Self {
         let channel_keys = ChannelKeys::from_key_id(key_id);
-        Self {
-            channel_keys,
-            user_keys,
-        }
+        Self { channel_keys }
     }
 
-    /// Connect to relays and start receiving events.
+    /// Start receiving channel events using the provided client.
+    /// The client should already be connected to relays.
     /// Events are emitted through the sink.
     /// Returns a handle for sending messages.
     pub async fn run(
         self,
-        relay_urls: Vec<String>,
-        sink: impl Sink<ChannelEvent>,
+        client: Client,
+        sink: impl Sink<ChannelEvent> + Clone,
     ) -> Result<ChannelHandle> {
-        let client = Client::new(self.user_keys.clone());
-
         sink.send(ChannelEvent::ConnectionState(ConnectionState::Connecting));
 
-        for url in &relay_urls {
-            if let Err(e) = client.add_relay(url).await {
-                tracing::warn!(relay = %url, error = %e, "failed to add relay");
+        let channel_id_hex = self.channel_keys.channel_id_hex();
+        let filter = Filter::new()
+            .custom_tag(
+                SingleLetterTag::lowercase(Alphabet::H),
+                channel_id_hex.clone(),
+            )
+            .kind(Kind::Custom(4));
+
+        let conversation_key = ConversationKey::new(self.channel_keys.shared_secret);
+
+        // 📦 Query cached events immediately so UI shows them right away
+        let stored_events = client.database().query(filter.clone()).await?;
+        tracing::debug!(count = stored_events.len(), "loaded cached events");
+
+        let mut members: HashMap<PublicKey, Option<NostrProfile>> = HashMap::new();
+        let mut seen_ids: std::collections::HashSet<EventId> = std::collections::HashSet::new();
+
+        for event in stored_events.into_iter() {
+            seen_ids.insert(event.id);
+            if let Some(channel_event) = process_event(&event, &conversation_key) {
+                if let ChannelEvent::ChatMessage { author, .. } = &channel_event {
+                    if !members.contains_key(author) {
+                        members.insert(*author, None);
+                    }
+                }
+                sink.send(channel_event);
             }
         }
 
-        client.connect().await;
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<ChannelCommand>(32);
+        let (profile_tx, mut profile_rx) = mpsc::channel::<(PublicKey, NostrProfile)>(32);
+
+        if !members.is_empty() {
+            emit_group_metadata(&sink, &members);
+            for pubkey in members.keys() {
+                spawn_profile_fetch(*pubkey, client.clone(), profile_tx.clone());
+            }
+        }
+
         sink.send(ChannelEvent::ConnectionState(ConnectionState::Connected));
 
-        let channel_id_hex = self.channel_keys.channel_id_hex();
-        let filter = Filter::new().custom_tag(
-            SingleLetterTag::lowercase(Alphabet::H),
-            [channel_id_hex.clone()],
-        );
+        // 📡 Subscribe for real-time updates
+        client.subscribe(filter.clone(), None).await?;
 
-        client.subscribe(vec![filter], None).await?;
+        // 🔄 Sync with relays in background (negentropy set reconciliation)
+        let sync_client = client.clone();
+        let sync_filter = filter;
+        let sync_sink = sink.clone();
+        let sync_conversation_key = conversation_key.clone();
+        tokio::spawn(async move {
+            let sync_opts = SyncOptions::default();
+            if let Err(e) = sync_client.sync(sync_filter.clone(), &sync_opts).await {
+                tracing::warn!(error = %e, "background sync failed");
+                return;
+            }
 
-        let conversation_key = ConversationKey::new(self.channel_keys.shared_secret);
-        let our_pubkey = self.user_keys.public_key();
-
-        let (cmd_tx, mut cmd_rx) = mpsc::channel::<ChannelCommand>(32);
+            // ✨ Emit any new events discovered during sync
+            match sync_client.database().query(sync_filter).await {
+                Ok(events) => {
+                    let mut new_count = 0;
+                    for event in events {
+                        if seen_ids.contains(&event.id) {
+                            continue;
+                        }
+                        if let Some(channel_event) = process_event(&event, &sync_conversation_key) {
+                            sync_sink.send(channel_event);
+                            new_count += 1;
+                        }
+                    }
+                    if new_count > 0 {
+                        tracing::debug!(count = new_count, "emitted events from sync");
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "failed to query after sync"),
+            }
+        });
 
         let client_for_task = client.clone();
         let channel_keys_for_task = self.channel_keys.clone();
-        let user_keys_for_task = self.user_keys.clone();
 
         tokio::spawn(async move {
             let mut notifications = client_for_task.notifications();
@@ -77,12 +128,12 @@ impl ChannelClient {
                         match cmd {
                             Some(ChannelCommand::SendPreparedMessage { inner_event, content, reply_to }) => {
                                 let message_id = inner_event.id;
-                                let timestamp = inner_event.created_at.as_u64();
+                                let author = inner_event.pubkey;
+                                let timestamp = inner_event.created_at.as_secs();
 
-                                // 📤 Emit immediately so UI shows the message
                                 sink.send(ChannelEvent::ChatMessage {
                                     message_id,
-                                    author: user_keys_for_task.public_key(),
+                                    author,
                                     content,
                                     timestamp,
                                     reply_to,
@@ -108,27 +159,28 @@ impl ChannelClient {
                                     }
                                 }
                             }
-                            Some(ChannelCommand::InitializeChannel { wallet_name }) => {
-                                if let Err(e) = initialize_channel_if_needed(
-                                    &client_for_task,
-                                    &channel_keys_for_task,
-                                    &user_keys_for_task,
-                                    &wallet_name,
-                                ).await {
-                                    tracing::error!(error = %e, "failed to initialize channel");
-                                }
-                            }
                             None => break,
                         }
+                    }
+                    Some((pubkey, profile)) = profile_rx.recv() => {
+                        members.insert(pubkey, Some(profile));
+                        emit_group_metadata(&sink, &members);
                     }
                     notification = notifications.recv() => {
                         match notification {
                             Ok(RelayPoolNotification::Event { event, .. }) => {
-                                if let Some(channel_event) = process_event(
-                                    &event,
-                                    &conversation_key,
-                                    our_pubkey,
-                                ) {
+                                if let Some(channel_event) = process_event(&event, &conversation_key) {
+                                    if let ChannelEvent::ChatMessage { author, .. } = &channel_event {
+                                        if !members.contains_key(author) {
+                                            members.insert(*author, None);
+                                            emit_group_metadata(&sink, &members);
+                                            spawn_profile_fetch(
+                                                *author,
+                                                client_for_task.clone(),
+                                                profile_tx.clone(),
+                                            );
+                                        }
+                                    }
                                     sink.send(channel_event);
                                 }
                             }
@@ -150,9 +202,64 @@ impl ChannelClient {
 
         Ok(ChannelHandle {
             cmd_tx,
-            user_keys: self.user_keys,
             client: Arc::new(client),
         })
+    }
+}
+
+fn emit_group_metadata(
+    sink: &impl Sink<ChannelEvent>,
+    members: &HashMap<PublicKey, Option<NostrProfile>>,
+) {
+    sink.send(ChannelEvent::GroupMetadata {
+        members: members
+            .iter()
+            .map(|(pubkey, profile)| GroupMember {
+                pubkey: *pubkey,
+                profile: profile.clone(),
+            })
+            .collect(),
+    });
+}
+
+fn spawn_profile_fetch(
+    pubkey: PublicKey,
+    client: Client,
+    tx: mpsc::Sender<(PublicKey, NostrProfile)>,
+) {
+    tokio::spawn(async move {
+        // 📦 Check cache first for instant display
+        if let Some(profile) = get_cached_profile(&client, pubkey).await {
+            let _ = tx.send((pubkey, profile)).await;
+            return;
+        }
+        // 🌐 Fall back to relay fetch
+        if let Some(profile) = fetch_profile_from_relays(&client, pubkey).await {
+            let _ = tx.send((pubkey, profile)).await;
+        }
+    });
+}
+
+async fn get_cached_profile(client: &Client, pubkey: PublicKey) -> Option<NostrProfile> {
+    let filter = Filter::new().author(pubkey).kind(Kind::Metadata).limit(1);
+    match client.database().query(filter).await {
+        Ok(events) => events.into_iter().next().and_then(|event| {
+            serde_json::from_str::<nostr_sdk::Metadata>(&event.content)
+                .ok()
+                .map(|metadata| NostrProfile::from_metadata(pubkey, metadata))
+        }),
+        Err(_) => None,
+    }
+}
+
+async fn fetch_profile_from_relays(client: &Client, pubkey: PublicKey) -> Option<NostrProfile> {
+    match client.fetch_metadata(pubkey, PROFILE_FETCH_TIMEOUT).await {
+        Ok(Some(metadata)) => Some(NostrProfile::from_metadata(pubkey, metadata)),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::debug!(pubkey = %pubkey, error = %e, "failed to fetch profile from relays");
+            None
+        }
     }
 }
 
@@ -162,14 +269,12 @@ enum ChannelCommand {
         content: String,
         reply_to: Option<EventId>,
     },
-    InitializeChannel { wallet_name: String },
 }
 
 /// Handle for sending messages to an active channel.
 #[derive(Clone)]
 pub struct ChannelHandle {
     cmd_tx: mpsc::Sender<ChannelCommand>,
-    user_keys: Keys,
     #[allow(dead_code)]
     client: Arc<Client>,
 }
@@ -177,8 +282,13 @@ pub struct ChannelHandle {
 impl ChannelHandle {
     /// Send a chat message, optionally replying to another message.
     /// Returns the message ID immediately; relay send happens in background.
-    pub async fn send_message(&self, content: String, reply_to: Option<EventId>) -> Result<EventId> {
-        let inner_event = create_inner_event(&self.user_keys, &content, reply_to).await?;
+    pub async fn send_message(
+        &self,
+        content: String,
+        reply_to: Option<EventId>,
+        keys: &Keys,
+    ) -> Result<EventId> {
+        let inner_event = create_inner_event(keys, &content, reply_to).await?;
         let message_id = inner_event.id;
 
         self.cmd_tx
@@ -193,23 +303,19 @@ impl ChannelHandle {
         Ok(message_id)
     }
 
-    /// Initialize channel with wallet name.
-    /// Idempotent - only creates the channel if it doesn't exist.
-    pub async fn initialize_channel(&self, wallet_name: &str) -> Result<()> {
-        self.cmd_tx
-            .send(ChannelCommand::InitializeChannel {
-                wallet_name: wallet_name.to_string(),
-            })
+    /// Fetch profile metadata for a public key.
+    pub async fn fetch_profile(&self, pubkey: PublicKey) -> Result<NostrProfile> {
+        let metadata = self
+            .client
+            .fetch_metadata(pubkey, PROFILE_FETCH_TIMEOUT)
             .await
-            .map_err(|_| anyhow!("channel closed"))
+            .context("failed to fetch profile")?
+            .ok_or_else(|| anyhow!("no profile found"))?;
+        Ok(NostrProfile::from_metadata(pubkey, metadata))
     }
 }
 
-fn process_event(
-    outer_event: &Event,
-    conversation_key: &ConversationKey,
-    _our_pubkey: PublicKey,
-) -> Option<ChannelEvent> {
+fn process_event(outer_event: &Event, conversation_key: &ConversationKey) -> Option<ChannelEvent> {
     let encrypted_content = &outer_event.content;
     if encrypted_content.is_empty() {
         return None;
@@ -252,40 +358,27 @@ fn process_event(
         return None;
     }
 
-    match inner_event.kind {
-        Kind::ChannelCreation => {
-            let metadata: serde_json::Value = serde_json::from_str(&inner_event.content).ok()?;
-            let name = metadata.get("name")?.as_str()?.to_string();
-            let about = metadata
-                .get("about")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            Some(ChannelEvent::ChannelMetadata { name, about })
-        }
-        Kind::ChannelMessage => {
-            let reply_to = inner_event.tags.iter().find_map(|tag| {
-                if tag.kind() == TagKind::e() {
-                    tag.content().and_then(|s| EventId::from_hex(s).ok())
-                } else {
-                    None
-                }
-            });
+    if inner_event.kind != Kind::ChannelMessage {
+        tracing::debug!(kind = ?inner_event.kind, "ignoring non-message event");
+        return None;
+    }
 
-            Some(ChannelEvent::ChatMessage {
-                message_id: inner_event.id,
-                author: inner_event.pubkey,
-                content: inner_event.content.clone(),
-                timestamp: inner_event.created_at.as_u64(),
-                reply_to,
-                pending: false,
-            })
-        }
-        _ => {
-            tracing::debug!(kind = ?inner_event.kind, "unknown inner event kind");
+    let reply_to = inner_event.tags.iter().find_map(|tag| {
+        if tag.kind() == TagKind::e() {
+            tag.content().and_then(|s| EventId::from_hex(s).ok())
+        } else {
             None
         }
-    }
+    });
+
+    Some(ChannelEvent::ChatMessage {
+        message_id: inner_event.id,
+        author: inner_event.pubkey,
+        content: inner_event.content.clone(),
+        timestamp: inner_event.created_at.as_secs(),
+        reply_to,
+        pending: false,
+    })
 }
 
 async fn create_inner_event(
@@ -318,81 +411,18 @@ async fn send_prepared_message(
     let outer_event = EventBuilder::new(Kind::Custom(4), encrypted)
         .tag(Tag::custom(
             TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H)),
-            [channel_keys.channel_id_hex()],
+            vec![channel_keys.channel_id_hex()],
         ))
         .build(ephemeral_keys.public_key())
         .sign_with_keys(&ephemeral_keys)?;
 
-    client.send_event(outer_event).await?;
-    Ok(())
-}
-
-async fn initialize_channel_if_needed(
-    client: &Client,
-    channel_keys: &ChannelKeys,
-    user_keys: &Keys,
-    wallet_name: &str,
-) -> Result<()> {
-    let channel_id_hex = channel_keys.channel_id_hex();
-    let filter = Filter::new()
-        .custom_tag(
-            SingleLetterTag::lowercase(Alphabet::H),
-            [channel_id_hex.clone()],
-        )
-        .kind(Kind::Custom(4))
-        .limit(100);
-
-    let events = client
-        .fetch_events(vec![filter], None)
-        .await
-        .context("failed to fetch events")?;
-
-    let conversation_key = ConversationKey::new(channel_keys.shared_secret);
-
-    for event in events.iter() {
-        if let Ok(payload) = BASE64.decode(&event.content) {
-            if let Ok(decrypted_bytes) = v2::decrypt_to_bytes(&conversation_key, &payload) {
-                if let Ok(decrypted) = String::from_utf8(decrypted_bytes) {
-                    if let Ok(inner) = serde_json::from_str::<Event>(&decrypted) {
-                        if inner.kind == Kind::ChannelCreation {
-                            tracing::debug!("channel already initialized");
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    let metadata = serde_json::json!({
-        "name": wallet_name,
-        "about": format!("Frostsnap signing channel for {}", wallet_name),
-    });
-
-    let inner_event = EventBuilder::new(Kind::ChannelCreation, metadata.to_string())
-        .build(user_keys.public_key())
-        .sign(user_keys)
-        .await?;
-
-    let encrypted = encrypt_inner_event(&inner_event, channel_keys)?;
-
-    let outer_event = EventBuilder::new(Kind::Custom(4), encrypted)
-        .tag(Tag::custom(
-            TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H)),
-            [channel_keys.channel_id_hex()],
-        ))
-        .build(user_keys.public_key())
-        .sign(user_keys)
-        .await?;
-
-    client.send_event(outer_event).await?;
-    tracing::info!(wallet_name = %wallet_name, "initialized channel");
+    client.send_event(&outer_event).await?;
     Ok(())
 }
 
 fn encrypt_inner_event(inner_event: &Event, channel_keys: &ChannelKeys) -> Result<String> {
     let inner_json = serde_json::to_string(inner_event)?;
     let conversation_key = ConversationKey::new(channel_keys.shared_secret);
-    let encrypted_bytes = v2::encrypt_to_bytes(&conversation_key, inner_json)?;
+    let encrypted_bytes = v2::encrypt_to_bytes(&conversation_key, inner_json.as_bytes())?;
     Ok(BASE64.encode(&encrypted_bytes))
 }

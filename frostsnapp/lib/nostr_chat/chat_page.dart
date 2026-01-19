@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnap/nostr_chat/group_info_page.dart';
+import 'package:frostsnap/nostr_chat/nostr_profile.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
+import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api.dart';
 
@@ -32,11 +36,7 @@ class ChatPage extends StatefulWidget {
   final KeyId keyId;
   final String walletName;
 
-  const ChatPage({
-    super.key,
-    required this.keyId,
-    required this.walletName,
-  });
+  const ChatPage({super.key, required this.keyId, required this.walletName});
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -48,21 +48,33 @@ class _ChatPageState extends State<ChatPage> {
   late final FocusNode _inputFocusNode;
   final List<ChatMessage> _messages = [];
   final Map<NostrEventId, ChatMessage> _messageById = {};
+  List<PublicKey> _memberPubkeys = [];
   StreamSubscription<FfiChannelEvent>? _subscription;
-  NostrChannelHandle? _handle;
+  NostrClient? _client;
   FfiConnectionState _connectionState = const FfiConnectionState.connecting();
-  String? _channelName;
-  PublicKey? _myPubkey;
   ChatMessage? _replyingTo;
+
+  NostrContext? _nostrContext;
+  PublicKey? get _myPubkey => _nostrContext?.myPubkey;
+  bool _didConnect = false;
 
   @override
   void initState() {
     super.initState();
     _inputFocusNode = FocusNode(onKeyEvent: _handleKeyEvent);
-    _loadPubkeyAndConnect();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _inputFocusNode.requestFocus();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _nostrContext = NostrContext.of(context);
+    if (!_didConnect) {
+      _didConnect = true;
+      _loadPubkeyAndConnect();
+    }
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
@@ -76,18 +88,37 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _loadPubkeyAndConnect() async {
-    _myPubkey = getNostrPubkey();
-    _connect();
+    try {
+      final hasIdentity = _nostrContext!.nostrSettings.hasIdentity();
+      if (!hasIdentity) {
+        if (!mounted) return;
+        final result = await showNostrSetupDialog(context);
+        if (result == NostrSetupResult.cancelled || !mounted) {
+          Navigator.of(context).pop();
+          return;
+        }
+      }
+      _connect();
+    } catch (e) {
+      debugPrint('Error loading nostr identity: $e');
+      if (!mounted) return;
+      final result = await showNostrSetupDialog(context);
+      if (result == NostrSetupResult.cancelled || !mounted) {
+        Navigator.of(context).pop();
+        return;
+      }
+      _connect();
+    }
   }
 
   Future<void> _connect() async {
-    final relays = defaultRelayUrls();
-    final stream = connectToChannel(
-      keyId: widget.keyId,
-      relayUrls: relays,
-    );
-
+    _client = await NostrClient.connect();
+    final stream = _client!.connectToChannel(keyId: widget.keyId);
     _subscription = stream.listen(_handleEvent);
+  }
+
+  FfiNostrProfile? _getProfile(PublicKey pubkey) {
+    return _nostrContext!.getProfile(pubkey);
   }
 
   void _handleEvent(FfiChannelEvent event) {
@@ -96,13 +127,13 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       switch (event) {
         case FfiChannelEvent_ChatMessage(
-            :final messageId,
-            :final author,
-            :final content,
-            :final timestamp,
-            :final replyTo,
-            :final pending,
-          ):
+          :final messageId,
+          :final author,
+          :final content,
+          :final timestamp,
+          :final replyTo,
+          :final pending,
+        ):
           final existing = _messageById[messageId];
           if (existing != null) {
             return;
@@ -120,7 +151,9 @@ class _ChatPageState extends State<ChatPage> {
           _messages.add(message);
           _messageById[messageId] = message;
           _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _scrollToBottom(),
+          );
 
         case FfiChannelEvent_MessageSent(:final messageId):
           // ✅ Our message was confirmed by relay
@@ -137,21 +170,14 @@ class _ChatPageState extends State<ChatPage> {
             msg.failureReason = reason;
           }
 
-        case FfiChannelEvent_ChannelMetadata(:final name, about: _):
-          _channelName = name;
-
         case FfiChannelEvent_ConnectionState(:final field0):
           _connectionState = field0;
-          if (field0 is FfiConnectionState_Connected) {
-            _initializeChannel();
-          }
+
+        case FfiChannelEvent_GroupMetadata(:final members):
+          _memberPubkeys = members.map((m) => m.pubkey).toList();
+          _nostrContext!.updateProfilesFromChannel(members);
       }
     });
-  }
-
-  Future<void> _initializeChannel() async {
-    _handle = await getChannelHandle(keyId: widget.keyId);
-    await _handle?.initializeChannel(walletName: widget.walletName);
   }
 
   void _scrollToBottom() {
@@ -166,34 +192,41 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendMessage() async {
     final content = _messageController.text.trim();
-    if (content.isEmpty) return;
+    if (content.isEmpty || _client == null) return;
 
-    _handle ??= await getChannelHandle(keyId: widget.keyId);
-    if (_handle == null) return;
-
+    final nsec = _nostrContext!.nostrSettings.getNsec();
     final replyToId = _replyingTo?.messageId;
     _messageController.clear();
     setState(() => _replyingTo = null);
 
-    await _handle!.sendMessage(content: content, replyTo: replyToId);
+    await _client!.sendMessage(
+      keyId: widget.keyId,
+      nsec: nsec,
+      content: content,
+      replyTo: replyToId,
+    );
     _inputFocusNode.requestFocus();
   }
 
   Future<void> _retryMessage(ChatMessage message) async {
-    if (message.status != MessageStatus.failed) return;
+    if (message.status != MessageStatus.failed || _client == null) return;
 
-    _handle ??= await getChannelHandle(keyId: widget.keyId);
-    if (_handle == null) return;
-
+    final nsec = _nostrContext!.nostrSettings.getNsec();
     setState(() {
       _messages.remove(message);
       _messageById.remove(message.messageId);
     });
 
-    await _handle!.sendMessage(
+    await _client!.sendMessage(
+      keyId: widget.keyId,
+      nsec: nsec,
       content: message.content,
       replyTo: message.replyTo,
     );
+  }
+
+  void _copyMessage(ChatMessage message) {
+    Clipboard.setData(ClipboardData(text: message.content));
   }
 
   void _startReply(ChatMessage message) {
@@ -205,10 +238,21 @@ class _ChatPageState extends State<ChatPage> {
     setState(() => _replyingTo = null);
   }
 
+  void _openGroupInfo() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => GroupInfoPage(
+          walletName: widget.walletName,
+          members: _memberPubkeys,
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _subscription?.cancel();
-    disconnectChannel(keyId: widget.keyId);
+    _client?.disconnectChannel(keyId: widget.keyId);
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -221,10 +265,15 @@ class _ChatPageState extends State<ChatPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_channelName ?? widget.walletName),
+        title: Text(widget.walletName),
         actions: [
           _buildConnectionIndicator(),
           const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.group),
+            tooltip: 'Group Info',
+            onPressed: _openGroupInfo,
+          ),
         ],
       ),
       body: Column(
@@ -232,13 +281,15 @@ class _ChatPageState extends State<ChatPage> {
           Expanded(
             child: _messages.isEmpty
                 ? Center(
-                    child: Text(
-                      'No messages yet.\nSend a message to start the conversation.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                    child: _connectionState is FfiConnectionState_Connected
+                        ? Text(
+                            'No messages yet.\nSend a message to start the conversation.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          )
+                        : const CircularProgressIndicator(),
                   )
                 : ListView.builder(
                     controller: _scrollController,
@@ -248,11 +299,13 @@ class _ChatPageState extends State<ChatPage> {
                       final message = _messages[index];
                       return _MessageBubble(
                         message: message,
+                        profile: _getProfile(message.author),
                         replyToMessage: message.replyTo != null
                             ? _messageById[message.replyTo]
                             : null,
                         onReply: () => _startReply(message),
                         onRetry: () => _retryMessage(message),
+                        onCopy: () => _copyMessage(message),
                       );
                     },
                   ),
@@ -268,9 +321,9 @@ class _ChatPageState extends State<ChatPage> {
       FfiConnectionState_Connecting() => (Colors.orange, 'Connecting...'),
       FfiConnectionState_Connected() => (Colors.green, 'Connected'),
       FfiConnectionState_Disconnected(:final reason) => (
-          Colors.red,
-          'Disconnected${reason != null ? ': $reason' : ''}'
-        ),
+        Colors.red,
+        'Disconnected${reason != null ? ': $reason' : ''}',
+      ),
     };
 
     return Tooltip(
@@ -278,10 +331,7 @@ class _ChatPageState extends State<ChatPage> {
       child: Container(
         width: 12,
         height: 12,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
     );
   }
@@ -300,7 +350,9 @@ class _ChatPageState extends State<ChatPage> {
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainerHighest,
                 border: Border(
-                  top: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+                  top: BorderSide(
+                    color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                  ),
                 ),
               ),
               child: Row(
@@ -321,7 +373,7 @@ class _ChatPageState extends State<ChatPage> {
                         Text(
                           _replyingTo!.isMe
                               ? 'Replying to yourself'
-                              : 'Replying to ${_shortenPubkey(_replyingTo!.author.toHex())}',
+                              : 'Replying to ${getDisplayName(_getProfile(_replyingTo!.author), _replyingTo!.author)}',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w600,
@@ -361,7 +413,9 @@ class _ChatPageState extends State<ChatPage> {
                     minLines: 1,
                     maxLines: 6,
                     decoration: InputDecoration(
-                      hintText: isConnected ? 'Type a message...' : 'Connecting...',
+                      hintText: isConnected
+                          ? 'Type a message...'
+                          : 'Connecting...',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                       ),
@@ -385,24 +439,23 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
   }
-
-  String _shortenPubkey(String pubkey) {
-    if (pubkey.length <= 12) return pubkey;
-    return '${pubkey.substring(0, 6)}...${pubkey.substring(pubkey.length - 6)}';
-  }
 }
 
 class _MessageBubble extends StatefulWidget {
   final ChatMessage message;
+  final FfiNostrProfile? profile;
   final ChatMessage? replyToMessage;
   final VoidCallback onReply;
   final VoidCallback onRetry;
+  final VoidCallback onCopy;
 
   const _MessageBubble({
     required this.message,
+    this.profile,
     required this.replyToMessage,
     required this.onReply,
     required this.onRetry,
+    required this.onCopy,
   });
 
   @override
@@ -412,13 +465,112 @@ class _MessageBubble extends StatefulWidget {
 class _MessageBubbleState extends State<_MessageBubble> {
   bool _isHovered = false;
 
-  @override
-  Widget build(BuildContext context) {
+  bool _isMobile(BuildContext context) {
+    return MediaQuery.of(context).size.width < 600;
+  }
+
+  void _showMobileActions(BuildContext context) {
     final theme = Theme.of(context);
+    final isFailed = widget.message.status == MessageStatus.failed;
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (dialogContext) {
+        return GestureDetector(
+          onTap: () => Navigator.of(dialogContext).pop(),
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            children: [
+              Center(
+                child: GestureDetector(
+                  onTap: () {},
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildBubbleContent(context, theme),
+                      const SizedBox(height: 8),
+                      Material(
+                        elevation: 8,
+                        borderRadius: BorderRadius.circular(12),
+                        color: theme.colorScheme.surface,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isFailed)
+                              _buildActionTile(
+                                icon: Icons.refresh,
+                                label: 'Retry',
+                                color: theme.colorScheme.error,
+                                onTap: () {
+                                  Navigator.of(dialogContext).pop();
+                                  widget.onRetry();
+                                },
+                              ),
+                            _buildActionTile(
+                              icon: Icons.copy,
+                              label: 'Copy',
+                              onTap: () {
+                                Navigator.of(dialogContext).pop();
+                                widget.onCopy();
+                              },
+                            ),
+                            _buildActionTile(
+                              icon: Icons.reply,
+                              label: 'Reply',
+                              onTap: () {
+                                Navigator.of(dialogContext).pop();
+                                widget.onReply();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String label,
+    Color? color,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color ?? theme.colorScheme.onSurface),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: color ?? theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBubbleContent(BuildContext context, ThemeData theme) {
     final isMe = widget.message.isMe;
     final isFailed = widget.message.status == MessageStatus.failed;
 
-    final bubble = Container(
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.7,
@@ -427,8 +579,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
         color: isFailed
             ? theme.colorScheme.errorContainer
             : isMe
-                ? theme.colorScheme.primaryContainer
-                : theme.colorScheme.surfaceContainerHighest,
+            ? theme.colorScheme.primaryContainer
+            : theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -436,7 +588,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
         children: [
           if (!isMe)
             Text(
-              _shortenPubkey(widget.message.author.toHex()),
+              getDisplayName(widget.profile, widget.message.author),
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.primary,
               ),
@@ -473,6 +625,16 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ],
       ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isMe = widget.message.isMe;
+    final isFailed = widget.message.status == MessageStatus.failed;
+    final isMobile = _isMobile(context);
+
+    final bubble = _buildBubbleContent(context, theme);
 
     final hoverActions = AnimatedOpacity(
       opacity: _isHovered ? 1.0 : 0.0,
@@ -482,7 +644,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
         children: [
           if (isFailed)
             IconButton(
-              icon: Icon(Icons.refresh, size: 18, color: theme.colorScheme.error),
+              icon: Icon(
+                Icons.refresh,
+                size: 18,
+                color: theme.colorScheme.error,
+              ),
               onPressed: widget.onRetry,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -490,7 +656,23 @@ class _MessageBubbleState extends State<_MessageBubble> {
               tooltip: 'Retry',
             ),
           IconButton(
-            icon: Icon(Icons.reply, size: 18, color: theme.colorScheme.onSurfaceVariant),
+            icon: Icon(
+              Icons.copy,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            onPressed: widget.onCopy,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            splashRadius: 14,
+            tooltip: 'Copy',
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.reply,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             onPressed: widget.onReply,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -501,20 +683,41 @@ class _MessageBubbleState extends State<_MessageBubble> {
       ),
     );
 
+    final avatar = !isMe
+        ? Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: NostrAvatar.small(
+              profile: widget.profile,
+              pubkey: widget.message.author,
+            ),
+          )
+        : null;
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: MouseRegion(
-        onEnter: (_) => setState(() => _isHovered = true),
-        onExit: (_) => setState(() => _isHovered = false),
+        onEnter: isMobile ? null : (_) => setState(() => _isHovered = true),
+        onExit: isMobile ? null : (_) => setState(() => _isHovered = false),
         child: GestureDetector(
           onTap: isFailed ? widget.onRetry : null,
+          onLongPress: isMobile ? () => _showMobileActions(context) : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: isMe
-                  ? [hoverActions, const SizedBox(width: 4), bubble]
-                  : [bubble, const SizedBox(width: 4), hoverActions],
+                  ? [
+                      if (!isMobile) hoverActions,
+                      if (!isMobile) const SizedBox(width: 4),
+                      bubble,
+                    ]
+                  : [
+                      if (avatar != null) avatar,
+                      bubble,
+                      if (!isMobile) const SizedBox(width: 4),
+                      if (!isMobile) hoverActions,
+                    ],
             ),
           ),
         ),
@@ -525,20 +728,20 @@ class _MessageBubbleState extends State<_MessageBubble> {
   Widget _buildStatusIndicator(ThemeData theme) {
     return switch (widget.message.status) {
       MessageStatus.pending => Icon(
-          Icons.access_time,
-          size: 12,
-          color: theme.colorScheme.outline,
-        ),
+        Icons.access_time,
+        size: 12,
+        color: theme.colorScheme.outline,
+      ),
       MessageStatus.sent => Icon(
-          Icons.check,
-          size: 12,
-          color: theme.colorScheme.outline,
-        ),
+        Icons.check,
+        size: 12,
+        color: theme.colorScheme.outline,
+      ),
       MessageStatus.failed => Icon(
-          Icons.error_outline,
-          size: 12,
-          color: theme.colorScheme.error,
-        ),
+        Icons.error_outline,
+        size: 12,
+        color: theme.colorScheme.error,
+      ),
     };
   }
 
@@ -549,10 +752,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         border: Border(
-          left: BorderSide(
-            color: theme.colorScheme.primary,
-            width: 2,
-          ),
+          left: BorderSide(color: theme.colorScheme.primary, width: 2),
         ),
         color: theme.colorScheme.surface.withValues(alpha: 0.5),
       ),
@@ -560,7 +760,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            replyTo.isMe ? 'You' : _shortenPubkey(replyTo.author.toHex()),
+            replyTo.isMe ? 'You' : getDisplayName(null, replyTo.author),
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.primary,
               fontWeight: FontWeight.w600,
@@ -577,11 +777,6 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ],
       ),
     );
-  }
-
-  String _shortenPubkey(String pubkey) {
-    if (pubkey.length <= 12) return pubkey;
-    return '${pubkey.substring(0, 6)}...${pubkey.substring(pubkey.length - 6)}';
   }
 
   String _formatTime(DateTime time) {

@@ -2,79 +2,293 @@ use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 use frostsnap_core::KeyId;
-use frostsnap_nostr::{ChannelClient, ChannelHandle, Keys, ToBech32};
+use frostsnap_nostr::{
+    ChannelClient, ChannelHandle, Client, Keys, NostrDatabaseExt, NostrLMDB, NostrProfile, ToBech32,
+};
 use rusqlite::Connection;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock, RwLock},
+    time::Duration,
 };
 
-pub use frostsnap_nostr::{ChannelEvent, ConnectionState, EventId, PublicKey};
+pub use frostsnap_nostr::{ChannelEvent, ConnectionState, EventId, GroupMember, PublicKey};
 
-lazy_static::lazy_static! {
-    static ref NOSTR_DB: Mutex<Option<Arc<Mutex<Connection>>>> = Mutex::new(None);
-}
+static NOSTR_LMDB: OnceLock<Arc<NostrLMDB>> = OnceLock::new();
 
-/// Initialize the nostr module with the database connection.
-/// Called during app startup.
-pub(crate) fn init_nostr_db(db: Arc<Mutex<Connection>>) -> Result<()> {
-    let db_guard = db.lock().unwrap();
-    db_guard.execute(
-        "CREATE TABLE IF NOT EXISTS nostr_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )",
-        [],
-    )?;
-    drop(db_guard);
-    *NOSTR_DB.lock().unwrap() = Some(db);
-    Ok(())
-}
-
-/// Get or generate the user's Nostr secret key.
-fn get_or_generate_nsec() -> Result<Nsec> {
-    let db_arc = NOSTR_DB
-        .lock()
-        .unwrap()
+fn get_or_init_nostr_lmdb(data_dir: &Path) -> Arc<NostrLMDB> {
+    NOSTR_LMDB
+        .get_or_init(|| {
+            let lmdb_path = data_dir.join("nostr-lmdb");
+            let db = NostrLMDB::open(&lmdb_path).expect("failed to open nostr lmdb");
+            Arc::new(db)
+        })
         .clone()
-        .ok_or_else(|| anyhow!("nostr db not initialized"))?;
-    let db = db_arc.lock().unwrap();
+}
 
-    let nsec: Option<String> = db
-        .query_row(
+fn get_nostr_lmdb() -> Result<Arc<NostrLMDB>> {
+    NOSTR_LMDB
+        .get()
+        .cloned()
+        .ok_or_else(|| anyhow!("nostr lmdb not initialized"))
+}
+
+// ============================================================================
+// NostrSettings - Identity settings with reactive updates
+// ============================================================================
+
+/// Nostr identity settings - follows same pattern as Settings struct.
+/// Created during app load, passed to Dart via context.
+#[frb(opaque)]
+pub struct NostrSettings {
+    db: Arc<Mutex<Connection>>,
+    #[allow(dead_code)]
+    data_dir: PathBuf,
+    inner: RwLock<NostrSettingsInner>,
+}
+
+struct NostrSettingsInner {
+    pubkey: Option<PublicKey>,
+    identity_sink: Option<StreamSink<FfiNostrIdentity>>,
+}
+
+/// Current Nostr identity state.
+#[derive(Clone, Default)]
+#[frb(non_opaque)]
+pub struct FfiNostrIdentity {
+    pub pubkey: Option<PublicKey>,
+    pub npub: Option<String>,
+}
+
+impl NostrSettings {
+    /// Create by loading existing identity from SQLite.
+    /// Called during app initialization.
+    pub(crate) fn new(db: Arc<Mutex<Connection>>, data_dir: PathBuf) -> Result<Self> {
+        // Ensure table exists
+        {
+            let db_guard = db.lock().unwrap();
+            db_guard.execute(
+                "CREATE TABLE IF NOT EXISTS nostr_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )",
+                [],
+            )?;
+        }
+
+        // Initialize LMDB
+        get_or_init_nostr_lmdb(&data_dir);
+
+        // Load existing identity
+        let pubkey = Self::load_pubkey_from_db(&db);
+
+        Ok(Self {
+            db,
+            data_dir,
+            inner: RwLock::new(NostrSettingsInner {
+                pubkey,
+                identity_sink: None,
+            }),
+        })
+    }
+
+    fn load_pubkey_from_db(db: &Arc<Mutex<Connection>>) -> Option<PublicKey> {
+        let db_guard = db.lock().unwrap();
+        let nsec: Option<String> = db_guard
+            .query_row(
+                "SELECT value FROM nostr_settings WHERE key = 'nsec'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        nsec.and_then(|n| Keys::parse(&n).ok().map(|k| k.public_key()))
+    }
+
+    /// Subscribe to identity changes. Emits current value immediately.
+    pub fn sub_identity(&self, sink: StreamSink<FfiNostrIdentity>) -> Result<()> {
+        {
+            let mut inner = self.inner.write().unwrap();
+            inner.identity_sink.replace(sink);
+        }
+        self.emit_identity();
+        Ok(())
+    }
+
+    fn emit_identity(&self) {
+        let inner = self.inner.read().unwrap();
+        if let Some(sink) = &inner.identity_sink {
+            let identity = FfiNostrIdentity {
+                pubkey: inner.pubkey,
+                npub: inner.pubkey.as_ref().and_then(|p| p.to_bech32().ok()),
+            };
+            let _ = sink.add(identity);
+        }
+    }
+
+    /// Get current identity synchronously.
+    #[frb(sync)]
+    pub fn current(&self) -> FfiNostrIdentity {
+        let inner = self.inner.read().unwrap();
+        FfiNostrIdentity {
+            pubkey: inner.pubkey.clone(),
+            npub: inner.pubkey.as_ref().and_then(|p| p.to_bech32().ok()),
+        }
+    }
+
+    /// Set/import nsec. Persists to DB and notifies subscribers.
+    pub fn set_nsec(&self, nsec: String) -> Result<()> {
+        let keys = Keys::parse(&nsec)?;
+
+        // Persist
+        {
+            let db = self.db.lock().unwrap();
+            db.execute(
+                "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
+                [&nsec],
+            )?;
+        }
+
+        // Update in-memory + emit
+        {
+            let mut inner = self.inner.write().unwrap();
+            inner.pubkey = Some(keys.public_key());
+        }
+        self.emit_identity();
+        tracing::info!("Nostr identity configured");
+        Ok(())
+    }
+
+    /// Generate new random identity.
+    pub fn generate(&self) -> Result<String> {
+        let keys = Keys::generate();
+        let nsec = keys.secret_key().to_bech32()?;
+        self.set_nsec(nsec.clone())?;
+        Ok(nsec)
+    }
+
+    /// Get nsec for export/backup.
+    #[frb(sync)]
+    pub fn get_nsec(&self) -> Result<String> {
+        let db = self.db.lock().unwrap();
+        db.query_row(
             "SELECT value FROM nostr_settings WHERE key = 'nsec'",
             [],
             |row| row.get(0),
         )
-        .ok();
-
-    if let Some(nsec_str) = nsec {
-        return Nsec::parse(nsec_str);
+        .map_err(|_| anyhow!("no Nostr identity configured"))
     }
 
-    let keys = Keys::generate();
-    let nsec_str = keys.secret_key().to_bech32().expect("valid key");
-    db.execute(
-        "INSERT INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
-        [&nsec_str],
-    )?;
-
-    tracing::info!("Generated new Nostr identity");
-    Ok(Nsec(nsec_str))
+    /// Check if identity exists.
+    #[frb(sync)]
+    pub fn has_identity(&self) -> bool {
+        self.inner.read().unwrap().pubkey.is_some()
+    }
 }
 
-/// Get the user's Nostr public key (npub).
-#[frb(sync)]
-pub fn get_nostr_npub() -> Result<String> {
-    let nsec = get_or_generate_nsec()?;
-    Ok(nsec.public_key().to_bech32()?)
+// ============================================================================
+// NostrClient - Unified client for profiles and channels
+// ============================================================================
+
+/// Unified Nostr client for profiles and channels.
+/// Create once and keep around - cloning shares the connection pool.
+pub struct NostrClient {
+    client: Client,
+    channels: Mutex<HashMap<[u8; 32], ChannelHandle>>,
 }
 
-/// Get the user's Nostr public key.
-#[frb(sync)]
-pub fn get_nostr_pubkey() -> Result<PublicKey> {
-    let nsec = get_or_generate_nsec()?;
-    Ok(nsec.public_key())
+impl NostrClient {
+    /// Connect to default relays and return a client ready for use.
+    pub async fn connect() -> Result<Self> {
+        let database = get_nostr_lmdb()?;
+        let client = Client::builder().database(database).build();
+
+        for url in default_relay_urls() {
+            if let Err(e) = client.add_relay(&url).await {
+                tracing::warn!(relay = %url, error = %e, "failed to add relay");
+            }
+        }
+
+        client.connect().await;
+
+        Ok(Self {
+            client,
+            channels: Mutex::new(HashMap::new()),
+        })
+    }
+
+    /// Fetch profile metadata for a public key.
+    /// Checks the local cache first, then fetches from relays if not found.
+    /// Returns None if the user has no profile.
+    pub async fn fetch_profile(&self, pubkey: &PublicKey) -> Result<Option<FfiNostrProfile>> {
+        // 📦 Check cache first
+        if let Ok(Some(metadata)) = self.client.database().metadata(*pubkey).await {
+            return Ok(Some(FfiNostrProfile::from_metadata(*pubkey, metadata)));
+        }
+
+        // 🌐 Fetch from relays
+        match self
+            .client
+            .fetch_metadata(*pubkey, Duration::from_secs(5))
+            .await
+        {
+            Ok(Some(metadata)) => Ok(Some(FfiNostrProfile::from_metadata(*pubkey, metadata))),
+            Ok(None) => Ok(None),
+            Err(e) => {
+                tracing::debug!(pubkey = %pubkey, error = %e, "failed to fetch profile");
+                Ok(None)
+            }
+        }
+    }
+
+    /// Connect to a channel for chat/signing coordination.
+    /// Events are streamed to the sink. Use send_message to interact.
+    pub async fn connect_to_channel(&self, key_id: KeyId, sink: StreamSink<FfiChannelEvent>) {
+        let channel_client = ChannelClient::new(&key_id);
+        let handle = match channel_client
+            .run(self.client.clone(), SinkWrap(sink))
+            .await
+        {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to connect to channel");
+                return;
+            }
+        };
+
+        self.channels
+            .lock()
+            .unwrap()
+            .insert(key_id.to_bytes(), handle);
+    }
+
+    /// Send a chat message to a channel, optionally as a reply.
+    /// The nsec is used to sign the message.
+    pub async fn send_message(
+        &self,
+        key_id: KeyId,
+        nsec: String,
+        content: String,
+        reply_to: Option<NostrEventId>,
+    ) -> Result<NostrEventId> {
+        let keys = Keys::parse(&nsec)?;
+        let handle = self
+            .channels
+            .lock()
+            .unwrap()
+            .get(&key_id.to_bytes())
+            .cloned()
+            .ok_or_else(|| anyhow!("channel not connected"))?;
+        let event_id = handle
+            .send_message(content, reply_to.map(|id| id.into()), &keys)
+            .await?;
+        Ok(event_id.into())
+    }
+
+    /// Disconnect from a channel.
+    pub fn disconnect_channel(&self, key_id: KeyId) {
+        self.channels.lock().unwrap().remove(&key_id.to_bytes());
+    }
 }
 
 // ============================================================================
@@ -167,7 +381,11 @@ impl PublicKeyExt for PublicKey {
 
 /// A Nostr event ID (32 bytes). This is a non-opaque wrapper that provides
 /// proper equality semantics in Dart for use as Map keys.
-#[frb(non_opaque, non_hash, non_eq, dart_code = "
+#[frb(
+    non_opaque,
+    non_hash,
+    non_eq,
+    dart_code = "
   @override
   int get hashCode => Object.hashAll(field0);
 
@@ -183,7 +401,8 @@ impl PublicKeyExt for PublicKey {
     }
     return true;
   }
-")]
+"
+)]
 #[derive(Debug, Clone)]
 pub struct NostrEventId(pub [u8; 32]);
 
@@ -206,8 +425,21 @@ impl From<NostrEventId> for EventId {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref CHANNEL_HANDLES: Mutex<HashMap<[u8; 32], ChannelHandle>> = Mutex::new(HashMap::new());
+/// A member of the channel group with their profile.
+#[frb(non_opaque)]
+#[derive(Debug, Clone)]
+pub struct FfiGroupMember {
+    pub pubkey: PublicKey,
+    pub profile: Option<FfiNostrProfile>,
+}
+
+impl From<GroupMember> for FfiGroupMember {
+    fn from(m: GroupMember) -> Self {
+        FfiGroupMember {
+            pubkey: m.pubkey,
+            profile: m.profile.map(|p| p.into()),
+        }
+    }
 }
 
 #[frb(non_opaque)]
@@ -228,11 +460,10 @@ pub enum FfiChannelEvent {
         message_id: NostrEventId,
         reason: String,
     },
-    ChannelMetadata {
-        name: String,
-        about: String,
-    },
     ConnectionState(FfiConnectionState),
+    GroupMetadata {
+        members: Vec<FfiGroupMember>,
+    },
 }
 
 #[frb(non_opaque)]
@@ -261,104 +492,92 @@ impl From<ChannelEvent> for FfiChannelEvent {
                 reply_to: reply_to.map(|id| id.into()),
                 pending,
             },
-            ChannelEvent::MessageSent { message_id } => {
-                FfiChannelEvent::MessageSent { message_id: message_id.into() }
-            }
+            ChannelEvent::MessageSent { message_id } => FfiChannelEvent::MessageSent {
+                message_id: message_id.into(),
+            },
             ChannelEvent::MessageSendFailed { message_id, reason } => {
-                FfiChannelEvent::MessageSendFailed { message_id: message_id.into(), reason }
+                FfiChannelEvent::MessageSendFailed {
+                    message_id: message_id.into(),
+                    reason,
+                }
             }
-            ChannelEvent::ChannelMetadata { name, about } => {
-                FfiChannelEvent::ChannelMetadata { name, about }
-            }
-            ChannelEvent::ConnectionState(state) => {
-                FfiChannelEvent::ConnectionState(match state {
-                    ConnectionState::Connecting => FfiConnectionState::Connecting,
-                    ConnectionState::Connected => FfiConnectionState::Connected,
-                    ConnectionState::Disconnected { reason } => {
-                        FfiConnectionState::Disconnected { reason }
-                    }
-                })
-            }
+            ChannelEvent::ConnectionState(state) => FfiChannelEvent::ConnectionState(match state {
+                ConnectionState::Connecting => FfiConnectionState::Connecting,
+                ConnectionState::Connected => FfiConnectionState::Connected,
+                ConnectionState::Disconnected { reason } => {
+                    FfiConnectionState::Disconnected { reason }
+                }
+            }),
+            ChannelEvent::GroupMetadata { members } => FfiChannelEvent::GroupMetadata {
+                members: members.into_iter().map(|m| m.into()).collect(),
+            },
         }
     }
 }
 
-/// Connect to a Nostr channel and receive events.
-///
-/// # Arguments
-/// * `key_id` - The wallet's key ID (determines the channel)
-/// * `relay_urls` - List of relay URLs to connect to
-/// * `sink` - Stream sink for receiving channel events
-pub async fn connect_to_channel(
-    key_id: KeyId,
-    relay_urls: Vec<String>,
-    sink: StreamSink<FfiChannelEvent>,
-) -> Result<()> {
-    let nsec = get_or_generate_nsec()?;
-    let user_keys = Keys::parse(&nsec.0)?;
-    let client = ChannelClient::new(&key_id, user_keys);
-    let handle = client.run(relay_urls, SinkWrap(sink)).await?;
-
-    CHANNEL_HANDLES.lock().unwrap().insert(key_id.0, handle);
-    Ok(())
+/// Nostr profile metadata (NIP-01 kind 0).
+#[frb(non_opaque)]
+#[derive(Debug, Clone, Default)]
+pub struct FfiNostrProfile {
+    pub pubkey: Option<PublicKey>,
+    pub name: Option<String>,
+    pub display_name: Option<String>,
+    pub about: Option<String>,
+    pub picture: Option<String>,
+    pub banner: Option<String>,
+    pub nip05: Option<String>,
+    pub website: Option<String>,
 }
 
-/// Get a channel handle for sending messages.
-/// Returns None if not connected to this channel.
-pub fn get_channel_handle(key_id: KeyId) -> Option<NostrChannelHandle> {
-    let handles = CHANNEL_HANDLES.lock().unwrap();
-    handles.get(&key_id.0).cloned().map(|h| NostrChannelHandle {
-        handle: Arc::new(Mutex::new(Some(h))),
-        key_id,
-    })
-}
-
-/// Disconnect from a channel.
-pub fn disconnect_channel(key_id: KeyId) {
-    CHANNEL_HANDLES.lock().unwrap().remove(&key_id.0);
-}
-
-/// Handle to an active Nostr channel connection.
-pub struct NostrChannelHandle {
-    handle: Arc<Mutex<Option<ChannelHandle>>>,
-    #[allow(dead_code)]
-    key_id: KeyId,
-}
-
-impl NostrChannelHandle {
-    /// Send a chat message to the channel, optionally as a reply to another message.
-    /// Returns the message ID immediately; relay send happens in background.
-    pub async fn send_message(&self, content: String, reply_to: Option<NostrEventId>) -> Result<NostrEventId> {
-        let handle = self
-            .handle
-            .lock()
-            .unwrap()
-            .as_ref()
-            .ok_or_else(|| anyhow!("channel not connected"))?
-            .clone();
-        let event_id = handle.send_message(content, reply_to.map(|id| id.into())).await?;
-        Ok(event_id.into())
+impl FfiNostrProfile {
+    pub(crate) fn from_metadata(pubkey: PublicKey, metadata: frostsnap_nostr::Metadata) -> Self {
+        FfiNostrProfile {
+            pubkey: Some(pubkey),
+            name: metadata.name,
+            display_name: metadata.display_name,
+            about: metadata.about,
+            picture: metadata.picture,
+            banner: metadata.banner,
+            nip05: metadata.nip05,
+            website: metadata.website,
+        }
     }
+}
 
-    /// Initialize the channel with the wallet name.
-    /// This is idempotent - it only creates the channel if it doesn't exist.
-    pub async fn initialize_channel(&self, wallet_name: String) -> Result<()> {
-        let handle = self
-            .handle
-            .lock()
-            .unwrap()
-            .as_ref()
-            .ok_or_else(|| anyhow!("channel not connected"))?
-            .clone();
-        handle.initialize_channel(&wallet_name).await
+impl From<NostrProfile> for FfiNostrProfile {
+    fn from(p: NostrProfile) -> Self {
+        FfiNostrProfile {
+            pubkey: p.pubkey,
+            name: p.name,
+            display_name: p.display_name,
+            about: p.about,
+            picture: p.picture,
+            banner: p.banner,
+            nip05: p.nip05,
+            website: p.website,
+        }
     }
 }
 
 /// Default port for the local test relay.
 pub const TEST_RELAY_PORT: u16 = 7447;
 
-/// Get default relay URLs.
+/// Get default relay URLs (public relays for profile/event discovery).
 #[frb(sync)]
 pub fn default_relay_urls() -> Vec<String> {
-    vec![format!("ws://localhost:{}", TEST_RELAY_PORT)]
+    vec![
+        "wss://relay.damus.io".to_string(),
+        "wss://nos.lol".to_string(),
+        "wss://relay.primal.net".to_string(),
+    ]
+}
+
+/// Get relay URLs for development (includes local test relay).
+#[frb(sync)]
+pub fn dev_relay_urls() -> Vec<String> {
+    vec![
+        format!("ws://localhost:{}", TEST_RELAY_PORT),
+        "wss://relay.damus.io".to_string(),
+        "wss://nos.lol".to_string(),
+    ]
 }

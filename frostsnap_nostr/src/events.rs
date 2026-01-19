@@ -1,4 +1,11 @@
-use nostr_sdk::{EventId, PublicKey};
+use nostr_sdk::{EventId, Metadata, PublicKey};
+
+/// A member of the channel group with their profile.
+#[derive(Debug, Clone)]
+pub struct GroupMember {
+    pub pubkey: PublicKey,
+    pub profile: Option<NostrProfile>,
+}
 
 /// Events emitted by ChannelClient through the Sink.
 /// Dart receives these and builds the chat state.
@@ -20,10 +27,10 @@ pub enum ChannelEvent {
     MessageSent { message_id: EventId },
     /// Our message failed to send to relay
     MessageSendFailed { message_id: EventId, reason: String },
-    /// Channel metadata received (NIP28 kind 40)
-    ChannelMetadata { name: String, about: String },
     /// Connection state changed
     ConnectionState(ConnectionState),
+    /// Group membership/profiles changed
+    GroupMetadata { members: Vec<GroupMember> },
 }
 
 #[derive(Debug, Clone)]
@@ -31,4 +38,32 @@ pub enum ConnectionState {
     Connecting,
     Connected,
     Disconnected { reason: Option<String> },
+}
+
+/// Nostr profile metadata (NIP-01 kind 0 event content)
+#[derive(Debug, Clone, Default)]
+pub struct NostrProfile {
+    pub pubkey: Option<PublicKey>,
+    pub name: Option<String>,
+    pub display_name: Option<String>,
+    pub about: Option<String>,
+    pub picture: Option<String>,
+    pub banner: Option<String>,
+    pub nip05: Option<String>,
+    pub website: Option<String>,
+}
+
+impl NostrProfile {
+    pub fn from_metadata(pubkey: PublicKey, metadata: Metadata) -> Self {
+        Self {
+            pubkey: Some(pubkey),
+            name: metadata.name,
+            display_name: metadata.display_name,
+            about: metadata.about,
+            picture: metadata.picture,
+            banner: metadata.banner,
+            nip05: metadata.nip05,
+            website: metadata.website,
+        }
+    }
 }
