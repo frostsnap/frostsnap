@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
-import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
+import 'package:frostsnap/dialog_content_with_actions.dart';
 import 'package:frostsnap/restoration/target_device.dart';
 
 class WaitReconnectDeviceView extends StatefulWidget with TitledWidget {

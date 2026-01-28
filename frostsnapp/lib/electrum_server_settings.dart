@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/progress_indicator.dart';
+import 'package:frostsnap/dialog_content_with_actions.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
@@ -225,17 +226,13 @@ class ServerListTile extends StatelessWidget {
   }
 
   void _showEditDialog(BuildContext context) {
-    showBottomSheetOrDialog(
-      context,
-      title: Text(isBackup ? 'Edit Backup Server' : 'Edit Primary Server'),
-      builder: (context, scrollController) {
-        return EditServerDialog(
-          network: network,
-          initialUrl: url,
-          isBackup: isBackup,
-          scrollController: scrollController,
-        );
-      },
+    showDialog(
+      context: context,
+      builder: (context) => EditServerDialog(
+        network: network,
+        initialUrl: url,
+        isBackup: isBackup,
+      ),
     );
   }
 }
@@ -246,14 +243,12 @@ class EditServerDialog extends StatefulWidget {
   final BitcoinNetwork network;
   final String initialUrl;
   final bool isBackup;
-  final ScrollController scrollController;
 
   const EditServerDialog({
     super.key,
     required this.network,
     required this.initialUrl,
     required this.isBackup,
-    required this.scrollController,
   });
 
   @override
@@ -375,16 +370,34 @@ class _EditServerDialogState extends State<EditServerDialog> {
     });
   }
 
+  String get _title =>
+      widget.isBackup ? 'Edit Backup Server' : 'Edit Primary Server';
+
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      controller: widget.scrollController,
-      child: AnimatedSwitcher(
-        duration: Durations.medium4,
-        transitionBuilder: (child, animation) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        child: _buildContent(),
+    return Dialog(
+      constraints: dialogConstraints,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            child: Text(
+              _title,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
+          Flexible(
+            child: AnimatedSwitcher(
+              duration: Durations.medium4,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(opacity: animation, child: child);
+              },
+              child: _buildContent(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -405,48 +418,32 @@ class _EditServerDialogState extends State<EditServerDialog> {
   }
 
   Widget _buildInputContent() {
-    return Padding(
+    return DialogContentWithActions(
       key: const ValueKey(_EditServerState.input),
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _controller,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'Server URL',
-            ),
-            onSubmitted: (_) => _connect(),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: _restoreDefault,
-                child: const Text('Restore Default'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _connect,
-                child: const Text('Connect & Save'),
-              ),
-            ],
-          ),
-        ],
+      content: TextField(
+        controller: _controller,
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          labelText: 'Server URL',
+        ),
+        onSubmitted: (_) => _connect(),
       ),
+      actions: [
+        TextButton(
+          onPressed: _restoreDefault,
+          child: const Text('Restore Default'),
+        ),
+        FilledButton(onPressed: _connect, child: const Text('Connect & Save')),
+      ],
     );
   }
 
   Widget _buildConnectingContent() {
     final theme = Theme.of(context);
 
-    return Padding(
+    return DialogContentWithActions(
       key: const ValueKey(_EditServerState.connecting),
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const FsProgressIndicator(),
@@ -460,10 +457,9 @@ class _EditServerDialogState extends State<EditServerDialog> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
-          TextButton(onPressed: _cancel, child: const Text('Cancel')),
         ],
       ),
+      actions: [TextButton(onPressed: _cancel, child: const Text('Cancel'))],
     );
   }
 
@@ -484,18 +480,17 @@ class _EditServerDialogState extends State<EditServerDialog> {
   Widget _buildSuccessContent() {
     final theme = Theme.of(context);
 
-    return Padding(
+    return DialogContentWithActions(
       key: const ValueKey(_EditServerState.success),
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             Icons.check_circle_outline,
-            size: 64,
+            size: 56,
             color: theme.colorScheme.primary,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Text('Server saved', style: theme.textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
@@ -505,27 +500,27 @@ class _EditServerDialogState extends State<EditServerDialog> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Done'),
-          ),
         ],
       ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Done'),
+        ),
+      ],
     );
   }
 
   Widget _buildFailureContent() {
     final theme = Theme.of(context);
 
-    return Padding(
+    return DialogContentWithActions(
       key: const ValueKey(_EditServerState.failure),
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
-          const SizedBox(height: 16),
+          Icon(Icons.error_outline, size: 56, color: theme.colorScheme.error),
+          const SizedBox(height: 8),
           Text('Connection failed', style: theme.textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
@@ -535,10 +530,11 @@ class _EditServerDialogState extends State<EditServerDialog> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
-          FilledButton(onPressed: _tryAgain, child: const Text('Try Again')),
         ],
       ),
+      actions: [
+        FilledButton(onPressed: _tryAgain, child: const Text('Try Again')),
+      ],
     );
   }
 }

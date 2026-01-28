@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
-import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
+import 'package:frostsnap/dialog_content_with_actions.dart';
 import 'package:frostsnap/restoration/state.dart';
 
 class StartRestorationInfoView extends StatelessWidget with TitledWidget {
