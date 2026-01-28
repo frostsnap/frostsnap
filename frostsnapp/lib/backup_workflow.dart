@@ -509,35 +509,35 @@ class _BackupChecklistState extends State<BackupChecklist> {
                       } else {
                         statusIcon = Icons.usb_rounded;
                         statusIconColor = theme.colorScheme.primary;
-                        deviceStatusContent = Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        deviceStatusContent = Wrap(
+                          spacing: 16,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Flexible(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  DeviceWithShareIndex(
-                                    shareIndex: deviceInfo.shareIndex,
-                                    deviceName:
-                                        coord.getDeviceName(
-                                          id: deviceInfo.deviceId,
-                                        ) ??
-                                        '',
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                DeviceWithShareIndex(
+                                  shareIndex: deviceInfo.shareIndex,
+                                  deviceName:
+                                      coord.getDeviceName(
+                                        id: deviceInfo.deviceId,
+                                      ) ??
+                                      '',
+                                ),
+                                Text(
+                                  'Connected',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
                                   ),
-                                  Text(
-                                    'connected',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                             if (deviceInfo.complete != false)
                               Row(
-                                spacing: 8,
                                 mainAxisSize: MainAxisSize.min,
+                                spacing: 8,
                                 children: [
                                   FilledButton(
                                     onPressed: () => showBackupDialog(
