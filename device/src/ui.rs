@@ -16,6 +16,7 @@ pub trait UserInteraction {
     fn set_busy_task(&mut self, task: BusyTask);
     fn clear_busy_task(&mut self);
     fn poll(&mut self) -> Option<UiEvent>;
+    fn force_redraw(&mut self);
 }
 
 // Implement UserInteraction for Box<T> where T implements UserInteraction
@@ -42,6 +43,10 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
 
     fn poll(&mut self) -> Option<UiEvent> {
         (**self).poll()
+    }
+
+    fn force_redraw(&mut self) {
+        (**self).force_redraw()
     }
 }
 
