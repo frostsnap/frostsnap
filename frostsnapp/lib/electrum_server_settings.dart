@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/progress_indicator.dart';
-import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
+import 'package:frostsnap/dialog_content_with_actions.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';

@@ -35,9 +35,11 @@ class DialogContentWithActions extends StatelessWidget {
         if (!isCompact) const Divider(height: 0),
         Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisAlignment: actionsAlignment,
+          child: OverflowBar(
+            alignment: actionsAlignment,
+            overflowAlignment: OverflowBarAlignment.end,
             spacing: 8,
+            overflowSpacing: 8,
             children: actions,
           ),
         ),

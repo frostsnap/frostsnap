@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
-import 'package:frostsnap/restoration/dialog_content_with_actions.dart';
+import 'package:frostsnap/dialog_content_with_actions.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
