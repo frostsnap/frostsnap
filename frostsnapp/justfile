@@ -24,14 +24,14 @@ run +ARGS="": maybe-gen
     just ../gen-firmware
     BUILD_COMMIT=$(just get-build-commit)
     BUILD_VERSION=$(just get-build-version)
-    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
+    BUNDLE_FIRMWARE=1 flutter run --flavor direct --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
 run-secure +ARGS="": maybe-gen
     #!/bin/sh
     just ../build-secure
     BUILD_COMMIT=$(just get-build-commit)
     BUILD_VERSION=$(just get-build-version)
-    BUNDLE_FIRMWARE=1 flutter run --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
+    BUNDLE_FIRMWARE=1 flutter run --flavor direct --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
 maybe-gen:
     #!/bin/sh
