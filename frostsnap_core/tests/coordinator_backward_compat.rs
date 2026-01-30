@@ -271,6 +271,13 @@ fn test_all_coordinator_mutations() {
             share_index: s!(1).public(),
         }),
         Mutation::Keygen(KeyMutation::DeleteKey(KeyId([3u8; 32]))),
+        Mutation::Keygen(KeyMutation::DeleteShare {
+            access_structure_ref: AccessStructureRef {
+                key_id: KeyId([3u8; 32]),
+                access_structure_id: AccessStructureId([4u8; 32]),
+            },
+            device_id: DeviceId([5u8; 33]),
+        }),
         // Signing mutations
         Mutation::Signing(SigningMutation::NewNonces {
             device_id: DeviceId([6u8; 33]),
@@ -365,6 +372,12 @@ fn test_all_coordinator_mutations() {
                 assert_bincode_hex_eq!(
                     mutation,
                     "00030303030303030303030303030303030303030303030303030303030303030303"
+                );
+            }
+            Mutation::Keygen(KeyMutation::DeleteShare { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0004030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040505050505050505050505050505050505050505050505050505050505050505050505"
                 );
             }
             Mutation::Signing(SigningMutation::NewNonces { .. }) => {

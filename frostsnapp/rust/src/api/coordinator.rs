@@ -106,6 +106,9 @@ pub trait AccessStructureExt {
     fn frb_override_devices(&self) -> Vec<DeviceId>;
 
     #[frb(sync)]
+    fn devices_by_share_index(&self) -> Vec<DeviceId>;
+
+    #[frb(sync)]
     fn short_id(&self) -> String;
 
     #[frb(sync)]
@@ -121,6 +124,11 @@ impl AccessStructureExt for AccessStructure {
     #[frb(sync)]
     fn frb_override_devices(&self) -> Vec<DeviceId> {
         self.devices().collect()
+    }
+
+    #[frb(sync)]
+    fn devices_by_share_index(&self) -> Vec<DeviceId> {
+        AccessStructure::devices_by_share_index(self)
     }
 
     #[frb(sync)]
@@ -211,6 +219,14 @@ impl Coordinator {
 
     pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
         self.0.delete_key(key_id)
+    }
+
+    pub fn delete_share(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        device_id: DeviceId,
+    ) -> Result<()> {
+        self.0.delete_share(access_structure_ref, device_id)
     }
 
     pub fn wipe_device_data(&self, device_id: DeviceId) {
