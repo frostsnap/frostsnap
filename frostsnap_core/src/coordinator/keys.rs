@@ -88,4 +88,8 @@ pub enum KeyMutation {
         share_index: ShareIndex,
     },
     DeleteKey(KeyId),
+    DeleteShare {
+        access_structure_ref: AccessStructureRef,
+        device_id: DeviceId,
+    },
 }

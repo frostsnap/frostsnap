@@ -1,8 +1,10 @@
 use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::EnterPhysicalId;
+use frostsnap_core::{EnterPhysicalId, WireSignTask};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use schnorr_fun::Schnorr;
+use std::collections::BTreeSet;
 
 mod common;
 mod env;
@@ -466,5 +468,81 @@ fn consolidate_backup_with_polynomial_checksum_validation() {
             physical_backup_phase.backup.share_image.index
         ),
         "Coordinator should know about the consolidated share"
+    );
+}
+
+#[test]
+fn delete_share_and_recover_then_sign() {
+    let schnorr = Schnorr::<sha2::Sha256>::verify_only();
+    let mut test_rng = ChaCha20Rng::from_seed([101u8; 32]);
+    let mut env = TestEnv::default();
+
+    // Create a 2-of-3 key with nonces ready for signing
+    let mut run =
+        Run::start_after_keygen_and_nonces(3, 2, &mut env, &mut test_rng, 2, KeyPurpose::Test);
+
+    let device_list: Vec<_> = run.device_set().into_iter().collect();
+    let key_data = run.coordinator.iter_keys().next().unwrap().clone();
+    let access_structure_ref = key_data
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+
+    // Delete share from device 2
+    let device_to_delete = device_list[2];
+    run.coordinator
+        .delete_share(access_structure_ref, device_to_delete)
+        .expect("Should delete share");
+
+    // Verify device 2 is no longer in the access structure
+    let access_structure = run
+        .coordinator
+        .get_access_structure(access_structure_ref)
+        .unwrap();
+    assert!(
+        !access_structure.devices().any(|d| d == device_to_delete),
+        "Device should no longer be in access structure"
+    );
+
+    // Ask the device what shares it has - the test env will auto-recover via recover_share()
+    let messages = run.coordinator.request_held_shares(device_to_delete);
+    run.extend(messages);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    // Verify device 2 is back in the access structure
+    let access_structure = run
+        .coordinator
+        .get_access_structure(access_structure_ref)
+        .unwrap();
+    assert!(
+        access_structure.devices().any(|d| d == device_to_delete),
+        "Device should be back in access structure"
+    );
+
+    // Sign with devices [1, 2] to prove the restored share works
+    env.signatures.clear();
+    let task2 = WireSignTask::Test {
+        message: "after restoration".into(),
+    };
+    let checked_task2 = task2
+        .clone()
+        .check(key_data.complete_key.master_appkey, KeyPurpose::Test)
+        .unwrap();
+    let signing_set2 = BTreeSet::from_iter([device_list[1], device_list[2]]);
+    let session_id2 = run
+        .coordinator
+        .start_sign(access_structure_ref, task2, &signing_set2, &mut test_rng)
+        .unwrap();
+
+    for &device_id in &signing_set2 {
+        let sign_req =
+            run.coordinator
+                .request_device_sign(session_id2, device_id, TEST_ENCRYPTION_KEY);
+        run.extend(sign_req);
+    }
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    assert!(
+        checked_task2.verify_final_signatures(&schnorr, env.signatures.get(&session_id2).unwrap())
     );
 }

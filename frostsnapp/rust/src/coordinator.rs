@@ -879,6 +879,25 @@ impl FfiCoordinator {
         Ok(())
     }
 
+    pub fn delete_share(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        device_id: DeviceId,
+    ) -> Result<()> {
+        {
+            let mut db = self.db.lock().unwrap();
+            let mut coordinator = self.coordinator.lock().unwrap();
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                coordinator
+                    .delete_share(access_structure_ref, device_id)
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                Ok(())
+            })?;
+        }
+        self.emit_key_state();
+        Ok(())
+    }
+
     pub fn sub_device_events(&self, new_stream: impl Sink<api::device_list::DeviceListUpdate>) {
         let mut device_list_stream = self.device_list_stream.lock().unwrap();
         let mut device_list = self.device_list.lock().unwrap();
