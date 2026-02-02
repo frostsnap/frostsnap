@@ -15,6 +15,13 @@ rustup target add riscv32imc-unknown-none-elf
 
 - **Debian/Ubuntu**: `apt install gcc-riscv32-unknown-elf`
 - **Arch**: Install `riscv-gnu-toolchain-bin` from AUR
+- **MacOS**:
+
+  ```bash
+  brew tap riscv-software-src/riscv
+  brew install riscv-tools
+  ```
+
 - **Other**: Use `just fetch-riscv` to download pinned version
 
 ### Build and flash
