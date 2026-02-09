@@ -8,6 +8,7 @@ use frostsnap_core::{
     tweak::BitcoinBip32Path,
     AccessStructureRef,
 };
+use frostsnap_widgets::Frac;
 
 pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
@@ -75,6 +76,9 @@ pub enum Workflow {
         rand_seed: u32,
     },
     FirmwareUpgrade(FirmwareUpgradeStatus),
+    EraseProgress {
+        progress: Frac,
+    },
 }
 
 impl Workflow {
@@ -100,7 +104,7 @@ pub enum Prompt {
         firmware_digest: Sha256Digest,
         size: u32,
     },
-    WipeDevice,
+    EraseDevice,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -136,5 +140,5 @@ pub enum UiEvent {
         access_structure_ref: AccessStructureRef,
     },
     UpgradeConfirm,
-    WipeDataConfirm,
+    EraseDataConfirm,
 }

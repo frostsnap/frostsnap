@@ -8,6 +8,7 @@ use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
 use frostsnap_coordinator::backup_run::BackupState;
 use frostsnap_coordinator::enter_physical_backup::{EnterPhysicalBackup, EnterPhysicalBackupState};
+use frostsnap_coordinator::erase_device::{EraseDevice, EraseDeviceState};
 use frostsnap_coordinator::firmware_upgrade::{
     FirmwareUpgradeConfirmState, FirmwareUpgradeProtocol,
 };
@@ -917,12 +918,13 @@ impl FfiCoordinator {
         self.device_list.lock().unwrap().get_device(id)
     }
 
-    pub fn wipe_device_data(&self, id: DeviceId) {
-        self.usb_sender.wipe_device_data(id);
+    pub fn erase_device(&self, id: DeviceId, sink: impl Sink<EraseDeviceState>) {
+        let ui_protocol = EraseDevice::new(id, sink);
+        self.start_protocol(ui_protocol);
     }
 
-    pub fn wipe_all_devices(&self) {
-        self.usb_sender.wipe_all()
+    pub fn erase_all_devices(&self) {
+        self.usb_sender.erase_all()
     }
 
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {

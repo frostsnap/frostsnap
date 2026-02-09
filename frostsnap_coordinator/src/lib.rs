@@ -1,6 +1,7 @@
 pub mod backup_run;
 pub mod display_backup;
 pub mod enter_physical_backup;
+pub mod erase_device;
 pub mod firmware;
 pub mod firmware_upgrade;
 pub mod keygen;

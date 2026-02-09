@@ -773,7 +773,7 @@ impl UsbSender {
         self.sender.send(message).expect("receiver exists")
     }
 
-    pub fn wipe_device_data(&self, device_id: DeviceId) {
+    pub fn erase_device_data(&self, device_id: DeviceId) {
         event!(
             Level::INFO,
             device_id = device_id.to_string(),
@@ -782,16 +782,16 @@ impl UsbSender {
         self.sender
             .send(CoordinatorSendMessage::to(
                 device_id,
-                CoordinatorSendBody::DataWipe,
+                CoordinatorSendBody::DataErase,
             ))
             .expect("receiver exists");
     }
 
-    pub fn wipe_all(&self) {
+    pub fn erase_all(&self) {
         self.sender
             .send(CoordinatorSendMessage {
                 target_destinations: Destination::All,
-                message_body: CoordinatorSendBody::DataWipe,
+                message_body: CoordinatorSendBody::DataErase,
             })
             .expect("receiver exists");
     }
