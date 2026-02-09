@@ -121,6 +121,16 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
         .map_err(|e| e.kind())
     }
 
+    pub fn erase_sectors(&self, start_sector: u32, count: u32) -> Result<(), NorFlashErrorKind> {
+        let end_sector = start_sector + count;
+        if end_sector > self.n_sectors {
+            return Err(NorFlashErrorKind::OutOfBounds);
+        }
+        let start = (self.offset_sector + start_sector) * SECTOR_SIZE as u32;
+        let end = (self.offset_sector + end_sector) * SECTOR_SIZE as u32;
+        NorFlash::erase(&mut *self.flash.borrow_mut(), start, end).map_err(|e| e.kind())
+    }
+
     pub fn erase_all(&self) -> Result<(), NorFlashErrorKind> {
         let start = self.offset_sector * SECTOR_SIZE as u32;
         NorFlash::erase(
@@ -349,6 +359,48 @@ mod test {
             [42; 4].as_slice()
         );
         assert_eq!(&test.borrow().0[4096 + 8..4096 + 8 + 4], [84; 4].as_slice());
+    }
+
+    #[test]
+    fn erase_sectors() {
+        let test = RefCell::new(TestNorFlash::new());
+        // offset 1, 3 sectors
+        let partition = FlashPartition::new(&test, 1, 3, "test");
+
+        // Write non-0xff data to all 3 sectors
+        for sector in 0..3 {
+            partition
+                .nor_write(sector * SECTOR_SIZE as u32, &[0x42; 4])
+                .unwrap();
+        }
+
+        // Erase first 2 sectors
+        partition.erase_sectors(0, 2).unwrap();
+
+        // First 2 sectors should be erased (0xff)
+        for sector in 0..2u32 {
+            let data = partition.read_sector(sector).unwrap();
+            assert!(
+                data.iter().all(|b| *b == 0xff),
+                "sector {sector} should be erased"
+            );
+        }
+
+        // Third sector should still have data
+        let data = partition.read_sector(2).unwrap();
+        assert_eq!(&data[..4], &[0x42; 4]);
+
+        // Erase the last sector
+        partition.erase_sectors(2, 1).unwrap();
+        let data = partition.read_sector(2).unwrap();
+        assert!(data.iter().all(|b| *b == 0xff), "sector 2 should be erased");
+
+        // Out of bounds: start within, end beyond
+        assert!(partition.erase_sectors(2, 2).is_err());
+        // Out of bounds: start beyond
+        assert!(partition.erase_sectors(3, 1).is_err());
+        // Exact boundary should work
+        assert!(partition.erase_sectors(0, 3).is_ok());
     }
 
     proptest! {

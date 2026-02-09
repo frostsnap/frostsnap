@@ -277,6 +277,34 @@ impl FrostCoordinator {
                     );
                 }
             },
+            Keygen(keys::KeyMutation::DeleteShare {
+                access_structure_ref,
+                device_id,
+            }) => match self.keys.get_mut(&access_structure_ref.key_id) {
+                Some(key_data) => {
+                    match key_data
+                        .complete_key
+                        .access_structures
+                        .get_mut(&access_structure_ref.access_structure_id)
+                    {
+                        Some(access_structure) => {
+                            access_structure.device_to_share_index.remove(&device_id)?;
+                        }
+                        None => {
+                            fail!(
+                                "share deleted from non-existent access structure {:?}",
+                                access_structure_ref
+                            );
+                        }
+                    }
+                }
+                None => {
+                    fail!(
+                        "share deleted from non-existent key: {}",
+                        access_structure_ref.key_id
+                    );
+                }
+            },
             Keygen(keys::KeyMutation::DeleteKey(key_id)) => {
                 self.keys.remove(&key_id)?;
                 self.key_order.retain(|&entry| entry != key_id);
@@ -1325,6 +1353,41 @@ impl FrostCoordinator {
         }
     }
 
+    pub fn delete_share(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        device_id: DeviceId,
+    ) -> Result<(), DeleteShareError> {
+        for session in self.active_signing_sessions.values() {
+            if session.access_structure_ref() == access_structure_ref {
+                let is_involved = session.sent_req_to_device.contains(&device_id)
+                    || session.has_received_from(device_id);
+                if is_involved {
+                    return Err(DeleteShareError::DeviceInActiveSignSession);
+                }
+            }
+        }
+
+        if let Some(key) = self.keys.get(&access_structure_ref.key_id) {
+            if let Some(access_structure) = key
+                .complete_key
+                .access_structures
+                .get(&access_structure_ref.access_structure_id)
+            {
+                if access_structure
+                    .device_to_share_index
+                    .contains_key(&device_id)
+                {
+                    self.mutate(Mutation::Keygen(keys::KeyMutation::DeleteShare {
+                        access_structure_ref,
+                        device_id,
+                    }));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn all_used_nonce_streams(&self) -> BTreeSet<NonceStreamId> {
         self.active_signing_sessions
             .values()
@@ -1711,6 +1774,13 @@ impl CoordAccessStructure {
         map
     }
 
+    pub fn devices_by_share_index(&self) -> Vec<DeviceId> {
+        self.share_index_to_devices()
+            .into_values()
+            .flatten()
+            .collect()
+    }
+
     pub fn iter_shares(&self) -> impl Iterator<Item = (DeviceId, ShareIndex)> + '_ {
         self.device_to_share_index
             .iter()
@@ -1771,6 +1841,27 @@ impl fmt::Display for StartSignError {
 #[cfg(feature = "std")]
 impl std::error::Error for StartSignError {}
 
+#[derive(Debug, Clone)]
+pub enum DeleteShareError {
+    DeviceInActiveSignSession,
+}
+
+impl fmt::Display for DeleteShareError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DeleteShareError::DeviceInActiveSignSession => {
+                write!(
+                    f,
+                    "Cannot delete device while it is involved in an active signing session"
+                )
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for DeleteShareError {}
+
 /// Mutations to the coordinator state
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq, Kind)]
 pub enum Mutation {
@@ -1792,6 +1883,10 @@ impl Mutation {
                 MasterAppkey::from_xpub_unchecked(shared_key).key_id()
             }
             Mutation::Keygen(keys::KeyMutation::NewShare {
+                access_structure_ref,
+                ..
+            }) => access_structure_ref.key_id,
+            Mutation::Keygen(keys::KeyMutation::DeleteShare {
                 access_structure_ref,
                 ..
             }) => access_structure_ref.key_id,

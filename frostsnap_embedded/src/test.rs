@@ -37,8 +37,9 @@ impl nor_flash::NorFlash for TestNorFlash {
     const WRITE_SIZE: usize = WORD_SIZE as usize;
     const ERASE_SIZE: usize = 4096;
 
-    fn erase(&mut self, _from: u32, _to: u32) -> Result<(), Self::Error> {
-        todo!("not doing erase test yet")
+    fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+        self.0[from as usize..to as usize].fill(0xff);
+        Ok(())
     }
 
     fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {

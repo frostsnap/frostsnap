@@ -162,6 +162,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 }
             }
 
+            // If we're already showing EraseProgress, just update the progress
+            (WidgetTree::EraseProgress { widget }, Workflow::EraseProgress { progress }) => {
+                widget.update_progress(*progress);
+                return;
+            }
+
             // If we're showing KeygenCheck and get another KeyGen prompt, we need a new one
             // because the security code would be different
             _ => {} // Different widget types, need to switch
@@ -281,11 +287,11 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             new_name: Some(new_name.clone()),
                         }
                     }
-                    Prompt::WipeDevice => {
+                    Prompt::EraseDevice => {
                         use frostsnap_widgets::DefaultTextStyle;
                         use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
 
-                        // Create warning text for device wipe
+                        // Create warning text for device erase
                         let prompt_text = "WARNING!\n\nErase all data?\n\nHold to confirm";
 
                         let text_widget =
@@ -296,7 +302,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         let hold_to_confirm =
                             HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, text_widget);
 
-                        WidgetTree::WipeDevicePrompt {
+                        WidgetTree::EraseDevicePrompt {
                             widget: Box::new(hold_to_confirm),
                             confirmed: false,
                         }
@@ -364,6 +370,11 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 });
 
                 WidgetTree::FirmwareUpgradeProgress { widget, status }
+            }
+
+            Workflow::EraseProgress { progress } => {
+                let widget = Box::new(frostsnap_widgets::EraseProgress::new(progress));
+                WidgetTree::EraseProgress { widget }
             }
         };
 
@@ -472,11 +483,11 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     }
                 }
             }
-            WidgetTree::WipeDevicePrompt { widget, confirmed } => {
-                // Check if the wipe device prompt was confirmed and we haven't already sent the event
+            WidgetTree::EraseDevicePrompt { widget, confirmed } => {
+                // Check if the erase device prompt was confirmed and we haven't already sent the event
                 if widget.is_completed() && !*confirmed {
                     *confirmed = true;
-                    return Some(UiEvent::WipeDataConfirm);
+                    return Some(UiEvent::EraseDataConfirm);
                 }
             }
             _ => {}

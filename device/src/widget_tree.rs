@@ -8,8 +8,8 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     layout::*,
     sign_prompt::SignTxPrompt,
-    DeviceNameScreen, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, HoldToConfirm,
-    SignMessageConfirm, Standby, Text,
+    DeviceNameScreen, EraseProgress, FirmwareUpgradeConfirm, FirmwareUpgradeProgress,
+    HoldToConfirm, SignMessageConfirm, Standby, Text,
 };
 
 use crate::ui::FirmwareUpgradeStatus;
@@ -62,8 +62,8 @@ pub enum WidgetTree {
         new_name: Option<frostsnap_comms::DeviceName>,
     },
 
-    /// Device wipe confirmation prompt
-    WipeDevicePrompt {
+    /// Device erase confirmation prompt
+    EraseDevicePrompt {
         widget: Box<HoldToConfirm<Text>>,
         confirmed: bool,
     },
@@ -82,6 +82,9 @@ pub enum WidgetTree {
         widget: Box<EnterShareScreen>,
         phase: Option<EnterBackupPhase>,
     },
+
+    /// Erase progress screen
+    EraseProgress { widget: Box<EraseProgress> },
 }
 
 impl Default for WidgetTree {
