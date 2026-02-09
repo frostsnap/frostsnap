@@ -3,6 +3,7 @@ use crate::sink_wrap::SinkWrap;
 use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
+pub use frostsnap_coordinator::erase_device::EraseDeviceState;
 pub use frostsnap_core::coordinator::restoration::RestorationState;
 pub use frostsnap_core::coordinator::CoordAccessStructure as AccessStructure;
 use frostsnap_core::{
@@ -17,6 +18,12 @@ use tracing::{event, Level};
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
 pub use super::backup_run::{BackupDevice, BackupRun};
+
+#[frb(mirror(EraseDeviceState), non_opaque)]
+pub enum _EraseDeviceState {
+    WaitingForConfirmation,
+    Confirmed,
+}
 
 #[derive(Clone, Debug)]
 pub struct KeyState {
@@ -229,12 +236,12 @@ impl Coordinator {
         self.0.delete_share(access_structure_ref, device_id)
     }
 
-    pub fn wipe_device_data(&self, device_id: DeviceId) {
-        self.0.wipe_device_data(device_id);
+    pub fn erase_device(&self, device_id: DeviceId, sink: StreamSink<EraseDeviceState>) {
+        self.0.erase_device(device_id, SinkWrap(sink));
     }
 
-    pub fn wipe_all_devices(&self) {
-        self.0.wipe_all_devices();
+    pub fn erase_all_devices(&self) {
+        self.0.erase_all_devices();
     }
 
     pub fn cancel_protocol(&self) {

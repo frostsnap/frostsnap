@@ -1262,9 +1262,9 @@ Future<void> _showEraseAllDialog(BuildContext context) async {
     }
   });
 
-  // Show dialog and perform wipe
+  // Show dialog and perform erase
   final dialogFuture = controller.batchAddActionNeeded(context, devicesToErase);
-  await coord.wipeAllDevices();
+  await coord.eraseAllDevices();
 
   // Wait for dialog to dismiss
   await dialogFuture;

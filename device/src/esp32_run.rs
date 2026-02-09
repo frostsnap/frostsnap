@@ -2,6 +2,7 @@
 
 use crate::partitions::PartitionExt;
 use crate::{
+    erase,
     flash::{Mutation, MutationLog},
     io::SerialInterface,
     ota,
@@ -140,6 +141,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let mut upstream_connection = UpstreamConnection::new(device_id);
     ui.set_upstream_connection_state(upstream_connection.state);
     let mut upgrade: Option<ota::FirmwareUpgradeMode> = None;
+    let mut erase_state: Option<erase::Erase> = None;
     let mut pending_device_name: Option<frostsnap_comms::DeviceName> = None;
 
     ui.clear_busy_task();
@@ -356,6 +358,18 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     let message = upgrade_.poll(ui);
                     upstream_connection.send_to_coordinator(message);
                 }
+
+                if let Some(erase_) = &mut erase_state {
+                    match erase_.poll(&full_nvs, ui) {
+                        erase::ErasePoll::Pending => {}
+                        erase::ErasePoll::SendConfirmation(msg) => {
+                            upstream_connection.send_to_coordinator([*msg]);
+                        }
+                        erase::ErasePoll::Reset => {
+                            reset(upstream_serial);
+                        }
+                    }
+                }
             }
         }
 
@@ -432,8 +446,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     }
                     CoordinatorUpgradeMessage::EnterUpgradeMode => {}
                 },
-                CoordinatorSendBody::DataWipe => {
-                    ui.set_workflow(ui::Workflow::prompt(ui::Prompt::WipeDevice))
+                CoordinatorSendBody::DataErase => {
+                    ui.set_workflow(ui::Workflow::prompt(ui::Prompt::EraseDevice))
                 }
                 CoordinatorSendBody::Challenge(challenge) => {
                     // Can only respond if we have hardware RSA and certificate
@@ -637,9 +651,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         signer.tell_coordinator_about_backup_load_result(phase, share_backup),
                     );
                 }
-                UiEvent::WipeDataConfirm => {
-                    full_nvs.erase_all().expect("failed to erase nvs");
-                    reset(upstream_serial);
+                UiEvent::EraseDataConfirm => {
+                    erase_state = Some(erase::Erase::new(&full_nvs));
                 }
             }
         }
