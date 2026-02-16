@@ -53,7 +53,12 @@ impl SigningDispatcher {
             key_id: active_sign_session.key_id,
             session_id: active_sign_session.session_id(),
             got_signatures: active_sign_session.received_from().collect(),
-            targets: active_sign_session.init.nonces.keys().cloned().collect(),
+            targets: active_sign_session
+                .init
+                .local_nonces
+                .keys()
+                .cloned()
+                .collect(),
             finished_signatures: None,
             sink: Box::new(sink),
             aborted: None,

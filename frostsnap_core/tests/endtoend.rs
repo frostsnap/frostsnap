@@ -799,3 +799,182 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
 
     assert_eq!(nonces_available, available_at_start);
 }
+
+/// Tests the staging signing API with two independent coordinators.
+///
+/// This simulates a remote signing scenario where multiple parties coordinate signing without
+/// being connected to the same coordinator. The key testing insight is that we can create two
+/// coordinators with the **same FROST key** but **different local devices** by:
+///
+/// 1. Running keygen with a single coordinator and all devices
+/// 2. Cloning the `Run` **before** nonce synchronization
+/// 3. Partitioning devices between the two runs (each keeps different devices)
+/// 4. Syncing nonces separately on each coordinator with only its local devices
+///
+/// After this setup, each coordinator only knows the nonces for its own devices, but both share
+/// the same underlying FROST key. This mirrors the real-world scenario where different apps
+/// each manage their own devices but cooperate to sign transactions.
+///
+/// The test then exercises the full staging flow:
+/// - Both coordinators create staging sessions for the same sign task
+/// - Each adds their local device and extracts binonces
+/// - Binonces are exchanged (simulating communication over e.g. Nostr)
+/// - Both promote to active sessions and verify they get the same session ID
+/// - Each coordinator signs with its local device
+/// - Signature shares are exchanged
+/// - Both coordinators complete the session and produce identical valid signatures
+#[test]
+fn test_staging_signing_api_two_coordinators() {
+    use frostsnap_core::coordinator::StagingSessionId;
+
+    let n_parties = 3;
+    let threshold = 2;
+    let mut env = TestEnv::default();
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+
+    // Keygen with all devices under one coordinator
+    let mut run1 = Run::start_after_keygen(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        KeyPurpose::Test,
+    );
+
+    // Clone BEFORE nonce sync - both have same key, same devices
+    let mut run2 = run1.clone();
+
+    // Partition devices between coordinators
+    let device_ids: Vec<_> = run1.devices.keys().copied().collect();
+    run1.devices.retain(|id, _| *id == device_ids[0]);
+    run2.devices.retain(|id, _| *id == device_ids[1]);
+    run1.start_devices.retain(|id, _| *id == device_ids[0]);
+    run2.start_devices.retain(|id, _| *id == device_ids[1]);
+
+    // Sync nonces separately
+    for run in [&mut run1, &mut run2] {
+        run.extend(run.coordinator.maybe_request_nonce_replenishment(
+            &run.device_set(),
+            2,
+            &mut test_rng,
+        ));
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    }
+
+    // Get access structure
+    let access_structure_ref = run1
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+
+    let sign_task = WireSignTask::Test {
+        message: "staging test".into(),
+    };
+
+    let staging_id = StagingSessionId::random(&mut test_rng);
+
+    // Both coordinators create staging sessions for the same task
+    for run in [&mut run1, &mut run2] {
+        run.coordinator
+            .stage_sign(staging_id, access_structure_ref, sign_task.clone())
+            .unwrap();
+    }
+
+    // Each adds their LOCAL device → gets binonces to share
+    let binonces: Vec<_> = [(&mut run1, device_ids[0]), (&mut run2, device_ids[1])]
+        .into_iter()
+        .map(|(run, device_id)| {
+            run.coordinator
+                .add_device_to_staging(staging_id, device_id)
+                .unwrap()
+        })
+        .collect();
+
+    // Exchange binonces - add all to both coordinators to test idempotency
+    for run in [&mut run1, &mut run2] {
+        for b in &binonces {
+            run.coordinator
+                .add_remote_binonces_to_staging(staging_id, b.clone())
+                .unwrap();
+        }
+    }
+
+    for run in [&mut run1, &mut run2] {
+        run.check_mutations();
+    }
+
+    // Both promote to active sessions and should get the same session ID
+    let session_ids: Vec<_> = [&mut run1, &mut run2]
+        .into_iter()
+        .map(|run| run.coordinator.promote_staging_session(staging_id).unwrap())
+        .collect();
+    assert_eq!(
+        session_ids[0], session_ids[1],
+        "both coordinators should derive the same session ID"
+    );
+    let session_id = session_ids[0];
+
+    // Verify sessions are active and do device signing
+    for (run, device_id) in [(&mut run1, device_ids[0]), (&mut run2, device_ids[1])] {
+        assert!(run
+            .coordinator
+            .active_signing_sessions_by_ssid()
+            .contains_key(&session_id));
+
+        let sign_req =
+            run.coordinator
+                .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+        run.extend(sign_req);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+        let session = run
+            .coordinator
+            .active_signing_sessions_by_ssid()
+            .get(&session_id)
+            .unwrap();
+        assert!(session.has_received_from(device_id));
+    }
+
+    // Collect all signature shares from both coordinators
+    let all_shares: Vec<_> = [&run1, &run2]
+        .into_iter()
+        .flat_map(|run| run.coordinator.get_signature_shares(session_id).unwrap())
+        .collect();
+
+    // Add all shares to both coordinators
+    for run in [&mut run1, &mut run2] {
+        for shares in &all_shares {
+            run.coordinator
+                .add_remote_signature_shares(session_id, shares.clone())
+                .unwrap();
+        }
+    }
+
+    // Complete the sign session on both coordinators
+    let signatures: Vec<_> = [&mut run1, &mut run2]
+        .into_iter()
+        .map(|run| run.coordinator.complete_sign_session(session_id).unwrap())
+        .collect();
+
+    // Both should produce the same signatures
+    assert_eq!(
+        signatures[0], signatures[1],
+        "both coordinators should produce the same signatures"
+    );
+
+    // Verify signatures are valid
+    let schnorr = Schnorr::<sha2::Sha256>::verify_only();
+    let key_data = run1.coordinator.iter_keys().next().unwrap();
+    let checked_task = sign_task
+        .check(key_data.complete_key.master_appkey, KeyPurpose::Test)
+        .unwrap();
+    assert!(checked_task.verify_final_signatures(
+        &schnorr,
+        &signatures[0]
+            .iter()
+            .map(|s| (*s).into_decoded().unwrap())
+            .collect::<Vec<_>>()
+    ));
+}

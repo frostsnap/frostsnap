@@ -4,7 +4,7 @@ mod common;
 use frostsnap_core::coordinator::{
     keys::KeyMutation,
     restoration::{PendingConsolidation, RestorationMutation},
-    signing::SigningMutation,
+    signing::{SigningMutation, StagingSessionId, StagingSignSession},
     ActiveSignSession, CompleteKey, CoordAccessStructure, Mutation, SignSessionProgress, StartSign,
 };
 use frostsnap_core::device::KeyPurpose;
@@ -137,7 +137,7 @@ fn test_all_coordinator_mutations() {
     let active_sign_session = ActiveSignSession {
         progress: vec![sign_session_progress],
         init: StartSign {
-            nonces: {
+            local_nonces: {
                 let mut nonces = BTreeMap::new();
                 // Add some device nonce states
                 nonces.insert(
@@ -293,6 +293,17 @@ fn test_all_coordinator_mutations() {
         Mutation::Signing(SigningMutation::ForgetFinishedSignSession {
             session_id: SignSessionId([12u8; 32]),
         }),
+        Mutation::Signing(SigningMutation::NewStagingSession {
+            staging_id: StagingSessionId([15u8; 32]),
+            session: StagingSignSession {
+                sign_task: WireSignTask::Test {
+                    message: "staging test".into(),
+                },
+                access_structure_ref,
+                threshold: 2,
+                signers: Default::default(),
+            },
+        }),
     ];
 
     // Test each mutation
@@ -414,6 +425,19 @@ fn test_all_coordinator_mutations() {
                     mutation,
                     "0207010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202020103030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af01020108746573745f6b657901010001"
                 );
+            }
+            Mutation::Signing(SigningMutation::NewStagingSession { .. }) => {
+                // Hex needs to be regenerated after struct changes
+                let encoded =
+                    bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
+                let hex = frostsnap_core::hex::encode(&encoded);
+                assert_bincode_hex_eq!(mutation, &hex);
+            }
+            Mutation::Signing(SigningMutation::StagingAddSigner { .. }) => {
+                unreachable!("not tested yet")
+            }
+            Mutation::Signing(SigningMutation::CancelStagingSession { .. }) => {
+                unreachable!("not tested yet")
             }
         }
     }

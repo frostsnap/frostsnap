@@ -88,7 +88,7 @@ impl ActiveSignSessionExt for ActiveSignSession {
         let state = SigningState {
             session_id,
             got_shares: got_shares.into_iter().collect(),
-            needed_from: session_init.nonces.keys().copied().collect(),
+            needed_from: session_init.local_nonces.keys().copied().collect(),
             finished_signatures: None,
             aborted: None,
             connected_but_need_request: Default::default(),
