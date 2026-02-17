@@ -14,6 +14,15 @@ Future<NostrSetupResult> showNostrSetupDialog(BuildContext context) async {
   return result ?? NostrSetupResult.cancelled;
 }
 
+/// Ensures a Nostr identity exists, prompting the user if needed.
+/// Returns true if identity is ready, false if the user cancelled.
+Future<bool> ensureNostrIdentity(BuildContext context) async {
+  final nostr = NostrContext.of(context);
+  if (nostr.nostrSettings.hasIdentity()) return true;
+  final result = await showNostrSetupDialog(context);
+  return result != NostrSetupResult.cancelled;
+}
+
 class _NostrSetupDialog extends StatefulWidget {
   const _NostrSetupDialog();
 
@@ -67,7 +76,7 @@ class _NostrSetupDialogState extends State<_NostrSetupDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorText = 'Invalid nsec: Please check and try again';
+        _errorText = 'Failed to import nsec: $e';
         _isLoading = false;
       });
     }

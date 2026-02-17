@@ -1,9 +1,12 @@
-use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
+use crate::frb_generated::StreamSink;
+use crate::sink_wrap::SinkWrap;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
-use frostsnap_core::KeyId;
+use frostsnap_coordinator::persist::Persisted;
+use frostsnap_core::{coordinator::FrostCoordinator, AccessStructureRef, KeyId, WireSignTask};
 use frostsnap_nostr::{
-    ChannelClient, ChannelHandle, Client, Keys, NostrDatabaseExt, NostrLMDB, NostrProfile, ToBech32,
+    ChannelClient, ChannelHandle, Client, Keys, NostrDatabaseExt, NostrLMDB, NostrProfile,
+    ToBech32,
 };
 use rusqlite::Connection;
 use std::{
@@ -195,11 +198,15 @@ impl NostrSettings {
 pub struct NostrClient {
     client: Client,
     channels: Mutex<HashMap<[u8; 32], ChannelHandle>>,
+    coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
+    db: Arc<Mutex<Connection>>,
 }
 
 impl NostrClient {
     /// Connect to default relays and return a client ready for use.
-    pub async fn connect() -> Result<Self> {
+    pub async fn connect(coordinator: &super::coordinator::Coordinator) -> Result<Self> {
+        let coordinator_arc = coordinator.0.coordinator.clone();
+        let db = coordinator.0.db.clone();
         let database = get_nostr_lmdb()?;
         let client = Client::builder().database(database).build();
 
@@ -214,6 +221,8 @@ impl NostrClient {
         Ok(Self {
             client,
             channels: Mutex::new(HashMap::new()),
+            coordinator: coordinator_arc,
+            db,
         })
     }
 
@@ -246,7 +255,12 @@ impl NostrClient {
     pub async fn connect_to_channel(&self, key_id: KeyId, sink: StreamSink<FfiChannelEvent>) {
         let channel_client = ChannelClient::new(&key_id);
         let handle = match channel_client
-            .run(self.client.clone(), SinkWrap(sink))
+            .run(
+                self.client.clone(),
+                self.coordinator.clone(),
+                self.db.clone(),
+                SinkWrap(sink),
+            )
             .await
         {
             Ok(h) => h,
@@ -272,15 +286,91 @@ impl NostrClient {
         reply_to: Option<NostrEventId>,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
-        let handle = self
-            .channels
-            .lock()
-            .unwrap()
-            .get(&key_id.to_bytes())
-            .cloned()
-            .ok_or_else(|| anyhow!("channel not connected"))?;
+        let handle = self.get_handle(key_id)?;
         let event_id = handle
             .send_message(content, reply_to.map(|id| id.into()), &keys)
+            .await?;
+        Ok(event_id.into())
+    }
+
+    /// Propose a transaction for signing over the channel.
+    pub async fn send_sign_request(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        nsec: String,
+        unsigned_tx: super::signing::UnsignedTx,
+        message: Option<String>,
+    ) -> Result<NostrEventId> {
+        let keys = Keys::parse(&nsec)?;
+        let sign_task = WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone());
+        let handle = self.get_handle(access_structure_ref.key_id)?;
+        let event_id = handle
+            .send_sign_request(&keys, sign_task, access_structure_ref, message)
+            .await?;
+        Ok(event_id.into())
+    }
+
+    /// Propose a test message for signing over the channel.
+    pub async fn send_test_sign_request(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        nsec: String,
+        test_message: String,
+        message: Option<String>,
+    ) -> Result<NostrEventId> {
+        let keys = Keys::parse(&nsec)?;
+        let sign_task = WireSignTask::Test { message: test_message };
+        let handle = self.get_handle(access_structure_ref.key_id)?;
+        let event_id = handle
+            .send_sign_request(&keys, sign_task, access_structure_ref, message)
+            .await?;
+        Ok(event_id.into())
+    }
+
+    /// Offer to participate in signing. Allocates nonces from local device
+    /// and sends binonces over the channel.
+    pub async fn offer_to_sign(
+        &self,
+        key_id: KeyId,
+        nsec: String,
+        request_id: NostrEventId,
+        device_id: frostsnap_core::DeviceId,
+    ) -> Result<NostrEventId> {
+        let keys = Keys::parse(&nsec)?;
+        let staging_id =
+            frostsnap_core::coordinator::StagingSessionId(request_id.0);
+        let binonces = {
+            let mut coord = self.coordinator.lock().unwrap();
+            coord.staged_mutate(&mut *self.db.lock().unwrap(), |coord| {
+                Ok(coord.add_device_to_staging(staging_id, device_id)?)
+            })?
+        };
+        let handle = self.get_handle(key_id)?;
+        let event_id = handle
+            .send_sign_offer(&keys, request_id.into(), binonces)
+            .await?;
+        Ok(event_id.into())
+    }
+
+    /// Send signature shares for a device that has completed signing.
+    pub async fn send_sign_partial(
+        &self,
+        key_id: KeyId,
+        nsec: String,
+        request_id: NostrEventId,
+        session_id: frostsnap_core::SignSessionId,
+        device_id: frostsnap_core::DeviceId,
+    ) -> Result<NostrEventId> {
+        let keys = Keys::parse(&nsec)?;
+        let shares = {
+            let coord = self.coordinator.lock().unwrap();
+            coord
+                .get_device_signature_shares(session_id, device_id)
+                .ok_or_else(|| anyhow!("no signature shares for device"))?
+        };
+        let handle = self.get_handle(key_id)?;
+        let event_id = handle
+            .send_sign_partial(&keys, request_id.into(), session_id, shares)
             .await?;
         Ok(event_id.into())
     }
@@ -288,6 +378,15 @@ impl NostrClient {
     /// Disconnect from a channel.
     pub fn disconnect_channel(&self, key_id: KeyId) {
         self.channels.lock().unwrap().remove(&key_id.to_bytes());
+    }
+
+    fn get_handle(&self, key_id: KeyId) -> Result<ChannelHandle> {
+        self.channels
+            .lock()
+            .unwrap()
+            .get(&key_id.to_bytes())
+            .cloned()
+            .ok_or_else(|| anyhow!("channel not connected"))
     }
 }
 
@@ -464,6 +563,43 @@ pub enum FfiChannelEvent {
     GroupMetadata {
         members: Vec<FfiGroupMember>,
     },
+    SigningEvent(FfiSigningEvent),
+    SessionPromoted {
+        request_id: NostrEventId,
+        session_id: frostsnap_core::SignSessionId,
+    },
+    Error {
+        event_id: NostrEventId,
+        author: PublicKey,
+        timestamp: u64,
+        reason: String,
+    },
+}
+
+#[frb(non_opaque)]
+#[derive(Debug, Clone)]
+pub enum FfiSigningEvent {
+    Request {
+        event_id: NostrEventId,
+        author: PublicKey,
+        signing_details: super::signing::SigningDetails,
+        access_structure_ref: AccessStructureRef,
+        message: Option<String>,
+        timestamp: u64,
+    },
+    Offer {
+        event_id: NostrEventId,
+        author: PublicKey,
+        request_id: NostrEventId,
+        share_index: u32,
+        timestamp: u64,
+    },
+    Partial {
+        event_id: NostrEventId,
+        author: PublicKey,
+        request_id: NostrEventId,
+        timestamp: u64,
+    },
 }
 
 #[frb(non_opaque)]
@@ -510,6 +646,73 @@ impl From<ChannelEvent> for FfiChannelEvent {
             }),
             ChannelEvent::GroupMetadata { members } => FfiChannelEvent::GroupMetadata {
                 members: members.into_iter().map(|m| m.into()).collect(),
+            },
+            ChannelEvent::Frostsnap(frostsnap_event) => {
+                use frostsnap_nostr::events::{FrostsnapEvent, SigningEvent};
+                match frostsnap_event {
+                    FrostsnapEvent::Signing(signing) => {
+                        FfiChannelEvent::SigningEvent(match signing {
+                            SigningEvent::Request {
+                                event_id,
+                                author,
+                                sign_task,
+                                access_structure_ref,
+                                message,
+                                timestamp,
+                            } => FfiSigningEvent::Request {
+                                event_id: event_id.into(),
+                                author,
+                                signing_details: super::signing::signing_details_from_wire_sign_task(sign_task),
+                                access_structure_ref,
+                                message,
+                                timestamp,
+                            },
+                            SigningEvent::Offer {
+                                event_id,
+                                author,
+                                request_id,
+                                binonces,
+                                timestamp,
+                            } => FfiSigningEvent::Offer {
+                                event_id: event_id.into(),
+                                author,
+                                request_id: request_id.into(),
+                                share_index: u32::try_from(binonces.share_index).expect("share index should fit in u32"),
+                                timestamp,
+                            },
+                            SigningEvent::Partial {
+                                event_id,
+                                author,
+                                request_id,
+                                timestamp,
+                                ..
+                            } => FfiSigningEvent::Partial {
+                                event_id: event_id.into(),
+                                author,
+                                request_id: request_id.into(),
+                                timestamp,
+                            },
+                        })
+                    }
+                }
+            }
+            ChannelEvent::SessionPromoted {
+                request_id,
+                session_id,
+            } => FfiChannelEvent::SessionPromoted {
+                request_id: request_id.into(),
+                session_id,
+            },
+            ChannelEvent::Error {
+                event_id,
+                author,
+                timestamp,
+                reason,
+            } => FfiChannelEvent::Error {
+                event_id: event_id.into(),
+                author,
+                timestamp,
+                reason,
             },
         }
     }

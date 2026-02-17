@@ -99,45 +99,46 @@ impl ActiveSignSessionExt for ActiveSignSession {
 
     #[frb(sync)]
     fn details(&self) -> SigningDetails {
-        let session_init = &self.init;
+        signing_details_from_wire_sign_task(self.init.group_request.sign_task.clone())
+    }
+}
 
-        let res = match session_init.group_request.sign_task.clone() {
-            WireSignTask::Test { message } => SigningDetails::Message { message },
-            WireSignTask::Nostr { event } => SigningDetails::Nostr {
-                id: event.id,
-                content: event.content,
-                hash_bytes: event.hash_bytes.to_lower_hex_string(),
-            },
-            WireSignTask::BitcoinTransaction(tx_temp) => {
-                let raw_tx = tx_temp.to_rust_bitcoin_tx();
-                let txid = raw_tx.compute_txid();
-                let is_mine = tx_temp
-                    .iter_locally_owned_inputs()
-                    .map(|(_, _, spk)| spk.spk())
-                    .chain(
-                        tx_temp
-                            .iter_locally_owned_outputs()
-                            .map(|(_, _, spk)| spk.spk()),
-                    )
-                    .collect::<HashSet<_>>();
-                let prevouts = tx_temp
-                    .inputs()
-                    .iter()
-                    .map(|input| (input.outpoint(), input.txout()))
-                    .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-                SigningDetails::Transaction {
-                    transaction: Transaction {
-                        inner: raw_tx,
-                        txid: txid.to_string(),
-                        confirmation_time: None,
-                        last_seen: None,
-                        prevouts,
-                        is_mine,
-                    },
-                }
+pub(crate) fn signing_details_from_wire_sign_task(sign_task: WireSignTask) -> SigningDetails {
+    match sign_task {
+        WireSignTask::Test { message } => SigningDetails::Message { message },
+        WireSignTask::Nostr { event } => SigningDetails::Nostr {
+            id: event.id,
+            content: event.content,
+            hash_bytes: event.hash_bytes.to_lower_hex_string(),
+        },
+        WireSignTask::BitcoinTransaction(tx_temp) => {
+            let raw_tx = tx_temp.to_rust_bitcoin_tx();
+            let txid = raw_tx.compute_txid();
+            let is_mine = tx_temp
+                .iter_locally_owned_inputs()
+                .map(|(_, _, spk)| spk.spk())
+                .chain(
+                    tx_temp
+                        .iter_locally_owned_outputs()
+                        .map(|(_, _, spk)| spk.spk()),
+                )
+                .collect::<HashSet<_>>();
+            let prevouts = tx_temp
+                .inputs()
+                .iter()
+                .map(|input| (input.outpoint(), input.txout()))
+                .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
+            SigningDetails::Transaction {
+                transaction: Transaction {
+                    inner: raw_tx,
+                    txid: txid.to_string(),
+                    confirmation_time: None,
+                    last_seen: None,
+                    prevouts,
+                    is_mine,
+                },
             }
-        };
-        res
+        }
     }
 }
 

@@ -1,20 +1,39 @@
 use crate::{
     channel::ChannelKeys,
-    events::{ChannelEvent, ConnectionState, GroupMember, NostrProfile},
+    events::{
+        ChannelEvent, ConnectionState, FrostsnapEvent, GroupMember, NostrProfile, SigningEvent,
+        SigningMessage,
+    },
 };
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use frostsnap_coordinator::Sink;
-use frostsnap_core::KeyId;
+use frostsnap_coordinator::{
+    persist::Persisted,
+    Sink,
+};
+use frostsnap_core::{
+    coordinator::{
+        FrostCoordinator, ParticipantBinonces, ParticipantSignatureShares, StagingSessionId,
+    },
+    AccessStructureRef, KeyId, SignSessionId, WireSignTask,
+};
 use nostr_sdk::{
     nips::nip44::v2::{self, ConversationKey},
     Alphabet, Client, Event, EventBuilder, EventId, Filter, Keys, Kind, PublicKey,
     RelayPoolNotification, SingleLetterTag, SyncOptions, Tag, TagKind,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::sync::mpsc;
 
 const PROFILE_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
+
+const KIND_FROSTSNAP_SIGNING: Kind = Kind::Custom(9001);
+
+const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
 /// Client for connecting to and communicating on a Nostr channel.
 pub struct ChannelClient {
@@ -35,6 +54,8 @@ impl ChannelClient {
     pub async fn run(
         self,
         client: Client,
+        coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
+        db: Arc<Mutex<rusqlite::Connection>>,
         sink: impl Sink<ChannelEvent> + Clone,
     ) -> Result<ChannelHandle> {
         sink.send(ChannelEvent::ConnectionState(ConnectionState::Connecting));
@@ -58,14 +79,16 @@ impl ChannelClient {
 
         for event in stored_events.into_iter() {
             seen_ids.insert(event.id);
-            if let Some(channel_event) = process_event(&event, &conversation_key) {
-                if let ChannelEvent::ChatMessage { author, .. } = &channel_event {
-                    if !members.contains_key(author) {
-                        members.insert(*author, None);
-                    }
+            let channel_event = process_event(&event, &conversation_key);
+            if let ChannelEvent::ChatMessage { ref author, .. } = channel_event {
+                if !members.contains_key(author) {
+                    members.insert(*author, None);
                 }
-                sink.send(channel_event);
             }
+            if let ChannelEvent::Frostsnap(ref frostsnap_event) = channel_event {
+                process_frostsnap_event(frostsnap_event, &coordinator, &db);
+            }
+            sink.send(channel_event);
         }
 
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<ChannelCommand>(32);
@@ -88,6 +111,8 @@ impl ChannelClient {
         let sync_filter = filter;
         let sync_sink = sink.clone();
         let sync_conversation_key = conversation_key.clone();
+        let sync_coordinator = coordinator.clone();
+        let sync_db = db.clone();
         tokio::spawn(async move {
             let sync_opts = SyncOptions::default();
             if let Err(e) = sync_client.sync(sync_filter.clone(), &sync_opts).await {
@@ -103,10 +128,12 @@ impl ChannelClient {
                         if seen_ids.contains(&event.id) {
                             continue;
                         }
-                        if let Some(channel_event) = process_event(&event, &sync_conversation_key) {
-                            sync_sink.send(channel_event);
-                            new_count += 1;
+                        let channel_event = process_event(&event, &sync_conversation_key);
+                        if let ChannelEvent::Frostsnap(ref frostsnap_event) = channel_event {
+                            process_frostsnap_event(frostsnap_event, &sync_coordinator, &sync_db);
                         }
+                        sync_sink.send(channel_event);
+                        new_count += 1;
                     }
                     if new_count > 0 {
                         tracing::debug!(count = new_count, "emitted events from sync");
@@ -159,6 +186,22 @@ impl ChannelClient {
                                     }
                                 }
                             }
+                            Some(ChannelCommand::SendSigningEvent { inner_event, local_event }) => {
+                                if let Some(frostsnap_event) = local_event {
+                                    let channel_event = ChannelEvent::Frostsnap(frostsnap_event.clone());
+                                    if let Some(promoted) = process_frostsnap_event(&frostsnap_event, &coordinator, &db) {
+                                        sink.send(promoted);
+                                    }
+                                    sink.send(channel_event);
+                                }
+                                if let Err(e) = send_prepared_message(
+                                    &client_for_task,
+                                    &channel_keys_for_task,
+                                    inner_event,
+                                ).await {
+                                    tracing::error!(error = %e, "failed to send signing event");
+                                }
+                            }
                             None => break,
                         }
                     }
@@ -169,20 +212,24 @@ impl ChannelClient {
                     notification = notifications.recv() => {
                         match notification {
                             Ok(RelayPoolNotification::Event { event, .. }) => {
-                                if let Some(channel_event) = process_event(&event, &conversation_key) {
-                                    if let ChannelEvent::ChatMessage { author, .. } = &channel_event {
-                                        if !members.contains_key(author) {
-                                            members.insert(*author, None);
-                                            emit_group_metadata(&sink, &members);
-                                            spawn_profile_fetch(
-                                                *author,
-                                                client_for_task.clone(),
-                                                profile_tx.clone(),
-                                            );
-                                        }
+                                let channel_event = process_event(&event, &conversation_key);
+                                if let ChannelEvent::ChatMessage { ref author, .. } = channel_event {
+                                    if !members.contains_key(author) {
+                                        members.insert(*author, None);
+                                        emit_group_metadata(&sink, &members);
+                                        spawn_profile_fetch(
+                                            *author,
+                                            client_for_task.clone(),
+                                            profile_tx.clone(),
+                                        );
                                     }
-                                    sink.send(channel_event);
                                 }
+                                if let ChannelEvent::Frostsnap(ref frostsnap_event) = channel_event {
+                                    if let Some(promoted) = process_frostsnap_event(frostsnap_event, &coordinator, &db) {
+                                        sink.send(promoted);
+                                    }
+                                }
+                                sink.send(channel_event);
                             }
                             Ok(RelayPoolNotification::Shutdown) => {
                                 sink.send(ChannelEvent::ConnectionState(
@@ -269,6 +316,10 @@ enum ChannelCommand {
         content: String,
         reply_to: Option<EventId>,
     },
+    SendSigningEvent {
+        inner_event: Event,
+        local_event: Option<FrostsnapEvent>,
+    },
 }
 
 /// Handle for sending messages to an active channel.
@@ -303,6 +354,85 @@ impl ChannelHandle {
         Ok(message_id)
     }
 
+    /// Send a sign request to the channel. Returns the inner event ID
+    /// (used as `StagingSessionId`).
+    pub async fn send_sign_request(
+        &self,
+        keys: &Keys,
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        message: Option<String>,
+    ) -> Result<EventId> {
+        let signing_msg = SigningMessage::Request {
+            sign_task: sign_task.clone(),
+            access_structure_ref,
+            message: message.clone(),
+        };
+        self.send_signing_message(keys, &signing_msg, None, move |event_id, author, timestamp| {
+            SigningEvent::Request {
+                event_id, author, sign_task, access_structure_ref, message, timestamp,
+            }
+        }).await
+    }
+
+    /// Send a sign offer (binonces) in reply to a sign request.
+    pub async fn send_sign_offer(
+        &self,
+        keys: &Keys,
+        request_id: EventId,
+        binonces: ParticipantBinonces,
+    ) -> Result<EventId> {
+        let message = SigningMessage::Offer { binonces: binonces.clone() };
+        self.send_signing_message(keys, &message, Some(request_id), move |event_id, author, timestamp| {
+            SigningEvent::Offer {
+                event_id, author, request_id, binonces, timestamp,
+            }
+        }).await
+    }
+
+    /// Send signature shares for an active signing session.
+    pub async fn send_sign_partial(
+        &self,
+        keys: &Keys,
+        request_id: EventId,
+        session_id: SignSessionId,
+        signature_shares: ParticipantSignatureShares,
+    ) -> Result<EventId> {
+        let message = SigningMessage::Partial {
+            session_id,
+            signature_shares: signature_shares.clone(),
+        };
+        self.send_signing_message(keys, &message, Some(request_id), move |event_id, author, timestamp| {
+            SigningEvent::Partial {
+                event_id, author, request_id, session_id, signature_shares, timestamp,
+            }
+        }).await
+    }
+
+    async fn send_signing_message(
+        &self,
+        keys: &Keys,
+        message: &SigningMessage,
+        reply_to: Option<EventId>,
+        make_event: impl FnOnce(EventId, PublicKey, u64) -> SigningEvent,
+    ) -> Result<EventId> {
+        let inner_event =
+            create_bincode_inner_event(keys, KIND_FROSTSNAP_SIGNING, message, reply_to).await?;
+        let event_id = inner_event.id;
+        let author = inner_event.pubkey;
+        let timestamp = inner_event.created_at.as_secs();
+        let local_event = FrostsnapEvent::Signing(make_event(event_id, author, timestamp));
+        self.send_signing_cmd(inner_event, Some(local_event)).await?;
+        Ok(event_id)
+    }
+
+    async fn send_signing_cmd(&self, inner_event: Event, local_event: Option<FrostsnapEvent>) -> Result<()> {
+        self.cmd_tx
+            .send(ChannelCommand::SendSigningEvent { inner_event, local_event })
+            .await
+            .map_err(|_| anyhow!("channel closed"))
+    }
+
     /// Fetch profile metadata for a public key.
     pub async fn fetch_profile(&self, pubkey: PublicKey) -> Result<NostrProfile> {
         let metadata = self
@@ -315,70 +445,224 @@ impl ChannelHandle {
     }
 }
 
-fn process_event(outer_event: &Event, conversation_key: &ConversationKey) -> Option<ChannelEvent> {
+fn process_frostsnap_event(
+    event: &FrostsnapEvent,
+    coordinator: &Arc<Mutex<Persisted<FrostCoordinator>>>,
+    db: &Arc<Mutex<rusqlite::Connection>>,
+) -> Option<ChannelEvent> {
+    match event {
+        FrostsnapEvent::Signing(signing_event) => {
+            process_signing_event(signing_event, coordinator, db)
+        }
+    }
+}
+
+fn process_signing_event(
+    event: &SigningEvent,
+    coordinator: &Arc<Mutex<Persisted<FrostCoordinator>>>,
+    db: &Arc<Mutex<rusqlite::Connection>>,
+) -> Option<ChannelEvent> {
+    let mut coord = coordinator.lock().unwrap();
+    let mut db = db.lock().unwrap();
+
+    let mut promoted = None;
+
+    let result = coord.staged_mutate(&mut *db, |coord| {
+        match event {
+            SigningEvent::Request {
+                event_id,
+                sign_task,
+                access_structure_ref,
+                ..
+            } => {
+                let staging_id = StagingSessionId(event_id.to_bytes());
+                let _ = coord.stage_sign(staging_id, *access_structure_ref, sign_task.clone());
+            }
+            SigningEvent::Offer {
+                request_id,
+                binonces,
+                ..
+            } => {
+                let staging_id = StagingSessionId(request_id.to_bytes());
+                if coord.add_remote_binonces_to_staging(staging_id, binonces.clone()).is_ok() {
+                    if coord.staging_session_ready(staging_id) {
+                        match coord.promote_staging_session(staging_id) {
+                            Ok(session_id) => {
+                                tracing::info!(?session_id, "auto-promoted staging session");
+                                promoted = Some((*request_id, session_id));
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "failed to auto-promote");
+                            }
+                        }
+                    }
+                }
+            }
+            SigningEvent::Partial {
+                session_id,
+                signature_shares,
+                ..
+            } => {
+                let _ = coord.add_remote_signature_shares(*session_id, signature_shares.clone());
+            }
+        }
+        Ok(())
+    });
+
+    if let Err(e) = result {
+        tracing::warn!(error = %e, "failed to persist signing event");
+    }
+
+    promoted.map(|(request_id, session_id)| ChannelEvent::SessionPromoted {
+        request_id,
+        session_id,
+    })
+}
+
+fn decrypt_inner_event(
+    outer_event: &Event,
+    conversation_key: &ConversationKey,
+) -> Result<Event> {
     let encrypted_content = &outer_event.content;
-    if encrypted_content.is_empty() {
-        return None;
-    }
+    anyhow::ensure!(!encrypted_content.is_empty(), "empty content");
 
-    let payload = match BASE64.decode(encrypted_content) {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to decode base64");
-            return None;
-        }
-    };
+    let payload = BASE64.decode(encrypted_content)?;
+    let decrypted_bytes = v2::decrypt_to_bytes(conversation_key, &payload)?;
+    let decrypted = String::from_utf8(decrypted_bytes)?;
+    let inner_event: Event = serde_json::from_str(&decrypted)?;
 
-    let decrypted_bytes = match v2::decrypt_to_bytes(conversation_key, &payload) {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to decrypt");
-            return None;
-        }
-    };
+    anyhow::ensure!(inner_event.verify().is_ok(), "inner event signature invalid");
 
-    let decrypted = match String::from_utf8(decrypted_bytes) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to convert to UTF-8");
-            return None;
-        }
-    };
+    Ok(inner_event)
+}
 
-    let inner_event: Event = match serde_json::from_str(&decrypted) {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::debug!(error = %e, "failed to parse inner event");
-            return None;
-        }
-    };
-
-    if inner_event.verify().is_err() {
-        tracing::debug!("inner event signature invalid");
-        return None;
-    }
-
-    if inner_event.kind != Kind::ChannelMessage {
-        tracing::debug!(kind = ?inner_event.kind, "ignoring non-message event");
-        return None;
-    }
-
-    let reply_to = inner_event.tags.iter().find_map(|tag| {
+fn extract_e_tag(event: &Event) -> Option<EventId> {
+    event.tags.iter().find_map(|tag| {
         if tag.kind() == TagKind::e() {
             tag.content().and_then(|s| EventId::from_hex(s).ok())
         } else {
             None
         }
-    });
-
-    Some(ChannelEvent::ChatMessage {
-        message_id: inner_event.id,
-        author: inner_event.pubkey,
-        content: inner_event.content.clone(),
-        timestamp: inner_event.created_at.as_secs(),
-        reply_to,
-        pending: false,
     })
+}
+
+fn decode_bincode<T: bincode::Decode<()>>(inner_event: &Event) -> Result<T> {
+    let content_bytes = BASE64.decode(&inner_event.content)?;
+    let (val, _) = bincode::decode_from_slice(&content_bytes, BINCODE_CONFIG)?;
+    Ok(val)
+}
+
+fn process_event(outer_event: &Event, conversation_key: &ConversationKey) -> ChannelEvent {
+    let inner_event = match decrypt_inner_event(outer_event, conversation_key) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(event_id = %outer_event.id, error = %e, "failed to decrypt event");
+            return ChannelEvent::Error {
+                event_id: outer_event.id,
+                author: outer_event.pubkey,
+                timestamp: outer_event.created_at.as_secs(),
+                reason: format!("failed to decrypt: {e}"),
+            };
+        }
+    };
+    let kind = inner_event.kind;
+    let event_id = inner_event.id;
+    let author = inner_event.pubkey;
+    let timestamp = inner_event.created_at.as_secs();
+    tracing::info!(event_id = %event_id, kind = ?kind, "decoded event");
+
+    if kind == Kind::ChannelMessage {
+        let reply_to = extract_e_tag(&inner_event);
+        ChannelEvent::ChatMessage {
+            message_id: event_id,
+            author,
+            content: inner_event.content.clone(),
+            timestamp,
+            reply_to,
+            pending: false,
+        }
+    } else if kind == KIND_FROSTSNAP_SIGNING {
+        let message: SigningMessage = match decode_bincode(&inner_event) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!(event_id = %event_id, error = %e, "failed to decode signing message");
+                return ChannelEvent::Error {
+                    event_id, author, timestamp,
+                    reason: format!("failed to decode signing message: {e}"),
+                };
+            }
+        };
+
+        let signing_event = match message {
+            SigningMessage::Request {
+                sign_task,
+                access_structure_ref,
+                message,
+            } => SigningEvent::Request {
+                event_id, author, sign_task, access_structure_ref, message, timestamp,
+            },
+            SigningMessage::Offer { binonces } => {
+                let request_id = match extract_e_tag(&inner_event) {
+                    Some(id) => id,
+                    None => {
+                        tracing::warn!(event_id = %event_id, "signing offer missing e-tag");
+                        return ChannelEvent::Error {
+                            event_id, author, timestamp,
+                            reason: "signing offer missing e-tag".into(),
+                        };
+                    }
+                };
+                SigningEvent::Offer {
+                    event_id, author, request_id, binonces, timestamp,
+                }
+            }
+            SigningMessage::Partial {
+                session_id,
+                signature_shares,
+            } => {
+                let request_id = match extract_e_tag(&inner_event) {
+                    Some(id) => id,
+                    None => {
+                        tracing::warn!(event_id = %event_id, "signing partial missing e-tag");
+                        return ChannelEvent::Error {
+                            event_id, author, timestamp,
+                            reason: "signing partial missing e-tag".into(),
+                        };
+                    }
+                };
+                SigningEvent::Partial {
+                    event_id, author, request_id, session_id, signature_shares, timestamp,
+                }
+            }
+        };
+
+        ChannelEvent::Frostsnap(FrostsnapEvent::Signing(signing_event))
+    } else {
+        tracing::warn!(event_id = %event_id, kind = ?kind, "unknown inner event kind");
+        ChannelEvent::Error {
+            event_id, author, timestamp,
+            reason: format!("unknown event kind: {kind:?}"),
+        }
+    }
+}
+
+async fn create_bincode_inner_event(
+    user_keys: &Keys,
+    kind: Kind,
+    payload: &impl bincode::Encode,
+    reply_to: Option<EventId>,
+) -> Result<Event> {
+    let encoded = bincode::encode_to_vec(payload, BINCODE_CONFIG)?;
+    let content = BASE64.encode(&encoded);
+    let mut builder = EventBuilder::new(kind, content);
+    if let Some(parent_id) = reply_to {
+        builder = builder.tag(Tag::event(parent_id));
+    }
+    let inner_event = builder
+        .build(user_keys.public_key())
+        .sign(user_keys)
+        .await?;
+    Ok(inner_event)
 }
 
 async fn create_inner_event(

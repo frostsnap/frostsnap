@@ -304,14 +304,14 @@ impl StagingSignSession {
 }
 
 /// Binonces for a participant (local or remote).
-#[derive(Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct ParticipantBinonces {
     pub share_index: frost::ShareIndex,
     pub binonces: Vec<schnorr_fun::binonce::Nonce>,
 }
 
 /// Signature shares from a participant (local or remote).
-#[derive(Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct ParticipantSignatureShares {
     pub share_index: frost::ShareIndex,
     pub signature_shares: Vec<SignatureShare>,
@@ -332,6 +332,7 @@ pub enum StartSignError {
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
     NoSuchStagingSession,
+    StagingSessionAlreadyExists { staging_id: StagingSessionId },
 }
 
 impl fmt::Display for StartSignError {
@@ -370,6 +371,12 @@ impl fmt::Display for StartSignError {
             StartSignError::CouldntDecryptRootKey => write!(f, "the decryption key did not"),
             StartSignError::NoSuchStagingSession => {
                 write!(f, "no staging session with that ID exists")
+            }
+            StartSignError::StagingSessionAlreadyExists { staging_id } => {
+                write!(
+                    f,
+                    "staging session {staging_id:?} already exists with different parameters"
+                )
             }
         }
     }
@@ -1020,6 +1027,16 @@ impl FrostCoordinator {
         access_structure_ref: AccessStructureRef,
         sign_task: crate::WireSignTask,
     ) -> Result<(), StartSignError> {
+        if let Some(existing) = self.signing.staging_sign_sessions.get(&staging_id) {
+            if existing.access_structure_ref == access_structure_ref
+                && existing.sign_task == sign_task
+            {
+                return Ok(());
+            } else {
+                return Err(StartSignError::StagingSessionAlreadyExists { staging_id });
+            }
+        }
+
         let AccessStructureRef { key_id, .. } = access_structure_ref;
 
         let key_data = self
@@ -1051,6 +1068,15 @@ impl FrostCoordinator {
         }));
 
         Ok(())
+    }
+
+    /// Whether the staging session has enough participants to be promoted.
+    pub fn staging_session_ready(&self, staging_id: StagingSessionId) -> bool {
+        self.signing
+            .staging_sign_sessions
+            .get(&staging_id)
+            .and_then(|s| s.implied_session_id())
+            .is_some()
     }
 
     /// Add a local device to a staging session.
@@ -1292,6 +1318,30 @@ impl FrostCoordinator {
             });
         }
         Some(result)
+    }
+
+    /// Get signature shares for a specific device from an active session.
+    pub fn get_device_signature_shares(
+        &self,
+        session_id: SignSessionId,
+        device_id: DeviceId,
+    ) -> Option<ParticipantSignatureShares> {
+        let session = self.signing.active_signing_sessions.get(&session_id)?;
+        if !session.received_from().any(|d| d == device_id) {
+            return None;
+        }
+        let access_structure_ref = session.access_structure_ref();
+        let access_structure = self.get_access_structure(access_structure_ref)?;
+        let share_index = *access_structure.device_to_share_index.get(&device_id)?;
+        let signature_shares: Vec<_> = session
+            .progress
+            .iter()
+            .map(|p| *p.signature_shares.get(&device_id).expect("received_from"))
+            .collect();
+        Some(ParticipantSignatureShares {
+            share_index,
+            signature_shares,
+        })
     }
 
     /// Add signature shares from a remote participant.

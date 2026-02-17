@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/nostr_chat/chat_page.dart';
+import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
@@ -236,7 +237,10 @@ class _WalletMoreState extends State<WalletMore> {
     );
   }
 
-  void _openChat(BuildContext context, WalletContext walletCtx) {
+  Future<void> _openChat(BuildContext context, WalletContext walletCtx) async {
+    if (!await ensureNostrIdentity(context)) return;
+    if (!context.mounted) return;
+
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
     final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
 

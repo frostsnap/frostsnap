@@ -1,3 +1,7 @@
+use frostsnap_core::{
+    coordinator::{ParticipantBinonces, ParticipantSignatureShares},
+    AccessStructureRef, SignSessionId, WireSignTask,
+};
 use nostr_sdk::{EventId, Metadata, PublicKey};
 
 /// A member of the channel group with their profile.
@@ -31,6 +35,69 @@ pub enum ChannelEvent {
     ConnectionState(ConnectionState),
     /// Group membership/profiles changed
     GroupMetadata { members: Vec<GroupMember> },
+    /// Frostsnap protocol event (signing, future: keygen, etc.)
+    Frostsnap(FrostsnapEvent),
+    /// A staging signing session was promoted to an active signing session.
+    SessionPromoted {
+        request_id: EventId,
+        session_id: SignSessionId,
+    },
+    /// An event we received but couldn't process.
+    Error {
+        event_id: EventId,
+        author: PublicKey,
+        timestamp: u64,
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum FrostsnapEvent {
+    Signing(SigningEvent),
+}
+
+#[derive(Debug, Clone)]
+pub enum SigningEvent {
+    Request {
+        event_id: EventId,
+        author: PublicKey,
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        message: Option<String>,
+        timestamp: u64,
+    },
+    Offer {
+        event_id: EventId,
+        author: PublicKey,
+        request_id: EventId,
+        binonces: ParticipantBinonces,
+        timestamp: u64,
+    },
+    Partial {
+        event_id: EventId,
+        author: PublicKey,
+        request_id: EventId,
+        session_id: SignSessionId,
+        signature_shares: ParticipantSignatureShares,
+        timestamp: u64,
+    },
+}
+
+/// Wire format for all frostsnap signing messages in the channel.
+#[derive(bincode::Encode, bincode::Decode)]
+pub enum SigningMessage {
+    Request {
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        message: Option<String>,
+    },
+    Offer {
+        binonces: ParticipantBinonces,
+    },
+    Partial {
+        session_id: SignSessionId,
+        signature_shares: ParticipantSignatureShares,
+    },
 }
 
 #[derive(Debug, Clone)]

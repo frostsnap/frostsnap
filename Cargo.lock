@@ -2170,6 +2170,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bdk_chain",
+ "bincode",
  "frostsnap_coordinator",
  "frostsnap_core",
  "hex",

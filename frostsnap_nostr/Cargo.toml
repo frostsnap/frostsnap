@@ -19,6 +19,7 @@ hex = "0.4"
 anyhow = "1"
 serde_json = "1"
 base64 = "0.22"
+bincode = { workspace = true }
 nostr-relay-builder = "0.44"
 
 [dev-dependencies]
