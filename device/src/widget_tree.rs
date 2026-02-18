@@ -8,7 +8,7 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     layout::*,
     sign_prompt::SignTxPrompt,
-    DeviceNameScreen, EraseProgress, FirmwareUpgradeConfirm, FirmwareUpgradeProgress,
+    DeviceNameScreen, EraseDevice, EraseProgress, FirmwareUpgradeConfirm, FirmwareUpgradeProgress,
     HoldToConfirm, SignMessageConfirm, Standby, Text,
 };
 
@@ -64,7 +64,7 @@ pub enum WidgetTree {
 
     /// Device erase confirmation prompt
     EraseDevicePrompt {
-        widget: Box<HoldToConfirm<Text>>,
+        widget: Box<EraseDevice>,
         confirmed: bool,
     },
 

@@ -1,14 +1,18 @@
 use crate::{
-    any_of::AnyOf, gray4_style::Gray4TextStyle, palette::PALETTE, BmpImage, Center, Column,
-    CrossAxisAlignment, DynWidget, HoldToConfirm, Instant, MainAxisAlignment, PageSlider, Row,
-    SizedBox, SuperDrawTarget, Text, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS,
+    any_of::AnyOf, gray4_style::Gray4TextStyle, palette::PALETTE, Center, Column,
+    CrossAxisAlignment, DynWidget, GrayToAlpha, HoldToConfirm, Image, Instant, MainAxisAlignment,
+    PageSlider, Row, SizedBox, SuperDrawTarget, Text, Widget, WidgetList,
+    HOLD_TO_CONFIRM_TIME_LONG_MS,
 };
 use alloc::string::ToString;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::Rgb565,
+    pixelcolor::{Gray8, Rgb565},
 };
+use tinybmp::Bmp;
+
+type WarningIcon = Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>;
 
 const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
@@ -25,7 +29,7 @@ pub struct WipeWarningPage {
     center: Center<
         Column<(
             Row<(
-                BmpImage, // Warning icon
+                WarningIcon, // Warning icon
                 SizedBox<Rgb565>,
                 Text<Gray4TextStyle>, // "Warning" text
             )>,
@@ -40,7 +44,10 @@ pub struct WipeWarningPage {
 impl WipeWarningPage {
     fn new() -> Self {
         // Use the warning icon BMP
-        let warning_icon = BmpImage::new(WARNING_ICON_DATA, PALETTE.warning);
+        let warning_icon = Image::new(GrayToAlpha::new(
+            Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning BMP"),
+            PALETTE.warning,
+        ));
 
         let icon_spacer = SizedBox::<Rgb565>::new(Size::new(4, 0)); // 4px horizontal spacing
 
@@ -101,7 +108,7 @@ pub struct WipeConfirmationPage {
         Column<(
             SizedBox<Rgb565>, // spacer0
             Row<(
-                BmpImage, // Warning icon
+                WarningIcon, // Warning icon
                 SizedBox<Rgb565>,
                 Text<Gray4TextStyle>, // "Warning" text
             )>,
@@ -118,7 +125,10 @@ pub struct WipeConfirmationPage {
 impl WipeConfirmationPage {
     fn new() -> Self {
         // Warning icon and text at top
-        let warning_icon = BmpImage::new(WARNING_ICON_DATA, PALETTE.warning);
+        let warning_icon = Image::new(GrayToAlpha::new(
+            Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning BMP"),
+            PALETTE.warning,
+        ));
 
         let icon_spacer = SizedBox::<Rgb565>::new(Size::new(4, 0)); // 4px horizontal spacing
 
@@ -134,7 +144,7 @@ impl WipeConfirmationPage {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::End);
 
-        let spacer0 = SizedBox::<Rgb565>::new(Size::new(1, 40)); // Space before warning row
+        let spacer0 = SizedBox::<Rgb565>::new(Size::new(1, 20)); // Space before warning row
 
         let spacer1 = SizedBox::<Rgb565>::new(Size::new(1, 15)); // Space between warning and "Hold to Wipe"
 
@@ -163,7 +173,7 @@ impl WipeConfirmationPage {
         let press_text = Column::new((press_line1, press_line2))
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let spacer3 = SizedBox::<Rgb565>::new(Size::new(1, 40)); // Match sign_prompt spacing
+        let spacer3 = SizedBox::<Rgb565>::new(Size::new(1, 20)); // Match sign_prompt spacing
 
         let confirm_content = Column::new((
             spacer0,
