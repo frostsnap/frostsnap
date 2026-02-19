@@ -5,8 +5,8 @@ use core::cell::RefCell;
 use embedded_graphics::{
     iterator::raw::RawDataSlice,
     pixelcolor::{
-        raw::{LittleEndian, RawU2},
-        Gray2, Rgb565,
+        raw::{LittleEndian, RawU4},
+        Gray4, GrayColor, Rgb565,
     },
     prelude::*,
     primitives::Rectangle,
@@ -151,17 +151,22 @@ impl EnteredWords {
             {
                 let fb = self.framebuffer.try_borrow().unwrap();
 
-                let framebuffer_pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb.data())
+                let color_lut = {
+                    use crate::{ColorInterpolate, Frac};
+                    let mut lut = [PALETTE.background; 16];
+                    for i in 1..16u8 {
+                        let alpha = Frac::from_ratio(i as u32, 15);
+                        lut[i as usize] =
+                            PALETTE.background.interpolate(PALETTE.on_background, alpha);
+                    }
+                    lut
+                };
+
+                let framebuffer_pixels = RawDataSlice::<RawU4, LittleEndian>::new(fb.data())
                     .into_iter()
                     .skip(skip_pixels)
                     .take(take_pixels)
-                    .map(|pixel| match Gray2::from(pixel).luma() {
-                        0x00 => PALETTE.background,
-                        0x01 => PALETTE.outline, // Numbers
-                        0x02 => PALETTE.on_background,
-                        0x03 => PALETTE.on_background,
-                        _ => PALETTE.background,
-                    });
+                    .map(|r| color_lut[Gray4::from(r).luma() as usize]);
 
                 let words_rect = Rectangle::new(
                     Point::zero(),

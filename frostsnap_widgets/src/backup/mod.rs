@@ -21,7 +21,6 @@ pub use word_selector::WordSelector;
 
 use u8g2_fonts::fonts as u8g2;
 
-pub(crate) const LEGACY_FONT_LARGE: u8g2::u8g2_font_profont29_mf = u8g2::u8g2_font_profont29_mf;
 #[allow(unused)]
 pub(crate) const LEGACY_FONT_MED: u8g2::u8g2_font_profont22_mf = u8g2::u8g2_font_profont22_mf;
 #[allow(unused)]

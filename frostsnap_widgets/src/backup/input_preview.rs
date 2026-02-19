@@ -1,60 +1,115 @@
 use super::backup_model::{FramebufferMutation, MainViewState, ViewState};
-use super::LEGACY_FONT_MED;
 use crate::cursor::Cursor;
 use crate::palette::PALETTE;
 use crate::progress_bars::ProgressBars;
 use crate::super_draw_target::SuperDrawTarget;
-use crate::text::Text as TextWidget;
 use crate::{
-    icons, Align, Alignment as WidgetAlignment, Container, DynWidget, FadeSwitcher, Key, KeyTouch,
-    Widget,
+    icons, DynWidget, Key, KeyTouch, Widget, FONT_HUGE_MONO,
 };
-use crate::{U8g2TextStyle, LEGACY_FONT_LARGE};
-use alloc::{
-    rc::Rc,
-    string::{String, ToString},
-};
+use alloc::rc::Rc;
 use core::cell::RefCell;
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
-    geometry::AnchorX,
     iterator::raw::RawDataSlice,
     pixelcolor::{
-        raw::{LittleEndian, RawU2},
-        Gray2, Rgb565,
+        raw::{LittleEndian, RawU4},
+        Gray4, GrayColor, Rgb565,
     },
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
-    text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use frost_backup::NUM_WORDS;
+use frostsnap_fonts::Gray4Font;
 
-// Type alias for the placeholder text widget (boxed to reduce stack usage)
-type PlaceholderText = alloc::boxed::Box<Container<Align<TextWidget<U8g2TextStyle<Rgb565>>>>>;
 
 // Constants for vertical BIP39 word display
 pub(super) const TOTAL_WORDS: usize = NUM_WORDS;
-pub(super) const FONT_SIZE: Size = Size::new(16, 24);
-pub(super) const VERTICAL_PAD: u32 = 18; // 9px top + 9px bottom padding per word
-                                         // Increased to prevent next row number from showing in 60px viewport
-                                         // 180 pixels width / 16 pixels per char = 11.25 chars total
-                                         // So we can fit 11 chars total
+pub(super) const FONT_SIZE: Size = Size::new(17, 29);
+pub(super) const VERTICAL_PAD: u32 = 13; // Adjusted so row height (29+13=42) matches old (24+18=42)
 const INDEX_CHARS: usize = 3; // "25." (with dot)
-const SPACE_BETWEEN: usize = 1;
+const SPACE_BETWEEN: usize = 0;
 const PREVIEW_LEFT_PAD: i32 = 4; // Left padding for preview rect
 pub(super) const TOP_PADDING: u32 = 10; // Top padding before first word
-pub(super) const FB_WIDTH: u32 = 176; // Divisible by 4 for Gray2 alignment
+pub(super) const FB_WIDTH: u32 = 188; // 11 chars * 17px = 187, rounded up to 188 (divisible by 4)
 pub(super) const FB_HEIGHT: u32 =
     TOP_PADDING + ((TOTAL_WORDS + 1) as u32 * (FONT_SIZE.height + VERTICAL_PAD)); // +1 for share index row
 
+/// The Gray4 font used for the word list framebuffer
+const FB_FONT: &Gray4Font = FONT_HUGE_MONO;
+
+/// Gray levels used in the framebuffer to distinguish word numbers from word text
+const INDEX_GRAY: u8 = 6;  // Dim - for row numbers
+const TEXT_GRAY: u8 = 15;  // Full brightness - for entered text
+
 pub(super) type Fb = Framebuffer<
-    Gray2,
-    RawU2,
+    Gray4,
+    RawU4,
     LittleEndian,
     { FB_WIDTH as usize },
     { FB_HEIGHT as usize },
-    { buffer_size::<Gray2>(FB_WIDTH as usize, FB_HEIGHT as usize) },
+    { buffer_size::<Gray4>(FB_WIDTH as usize, FB_HEIGHT as usize) },
 >;
+
+/// Draw a single character from a Gray4Font into a Gray4 DrawTarget.
+/// Positioned at the given point using left alignment and top baseline.
+fn draw_gray4_char<D: DrawTarget<Color = Gray4>>(
+    target: &mut D,
+    font: &'static Gray4Font,
+    ch: char,
+    position: Point,
+    scale: u8,
+) {
+    let glyph = match font.get_glyph(ch) {
+        Some(g) => g,
+        None => return,
+    };
+
+    let draw_x = position.x + glyph.x_offset as i32;
+    let draw_y = position.y + glyph.y_offset as i32;
+
+    for Pixel(point, gray) in font.glyph_pixels(glyph) {
+        let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
+        if scaled > 0 {
+            let _ = Pixel(
+                Point::new(draw_x + point.x, draw_y + point.y),
+                Gray4::new(scaled),
+            )
+            .draw(target);
+        }
+    }
+}
+
+/// Draw a string of characters from a Gray4Font into a Gray4 DrawTarget.
+/// Characters are drawn left-to-right using each glyph's x_advance.
+fn draw_gray4_string<D: DrawTarget<Color = Gray4>>(
+    target: &mut D,
+    font: &'static Gray4Font,
+    text: &str,
+    position: Point,
+    scale: u8,
+) {
+    let mut x = position.x;
+    for ch in text.chars() {
+        if let Some(glyph) = font.get_glyph(ch) {
+            let draw_x = x + glyph.x_offset as i32;
+            let draw_y = position.y + glyph.y_offset as i32;
+
+            for Pixel(point, gray) in font.glyph_pixels(glyph) {
+                let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
+                if scaled > 0 {
+                    let _ = Pixel(
+                        Point::new(draw_x + point.x, draw_y + point.y),
+                        Gray4::new(scaled),
+                    )
+                    .draw(target);
+                }
+            }
+            x += glyph.x_advance as i32;
+        } else if ch == ' ' {
+            x += (font.line_height / 4) as i32;
+        }
+    }
+}
 
 pub struct InputPreview {
     pub(super) area: Rectangle,
@@ -65,8 +120,6 @@ pub struct InputPreview {
     framebuf: Framebuf,
     init_draw: bool,
     cursor: Cursor,
-    hint_switcher: alloc::boxed::Box<FadeSwitcher<Option<PlaceholderText>>>,
-    placeholder_text: Option<PlaceholderText>,
     current_view_state: Option<ViewState>,
 }
 
@@ -87,9 +140,6 @@ impl InputPreview {
         let progress = ProgressBars::new(NUM_WORDS + 1);
         let framebuf = Framebuf::new();
 
-        // Use FadeSwitcher with 300ms fade-in, 0ms fade-out, starting with None
-        let hint_switcher = alloc::boxed::Box::new(FadeSwitcher::new(None, 300));
-
         Self {
             area: Rectangle::zero(),
             preview_rect,
@@ -98,9 +148,7 @@ impl InputPreview {
             progress,
             framebuf,
             init_draw: false,
-            cursor: Cursor::new(Point::zero()), // Will update position in draw
-            hint_switcher,
-            placeholder_text: None,
+            cursor: Cursor::new(Point::zero()),
             current_view_state: None,
         }
     }
@@ -142,10 +190,12 @@ impl InputPreview {
         self.current_view_state = Some(view_state.clone());
         // Update cursor position based on view state
         let x = ((INDEX_CHARS + SPACE_BETWEEN) + view_state.cursor_pos) * FONT_SIZE.width as usize;
-        // Fixed Y position - cursor appears at bottom of text (centered vertically, then add font height)
-        let y = self.preview_rect.size.height as i32 / 2 - FONT_SIZE.height as i32 / 2
-            + FONT_SIZE.height as i32
-            - 2;
+        // Y position: align cursor bottom with text cell bottom in the viewport.
+        // Text cell bottom in viewport = (TOP_PADDING + VERTICAL_PAD/2 + FONT_SIZE.height) - scroll_offset
+        // where scroll_offset centers the row: TOP_PADDING + row_height/2 - viewport_height/2
+        // Simplifies to: (viewport_height + FONT_SIZE.height) / 2 - cursor_height
+        let cursor_height = 2i32;
+        let y = (self.preview_rect.size.height as i32 + FONT_SIZE.height as i32) / 2 - cursor_height;
         self.cursor.set_position(Point::new(x as i32, y));
 
         // Enable cursor when there's text but row isn't complete (not in word selection)
@@ -161,39 +211,6 @@ impl InputPreview {
         self.framebuf
             .update_scroll_position_for_row(view_state.row, false);
 
-        if self.is_scrolling() {
-            self.hint_switcher.instant_fade();
-        }
-
-        // Update placeholder text based on whether the current row is empty
-        let hint_text = match &view_state.main_view {
-            MainViewState::EnterShareIndex { current } if current.is_empty() => {
-                Some(String::from("enter\nkey number"))
-            }
-            MainViewState::EnterWord { .. } if view_state.cursor_pos == 0 => {
-                // view_state.row is 0 for share index, 1 for word 1, etc.
-                Some(format!("enter\nword {}", view_state.row))
-            }
-            MainViewState::AllWordsEntered { .. } => {
-                self.hint_switcher.instant_fade();
-                None
-            }
-            _ => {
-                self.hint_switcher.instant_fade();
-                None
-            }
-        };
-
-        self.placeholder_text = hint_text.map(|text| {
-            let text_widget = TextWidget::new(
-                text,
-                U8g2TextStyle::new(LEGACY_FONT_MED, PALETTE.surface_variant),
-            )
-            .with_alignment(Alignment::Center);
-            let aligned = Align::new(text_widget).alignment(WidgetAlignment::Center);
-            let container = Container::new(aligned).with_expanded();
-            alloc::boxed::Box::new(container)
-        });
     }
 
     fn draw_cursor<D: DrawTarget<Color = Rgb565>>(
@@ -233,16 +250,8 @@ impl crate::DynWidget for InputPreview {
             Size::new(max_size.width, progress_height),
         );
 
-        // Calculate text area size for hint switcher
-        let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as u32;
-        let text_area_size = Size::new(
-            self.preview_rect.size.width.saturating_sub(text_offset),
-            self.preview_rect.size.height,
-        );
-
         self.progress.set_constraints(self.progress_rect.size);
         self.framebuf.set_constraints(self.preview_rect.size);
-        self.hint_switcher.set_constraints(text_area_size);
         self.area = Rectangle::new(Point::zero(), max_size);
     }
 
@@ -286,9 +295,8 @@ impl Widget for InputPreview {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        // Draw backspace icon on first draw
         if !self.init_draw {
-            // Clear the entire area first
+            // Clear the entire area on first draw
             let clear_rect = Rectangle::new(Point::zero(), self.area.size);
             let _ = clear_rect
                 .into_styled(
@@ -298,43 +306,16 @@ impl Widget for InputPreview {
                 )
                 .draw(target);
 
+            // Draw backspace icon in the right portion of its touch area
             icons::backspace()
                 .with_color(PALETTE.error)
                 .with_center(
-                    self.backspace_rect
-                        .resized_width(self.backspace_rect.size.width / 2, AnchorX::Left)
-                        .center(),
+                    self.backspace_rect.center(),
                 )
                 .draw(target);
+
             self.init_draw = true;
         }
-
-        let text_offset = ((INDEX_CHARS + SPACE_BETWEEN) * FONT_SIZE.width as usize) as i32;
-        let hint_rect = Rectangle::new(
-            Point::new(
-                self.preview_rect.top_left.x + text_offset,
-                self.preview_rect.top_left.y,
-            ),
-            Size::new(
-                self.preview_rect
-                    .size
-                    .width
-                    .saturating_sub(text_offset as u32),
-                self.preview_rect.size.height,
-            ),
-        );
-
-        // Draw hint text overlay only when not scrolling
-        if !self.is_scrolling() {
-            // Switch to placeholder text if we have one, otherwise empty container
-            if let Some(placeholder) = self.placeholder_text.take() {
-                self.hint_switcher.switch_to(Some(placeholder));
-            }
-        }
-
-        // Draw hint text offset to alin with actual text entry area
-        self.hint_switcher
-            .draw(&mut target.clone().crop(hint_rect), current_time)?;
 
         self.framebuf
             .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
@@ -365,20 +346,17 @@ impl Framebuf {
         let fb = Rc::new(RefCell::new(Fb::new()));
 
         // Clear the framebuffer
-        let _ = fb.borrow_mut().clear(Gray2::BLACK);
+        let _ = fb.borrow_mut().clear(Gray4::new(0));
 
         // Pre-render share index placeholder with '#' prefix (no dot for share index)
         let share_y = TOP_PADDING as i32 + (VERTICAL_PAD / 2) as i32;
-        let _ = Text::with_text_style(
+        draw_gray4_string(
+            &mut *fb.borrow_mut(),
+            FB_FONT,
             " #",
             Point::new(0, share_y),
-            U8g2TextStyle::new(LEGACY_FONT_LARGE, Gray2::new(0x01)),
-            TextStyleBuilder::new()
-                .alignment(Alignment::Left)
-                .baseline(Baseline::Top)
-                .build(),
-        )
-        .draw(&mut *fb.borrow_mut());
+            INDEX_GRAY,
+        );
 
         // Pre-render word indices with dots
         for i in 0..TOTAL_WORDS {
@@ -387,31 +365,27 @@ impl Framebuf {
             let y = TOP_PADDING as i32
                 + (row as u32 * (FONT_SIZE.height + VERTICAL_PAD)) as i32
                 + (VERTICAL_PAD / 2) as i32;
-            let number_with_dot = format!("{}.", i + 1);
+            let number_with_dot = alloc::format!("{}.", i + 1);
 
             // Right-align numbers at 3 characters from left (with dots)
-            let number_right_edge = 48; // 3 * 16 pixels
+            let number_right_edge = 3 * FONT_SIZE.width as i32;
 
             // Calculate number position to right-align
             let number_x = if i < 9 {
-                // Single digit + dot: right-aligned at position (takes 2 chars: "1.")
+                // Single digit + dot: right-aligned (takes 2 chars)
                 number_right_edge - (2 * FONT_SIZE.width as i32)
             } else {
-                // Double digit + dot: starts at position 0 (takes 3 chars: "25.")
+                // Double digit + dot: starts at position 0 (takes 3 chars)
                 0
             };
 
-            // Draw the number with dot in a different gray level
-            let _ = Text::with_text_style(
+            draw_gray4_string(
+                &mut *fb.borrow_mut(),
+                FB_FONT,
                 &number_with_dot,
                 Point::new(number_x, y),
-                U8g2TextStyle::new(LEGACY_FONT_LARGE, Gray2::new(0x01)),
-                TextStyleBuilder::new()
-                    .alignment(Alignment::Left)
-                    .baseline(Baseline::Top)
-                    .build(),
-            )
-            .draw(&mut *fb.borrow_mut());
+                INDEX_GRAY,
+            );
         }
 
         Self {
@@ -441,17 +415,14 @@ impl Framebuf {
                         Size::new(FONT_SIZE.width, FONT_SIZE.height),
                     ));
 
-                    let _ = char_frame.clear(Gray2::BLACK);
-                    let _ = Text::with_text_style(
-                        &ch.to_string(),
+                    let _ = char_frame.clear(Gray4::new(0));
+                    draw_gray4_char(
+                        &mut char_frame,
+                        FB_FONT,
+                        *ch,
                         Point::zero(),
-                        U8g2TextStyle::new(LEGACY_FONT_LARGE, Gray2::new(0x02)),
-                        TextStyleBuilder::new()
-                            .alignment(Alignment::Left)
-                            .baseline(Baseline::Top)
-                            .build(),
-                    )
-                    .draw(&mut char_frame);
+                        TEXT_GRAY,
+                    );
                 }
                 FramebufferMutation::DelCharacter { row, pos } => {
                     let x = ((INDEX_CHARS + SPACE_BETWEEN) + pos) * FONT_SIZE.width as usize;
@@ -463,7 +434,7 @@ impl Framebuf {
                         Point::new(x as i32, y as i32),
                         Size::new(FONT_SIZE.width, FONT_SIZE.height),
                     ));
-                    let _ = char_frame.clear(Gray2::BLACK);
+                    let _ = char_frame.clear(Gray4::new(0));
                 }
             }
             self.redraw = true;
@@ -633,26 +604,31 @@ impl Widget for Framebuf {
             return Ok(());
         }
 
+        // Build a linear color LUT for Gray4 → Rgb565 mapping.
+        // Numbers appear dim (INDEX_GRAY=4 scales pixels to 0-4 range),
+        // text appears bright (TEXT_GRAY=15 uses full 0-15 range).
+        let color_lut = {
+            use crate::{ColorInterpolate, Frac};
+            let mut lut = [PALETTE.background; 16];
+            for i in 1..16u8 {
+                let alpha = Frac::from_ratio(i as u32, 15);
+                lut[i as usize] = PALETTE.background.interpolate(PALETTE.on_background, alpha);
+            }
+            lut
+        };
+
         // Skip to the correct starting position in the framebuffer
-        // current_position is already in pixels (Y coordinate), so we need to skip
-        // that many rows worth of pixels in the framebuffer
         let skip_rows = self.current_position as usize;
         let skip_pixels = skip_rows * FB_WIDTH as usize;
         let take_pixels = bb.size.height as usize * bb.size.width as usize;
 
         {
             let fb = self.framebuffer.try_borrow().unwrap();
-            let framebuffer_pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb.data())
+            let framebuffer_pixels = RawDataSlice::<RawU4, LittleEndian>::new(fb.data())
                 .into_iter()
                 .skip(skip_pixels)
                 .take(take_pixels)
-                .map(|pixel| match Gray2::from(pixel).luma() {
-                    0x00 => PALETTE.background,
-                    0x01 => PALETTE.outline, // Numbers in subtle outline color
-                    0x02 => PALETTE.on_background, // Words in normal text color
-                    0x03 => PALETTE.on_background, // Also words
-                    _ => PALETTE.background,
-                });
+                .map(|r| color_lut[Gray4::from(r).luma() as usize]);
 
             target.fill_contiguous(&bb, framebuffer_pixels)?;
         }

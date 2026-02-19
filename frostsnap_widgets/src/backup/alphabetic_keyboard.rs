@@ -1,51 +1,93 @@
-use crate::{
-    palette::PALETTE, super_draw_target::SuperDrawTarget, U8g2TextStyle, Widget, LEGACY_FONT_LARGE,
-};
-use alloc::{boxed::Box, string::ToString};
+use crate::{palette::PALETTE, super_draw_target::SuperDrawTarget, Widget, FONT_LARGE};
+use alloc::boxed::Box;
 use embedded_graphics::{
     framebuffer::{buffer_size, Framebuffer},
     image::Image,
     iterator::raw::RawDataSlice,
     pixelcolor::{
-        raw::{LittleEndian, RawU1},
-        BinaryColor, Rgb565,
+        raw::{LittleEndian, RawU4},
+        Gray4, GrayColor, Rgb565,
     },
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
-    text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use embedded_iconoir::{
     prelude::IconoirNewIcon,
     size32px::navigation::{NavArrowLeft, NavArrowRight},
 };
 use frost_backup::bip39_words::ValidLetters;
+use frostsnap_fonts::Gray4Font;
 
-// Constants for framebuffer and keyboard dimensions
 const FRAMEBUFFER_WIDTH: u32 = 240;
 const TOTAL_COLS: usize = 4;
 const KEY_WIDTH: u32 = FRAMEBUFFER_WIDTH / TOTAL_COLS as u32;
 const KEY_HEIGHT: u32 = 50;
-const TOTAL_ROWS: usize = 7;
+const NUM_LETTERS: usize = 26;
+const TOTAL_ROWS: usize = NUM_LETTERS.div_ceil(TOTAL_COLS);
 const FRAMEBUFFER_HEIGHT: u32 = TOTAL_ROWS as u32 * KEY_HEIGHT;
-// Remove this inline color - we'll use PALETTE.primary_container for keys
+
+/// Gray4 levels used in the framebuffer to distinguish enabled vs disabled keys.
+const ENABLED_GRAY: u8 = 15;
+const DISABLED_GRAY: u8 = 4;
 
 type Fb = Framebuffer<
-    BinaryColor,
-    RawU1,
+    Gray4,
+    RawU4,
     LittleEndian,
     { FRAMEBUFFER_WIDTH as usize },
     { FRAMEBUFFER_HEIGHT as usize },
-    { buffer_size::<BinaryColor>(FRAMEBUFFER_WIDTH as usize, FRAMEBUFFER_HEIGHT as usize) },
+    { buffer_size::<Gray4>(FRAMEBUFFER_WIDTH as usize, FRAMEBUFFER_HEIGHT as usize) },
 >;
+
+/// Draw a single character from a Gray4Font into a Gray4 framebuffer, centered in a cell.
+/// The `scale` parameter scales the glyph's gray values: pixel = glyph_gray * scale / 15.
+fn draw_char_to_framebuffer(
+    fb: &mut Fb,
+    font: &'static Gray4Font,
+    ch: char,
+    cell_x: i32,
+    cell_y: i32,
+    scale: u8,
+) {
+    let glyph = match font.get_glyph(ch) {
+        Some(g) => g,
+        None => return,
+    };
+
+    // Center the glyph in the cell
+    let glyph_center_x = cell_x + KEY_WIDTH as i32 / 2;
+    let glyph_center_y = cell_y + KEY_HEIGHT as i32 / 2;
+
+    // Position the glyph baseline-centered vertically
+    let draw_x = glyph_center_x - glyph.x_advance as i32 / 2 + glyph.x_offset as i32;
+    let draw_y = glyph_center_y - font.line_height as i32 / 2 + glyph.y_offset as i32;
+
+    for Pixel(point, gray) in font.glyph_pixels(glyph) {
+        let px = draw_x + point.x;
+        let py = draw_y + point.y;
+
+        if px >= 0
+            && py >= 0
+            && (px as u32) < FRAMEBUFFER_WIDTH
+            && (py as u32) < FRAMEBUFFER_HEIGHT
+        {
+            // Scale the gray value
+            let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
+            if scaled > 0 {
+                let _ = Pixel(Point::new(px, py), Gray4::new(scaled)).draw(fb);
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct AlphabeticKeyboard {
-    scroll_position: i32,       // Current scroll offset
-    framebuffer: Box<Fb>,       // Boxed framebuffer
-    needs_redraw: bool,         // Flag to trigger redraw
-    enabled_keys: ValidLetters, // Which keys are enabled
+    scroll_position: i32,
+    framebuffer: Box<Fb>,
+    needs_redraw: bool,
+    enabled_keys: ValidLetters,
     visible_height: u32,
-    current_word_index: usize, // Current word being edited (0-24 for 25 words)
+    current_word_index: usize,
 }
 
 impl Default for AlphabeticKeyboard {
@@ -61,27 +103,17 @@ impl AlphabeticKeyboard {
             scroll_position: 0,
             needs_redraw: true,
             enabled_keys: ValidLetters::default(),
-            visible_height: 0, // Will be set in set_constraints
+            visible_height: 0,
             current_word_index: 0,
         };
 
-        // Initialize by rendering the keyboard
-        keyboard.render_compact_keyboard();
+        keyboard.render_keyboard();
         keyboard
     }
 
     pub fn scroll(&mut self, amount: i32) {
-        // Calculate the effective height based on what's rendered
-        let num_rendered = if self.enabled_keys.count_enabled() == 0 {
-            ValidLetters::all_valid().count_enabled()
-        } else {
-            self.enabled_keys.count_enabled()
-        };
-        let rows_needed = num_rendered.div_ceil(TOTAL_COLS);
-        let keyboard_buffer_height = rows_needed * KEY_HEIGHT as usize;
-
-        let max_scroll = keyboard_buffer_height.saturating_sub(self.visible_height as usize);
-        let new_scroll_position = (self.scroll_position - amount).clamp(0, max_scroll as i32);
+        let max_scroll = FRAMEBUFFER_HEIGHT.saturating_sub(self.visible_height) as i32;
+        let new_scroll_position = (self.scroll_position - amount).clamp(0, max_scroll);
         self.needs_redraw = self.needs_redraw || new_scroll_position != self.scroll_position;
         self.scroll_position = new_scroll_position;
     }
@@ -93,49 +125,31 @@ impl AlphabeticKeyboard {
         }
     }
 
-    fn render_compact_keyboard(&mut self) {
-        // Clear the framebuffer
-        let _ = self.framebuffer.clear(BinaryColor::Off);
+    /// Render all 26 letters A-Z into the framebuffer at fixed grid positions.
+    /// Enabled letters get full brightness, disabled letters get dimmed.
+    fn render_keyboard(&mut self) {
+        let _ = self.framebuffer.clear(Gray4::new(0));
 
-        // Use U8g2TextStyle for monochrome framebuffer
-        let character_style = U8g2TextStyle::new(LEGACY_FONT_LARGE, BinaryColor::On);
-
-        // Determine which keys to render
-        let keys_to_render = if self.enabled_keys.count_enabled() == 0 {
-            ValidLetters::all_valid()
-        } else {
-            self.enabled_keys
-        };
-
-        // Always render in compact layout
-        for (idx, c) in keys_to_render.iter_valid().enumerate() {
+        for idx in 0..NUM_LETTERS {
+            let letter = (b'A' + idx as u8) as char;
             let row = idx / TOTAL_COLS;
             let col = idx % TOTAL_COLS;
+            let cell_x = col as i32 * KEY_WIDTH as i32;
+            let cell_y = row as i32 * KEY_HEIGHT as i32;
 
-            let x = col as i32 * KEY_WIDTH as i32;
-            let y = row as i32 * KEY_HEIGHT as i32;
-            let position = Point::new(x + (KEY_WIDTH as i32 / 2), y + (KEY_HEIGHT as i32 / 2));
+            let scale = if self.enabled_keys.is_valid(letter) {
+                ENABLED_GRAY
+            } else {
+                DISABLED_GRAY
+            };
 
-            let _ = Text::with_text_style(
-                &c.to_string(),
-                position,
-                character_style.clone(),
-                TextStyleBuilder::new()
-                    .alignment(Alignment::Center)
-                    .baseline(Baseline::Middle)
-                    .build(),
-            )
-            .draw(&mut *self.framebuffer);
+            draw_char_to_framebuffer(&mut self.framebuffer, FONT_LARGE, letter, cell_x, cell_y, scale);
         }
     }
 
     pub fn set_valid_keys(&mut self, valid_letters: ValidLetters) {
-        // Simply update the enabled keys
         self.enabled_keys = valid_letters;
-
-        // Reset scroll position and redraw the framebuffer
-        self.scroll_position = 0;
-        self.render_compact_keyboard();
+        self.render_keyboard();
         self.needs_redraw = true;
     }
 
@@ -169,19 +183,14 @@ impl crate::DynWidget for AlphabeticKeyboard {
         use crate::{Key, KeyTouch};
 
         if self.enabled_keys.count_enabled() == 0 {
-            // Handle navigation button touches
             let screen_width = FRAMEBUFFER_WIDTH;
             let screen_height = self.visible_height;
 
-            // Check back button area (left side) - only if we can go back
             if point.x < (screen_width / 2) as i32 && self.current_word_index > 0 {
                 let rect =
                     Rectangle::new(Point::new(0, 0), Size::new(screen_width / 2, screen_height));
                 return Some(KeyTouch::new(Key::NavBack, rect));
-            }
-            // Check forward button area (right side) - only if we can go forward
-            else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 {
-                // 0-24 for 25 words
+            } else if point.x >= (screen_width / 2) as i32 && self.current_word_index < 24 {
                 let rect = Rectangle::new(
                     Point::new((screen_width / 2) as i32, 0),
                     Size::new(screen_width / 2, screen_height),
@@ -190,20 +199,21 @@ impl crate::DynWidget for AlphabeticKeyboard {
             }
         }
 
-        // In compact layout, keys are positioned differently
+        // Fixed grid: letter index = row * 4 + col
         let col = (point.x / KEY_WIDTH as i32) as usize;
         let row = ((point.y + self.scroll_position) / KEY_HEIGHT as i32) as usize;
 
         if col < TOTAL_COLS {
             let idx = row * TOTAL_COLS + col;
-            // Use nth_enabled to get the key at this index
-            if let Some(key) = self.enabled_keys.nth_enabled(idx) {
-                // Calculate the screen position of the key in compact layout
-                let x = col as i32 * KEY_WIDTH as i32;
-                let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
-                let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
-
-                return Some(KeyTouch::new(Key::Keyboard(key), rect));
+            if idx < NUM_LETTERS {
+                let letter = (b'A' + idx as u8) as char;
+                if self.enabled_keys.is_valid(letter) {
+                    let x = col as i32 * KEY_WIDTH as i32;
+                    let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
+                    let rect =
+                        Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
+                    return Some(KeyTouch::new(Key::Keyboard(letter), rect));
+                }
             }
         }
         None
@@ -236,9 +246,7 @@ impl Widget for AlphabeticKeyboard {
 
         let bounds = target.bounding_box();
 
-        // Draw based on layout
         if self.enabled_keys.count_enabled() == 0 {
-            // Draw navigation buttons when no keys are enabled
             let left_arrow = NavArrowLeft::new(PALETTE.on_background);
             let right_arrow = NavArrowRight::new(PALETTE.on_background);
 
@@ -247,7 +255,6 @@ impl Widget for AlphabeticKeyboard {
             let icon_size = 32;
             let padding = 10;
 
-            // Clear the area first
             Rectangle::new(Point::zero(), bounds.size)
                 .into_styled(
                     PrimitiveStyleBuilder::new()
@@ -256,13 +263,11 @@ impl Widget for AlphabeticKeyboard {
                 )
                 .draw(target)?;
 
-            // Draw left arrow if not at the first word
             if self.current_word_index > 0 {
                 let left_point = Point::new(padding, (screen_height / 2 - icon_size / 2) as i32);
                 Image::new(&left_arrow, left_point).draw(target)?;
             }
 
-            // Draw right arrow if not at the last word
             if self.current_word_index < 24 {
                 let right_point = Point::new(
                     (screen_width - icon_size - padding as u32) as i32,
@@ -270,10 +275,19 @@ impl Widget for AlphabeticKeyboard {
                 );
                 Image::new(&right_arrow, right_point).draw(target)?;
             }
-
-            // Removed word number display - not needed with navigation buttons
         } else {
-            // Draw the framebuffer for compact keyboard
+            // Draw the Gray4 framebuffer, mapping gray levels to blended Rgb565 colors.
+            // We pre-compute a 16-entry lookup table for the blend.
+            let color_lut = {
+                use crate::{ColorInterpolate, Frac};
+                let mut lut = [PALETTE.background; 16];
+                for i in 1..16u8 {
+                    let alpha = Frac::from_ratio(i as u32, 15);
+                    lut[i as usize] = PALETTE.background.interpolate(PALETTE.primary_container, alpha);
+                }
+                lut
+            };
+
             let content_height = ((self.framebuffer.size().height as i32 - self.scroll_position)
                 .max(0) as u32)
                 .min(bounds.size.height);
@@ -282,16 +296,12 @@ impl Widget for AlphabeticKeyboard {
                 let skip_pixels =
                     (self.scroll_position.max(0) as usize) * FRAMEBUFFER_WIDTH as usize;
 
-                // Draw the framebuffer content followed by background padding
                 let framebuffer_pixels =
-                    RawDataSlice::<RawU1, LittleEndian>::new(self.framebuffer.data())
+                    RawDataSlice::<RawU4, LittleEndian>::new(self.framebuffer.data())
                         .into_iter()
                         .skip(skip_pixels)
                         .take(FRAMEBUFFER_WIDTH as usize * content_height as usize)
-                        .map(|r| match BinaryColor::from(r) {
-                            BinaryColor::Off => PALETTE.background,
-                            BinaryColor::On => PALETTE.primary_container,
-                        });
+                        .map(|r| color_lut[Gray4::from(r).luma() as usize]);
 
                 let padding_pixels = core::iter::repeat_n(
                     PALETTE.background,
