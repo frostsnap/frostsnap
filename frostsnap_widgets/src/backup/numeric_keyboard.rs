@@ -38,15 +38,10 @@ impl NumericButton {
         // Center align the text
         let aligned_text = Align::new(text);
 
-        // Wrap in a Container with button styling
-        let container_fill = if enabled {
-            PALETTE.surface
-        } else {
-            PALETTE.surface_variant
-        };
-
+        // Wrap in a Container with button styling — always use normal surface color
         let container = Container::new(aligned_text)
-            .with_fill(container_fill)
+            .with_expanded()
+            .with_fill(PALETTE.surface)
             .with_corner_radius(Size::new(8, 8));
 
         let button = Self {
@@ -69,29 +64,18 @@ impl NumericButton {
         if self.enabled != enabled {
             self.enabled = enabled;
 
-            // Update text color
+            // Only grey out the text, keep the button surface color
             let text_color = if enabled {
                 PALETTE.primary
             } else {
                 PALETTE.text_disabled
             };
 
-            // Update container fill
-            let container_fill = if enabled {
-                PALETTE.surface
-            } else {
-                PALETTE.surface_variant
-            };
-
-            // Update the text character style
             self.inner
                 .child
                 .child
                 .child
                 .set_character_style(DefaultTextStyle::new(FONT_MED, text_color));
-
-            // Update the container fill
-            self.inner.set_fill(container_fill);
         }
     }
 }
@@ -114,7 +98,7 @@ impl CheckmarkButton {
     fn new(enabled: bool) -> TouchListener<Self> {
         // Use smaller size24px icon and set color based on enabled state
         let icon_color = if enabled {
-            PALETTE.on_primary_container
+            PALETTE.tertiary
         } else {
             PALETTE.text_disabled
         };
@@ -130,11 +114,11 @@ impl CheckmarkButton {
         let container_fill = if enabled {
             PALETTE.primary_container
         } else {
-            PALETTE.surface_variant
+            PALETTE.surface
         };
 
         let container = Container::new(aligned_icon)
-            .with_height(50)
+            .with_expanded()
             .with_fill(container_fill)
             .with_corner_radius(Size::new(8, 8));
 
@@ -157,24 +141,19 @@ impl CheckmarkButton {
         if self.enabled != enabled {
             self.enabled = enabled;
 
-            // Update icon color
             let icon_color = if enabled {
-                PALETTE.on_primary_container
+                PALETTE.tertiary
             } else {
                 PALETTE.text_disabled
             };
 
-            // Update container fill
             let container_fill = if enabled {
                 PALETTE.primary_container
             } else {
-                PALETTE.surface_variant
+                PALETTE.surface
             };
 
-            // Update the icon color using set_color
             self.inner.child.child.set_color(icon_color);
-
-            // Update the container fill
             self.inner.set_fill(container_fill);
         }
     }
