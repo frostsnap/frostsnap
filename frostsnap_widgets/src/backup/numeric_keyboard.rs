@@ -46,6 +46,7 @@ impl NumericButton {
         };
 
         let container = Container::new(aligned_text)
+            .with_expanded()
             .with_fill(container_fill)
             .with_corner_radius(Size::new(8, 8));
 
@@ -134,7 +135,7 @@ impl CheckmarkButton {
         };
 
         let container = Container::new(aligned_icon)
-            .with_height(50)
+            .with_expanded()
             .with_fill(container_fill)
             .with_corner_radius(Size::new(8, 8));
 
