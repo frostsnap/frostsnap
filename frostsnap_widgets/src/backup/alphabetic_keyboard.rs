@@ -22,13 +22,8 @@ const FRAMEBUFFER_WIDTH: u32 = 240;
 const TOTAL_COLS: usize = 4;
 const KEY_WIDTH: u32 = FRAMEBUFFER_WIDTH / TOTAL_COLS as u32;
 const KEY_HEIGHT: u32 = 50;
-const NUM_LETTERS: usize = 26;
-const TOTAL_ROWS: usize = NUM_LETTERS.div_ceil(TOTAL_COLS);
+const TOTAL_ROWS: usize = 7;
 const FRAMEBUFFER_HEIGHT: u32 = TOTAL_ROWS as u32 * KEY_HEIGHT;
-
-/// Gray4 levels used in the framebuffer to distinguish enabled vs disabled keys.
-const ENABLED_GRAY: u8 = 15;
-const DISABLED_GRAY: u8 = 4;
 
 type Fb = Framebuffer<
     Gray4,
@@ -40,14 +35,12 @@ type Fb = Framebuffer<
 >;
 
 /// Draw a single character from a Gray4Font into a Gray4 framebuffer, centered in a cell.
-/// The `scale` parameter scales the glyph's gray values: pixel = glyph_gray * scale / 15.
 fn draw_char_to_framebuffer(
     fb: &mut Fb,
     font: &'static Gray4Font,
     ch: char,
     cell_x: i32,
     cell_y: i32,
-    scale: u8,
 ) {
     let glyph = match font.get_glyph(ch) {
         Some(g) => g,
@@ -71,10 +64,8 @@ fn draw_char_to_framebuffer(
             && (px as u32) < FRAMEBUFFER_WIDTH
             && (py as u32) < FRAMEBUFFER_HEIGHT
         {
-            // Scale the gray value
-            let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
-            if scaled > 0 {
-                let _ = Pixel(Point::new(px, py), Gray4::new(scaled)).draw(fb);
+            if gray.luma() > 0 {
+                let _ = Pixel(Point::new(px, py), gray).draw(fb);
             }
         }
     }
@@ -107,13 +98,21 @@ impl AlphabeticKeyboard {
             current_word_index: 0,
         };
 
-        keyboard.render_keyboard();
+        keyboard.render_compact_keyboard();
         keyboard
     }
 
     pub fn scroll(&mut self, amount: i32) {
-        let max_scroll = FRAMEBUFFER_HEIGHT.saturating_sub(self.visible_height) as i32;
-        let new_scroll_position = (self.scroll_position - amount).clamp(0, max_scroll);
+        let num_rendered = if self.enabled_keys.count_enabled() == 0 {
+            ValidLetters::all_valid().count_enabled()
+        } else {
+            self.enabled_keys.count_enabled()
+        };
+        let rows_needed = num_rendered.div_ceil(TOTAL_COLS);
+        let keyboard_buffer_height = rows_needed * KEY_HEIGHT as usize;
+
+        let max_scroll = keyboard_buffer_height.saturating_sub(self.visible_height as usize);
+        let new_scroll_position = (self.scroll_position - amount).clamp(0, max_scroll as i32);
         self.needs_redraw = self.needs_redraw || new_scroll_position != self.scroll_position;
         self.scroll_position = new_scroll_position;
     }
@@ -125,31 +124,30 @@ impl AlphabeticKeyboard {
         }
     }
 
-    /// Render all 26 letters A-Z into the framebuffer at fixed grid positions.
-    /// Enabled letters get full brightness, disabled letters get dimmed.
-    fn render_keyboard(&mut self) {
+    /// Render only enabled letters in a compact grid layout.
+    fn render_compact_keyboard(&mut self) {
         let _ = self.framebuffer.clear(Gray4::new(0));
 
-        for idx in 0..NUM_LETTERS {
-            let letter = (b'A' + idx as u8) as char;
+        let keys_to_render = if self.enabled_keys.count_enabled() == 0 {
+            ValidLetters::all_valid()
+        } else {
+            self.enabled_keys
+        };
+
+        for (idx, c) in keys_to_render.iter_valid().enumerate() {
             let row = idx / TOTAL_COLS;
             let col = idx % TOTAL_COLS;
             let cell_x = col as i32 * KEY_WIDTH as i32;
             let cell_y = row as i32 * KEY_HEIGHT as i32;
 
-            let scale = if self.enabled_keys.is_valid(letter) {
-                ENABLED_GRAY
-            } else {
-                DISABLED_GRAY
-            };
-
-            draw_char_to_framebuffer(&mut self.framebuffer, FONT_LARGE, letter, cell_x, cell_y, scale);
+            draw_char_to_framebuffer(&mut self.framebuffer, FONT_LARGE, c, cell_x, cell_y);
         }
     }
 
     pub fn set_valid_keys(&mut self, valid_letters: ValidLetters) {
         self.enabled_keys = valid_letters;
-        self.render_keyboard();
+        self.scroll_position = 0;
+        self.render_compact_keyboard();
         self.needs_redraw = true;
     }
 
@@ -199,21 +197,16 @@ impl crate::DynWidget for AlphabeticKeyboard {
             }
         }
 
-        // Fixed grid: letter index = row * 4 + col
         let col = (point.x / KEY_WIDTH as i32) as usize;
         let row = ((point.y + self.scroll_position) / KEY_HEIGHT as i32) as usize;
 
         if col < TOTAL_COLS {
             let idx = row * TOTAL_COLS + col;
-            if idx < NUM_LETTERS {
-                let letter = (b'A' + idx as u8) as char;
-                if self.enabled_keys.is_valid(letter) {
-                    let x = col as i32 * KEY_WIDTH as i32;
-                    let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
-                    let rect =
-                        Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
-                    return Some(KeyTouch::new(Key::Keyboard(letter), rect));
-                }
+            if let Some(key) = self.enabled_keys.nth_enabled(idx) {
+                let x = col as i32 * KEY_WIDTH as i32;
+                let y = row as i32 * KEY_HEIGHT as i32 - self.scroll_position;
+                let rect = Rectangle::new(Point::new(x, y), Size::new(KEY_WIDTH, KEY_HEIGHT));
+                return Some(KeyTouch::new(Key::Keyboard(key), rect));
             }
         }
         None
@@ -276,14 +269,13 @@ impl Widget for AlphabeticKeyboard {
                 Image::new(&right_arrow, right_point).draw(target)?;
             }
         } else {
-            // Draw the Gray4 framebuffer, mapping gray levels to blended Rgb565 colors.
-            // We pre-compute a 16-entry lookup table for the blend.
             let color_lut = {
                 use crate::{ColorInterpolate, Frac};
                 let mut lut = [PALETTE.background; 16];
                 for i in 1..16u8 {
                     let alpha = Frac::from_ratio(i as u32, 15);
-                    lut[i as usize] = PALETTE.background.interpolate(PALETTE.primary_container, alpha);
+                    lut[i as usize] =
+                        PALETTE.background.interpolate(PALETTE.primary_container, alpha);
                 }
                 lut
             };
