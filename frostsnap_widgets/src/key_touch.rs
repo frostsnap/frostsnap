@@ -23,6 +23,10 @@ pub struct KeyTouch {
 }
 
 impl KeyTouch {
+    pub fn rect(&self) -> Rectangle {
+        self.rect
+    }
+
     pub fn translate(&mut self, point: Point) {
         self.rect.top_left += point;
     }
