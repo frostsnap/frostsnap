@@ -303,10 +303,15 @@ impl crate::DynWidget for EnterShareScreen {
         lift_up: bool,
     ) -> Option<KeyTouch> {
         if lift_up {
-            // Otherwise process normal key release
-            // Find the last non-cancelled touch
+            // Find the last non-cancelled touch and release it
             if let Some(active_touch) = self.touches.iter_mut().rev().find(|t| !t.has_been_let_go())
             {
+                // If a previous action is still pending, just animate the
+                // release without processing the key to avoid double-actions.
+                if self.pending_model_update {
+                    active_touch.let_go(current_time);
+                    return None;
+                }
                 if let Some(key) = active_touch.let_go(current_time) {
                     match key {
                         Key::Keyboard('⌫') => {
