@@ -209,8 +209,6 @@ impl Widget for EnterShareScreen {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        // Draw touches and clean up
-        // First draw all touches
         for touch in &mut self.touches {
             touch.draw(target, current_time);
         }
@@ -457,6 +455,7 @@ impl crate::DynWidget for EnterShareScreen {
                         .handle_touch(translated_point, current_time, lift_up)
                         .map(|mut key_touch| {
                             key_touch.translate(self.keyboard_rect.top_left);
+                            key_touch.clamp_to(self.keyboard_rect);
                             key_touch
                         })
                 } else {
