@@ -209,11 +209,15 @@ impl Widget for EnterShareScreen {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        // Draw touches clipped to keyboard area so they don't bleed into the
-        // input preview / progress bar region when the keyboard is scrolled.
+        // Draw touches - clip keyboard-area touches so they don't bleed into
+        // the input preview / progress bar region when the keyboard is scrolled.
         let mut clipped = target.clone().clip(self.keyboard_rect);
         for touch in &mut self.touches {
-            touch.draw(&mut clipped, current_time);
+            if touch.rect().top_left.y >= self.keyboard_rect.top_left.y {
+                touch.draw(&mut clipped, current_time);
+            } else {
+                touch.draw(target, current_time);
+            }
         }
 
         // Then remove finished ones
