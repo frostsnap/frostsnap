@@ -11,6 +11,9 @@ where
 {
     display: Rc<RefCell<D>>,
     crop_area: Rectangle,
+    /// Optional clip rectangle in display coordinates. When set, pixels outside
+    /// this rectangle are discarded. Unlike `crop`, this does not affect translation.
+    clip_rect: Option<Rectangle>,
     opacity: Frac,
     background_color: C,
 }
@@ -25,6 +28,7 @@ where
         Self {
             display: Rc::new(RefCell::new(display)),
             crop_area,
+            clip_rect: None,
             opacity: Frac::ONE,
             background_color,
         }
@@ -35,6 +39,7 @@ where
         Self {
             display,
             crop_area,
+            clip_rect: None,
             opacity: Frac::ONE,
             background_color,
         }
@@ -45,6 +50,20 @@ where
         let mut translated = area;
         translated.top_left += self.crop_area.top_left;
         self.crop_area = translated;
+        self
+    }
+
+    /// Restrict drawing to the given area (in local coordinates) without
+    /// changing the coordinate translation. Pixels outside this area will be
+    /// discarded.
+    pub fn clip(mut self, area: Rectangle) -> Self {
+        // Convert local coordinates to display coordinates
+        let mut display_area = area;
+        display_area.top_left += self.crop_area.top_left;
+        self.clip_rect = Some(match self.clip_rect {
+            Some(existing) => rect_intersection(existing, display_area),
+            None => display_area,
+        });
         self
     }
 
@@ -101,6 +120,7 @@ where
         Self {
             display: Rc::clone(&self.display),
             crop_area: self.crop_area,
+            clip_rect: self.clip_rect,
             opacity: self.opacity,
             background_color: self.background_color,
         }
@@ -121,13 +141,20 @@ where
     {
         let mut display = self.display.borrow_mut();
         let crop = self.crop_area;
+        let clip = self.clip_rect;
 
         if self.opacity < Frac::ONE {
             // Cache with invalidation based on source color
             let mut cache: Option<(C, C)> = None; // (source_color, interpolated_color)
 
-            let pixels = pixels.into_iter().map(|Pixel(point, color)| {
+            let pixels = pixels.into_iter().filter_map(|Pixel(point, color)| {
                 let translated_point = point + crop.top_left;
+
+                if let Some(clip) = clip {
+                    if !clip.contains(translated_point) {
+                        return None;
+                    }
+                }
 
                 let final_color = match cache {
                     Some((cached_source, cached_result)) if cached_source == color => {
@@ -142,14 +169,19 @@ where
                     }
                 };
 
-                Pixel(translated_point, final_color)
+                Some(Pixel(translated_point, final_color))
             });
             display.draw_iter(pixels)
         } else {
             // Just translate points
-            let pixels = pixels.into_iter().map(|Pixel(point, color)| {
+            let pixels = pixels.into_iter().filter_map(|Pixel(point, color)| {
                 let translated_point = point + crop.top_left;
-                Pixel(translated_point, color)
+                if let Some(clip) = clip {
+                    if !clip.contains(translated_point) {
+                        return None;
+                    }
+                }
+                Some(Pixel(translated_point, color))
             });
             display.draw_iter(pixels)
         }
@@ -198,6 +230,14 @@ where
 
         let mut translated_area = *area;
         translated_area.top_left += self.crop_area.top_left;
+
+        if let Some(clip) = self.clip_rect {
+            translated_area = rect_intersection(translated_area, clip);
+            if translated_area.size.width == 0 || translated_area.size.height == 0 {
+                return Ok(());
+            }
+        }
+
         display.fill_solid(&translated_area, final_color)
     }
 
@@ -210,8 +250,34 @@ where
             color
         };
 
+        let mut area = self.crop_area;
+        if let Some(clip) = self.clip_rect {
+            area = rect_intersection(area, clip);
+            if area.size.width == 0 || area.size.height == 0 {
+                return Ok(());
+            }
+        }
+
         // When clearing with a crop, we fill the crop area
-        display.fill_solid(&self.crop_area, final_color)
+        display.fill_solid(&area, final_color)
+    }
+}
+
+/// Compute the intersection of two rectangles. Returns a zero-size rectangle if
+/// they don't overlap.
+fn rect_intersection(a: Rectangle, b: Rectangle) -> Rectangle {
+    let left = a.top_left.x.max(b.top_left.x);
+    let top = a.top_left.y.max(b.top_left.y);
+    let right = (a.top_left.x + a.size.width as i32).min(b.top_left.x + b.size.width as i32);
+    let bottom = (a.top_left.y + a.size.height as i32).min(b.top_left.y + b.size.height as i32);
+
+    if right <= left || bottom <= top {
+        Rectangle::new(Point::new(left, top), Size::zero())
+    } else {
+        Rectangle::new(
+            Point::new(left, top),
+            Size::new((right - left) as u32, (bottom - top) as u32),
+        )
     }
 }
 
