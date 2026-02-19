@@ -113,6 +113,11 @@ impl BackupModel {
         let mut mutations = Vec::new();
         let (row, current) = self.current_string();
 
+        // Limit share index to 7 characters to prevent display overflow
+        if row == 0 && current.len() >= 7 {
+            return mutations;
+        }
+
         // Add the character
         current.push(c);
         mutations.push(FramebufferMutation::SetCharacter {

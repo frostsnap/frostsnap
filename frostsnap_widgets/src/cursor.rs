@@ -8,7 +8,7 @@ use embedded_graphics::{
 };
 
 // Font size matching the one used in bip39_input_preview
-const FONT_SIZE: Size = Size::new(16, 24);
+const FONT_SIZE: Size = Size::new(17, 29);
 
 #[derive(Debug)]
 pub struct Cursor {
@@ -24,16 +24,18 @@ impl Cursor {
             last_toggle: None,
             rect: Rectangle {
                 top_left: position,
-                size: Size::new(FONT_SIZE.width - 4, 2),
+                size: Size::new(FONT_SIZE.width, 2),
             },
             last_draw_rect: None,
-            enabled: true,
+            enabled: false,
         }
     }
 
     pub fn set_position(&mut self, new_position: Point) {
-        self.rect.top_left = new_position;
-        self.last_toggle = None;
+        if self.rect.top_left != new_position {
+            self.rect.top_left = new_position;
+            self.last_toggle = None;
+        }
     }
 
     pub fn enabled(&mut self, enabled: bool) {
