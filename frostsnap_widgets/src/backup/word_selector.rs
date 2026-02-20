@@ -1,6 +1,6 @@
 use crate::{
-    any_of::AnyOf, palette::PALETTE, prelude::*, touch_listener::TouchListener,
-    DefaultTextStyle, Key, SizedBox, FONT_MED,
+    any_of::AnyOf, palette::PALETTE, prelude::*, touch_listener::TouchListener, DefaultTextStyle,
+    Key, SizedBox, FONT_MED,
 };
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
@@ -98,11 +98,13 @@ impl WordSelector {
         // WordButton height: FONT_MED line_height (19px) + padding top(15) + bottom(8) = 42px
         let placeholder_height = 42;
         while left_words.len() < WORDS_PER_COLUMN {
-            let placeholder: WordOrEmpty = AnyOf::new(SizedBox::<Rgb565>::new(Size::new(110, placeholder_height)));
+            let placeholder: WordOrEmpty =
+                AnyOf::new(SizedBox::<Rgb565>::new(Size::new(110, placeholder_height)));
             left_words.push(placeholder);
         }
         while right_words.len() < WORDS_PER_COLUMN {
-            let placeholder: WordOrEmpty = AnyOf::new(SizedBox::<Rgb565>::new(Size::new(110, placeholder_height)));
+            let placeholder: WordOrEmpty =
+                AnyOf::new(SizedBox::<Rgb565>::new(Size::new(110, placeholder_height)));
             right_words.push(placeholder);
         }
 

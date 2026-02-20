@@ -63,10 +63,9 @@ fn draw_char_to_framebuffer(
             && py >= 0
             && (px as u32) < FRAMEBUFFER_WIDTH
             && (py as u32) < FRAMEBUFFER_HEIGHT
+            && gray.luma() > 0
         {
-            if gray.luma() > 0 {
-                let _ = Pixel(Point::new(px, py), gray).draw(fb);
-            }
+            let _ = Pixel(Point::new(px, py), gray).draw(fb);
         }
     }
 }
@@ -239,7 +238,9 @@ impl Widget for AlphabeticKeyboard {
 
         let bounds = target.bounding_box();
 
+        // Draw based on layout
         if self.enabled_keys.count_enabled() == 0 {
+            // Draw navigation buttons when no keys are enabled
             let left_arrow = NavArrowLeft::new(PALETTE.on_background);
             let right_arrow = NavArrowRight::new(PALETTE.on_background);
 
@@ -248,6 +249,7 @@ impl Widget for AlphabeticKeyboard {
             let icon_size = 32;
             let padding = 10;
 
+            // Clear the area first
             Rectangle::new(Point::zero(), bounds.size)
                 .into_styled(
                     PrimitiveStyleBuilder::new()
@@ -256,11 +258,13 @@ impl Widget for AlphabeticKeyboard {
                 )
                 .draw(target)?;
 
+            // Draw left arrow if not at the first word
             if self.current_word_index > 0 {
                 let left_point = Point::new(padding, (screen_height / 2 - icon_size / 2) as i32);
                 Image::new(&left_arrow, left_point).draw(target)?;
             }
 
+            // Draw right arrow if not at the last word
             if self.current_word_index < 24 {
                 let right_point = Point::new(
                     (screen_width - icon_size - padding as u32) as i32,
@@ -274,8 +278,9 @@ impl Widget for AlphabeticKeyboard {
                 let mut lut = [PALETTE.background; 16];
                 for i in 1..16u8 {
                     let alpha = Frac::from_ratio(i as u32, 15);
-                    lut[i as usize] =
-                        PALETTE.background.interpolate(PALETTE.primary_container, alpha);
+                    lut[i as usize] = PALETTE
+                        .background
+                        .interpolate(PALETTE.primary_container, alpha);
                 }
                 lut
             };

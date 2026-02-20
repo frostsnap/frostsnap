@@ -20,6 +20,10 @@ use super::{
 use crate::scroll_bar::{ScrollBar, SCROLLBAR_WIDTH};
 
 const WORD_LIST_LEFT_PAD: i32 = 4; // Left padding for word list
+/// Shift touch outline up to visually center on text. The font has 7px of descender
+/// space below the baseline that most glyphs don't use, so the visual center of the
+/// text is higher than the geometric center of the row.
+const TOUCH_Y_ADJUST: i32 = -3;
 
 pub struct EnteredWords {
     framebuffer: Rc<RefCell<Fb>>,
@@ -251,7 +255,8 @@ impl EnteredWords {
 
         // Create a rectangle for the touched word (includes padding)
         // Add TOP_PADDING since words are offset in the framebuffer
-        let y = TOP_PADDING as i32 + (word_index as i32 * row_height) - self.scroll_position;
+        let y = TOP_PADDING as i32 + (word_index as i32 * row_height) - self.scroll_position
+            + TOUCH_Y_ADJUST;
         let status_y = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
 
         // Clip the rectangle height if it would extend into the status area

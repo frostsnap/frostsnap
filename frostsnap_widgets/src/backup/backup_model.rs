@@ -189,7 +189,7 @@ impl BackupModel {
 
                 let matches = bip39_words::words_with_prefix(current);
 
-                if matches.len() >= 1 && matches.len() <= 8 {
+                if !matches.is_empty() && matches.len() <= 8 {
                     // We're in word selector range (1-8 matches)
                     // Check if next deletion would give us >8 matches (keyboard state)
                     if current.len() > 1 {
@@ -345,7 +345,7 @@ impl BackupModel {
                 // Check how many words match current prefix
                 let matches = bip39_words::words_with_prefix(current_word);
 
-                if matches.len() >= 1 && matches.len() <= 8 {
+                if !matches.is_empty() && matches.len() <= 8 {
                     // Show word selector for 1-8 matches (consistent UX)
                     MainViewState::WordSelect {
                         current,

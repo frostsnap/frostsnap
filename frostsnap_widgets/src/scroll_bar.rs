@@ -15,6 +15,7 @@ pub struct ScrollBar {
     thumb_size: Frac,
     scroll_position: Rat,
     height: Option<u32>,
+    last_thumb_rect: Option<Rectangle>,
 }
 
 impl ScrollBar {
@@ -24,6 +25,7 @@ impl ScrollBar {
             thumb_size,
             scroll_position: Rat::ZERO,
             height: None,
+            last_thumb_rect: None,
         }
     }
 
@@ -56,27 +58,52 @@ impl ScrollBar {
             Size::new(track_rect.size.width, thumb_height.round()),
         );
 
-        // Always draw the track background
-        let track = RoundedRectangle::with_equal_corners(track_rect, Size::new(2, 2));
-        let _ = track
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(PALETTE.surface_variant)
-                    .build(),
-            )
-            .draw(target);
+        let track_style = PrimitiveStyleBuilder::new()
+            .fill_color(PALETTE.surface_variant)
+            .build();
+        let thumb_style = PrimitiveStyleBuilder::new()
+            .fill_color(PALETTE.on_surface_variant)
+            .build();
+
+        if let Some(old_thumb) = self.last_thumb_rect {
+            // Only repaint the region vacated by the old thumb, then draw the new thumb.
+            // This avoids clearing the entire track which causes flicker.
+            let old_top = old_thumb.top_left.y;
+            let old_bottom = old_top + old_thumb.size.height as i32;
+            let new_top = thumb_rect.top_left.y;
+            let new_bottom = new_top + thumb_rect.size.height as i32;
+
+            // Clear the strip of the old thumb that the new thumb doesn't cover
+            if new_top > old_top {
+                // Old thumb extended above new thumb — clear that strip with track color
+                let clear_height = (new_top - old_top).min(old_thumb.size.height as i32);
+                let clear = Rectangle::new(
+                    Point::new(track_rect.top_left.x, old_top),
+                    Size::new(track_rect.size.width, clear_height as u32),
+                );
+                let _ = clear.into_styled(track_style).draw(target);
+            }
+            if new_bottom < old_bottom {
+                // Old thumb extended below new thumb — clear that strip with track color
+                let clear_height = (old_bottom - new_bottom).min(old_thumb.size.height as i32);
+                let clear = Rectangle::new(
+                    Point::new(track_rect.top_left.x, new_bottom),
+                    Size::new(track_rect.size.width, clear_height as u32),
+                );
+                let _ = clear.into_styled(track_style).draw(target);
+            }
+        } else {
+            // First draw: paint the full track background
+            let track = RoundedRectangle::with_equal_corners(track_rect, Size::new(2, 2));
+            let _ = track.into_styled(track_style).draw(target);
+        }
 
         // Draw the thumb
         let thumb = RoundedRectangle::with_equal_corners(thumb_rect, Size::new(2, 2));
-        let _ = thumb
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(PALETTE.on_surface_variant)
-                    .build(),
-            )
-            .draw(target);
+        let _ = thumb.into_styled(thumb_style).draw(target);
 
         self.last_scroll_position = Some(self.scroll_position);
+        self.last_thumb_rect = Some(thumb_rect);
     }
 }
 
@@ -97,6 +124,7 @@ impl crate::DynWidget for ScrollBar {
 
     fn force_full_redraw(&mut self) {
         self.last_scroll_position = None;
+        self.last_thumb_rect = None;
     }
 }
 
