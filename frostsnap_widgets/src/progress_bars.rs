@@ -51,8 +51,8 @@ impl ProgressBars {
         for (i, container) in self.row.children.iter_mut().enumerate() {
             if i < new_progress {
                 // This bar should be "on" - set to green
-                if container.fill_color() != Some(PALETTE.tertiary) {
-                    container.set_fill(PALETTE.tertiary);
+                if container.fill_color() != Some(PALETTE.logo) {
+                    container.set_fill(PALETTE.logo);
                 }
             } else {
                 // This bar should be "off" - set to gray

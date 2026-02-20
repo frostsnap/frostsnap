@@ -52,6 +52,9 @@ pub struct EnterShareScreen {
     pending_model_update: bool,
     size: Size,
     auto_fill_enabled: bool,
+    /// When the valid backup state was first reached
+    valid_since: Option<crate::Instant>,
+    current_time: Option<crate::Instant>,
 }
 
 impl Default for EnterShareScreen {
@@ -79,6 +82,8 @@ impl EnterShareScreen {
             pending_model_update: false,
             size: Size::zero(),
             auto_fill_enabled: false,
+            valid_since: None,
+            current_time: None,
         }
     }
 
@@ -91,7 +96,18 @@ impl EnterShareScreen {
 
     pub fn get_backup(&self) -> Option<frost_backup::share_backup::ShareBackup> {
         if let MainViewState::AllWordsEntered { success } = &self.model.view_state().main_view {
-            success.clone()
+            if let Some(backup) = success {
+                // Delay returning the valid backup for 2 seconds so the user can see
+                // the success screen
+                const SUCCESS_DELAY_MS: u64 = 1000;
+                if let (Some(valid_since), Some(now)) = (self.valid_since, self.current_time) {
+                    let elapsed = now.duration_since(valid_since).unwrap_or(0);
+                    if elapsed >= SUCCESS_DELAY_MS {
+                        return Some(backup.clone());
+                    }
+                }
+            }
+            None
         } else {
             None
         }
@@ -106,9 +122,13 @@ impl EnterShareScreen {
     }
 
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        // scrolling cancels the touch
-        if let Some(active_touch) = self.touches.last_mut() {
-            active_touch.cancel()
+        // Cancel the active touch on drag, but not if a model update is pending —
+        // cancelling would make the touch finish immediately, triggering the
+        // pending update and interrupting the input preview scroll animation.
+        if !self.pending_model_update {
+            if let Some(active_touch) = self.touches.last_mut() {
+                active_touch.cancel()
+            }
         }
 
         if let Some(ref mut entered_words) = self.entered_words {
@@ -138,7 +158,12 @@ impl EnterShareScreen {
         self.input_preview.update_progress(completed_rows);
         // Update keyboard/UI based on main view state
         match view_state.main_view {
-            MainViewState::AllWordsEntered { .. } => {
+            MainViewState::AllWordsEntered { ref success } => {
+                // Record when we first see a valid backup
+                if success.is_some() && self.valid_since.is_none() {
+                    self.valid_since = self.current_time;
+                }
+
                 // Show the EnteredWords view - same as when user taps ShowEnteredWords
                 if self.entered_words.is_none() {
                     let framebuffer = self.input_preview.get_framebuffer();
@@ -209,6 +234,8 @@ impl Widget for EnterShareScreen {
     where
         D: DrawTarget<Color = Self::Color>,
     {
+        self.current_time = Some(current_time);
+
         // Draw touches clipped to keyboard area so they don't bleed into the
         // progress bar. The backspace button is in the input preview area and
         // its rect already excludes the progress bar, so it draws unclipped.
@@ -319,6 +346,11 @@ impl crate::DynWidget for EnterShareScreen {
                     return None;
                 }
                 if let Some(key) = active_touch.let_go(current_time) {
+                    // Fast forward any ongoing scrolling animation when a key
+                    // is actually selected (not just touched and then dragged away)
+                    if matches!(key, Key::Keyboard(_)) {
+                        self.input_preview.fast_forward_scrolling();
+                    }
                     match key {
                         Key::Keyboard('⌫') => {
                             // Just pass to model, let it handle
@@ -417,7 +449,10 @@ impl crate::DynWidget for EnterShareScreen {
             }
 
             // Handle touch for different modes
-            let key_touch = if let Some(ref entered_words) = self.entered_words {
+            let key_touch = if self.valid_since.is_some() {
+                // Valid backup — disable all touches during the success delay
+                None
+            } else if let Some(ref entered_words) = self.entered_words {
                 // EnteredWords is full-screen, handle its touches directly
                 entered_words.handle_touch(point)
             } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
@@ -471,12 +506,6 @@ impl crate::DynWidget for EnterShareScreen {
             };
 
             if let Some(key_touch) = key_touch {
-                // Fast forward any ongoing scrolling animation immediately
-                // This ensures the UI is responsive to new input
-                if matches!(key_touch.key, Key::Keyboard(_)) {
-                    self.input_preview.fast_forward_scrolling();
-                }
-
                 if let Some(last) = self.touches.last_mut() {
                     if last.key == key_touch.key {
                         self.touches.pop();
@@ -491,9 +520,13 @@ impl crate::DynWidget for EnterShareScreen {
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        // scrolling cancels the touch
-        if let Some(active_touch) = self.touches.last_mut() {
-            active_touch.cancel()
+        // Cancel the active touch on drag, but not if a model update is pending —
+        // cancelling would make the touch finish immediately, triggering the
+        // pending update and interrupting the input preview scroll animation.
+        if !self.pending_model_update {
+            if let Some(active_touch) = self.touches.last_mut() {
+                active_touch.cancel()
+            }
         }
 
         if let Some(ref mut entered_words) = self.entered_words {

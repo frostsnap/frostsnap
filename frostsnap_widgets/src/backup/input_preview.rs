@@ -3,9 +3,7 @@ use crate::cursor::Cursor;
 use crate::palette::PALETTE;
 use crate::progress_bars::ProgressBars;
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{
-    icons, DynWidget, Key, KeyTouch, Widget, FONT_HUGE_MONO,
-};
+use crate::{icons, DynWidget, Key, KeyTouch, Widget, FONT_HUGE_MONO};
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use embedded_graphics::{
@@ -20,7 +18,6 @@ use embedded_graphics::{
 };
 use frost_backup::NUM_WORDS;
 use frostsnap_fonts::Gray4Font;
-
 
 // Constants for vertical BIP39 word display
 pub(super) const TOTAL_WORDS: usize = NUM_WORDS;
@@ -38,8 +35,8 @@ pub(super) const FB_HEIGHT: u32 =
 const FB_FONT: &Gray4Font = FONT_HUGE_MONO;
 
 /// Gray levels used in the framebuffer to distinguish word numbers from word text
-const INDEX_GRAY: u8 = 6;  // Dim - for row numbers
-const TEXT_GRAY: u8 = 15;  // Full brightness - for entered text
+const INDEX_GRAY: u8 = 6; // Dim - for row numbers
+const TEXT_GRAY: u8 = 15; // Full brightness - for entered text
 
 pub(super) type Fb = Framebuffer<
     Gray4,
@@ -195,7 +192,8 @@ impl InputPreview {
         // where scroll_offset centers the row: TOP_PADDING + row_height/2 - viewport_height/2
         // Simplifies to: (viewport_height + FONT_SIZE.height) / 2 - cursor_height
         let cursor_height = 2i32;
-        let y = (self.preview_rect.size.height as i32 + FONT_SIZE.height as i32) / 2 - cursor_height;
+        let y =
+            (self.preview_rect.size.height as i32 + FONT_SIZE.height as i32) / 2 - cursor_height;
         self.cursor.set_position(Point::new(x as i32, y));
 
         // Enable cursor when there's text but row isn't complete (not in word selection)
@@ -210,7 +208,6 @@ impl InputPreview {
         // Update scroll position to show the current row
         self.framebuf
             .update_scroll_position_for_row(view_state.row, false);
-
     }
 
     fn draw_cursor<D: DrawTarget<Color = Rgb565>>(
@@ -309,9 +306,7 @@ impl Widget for InputPreview {
             // Draw backspace icon in the right portion of its touch area
             icons::backspace()
                 .with_color(PALETTE.error)
-                .with_center(
-                    self.backspace_rect.center(),
-                )
+                .with_center(self.backspace_rect.center())
                 .draw(target);
 
             self.init_draw = true;
@@ -416,13 +411,7 @@ impl Framebuf {
                     ));
 
                     let _ = char_frame.clear(Gray4::new(0));
-                    draw_gray4_char(
-                        &mut char_frame,
-                        FB_FONT,
-                        *ch,
-                        Point::zero(),
-                        TEXT_GRAY,
-                    );
+                    draw_gray4_char(&mut char_frame, FB_FONT, *ch, Point::zero(), TEXT_GRAY);
                 }
                 FramebufferMutation::DelCharacter { row, pos } => {
                     let x = ((INDEX_CHARS + SPACE_BETWEEN) + pos) * FONT_SIZE.width as usize;
