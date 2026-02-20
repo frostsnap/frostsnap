@@ -16,15 +16,15 @@ type WarningIcon = Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>;
 
 const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
-// Warning colors for destructive wipe action
-/// Darker red for button fill in wipe confirmation
-const WIPE_BUTTON_FILL_COLOR: Rgb565 = Rgb565::new(25, 8, 4);
-/// Brighter red for border/outline in wipe confirmation
-const WIPE_BUTTON_BORDER_COLOR: Rgb565 = Rgb565::new(31, 14, 8);
+// Warning colors for destructive erase action
+/// Darker red for button fill in erase confirmation
+const ERASE_BUTTON_FILL_COLOR: Rgb565 = Rgb565::new(25, 8, 4);
+/// Brighter red for border/outline in erase confirmation
+const ERASE_BUTTON_BORDER_COLOR: Rgb565 = Rgb565::new(31, 14, 8);
 
-/// Warning page for wipe device
+/// Warning page for erase device
 #[derive(frostsnap_macros::Widget)]
-pub struct WipeWarningPage {
+pub struct EraseWarningPage {
     #[widget_delegate]
     center: Center<
         Column<(
@@ -41,7 +41,7 @@ pub struct WipeWarningPage {
     >,
 }
 
-impl WipeWarningPage {
+impl EraseWarningPage {
     fn new() -> Self {
         // Use the warning icon BMP
         let warning_icon = Image::new(GrayToAlpha::new(
@@ -55,7 +55,7 @@ impl WipeWarningPage {
             "Warning".to_string(),
             Gray4TextStyle::new(
                 &frostsnap_fonts::NOTO_SANS_18_MEDIUM,
-                WIPE_BUTTON_BORDER_COLOR,
+                ERASE_BUTTON_BORDER_COLOR,
             ), // Same red as border
         );
 
@@ -68,7 +68,7 @@ impl WipeWarningPage {
 
         // Title in white
         let title_text = Text::new(
-            "Wipe Device".to_string(),
+            "Erase Device".to_string(),
             Gray4TextStyle::new(&frostsnap_fonts::NOTO_SANS_24_BOLD, PALETTE.on_background),
         );
 
@@ -102,8 +102,8 @@ impl WipeWarningPage {
     }
 }
 
-/// Confirmation page for wipe device with red hold-to-confirm
-pub struct WipeConfirmationPage {
+/// Confirmation page for erase device with red hold-to-confirm
+pub struct EraseConfirmationPage {
     hold_confirm: HoldToConfirm<
         Column<(
             SizedBox<Rgb565>, // spacer0
@@ -113,7 +113,7 @@ pub struct WipeConfirmationPage {
                 Text<Gray4TextStyle>, // "Warning" text
             )>,
             SizedBox<Rgb565>,                                     // spacer1
-            Text<Gray4TextStyle>,                                 // wipe_text
+            Text<Gray4TextStyle>,                                 // erase_text
             SizedBox<Rgb565>,                                     // spacer2
             Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>, // press_text split into two lines
             SizedBox<Rgb565>,                                     // spacer3
@@ -122,7 +122,7 @@ pub struct WipeConfirmationPage {
     fade_started: bool,
 }
 
-impl WipeConfirmationPage {
+impl EraseConfirmationPage {
     fn new() -> Self {
         // Warning icon and text at top
         let warning_icon = Image::new(GrayToAlpha::new(
@@ -136,7 +136,7 @@ impl WipeConfirmationPage {
             "Warning".to_string(),
             Gray4TextStyle::new(
                 &frostsnap_fonts::NOTO_SANS_18_MEDIUM,
-                WIPE_BUTTON_BORDER_COLOR,
+                ERASE_BUTTON_BORDER_COLOR,
             ), // Same red as border
         );
 
@@ -146,10 +146,10 @@ impl WipeConfirmationPage {
 
         let spacer0 = SizedBox::<Rgb565>::new(Size::new(1, 20)); // Space before warning row
 
-        let spacer1 = SizedBox::<Rgb565>::new(Size::new(1, 15)); // Space between warning and "Hold to Wipe"
+        let spacer1 = SizedBox::<Rgb565>::new(Size::new(1, 15)); // Space between warning and "Hold to Erase"
 
-        let wipe_text = Text::new(
-            "Hold to Wipe Device".to_string(),
+        let erase_text = Text::new(
+            "Hold to Erase Device".to_string(),
             Gray4TextStyle::new(&frostsnap_fonts::NOTO_SANS_18_MEDIUM, PALETTE.on_background),
         );
 
@@ -179,7 +179,7 @@ impl WipeConfirmationPage {
             spacer0,
             warning_row,
             spacer1,
-            wipe_text,
+            erase_text,
             spacer2,
             press_text,
             spacer3,
@@ -193,9 +193,9 @@ impl WipeConfirmationPage {
         // Red: fill(25,8,4) -> border calculated proportionally
         let hold_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, confirm_content)
             .with_custom_colors(
-                WIPE_BUTTON_BORDER_COLOR, // Brighter red for border progress
-                WIPE_BUTTON_FILL_COLOR,   // Darker red for button fill
-                WIPE_BUTTON_BORDER_COLOR, // Brighter red for button outline
+                ERASE_BUTTON_BORDER_COLOR, // Brighter red for border progress
+                ERASE_BUTTON_FILL_COLOR,   // Darker red for button fill
+                ERASE_BUTTON_BORDER_COLOR, // Brighter red for button outline
             )
             .with_faded_out_button();
 
@@ -217,7 +217,7 @@ impl WipeConfirmationPage {
     }
 }
 
-impl DynWidget for WipeConfirmationPage {
+impl DynWidget for EraseConfirmationPage {
     fn set_constraints(&mut self, max_size: Size) {
         self.hold_confirm.set_constraints(max_size);
     }
@@ -246,7 +246,7 @@ impl DynWidget for WipeConfirmationPage {
     }
 }
 
-impl Widget for WipeConfirmationPage {
+impl Widget for EraseConfirmationPage {
     type Color = Rgb565;
 
     fn draw<D>(
@@ -261,40 +261,40 @@ impl Widget for WipeConfirmationPage {
     }
 }
 
-/// Type alias for the wipe device pages
-type WipeDevicePage = AnyOf<(WipeWarningPage, WipeConfirmationPage)>;
+/// Type alias for the erase device pages
+type EraseDevicePage = AnyOf<(EraseWarningPage, EraseConfirmationPage)>;
 
-/// List of pages for wipe device flow
-pub struct WipeDevicePageList;
+/// List of pages for erase device flow
+pub struct EraseDevicePageList;
 
-impl WidgetList<WipeDevicePage> for WipeDevicePageList {
+impl WidgetList<EraseDevicePage> for EraseDevicePageList {
     fn len(&self) -> usize {
         2 // Warning page and confirmation page
     }
 
-    fn get(&self, index: usize) -> Option<WipeDevicePage> {
+    fn get(&self, index: usize) -> Option<EraseDevicePage> {
         match index {
-            0 => Some(AnyOf::new(WipeWarningPage::new())),
-            1 => Some(AnyOf::new(WipeConfirmationPage::new())),
+            0 => Some(AnyOf::new(EraseWarningPage::new())),
+            1 => Some(AnyOf::new(EraseConfirmationPage::new())),
             _ => None,
         }
     }
 }
 
-/// Main wipe device widget with page slider
+/// Main erase device widget with page slider
 #[derive(frostsnap_macros::Widget)]
-pub struct WipeDevice {
+pub struct EraseDevice {
     #[widget_delegate]
-    page_slider: PageSlider<WipeDevicePageList, WipeDevicePage>,
+    page_slider: PageSlider<EraseDevicePageList, EraseDevicePage>,
 }
 
-impl WipeDevice {
+impl EraseDevice {
     pub fn new() -> Self {
-        let page_list = WipeDevicePageList;
+        let page_list = EraseDevicePageList;
         let page_slider = PageSlider::new(page_list)
             .with_on_page_ready(|page| {
-                // Try to downcast to WipeConfirmationPage
-                if let Some(confirmation_page) = page.downcast_mut::<WipeConfirmationPage>() {
+                // Try to downcast to EraseConfirmationPage
+                if let Some(confirmation_page) = page.downcast_mut::<EraseConfirmationPage>() {
                     // Fade in the button when the confirmation page is ready
                     confirmation_page.fade_in_button();
                 }
@@ -304,18 +304,18 @@ impl WipeDevice {
         Self { page_slider }
     }
 
-    /// Check if the user has confirmed the wipe
+    /// Check if the user has confirmed the erase
     pub fn is_confirmed(&mut self) -> bool {
         // Check if we're on the confirmation page and it's confirmed
         let page = self.page_slider.current_widget();
-        if let Some(confirmation_page) = page.downcast_ref::<WipeConfirmationPage>() {
+        if let Some(confirmation_page) = page.downcast_ref::<EraseConfirmationPage>() {
             return confirmation_page.is_confirmed();
         }
         false
     }
 }
 
-impl Default for WipeDevice {
+impl Default for EraseDevice {
     fn default() -> Self {
         Self::new()
     }

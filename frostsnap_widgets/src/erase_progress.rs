@@ -12,8 +12,11 @@ pub struct EraseProgress {
 
 impl EraseProgress {
     pub fn new(progress: Frac) -> Self {
-        let title = Text::new("Erasing...", DefaultTextStyle::new(FONT_MED, PALETTE.error))
-            .with_alignment(Alignment::Center);
+        let title = Text::new(
+            "Erasing...",
+            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
+        )
+        .with_alignment(Alignment::Center);
 
         let mut progress_indicator = ProgressIndicator::new();
         progress_indicator.set_progress(progress);

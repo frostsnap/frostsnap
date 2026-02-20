@@ -43,6 +43,7 @@ pub mod bobbing_carat;
 pub mod circle_button;
 pub mod demo_widget;
 pub mod device_name;
+pub mod erase_device;
 pub mod erase_progress;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
@@ -72,7 +73,6 @@ pub mod touch_listener;
 pub mod translate;
 pub mod vec_framebuffer;
 pub mod widget_color;
-pub mod wipe_device;
 
 // Re-export key types
 pub use key_touch::{Key, KeyTouch};
@@ -108,6 +108,7 @@ pub use rat::{Frac, Rat};
 pub use bobbing_carat::BobbingCarat;
 pub use circle_button::*;
 pub use device_name::*;
+pub use erase_device::*;
 pub use erase_progress::EraseProgress;
 pub use fade_switcher::FadeSwitcher;
 pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};
@@ -125,7 +126,6 @@ pub use switcher::Switcher;
 pub use text::*;
 pub use touch_listener::TouchListener;
 pub use translate::*;
-pub use wipe_device::*;
 
 // Font re-exports
 use frostsnap_fonts::{
