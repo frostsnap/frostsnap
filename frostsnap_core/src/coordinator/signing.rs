@@ -44,16 +44,12 @@ pub enum SigningMutation {
     ForgetFinishedSignSession {
         session_id: SignSessionId,
     },
-    NewStagingSession {
-        staging_id: StagingSessionId,
-        session: StagingSignSession,
+    NewNonceReservation {
+        id: NonceReservationId,
+        reservation: NonceReservation,
     },
-    StagingAddSigner {
-        staging_id: StagingSessionId,
-        signer: StagingSigner,
-    },
-    CancelStagingSession {
-        staging_id: StagingSessionId,
+    ConsumeNonceReservation {
+        id: NonceReservationId,
     },
 }
 
@@ -70,16 +66,8 @@ impl SigningMutation {
             | SigningMutation::ForgetFinishedSignSession { session_id } => {
                 Some(coord.get_sign_session(*session_id)?.key_id())
             }
-            SigningMutation::NewStagingSession { session, .. } => {
-                Some(session.access_structure_ref.key_id)
-            }
-            SigningMutation::StagingAddSigner { staging_id, .. }
-            | SigningMutation::CancelStagingSession { staging_id } => Some(
-                coord
-                    .get_staging_session(*staging_id)?
-                    .access_structure_ref
-                    .key_id,
-            ),
+            SigningMutation::NewNonceReservation { .. }
+            | SigningMutation::ConsumeNonceReservation { .. } => None,
         }
     }
 }
@@ -226,81 +214,30 @@ pub struct StartSign {
 }
 
 // ============================================================================
-// Staging Sessions
+// Nonce Reservations
 // ============================================================================
 
-/// Application-provided identifier for a staging session.
-/// This allows the caller to use their own ID scheme (e.g., Nostr event ID).
+/// Identifier for a nonce reservation, derived by hashing the reserved binonces.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, bincode::Encode, bincode::Decode,
 )]
-pub struct StagingSessionId(pub [u8; 32]);
+pub struct NonceReservationId([u8; 32]);
 
-impl StagingSessionId {
-    pub fn random(rng: &mut impl rand_core::RngCore) -> Self {
-        let mut bytes = [0u8; 32];
-        rng.fill_bytes(&mut bytes);
-        Self(bytes)
+impl NonceReservationId {
+    pub fn from_binonces(binonces: &[schnorr_fun::binonce::Nonce]) -> Self {
+        use sha2::{Digest, Sha256};
+        let bytes = bincode::encode_to_vec(binonces, bincode::config::standard())
+            .expect("binonce encoding can't fail");
+        Self(Sha256::new().chain_update(bytes).finalize().into())
     }
 }
 
-/// A signing session that is being staged - we may have locked local nonces
-/// but haven't yet received all participant binonces to form a complete session.
+/// A nonce reservation for a local device. The reserved binonces identify this reservation.
 #[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
-pub struct StagingSignSession {
-    pub sign_task: crate::WireSignTask,
-    pub access_structure_ref: AccessStructureRef,
-    pub threshold: usize,
-    pub signers: BTreeMap<frost::ShareIndex, StagingSigner>,
-}
-
-/// A signer in a staging session (local or remote).
-#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
-pub struct StagingSigner {
-    pub share_index: frost::ShareIndex,
-    pub binonces: Vec<schnorr_fun::binonce::Nonce>,
-    /// If this is a local signer, includes device_id and nonce allocation.
-    pub local: Option<LocalSignerInfo>,
-}
-
-/// Info for a local signer.
-#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
-pub struct LocalSignerInfo {
+pub struct NonceReservation {
     pub device_id: DeviceId,
-    pub nonces: CoordNonceStreamState,
-}
-
-impl StagingSignSession {
-    pub fn n_participants(&self) -> usize {
-        self.signers.len()
-    }
-
-    /// Build the GroupSignReq this staging session would produce.
-    /// Returns None if we don't have at least `threshold` participants.
-    pub fn group_sign_req(&self) -> Option<GroupSignReq> {
-        use schnorr_fun::binonce::Nonce as Binonce;
-
-        if self.n_participants() < self.threshold {
-            return None;
-        }
-
-        let n_signatures = self.signers.values().next()?.binonces.len();
-        let agg_nonces: Vec<_> = (0..n_signatures)
-            .map(|i| Binonce::aggregate(self.signers.values().map(|s| s.binonces[i])))
-            .collect();
-
-        Some(GroupSignReq {
-            sign_task: self.sign_task.clone(),
-            parties: self.signers.keys().cloned().collect(),
-            agg_nonces,
-            access_structure_id: self.access_structure_ref.access_structure_id,
-        })
-    }
-
-    /// Compute the SignSessionId this staging session would produce if promoted.
-    pub fn implied_session_id(&self) -> Option<SignSessionId> {
-        self.group_sign_req().map(|req| req.session_id())
-    }
+    pub binonces: Vec<schnorr_fun::binonce::Nonce>,
+    pub nonce_state: CoordNonceStreamState,
 }
 
 /// Binonces for a participant (local or remote).
@@ -308,6 +245,29 @@ impl StagingSignSession {
 pub struct ParticipantBinonces {
     pub share_index: frost::ShareIndex,
     pub binonces: Vec<schnorr_fun::binonce::Nonce>,
+}
+
+impl GroupSignReq {
+    /// Build a `GroupSignReq` from collected participant binonces.
+    pub fn from_binonces(
+        sign_task: crate::WireSignTask,
+        access_structure_id: crate::AccessStructureId,
+        all_binonces: &[ParticipantBinonces],
+    ) -> Self {
+        use schnorr_fun::binonce::Nonce as Binonce;
+
+        let n_signatures = all_binonces.first().map(|b| b.binonces.len()).unwrap_or(0);
+        let agg_nonces: Vec<_> = (0..n_signatures)
+            .map(|i| Binonce::aggregate(all_binonces.iter().map(|b| b.binonces[i])))
+            .collect();
+
+        GroupSignReq {
+            sign_task,
+            parties: all_binonces.iter().map(|b| b.share_index).collect(),
+            agg_nonces,
+            access_structure_id,
+        }
+    }
 }
 
 /// Signature shares from a participant (local or remote).
@@ -331,8 +291,7 @@ pub enum StartSignError {
     SignTask(SignTaskError),
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
-    NoSuchStagingSession,
-    StagingSessionAlreadyExists { staging_id: StagingSessionId },
+    DeviceNotLocalSigner { device_id: DeviceId },
 }
 
 impl fmt::Display for StartSignError {
@@ -369,15 +328,10 @@ impl fmt::Display for StartSignError {
                 "the access structure you wanted to sign with did not exist"
             ),
             StartSignError::CouldntDecryptRootKey => write!(f, "the decryption key did not"),
-            StartSignError::NoSuchStagingSession => {
-                write!(f, "no staging session with that ID exists")
-            }
-            StartSignError::StagingSessionAlreadyExists { staging_id } => {
-                write!(
-                    f,
-                    "staging session {staging_id:?} already exists with different parameters"
-                )
-            }
+            StartSignError::DeviceNotLocalSigner { device_id } => write!(
+                f,
+                "device {device_id} did not provide nonces for this session"
+            ),
         }
     }
 }
@@ -415,7 +369,7 @@ impl std::error::Error for SignShareError {}
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
-    pub(super) staging_sign_sessions: BTreeMap<StagingSessionId, StagingSignSession>,
+    pub(super) nonce_reservations: BTreeMap<NonceReservationId, NonceReservation>,
     pub(super) active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
     pub(super) active_sign_session_order: Vec<SignSessionId>,
     pub(super) finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
@@ -446,9 +400,6 @@ impl State {
                 self.active_signing_sessions
                     .insert(ssid, signing_session_state.clone());
                 self.active_sign_session_order.push(ssid);
-                // 🧹 Auto-remove any staging session that promoted to this session
-                self.staging_sign_sessions
-                    .retain(|_, staging| staging.implied_session_id() != Some(ssid));
             }
             SigningMutation::GotSignatureSharesFromDevice {
                 session_id,
@@ -514,34 +465,14 @@ impl State {
             SigningMutation::ForgetFinishedSignSession { session_id } => {
                 self.finished_signing_sessions.remove(&session_id);
             }
-            SigningMutation::NewStagingSession {
-                staging_id,
-                ref session,
+            SigningMutation::NewNonceReservation {
+                id,
+                ref reservation,
             } => {
-                self.staging_sign_sessions
-                    .insert(staging_id, session.clone());
+                self.nonce_reservations.insert(id, reservation.clone());
             }
-            SigningMutation::StagingAddSigner {
-                staging_id,
-                ref signer,
-            } => {
-                if let Some(staging) = self.staging_sign_sessions.get_mut(&staging_id) {
-                    use alloc::collections::btree_map::Entry;
-                    match staging.signers.entry(signer.share_index) {
-                        Entry::Vacant(entry) => {
-                            entry.insert(signer.clone());
-                        }
-                        Entry::Occupied(mut entry) => {
-                            // 🔒 Don't overwrite a local signer with a remote one
-                            if entry.get().local.is_none() && signer.local.is_some() {
-                                entry.insert(signer.clone());
-                            }
-                        }
-                    }
-                }
-            }
-            SigningMutation::CancelStagingSession { staging_id } => {
-                self.staging_sign_sessions.remove(&staging_id);
+            SigningMutation::ConsumeNonceReservation { id } => {
+                self.nonce_reservations.remove(&id);
             }
         }
 
@@ -573,13 +504,10 @@ impl State {
     }
 
     pub fn all_used_nonce_streams(&self) -> BTreeSet<crate::nonce_stream::NonceStreamId> {
-        let staging = self.staging_sign_sessions.values().flat_map(|session| {
-            session
-                .signers
-                .values()
-                .filter_map(|signer| signer.local.as_ref())
-                .map(|local| local.nonces.stream_id)
-        });
+        let reserved = self
+            .nonce_reservations
+            .values()
+            .map(|r| r.nonce_state.stream_id);
 
         let active = self.active_signing_sessions.values().flat_map(|session| {
             session
@@ -589,7 +517,7 @@ impl State {
                 .map(|device_nonces| device_nonces.stream_id)
         });
 
-        staging.chain(active).collect()
+        reserved.chain(active).collect()
     }
 }
 
@@ -1011,114 +939,20 @@ impl FrostCoordinator {
     }
 
     // ========================================================================
-    // Staging sessions
+    // Nonce reservations
     // ========================================================================
 
-    /// Create a staging signing session.
+    /// Reserve nonces for a local device.
     ///
-    /// The caller provides a `staging_id` to identify this staging session
-    /// (e.g., derived from a Nostr event ID).
-    ///
-    /// After creation, use `add_device_to_staging` to add local devices.
-    /// Call `promote_staging_session` once all participant binonces are collected.
-    pub fn stage_sign(
+    /// Returns raw binonces. The caller wraps them with a `share_index` to build
+    /// `ParticipantBinonces`. The reserved binonces serve as the reservation's
+    /// identifier — the coordinator hashes them to look up the associated
+    /// `CoordNonceStreamState` later in `ensure_sign_session`.
+    pub fn reserve_nonces(
         &mut self,
-        staging_id: StagingSessionId,
-        access_structure_ref: AccessStructureRef,
-        sign_task: crate::WireSignTask,
-    ) -> Result<(), StartSignError> {
-        if let Some(existing) = self.signing.staging_sign_sessions.get(&staging_id) {
-            if existing.access_structure_ref == access_structure_ref
-                && existing.sign_task == sign_task
-            {
-                return Ok(());
-            } else {
-                return Err(StartSignError::StagingSessionAlreadyExists { staging_id });
-            }
-        }
-
-        let AccessStructureRef { key_id, .. } = access_structure_ref;
-
-        let key_data = self
-            .keys
-            .get(&key_id)
-            .ok_or(StartSignError::UnknownKey { key_id })?;
-
-        let access_structure = key_data
-            .complete_key
-            .access_structures
-            .get(&access_structure_ref.access_structure_id)
-            .ok_or(StartSignError::NoSuchAccessStructure)?;
-
-        let threshold = access_structure.threshold() as usize;
-
-        sign_task
-            .clone()
-            .check(key_data.complete_key.master_appkey, key_data.purpose)
-            .map_err(StartSignError::SignTask)?;
-
-        self.mutate(Mutation::Signing(SigningMutation::NewStagingSession {
-            staging_id,
-            session: StagingSignSession {
-                sign_task,
-                access_structure_ref,
-                threshold,
-                signers: Default::default(),
-            },
-        }));
-
-        Ok(())
-    }
-
-    /// Whether the staging session has enough participants to be promoted.
-    pub fn staging_session_ready(&self, staging_id: StagingSessionId) -> bool {
-        self.signing
-            .staging_sign_sessions
-            .get(&staging_id)
-            .and_then(|s| s.implied_session_id())
-            .is_some()
-    }
-
-    /// Add a local device to a staging session.
-    ///
-    /// Locks nonces for the device and returns binonces to share with other participants.
-    pub fn add_device_to_staging(
-        &mut self,
-        staging_id: StagingSessionId,
         device_id: DeviceId,
-    ) -> Result<ParticipantBinonces, StartSignError> {
-        let staging = self
-            .signing
-            .staging_sign_sessions
-            .get(&staging_id)
-            .ok_or(StartSignError::NoSuchStagingSession)?;
-
-        let access_structure_ref = staging.access_structure_ref;
-        let key_id = access_structure_ref.key_id;
-
-        let key_data = self
-            .keys
-            .get(&key_id)
-            .ok_or(StartSignError::UnknownKey { key_id })?;
-
-        let access_structure = key_data
-            .complete_key
-            .access_structures
-            .get(&access_structure_ref.access_structure_id)
-            .ok_or(StartSignError::NoSuchAccessStructure)?;
-
-        let share_index = *access_structure
-            .device_to_share_index
-            .get(&device_id)
-            .ok_or(StartSignError::DeviceNotPartOfKey { device_id })?;
-
-        let checked_sign_task = staging
-            .sign_task
-            .clone()
-            .check(key_data.complete_key.master_appkey, key_data.purpose)
-            .map_err(StartSignError::SignTask)?;
-        let n_signatures = checked_sign_task.sign_items().len();
-
+        n_signatures: usize,
+    ) -> Result<Vec<schnorr_fun::binonce::Nonce>, StartSignError> {
         let nonces_map = self
             .signing
             .nonce_cache
@@ -1133,61 +967,160 @@ impl FrostCoordinator {
         let binonces: Vec<schnorr_fun::binonce::Nonce> =
             nonce_sub_segment.segment.nonces.iter().copied().collect();
 
-        self.mutate(Mutation::Signing(SigningMutation::StagingAddSigner {
-            staging_id,
-            signer: StagingSigner {
-                share_index,
-                binonces: binonces.clone(),
-                local: Some(LocalSignerInfo {
-                    device_id,
-                    nonces: nonce_sub_segment.coord_nonce_state(),
-                }),
-            },
+        let reservation = NonceReservation {
+            device_id,
+            binonces: binonces.clone(),
+            nonce_state: nonce_sub_segment.coord_nonce_state(),
+        };
+        let id = NonceReservationId::from_binonces(&binonces);
+
+        self.mutate(Mutation::Signing(SigningMutation::NewNonceReservation {
+            id,
+            reservation,
         }));
 
-        Ok(ParticipantBinonces {
-            share_index,
-            binonces,
-        })
+        Ok(binonces)
     }
 
-    /// Add a remote participant's binonces to a staging session.
-    pub fn add_remote_binonces_to_staging(
-        &mut self,
-        staging_id: StagingSessionId,
-        participant_binonces: ParticipantBinonces,
-    ) -> Result<(), StartSignError> {
-        if !self.signing.staging_sign_sessions.contains_key(&staging_id) {
-            return Err(StartSignError::NoSuchStagingSession);
+    /// Cancel a nonce reservation, releasing the nonces for reuse.
+    pub fn cancel_nonce_reservation(&mut self, binonces: &[schnorr_fun::binonce::Nonce]) {
+        let id = NonceReservationId::from_binonces(binonces);
+        self.mutate(Mutation::Signing(
+            SigningMutation::ConsumeNonceReservation { id },
+        ));
+    }
+
+    /// Check whether `sign_with_nonce_reservation` would succeed for this device.
+    pub fn can_sign_with_nonce_reservation(
+        &self,
+        sign_task: &crate::WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: &[ParticipantBinonces],
+        device_id: DeviceId,
+    ) -> bool {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+
+        let key_data = match self.keys.get(&key_id) {
+            Some(kd) => kd,
+            None => {
+                dbg!("can_sign: no key_data");
+                return false;
+            }
+        };
+
+        let access_structure = match key_data
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+        {
+            Some(a) => a,
+            None => {
+                dbg!("can_sign: no access_structure");
+                return false;
+            }
+        };
+
+        if all_binonces.len() < access_structure.threshold() as usize {
+            dbg!("can_sign: not enough binonces", all_binonces.len(), access_structure.threshold());
+            return false;
         }
 
-        self.mutate(Mutation::Signing(SigningMutation::StagingAddSigner {
-            staging_id,
-            signer: StagingSigner {
-                share_index: participant_binonces.share_index,
-                binonces: participant_binonces.binonces,
-                local: None,
-            },
-        }));
+        if sign_task
+            .clone()
+            .check(key_data.complete_key.master_appkey, key_data.purpose)
+            .is_err()
+        {
+            dbg!("can_sign: sign_task check failed");
+            return false;
+        }
 
-        Ok(())
+        // Check if session already exists with this device as local signer
+        let group_request = GroupSignReq::from_binonces(
+            sign_task.clone(),
+            access_structure_id,
+            all_binonces,
+        );
+        let session_id = group_request.session_id();
+        dbg!(
+            "can_sign state",
+            self.signing.active_signing_sessions.contains_key(&session_id),
+            self.signing.nonce_reservations.len(),
+            self.signing.active_signing_sessions.len(),
+        );
+        if let Some(session) = self.signing.active_signing_sessions.get(&session_id) {
+            let has_device = session.init.local_nonces.contains_key(&device_id);
+            dbg!("can_sign: session exists", has_device);
+            return has_device;
+        }
+
+        // Check if device has a matching nonce reservation
+        let has_reservation = all_binonces.iter().any(|p| {
+            let id = NonceReservationId::from_binonces(&p.binonces);
+            let found = self.signing
+                .nonce_reservations
+                .get(&id)
+                .is_some_and(|r| r.device_id == device_id);
+            dbg!("can_sign: checking reservation", &id, found);
+            found
+        });
+        dbg!("can_sign: reservation check result", has_reservation);
+        has_reservation
     }
 
-    /// Promote a staging session to an active signing session.
+    /// Create a signing session from collected participant binonces, then immediately
+    /// request the local device to sign.
     ///
-    /// Called once we have enough participants (local + remote).
-    pub fn promote_staging_session(
+    /// All binonces are provided uniformly. The coordinator hashes each participant's
+    /// binonces against its internal nonce reservations to determine which are local.
+    /// The session is created idempotently (same inputs → same session).
+    pub fn sign_with_nonce_reservation(
         &mut self,
-        staging_id: StagingSessionId,
-    ) -> Result<SignSessionId, StartSignError> {
-        let staging = self
-            .signing
-            .staging_sign_sessions
-            .remove(&staging_id)
-            .ok_or(StartSignError::NoSuchStagingSession)?;
+        sign_task: crate::WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: &[ParticipantBinonces],
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+    ) -> Result<RequestDeviceSign, StartSignError> {
+        if !self.can_sign_with_nonce_reservation(
+            &sign_task,
+            access_structure_ref,
+            all_binonces,
+            device_id,
+        ) {
+            return Err(StartSignError::DeviceNotLocalSigner { device_id });
+        }
 
-        let access_structure_ref = staging.access_structure_ref;
-        let key_id = access_structure_ref.key_id;
+        let session_id =
+            self.ensure_sign_session(sign_task, access_structure_ref, all_binonces)?;
+        Ok(self.request_device_sign(session_id, device_id, encryption_key))
+    }
+
+    pub fn ensure_sign_session(
+        &mut self,
+        sign_task: crate::WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: &[ParticipantBinonces],
+    ) -> Result<SignSessionId, StartSignError> {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+
+        let group_request =
+            GroupSignReq::from_binonces(sign_task.clone(), access_structure_id, all_binonces);
+        let session_id = group_request.session_id();
+
+        // ⚡ Idempotent: return existing session
+        if self
+            .signing
+            .active_signing_sessions
+            .contains_key(&session_id)
+        {
+            return Ok(session_id);
+        }
 
         let key_data = self
             .keys
@@ -1198,41 +1131,20 @@ impl FrostCoordinator {
         let access_structure = key_data
             .complete_key
             .access_structures
-            .get(&access_structure_ref.access_structure_id)
+            .get(&access_structure_id)
             .ok_or(StartSignError::NoSuchAccessStructure)?;
 
         let app_shared_key = access_structure.app_shared_key().clone();
         let threshold = access_structure.threshold();
 
-        let group_request =
-            staging
-                .group_sign_req()
-                .ok_or(StartSignError::NotEnoughDevicesSelected {
-                    selected: staging.n_participants(),
-                    threshold,
-                })?;
-
-        let n_participants = group_request.parties.len();
-        if n_participants < threshold as usize {
-            self.signing
-                .staging_sign_sessions
-                .insert(staging_id, staging);
+        if all_binonces.len() < threshold as usize {
             return Err(StartSignError::NotEnoughDevicesSelected {
-                selected: n_participants,
+                selected: all_binonces.len(),
                 threshold,
             });
         }
 
-        // Build individual binonces map for SignSessionProgress
-        let all_binonces: BTreeMap<frost::ShareIndex, Vec<schnorr_fun::binonce::Nonce>> = staging
-            .signers
-            .iter()
-            .map(|(&share_index, signer)| (share_index, signer.binonces.clone()))
-            .collect();
-
-        let checked_sign_task = staging
-            .sign_task
-            .clone()
+        let checked_sign_task = sign_task
             .check(key_data.complete_key.master_appkey, key_data.purpose)
             .map_err(StartSignError::SignTask)?;
         let sign_items = checked_sign_task.sign_items();
@@ -1244,7 +1156,7 @@ impl FrostCoordinator {
             .map(|(i, sign_item)| {
                 let indexed_nonces = all_binonces
                     .iter()
-                    .map(|(share_index, binonces)| (*share_index, binonces[i]))
+                    .map(|p| (p.share_index, p.binonces[i]))
                     .collect();
 
                 SignSessionProgress::new_deterministic(
@@ -1256,13 +1168,17 @@ impl FrostCoordinator {
             })
             .collect();
 
-        let session_id = group_request.session_id();
+        // Match participant binonces against nonce reservations to find local devices
+        let mut local_nonces: BTreeMap<DeviceId, CoordNonceStreamState> = BTreeMap::new();
+        let mut consumed_reservations: Vec<NonceReservationId> = Vec::new();
 
-        let local_nonces: BTreeMap<DeviceId, CoordNonceStreamState> = staging
-            .signers
-            .into_values()
-            .filter_map(|signer| signer.local.map(|local| (local.device_id, local.nonces)))
-            .collect();
+        for participant in all_binonces {
+            let reservation_id = NonceReservationId::from_binonces(&participant.binonces);
+            if let Some(reservation) = self.signing.nonce_reservations.get(&reservation_id) {
+                local_nonces.insert(reservation.device_id, reservation.nonce_state);
+                consumed_reservations.push(reservation_id);
+            }
+        }
 
         let start_sign = StartSign {
             local_nonces,
@@ -1276,23 +1192,16 @@ impl FrostCoordinator {
             sent_req_to_device: Default::default(),
         };
 
+        for id in consumed_reservations {
+            self.mutate(Mutation::Signing(
+                SigningMutation::ConsumeNonceReservation { id },
+            ));
+        }
         self.mutate(Mutation::Signing(SigningMutation::NewSigningSession(
             active_session,
         )));
 
         Ok(session_id)
-    }
-
-    /// Cancel a staging session without consuming nonces.
-    pub fn cancel_staging_session(&mut self, staging_id: StagingSessionId) {
-        self.mutate(Mutation::Signing(SigningMutation::CancelStagingSession {
-            staging_id,
-        }));
-    }
-
-    /// Get a staging session by ID.
-    pub fn get_staging_session(&self, staging_id: StagingSessionId) -> Option<&StagingSignSession> {
-        self.signing.staging_sign_sessions.get(&staging_id)
     }
 
     /// Get all signature shares from an active session, bundled with their share indices.

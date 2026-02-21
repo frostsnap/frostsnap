@@ -106,8 +106,9 @@ gen-firmware: build-device
 run +ARGS="":
     just frostsnapp/run {{ARGS}}
 
-# Run two app instances with separate data directories for testing
-run-dual:
+# Run app instances with separate data directories for testing.
+# Pass 'a' or 'b' to start only that instance, or omit for both.
+run-dual INSTANCE="":
     #!/bin/sh
     set -e
     just gen-firmware
@@ -115,9 +116,15 @@ run-dual:
     BUILD_COMMIT=$(just frostsnapp/get-build-commit)
     BUILD_VERSION=$(just frostsnapp/get-build-version)
     (cd frostsnapp && BUNDLE_FIRMWARE=1 flutter build linux --debug --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION")
-    frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-a" &
-    frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-b" &
-    wait
+    case "{{INSTANCE}}" in
+        a) frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-a" ;;
+        b) frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-b" ;;
+        *)
+            frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-a" &
+            frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-b" &
+            wait
+            ;;
+    esac
 
 # Run the app with bundled firmware
 run-secure +ARGS="":

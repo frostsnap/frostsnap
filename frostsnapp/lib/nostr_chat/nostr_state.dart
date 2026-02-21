@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:rxdart/rxdart.dart';
@@ -61,7 +60,7 @@ class NostrContext extends InheritedWidget {
     _fetchingProfiles.add(hex);
 
     try {
-      _client ??= await NostrClient.connect(coordinator: coord);
+      _client ??= await NostrClient.connect();
       final profile = await _client!.fetchProfile(pubkey: pubkey);
       _profileCache[hex]?.add(profile);
     } catch (e) {

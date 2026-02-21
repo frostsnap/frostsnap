@@ -39,6 +39,59 @@ class ChatMessage {
   });
 }
 
+class ReplyTarget {
+  final NostrEventId eventId;
+  final PublicKey author;
+  final String preview;
+  final bool isMe;
+
+  ReplyTarget({
+    required this.eventId,
+    required this.author,
+    required this.preview,
+    required this.isMe,
+  });
+}
+
+sealed class TimelineItem {
+  DateTime get timestamp;
+}
+
+class TimelineChat extends TimelineItem {
+  final ChatMessage message;
+  @override
+  DateTime get timestamp => message.timestamp;
+  TimelineChat(this.message);
+}
+
+class TimelineSigning extends TimelineItem {
+  final FfiSigningEvent event;
+  @override
+  final DateTime timestamp;
+  TimelineSigning(this.event)
+      : timestamp = DateTime.fromMillisecondsSinceEpoch(
+            switch (event) {
+              FfiSigningEvent_Request(:final timestamp) => timestamp,
+              FfiSigningEvent_Offer(:final timestamp) => timestamp,
+              FfiSigningEvent_Partial(:final timestamp) => timestamp,
+            } *
+            1000);
+}
+
+class TimelineError extends TimelineItem {
+  final NostrEventId eventId;
+  final PublicKey author;
+  final String reason;
+  @override
+  final DateTime timestamp;
+  TimelineError({
+    required this.eventId,
+    required this.author,
+    required int timestamp,
+    required this.reason,
+  }) : timestamp = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+}
+
 class ChatPage extends StatefulWidget {
   final KeyId keyId;
   final String walletName;
@@ -53,17 +106,15 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late final FocusNode _inputFocusNode;
-  final List<ChatMessage> _messages = [];
+  final List<TimelineItem> _timeline = [];
   final Map<NostrEventId, ChatMessage> _messageById = {};
   final Map<NostrEventId, SigningRequestState> _signingRequests = {};
-  final List<FfiSigningEvent> _signingEvents = [];
   final Set<String> _seenSigningEventIds = {};
-  final List<({NostrEventId eventId, int timestamp, String reason})> _errorEvents = [];
   List<PublicKey> _memberPubkeys = [];
   StreamSubscription<FfiChannelEvent>? _subscription;
   NostrClient? _client;
   FfiConnectionState _connectionState = const FfiConnectionState.connecting();
-  ChatMessage? _replyingTo;
+  ReplyTarget? _replyingTo;
   ({AccessStructureRef asRef, String testMessage})? _pendingSignRequest;
 
   NostrContext? _nostrContext;
@@ -99,13 +150,36 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _connect() async {
-    _client = await NostrClient.connect(coordinator: coord);
-    final stream = _client!.connectToChannel(keyId: widget.keyId);
+    _client = await NostrClient.connect();
+    final frostKey = coord.getFrostKey(keyId: widget.keyId);
+    final threshold = frostKey?.accessStructures()[0].threshold() ?? 2;
+    final stream = _client!.connectToChannel(keyId: widget.keyId, threshold: threshold);
     _subscription = stream.listen(_handleEvent);
   }
 
   FfiNostrProfile? _getProfile(PublicKey pubkey) {
     return _nostrContext!.getProfile(pubkey);
+  }
+
+  DeviceId? _getMyDevice(SigningRequestState? state) {
+    if (state == null || _myPubkey == null) return null;
+    final myOffer = state.offers[_myPubkey!.toHex()];
+    if (myOffer == null) return null;
+    return _deviceForShareIndex(
+      state.request.accessStructureRef,
+      myOffer.shareIndex,
+    );
+  }
+
+  DeviceId? _deviceForShareIndex(AccessStructureRef asRef, int shareIndex) {
+    final accessStruct = coord.getAccessStructure(asRef: asRef);
+    if (accessStruct == null) return null;
+    for (final deviceId in accessStruct.devices()) {
+      if (accessStruct.getDeviceShortShareIndex(deviceId: deviceId) == shareIndex) {
+        return deviceId;
+      }
+    }
+    return null;
   }
 
   void _handleEvent(FfiChannelEvent event) {
@@ -135,9 +209,8 @@ class _ChatPageState extends State<ChatPage> {
             replyTo: replyTo,
             status: pending ? MessageStatus.pending : MessageStatus.sent,
           );
-          _messages.add(message);
           _messageById[messageId] = message;
-          _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          _insertTimelineItem(TimelineChat(message));
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => _scrollToBottom(),
           );
@@ -173,23 +246,23 @@ class _ChatPageState extends State<ChatPage> {
           final idHex = eventId.toHex();
           if (!_seenSigningEventIds.add(idHex)) break;
 
-          _signingEvents.add(field0);
+          _insertTimelineItem(TimelineSigning(field0));
 
           switch (field0) {
             case FfiSigningEvent_Request():
               _signingRequests[field0.eventId] = SigningRequestState(field0);
-              // 🔁 replay any offers/partials that arrived before this request
-              for (final prev in _signingEvents) {
-                switch (prev) {
+              for (final item in _timeline) {
+                if (item is! TimelineSigning) continue;
+                switch (item.event) {
                   case FfiSigningEvent_Offer(:final requestId):
                     if (requestId == field0.eventId) {
                       _signingRequests[field0.eventId]!
-                          .offers[prev.author.toHex()] = prev;
+                          .offers[item.event.author.toHex()] = item.event as FfiSigningEvent_Offer;
                     }
                   case FfiSigningEvent_Partial(:final requestId):
                     if (requestId == field0.eventId) {
                       _signingRequests[field0.eventId]!
-                          .partials[prev.author.toHex()] = prev;
+                          .partials[item.event.author.toHex()] = item.event as FfiSigningEvent_Partial;
                     }
                   default:
                     break;
@@ -207,22 +280,15 @@ class _ChatPageState extends State<ChatPage> {
               }
           }
 
-        case FfiChannelEvent_SessionPromoted(
-          :final requestId,
-          :final sessionId,
-        ):
-          final state = _signingRequests[requestId];
-          if (state != null) {
-            state.sessionId = sessionId;
-          }
-
         case FfiChannelEvent_Error(
           :final eventId,
+          :final author,
           :final timestamp,
           :final reason,
         ):
-          _errorEvents.add((
+          _insertTimelineItem(TimelineError(
             eventId: eventId,
+            author: author,
             timestamp: timestamp,
             reason: reason,
           ));
@@ -230,35 +296,17 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  List<({DateTime time, Object item})> _buildTimelineItems() {
-    final items = <({DateTime time, Object item})>[];
-    for (final msg in _messages) {
-      items.add((time: msg.timestamp, item: msg));
+  void _insertTimelineItem(TimelineItem item) {
+    final ts = item.timestamp;
+    var i = _timeline.length;
+    while (i > 0 && _timeline[i - 1].timestamp.isAfter(ts)) {
+      i--;
     }
-    for (final event in _signingEvents) {
-      final timestamp = switch (event) {
-        FfiSigningEvent_Request(:final timestamp) => timestamp,
-        FfiSigningEvent_Offer(:final timestamp) => timestamp,
-        FfiSigningEvent_Partial(:final timestamp) => timestamp,
-      };
-      items.add((
-        time: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
-        item: event,
-      ));
-    }
-    for (final err in _errorEvents) {
-      items.add((
-        time: DateTime.fromMillisecondsSinceEpoch(err.timestamp * 1000),
-        item: err,
-      ));
-    }
-    items.sort((a, b) => a.time.compareTo(b.time));
-    return items;
+    _timeline.insert(i, item);
   }
 
   Widget _buildTimeline(ThemeData theme) {
-    final items = _buildTimelineItems();
-    if (items.isEmpty) {
+    if (_timeline.isEmpty) {
       return Center(
         child: _connectionState is FfiConnectionState_Connected
             ? Text(
@@ -274,34 +322,43 @@ class _ChatPageState extends State<ChatPage> {
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: items.length,
+      itemCount: _timeline.length,
       itemBuilder: (context, index) {
-        final entry = items[index];
-        if (entry.item is ChatMessage) {
-          final message = entry.item as ChatMessage;
-          return _MessageBubble(
+        final item = _timeline[index];
+        return switch (item) {
+          TimelineChat(:final message) => _MessageBubble(
             message: message,
             profile: _getProfile(message.author),
             replyToMessage:
                 message.replyTo != null ? _messageById[message.replyTo] : null,
-            onReply: () => _startReply(message),
+            onReply: () => _startReply(ReplyTarget(
+              eventId: message.messageId,
+              author: message.author,
+              preview: message.content,
+              isMe: message.isMe,
+            )),
             onRetry: () => _retryMessage(message),
             onCopy: () => _copyMessage(message),
-          );
-        } else if (entry.item is FfiSigningEvent) {
-          final event = entry.item as FfiSigningEvent;
-          return switch (event) {
+          ),
+          TimelineSigning(:final event) => switch (event) {
             FfiSigningEvent_Request() => _buildRequestCard(event),
             FfiSigningEvent_Offer() => _buildOfferCard(event),
             FfiSigningEvent_Partial() => _buildPartialCard(event),
-          };
-        } else if (entry.item
-            is ({NostrEventId eventId, int timestamp, String reason})) {
-          final err = entry.item
-              as ({NostrEventId eventId, int timestamp, String reason});
-          return SigningEventCard.error(text: err.reason);
-        }
-        return const SizedBox.shrink();
+          },
+          TimelineError() => SigningEventCard.error(
+            text: item.reason,
+            author: item.author,
+            profile: _getProfile(item.author),
+            isMe: _myPubkey != null && item.author.equals(other: _myPubkey!),
+            onCopy: () => Clipboard.setData(ClipboardData(text: item.reason)),
+            onReply: () => _startReply(ReplyTarget(
+              eventId: item.eventId,
+              author: item.author,
+              preview: 'Error: ${item.reason}',
+              isMe: _myPubkey != null && item.author.equals(other: _myPubkey!),
+            )),
+          ),
+        };
       },
     );
   }
@@ -325,6 +382,8 @@ class _ChatPageState extends State<ChatPage> {
       profile: _getProfile(state.request.author),
       getDisplayName: (pubkey) => getDisplayName(_getProfile(pubkey), pubkey),
       onOfferToSign: iOffered ? null : () => _onOfferToSign(state),
+      onCopy: () => _copySigningText(request),
+      onReply: () => _startReply(_signingReplyTarget(request)),
     );
   }
 
@@ -346,10 +405,12 @@ class _ChatPageState extends State<ChatPage> {
           ? 'You'
           : getDisplayName(_getProfile(reqAuthor), reqAuthor);
     }
-    final canSign = requestState != null &&
-        requestState.sessionId != null &&
-        requestState.myOfferedDevice != null &&
-        !requestState.signingInProgress;
+    final alreadySigned = _myPubkey != null &&
+        requestState != null &&
+        requestState.partials.containsKey(_myPubkey!.toHex());
+    final sealed = requestState?.sealedData;
+    final myDevice = _getMyDevice(requestState);
+    final canSign = sealed != null && myDevice != null && !alreadySigned;
     return SigningEventCard.offer(
       author: offer.author,
       profile: _getProfile(offer.author),
@@ -359,19 +420,31 @@ class _ChatPageState extends State<ChatPage> {
       requestState: requestState,
       requestAuthorName: requestAuthorName,
       threshold: threshold,
-      onSign: canSign ? () => _triggerDeviceSigning(requestState) : null,
+      onSign: canSign ? () => _triggerDeviceSigning(requestState!, sealed, myDevice) : null,
+      onCopy: () => _copySigningText(offer),
+      onReply: () => _startReply(_signingReplyTarget(offer)),
     );
   }
 
   Widget _buildPartialCard(FfiSigningEvent_Partial partial) {
-    final hasRequest = _signingRequests.containsKey(partial.requestId);
+    final requestState = _signingRequests[partial.requestId];
     final isMe =
         _myPubkey != null && partial.author.equals(other: _myPubkey!);
+    int? threshold;
+    if (requestState != null) {
+      final accessStruct = coord.getAccessStructure(
+          asRef: requestState.request.accessStructureRef);
+      threshold = accessStruct?.threshold();
+    }
     return SigningEventCard.partial(
       author: partial.author,
       profile: _getProfile(partial.author),
       isMe: isMe,
-      isOrphaned: !hasRequest,
+      isOrphaned: requestState == null,
+      requestState: requestState,
+      threshold: threshold,
+      onCopy: () => _copySigningText(partial),
+      onReply: () => _startReply(_signingReplyTarget(partial)),
     );
   }
 
@@ -420,15 +493,16 @@ class _ChatPageState extends State<ChatPage> {
 
     final nsec = _nostrContext!.nostrSettings.getNsec();
     try {
-      await _client!.offerToSign(
+      final binonces = await coord.reserveNonces(
+        deviceId: selectedDevice,
+        nSignatures: 1,
+      );
+      await _client!.sendSignOffer(
         keyId: widget.keyId,
         nsec: nsec,
-        requestId: state.request.eventId,
-        deviceId: selectedDevice,
+        replyTo: state.chainTip,
+        binonces: binonces,
       );
-      setState(() {
-        state.myOfferedDevice = selectedDevice;
-      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -438,12 +512,15 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _triggerDeviceSigning(SigningRequestState state) async {
-    final deviceId = state.myOfferedDevice!;
-    final sessionId = state.sessionId!;
-    state.signingInProgress = true;
-
+  Future<void> _triggerDeviceSigning(SigningRequestState state, SealedSigningData sealed, DeviceId deviceId) async {
     try {
+      final sessionId = await coord.signWithNonceReservation(
+        signTask: sealed.signTask(),
+        accessStructureRef: sealed.accessStructureRef(),
+        allBinonces: sealed.binonces(),
+        deviceId: deviceId,
+      );
+
       final signingStream = coord
           .tryRestoreSigningSession(sessionId: sessionId)
           .toBehaviorSubject();
@@ -486,10 +563,15 @@ class _ChatPageState extends State<ChatPage> {
       );
 
       if (result == null) {
-        coord.cancelSignSession(ssid: sessionId);
         coord.cancelProtocol();
         return;
       }
+
+      final shares = coord.getDeviceSignatureShares(
+        sessionId: sessionId,
+        deviceId: deviceId,
+      );
+      if (shares == null) throw Exception('No signature shares from device');
 
       final nsec = _nostrContext!.nostrSettings.getNsec();
       await _client!.sendSignPartial(
@@ -497,10 +579,9 @@ class _ChatPageState extends State<ChatPage> {
         nsec: nsec,
         requestId: state.request.eventId,
         sessionId: sessionId,
-        deviceId: deviceId,
+        shares: shares,
       );
     } catch (e) {
-      debugPrint('Device signing failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Signing failed: $e')),
@@ -594,7 +675,7 @@ class _ChatPageState extends State<ChatPage> {
     if (_client == null) return;
 
     final nsec = _nostrContext!.nostrSettings.getNsec();
-    final replyToId = _replyingTo?.messageId;
+    final replyToId = _replyingTo?.eventId;
     _messageController.clear();
     setState(() {
       _replyingTo = null;
@@ -632,7 +713,7 @@ class _ChatPageState extends State<ChatPage> {
 
     final nsec = _nostrContext!.nostrSettings.getNsec();
     setState(() {
-      _messages.remove(message);
+      _timeline.removeWhere((item) => item is TimelineChat && item.message == message);
       _messageById.remove(message.messageId);
     });
 
@@ -648,8 +729,46 @@ class _ChatPageState extends State<ChatPage> {
     Clipboard.setData(ClipboardData(text: message.content));
   }
 
-  void _startReply(ChatMessage message) {
-    setState(() => _replyingTo = message);
+  String _displayName(PublicKey author) {
+    if (_myPubkey != null && author.equals(other: _myPubkey!)) return 'You';
+    return getDisplayName(_getProfile(author), author);
+  }
+
+  void _copySigningText(FfiSigningEvent event) {
+    final text = switch (event) {
+      FfiSigningEvent_Request(:final signingDetails, :final message) =>
+        '${signingDetailsText(signingDetails)}${message != null ? '\n$message' : ''}',
+      FfiSigningEvent_Offer(:final shareIndex, :final author) =>
+        '${_displayName(author)} offered to sign with key #$shareIndex',
+      FfiSigningEvent_Partial(:final author) =>
+        '${_displayName(author)} signed',
+    };
+    Clipboard.setData(ClipboardData(text: text));
+  }
+
+  ReplyTarget _signingReplyTarget(FfiSigningEvent event) {
+    final (eventId, author) = switch (event) {
+      FfiSigningEvent_Request(:final eventId, :final author) => (eventId, author),
+      FfiSigningEvent_Offer(:final eventId, :final author) => (eventId, author),
+      FfiSigningEvent_Partial(:final eventId, :final author) => (eventId, author),
+    };
+    final preview = switch (event) {
+      FfiSigningEvent_Request(:final signingDetails) =>
+        'Signing request: ${signingDetailsText(signingDetails)}',
+      FfiSigningEvent_Offer(:final shareIndex) =>
+        'Sign offer — key #$shareIndex',
+      FfiSigningEvent_Partial() => 'Signed',
+    };
+    return ReplyTarget(
+      eventId: eventId,
+      author: author,
+      preview: preview,
+      isMe: _myPubkey != null && author.equals(other: _myPubkey!),
+    );
+  }
+
+  void _startReply(ReplyTarget target) {
+    setState(() => _replyingTo = target);
     _inputFocusNode.requestFocus();
   }
 
@@ -768,7 +887,7 @@ class _ChatPageState extends State<ChatPage> {
                           ),
                         ),
                         Text(
-                          _replyingTo!.content,
+                          _replyingTo!.preview,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(

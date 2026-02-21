@@ -2,11 +2,12 @@ use crate::frb_generated::StreamSink;
 use crate::sink_wrap::SinkWrap;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
-use frostsnap_coordinator::persist::Persisted;
-use frostsnap_core::{coordinator::FrostCoordinator, AccessStructureRef, KeyId, WireSignTask};
+use frostsnap_core::{
+    coordinator::ParticipantBinonces, AccessStructureRef, KeyId, SignSessionId, WireSignTask,
+};
 use frostsnap_nostr::{
     ChannelClient, ChannelHandle, Client, Keys, NostrDatabaseExt, NostrLMDB, NostrProfile,
-    ToBech32,
+    SigningChain, ToBech32,
 };
 use rusqlite::Connection;
 use std::{
@@ -198,15 +199,11 @@ impl NostrSettings {
 pub struct NostrClient {
     client: Client,
     channels: Mutex<HashMap<[u8; 32], ChannelHandle>>,
-    coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
-    db: Arc<Mutex<Connection>>,
 }
 
 impl NostrClient {
     /// Connect to default relays and return a client ready for use.
-    pub async fn connect(coordinator: &super::coordinator::Coordinator) -> Result<Self> {
-        let coordinator_arc = coordinator.0.coordinator.clone();
-        let db = coordinator.0.db.clone();
+    pub async fn connect() -> Result<Self> {
         let database = get_nostr_lmdb()?;
         let client = Client::builder().database(database).build();
 
@@ -221,8 +218,6 @@ impl NostrClient {
         Ok(Self {
             client,
             channels: Mutex::new(HashMap::new()),
-            coordinator: coordinator_arc,
-            db,
         })
     }
 
@@ -252,15 +247,16 @@ impl NostrClient {
 
     /// Connect to a channel for chat/signing coordination.
     /// Events are streamed to the sink. Use send_message to interact.
-    pub async fn connect_to_channel(&self, key_id: KeyId, sink: StreamSink<FfiChannelEvent>) {
-        let channel_client = ChannelClient::new(&key_id);
+    /// `threshold` is the number of signers needed (from the access structure).
+    pub async fn connect_to_channel(
+        &self,
+        key_id: KeyId,
+        threshold: u32,
+        sink: StreamSink<FfiChannelEvent>,
+    ) {
+        let channel_client = ChannelClient::new(&key_id, threshold as usize);
         let handle = match channel_client
-            .run(
-                self.client.clone(),
-                self.coordinator.clone(),
-                self.db.clone(),
-                SinkWrap(sink),
-            )
+            .run(self.client.clone(), SinkWrap(sink))
             .await
         {
             Ok(h) => h,
@@ -327,47 +323,33 @@ impl NostrClient {
         Ok(event_id.into())
     }
 
-    /// Offer to participate in signing. Allocates nonces from local device
-    /// and sends binonces over the channel.
-    pub async fn offer_to_sign(
+    /// Send a signing offer with pre-allocated binonces over the channel.
+    pub async fn send_sign_offer(
         &self,
         key_id: KeyId,
         nsec: String,
-        request_id: NostrEventId,
-        device_id: frostsnap_core::DeviceId,
+        reply_to: NostrEventId,
+        binonces: ParticipantBinonces,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
-        let staging_id =
-            frostsnap_core::coordinator::StagingSessionId(request_id.0);
-        let binonces = {
-            let mut coord = self.coordinator.lock().unwrap();
-            coord.staged_mutate(&mut *self.db.lock().unwrap(), |coord| {
-                Ok(coord.add_device_to_staging(staging_id, device_id)?)
-            })?
-        };
         let handle = self.get_handle(key_id)?;
         let event_id = handle
-            .send_sign_offer(&keys, request_id.into(), binonces)
+            .send_sign_offer(&keys, reply_to.into(), binonces)
             .await?;
         Ok(event_id.into())
     }
 
-    /// Send signature shares for a device that has completed signing.
+    /// Send signature shares over the channel.
+    /// Dart is responsible for getting shares from the coordinator first.
     pub async fn send_sign_partial(
         &self,
         key_id: KeyId,
         nsec: String,
         request_id: NostrEventId,
-        session_id: frostsnap_core::SignSessionId,
-        device_id: frostsnap_core::DeviceId,
+        session_id: SignSessionId,
+        shares: frostsnap_core::coordinator::ParticipantSignatureShares,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
-        let shares = {
-            let coord = self.coordinator.lock().unwrap();
-            coord
-                .get_device_signature_shares(session_id, device_id)
-                .ok_or_else(|| anyhow!("no signature shares for device"))?
-        };
         let handle = self.get_handle(key_id)?;
         let event_id = handle
             .send_sign_partial(&keys, request_id.into(), session_id, shares)
@@ -564,10 +546,6 @@ pub enum FfiChannelEvent {
         members: Vec<FfiGroupMember>,
     },
     SigningEvent(FfiSigningEvent),
-    SessionPromoted {
-        request_id: NostrEventId,
-        session_id: frostsnap_core::SignSessionId,
-    },
     Error {
         event_id: NostrEventId,
         author: PublicKey,
@@ -576,12 +554,47 @@ pub enum FfiChannelEvent {
     },
 }
 
+/// Opaque bundle of chain data needed to promote a sealed signing session.
+/// Dart holds this and passes it to `Coordinator.promoteSealedSigningSession`.
+#[frb(opaque)]
+#[derive(Debug, Clone)]
+pub struct SealedSigningData(pub(crate) SigningChain);
+
+impl SealedSigningData {
+    #[frb(sync)]
+    pub fn sign_task(&self) -> WireSignTask {
+        self.0.sign_task.clone()
+    }
+
+    #[frb(sync)]
+    pub fn access_structure_ref(&self) -> AccessStructureRef {
+        self.0.access_structure_ref
+    }
+
+    #[frb(sync)]
+    pub fn binonces(&self) -> Vec<ParticipantBinonces> {
+        self.0.binonces.clone()
+    }
+
+    #[frb(sync)]
+    pub fn sign_session_id(&self) -> SignSessionId {
+        use frostsnap_core::message::GroupSignReq;
+        GroupSignReq::from_binonces(
+            self.0.sign_task.clone(),
+            self.0.access_structure_ref.access_structure_id,
+            &self.0.binonces,
+        )
+        .session_id()
+    }
+}
+
 #[frb(non_opaque)]
 #[derive(Debug, Clone)]
 pub enum FfiSigningEvent {
     Request {
         event_id: NostrEventId,
         author: PublicKey,
+        sign_task: crate::frb_generated::RustAutoOpaque<WireSignTask>,
         signing_details: super::signing::SigningDetails,
         access_structure_ref: AccessStructureRef,
         message: Option<String>,
@@ -592,6 +605,7 @@ pub enum FfiSigningEvent {
         author: PublicKey,
         request_id: NostrEventId,
         share_index: u32,
+        sealed: Option<crate::frb_generated::RustAutoOpaque<SealedSigningData>>,
         timestamp: u64,
     },
     Partial {
@@ -659,25 +673,34 @@ impl From<ChannelEvent> for FfiChannelEvent {
                                 access_structure_ref,
                                 message,
                                 timestamp,
-                            } => FfiSigningEvent::Request {
-                                event_id: event_id.into(),
-                                author,
-                                signing_details: super::signing::signing_details_from_wire_sign_task(sign_task),
-                                access_structure_ref,
-                                message,
-                                timestamp,
-                            },
+                            } => {
+                                use super::signing::WireSignTaskExt;
+                                let signing_details = sign_task.signing_details();
+                                FfiSigningEvent::Request {
+                                    event_id: event_id.into(),
+                                    author,
+                                    sign_task: crate::frb_generated::RustAutoOpaque::new(sign_task),
+                                    signing_details,
+                                    access_structure_ref,
+                                    message,
+                                    timestamp,
+                                }
+                            }
                             SigningEvent::Offer {
                                 event_id,
                                 author,
                                 request_id,
                                 binonces,
+                                sealed,
                                 timestamp,
                             } => FfiSigningEvent::Offer {
                                 event_id: event_id.into(),
                                 author,
                                 request_id: request_id.into(),
                                 share_index: u32::try_from(binonces.share_index).expect("share index should fit in u32"),
+                                sealed: sealed.map(|chain| {
+                                    crate::frb_generated::RustAutoOpaque::new(SealedSigningData(chain))
+                                }),
                                 timestamp,
                             },
                             SigningEvent::Partial {
@@ -696,13 +719,6 @@ impl From<ChannelEvent> for FfiChannelEvent {
                     }
                 }
             }
-            ChannelEvent::SessionPromoted {
-                request_id,
-                session_id,
-            } => FfiChannelEvent::SessionPromoted {
-                request_id: request_id.into(),
-                session_id,
-            },
             ChannelEvent::Error {
                 event_id,
                 author,

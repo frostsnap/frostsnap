@@ -4,7 +4,7 @@ mod common;
 use frostsnap_core::coordinator::{
     keys::KeyMutation,
     restoration::{PendingConsolidation, RestorationMutation},
-    signing::{SigningMutation, StagingSessionId, StagingSignSession},
+    signing::{NonceReservation, NonceReservationId, SigningMutation},
     ActiveSignSession, CompleteKey, CoordAccessStructure, Mutation, SignSessionProgress, StartSign,
 };
 use frostsnap_core::device::KeyPurpose;
@@ -198,6 +198,8 @@ fn test_all_coordinator_mutations() {
     // Create EncodedSignature
     let encoded_sig = EncodedSignature([14u8; 64]);
 
+    let test_nonce = binonce::Nonce([g!(30 * G).normalize(), g!(31 * G).normalize()]);
+
     // Create all mutation variants we want to test
     let mutations = vec![
         // Restoration mutations
@@ -293,16 +295,20 @@ fn test_all_coordinator_mutations() {
         Mutation::Signing(SigningMutation::ForgetFinishedSignSession {
             session_id: SignSessionId([12u8; 32]),
         }),
-        Mutation::Signing(SigningMutation::NewStagingSession {
-            staging_id: StagingSessionId([15u8; 32]),
-            session: StagingSignSession {
-                sign_task: WireSignTask::Test {
-                    message: "staging test".into(),
+        Mutation::Signing(SigningMutation::NewNonceReservation {
+            id: NonceReservationId::from_binonces(&[test_nonce]),
+            reservation: NonceReservation {
+                device_id: DeviceId([6u8; 33]),
+                binonces: vec![test_nonce],
+                nonce_state: CoordNonceStreamState {
+                    stream_id: NonceStreamId([7u8; 16]),
+                    index: 3,
+                    remaining: 10,
                 },
-                access_structure_ref,
-                threshold: 2,
-                signers: Default::default(),
             },
+        }),
+        Mutation::Signing(SigningMutation::ConsumeNonceReservation {
+            id: NonceReservationId::from_binonces(&[test_nonce]),
         }),
     ];
 
@@ -426,18 +432,17 @@ fn test_all_coordinator_mutations() {
                     "0207010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202020103030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af01020108746573745f6b657901010001"
                 );
             }
-            Mutation::Signing(SigningMutation::NewStagingSession { .. }) => {
-                // Hex needs to be regenerated after struct changes
+            Mutation::Signing(SigningMutation::NewNonceReservation { .. }) => {
                 let encoded =
                     bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
                 let hex = frostsnap_core::hex::encode(&encoded);
                 assert_bincode_hex_eq!(mutation, &hex);
             }
-            Mutation::Signing(SigningMutation::StagingAddSigner { .. }) => {
-                unreachable!("not tested yet")
-            }
-            Mutation::Signing(SigningMutation::CancelStagingSession { .. }) => {
-                unreachable!("not tested yet")
+            Mutation::Signing(SigningMutation::ConsumeNonceReservation { .. }) => {
+                let encoded =
+                    bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
+                let hex = frostsnap_core::hex::encode(&encoded);
+                assert_bincode_hex_eq!(mutation, &hex);
             }
         }
     }

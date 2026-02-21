@@ -4,7 +4,7 @@ pub mod events;
 pub mod settings;
 
 pub use channel::ChannelKeys;
-pub use client::{ChannelClient, ChannelHandle};
+pub use client::{ChannelClient, ChannelHandle, SigningEventTree, SigningChain};
 pub use events::{ChannelEvent, ConnectionState, GroupMember, NostrProfile};
 pub use nostr_lmdb::NostrLMDB;
 pub use nostr_sdk::nips::nip19::ToBech32;

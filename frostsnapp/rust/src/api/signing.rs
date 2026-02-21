@@ -11,11 +11,13 @@ use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
 pub use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 pub use frostsnap_core::coordinator::ActiveSignSession;
-pub use frostsnap_core::coordinator::{SignSessionProgress, StartSign};
+pub use frostsnap_core::coordinator::{
+    ParticipantBinonces, ParticipantSignatureShares, SignSessionProgress, StartSign,
+};
 use frostsnap_core::MasterAppkey;
+pub use frostsnap_core::WireSignTask;
 use frostsnap_core::{
     message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
-    WireSignTask,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -99,44 +101,54 @@ impl ActiveSignSessionExt for ActiveSignSession {
 
     #[frb(sync)]
     fn details(&self) -> SigningDetails {
-        signing_details_from_wire_sign_task(self.init.group_request.sign_task.clone())
+        self.init.group_request.sign_task.signing_details()
     }
 }
 
-pub(crate) fn signing_details_from_wire_sign_task(sign_task: WireSignTask) -> SigningDetails {
-    match sign_task {
-        WireSignTask::Test { message } => SigningDetails::Message { message },
-        WireSignTask::Nostr { event } => SigningDetails::Nostr {
-            id: event.id,
-            content: event.content,
-            hash_bytes: event.hash_bytes.to_lower_hex_string(),
-        },
-        WireSignTask::BitcoinTransaction(tx_temp) => {
-            let raw_tx = tx_temp.to_rust_bitcoin_tx();
-            let txid = raw_tx.compute_txid();
-            let is_mine = tx_temp
-                .iter_locally_owned_inputs()
-                .map(|(_, _, spk)| spk.spk())
-                .chain(
-                    tx_temp
-                        .iter_locally_owned_outputs()
-                        .map(|(_, _, spk)| spk.spk()),
-                )
-                .collect::<HashSet<_>>();
-            let prevouts = tx_temp
-                .inputs()
-                .iter()
-                .map(|input| (input.outpoint(), input.txout()))
-                .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-            SigningDetails::Transaction {
-                transaction: Transaction {
-                    inner: raw_tx,
-                    txid: txid.to_string(),
-                    confirmation_time: None,
-                    last_seen: None,
-                    prevouts,
-                    is_mine,
-                },
+pub trait WireSignTaskExt {
+    #[frb(sync)]
+    fn signing_details(&self) -> SigningDetails;
+}
+
+impl WireSignTaskExt for WireSignTask {
+    #[frb(sync)]
+    fn signing_details(&self) -> SigningDetails {
+        match self {
+            WireSignTask::Test { message } => SigningDetails::Message {
+                message: message.clone(),
+            },
+            WireSignTask::Nostr { event } => SigningDetails::Nostr {
+                id: event.id.clone(),
+                content: event.content.clone(),
+                hash_bytes: event.hash_bytes.to_lower_hex_string(),
+            },
+            WireSignTask::BitcoinTransaction(tx_temp) => {
+                let raw_tx = tx_temp.to_rust_bitcoin_tx();
+                let txid = raw_tx.compute_txid();
+                let is_mine = tx_temp
+                    .iter_locally_owned_inputs()
+                    .map(|(_, _, spk)| spk.spk())
+                    .chain(
+                        tx_temp
+                            .iter_locally_owned_outputs()
+                            .map(|(_, _, spk)| spk.spk()),
+                    )
+                    .collect::<HashSet<_>>();
+                let prevouts = tx_temp
+                    .inputs()
+                    .iter()
+                    .map(|input| (input.outpoint(), input.txout()))
+                    .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
+                SigningDetails::Transaction {
+                    transaction: Transaction {
+                        inner: raw_tx,
+                        txid: txid.to_string(),
+                        confirmation_time: None,
+                        last_seen: None,
+                        prevouts,
+                        is_mine,
+                    },
+                }
             }
         }
     }
@@ -425,6 +437,69 @@ impl Coordinator {
 
     pub fn sub_signing_session_signals(&self, key_id: KeyId, sink: StreamSink<()>) {
         self.0.sub_signing_session_signals(key_id, SinkWrap(sink))
+    }
+
+    pub fn reserve_nonces(
+        &self,
+        device_id: DeviceId,
+        n_signatures: u32,
+    ) -> Result<ParticipantBinonces> {
+        self.0.reserve_nonces(device_id, n_signatures as usize)
+    }
+
+    pub fn cancel_nonce_reservation(
+        &self,
+        binonces: ParticipantBinonces,
+    ) -> Result<()> {
+        self.0.cancel_nonce_reservation(&binonces)
+    }
+
+    #[frb(sync)]
+    pub fn can_sign_with_nonce_reservation(
+        &self,
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: Vec<ParticipantBinonces>,
+        device_id: DeviceId,
+    ) -> bool {
+        self.0.can_sign_with_nonce_reservation(
+            &sign_task,
+            access_structure_ref,
+            &all_binonces,
+            device_id,
+        )
+    }
+
+    pub fn sign_with_nonce_reservation(
+        &self,
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: Vec<ParticipantBinonces>,
+        device_id: DeviceId,
+    ) -> Result<SignSessionId> {
+        self.0.sign_with_nonce_reservation(
+            sign_task,
+            access_structure_ref,
+            &all_binonces,
+            device_id,
+        )
+    }
+
+    #[frb(sync)]
+    pub fn get_device_signature_shares(
+        &self,
+        session_id: SignSessionId,
+        device_id: DeviceId,
+    ) -> Option<ParticipantSignatureShares> {
+        self.0.get_device_signature_shares(session_id, device_id)
+    }
+
+    pub fn add_remote_signature_shares(
+        &self,
+        session_id: SignSessionId,
+        shares: ParticipantSignatureShares,
+    ) -> Result<()> {
+        self.0.add_remote_signature_shares(session_id, shares)
     }
 }
 

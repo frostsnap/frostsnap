@@ -31,7 +31,7 @@ use frostsnap_core::coordinator::restoration::{
 };
 use frostsnap_core::coordinator::{
     BeginKeygen, CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
-    FrostCoordinator, NonceReplenishRequest,
+    FrostCoordinator, NonceReplenishRequest, ParticipantBinonces, ParticipantSignatureShares,
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
@@ -949,6 +949,113 @@ impl FfiCoordinator {
 
         Ok(())
     }
+    pub fn reserve_nonces(
+        &self,
+        device_id: DeviceId,
+        n_signatures: usize,
+    ) -> anyhow::Result<ParticipantBinonces> {
+        let mut db = self.db.lock().unwrap();
+        let mut coord = self.coordinator.lock().unwrap();
+        coord.staged_mutate(&mut *db, |coordinator| {
+            let access_structure = coordinator
+                .iter_access_structures()
+                .find(|a| a.devices().any(|d| d == device_id))
+                .ok_or_else(|| anyhow::anyhow!("device not in any access structure"))?;
+            let share_index = *access_structure
+                .device_to_share_indicies()
+                .get(&device_id)
+                .ok_or_else(|| anyhow::anyhow!("device has no share index"))?;
+            let binonces = coordinator.reserve_nonces(device_id, n_signatures)?;
+            Ok(ParticipantBinonces {
+                share_index,
+                binonces,
+            })
+        })
+    }
+
+    pub fn cancel_nonce_reservation(&self, binonces: &ParticipantBinonces) -> anyhow::Result<()> {
+        let mut db = self.db.lock().unwrap();
+        let mut coord = self.coordinator.lock().unwrap();
+        coord.staged_mutate(&mut *db, |coordinator| {
+            coordinator.cancel_nonce_reservation(&binonces.binonces);
+            Ok(())
+        })
+    }
+
+    pub fn can_sign_with_nonce_reservation(
+        &self,
+        sign_task: &WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: &[ParticipantBinonces],
+        device_id: DeviceId,
+    ) -> bool {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .can_sign_with_nonce_reservation(sign_task, access_structure_ref, all_binonces, device_id)
+    }
+
+    pub fn sign_with_nonce_reservation(
+        &self,
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: &[ParticipantBinonces],
+        device_id: DeviceId,
+    ) -> anyhow::Result<SignSessionId> {
+        let session_id = {
+            let mut db = self.db.lock().unwrap();
+            let mut coord = self.coordinator.lock().unwrap();
+            dbg!(
+                "sign_with_nonce_reservation entry",
+                coord.active_signing_sessions().count(),
+            );
+            coord.staged_mutate(&mut *db, |coordinator| {
+                if !coordinator.can_sign_with_nonce_reservation(
+                    &sign_task,
+                    access_structure_ref,
+                    all_binonces,
+                    device_id,
+                ) {
+                    return Err(anyhow::anyhow!("device cannot sign with nonce reservation"));
+                }
+                Ok(coordinator.ensure_sign_session(sign_task, access_structure_ref, all_binonces)?)
+            })?
+        };
+        self.emit_signing_signal(
+            self.coordinator
+                .lock()
+                .unwrap()
+                .active_signing_sessions_by_ssid()
+                .get(&session_id)
+                .expect("just created")
+                .key_id,
+        );
+        Ok(session_id)
+    }
+
+    pub fn get_device_signature_shares(
+        &self,
+        session_id: SignSessionId,
+        device_id: DeviceId,
+    ) -> Option<ParticipantSignatureShares> {
+        self.coordinator
+            .lock()
+            .unwrap()
+            .get_device_signature_shares(session_id, device_id)
+    }
+
+    pub fn add_remote_signature_shares(
+        &self,
+        session_id: SignSessionId,
+        shares: ParticipantSignatureShares,
+    ) -> anyhow::Result<()> {
+        let mut db = self.db.lock().unwrap();
+        let mut coord = self.coordinator.lock().unwrap();
+        coord.staged_mutate(&mut *db, |coordinator| {
+            Ok(coordinator.add_remote_signature_shares(session_id, shares)?)
+        })
+    }
+
     pub fn cancel_restoration(&self, restoration_id: RestorationId) -> anyhow::Result<()> {
         let mut db = self.db.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();

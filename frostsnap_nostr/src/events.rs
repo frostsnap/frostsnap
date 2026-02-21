@@ -1,3 +1,4 @@
+use crate::client::SigningChain;
 use frostsnap_core::{
     coordinator::{ParticipantBinonces, ParticipantSignatureShares},
     AccessStructureRef, SignSessionId, WireSignTask,
@@ -37,11 +38,6 @@ pub enum ChannelEvent {
     GroupMetadata { members: Vec<GroupMember> },
     /// Frostsnap protocol event (signing, future: keygen, etc.)
     Frostsnap(FrostsnapEvent),
-    /// A staging signing session was promoted to an active signing session.
-    SessionPromoted {
-        request_id: EventId,
-        session_id: SignSessionId,
-    },
     /// An event we received but couldn't process.
     Error {
         event_id: EventId,
@@ -71,6 +67,9 @@ pub enum SigningEvent {
         author: PublicKey,
         request_id: EventId,
         binonces: ParticipantBinonces,
+        /// If this offer completes the signing set (threshold met), the full chain data
+        /// needed to promote to an active signing session.
+        sealed: Option<SigningChain>,
         timestamp: u64,
     },
     Partial {
