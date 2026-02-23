@@ -21,7 +21,7 @@ use frostsnap_macros::Widget;
 // Font constant for derivation path display
 const FONT_DERIVATION_PATH: &Gray4Font = &NOTO_SANS_14_LIGHT;
 
-/// A widget that displays only a Bitcoin address (without derivation path)
+/// A widget that displays a titled Bitcoin address (title + address in one framebuffer)
 #[derive(Widget)]
 pub struct AddressDisplay {
     #[widget_delegate]
@@ -37,19 +37,19 @@ pub struct AddressDisplay {
 }
 
 impl AddressDisplay {
-    pub fn new(address: bitcoin::Address) -> Self {
-        Self::new_with_seed(address, 0)
+    pub fn new(title: &str, address: bitcoin::Address) -> Self {
+        Self::new_with_seed(title, address, 0)
     }
 
-    pub fn new_with_seed(address: bitcoin::Address, seed: u32) -> Self {
+    pub fn new_with_seed(title: &str, address: bitcoin::Address, seed: u32) -> Self {
         use bitcoin::AddressType;
 
         let address_str = address.to_string();
 
-        // Route to the appropriate specialized display widget based on address type
         match address.address_type() {
             Some(AddressType::P2tr) => {
                 let container = Box::new(AnyOf::new(P2trAddressDisplay::new_with_seed(
+                    title,
                     &address_str,
                     seed,
                 )));
@@ -57,6 +57,7 @@ impl AddressDisplay {
             }
             Some(AddressType::P2wsh) => {
                 let container = Box::new(AnyOf::new(P2wshAddressDisplay::new_with_seed(
+                    title,
                     &address_str,
                     seed,
                 )));
@@ -64,6 +65,7 @@ impl AddressDisplay {
             }
             Some(AddressType::P2wpkh) => {
                 let container = Box::new(AnyOf::new(P2wpkhAddressDisplay::new_with_seed(
+                    title,
                     &address_str,
                     seed,
                 )));
@@ -71,6 +73,7 @@ impl AddressDisplay {
             }
             Some(AddressType::P2sh) => {
                 let container = Box::new(AnyOf::new(P2shAddressDisplay::new_with_seed(
+                    title,
                     &address_str,
                     seed,
                 )));
@@ -78,13 +81,13 @@ impl AddressDisplay {
             }
             Some(AddressType::P2pkh) => {
                 let container = Box::new(AnyOf::new(P2pkhAddressDisplay::new_with_seed(
+                    title,
                     &address_str,
                     seed,
                 )));
                 Self { container }
             }
             None | Some(_) => {
-                // Fallback for unknown address types - should never happen in practice
                 panic!(
                     "Unsupported Bitcoin address type: {:?}",
                     address.address_type()
@@ -102,8 +105,6 @@ pub struct AddressWithPath {
         crate::Center<
             crate::Padding<
                 Column<(
-                    Text<Gray4TextStyle>,
-                    crate::SizedBox<embedded_graphics::pixelcolor::Rgb565>,
                     AddressDisplay,
                     crate::SizedBox<embedded_graphics::pixelcolor::Rgb565>,
                     Text<Gray4TextStyle>,
@@ -133,20 +134,11 @@ impl AddressWithPath {
         seed: u32,
     ) -> Self {
         use embedded_graphics::pixelcolor::Rgb565;
-        use frostsnap_fonts::NOTO_SANS_18_LIGHT;
 
-        // Header: "Receive Address #X"
-        let title = Text::new(
-            alloc::format!("Receive Address #{}", index),
-            Gray4TextStyle::new(&NOTO_SANS_18_LIGHT, PALETTE.text_secondary),
-        );
+        let title = alloc::format!("Receive Address #{}", index);
+        let address_display = AddressDisplay::new_with_seed(&title, address, seed);
 
-        let spacer1 = crate::SizedBox::<Rgb565>::new(embedded_graphics::geometry::Size::new(1, 10));
-
-        // The taproot address display with random seed for anti-address-poisoning
-        let address_display = AddressDisplay::new_with_seed(address, seed);
-
-        let spacer2 = crate::SizedBox::<Rgb565>::new(embedded_graphics::geometry::Size::new(1, 15));
+        let spacer = crate::SizedBox::<Rgb565>::new(embedded_graphics::geometry::Size::new(1, 15));
 
         // Derivation path underneath
         let path_text = Text::new(
@@ -155,7 +147,7 @@ impl AddressWithPath {
         )
         .with_alignment(Alignment::Center);
 
-        let column = Column::new((title, spacer1, address_display, spacer2, path_text))
+        let column = Column::new((address_display, spacer, path_text))
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 

@@ -826,7 +826,7 @@ macro_rules! demo_widget {
                 let address_str = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
                 let address = Address::from_str(address_str).unwrap().assume_checked();
 
-                let widget = AddressDisplay::new(address);
+                let widget = AddressDisplay::new("To Address #1", address);
                 $run_macro!(widget);
             }
             "address_with_path" => {
@@ -854,7 +854,7 @@ macro_rules! demo_widget {
                 let address_str = "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297";
                 let address = Address::from_str(address_str).unwrap().assume_checked();
 
-                let widget = AddressDisplay::new(address);
+                let widget = AddressDisplay::new("Taproot Address", address);
                 $run_macro!(widget);
             }
             "p2pkh_address" => {
@@ -866,7 +866,7 @@ macro_rules! demo_widget {
                 let address_str = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa";
                 let address = Address::from_str(address_str).unwrap().assume_checked();
 
-                let widget = AddressDisplay::new(address);
+                let widget = AddressDisplay::new("P2PKH Address", address);
                 $run_macro!(widget);
             }
             "standby" => {

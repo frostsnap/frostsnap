@@ -356,6 +356,35 @@ where
                 }),
         )
     }
+
+    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Self::Color>,
+    {
+        // Mark all pixels in the area in the tracking bitmaps, then forward
+        // the bulk fill to the inner target so it can use fast SPI transfer.
+        let dirty_rect_offset = self.dirty_rect_offset;
+        let diff_offset = self.diff_offset;
+
+        for y in area.top_left.y..area.top_left.y + area.size.height as i32 {
+            for x in area.top_left.x..area.top_left.x + area.size.width as i32 {
+                let bitmap_point = Point::new(x, y) - dirty_rect_offset;
+                VecFramebuffer::<BinaryColor>::set_pixel(
+                    self.current_bitmap,
+                    bitmap_point,
+                    BinaryColor::On,
+                );
+                let prev_bitmap_point = bitmap_point + diff_offset;
+                VecFramebuffer::<BinaryColor>::set_pixel(
+                    self.previous_bitmap,
+                    prev_bitmap_point,
+                    BinaryColor::Off,
+                );
+            }
+        }
+
+        self.inner.fill_contiguous(area, colors)
+    }
 }
 
 impl<'a, D, C> Dimensions for TranslatorDrawTarget<'a, D, C>

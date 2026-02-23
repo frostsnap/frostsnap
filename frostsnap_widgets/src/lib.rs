@@ -16,6 +16,7 @@ pub mod pixel_recorder;
 
 // Widget modules
 pub mod address_display;
+pub mod address_framebuffer;
 pub mod animation_speed;
 pub mod backup;
 pub mod bitmap;

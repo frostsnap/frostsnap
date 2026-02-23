@@ -9,7 +9,7 @@ use embedded_graphics::{
 
 const ANIMATION_DURATION_MS: u64 = 750;
 const MIN_SWIPE_DISTANCE: u32 = 0;
-const DEFAULT_SLIDE_DISTANCE: u32 = 40;
+const DEFAULT_SLIDE_DISTANCE: u32 = 30;
 
 // Type aliases to reduce complexity
 type PageStack<T> = Stack<(SlideInTransition<T>, Option<Fader<SwipeUpChevron>>)>;
@@ -90,7 +90,7 @@ where
     /// Builder method to enable swipe up chevron indicator
     pub fn with_swipe_up_chevron(mut self) -> Self {
         // Create chevron
-        let chevron = SwipeUpChevron::new(PALETTE.on_surface, PALETTE.background);
+        let chevron = SwipeUpChevron::new(PALETTE.text_secondary, PALETTE.background);
         let fader = Fader::new_faded_out(chevron);
 
         // Set the chevron in the stack (it's already positioned with BottomCenter alignment)
