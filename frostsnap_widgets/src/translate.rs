@@ -296,6 +296,23 @@ where
     }
 }
 
+/// Compute the intersection of two rectangles. Returns a zero-size rectangle if they don't overlap.
+fn clip_rect(a: Rectangle, b: Rectangle) -> Rectangle {
+    let left = a.top_left.x.max(b.top_left.x);
+    let top = a.top_left.y.max(b.top_left.y);
+    let right = (a.top_left.x + a.size.width as i32).min(b.top_left.x + b.size.width as i32);
+    let bottom = (a.top_left.y + a.size.height as i32).min(b.top_left.y + b.size.height as i32);
+
+    if right > left && bottom > top {
+        Rectangle::new(
+            Point::new(left, top),
+            Size::new((right - left) as u32, (bottom - top) as u32),
+        )
+    } else {
+        Rectangle::new(Point::zero(), Size::zero())
+    }
+}
+
 /// A DrawTarget wrapper that tracks pixels for the translate animation
 struct TranslatorDrawTarget<'a, D, C>
 where
@@ -361,13 +378,18 @@ where
     where
         I: IntoIterator<Item = Self::Color>,
     {
-        // Mark all pixels in the area in the tracking bitmaps, then forward
-        // the bulk fill to the inner target so it can use fast SPI transfer.
+        // Clip to dirty_rect, matching draw_iter's filter behavior
+        let clipped = clip_rect(*area, self.dirty_rect);
+        if clipped.size.width == 0 || clipped.size.height == 0 {
+            return Ok(());
+        }
+
+        // Mark all pixels in the clipped area in the tracking bitmaps
         let dirty_rect_offset = self.dirty_rect_offset;
         let diff_offset = self.diff_offset;
 
-        for y in area.top_left.y..area.top_left.y + area.size.height as i32 {
-            for x in area.top_left.x..area.top_left.x + area.size.width as i32 {
+        for y in clipped.top_left.y..clipped.top_left.y + clipped.size.height as i32 {
+            for x in clipped.top_left.x..clipped.top_left.x + clipped.size.width as i32 {
                 let bitmap_point = Point::new(x, y) - dirty_rect_offset;
                 VecFramebuffer::<BinaryColor>::set_pixel(
                     self.current_bitmap,
@@ -383,7 +405,26 @@ where
             }
         }
 
-        self.inner.fill_contiguous(area, colors)
+        if clipped == *area {
+            // No clipping needed, forward the full contiguous block
+            self.inner.fill_contiguous(area, colors)
+        } else {
+            // Area was clipped — we must skip pixels outside the clipped region.
+            // Fall back to draw_iter for correctness since fill_contiguous
+            // requires pixels to exactly match the area dimensions.
+            let area_width = area.size.width as i32;
+            let pixels = colors.into_iter().enumerate().filter_map(move |(i, color)| {
+                let x = area.top_left.x + (i as i32 % area_width);
+                let y = area.top_left.y + (i as i32 / area_width);
+                let point = Point::new(x, y);
+                if clipped.contains(point) {
+                    Some(Pixel(point, color))
+                } else {
+                    None
+                }
+            });
+            self.inner.draw_iter(pixels)
+        }
     }
 }
 
