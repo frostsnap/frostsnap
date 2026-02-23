@@ -59,6 +59,10 @@ where
     border_width: u32,
     border_color: C,
     background_color: C,
+    // High-water mark: the maximum progress that was actually drawn to screen.
+    // Used by force_full_redraw to ensure all drawn pixels get erased, even if
+    // progress has been decremented since the peak (e.g., touch released before swipe-back).
+    max_drawn_progress: Frac,
     // Fade state for border only
     fade_progress: Frac,
     fade_start_time: Option<crate::Instant>,
@@ -86,6 +90,7 @@ where
             border_width,
             border_color,
             background_color,
+            max_drawn_progress: Frac::ZERO,
             fade_progress: Frac::ZERO,
             fade_start_time: None,
             fade_duration_ms: 0,
@@ -183,6 +188,9 @@ where
     }
 
     fn force_full_redraw(&mut self) {
+        // Use the high-water mark so we erase all pixels that were ever drawn,
+        // even if progress has since been decremented (e.g., touch released before swipe-back).
+        self.progress = self.max_drawn_progress;
         self.last_drawn_progress = Frac::ZERO;
         // Also propagate to child
         self.child.force_full_redraw();
@@ -271,6 +279,9 @@ where
             }
 
             self.last_drawn_progress = self.progress;
+            if self.progress > self.max_drawn_progress {
+                self.max_drawn_progress = self.progress;
+            }
             Ok(())
         }
     }
