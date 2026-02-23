@@ -27,6 +27,7 @@ pub mod debug;
 pub mod fader;
 pub mod hold_to_confirm;
 pub mod hold_to_confirm_border;
+mod hold_to_confirm_border_data;
 pub mod icons;
 pub mod image;
 pub mod key_touch;

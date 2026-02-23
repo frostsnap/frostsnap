@@ -130,110 +130,10 @@ where
         self.background_color = color;
     }
 
-    fn record_border_pixels(&mut self, screen_size: Size) {
-        const CORNER_RADIUS: f32 = 42.0;
-
-        let middle_x = screen_size.width as i32 / 2;
-        let w = screen_size.width as f32;
-        let h = screen_size.height as f32;
-        let cx = w * 0.5;
-        let cy = h * 0.5;
-        let half_w = cx;
-        let half_h = cy;
-        let sw = self.border_width as f32;
-
-        // For inside-aligned stroke: outer boundary is the rect edge, inner is inset
-        let outer_cr = CORNER_RADIUS;
-        let inner_cr = (CORNER_RADIUS - sw).max(0.0);
-        let inner_half_w = half_w - sw;
-        let inner_half_h = half_h - sw;
-
-        let mut pixels = Vec::new();
-
-        // Only record left-half pixels (will be mirrored)
-        // The border_margin must account for the corner radius, not just stroke width,
-        // because the rounded corners curve inward from both edges simultaneously.
-        let corner_margin = CORNER_RADIUS as i32 + 2; // corner region + AA fringe
-        let stroke_margin = self.border_width as i32 + 2; // straight edge region + AA fringe
-
-        for y in 0..screen_size.height as i32 {
-            for x in 0..=middle_x {
-                // Skip pixels that are far from any border edge.
-                // A pixel is near the border if it's:
-                // - In the top/bottom corner regions (y < corner_margin or y >= height - corner_margin)
-                //   AND within the corner's x range (x < corner_margin)
-                // - In the straight left/right edge bands (x < stroke_margin)
-                // - In the straight top/bottom edge bands (y < stroke_margin or y >= height - stroke_margin)
-                let in_top_corner_region = y < corner_margin && x < corner_margin;
-                let in_bottom_corner_region =
-                    y >= (screen_size.height as i32 - corner_margin) && x < corner_margin;
-                let in_left_edge = x < stroke_margin;
-                let in_top_edge = y < stroke_margin;
-                let in_bottom_edge = y >= (screen_size.height as i32 - stroke_margin);
-
-                let near_border = in_top_corner_region
-                    || in_bottom_corner_region
-                    || in_left_edge
-                    || in_top_edge
-                    || in_bottom_edge;
-
-                if !near_border {
-                    continue;
-                }
-
-                let px = x as f32 + 0.5;
-                let py = y as f32 + 0.5;
-
-                let d_outer = sdf::sdf_rounded_rect(px, py, cx, cy, half_w, half_h, outer_cr);
-                let d_inner =
-                    sdf::sdf_rounded_rect(px, py, cx, cy, inner_half_w, inner_half_h, inner_cr);
-
-                // outer_cov: coverage of full shape (inside outer boundary)
-                let outer_cov = sdf::sdf_coverage(d_outer);
-                // inner_cov: coverage of interior (inside inner boundary)
-                let inner_cov = sdf::sdf_coverage(d_inner);
-                // stroke_cov: the border band = shape minus interior
-                let stroke_cov = outer_cov - inner_cov;
-                let stroke_cov = if stroke_cov > 0.0 { stroke_cov } else { 0.0 };
-
-                let level = sdf::coverage_to_gray4(stroke_cov);
-                if level > 0 {
-                    pixels.push(CompressedPointWithCoverage::new(Point::new(x, y), level));
-                }
-            }
+    fn load_border_pixels_if_needed(&mut self) {
+        if self.border_pixels.is_empty() {
+            self.border_pixels = crate::hold_to_confirm_border_data::load_border_pixels();
         }
-
-        // Sort the left-half pixels.
-        // The bucket margin includes the AA fringe (+2px) so that low-coverage
-        // fringe pixels at the inner border edge are grouped with their adjacent
-        // full-coverage border pixels, preventing visible "line" artifacts.
-        let bucket_margin = self.border_width as i32 + 2;
-        pixels.sort_unstable_by_key(|cp| {
-            let point = cp.to_point();
-            let mut y_bucket = point.y;
-
-            if y_bucket < bucket_margin {
-                y_bucket = 0;
-            } else if y_bucket > (screen_size.height as i32 - bucket_margin - 1) {
-                y_bucket = i32::MAX;
-            }
-
-            // For left-half pixels, closer to middle should come first
-            let x_distance = middle_x - point.x;
-            let final_distance = if point.y > screen_size.height as i32 / 2 {
-                -x_distance
-            } else {
-                x_distance
-            };
-
-            (y_bucket, final_distance)
-        });
-
-        pixels.shrink_to_fit();
-
-        // Store the sorted left-half pixels
-        self.border_pixels = pixels;
-        self.constraints = Some(screen_size); // Store screen size for mirroring
     }
 }
 
@@ -260,7 +160,7 @@ where
             ..Default::default()
         };
 
-        self.record_border_pixels(max_size);
+        self.load_border_pixels_if_needed();
     }
 
     fn sizing(&self) -> crate::Sizing {
