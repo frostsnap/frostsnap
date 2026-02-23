@@ -1,4 +1,4 @@
-use crate::sdf;
+use crate::circle_button_data;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::vec_framebuffer::VecFramebuffer;
 use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*};
@@ -43,88 +43,32 @@ impl Default for CircleButton {
     }
 }
 
-/// Circle radius used by SDF rendering (matches the old CIRCLE_DIAMETER - 4 geometry).
-/// The old circle was `Circle::with_center(center, CIRCLE_DIAMETER - 4)` which means
-/// diameter = 96, radius = 48. The stroke was 2px centered on the boundary.
-const SDF_CIRCLE_RADIUS: f32 = 48.0;
-const SDF_STROKE_WIDTH: f32 = 2.0;
-
-/// Render a filled+stroked circle with an icon centered on it into a framebuffer
-fn render_circle_with_icon(
-    fill_color: Rgb565,
-    stroke_color: Rgb565,
-    icon_color: Rgb565,
-    bg_color: Rgb565,
-) -> VecFramebuffer<Rgb565> {
-    let mut fb = VecFramebuffer::<Rgb565>::new(CIRCLE_DIAMETER as usize, CIRCLE_DIAMETER as usize);
-    fb.clear(bg_color);
-
-    let cx = CIRCLE_RADIUS as f32;
-    let cy = CIRCLE_RADIUS as f32;
-
-    sdf::render_circle_aa(
-        &mut fb,
-        cx,
-        cy,
-        SDF_CIRCLE_RADIUS,
-        Some(SDF_STROKE_WIDTH),
-        fill_color,
-        stroke_color,
-        bg_color,
-    );
-
+/// Draw the hand icon centered on a framebuffer
+fn draw_icon(fb: &mut VecFramebuffer<Rgb565>, icon_color: Rgb565) {
     let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
     let icon = OpenSelectHandGesture::new(icon_color);
-    Image::with_center(&icon, center).draw(&mut fb).unwrap();
-
-    fb
-}
-
-/// Render just a filled circle (no icon) into a framebuffer
-fn render_circle_only(
-    fill_color: Rgb565,
-    stroke_color: Rgb565,
-    bg_color: Rgb565,
-) -> VecFramebuffer<Rgb565> {
-    let mut fb = VecFramebuffer::<Rgb565>::new(CIRCLE_DIAMETER as usize, CIRCLE_DIAMETER as usize);
-    fb.clear(bg_color);
-
-    let cx = CIRCLE_RADIUS as f32;
-    let cy = CIRCLE_RADIUS as f32;
-
-    sdf::render_circle_aa(
-        &mut fb,
-        cx,
-        cy,
-        SDF_CIRCLE_RADIUS,
-        Some(SDF_STROKE_WIDTH),
-        fill_color,
-        stroke_color,
-        bg_color,
-    );
-
-    fb
+    Image::with_center(&icon, center).draw(fb).unwrap();
 }
 
 impl CircleButton {
     pub fn new() -> Self {
         let checkmark = Center::new(Checkmark::new(50, PALETTE.on_tertiary_container));
 
-        let idle_fb = render_circle_with_icon(
+        let mut idle_fb = circle_button_data::build_circle_fb(
             PALETTE.surface_variant,
             PALETTE.outline,
-            PALETTE.on_surface_variant,
             PALETTE.background,
         );
+        draw_icon(&mut idle_fb, PALETTE.on_surface_variant);
 
-        let pressed_fb = render_circle_with_icon(
+        let mut pressed_fb = circle_button_data::build_circle_fb(
             PALETTE.tertiary_container,
             PALETTE.confirm_progress,
-            PALETTE.on_tertiary_container,
             PALETTE.background,
         );
+        draw_icon(&mut pressed_fb, PALETTE.on_tertiary_container);
 
-        let checkmark_bg_fb = render_circle_only(
+        let checkmark_bg_fb = circle_button_data::build_circle_fb(
             PALETTE.tertiary_container,
             PALETTE.tertiary_container,
             PALETTE.background,
@@ -153,17 +97,20 @@ impl CircleButton {
             PALETTE.on_tertiary_container
         };
 
-        // Re-render pressed framebuffer with new colors
-        self.pressed_fb = render_circle_with_icon(
+        // Re-render pressed framebuffer with new colors (coverage map, no SDF math)
+        self.pressed_fb = circle_button_data::build_circle_fb(
             pressed_fill,
             pressed_stroke,
-            icon_color,
             PALETTE.background,
         );
+        draw_icon(&mut self.pressed_fb, icon_color);
 
         // Re-render checkmark background with new colors
-        self.checkmark_bg_fb =
-            render_circle_only(pressed_fill, pressed_fill, PALETTE.background);
+        self.checkmark_bg_fb = circle_button_data::build_circle_fb(
+            pressed_fill,
+            pressed_fill,
+            PALETTE.background,
+        );
 
         // Force redraw to apply new colors
         self.last_drawn_state = None;

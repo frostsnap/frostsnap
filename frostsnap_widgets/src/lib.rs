@@ -44,6 +44,7 @@ pub mod any_of;
 pub mod bitcoin_amount_display;
 pub mod bobbing_carat;
 pub mod circle_button;
+mod circle_button_data;
 pub mod demo_widget;
 pub mod device_name;
 pub mod erase_device;

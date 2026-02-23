@@ -54,6 +54,16 @@ where
         }
     }
 
+    /// Create a framebuffer from pre-existing raw data
+    pub fn from_raw_data(data: Vec<u8>, width: usize, height: usize) -> Self {
+        Self {
+            data,
+            width,
+            height,
+            _phantom: core::marker::PhantomData,
+        }
+    }
+
     /// Get the raw data as a slice
     #[inline]
     pub fn data(&self) -> &[u8] {
