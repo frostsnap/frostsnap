@@ -60,7 +60,7 @@ pub struct AddressFramebuffer {
 }
 
 /// Measure the pixel width of a string in a given font.
-fn measure_string_width(font: &Gray4Font, text: &str) -> u32 {
+pub(crate) fn measure_string_width(font: &Gray4Font, text: &str) -> u32 {
     let mut width = 0u32;
     for ch in text.chars() {
         if let Some(glyph) = font.get_glyph(ch) {
@@ -168,7 +168,7 @@ impl AddressFramebuffer {
     }
 }
 
-fn build_lut(color: Rgb565) -> [Rgb565; 16] {
+pub(crate) fn build_lut(color: Rgb565) -> [Rgb565; 16] {
     let mut lut = [PALETTE.background; 16];
     for i in 1..16u8 {
         let alpha = Frac::from_ratio(i as u32, 15);
@@ -178,7 +178,7 @@ fn build_lut(color: Rgb565) -> [Rgb565; 16] {
 }
 
 /// Draw a string into a Gray4 framebuffer.
-fn draw_gray4_string<D: DrawTarget<Color = Gray4>>(
+pub(crate) fn draw_gray4_string<D: DrawTarget<Color = Gray4>>(
     target: &mut D,
     font: &'static Gray4Font,
     text: &str,

@@ -1,14 +1,21 @@
-use crate::backup::LEGACY_FONT_SMALL;
+use crate::address_framebuffer::{build_lut, draw_gray4_string, measure_string_width};
 use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_MS;
 use crate::{
     icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
     share_index::ShareIndexWidget, widget_list::WidgetList, FadeSwitcher, HoldToConfirm,
-    U8g2TextStyle, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
+    FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
 };
-use alloc::{format, string::String, vec::Vec};
-use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
+use alloc::{boxed::Box, format, rc::Rc, string::String, vec, vec::Vec};
+use embedded_graphics::{
+    geometry::Size,
+    pixelcolor::{Gray4, GrayColor, Rgb565},
+    prelude::*,
+    primitives::Rectangle,
+    text::Alignment,
+};
 use frost_backup::{bip39_words::BIP39_WORDS, NUM_WORDS};
+use frostsnap_fonts::NOTO_SANS_14_LIGHT;
 
 const WORDS_PER_PAGE: usize = 3;
 
@@ -131,77 +138,145 @@ impl WordsPage {
     }
 }
 
-// Helper type for a single word entry (number + word)
-type SingleWordRow = Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>;
+/// Screen dimensions for AllWordsPage
+const ALL_WORDS_SCREEN_WIDTH: u32 = 240;
+const ALL_WORDS_FONT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_14_LIGHT;
+const ALL_WORDS_LINE_HEIGHT: u32 = 15;
+const ALL_WORDS_NUM_ROWS: u32 = 13;
+const ALL_WORDS_HEIGHT: u32 = ALL_WORDS_NUM_ROWS * ALL_WORDS_LINE_HEIGHT;
 
-/// A page showing all 25 words in a simple scrollable format
-#[derive(frostsnap_macros::Widget)]
+/// Pre-rendered Rgb565 pixels for the all-words page, cached via Rc.
+/// Two Gray4 framebuffers are used during construction for full anti-aliasing
+/// with separate colors, then converted to Rgb565 and dropped.
+type AllWordsPixels = Rc<Box<[Rgb565]>>;
+
+fn render_all_words_pixels(word_indices: &[u16; 25], share_index: u16) -> AllWordsPixels {
+    use crate::vec_framebuffer::VecFramebuffer;
+
+    let font = ALL_WORDS_FONT;
+    let line_height = ALL_WORDS_LINE_HEIGHT;
+    let width = ALL_WORDS_SCREEN_WIDTH as usize;
+    let height = ALL_WORDS_HEIGHT as usize;
+
+    let number_width = measure_string_width(font, "25.");
+    let number_gap = 3u32;
+    let word_x_offset = number_width + number_gap;
+
+    let column_width = ALL_WORDS_SCREEN_WIDTH / 2;
+    let left_col_x = 8u32;
+    let right_col_x = column_width + 4;
+
+    let mut num_fb = VecFramebuffer::<Gray4>::new(width, height);
+    let mut wrd_fb = VecFramebuffer::<Gray4>::new(width, height);
+
+    // Row 0: share index "#." + value
+    draw_gray4_string(&mut num_fb, font, "#.", Point::new(left_col_x as i32, 0), 15);
+    let share_str = format!("{}", share_index);
+    draw_gray4_string(
+        &mut wrd_fb,
+        font,
+        &share_str,
+        Point::new((left_col_x + word_x_offset) as i32, 0),
+        15,
+    );
+
+    // Left column rows 1-12: words 1-12
+    for i in 0..12 {
+        let y = ((i + 1) as u32 * line_height) as i32;
+        let num_str = format!("{}.", i + 1);
+        draw_gray4_string(&mut num_fb, font, &num_str, Point::new(left_col_x as i32, y), 15);
+        let word = BIP39_WORDS[word_indices[i] as usize];
+        draw_gray4_string(
+            &mut wrd_fb,
+            font,
+            word,
+            Point::new((left_col_x + word_x_offset) as i32, y),
+            15,
+        );
+    }
+
+    // Right column: words 13-25
+    for i in 12..25 {
+        let y = ((i - 12) as u32 * line_height) as i32;
+        let num_str = format!("{}.", i + 1);
+        draw_gray4_string(&mut num_fb, font, &num_str, Point::new(right_col_x as i32, y), 15);
+        let word = BIP39_WORDS[word_indices[i] as usize];
+        draw_gray4_string(
+            &mut wrd_fb,
+            font,
+            word,
+            Point::new((right_col_x + word_x_offset) as i32, y),
+            15,
+        );
+    }
+
+    // Convert to Rgb565 — Gray4 buffers are dropped after this
+    let secondary_lut = build_lut(PALETTE.text_secondary);
+    let primary_lut = build_lut(PALETTE.primary);
+    let total_pixels = width * height;
+    let mut pixels = vec![PALETTE.background; total_pixels].into_boxed_slice();
+
+    for (i, (num_color, wrd_color)) in num_fb
+        .contiguous_pixels()
+        .zip(wrd_fb.contiguous_pixels())
+        .take(total_pixels)
+        .enumerate()
+    {
+        let num_val = num_color.luma() as usize;
+        if num_val > 0 {
+            pixels[i] = secondary_lut[num_val];
+        } else {
+            let wrd_val = wrd_color.luma() as usize;
+            if wrd_val > 0 {
+                pixels[i] = primary_lut[wrd_val];
+            }
+        }
+    }
+
+    Rc::new(pixels)
+}
+
+/// A page showing all 25 words in two columns with anti-aliased text.
+/// Pre-rendered to Rgb565 (~91 KB) at construction, cached via Rc for fast blitting.
 pub struct AllWordsPage {
-    #[widget_delegate]
-    content: Row<(Column<Vec<SingleWordRow>>, Column<Vec<SingleWordRow>>)>,
+    pixels: AllWordsPixels,
 }
 
 impl AllWordsPage {
     pub fn new(word_indices: &[u16; 25], share_index: u16) -> Self {
-        // Helper to create a word row (word_idx is 0-based)
-        let make_word_row = |word_idx: usize| -> SingleWordRow {
-            Row::new((
-                Text::new(
-                    format!("{:2}.", word_idx + 1),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
-                ),
-                Text::new(
-                    format!("{:<8}", BIP39_WORDS[word_indices[word_idx] as usize]),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
-                ),
-            ))
-            .with_main_axis_alignment(MainAxisAlignment::Start)
-        };
+        Self::from_cached(render_all_words_pixels(word_indices, share_index))
+    }
 
-        // Create left column: Share index, then words 1-12
-        let left_column = {
-            // First row: share index
-            let share_row = Row::new((
-                Text::new(
-                    " #.",
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
-                ),
-                Text::new(
-                    format!("{}", share_index),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
-                )
-                .with_underline(PALETTE.surface),
-            ))
-            .with_main_axis_alignment(MainAxisAlignment::Start);
+    fn from_cached(pixels: AllWordsPixels) -> Self {
+        Self { pixels }
+    }
+}
 
-            let mut rows = Vec::with_capacity(13);
-            rows.push(share_row);
-            for i in 0..12 {
-                rows.push(make_word_row(i));
-            }
+impl crate::DynWidget for AllWordsPage {
+    fn set_constraints(&mut self, _max_size: Size) {}
 
-            Column::new(rows)
-                .with_main_axis_alignment(MainAxisAlignment::Center)
-                .with_cross_axis_alignment(CrossAxisAlignment::Start)
-        };
+    fn sizing(&self) -> crate::Sizing {
+        Size::new(ALL_WORDS_SCREEN_WIDTH, ALL_WORDS_HEIGHT).into()
+    }
 
-        // Create right column: Words 13-25
-        let mut right_rows = Vec::with_capacity(13);
-        for i in 12..25 {
-            right_rows.push(make_word_row(i));
-        }
+    fn force_full_redraw(&mut self) {}
+}
 
-        let right_column = Column::new(right_rows)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Start);
+impl crate::Widget for AllWordsPage {
+    type Color = Rgb565;
 
-        // Combine the two columns
-        let two_columns = Row::new((left_column, right_column))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
-
-        let content = two_columns;
-
-        Self { content }
+    fn draw<D: DrawTarget<Color = Self::Color>>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        _current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        target.fill_contiguous(
+            &Rectangle::new(
+                Point::zero(),
+                Size::new(ALL_WORDS_SCREEN_WIDTH, ALL_WORDS_HEIGHT),
+            ),
+            self.pixels.iter().copied(),
+        )
     }
 }
 
@@ -367,7 +442,7 @@ impl crate::Widget for BackupConfirmationScreen {
 type BackupPage = crate::any_of::AnyOf<(
     ShareIndexPage,
     WordsPage,
-    AllWordsPage,
+    Center<AllWordsPage>,
     BackupConfirmationScreen,
 )>;
 
@@ -376,6 +451,7 @@ pub struct BackupPageList {
     word_indices: [u16; 25],
     share_index: u16,
     total_pages: usize,
+    all_words_pixels: AllWordsPixels,
 }
 
 impl BackupPageList {
@@ -383,11 +459,13 @@ impl BackupPageList {
         // Calculate total pages: 1 share index page + word pages + 1 all words page + 1 hold to confirm page
         let word_pages = NUM_WORDS.div_ceil(WORDS_PER_PAGE);
         let total_pages = 1 + word_pages + 1 + 1; // share + word pages + all words + confirm
+        let all_words_pixels = render_all_words_pixels(&word_indices, share_index);
 
         Self {
             word_indices,
             share_index,
             total_pages,
+            all_words_pixels,
         }
     }
 }
@@ -410,7 +488,7 @@ impl WidgetList<BackupPage> for BackupPageList {
             BackupPage::new(BackupConfirmationScreen::new())
         } else if index == self.total_pages - 2 {
             // Second to last page - All words summary
-            BackupPage::new(AllWordsPage::new(&self.word_indices, self.share_index))
+            BackupPage::new(Center::new(AllWordsPage::from_cached(self.all_words_pixels.clone())))
         } else {
             // Words page
             let word_start_index = (index - 1) * WORDS_PER_PAGE;
