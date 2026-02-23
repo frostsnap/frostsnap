@@ -1,3 +1,4 @@
+use crate::sdf;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::vec_framebuffer::VecFramebuffer;
 use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*};
@@ -7,7 +8,7 @@ use embedded_graphics::{
     image::Image,
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::{Circle, PrimitiveStyleBuilder, Rectangle},
+    primitives::Rectangle,
 };
 use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
 
@@ -42,6 +43,12 @@ impl Default for CircleButton {
     }
 }
 
+/// Circle radius used by SDF rendering (matches the old CIRCLE_DIAMETER - 4 geometry).
+/// The old circle was `Circle::with_center(center, CIRCLE_DIAMETER - 4)` which means
+/// diameter = 96, radius = 48. The stroke was 2px centered on the boundary.
+const SDF_CIRCLE_RADIUS: f32 = 48.0;
+const SDF_STROKE_WIDTH: f32 = 2.0;
+
 /// Render a filled+stroked circle with an icon centered on it into a framebuffer
 fn render_circle_with_icon(
     fill_color: Rgb565,
@@ -52,19 +59,21 @@ fn render_circle_with_icon(
     let mut fb = VecFramebuffer::<Rgb565>::new(CIRCLE_DIAMETER as usize, CIRCLE_DIAMETER as usize);
     fb.clear(bg_color);
 
+    let cx = CIRCLE_RADIUS as f32;
+    let cy = CIRCLE_RADIUS as f32;
+
+    sdf::render_circle_aa(
+        &mut fb,
+        cx,
+        cy,
+        SDF_CIRCLE_RADIUS,
+        Some(SDF_STROKE_WIDTH),
+        fill_color,
+        stroke_color,
+        bg_color,
+    );
+
     let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
-
-    let circle_style = PrimitiveStyleBuilder::new()
-        .fill_color(fill_color)
-        .stroke_color(stroke_color)
-        .stroke_width(2)
-        .build();
-
-    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-        .into_styled(circle_style)
-        .draw(&mut fb)
-        .unwrap();
-
     let icon = OpenSelectHandGesture::new(icon_color);
     Image::with_center(&icon, center).draw(&mut fb).unwrap();
 
@@ -80,18 +89,19 @@ fn render_circle_only(
     let mut fb = VecFramebuffer::<Rgb565>::new(CIRCLE_DIAMETER as usize, CIRCLE_DIAMETER as usize);
     fb.clear(bg_color);
 
-    let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
+    let cx = CIRCLE_RADIUS as f32;
+    let cy = CIRCLE_RADIUS as f32;
 
-    let circle_style = PrimitiveStyleBuilder::new()
-        .fill_color(fill_color)
-        .stroke_color(stroke_color)
-        .stroke_width(2)
-        .build();
-
-    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-        .into_styled(circle_style)
-        .draw(&mut fb)
-        .unwrap();
+    sdf::render_circle_aa(
+        &mut fb,
+        cx,
+        cy,
+        SDF_CIRCLE_RADIUS,
+        Some(SDF_STROKE_WIDTH),
+        fill_color,
+        stroke_color,
+        bg_color,
+    );
 
     fb
 }

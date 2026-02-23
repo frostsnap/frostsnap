@@ -65,7 +65,8 @@ impl KeygenCheck {
         let padded_code_column = Padding::symmetric(10, 4, code_column);
         let code_container = Container::new(padded_code_column)
             .with_border(PALETTE.outline, 2)
-            .with_corner_radius(Size::new(8, 8));
+            .with_corner_radius(Size::new(8, 8))
+            .with_aa_background(PALETTE.background);
 
         // Create the subtitle text in smaller grey (now at the top) - split into two lines
         let subtitle_line1 = Text::new(

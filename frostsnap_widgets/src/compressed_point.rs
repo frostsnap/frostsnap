@@ -25,3 +25,26 @@ impl From<CompressedPoint> for Point {
         cp.to_point()
     }
 }
+
+/// Compressed point with anti-aliasing coverage (Gray4 level 0–15).
+/// 4 bytes per point vs 3 for CompressedPoint.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CompressedPointWithCoverage {
+    pub x: u8,
+    pub y: u16,
+    pub coverage: u8, // 0–15 (Gray4 levels)
+}
+
+impl CompressedPointWithCoverage {
+    pub fn new(point: Point, coverage: u8) -> Self {
+        Self {
+            x: point.x as u8,
+            y: point.y as u16,
+            coverage,
+        }
+    }
+
+    pub fn to_point(self) -> Point {
+        Point::new(self.x as i32, self.y as i32)
+    }
+}

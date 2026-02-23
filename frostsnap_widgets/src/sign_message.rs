@@ -34,6 +34,7 @@ impl SignMessageConfirm {
             .with_border(PALETTE.outline, 2)
             .with_fill(PALETTE.surface)
             .with_corner_radius(Size::new(8, 8))
+            .with_aa_background(PALETTE.background)
             .with_expanded();
 
         let content = Column::new((title, message_container))

@@ -13,6 +13,7 @@ use embedded_graphics::prelude::*;
 pub mod compressed_point;
 pub mod palette;
 pub mod pixel_recorder;
+pub mod sdf;
 
 // Widget modules
 pub mod address_display;

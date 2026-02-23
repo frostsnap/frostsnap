@@ -667,7 +667,8 @@ macro_rules! demo_widget {
                     Size::new(20, 20)
                 )
                 .with_fill(PALETTE.error)
-                .with_corner_radius(Size::new(10, 10));
+                .with_corner_radius(Size::new(10, 10))
+                .with_aa_background(PALETTE.background);
 
                 // Build the stack
                 let stack = Stack::builder()

@@ -42,7 +42,8 @@ impl NumericButton {
         let container = Container::new(aligned_text)
             .with_expanded()
             .with_fill(PALETTE.surface)
-            .with_corner_radius(Size::new(8, 8));
+            .with_corner_radius(Size::new(8, 8))
+            .with_aa_background(PALETTE.background);
 
         let button = Self {
             key,
@@ -120,7 +121,8 @@ impl CheckmarkButton {
         let container = Container::new(aligned_icon)
             .with_expanded()
             .with_fill(container_fill)
-            .with_corner_radius(Size::new(8, 8));
+            .with_corner_radius(Size::new(8, 8))
+            .with_aa_background(PALETTE.background);
 
         let button = Self {
             enabled,

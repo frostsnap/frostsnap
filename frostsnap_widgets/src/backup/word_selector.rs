@@ -42,7 +42,8 @@ impl WordButton {
         let container = Container::new(word_row)
             .with_width(110)
             .with_fill(PALETTE.surface)
-            .with_corner_radius(Size::new(8, 8));
+            .with_corner_radius(Size::new(8, 8))
+            .with_aa_background(PALETTE.background);
 
         let word_button = Self {
             word,

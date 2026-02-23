@@ -105,7 +105,8 @@ impl FirmwareUpgradeConfirm {
         let hash_with_padding = Padding::symmetric(10, 5, hash_column);
         let hash_container = Container::new(hash_with_padding)
             .with_border(PALETTE.outline, 2)
-            .with_corner_radius(Size::new(8, 8));
+            .with_corner_radius(Size::new(8, 8))
+            .with_aa_background(PALETTE.background);
 
         // Create main column with SpaceEvenly alignment
         let content = Column::new((title_text, hash_container, version_size_display, hold_text))
