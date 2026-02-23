@@ -1,4 +1,5 @@
 use crate::super_draw_target::SuperDrawTarget;
+use crate::vec_framebuffer::VecFramebuffer;
 use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*};
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -6,7 +7,7 @@ use embedded_graphics::{
     image::Image,
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::{Circle, PrimitiveStyleBuilder},
+    primitives::{Circle, PrimitiveStyleBuilder, Rectangle},
 };
 use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
 
@@ -21,16 +22,18 @@ pub enum CircleButtonState {
     ShowingCheckmark,
 }
 
-/// A circular button that shows a hand icon when idle/pressed and transitions to a checkmark
+/// A circular button that shows a hand icon when idle/pressed and transitions to a checkmark.
+/// Idle and Pressed states are pre-rendered into Rgb565 framebuffers so that each draw is a
+/// single fill_contiguous call, avoiding flicker from layered circle + icon drawing.
 pub struct CircleButton {
     state: CircleButtonState,
     checkmark: Center<Checkmark<Rgb565>>,
     last_drawn_state: Option<CircleButtonState>,
-    // Colors for different states
-    idle_stroke_color: Rgb565,
-    pressed_fill_color: Rgb565,
-    pressed_stroke_color: Rgb565,
-    checkmark_color: Rgb565,
+    // Pre-rendered framebuffers for flicker-free drawing
+    idle_fb: VecFramebuffer<Rgb565>,
+    pressed_fb: VecFramebuffer<Rgb565>,
+    // Checkmark state needs a pre-rendered circle background + animated checkmark on top
+    checkmark_bg_fb: VecFramebuffer<Rgb565>,
 }
 
 impl Default for CircleButton {
@@ -39,36 +42,119 @@ impl Default for CircleButton {
     }
 }
 
+/// Render a filled+stroked circle with an icon centered on it into a framebuffer
+fn render_circle_with_icon(
+    fill_color: Rgb565,
+    stroke_color: Rgb565,
+    icon_color: Rgb565,
+    bg_color: Rgb565,
+) -> VecFramebuffer<Rgb565> {
+    let mut fb = VecFramebuffer::<Rgb565>::new(CIRCLE_DIAMETER as usize, CIRCLE_DIAMETER as usize);
+    fb.clear(bg_color);
+
+    let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
+
+    let circle_style = PrimitiveStyleBuilder::new()
+        .fill_color(fill_color)
+        .stroke_color(stroke_color)
+        .stroke_width(2)
+        .build();
+
+    Circle::with_center(center, CIRCLE_DIAMETER - 4)
+        .into_styled(circle_style)
+        .draw(&mut fb)
+        .unwrap();
+
+    let icon = OpenSelectHandGesture::new(icon_color);
+    Image::with_center(&icon, center).draw(&mut fb).unwrap();
+
+    fb
+}
+
+/// Render just a filled circle (no icon) into a framebuffer
+fn render_circle_only(
+    fill_color: Rgb565,
+    stroke_color: Rgb565,
+    bg_color: Rgb565,
+) -> VecFramebuffer<Rgb565> {
+    let mut fb = VecFramebuffer::<Rgb565>::new(CIRCLE_DIAMETER as usize, CIRCLE_DIAMETER as usize);
+    fb.clear(bg_color);
+
+    let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
+
+    let circle_style = PrimitiveStyleBuilder::new()
+        .fill_color(fill_color)
+        .stroke_color(stroke_color)
+        .stroke_width(2)
+        .build();
+
+    Circle::with_center(center, CIRCLE_DIAMETER - 4)
+        .into_styled(circle_style)
+        .draw(&mut fb)
+        .unwrap();
+
+    fb
+}
+
 impl CircleButton {
     pub fn new() -> Self {
-        // Use a checkmark that fits nicely within the circle
         let checkmark = Center::new(Checkmark::new(50, PALETTE.on_tertiary_container));
+
+        let idle_fb = render_circle_with_icon(
+            PALETTE.surface_variant,
+            PALETTE.outline,
+            PALETTE.on_surface_variant,
+            PALETTE.background,
+        );
+
+        let pressed_fb = render_circle_with_icon(
+            PALETTE.tertiary_container,
+            PALETTE.confirm_progress,
+            PALETTE.on_tertiary_container,
+            PALETTE.background,
+        );
+
+        let checkmark_bg_fb = render_circle_only(
+            PALETTE.tertiary_container,
+            PALETTE.tertiary_container,
+            PALETTE.background,
+        );
 
         Self {
             state: CircleButtonState::Idle,
             checkmark,
             last_drawn_state: None,
-            idle_stroke_color: PALETTE.outline, // Default gray stroke when idle
-            pressed_fill_color: PALETTE.tertiary_container,
-            pressed_stroke_color: PALETTE.confirm_progress,
-            checkmark_color: PALETTE.on_tertiary_container,
+            idle_fb,
+            pressed_fb,
+            checkmark_bg_fb,
         }
     }
 
     /// Set custom colors for the pressed state
     pub fn set_pressed_colors(&mut self, pressed_fill: Rgb565, pressed_stroke: Rgb565) {
-        self.pressed_fill_color = pressed_fill;
-        self.pressed_stroke_color = pressed_stroke;
         // For danger actions (red), use white checkmark; otherwise use default
-        if pressed_fill == PALETTE.error {
-            self.checkmark_color = PALETTE.on_error; // White/light checkmark on red
+        let icon_color = if pressed_fill == PALETTE.error {
             self.checkmark.child.set_color(PALETTE.on_error);
+            PALETTE.on_error
         } else {
-            self.checkmark_color = PALETTE.on_tertiary_container;
             self.checkmark
                 .child
                 .set_color(PALETTE.on_tertiary_container);
-        }
+            PALETTE.on_tertiary_container
+        };
+
+        // Re-render pressed framebuffer with new colors
+        self.pressed_fb = render_circle_with_icon(
+            pressed_fill,
+            pressed_stroke,
+            icon_color,
+            PALETTE.background,
+        );
+
+        // Re-render checkmark background with new colors
+        self.checkmark_bg_fb =
+            render_circle_only(pressed_fill, pressed_fill, PALETTE.background);
+
         // Force redraw to apply new colors
         self.last_drawn_state = None;
     }
@@ -161,54 +247,18 @@ impl Widget for CircleButton {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
-
         // Only redraw the circle if state changed
         let should_redraw = self.last_drawn_state != Some(self.state);
 
         if should_redraw {
-            match self.state {
-                CircleButtonState::Idle => {
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(PALETTE.surface_variant)
-                        .stroke_color(self.idle_stroke_color)
-                        .stroke_width(2)
-                        .build();
+            let fb = match self.state {
+                CircleButtonState::Idle => &self.idle_fb,
+                CircleButtonState::Pressed => &self.pressed_fb,
+                CircleButtonState::ShowingCheckmark => &self.checkmark_bg_fb,
+            };
 
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
-
-                    let icon = OpenSelectHandGesture::new(PALETTE.on_surface_variant);
-                    Image::with_center(&icon, center).draw(target)?;
-                }
-                CircleButtonState::Pressed => {
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(self.pressed_fill_color)
-                        .stroke_color(self.pressed_stroke_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
-
-                    let icon = OpenSelectHandGesture::new(PALETTE.on_tertiary_container);
-                    Image::with_center(&icon, center).draw(target)?;
-                }
-                CircleButtonState::ShowingCheckmark => {
-                    // Draw solid circle using the pressed colors (green for normal, red for danger)
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(self.pressed_fill_color)
-                        .stroke_color(self.pressed_fill_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
-                }
-            }
+            let area = Rectangle::new(Point::zero(), Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER));
+            target.fill_contiguous(&area, fb.contiguous_pixels())?;
 
             self.last_drawn_state = Some(self.state);
         }

@@ -195,6 +195,49 @@ where
         let mut translated_area = *area;
         translated_area.top_left += self.crop_area.top_left;
 
+        if let Some(clip) = self.clip_rect {
+            let clipped = rect_intersection(translated_area, clip);
+            if clipped.size.width == 0 || clipped.size.height == 0 {
+                return Ok(());
+            }
+            if clipped != translated_area {
+                // Area was clipped — fall back to draw_iter since fill_contiguous
+                // requires pixels to exactly match the area dimensions.
+                let area_width = area.size.width as i32;
+                let bg = self.background_color;
+                let opacity = self.opacity;
+                let crop_offset = self.crop_area.top_left;
+                let mut cache: Option<(C, C)> = None;
+                let pixels =
+                    colors
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(move |(i, color)| {
+                            let x = area.top_left.x + (i as i32 % area_width);
+                            let y = area.top_left.y + (i as i32 / area_width);
+                            let translated_point = Point::new(x, y) + crop_offset;
+                            if !clip.contains(translated_point) {
+                                return None;
+                            }
+                            let final_color = if opacity < Frac::ONE {
+                                match cache {
+                                    Some((cs, cr)) if cs == color => cr,
+                                    _ => {
+                                        let c = bg.interpolate(color, opacity);
+                                        cache = Some((color, c));
+                                        c
+                                    }
+                                }
+                            } else {
+                                color
+                            };
+                            Some(Pixel(translated_point, final_color))
+                        });
+                return display.draw_iter(pixels);
+            }
+            translated_area = clipped;
+        }
+
         if self.opacity < Frac::ONE {
             // Cache with invalidation based on source color
             let mut cache: Option<(C, C)> = None; // (source_color, interpolated_color)
