@@ -432,7 +432,10 @@ impl WidgetList for BackupPageList {
         }
     }
 
-    fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {
+    fn can_go_prev(&self, from_index: usize, current_widget: &BackupPage) -> bool {
+        if from_index == 0 {
+            return false;
+        }
         // If we're on the last page (confirmation screen)
         if from_index == self.total_pages - 1 {
             // Check if the confirmation screen has been confirmed
