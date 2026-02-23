@@ -51,6 +51,8 @@ pub struct Translate<W: Widget> {
     dirty_rect_offset: Point,
     /// The child's dirty rect (cached from set_constraints)
     child_dirty_rect: Rectangle,
+    /// Whether the bitmap has been populated at least once
+    bitmap_initialized: bool,
 }
 
 impl<W: Widget> Translate<W>
@@ -73,6 +75,7 @@ where
             constraints: None,
             dirty_rect_offset: Point::zero(),
             child_dirty_rect: Rectangle::zero(),
+            bitmap_initialized: true,
         }
     }
 
@@ -93,6 +96,9 @@ where
 
     /// Animate from rest position to an offset (exit animation)
     pub fn animate_to(&mut self, to: Point, duration: u64) {
+        // Don't draw until movement actually starts, to avoid a ghost at the rest
+        // position on the first frame(s) where the rounded offset is still zero.
+        self.bitmap_initialized = false;
         self.translation_direction = TranslationDirection::Animating {
             offset: to,
             duration,
@@ -245,6 +251,7 @@ where
 
         // Handle offset change and bitmap tracking
         if offset != self.current_offset {
+            self.bitmap_initialized = true;
             self.child.force_full_redraw();
 
             // Clear current bitmap for reuse
@@ -286,7 +293,7 @@ where
             // Swap bitmaps
             core::mem::swap(&mut self.previous_bitmap, &mut self.current_bitmap);
             self.current_offset = offset;
-        } else {
+        } else if self.bitmap_initialized {
             // No movement - just draw normally with animation offset
             let mut translated_target = target.clone().translate(offset);
             self.child.draw(&mut translated_target, current_time)?;
