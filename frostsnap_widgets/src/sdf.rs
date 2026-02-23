@@ -146,24 +146,28 @@ pub fn render_circle_aa(
                 let stroke_cov = shape_cov - fill_cov;
                 let stroke_cov = if stroke_cov > 0.0 { stroke_cov } else { 0.0 };
 
-                let fill_level = coverage_to_gray4(fill_cov);
-                let stroke_level = coverage_to_gray4(stroke_cov);
-
-                if fill_level > 0 || stroke_level > 0 {
+                if shape_cov > 0.0 {
                     let pt = embedded_graphics::prelude::Point::new(x, y);
-                    if stroke_level > 0 && fill_level > 0 {
-                        // Blend: stroke over fill over background
-                        let fill_pixel = fill_lut[fill_level as usize];
-                        let stroke_over_fill_lut = build_aa_lut(stroke_color, fill_pixel);
-                        fb.set_pixel(pt, stroke_over_fill_lut[stroke_level as usize]);
-                    } else if stroke_level > 0 {
-                        // Stroke pixel on background
-                        let stroke_lut = build_aa_lut(stroke_color, bg_color);
-                        fb.set_pixel(pt, stroke_lut[stroke_level as usize]);
-                    } else {
-                        // Fill pixel on background
-                        fb.set_pixel(pt, fill_lut[fill_level as usize]);
-                    }
+
+                    // Direct three-way blend: each pixel is a weighted sum of
+                    // stroke, fill, and background contributions.
+                    // stroke_cov + fill_cov = shape_cov, bg_cov = 1 - shape_cov
+                    let bg_cov = 1.0 - shape_cov;
+
+                    let r = stroke_color.r() as f32 * stroke_cov
+                        + fill_color.r() as f32 * fill_cov
+                        + bg_color.r() as f32 * bg_cov;
+                    let g = stroke_color.g() as f32 * stroke_cov
+                        + fill_color.g() as f32 * fill_cov
+                        + bg_color.g() as f32 * bg_cov;
+                    let b = stroke_color.b() as f32 * stroke_cov
+                        + fill_color.b() as f32 * fill_cov
+                        + bg_color.b() as f32 * bg_cov;
+
+                    fb.set_pixel(
+                        pt,
+                        Rgb565::new(r as u8, g as u8, b as u8),
+                    );
                 }
             } else {
                 // Fill only — sdf_coverage handles the SDF convention directly

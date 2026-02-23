@@ -155,12 +155,11 @@ where
                 self.content.set_progress(new_progress);
 
                 if new_progress >= Frac::ONE {
+                    // Mark as completed but don't start fade-out or checkmark yet.
+                    // The border needs one more draw at progress=1.0 to close the
+                    // final gap before we change the button state (which triggers
+                    // a large SPI blit that would delay the border update).
                     self.completed = true;
-
-                    // Start fading out the border only
-                    self.content.start_fade_out(500);
-                    self.button_mut()
-                        .set_state(CircleButtonState::ShowingCheckmark);
                 }
             } else if !holding && current_progress > Frac::ZERO && !self.completed {
                 let decrement = Frac::from_ratio(elapsed_ms, 1000);
@@ -231,6 +230,16 @@ where
 
         // Draw the border (which includes the content)
         self.content.draw(target, current_time)?;
+
+        // After the border has drawn at full progress, start the fade-out and
+        // checkmark transition. This is deferred by one frame from when progress
+        // hits 1.0 so the border visually closes the gap before the button
+        // state change triggers a large redraw.
+        if self.completed && !self.content.is_fading() {
+            self.content.start_fade_out(500);
+            self.button_mut()
+                .set_state(CircleButtonState::ShowingCheckmark);
+        }
 
         if self.content.is_faded_out() && !self.button().checkmark().drawing_started() {
             self.button_mut().checkmark_mut().start_drawing()

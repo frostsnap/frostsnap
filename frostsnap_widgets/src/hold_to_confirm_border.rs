@@ -112,6 +112,10 @@ where
         self.fade_progress = Frac::ZERO;
     }
 
+    pub fn is_fading(&self) -> bool {
+        self.is_fading
+    }
+
     pub fn is_faded_out(&self) -> bool {
         self.is_fading && self.fade_progress == Frac::ONE
     }
