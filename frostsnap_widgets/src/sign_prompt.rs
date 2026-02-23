@@ -380,7 +380,10 @@ impl WidgetList for SignPromptPageList {
         Some(item)
     }
 
-    fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {
+    fn can_go_prev(&self, from_index: usize, current_widget: &SignPromptPage) -> bool {
+        if from_index == 0 {
+            return false;
+        }
         if from_index == self.total_pages - 1 {
             if let Some(confirmation_page) = current_widget.downcast_ref::<ConfirmationPage>() {
                 return !confirmation_page.is_confirmed();
