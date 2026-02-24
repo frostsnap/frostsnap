@@ -5,8 +5,9 @@ use crate::Frac;
 pub enum AnimationSpeed {
     /// Linear interpolation - constant speed throughout
     Linear,
-    /// Cubic bezier ease-out curve (0.0, 0.0, 0.58, 1.0)
-    /// Starts fast and slows down at the end
+    /// Cubic ease-in: starts slow and speeds up. Formula: t³
+    EaseIn,
+    /// Cubic ease-out: starts fast and slows down. Formula: 1 - (1 - t)³
     EaseOut,
 }
 
@@ -16,6 +17,10 @@ impl AnimationSpeed {
     pub fn apply(&self, progress: Frac) -> Frac {
         match self {
             AnimationSpeed::Linear => progress,
+            AnimationSpeed::EaseIn => {
+                // Formula: t³
+                progress * progress * progress
+            }
             AnimationSpeed::EaseOut => {
                 // Ease-out cubic bezier approximation using fixed point math
                 // This approximates the curve (0.0, 0.0, 0.58, 1.0)

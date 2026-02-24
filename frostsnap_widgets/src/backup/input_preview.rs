@@ -1,9 +1,10 @@
 use super::backup_model::{FramebufferMutation, MainViewState, ViewState};
+use crate::animation_speed::AnimationSpeed;
 use crate::cursor::Cursor;
 use crate::palette::PALETTE;
 use crate::progress_bars::ProgressBars;
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{icons, DynWidget, Key, KeyTouch, Widget, FONT_HUGE_MONO};
+use crate::{icons, DynWidget, Frac, Key, KeyTouch, Widget, FONT_HUGE_MONO};
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use embedded_graphics::{
@@ -331,11 +332,13 @@ impl Widget for InputPreview {
 
 pub struct Framebuf {
     framebuffer: Rc<RefCell<Fb>>,
-    current_position: u32, // Current vertical scroll position
+    current_position: u32,
     current_time: Option<crate::Instant>,
-    target_position: u32, // Target vertical scroll position
-    animation_start_time: Option<crate::Instant>, // When current animation started
-    viewport_height: u32, // Height of the visible area
+    target_position: u32,
+    scroll_start_position: u32,
+    scroll_start_time: Option<crate::Instant>,
+    scroll_easing: AnimationSpeed,
+    viewport_height: u32,
     pub(super) redraw: bool,
 }
 
@@ -391,8 +394,10 @@ impl Framebuf {
             current_position: 0,
             current_time: None,
             target_position: 0,
-            animation_start_time: None,
-            viewport_height: 34, // Default viewport height
+            scroll_start_position: 0,
+            scroll_start_time: None,
+            scroll_easing: AnimationSpeed::EaseIn,
+            viewport_height: 34,
             redraw: true,
         }
     }
@@ -449,9 +454,17 @@ impl Framebuf {
             self.target_position = new_target;
             if skip_animation {
                 self.current_position = new_target;
-                self.animation_start_time = None;
+                self.scroll_start_time = None;
             } else {
-                self.animation_start_time = self.current_time;
+                self.scroll_start_position = self.current_position;
+                self.scroll_start_time = self.current_time;
+                // ⏩ forward (next word): linger then accelerate away
+                // ⏪ backward (backspace): snap quickly then settle
+                self.scroll_easing = if new_target > self.current_position {
+                    AnimationSpeed::EaseIn
+                } else {
+                    AnimationSpeed::EaseOut
+                };
             }
             self.redraw = true;
         }
@@ -461,7 +474,7 @@ impl Framebuf {
     pub fn fast_forward_scrolling(&mut self) {
         self.redraw = self.current_position != self.target_position;
         self.current_position = self.target_position;
-        self.animation_start_time = None;
+        self.scroll_start_time = None;
     }
 
     /// Check if the framebuffer is currently scrolling
@@ -521,74 +534,29 @@ impl Widget for Framebuf {
             self.current_position = self.target_position;
         }
 
-        // Animate scrolling using acceleration
-        let last_draw_time = self.current_time.get_or_insert(current_time);
+        self.current_time = Some(current_time);
 
         if self.current_position != self.target_position {
-            // Calculate time since animation started
-            let animation_elapsed = if let Some(start_time) = self.animation_start_time {
-                current_time.duration_since(start_time).unwrap_or(0) as f32
-            } else {
-                self.animation_start_time = Some(current_time);
-                0.0
-            };
+            let start_time = *self.scroll_start_time.get_or_insert(current_time);
+            let elapsed = current_time.saturating_duration_since(start_time) as u32;
 
-            // Accelerating curve: starts slow, speeds up
-            // Using a quadratic function for smooth acceleration
-            const ACCELERATION: f32 = 0.00000005; // Acceleration factor (5x faster)
-            const MIN_VELOCITY: f32 = 0.0005; // Minimum velocity to ensure it starts moving
+            const SCROLL_DURATION_MS: u32 = 1500;
 
-            // Calculate current velocity based on time elapsed
-            let velocity = MIN_VELOCITY + (ACCELERATION * animation_elapsed * animation_elapsed);
+            let progress = Frac::from_ratio(elapsed.min(SCROLL_DURATION_MS), SCROLL_DURATION_MS);
+            let eased = self.scroll_easing.apply(progress);
 
-            // Calculate distance to move this frame
-            let frame_duration = current_time.duration_since(*last_draw_time).unwrap_or(0) as f32;
+            let start = self.scroll_start_position as i32;
+            let end = self.target_position as i32;
+            self.current_position = (start + eased.as_rat() * (end - start)).max(0) as u32;
 
-            // For upward scrolling, we want positive distance to move up (decrease position)
-            // When velocity is negative, we actually want to move down briefly
-            // Manual rounding: add 0.5 and truncate for positive values
-            let raw_distance = frame_duration * velocity;
-            let distance = if raw_distance >= 0.0 {
-                (raw_distance + 0.5) as i32
-            } else {
-                (raw_distance - 0.5) as i32
-            };
-
-            // Only proceed if we're actually going to move
-            if distance != 0 {
-                *last_draw_time = current_time;
-
-                // Direction: negative means scrolling up (decreasing position)
-                let direction =
-                    (self.target_position as i32 - self.current_position as i32).signum();
-
-                // Apply the velocity in the correct direction
-                // For upward scroll (direction < 0), positive velocity should decrease position
-                let position_change = if direction < 0 {
-                    -distance // Upward scroll
-                } else {
-                    distance // Downward scroll
-                };
-
-                let new_position = (self.current_position as i32 + position_change).max(0);
-
-                // Check if we've reached or passed the target
-                if (direction < 0 && new_position <= self.target_position as i32)
-                    || (direction > 0 && new_position >= self.target_position as i32)
-                    || direction == 0
-                {
-                    self.current_position = self.target_position;
-                    self.animation_start_time = None; // Animation complete
-                } else {
-                    self.current_position = new_position as u32;
-                }
-
-                self.redraw = true; // Keep redrawing until animation completes
+            if progress >= Frac::ONE {
+                self.current_position = self.target_position;
+                self.scroll_start_time = None;
             }
-            // If distance is 0, we don't update last_draw_time, allowing frame_duration to accumulate
+
+            self.redraw = true;
         } else {
-            *last_draw_time = current_time;
-            self.animation_start_time = None;
+            self.scroll_start_time = None;
         }
 
         // Only redraw if needed
