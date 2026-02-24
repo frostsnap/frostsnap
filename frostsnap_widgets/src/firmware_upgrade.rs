@@ -143,9 +143,16 @@ pub enum FirmwareUpgradeProgress {
             >,
         >,
     },
-    /// Passive state - just show text
+    /// Passive state - title and status, no progress bar
     Passive {
-        widget: Center<Text<Gray4TextStyle>>,
+        widget: Center<
+            Padding<
+                Column<(
+                    Text<Gray4TextStyle>, // Title
+                    Text<Gray4TextStyle>, // Status
+                )>,
+            >,
+        >,
     },
 }
 
@@ -209,11 +216,22 @@ impl FirmwareUpgradeProgress {
 
     /// Create a new firmware upgrade progress widget in passive state
     pub fn passive() -> Self {
-        let text = Text::new(
-            "Firmware Upgrade".to_string(),
-            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.primary),
+        let title = Text::new(
+            "Firmware upgrade".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
         );
-        let widget = Center::new(text);
+
+        let status = Text::new(
+            "Waiting".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
+
+        let column = Column::new((title, status))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        let padded = Padding::symmetric(20, 20, column);
+        let widget = Center::new(padded);
 
         Self::Passive { widget }
     }
