@@ -4,7 +4,7 @@ use crate::HOLD_TO_CONFIRM_TIME_MS;
 use crate::{
     page_slider::PageSlider, palette::PALETTE, prelude::*,
     share_index::ShareIndexWidget, widget_list::WidgetList, FadeSwitcher, HoldToConfirm,
-    FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
+    FONT_HUGE_MONO, FONT_MED,
 };
 use alloc::{boxed::Box, format, rc::Rc, string::String, string::ToString, vec, vec::Vec};
 use embedded_graphics::{
