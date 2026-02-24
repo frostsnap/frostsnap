@@ -45,7 +45,7 @@ const SUCCESS_DELAY_MS: u64 = 1000;
 enum CompletionState {
     InProgress,
     Invalid,
-    SuccessDelay { success_at: crate::Instant },
+    SuccessDelay { success_at: Option<crate::Instant> },
     Success,
 }
 
@@ -151,7 +151,15 @@ impl EnterShareScreen {
         self.input_preview.update_progress(completed_rows);
         // Update keyboard/UI based on main view state
         match view_state.main_view {
-            MainViewState::AllWordsEntered { .. } => {
+            MainViewState::AllWordsEntered { ref success } => {
+                // Transition completion state immediately so touch handling is correct
+                if matches!(self.completion, CompletionState::InProgress) {
+                    self.completion = if success.is_some() {
+                        CompletionState::SuccessDelay { success_at: None }
+                    } else {
+                        CompletionState::Invalid
+                    };
+                }
                 // Show the EnteredWords view - same as when user taps ShowEnteredWords
                 if self.entered_words.is_none() {
                     let framebuffer = self.input_preview.get_framebuffer();
@@ -223,26 +231,11 @@ impl Widget for EnterShareScreen {
         D: DrawTarget<Color = Self::Color>,
     {
         // Advance completion state machine where we have access to current_time
-        match self.completion {
-            CompletionState::InProgress => {
-                if let MainViewState::AllWordsEntered { ref success } =
-                    self.model.view_state().main_view
-                {
-                    self.completion = if success.is_some() {
-                        CompletionState::SuccessDelay {
-                            success_at: current_time,
-                        }
-                    } else {
-                        CompletionState::Invalid
-                    };
-                }
+        if let CompletionState::SuccessDelay { ref mut success_at } = self.completion {
+            let t = *success_at.get_or_insert(current_time);
+            if current_time.saturating_duration_since(t) >= SUCCESS_DELAY_MS {
+                self.completion = CompletionState::Success;
             }
-            CompletionState::SuccessDelay { success_at } => {
-                if current_time.saturating_duration_since(success_at) >= SUCCESS_DELAY_MS {
-                    self.completion = CompletionState::Success;
-                }
-            }
-            _ => {}
         }
 
         for touch in &mut self.touches {
@@ -430,6 +423,7 @@ impl crate::DynWidget for EnterShareScreen {
                             let mutations = self.model.edit_row(word_index);
                             self.input_preview.apply_mutations(&mutations);
                             self.input_preview.force_redraw();
+                            self.completion = CompletionState::InProgress;
                             self.update_from_model();
 
                             // Exit EnteredWords view if we're in it
