@@ -70,9 +70,10 @@ impl EnteredWords {
         use crate::DynWidget;
         status_bar.set_constraints(Size::new(visible_size.width, STATUS_BAR_HEIGHT));
 
-        // Use a fixed thumb size for now
-        let thumb_size = crate::Frac::from_ratio(1, 4); // 25% of scrollbar height
-        let scroll_bar = ScrollBar::new(thumb_size);
+        let thumb_size = crate::Frac::from_ratio(1, 4);
+        let mut scroll_bar = ScrollBar::new(thumb_size);
+        let scrollbar_height = (visible_size.height - STATUS_BAR_HEIGHT) - 30 - 2;
+        scroll_bar.set_constraints(Size::new(SCROLLBAR_WIDTH, scrollbar_height));
 
         Self {
             framebuffer: framebuffer.clone(),
@@ -208,8 +209,9 @@ impl EnteredWords {
             Point::new(scrollbar_x, scrollbar_y),
             Size::new(SCROLLBAR_WIDTH, scrollbar_height),
         );
-        self.scroll_bar
-            .draw(&mut target.clone().crop(scrollbar_area));
+        let _ = self
+            .scroll_bar
+            .draw(&mut target.clone().crop(scrollbar_area), current_time);
 
         self.needs_redraw = false;
         self.first_draw = false;

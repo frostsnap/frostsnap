@@ -1,98 +1,55 @@
+use crate::layout::Container;
 use crate::super_draw_target::SuperDrawTarget;
+use crate::translate::Translate;
 use crate::{palette::PALETTE, Frac, Rat, Widget};
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::{PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
-};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 
 pub const SCROLLBAR_WIDTH: u32 = 4;
 const MIN_INDICATOR_HEIGHT: u32 = 20;
 const CORNER_RADIUS: Size = Size::new(2, 2);
 
-#[derive(Debug, PartialEq)]
 pub struct ScrollBar {
-    last_scroll_position: Option<Rat>,
     thumb_size: Frac,
     scroll_position: Rat,
     height: Option<u32>,
+    thumb: Option<Translate<Container<()>>>,
+    track_drawn: bool,
 }
 
 impl ScrollBar {
     pub fn new(thumb_size: Frac) -> Self {
         Self {
-            last_scroll_position: None,
             thumb_size,
             scroll_position: Rat::ZERO,
             height: None,
+            thumb: None,
+            track_drawn: false,
         }
-    }
-
-    fn thumb_rect(&self, track_rect: &Rectangle, scroll_position: Rat) -> Rectangle {
-        let thumb_height = (self.thumb_size * track_rect.size.height)
-            .max(Rat::from_int(MIN_INDICATOR_HEIGHT as _));
-        let available_track_height = track_rect.size.height - thumb_height;
-        let thumb_y =
-            track_rect.top_left.y + (scroll_position * available_track_height).round() as i32;
-        Rectangle::new(
-            Point::new(track_rect.top_left.x, thumb_y),
-            Size::new(track_rect.size.width, thumb_height.round()),
-        )
     }
 
     pub fn set_scroll_position(&mut self, position: Rat) {
-        self.scroll_position = position;
-    }
-
-    pub fn draw<D: DrawTarget<Color = Rgb565>>(&mut self, target: &mut D) {
-        if self.thumb_size >= Frac::ONE {
+        if self.scroll_position == position {
             return;
         }
-
-        let bounds = target.bounding_box();
-        let track_rect = Rectangle::new(bounds.top_left, bounds.size);
-        let new_thumb = self.thumb_rect(&track_rect, self.scroll_position);
-
-        let track_style = PrimitiveStyleBuilder::new()
-            .fill_color(PALETTE.surface_variant)
-            .build();
-        let thumb_style = PrimitiveStyleBuilder::new()
-            .fill_color(PALETTE.on_surface_variant)
-            .build();
-
-        if let Some(last_pos) = self.last_scroll_position {
-            if last_pos == self.scroll_position {
-                return;
-            }
-            let old_thumb = self.thumb_rect(&track_rect, last_pos);
-            let displacement = new_thumb.top_left.y - old_thumb.top_left.y;
-            // 🔘 extend by corner radius so the old thumb's rounded pixels get cleared
-            let clear_height =
-                (displacement.unsigned_abs() + CORNER_RADIUS.height).min(old_thumb.size.height);
-            if clear_height > 0 {
-                let clear_y = if displacement > 0 {
-                    old_thumb.top_left.y
-                } else {
-                    old_thumb.top_left.y + old_thumb.size.height as i32 - clear_height as i32
-                };
-                let strip = RoundedRectangle::with_equal_corners(
-                    Rectangle::new(
-                        Point::new(track_rect.top_left.x, clear_y),
-                        Size::new(track_rect.size.width, clear_height),
-                    ),
-                    CORNER_RADIUS,
-                );
-                let _ = strip.into_styled(track_style).draw(target);
-            }
-        } else {
-            let track = RoundedRectangle::with_equal_corners(track_rect, CORNER_RADIUS);
-            let _ = track.into_styled(track_style).draw(target);
+        self.scroll_position = position;
+        let y = self.thumb_y();
+        if let Some(ref mut thumb) = self.thumb {
+            thumb.animate_to(Point::new(0, y), 0);
         }
+    }
 
-        let thumb = RoundedRectangle::with_equal_corners(new_thumb, CORNER_RADIUS);
-        let _ = thumb.into_styled(thumb_style).draw(target);
+    fn thumb_height(&self) -> u32 {
+        let height = self.height.unwrap_or(0);
+        (self.thumb_size * height)
+            .max(Rat::from_int(MIN_INDICATOR_HEIGHT as _))
+            .round()
+    }
 
-        self.last_scroll_position = Some(self.scroll_position);
+    fn thumb_y(&self) -> i32 {
+        let height = self.height.unwrap_or(0);
+        let thumb_height = Rat::from_int(self.thumb_height() as _);
+        let available = height - thumb_height;
+        (self.scroll_position * available).round() as i32
     }
 }
 
@@ -109,10 +66,24 @@ impl crate::DynWidget for ScrollBar {
 
     fn set_constraints(&mut self, max_size: Size) {
         self.height = Some(max_size.height);
+
+        let thumb_height = self.thumb_height();
+        let mut container = Container::with_size((), Size::new(SCROLLBAR_WIDTH, thumb_height))
+            .with_fill(PALETTE.on_surface_variant)
+            .with_corner_radius(CORNER_RADIUS);
+        container.set_constraints(Size::new(SCROLLBAR_WIDTH, thumb_height));
+
+        let mut translate = Translate::new(container, PALETTE.surface_variant);
+        translate.set_constraints(max_size);
+        translate.set_offset(Point::new(0, self.thumb_y()));
+        self.thumb = Some(translate);
     }
 
     fn force_full_redraw(&mut self) {
-        self.last_scroll_position = None;
+        self.track_drawn = false;
+        if let Some(ref mut thumb) = self.thumb {
+            thumb.force_full_redraw();
+        }
     }
 }
 
@@ -122,9 +93,29 @@ impl Widget for ScrollBar {
     fn draw<D: DrawTarget<Color = Self::Color>>(
         &mut self,
         target: &mut SuperDrawTarget<D, Self::Color>,
-        _current_time: crate::Instant,
+        current_time: crate::Instant,
     ) -> Result<(), D::Error> {
-        self.draw(target);
+        if self.thumb_size >= Frac::ONE {
+            return Ok(());
+        }
+
+        if !self.track_drawn {
+            let bounds = target.bounding_box();
+            let track_style = embedded_graphics::primitives::PrimitiveStyleBuilder::new()
+                .fill_color(PALETTE.surface_variant)
+                .build();
+            let track = embedded_graphics::primitives::RoundedRectangle::with_equal_corners(
+                bounds,
+                CORNER_RADIUS,
+            );
+            let _ = track.into_styled(track_style).draw(target);
+            self.track_drawn = true;
+        }
+
+        if let Some(ref mut thumb) = self.thumb {
+            thumb.draw(target, current_time)?;
+        }
+
         Ok(())
     }
 }
