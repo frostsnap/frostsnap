@@ -144,8 +144,6 @@ pub const FONT_SMALL: &Gray4Font = &NOTO_SANS_17_REGULAR;
 // Type alias for default text styling
 pub type DefaultTextStyle = Gray4TextStyle;
 
-// U8g2 fonts for keyboards (monochrome framebuffers)
-use u8g2_fonts::U8g2TextStyle;
 
 pub const HOLD_TO_CONFIRM_TIME_SHORT_MS: u32 = 1000;
 pub const HOLD_TO_CONFIRM_TIME_MS: u32 = 2000;

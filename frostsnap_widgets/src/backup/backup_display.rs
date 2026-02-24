@@ -2,11 +2,11 @@ use crate::address_framebuffer::{build_lut, draw_gray4_string, measure_string_wi
 use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_MS;
 use crate::{
-    icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
+    page_slider::PageSlider, palette::PALETTE, prelude::*,
     share_index::ShareIndexWidget, widget_list::WidgetList, FadeSwitcher, HoldToConfirm,
     FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
 };
-use alloc::{boxed::Box, format, rc::Rc, string::String, vec, vec::Vec};
+use alloc::{boxed::Box, format, rc::Rc, string::String, string::ToString, vec, vec::Vec};
 use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray4, GrayColor, Rgb565},
@@ -289,44 +289,69 @@ pub struct BackupConfirmationScreen {
     fade_triggered: bool,
 }
 
+use crate::gray4_style::Gray4TextStyle;
+use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM};
+
+const FONT_CONFIRM_TITLE: &frostsnap_fonts::Gray4Font = &NOTO_SANS_18_MEDIUM;
+const FONT_CONFIRM_TEXT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_17_REGULAR;
+
 /// The initial confirmation content
 #[derive(frostsnap_macros::Widget)]
 pub struct ConfirmContent {
     #[widget_delegate]
-    column: Column<(Text, Text)>,
+    column: Column<(
+        SizedBox<Rgb565>,
+        Column<(Text<Gray4TextStyle>, SizedBox<Rgb565>, Text<Gray4TextStyle>, Text<Gray4TextStyle>)>,
+        SizedBox<Rgb565>,
+        Text<Gray4TextStyle>,
+        SizedBox<Rgb565>,
+    )>,
 }
 
-/// The safety reminder that fades in after confirmation
+/// The completion message that fades in after confirmation
 #[derive(frostsnap_macros::Widget)]
 pub struct SafetyReminder {
     #[widget_delegate]
     content: Column<(
-        IconWidget<
-            embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::security::Shield>,
-        >,
-        Text,
-        Text,
+        Text<Gray4TextStyle>,
+        SizedBox<Rgb565>,
+        Text<Gray4TextStyle>,
+        Text<Gray4TextStyle>,
     )>,
 }
 
 impl ConfirmContent {
     fn new() -> Self {
-        let title = Text::new(
-            "Backup\nrecorded?",
-            DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+        let spacer1 = SizedBox::<Rgb565>::new(Size::new(1, 40));
 
-        let subtitle = Text::new(
-            "I've written down:\n  - The key number\n  - All 25 words",
-            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
+        let line1 = Text::new(
+            "Verify you've recorded:".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let list_spacer = SizedBox::<Rgb565>::new(Size::new(1, 4));
+        let line2 = Text::new(
+            "- Key number".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line3 = Text::new(
+            "- All 25 words".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let subtitle = Column::new((line1, list_spacer, line2, line3))
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        let spacer2 = SizedBox::<Rgb565>::new(Size::new(1, 15));
+
+        let title = Text::new(
+            "Hold to Confirm".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
         );
 
-        let column = Column::builder()
-            .push(title)
-            .gap(10)
-            .push(subtitle)
-            .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+        let spacer3 = SizedBox::<Rgb565>::new(Size::new(1, 40));
+
+        let column = Column::new((spacer1, subtitle, spacer2, title, spacer3))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { column }
     }
@@ -334,30 +359,25 @@ impl ConfirmContent {
 
 impl SafetyReminder {
     fn new() -> Self {
-        use embedded_iconoir::prelude::*;
-
-        let shield_icon = IconWidget::new(
-            embedded_iconoir::icons::size48px::security::Shield::new(PALETTE.primary),
+        let title = Text::new(
+            "Backup Completed".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
         );
 
-        let title = Text::new(
-            "Keep it secret",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
+        let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15));
 
-        let subtitle = Text::new(
-            "Keep it safe",
-            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
-        )
-        .with_alignment(Alignment::Center);
+        let line1 = Text::new(
+            "Store it safely in a".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line2 = Text::new(
+            "secure location".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
 
-        let column = Column::builder()
-            .push(shield_icon)
-            .push(title)
-            .gap(20)
-            .push(subtitle)
-            .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+        let column = Column::new((title, spacer, line1, line2))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { content: column }
     }
