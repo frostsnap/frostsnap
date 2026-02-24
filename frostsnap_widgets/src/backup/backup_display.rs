@@ -547,11 +547,14 @@ impl WidgetList<BackupPage> for BackupPageList {
     }
 }
 
+/// How long to show the "Backup Completed" screen before signaling done
+const SUCCESS_DISPLAY_MS: u64 = 2000;
+
 /// Main widget that displays backup words using PageSlider
-#[derive(frostsnap_macros::Widget)]
 pub struct BackupDisplay {
-    #[widget_delegate]
     page_slider: PageSlider<BackupPageList, BackupPage>,
+    confirmed_at: Option<crate::Instant>,
+    current_time: Option<crate::Instant>,
 }
 
 impl BackupDisplay {
@@ -567,20 +570,79 @@ impl BackupDisplay {
             })
             .with_swipe_up_chevron();
 
-        Self { page_slider }
+        Self {
+            page_slider,
+            confirmed_at: None,
+            current_time: None,
+        }
     }
 
-    /// Check if the backup has been confirmed via the hold-to-confirm on the last page
+    /// Check if the backup has been confirmed and the success screen has been shown long enough
     pub fn is_confirmed(&mut self) -> bool {
-        // Check if we're on the last page
+        if let (Some(confirmed_at), Some(now)) = (self.confirmed_at, self.current_time) {
+            let elapsed = now.saturating_duration_since(confirmed_at);
+            return elapsed >= SUCCESS_DISPLAY_MS;
+        }
+        false
+    }
+
+    fn check_confirmed(&mut self) {
+        if self.confirmed_at.is_some() {
+            return;
+        }
         if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
             let current_widget = self.page_slider.current_widget();
             if let Some(confirmation_screen) =
                 current_widget.downcast_ref::<BackupConfirmationScreen>()
             {
-                return confirmation_screen.is_confirmed();
+                if confirmation_screen.is_confirmed() {
+                    self.confirmed_at = self.current_time;
+                }
             }
         }
-        false
+    }
+}
+
+impl crate::DynWidget for BackupDisplay {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.page_slider.set_constraints(max_size);
+    }
+
+    fn sizing(&self) -> crate::Sizing {
+        self.page_slider.sizing()
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        self.page_slider.handle_touch(point, current_time, is_release)
+    }
+
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.page_slider.handle_vertical_drag(prev_y, new_y, is_release);
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.page_slider.force_full_redraw();
+    }
+}
+
+impl crate::Widget for BackupDisplay {
+    type Color = Rgb565;
+
+    fn draw<D>(
+        &mut self,
+        target: &mut crate::super_draw_target::SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>,
+    {
+        self.current_time = Some(current_time);
+        self.check_confirmed();
+        self.page_slider.draw(target, current_time)
     }
 }

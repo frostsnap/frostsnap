@@ -654,6 +654,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     outbox.extend(
                         signer.tell_coordinator_about_backup_load_result(phase, share_backup),
                     );
+                    ui.set_workflow(default_workflow!(name, signer));
                 }
                 UiEvent::EraseDataConfirm => {
                     erase_state = Some(erase::Erase::new(&full_nvs));
