@@ -39,6 +39,16 @@ const TEST_WORD_SETS: [[&str; 24]; 4] = [
     ],
 ];
 
+const SUCCESS_DELAY_MS: u64 = 1000;
+
+#[derive(Debug, Clone, Copy)]
+enum CompletionState {
+    InProgress,
+    Invalid,
+    SuccessDelay { success_at: Option<crate::Instant> },
+    Success,
+}
+
 pub struct EnterShareScreen {
     model: BackupModel,
     numeric_keyboard: Option<OneTimeClearHack<NumericKeyboard>>,
@@ -49,8 +59,10 @@ pub struct EnterShareScreen {
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
     needs_redraw: bool,
+    pending_model_update: bool,
     size: Size,
     auto_fill_enabled: bool,
+    completion: CompletionState,
 }
 
 impl Default for EnterShareScreen {
@@ -75,16 +87,15 @@ impl EnterShareScreen {
             touches: vec![],
             keyboard_rect: Rectangle::zero(),
             needs_redraw: true,
+            pending_model_update: false,
             size: Size::zero(),
             auto_fill_enabled: false,
+            completion: CompletionState::InProgress,
         }
     }
 
     pub fn is_finished(&self) -> bool {
-        matches!(
-            self.model.view_state().main_view,
-            MainViewState::AllWordsEntered { .. }
-        )
+        matches!(self.completion, CompletionState::Success)
     }
 
     pub fn get_backup(&self) -> Option<frost_backup::share_backup::ShareBackup> {
@@ -104,9 +115,13 @@ impl EnterShareScreen {
     }
 
     pub fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        // scrolling cancels the touch
-        if let Some(active_touch) = self.touches.last_mut() {
-            active_touch.cancel()
+        // Cancel the active touch on drag, but not if a model update is pending —
+        // cancelling would make the touch finish immediately, triggering the
+        // pending update and interrupting the input preview scroll animation.
+        if !self.pending_model_update {
+            if let Some(active_touch) = self.touches.last_mut() {
+                active_touch.cancel()
+            }
         }
 
         if let Some(ref mut entered_words) = self.entered_words {
@@ -136,7 +151,15 @@ impl EnterShareScreen {
         self.input_preview.update_progress(completed_rows);
         // Update keyboard/UI based on main view state
         match view_state.main_view {
-            MainViewState::AllWordsEntered { .. } => {
+            MainViewState::AllWordsEntered { ref success } => {
+                // Transition completion state immediately so touch handling is correct
+                if matches!(self.completion, CompletionState::InProgress) {
+                    self.completion = if success.is_some() {
+                        CompletionState::SuccessDelay { success_at: None }
+                    } else {
+                        CompletionState::Invalid
+                    };
+                }
                 // Show the EnteredWords view - same as when user taps ShowEnteredWords
                 if self.entered_words.is_none() {
                     let framebuffer = self.input_preview.get_framebuffer();
@@ -207,14 +230,26 @@ impl Widget for EnterShareScreen {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        // Draw touches and clean up
-        // First draw all touches
+        // Advance completion state machine where we have access to current_time
+        if let CompletionState::SuccessDelay { ref mut success_at } = self.completion {
+            let t = *success_at.get_or_insert(current_time);
+            if current_time.saturating_duration_since(t) >= SUCCESS_DELAY_MS {
+                self.completion = CompletionState::Success;
+            }
+        }
+
         for touch in &mut self.touches {
             touch.draw(target, current_time);
         }
 
         // Then remove finished ones
         self.touches.retain(|touch| !touch.is_finished());
+
+        // Apply deferred keyboard update once all touches have faded out
+        if self.pending_model_update && self.touches.is_empty() {
+            self.pending_model_update = false;
+            self.update_from_model();
+        }
 
         let input_display_rect = Rectangle::new(
             Point::zero(),
@@ -260,7 +295,7 @@ impl crate::DynWidget for EnterShareScreen {
         self.size = max_size;
 
         // Calculate keyboard rect
-        let preview_height = 60;
+        let preview_height = super::input_preview::PREVIEW_HEIGHT as i32;
         self.keyboard_rect = Rectangle::new(
             Point::new(0, preview_height),
             Size::new(max_size.width, max_size.height - preview_height as u32),
@@ -295,17 +330,27 @@ impl crate::DynWidget for EnterShareScreen {
         lift_up: bool,
     ) -> Option<KeyTouch> {
         if lift_up {
-            // Otherwise process normal key release
-            // Find the last non-cancelled touch
+            // Find the last non-cancelled touch and release it
             if let Some(active_touch) = self.touches.iter_mut().rev().find(|t| !t.has_been_let_go())
             {
+                // If a previous action is still pending, just animate the
+                // release without processing the key to avoid double-actions.
+                if self.pending_model_update {
+                    active_touch.let_go(current_time);
+                    return None;
+                }
                 if let Some(key) = active_touch.let_go(current_time) {
+                    // Fast forward any ongoing scrolling animation when a key
+                    // is actually selected (not just touched and then dragged away)
+                    if matches!(key, Key::Keyboard(_)) {
+                        self.input_preview.fast_forward_scrolling();
+                    }
                     match key {
                         Key::Keyboard('⌫') => {
                             // Just pass to model, let it handle
                             let mutations = self.model.backspace();
                             self.input_preview.apply_mutations(&mutations);
-                            self.update_from_model();
+                            self.pending_model_update = true;
                         }
                         Key::Keyboard('✓') => {
                             // Get current state to know what to complete
@@ -314,7 +359,6 @@ impl crate::DynWidget for EnterShareScreen {
                             {
                                 let mutations = self.model.complete_row(&current);
                                 self.input_preview.apply_mutations(&mutations);
-                                self.update_from_model();
 
                                 // Auto-fill test words if enabled
                                 if self.auto_fill_enabled {
@@ -325,17 +369,17 @@ impl crate::DynWidget for EnterShareScreen {
                                                 let mutations = self.model.complete_row(word);
                                                 self.input_preview.apply_mutations(&mutations);
                                             }
-                                            self.update_from_model();
                                         }
                                     }
                                 }
+                                self.pending_model_update = true;
                             }
                         }
                         Key::Keyboard(c) if c.is_alphabetic() || c.is_numeric() => {
                             // Just pass character to model
                             let mutations = self.model.add_character(c);
                             self.input_preview.apply_mutations(&mutations);
-                            self.update_from_model();
+                            self.pending_model_update = true;
 
                             // Check if we're complete
                             if self.model.is_complete() {
@@ -348,7 +392,7 @@ impl crate::DynWidget for EnterShareScreen {
                             // Complete the current row with selected word
                             let mutations = self.model.complete_row(word);
                             self.input_preview.apply_mutations(&mutations);
-                            self.update_from_model();
+                            self.pending_model_update = true;
 
                             // Check if we're complete
                             if self.model.is_complete() {
@@ -379,6 +423,7 @@ impl crate::DynWidget for EnterShareScreen {
                             let mutations = self.model.edit_row(word_index);
                             self.input_preview.apply_mutations(&mutations);
                             self.input_preview.force_redraw();
+                            self.completion = CompletionState::InProgress;
                             self.update_from_model();
 
                             // Exit EnteredWords view if we're in it
@@ -393,8 +438,18 @@ impl crate::DynWidget for EnterShareScreen {
                 }
             }
         } else {
+            // Ignore new touches while waiting for fade-out to complete before keyboard redraw
+            if self.pending_model_update {
+                return None;
+            }
+
             // Handle touch for different modes
-            let key_touch = if let Some(ref entered_words) = self.entered_words {
+            let key_touch = if matches!(
+                self.completion,
+                CompletionState::SuccessDelay { .. } | CompletionState::Success
+            ) {
+                None
+            } else if let Some(ref entered_words) = self.entered_words {
                 // EnteredWords is full-screen, handle its touches directly
                 entered_words.handle_touch(point)
             } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
@@ -440,6 +495,7 @@ impl crate::DynWidget for EnterShareScreen {
                         .handle_touch(translated_point, current_time, lift_up)
                         .map(|mut key_touch| {
                             key_touch.translate(self.keyboard_rect.top_left);
+                            key_touch.clamp_to(self.keyboard_rect);
                             key_touch
                         })
                 } else {
@@ -448,12 +504,6 @@ impl crate::DynWidget for EnterShareScreen {
             };
 
             if let Some(key_touch) = key_touch {
-                // Fast forward any ongoing scrolling animation immediately
-                // This ensures the UI is responsive to new input
-                if matches!(key_touch.key, Key::Keyboard(_)) {
-                    self.input_preview.fast_forward_scrolling();
-                }
-
                 if let Some(last) = self.touches.last_mut() {
                     if last.key == key_touch.key {
                         self.touches.pop();
@@ -468,9 +518,13 @@ impl crate::DynWidget for EnterShareScreen {
     }
 
     fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, _is_release: bool) {
-        // scrolling cancels the touch
-        if let Some(active_touch) = self.touches.last_mut() {
-            active_touch.cancel()
+        // Cancel the active touch on drag, but not if a model update is pending —
+        // cancelling would make the touch finish immediately, triggering the
+        // pending update and interrupting the input preview scroll animation.
+        if !self.pending_model_update {
+            if let Some(active_touch) = self.touches.last_mut() {
+                active_touch.cancel()
+            }
         }
 
         if let Some(ref mut entered_words) = self.entered_words {

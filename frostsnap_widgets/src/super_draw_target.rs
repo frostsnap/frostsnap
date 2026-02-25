@@ -25,6 +25,7 @@ where
         Self {
             display: Rc::new(RefCell::new(display)),
             crop_area,
+
             opacity: Frac::ONE,
             background_color,
         }
@@ -35,6 +36,7 @@ where
         Self {
             display,
             crop_area,
+
             opacity: Frac::ONE,
             background_color,
         }

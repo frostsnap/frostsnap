@@ -1,7 +1,10 @@
 use crate::{palette::PALETTE, prelude::*};
 use alloc::vec::Vec;
-use embedded_graphics::prelude::*;
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use frostsnap_macros::Widget;
+
+const BAR_COMPLETE: Rgb565 = PALETTE.logo;
+const BAR_INCOMPLETE: Rgb565 = PALETTE.surface_variant;
 
 #[derive(Widget)]
 pub struct ProgressBars {
@@ -27,7 +30,7 @@ impl ProgressBars {
             // Create container with the "off" color (surface_variant gray)
             // Fixed height of 8px, width will be determined by flex
             let container =
-                Container::with_size((), Size::new(u32::MAX, 8)).with_fill(PALETTE.surface_variant);
+                Container::with_size((), Size::new(u32::MAX, 8)).with_fill(BAR_INCOMPLETE);
             bars.push(container);
         }
 
@@ -51,14 +54,11 @@ impl ProgressBars {
         for (i, container) in self.row.children.iter_mut().enumerate() {
             if i < new_progress {
                 // This bar should be "on" - set to green
-                if container.fill_color() != Some(PALETTE.tertiary) {
-                    container.set_fill(PALETTE.tertiary);
+                if container.fill_color() != Some(BAR_COMPLETE) {
+                    container.set_fill(BAR_COMPLETE);
                 }
-            } else {
-                // This bar should be "off" - set to gray
-                if container.fill_color() != Some(PALETTE.surface_variant) {
-                    container.set_fill(PALETTE.surface_variant);
-                }
+            } else if container.fill_color() != Some(BAR_INCOMPLETE) {
+                container.set_fill(BAR_INCOMPLETE);
             }
         }
     }

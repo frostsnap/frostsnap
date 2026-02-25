@@ -26,6 +26,14 @@ impl KeyTouch {
     pub fn translate(&mut self, point: Point) {
         self.rect.top_left += point;
     }
+
+    pub fn clamp_to(&mut self, bounds: Rectangle) {
+        let clamped = self.rect.intersection(&bounds);
+        if clamped != self.rect {
+            self.rect = clamped;
+            self.widget.set_constraints(clamped.size);
+        }
+    }
     pub fn new(key: Key, rect: Rectangle) -> Self {
         const CORNER_RADIUS: u32 = 8;
 
@@ -55,7 +63,7 @@ impl KeyTouch {
         }
         self.let_go = Some(current_time);
         // Start fade out animation
-        self.widget.start_fade(500);
+        self.widget.start_fade(100);
         Some(self.key)
     }
 

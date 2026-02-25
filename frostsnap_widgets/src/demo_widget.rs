@@ -53,10 +53,60 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "bip39_entry" => {
-                let mut widget = $crate::backup::EnterShareScreen::new();
-                if cfg!(feature = "prefill-words") {
-                    widget.prefill_test_words();
+                use $crate::{text::Text, Center, Align, Alignment};
+                struct Bip39Demo {
+                    screen: $crate::backup::EnterShareScreen,
+                    done: Center<Text<DefaultTextStyle>>,
+                    finished: bool,
                 }
+
+                impl $crate::DynWidget for Bip39Demo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.screen.set_constraints(max_size);
+                        self.done.set_constraints(max_size);
+                    }
+                    fn sizing(&self) -> $crate::Sizing { self.screen.sizing() }
+                    fn handle_touch(&mut self, point: Point, current_time: $crate::Instant, is_release: bool) -> Option<$crate::KeyTouch> {
+                        self.screen.handle_touch(point, current_time, is_release)
+                    }
+                    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+                        self.screen.handle_vertical_drag(prev_y, new_y, is_release)
+                    }
+                    fn force_full_redraw(&mut self) {
+                        self.screen.force_full_redraw();
+                        self.done.force_full_redraw();
+                    }
+                }
+
+                impl $crate::Widget for Bip39Demo {
+                    type Color = Rgb565;
+                    fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        current_time: $crate::Instant,
+                    ) -> Result<(), D::Error> {
+                        if !self.finished && self.screen.is_finished() {
+                            self.finished = true;
+                            target.clear(PALETTE.background)?;
+                            self.done.force_full_redraw();
+                        }
+                        if self.finished {
+                            self.done.draw(target, current_time)
+                        } else {
+                            self.screen.draw(target, current_time)
+                        }
+                    }
+                }
+
+                let mut screen = $crate::backup::EnterShareScreen::new();
+                if cfg!(feature = "prefill-words") {
+                    screen.prefill_test_words();
+                }
+                let done = Center::new(Text::new(
+                    "DONE",
+                    DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
+                ));
+                let widget = Bip39Demo { screen, done, finished: false };
                 $run_macro!(widget);
             }
             "log_touches" => {

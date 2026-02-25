@@ -5,8 +5,8 @@ use core::cell::RefCell;
 use embedded_graphics::{
     iterator::raw::RawDataSlice,
     pixelcolor::{
-        raw::{LittleEndian, RawU2},
-        Gray2, Rgb565,
+        raw::{LittleEndian, RawU4},
+        Gray4, GrayColor, Rgb565,
     },
     prelude::*,
     primitives::Rectangle,
@@ -20,6 +20,10 @@ use super::{
 use crate::scroll_bar::{ScrollBar, SCROLLBAR_WIDTH};
 
 const WORD_LIST_LEFT_PAD: i32 = 4; // Left padding for word list
+/// Shift touch outline up to visually center on text. The font has 7px of descender
+/// space below the baseline that most glyphs don't use, so the visual center of the
+/// text is higher than the geometric center of the row.
+const TOUCH_Y_ADJUST: i32 = -3;
 
 pub struct EnteredWords {
     framebuffer: Rc<RefCell<Fb>>,
@@ -66,9 +70,10 @@ impl EnteredWords {
         use crate::DynWidget;
         status_bar.set_constraints(Size::new(visible_size.width, STATUS_BAR_HEIGHT));
 
-        // Use a fixed thumb size for now
-        let thumb_size = crate::Frac::from_ratio(1, 4); // 25% of scrollbar height
-        let scroll_bar = ScrollBar::new(thumb_size);
+        let thumb_size = crate::Frac::from_ratio(1, 4);
+        let mut scroll_bar = ScrollBar::new(thumb_size);
+        let scrollbar_height = (visible_size.height - STATUS_BAR_HEIGHT) - 30 - 2;
+        scroll_bar.set_constraints(Size::new(SCROLLBAR_WIDTH, scrollbar_height));
 
         Self {
             framebuffer: framebuffer.clone(),
@@ -151,17 +156,22 @@ impl EnteredWords {
             {
                 let fb = self.framebuffer.try_borrow().unwrap();
 
-                let framebuffer_pixels = RawDataSlice::<RawU2, LittleEndian>::new(fb.data())
+                let color_lut = {
+                    use crate::{ColorInterpolate, Frac};
+                    let mut lut = [PALETTE.background; 16];
+                    for i in 1..16u8 {
+                        let alpha = Frac::from_ratio(i as u32, 15);
+                        lut[i as usize] =
+                            PALETTE.background.interpolate(PALETTE.on_background, alpha);
+                    }
+                    lut
+                };
+
+                let framebuffer_pixels = RawDataSlice::<RawU4, LittleEndian>::new(fb.data())
                     .into_iter()
                     .skip(skip_pixels)
                     .take(take_pixels)
-                    .map(|pixel| match Gray2::from(pixel).luma() {
-                        0x00 => PALETTE.background,
-                        0x01 => PALETTE.outline, // Numbers
-                        0x02 => PALETTE.on_background,
-                        0x03 => PALETTE.on_background,
-                        _ => PALETTE.background,
-                    });
+                    .map(|r| color_lut[Gray4::from(r).luma() as usize]);
 
                 let words_rect = Rectangle::new(
                     Point::zero(),
@@ -199,8 +209,9 @@ impl EnteredWords {
             Point::new(scrollbar_x, scrollbar_y),
             Size::new(SCROLLBAR_WIDTH, scrollbar_height),
         );
-        self.scroll_bar
-            .draw(&mut target.clone().crop(scrollbar_area));
+        let _ = self
+            .scroll_bar
+            .draw(&mut target.clone().crop(scrollbar_area), current_time);
 
         self.needs_redraw = false;
         self.first_draw = false;
@@ -246,7 +257,8 @@ impl EnteredWords {
 
         // Create a rectangle for the touched word (includes padding)
         // Add TOP_PADDING since words are offset in the framebuffer
-        let y = TOP_PADDING as i32 + (word_index as i32 * row_height) - self.scroll_position;
+        let y = TOP_PADDING as i32 + (word_index as i32 * row_height) - self.scroll_position
+            + TOUCH_Y_ADJUST;
         let status_y = self.visible_size.height as i32 - STATUS_BAR_HEIGHT as i32;
 
         // Clip the rectangle height if it would extend into the status area

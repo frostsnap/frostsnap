@@ -51,6 +51,8 @@ pub struct Translate<W: Widget> {
     dirty_rect_offset: Point,
     /// The child's dirty rect (cached from set_constraints)
     child_dirty_rect: Rectangle,
+    /// Whether pixels have been tracked at least once
+    pixels_tracked: bool,
 }
 
 impl<W: Widget> Translate<W>
@@ -73,6 +75,7 @@ where
             constraints: None,
             dirty_rect_offset: Point::zero(),
             child_dirty_rect: Rectangle::zero(),
+            pixels_tracked: false,
         }
     }
 
@@ -110,6 +113,12 @@ where
     /// Enable or disable repeat mode (animation reverses direction each cycle)
     pub fn set_repeat(&mut self, repeat: bool) {
         self.repeat = repeat;
+    }
+
+    /// Set the offset without animation — the child is considered already at this position
+    pub fn set_offset(&mut self, offset: Point) {
+        self.translation_direction = TranslationDirection::Idle { offset };
+        self.current_offset = offset;
     }
 
     /// Check if animation is complete
@@ -244,7 +253,10 @@ where
         let offset = self.calculate_offset(current_time);
 
         // Handle offset change and bitmap tracking
-        if offset != self.current_offset {
+        // 🎬 First draw must track pixels even with no movement, otherwise
+        // they won't be cleared when the first real movement happens.
+        if offset != self.current_offset || !self.pixels_tracked {
+            self.pixels_tracked = true;
             self.child.force_full_redraw();
 
             // Clear current bitmap for reuse

@@ -2,11 +2,9 @@ use crate::palette::PALETTE;
 use crate::DefaultTextStyle;
 use crate::{any_of::AnyOf, prelude::*, FONT_MED, FONT_SMALL};
 use alloc::string::ToString;
-use embedded_graphics::prelude::*;
 use frost_backup::NUM_WORDS;
 
 pub const STATUS_BAR_HEIGHT: u32 = 55;
-const CORNER_RADIUS: Size = Size::new(40, 5);
 
 #[derive(Debug, Clone)]
 pub enum BackupStatus {
@@ -22,7 +20,7 @@ type IncompleteWidget = Container<Center<Column<(Text, Text)>>>;
 type InvalidChecksumWidget = Container<Center<Column<(Text, Text)>>>;
 
 // Widget for valid status
-type ValidWidget = Container<Center<Text>>;
+type ValidWidget = Container<Center<Column<(Text, Text)>>>;
 
 #[derive(frostsnap_macros::Widget)]
 pub struct BackupStatusBar {
@@ -46,7 +44,7 @@ impl BackupStatusBar {
                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
                 let hint_text = Text::new(
-                    "tap word to edit",
+                    "Tap word to edit",
                     DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
                 )
                 .with_alignment(embedded_graphics::text::Alignment::Center);
@@ -56,9 +54,7 @@ impl BackupStatusBar {
                     .with_main_axis_alignment(MainAxisAlignment::Center);
 
                 let center = Center::new(column);
-                let mut container = Container::new(center)
-                    .with_corner_radius(CORNER_RADIUS)
-                    .with_border(PALETTE.outline, 2);
+                let mut container = Container::new(center).with_border(PALETTE.surface_variant, 2);
                 container.set_fill(PALETTE.surface_variant);
 
                 Self {
@@ -68,13 +64,13 @@ impl BackupStatusBar {
             BackupStatus::InvalidChecksum => {
                 // Create column with two text elements
                 let invalid_text = Text::new(
-                    "Invalid backup",
+                    "Invalid Backup",
                     DefaultTextStyle::new(FONT_MED, PALETTE.on_error),
                 )
                 .with_alignment(embedded_graphics::text::Alignment::Center);
 
                 let tap_text = Text::new(
-                    "tap word to edit",
+                    "Tap word to edit",
                     DefaultTextStyle::new(FONT_SMALL, PALETTE.on_error),
                 )
                 .with_alignment(embedded_graphics::text::Alignment::Center);
@@ -84,9 +80,7 @@ impl BackupStatusBar {
                     .with_main_axis_alignment(MainAxisAlignment::Center);
 
                 let center = Center::new(column);
-                let mut container = Container::new(center)
-                    .with_corner_radius(CORNER_RADIUS)
-                    .with_border(PALETTE.outline, 2);
+                let mut container = Container::new(center).with_border(PALETTE.error, 2);
                 container.set_fill(PALETTE.error);
 
                 Self {
@@ -94,13 +88,25 @@ impl BackupStatusBar {
                 }
             }
             BackupStatus::Valid => {
-                let text_style = DefaultTextStyle::new(FONT_MED, PALETTE.on_tertiary_container);
-                let text_widget = Text::new("Backup valid", text_style)
-                    .with_alignment(embedded_graphics::text::Alignment::Center);
-                let center = Center::new(text_widget);
-                let mut container = Container::new(center)
-                    .with_corner_radius(CORNER_RADIUS)
-                    .with_border(PALETTE.outline, 2);
+                let main_text = Text::new(
+                    "Success",
+                    DefaultTextStyle::new(FONT_MED, PALETTE.on_tertiary_container),
+                )
+                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                let sub_text = Text::new(
+                    "Valid Backup",
+                    DefaultTextStyle::new(FONT_SMALL, PALETTE.on_tertiary_container),
+                )
+                .with_alignment(embedded_graphics::text::Alignment::Center);
+
+                use crate::layout::MainAxisAlignment;
+                let column = Column::new((main_text, sub_text))
+                    .with_main_axis_alignment(MainAxisAlignment::Center);
+
+                let center = Center::new(column);
+                let mut container =
+                    Container::new(center).with_border(PALETTE.tertiary_container, 2);
                 container.set_fill(PALETTE.tertiary_container);
 
                 Self {
