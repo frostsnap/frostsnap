@@ -375,6 +375,37 @@ class _DeviceDetailsState extends State<DeviceDetails> {
   }
 
   void showEraseDialog(BuildContext context, DeviceId id) async {
+    // Check if device is involved in any wallet with an active signing session
+    final accessStructureRefs = coord.accessStructuresInvolvingDevice(
+      deviceId: id,
+    );
+    for (final ref in accessStructureRefs) {
+      final sessions = coord.activeSigningSessions(keyId: ref.keyId);
+      if (sessions.isNotEmpty) {
+        final walletName =
+            coord.getFrostKey(keyId: ref.keyId)?.keyName() ?? 'Unknown';
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text('Cannot Erase Device'),
+              content: Text(
+                'This device is part of wallet "$walletName" which has an active signing session.\n'
+                'Finish or cancel the signing session to continue with erasing.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+    }
+
     _eraseConfirmed.value = false;
     final dialogFuture = _eraseController.addActionNeeded(context, id);
     final stream = coord.eraseDevice(deviceId: id);
