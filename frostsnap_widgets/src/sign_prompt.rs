@@ -302,7 +302,9 @@ impl SignPromptPageList {
     }
 }
 
-impl WidgetList<SignPromptPage> for SignPromptPageList {
+impl WidgetList for SignPromptPageList {
+    type Widget = SignPromptPage;
+
     fn len(&self) -> usize {
         self.total_pages
     }
@@ -356,7 +358,7 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
         Some(page)
     }
 
-    fn can_go_prev(&self, from_index: usize, current_widget: &SignPromptPage) -> bool {
+    fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {
         // If we're on the last page (confirmation screen)
         if from_index == self.total_pages - 1 {
             // Check if the confirmation screen has been confirmed
@@ -373,13 +375,13 @@ impl WidgetList<SignPromptPage> for SignPromptPageList {
 #[derive(frostsnap_macros::Widget)]
 pub struct SignTxPrompt {
     #[widget_delegate]
-    page_slider: PageSlider<SignPromptPageList, SignPromptPage>,
+    page_slider: PageSlider<SignPromptPageList>,
 }
 
 impl SignTxPrompt {
     pub fn new(prompt: PromptSignBitcoinTx) -> Self {
         let page_list = SignPromptPageList::new(prompt);
-        let page_slider = PageSlider::new(page_list, 40)
+        let page_slider = PageSlider::new(page_list)
             .with_on_page_ready(|page| {
                 // Try to downcast to ConfirmationPage
                 if let Some(confirmation_page) = page.downcast_mut::<ConfirmationPage>() {

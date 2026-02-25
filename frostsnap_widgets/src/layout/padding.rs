@@ -8,7 +8,7 @@ use embedded_graphics::{
 };
 
 /// A widget that adds padding around its child
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Padding<W: Widget> {
     pub child: W,
     pub top: u32,

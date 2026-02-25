@@ -7,7 +7,7 @@ use embedded_graphics::{
 };
 
 /// A widget that centers its child both horizontally and vertically
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Center<W> {
     pub child: W,
     constraints: Option<Size>,

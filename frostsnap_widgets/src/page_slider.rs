@@ -9,6 +9,7 @@ use embedded_graphics::{
 
 const ANIMATION_DURATION_MS: u64 = 750;
 const MIN_SWIPE_DISTANCE: u32 = 0;
+const DEFAULT_SLIDE_DISTANCE: u32 = 40;
 
 // Type aliases to reduce complexity
 type PageStack<T> = Stack<(SlideInTransition<T>, Option<Fader<SwipeUpChevron>>)>;
@@ -21,28 +22,27 @@ pub enum Direction {
 }
 
 /// A page slider that uses SlideInTransition for smooth page transitions
-pub struct PageSlider<L, T>
+pub struct PageSlider<L>
 where
-    L: WidgetList<T>,
-    T: Widget<Color = Rgb565>,
+    L: WidgetList,
+    L::Widget: Widget<Color = Rgb565>,
 {
     list: L,
     current_index: usize,
-    stack: PageStack<T>,
+    stack: PageStack<L::Widget>,
     drag_start: Option<u32>,
-    height: u32,
-    on_page_ready: Option<PageReadyCallback<T>>,
+    slide_distance: u32,
+    on_page_ready: Option<PageReadyCallback<L::Widget>>,
     page_ready_triggered: bool,
     screen_size: Option<Size>,
 }
 
-impl<L, T> PageSlider<L, T>
+impl<L> PageSlider<L>
 where
-    L: WidgetList<T>,
-    T: Widget<Color = Rgb565>,
+    L: WidgetList,
+    L::Widget: Widget<Color = Rgb565>,
 {
-    pub fn new(list: L, height: u32) -> Self {
-        // Get the initial widget (index 0)
+    pub fn new(list: L) -> Self {
         let initial_widget = list
             .get(0)
             .expect("PageSlider requires at least one widget in the list");
@@ -50,11 +50,10 @@ where
         let transition = SlideInTransition::new(
             initial_widget,
             ANIMATION_DURATION_MS,
-            Point::new(0, 0), // Start at rest position for initial widget
+            Point::new(0, 0),
             PALETTE.background,
         );
 
-        // Build stack with transition and optional chevron aligned at bottom center
         let stack = Stack::builder()
             .push(transition)
             .push_aligned(None::<Fader<SwipeUpChevron>>, Alignment::BottomCenter);
@@ -64,17 +63,22 @@ where
             current_index: 0,
             stack,
             drag_start: None,
-            height,
+            slide_distance: DEFAULT_SLIDE_DISTANCE,
             on_page_ready: None,
             page_ready_triggered: false,
             screen_size: None,
         }
     }
 
+    pub fn with_slide_distance(mut self, slide_distance: u32) -> Self {
+        self.slide_distance = slide_distance;
+        self
+    }
+
     /// Builder method to set a callback that's called when a page is ready (animation complete)
     pub fn with_on_page_ready<F>(mut self, callback: F) -> Self
     where
-        F: FnMut(&mut T) + 'static,
+        F: FnMut(&mut L::Widget) + 'static,
     {
         self.on_page_ready = Some(Box::new(callback));
         self
@@ -108,7 +112,7 @@ where
     }
 
     /// Get a reference to the current widget
-    pub fn current_widget(&mut self) -> &mut T {
+    pub fn current_widget(&mut self) -> &mut L::Widget {
         self.stack.children.0.current_widget_mut()
     }
 
@@ -149,11 +153,11 @@ where
 
         // Get the new widget
         if let Some(new_widget) = self.list.get(target_index) {
-            // Set slide direction based on height
-            let height = self.height as i32;
+            // Set slide direction based on slide_distance
+            let distance = self.slide_distance as i32;
             let slide_from = match direction {
-                Direction::Up => Point::new(0, height), // Slide from bottom
-                Direction::Down => Point::new(0, -height), // Slide from top
+                Direction::Up => Point::new(0, distance), // Slide from bottom
+                Direction::Down => Point::new(0, -distance), // Slide from top
             };
 
             // Update the slide-from position and switch to the new widget
@@ -168,10 +172,10 @@ where
     }
 }
 
-impl<L, T> DynWidget for PageSlider<L, T>
+impl<L> DynWidget for PageSlider<L>
 where
-    L: WidgetList<T>,
-    T: Widget<Color = Rgb565>,
+    L: WidgetList,
+    L::Widget: Widget<Color = Rgb565>,
 {
     fn set_constraints(&mut self, max_size: Size) {
         self.screen_size = Some(max_size);
@@ -218,10 +222,10 @@ where
     }
 }
 
-impl<L, T> Widget for PageSlider<L, T>
+impl<L> Widget for PageSlider<L>
 where
-    L: WidgetList<T>,
-    T: Widget<Color = Rgb565>,
+    L: WidgetList,
+    L::Widget: Widget<Color = Rgb565>,
 {
     type Color = Rgb565;
 

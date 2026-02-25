@@ -1,4 +1,6 @@
-use super::{compressed_point::CompressedPoint, pixel_recorder::PixelRecorder, rat::Frac, Widget};
+use super::{
+    compressed_point::CompressedPoint, pixel_recorder::PixelRecorder, rat::Frac, DynWidget, Widget,
+};
 use crate::fader::FadingDrawTarget;
 use crate::super_draw_target::SuperDrawTarget;
 use alloc::vec::Vec;
@@ -23,7 +25,7 @@ fn mirror_pixel<C: PixelColor>(
     ]
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HoldToConfirmBorder<W, C>
 where
     W: Widget<Color = C>,
@@ -93,6 +95,16 @@ where
 
     pub fn is_faded_out(&self) -> bool {
         self.is_fading && self.fade_progress == Frac::ONE
+    }
+
+    pub fn set_border_color(&mut self, color: C) {
+        self.border_color = color;
+        self.force_full_redraw();
+    }
+
+    pub fn set_background_color(&mut self, color: C) {
+        self.background_color = color;
+        self.force_full_redraw();
     }
 
     fn record_border_pixels(&mut self, screen_size: Size) {

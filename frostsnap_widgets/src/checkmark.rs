@@ -1,4 +1,4 @@
-use super::{pixel_recorder::PixelRecorder, Widget};
+use super::{pixel_recorder::PixelRecorder, DynWidget, Widget};
 use crate::{
     compressed_point::CompressedPoint, super_draw_target::SuperDrawTarget, Frac, Instant, Rat,
 };
@@ -11,7 +11,7 @@ use embedded_graphics::{
     primitives::{Circle, Line, PrimitiveStyle},
 };
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Checkmark<C> {
     width: u32,
     color: C,
@@ -34,7 +34,7 @@ enum AnimationState {
 
 impl<C: PixelColor> Checkmark<C> {
     pub fn new(width: u32, color: C) -> Self {
-        let mut checkmark = Self {
+        Self {
             width,
             color,
             check_pixels: Vec::new(),
@@ -45,10 +45,12 @@ impl<C: PixelColor> Checkmark<C> {
             animation_start_time: None,
             check_width: 0,
             check_height: 0,
-        };
+        }
+    }
 
-        checkmark.record_pixels();
-        checkmark
+    pub fn set_color(&mut self, color: C) {
+        self.color = color;
+        self.force_full_redraw();
     }
 
     pub fn start_drawing(&mut self) {
@@ -213,7 +215,9 @@ impl<C: PixelColor> Checkmark<C> {
 
 impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
     fn set_constraints(&mut self, _max_size: Size) {
-        // Checkmark has a fixed size based on check_width and check_height
+        if self.check_pixels.is_empty() {
+            self.record_pixels();
+        }
     }
 
     fn sizing(&self) -> crate::Sizing {

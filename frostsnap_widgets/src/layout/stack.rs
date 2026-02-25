@@ -50,7 +50,7 @@ impl<W> Positioned<W> {
 ///     .push(centered_text)
 ///     .with_alignment(Alignment::Center);
 /// ```
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Stack<T: AssociatedArray> {
     pub children: T,
     pub alignment: Alignment,

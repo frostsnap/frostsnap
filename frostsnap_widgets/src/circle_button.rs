@@ -22,10 +22,15 @@ pub enum CircleButtonState {
 }
 
 /// A circular button that shows a hand icon when idle/pressed and transitions to a checkmark
+#[derive(Clone)]
 pub struct CircleButton {
     state: CircleButtonState,
     checkmark: Center<Checkmark<Rgb565>>,
     last_drawn_state: Option<CircleButtonState>,
+    idle_stroke_color: Rgb565,
+    pressed_fill_color: Rgb565,
+    pressed_stroke_color: Rgb565,
+    checkmark_color: Rgb565,
 }
 
 impl Default for CircleButton {
@@ -36,14 +41,30 @@ impl Default for CircleButton {
 
 impl CircleButton {
     pub fn new() -> Self {
-        // Use a checkmark that fits nicely within the circle
         let checkmark = Center::new(Checkmark::new(50, PALETTE.on_tertiary_container));
 
         Self {
             state: CircleButtonState::Idle,
             checkmark,
             last_drawn_state: None,
+            idle_stroke_color: PALETTE.outline,
+            pressed_fill_color: PALETTE.tertiary_container,
+            pressed_stroke_color: PALETTE.confirm_progress,
+            checkmark_color: PALETTE.on_tertiary_container,
         }
+    }
+
+    pub fn set_pressed_colors(
+        &mut self,
+        pressed_fill: Rgb565,
+        pressed_stroke: Rgb565,
+        checkmark_color: Rgb565,
+    ) {
+        self.pressed_fill_color = pressed_fill;
+        self.pressed_stroke_color = pressed_stroke;
+        self.checkmark_color = checkmark_color;
+        self.checkmark.child.set_color(checkmark_color);
+        self.force_full_redraw();
     }
 
     /// Set the button state
@@ -144,7 +165,7 @@ impl Widget for CircleButton {
                 CircleButtonState::Idle => {
                     let circle_style = PrimitiveStyleBuilder::new()
                         .fill_color(PALETTE.surface_variant)
-                        .stroke_color(PALETTE.confirm_progress)
+                        .stroke_color(self.idle_stroke_color)
                         .stroke_width(2)
                         .build();
 
@@ -157,8 +178,8 @@ impl Widget for CircleButton {
                 }
                 CircleButtonState::Pressed => {
                     let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(PALETTE.tertiary_container)
-                        .stroke_color(PALETTE.confirm_progress)
+                        .fill_color(self.pressed_fill_color)
+                        .stroke_color(self.pressed_stroke_color)
                         .stroke_width(2)
                         .build();
 
@@ -170,10 +191,10 @@ impl Widget for CircleButton {
                     Image::with_center(&icon, center).draw(target)?;
                 }
                 CircleButtonState::ShowingCheckmark => {
-                    // Draw solid green circle (both fill and border are green)
+                    // Draw solid circle using the pressed colors (green for normal, red for danger)
                     let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(PALETTE.tertiary_container)
-                        .stroke_color(PALETTE.tertiary_container)
+                        .fill_color(self.pressed_fill_color)
+                        .stroke_color(self.pressed_fill_color)
                         .stroke_width(2)
                         .build();
 
