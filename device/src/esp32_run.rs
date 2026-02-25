@@ -52,9 +52,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let header = match header_flash.read_header() {
         Some(h) => h,
         None => {
-            // New device - verify NVS is empty
             if !nvs.is_empty().expect("checking NVS is empty") {
-                panic!("Device appears to be new but NVS is not blank. Maybe you need to manually erase the device?");
+                // Header is blank but NVS has data — this means a previous erase was
+                // interrupted (the header is erased first). Finish the job.
+                nvs.erase_all().expect("failed to erase remaining NVS");
             }
             // Initialize new header with device keypair
             header_flash.init(rng)
