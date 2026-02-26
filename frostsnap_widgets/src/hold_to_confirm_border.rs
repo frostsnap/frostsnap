@@ -95,6 +95,16 @@ where
         self.is_fading && self.fade_progress == Frac::ONE
     }
 
+    pub fn set_border_color(&mut self, color: C) {
+        self.border_color = color;
+        // Force redraw with new color
+        self.last_drawn_progress = Frac::from_ratio(u32::MAX, u32::MAX); // Force redraw
+    }
+
+    pub fn set_background_color(&mut self, color: C) {
+        self.background_color = color;
+    }
+
     fn record_border_pixels(&mut self, screen_size: Size) {
         const CORNER_RADIUS: u32 = 42;
 

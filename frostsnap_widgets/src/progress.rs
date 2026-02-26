@@ -214,7 +214,7 @@ impl ProgressIndicator {
         let percentage = (progress * 100u32).round();
         if percentage != self.last_percentage {
             self.last_percentage = percentage;
-            let percentage_text = format!("{:02}%", percentage);
+            let percentage_text = format!("{percentage}%");
             let new_text = TextWidget::new(
                 percentage_text,
                 DefaultTextStyle::new(FONT_SMALL, PALETTE.on_background),
