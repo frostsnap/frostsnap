@@ -3,6 +3,7 @@ use crate::sink_wrap::SinkWrap;
 use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
+pub use frostsnap_coordinator::erase_device::EraseDeviceState;
 pub use frostsnap_core::coordinator::restoration::RestorationState;
 pub use frostsnap_core::coordinator::CoordAccessStructure as AccessStructure;
 use frostsnap_core::{
@@ -17,6 +18,12 @@ use tracing::{event, Level};
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
 pub use super::backup_run::{BackupDevice, BackupRun};
+
+#[frb(mirror(EraseDeviceState), non_opaque)]
+pub enum _EraseDeviceState {
+    WaitingForConfirmation,
+    Confirmed,
+}
 
 #[derive(Clone, Debug)]
 pub struct KeyState {
@@ -106,6 +113,9 @@ pub trait AccessStructureExt {
     fn frb_override_devices(&self) -> Vec<DeviceId>;
 
     #[frb(sync)]
+    fn devices_by_share_index(&self) -> Vec<DeviceId>;
+
+    #[frb(sync)]
     fn short_id(&self) -> String;
 
     #[frb(sync)]
@@ -121,6 +131,11 @@ impl AccessStructureExt for AccessStructure {
     #[frb(sync)]
     fn frb_override_devices(&self) -> Vec<DeviceId> {
         self.devices().collect()
+    }
+
+    #[frb(sync)]
+    fn devices_by_share_index(&self) -> Vec<DeviceId> {
+        AccessStructure::devices_by_share_index(self)
     }
 
     #[frb(sync)]
@@ -213,12 +228,20 @@ impl Coordinator {
         self.0.delete_key(key_id)
     }
 
-    pub fn wipe_device_data(&self, device_id: DeviceId) {
-        self.0.wipe_device_data(device_id);
+    pub fn delete_share(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        device_id: DeviceId,
+    ) -> Result<()> {
+        self.0.delete_share(access_structure_ref, device_id)
     }
 
-    pub fn wipe_all_devices(&self) {
-        self.0.wipe_all_devices();
+    pub fn erase_device(&self, device_id: DeviceId, sink: StreamSink<EraseDeviceState>) {
+        self.0.erase_device(device_id, SinkWrap(sink));
+    }
+
+    pub fn erase_all_devices(&self) {
+        self.0.erase_all_devices();
     }
 
     pub fn cancel_protocol(&self) {

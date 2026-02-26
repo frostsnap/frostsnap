@@ -5,6 +5,7 @@ use crate::{
 use frostsnap_coordinator::{
     // bitcoin::chain_sync::ChainStatus,
     bitcoin::chain_sync::ChainStatus,
+    erase_device::EraseDeviceState,
     firmware_upgrade::FirmwareUpgradeConfirmState,
     keygen::KeyGenState,
     nonce_replenish::NonceReplenishState,
@@ -41,3 +42,4 @@ bridge_sink!(crate::api::backup_run::BackupRun);
 bridge_sink!(crate::api::backup_run::DisplayBackupState);
 bridge_sink!(crate::api::recovery::EnterPhysicalBackupState);
 bridge_sink!(crate::api::recovery::WaitForSingleDeviceState);
+bridge_sink!(EraseDeviceState);
