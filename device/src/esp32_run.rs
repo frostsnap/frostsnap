@@ -53,9 +53,11 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
         Some(h) => h,
         None => {
             if !nvs.is_empty().expect("checking NVS is empty") {
-                // Header is blank but NVS has data — this means a previous erase was
+                // Header is blank but NVS has data — a previous erase was
                 // interrupted (the header is erased first). Finish the job.
-                nvs.erase_all().expect("failed to erase remaining NVS");
+                let mut erase_op = erase::Erase::new(&full_nvs);
+                while !matches!(erase_op.poll(&full_nvs, ui), erase::ErasePoll::Reset) {}
+                esp_hal::reset::software_reset();
             }
             // Initialize new header with device keypair
             header_flash.init(rng)
