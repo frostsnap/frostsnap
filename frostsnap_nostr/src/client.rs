@@ -460,7 +460,7 @@ impl ChannelHandle {
         keys: &Keys,
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
-        message: Option<String>,
+        message: String,
     ) -> Result<EventId> {
         let signing_msg = SigningMessage::Request {
             sign_task,

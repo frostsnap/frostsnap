@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/nostr_chat/group_info_page.dart';
+import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/nostr_chat/signing_card.dart';
@@ -24,6 +25,7 @@ class ChatMessage {
   DateTime timestamp;
   final bool isMe;
   final NostrEventId? replyTo;
+  final IconData? quoteIcon;
   MessageStatus status;
   String? failureReason;
 
@@ -34,6 +36,7 @@ class ChatMessage {
     required this.timestamp,
     required this.isMe,
     this.replyTo,
+    this.quoteIcon,
     this.status = MessageStatus.sent,
     this.failureReason,
   });
@@ -92,6 +95,14 @@ class TimelineError extends TimelineItem {
   }) : timestamp = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
 }
 
+class TimelineSigningComplete extends TimelineItem {
+  final SigningRequestState requestState;
+  @override
+  final DateTime timestamp;
+  TimelineSigningComplete(this.requestState)
+      : timestamp = DateTime.now();
+}
+
 class ChatPage extends StatefulWidget {
   final KeyId keyId;
   final String walletName;
@@ -108,6 +119,8 @@ class _ChatPageState extends State<ChatPage> {
   late final FocusNode _inputFocusNode;
   final List<TimelineItem> _timeline = [];
   final Map<NostrEventId, ChatMessage> _messageById = {};
+  final Map<String, GlobalKey> _timelineKeys = {};
+  String? _highlightedId;
   final Map<NostrEventId, SigningRequestState> _signingRequests = {};
   final Set<String> _seenSigningEventIds = {};
   List<PublicKey> _memberPubkeys = [];
@@ -159,6 +172,20 @@ class _ChatPageState extends State<ChatPage> {
 
   FfiNostrProfile? _getProfile(PublicKey pubkey) {
     return _nostrContext!.getProfile(pubkey);
+  }
+
+  void _showMemberProfile(PublicKey pubkey) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => MemberDetailSheet(
+        pubkey: pubkey,
+        profile: _getProfile(pubkey),
+      ),
+    );
   }
 
   DeviceId? _getMyDevice(SigningRequestState? state) {
@@ -246,6 +273,23 @@ class _ChatPageState extends State<ChatPage> {
           final idHex = eventId.toHex();
           if (!_seenSigningEventIds.add(idHex)) break;
 
+          final (author, timestamp, content) = switch (field0) {
+            FfiSigningEvent_Request(:final author, :final timestamp, :final signingDetails, :final message) =>
+              (author, timestamp, message.isNotEmpty ? message : signingDetailsText(signingDetails)),
+            FfiSigningEvent_Offer(:final author, :final timestamp) =>
+              (author, timestamp, 'offered to sign'),
+            FfiSigningEvent_Partial(:final author, :final timestamp) =>
+              (author, timestamp, 'signed'),
+          };
+          _messageById[eventId] = ChatMessage(
+            messageId: eventId,
+            author: author,
+            content: content,
+            timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
+            isMe: _myPubkey != null && author.equals(other: _myPubkey!),
+            quoteIcon: Icons.draw,
+          );
+
           _insertTimelineItem(TimelineSigning(field0));
 
           switch (field0) {
@@ -277,6 +321,12 @@ class _ChatPageState extends State<ChatPage> {
               final state = _signingRequests[field0.requestId];
               if (state != null) {
                 state.partials[field0.author.toHex()] = field0;
+                final accessStruct = coord.getAccessStructure(
+                    asRef: state.request.accessStructureRef);
+                final threshold = accessStruct?.threshold() ?? 0;
+                if (state.partials.length >= threshold) {
+                  _insertTimelineItem(TimelineSigningComplete(state));
+                }
               }
           }
 
@@ -305,6 +355,38 @@ class _ChatPageState extends State<ChatPage> {
     _timeline.insert(i, item);
   }
 
+  Widget? _buildTaskCard(SigningRequestState state) {
+    final accessStruct =
+        coord.getAccessStructure(asRef: state.request.accessStructureRef);
+    final threshold = accessStruct?.threshold() ?? 0;
+    final myPubkey = _myPubkey;
+    final alreadySigned =
+        myPubkey != null && state.partials.containsKey(myPubkey.toHex());
+    final sealed = state.sealedData;
+    final myDevice = _getMyDevice(state);
+    final canSign = sealed != null && myDevice != null && !alreadySigned;
+    if (!canSign) return null;
+
+    return TransactionTaskCard(
+      state: state,
+      threshold: threshold,
+      onSign: () => _triggerDeviceSigning(state, sealed, myDevice),
+    );
+  }
+
+  SigningRequestState? get _activeSigningRequest {
+    final frostKey = coord.getFrostKey(keyId: widget.keyId);
+    final threshold = frostKey?.accessStructures()[0].threshold() ?? 0;
+    SigningRequestState? best;
+    for (final state in _signingRequests.values) {
+      if (state.partials.length >= threshold) continue;
+      if (best == null || state.timestamp.isAfter(best.timestamp)) {
+        best = state;
+      }
+    }
+    return best;
+  }
+
   Widget _buildTimeline(ThemeData theme) {
     if (_timeline.isEmpty) {
       return Center(
@@ -319,18 +401,31 @@ class _ChatPageState extends State<ChatPage> {
             : const CircularProgressIndicator(),
       );
     }
+    final topPadding = MediaQuery.of(context).padding.top + kToolbarHeight + 8;
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, topPadding, 16, 16),
       itemCount: _timeline.length,
       itemBuilder: (context, index) {
         final item = _timeline[index];
-        return switch (item) {
+        final showDateDivider = index == 0 ||
+            !_isSameDay(item.timestamp, _timeline[index - 1].timestamp);
+        final child = switch (item) {
           TimelineChat(:final message) => _MessageBubble(
+            key: _timelineKeys.putIfAbsent(
+                message.messageId.toHex(), () => GlobalKey()),
             message: message,
             profile: _getProfile(message.author),
+            isHighlighted:
+                _highlightedId == message.messageId.toHex(),
             replyToMessage:
                 message.replyTo != null ? _messageById[message.replyTo] : null,
+            onTapQuote: message.replyTo != null
+                ? () => _scrollToAndHighlight(message.replyTo!)
+                : null,
+            onTapAvatar: message.isMe
+                ? null
+                : () => _showMemberProfile(message.author),
             onReply: () => _startReply(ReplyTarget(
               eventId: message.messageId,
               author: message.author,
@@ -345,7 +440,11 @@ class _ChatPageState extends State<ChatPage> {
             FfiSigningEvent_Offer() => _buildOfferCard(event),
             FfiSigningEvent_Partial() => _buildPartialCard(event),
           },
-          TimelineError() => SigningEventCard.error(
+          TimelineSigningComplete(:final requestState) =>
+            _SigningCompleteCard(
+              details: signingDetailsText(requestState.request.signingDetails),
+            ),
+          TimelineError() => SigningErrorCard(
             text: item.reason,
             author: item.author,
             profile: _getProfile(item.author),
@@ -357,16 +456,46 @@ class _ChatPageState extends State<ChatPage> {
               preview: 'Error: ${item.reason}',
               isMe: _myPubkey != null && item.author.equals(other: _myPubkey!),
             )),
+            onTapAvatar: _myPubkey != null && item.author.equals(other: _myPubkey!)
+                ? null
+                : () => _showMemberProfile(item.author),
           ),
         };
+        if (!showDateDivider) return child;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _DateDivider(date: item.timestamp),
+            child,
+          ],
+        );
       },
     );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  void _scrollToAndHighlight(NostrEventId eventId) {
+    final idHex = eventId.toHex();
+    final key = _timelineKeys[idHex];
+    if (key?.currentContext == null) return;
+    Scrollable.ensureVisible(
+      key!.currentContext!,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      alignment: 0.3,
+    );
+    setState(() => _highlightedId = idHex);
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _highlightedId = null);
+    });
   }
 
   Widget _buildRequestCard(FfiSigningEvent_Request request) {
     final state = _signingRequests[request.eventId];
     if (state == null) {
-      return SigningEventCard.error(text: 'Unknown signing request');
+      return SigningErrorCard(text: 'Unknown signing request');
     }
     final myPubkey = _myPubkey;
     final iOffered =
@@ -375,76 +504,48 @@ class _ChatPageState extends State<ChatPage> {
         coord.getAccessStructure(asRef: state.request.accessStructureRef);
     final threshold = accessStruct?.threshold() ?? 0;
     final reqIsMe = myPubkey != null && state.request.author.equals(other: myPubkey);
+    final idHex = request.eventId.toHex();
+    final key = _timelineKeys.putIfAbsent(idHex, () => GlobalKey());
     return SigningRequestCard(
+      key: key,
       state: state,
       threshold: threshold,
       isMe: reqIsMe,
+      isHighlighted: _highlightedId == idHex,
       profile: _getProfile(state.request.author),
       getDisplayName: (pubkey) => getDisplayName(_getProfile(pubkey), pubkey),
       onOfferToSign: iOffered ? null : () => _onOfferToSign(state),
       onCopy: () => _copySigningText(request),
       onReply: () => _startReply(_signingReplyTarget(request)),
+      onTapAvatar: reqIsMe ? null : () => _showMemberProfile(state.request.author),
     );
   }
 
   Widget _buildOfferCard(FfiSigningEvent_Offer offer) {
-    final requestState = _signingRequests[offer.requestId];
     final isMe =
         _myPubkey != null && offer.author.equals(other: _myPubkey!);
-    int? threshold;
-    if (requestState != null) {
-      final accessStruct = coord.getAccessStructure(
-          asRef: requestState.request.accessStructureRef);
-      threshold = accessStruct?.threshold();
-    }
-    String? requestAuthorName;
-    if (requestState != null) {
-      final reqAuthor = requestState.request.author;
-      final reqIsMe = _myPubkey != null && reqAuthor.equals(other: _myPubkey!);
-      requestAuthorName = reqIsMe
-          ? 'You'
-          : getDisplayName(_getProfile(reqAuthor), reqAuthor);
-    }
-    final alreadySigned = _myPubkey != null &&
-        requestState != null &&
-        requestState.partials.containsKey(_myPubkey!.toHex());
-    final sealed = requestState?.sealedData;
-    final myDevice = _getMyDevice(requestState);
-    final canSign = sealed != null && myDevice != null && !alreadySigned;
-    return SigningEventCard.offer(
-      author: offer.author,
+    return _SigningEventLine(
       profile: _getProfile(offer.author),
+      author: offer.author,
       isMe: isMe,
-      shareIndex: offer.shareIndex,
-      isOrphaned: requestState == null,
-      requestState: requestState,
-      requestAuthorName: requestAuthorName,
-      threshold: threshold,
-      onSign: canSign ? () => _triggerDeviceSigning(requestState!, sealed, myDevice) : null,
-      onCopy: () => _copySigningText(offer),
-      onReply: () => _startReply(_signingReplyTarget(offer)),
+      text: 'offered to sign with key #${offer.shareIndex}',
+      timestamp: DateTime.fromMillisecondsSinceEpoch(offer.timestamp * 1000),
+      onTapReference: () => _scrollToAndHighlight(offer.requestId),
+      onTapAvatar: isMe ? null : () => _showMemberProfile(offer.author),
     );
   }
 
   Widget _buildPartialCard(FfiSigningEvent_Partial partial) {
-    final requestState = _signingRequests[partial.requestId];
     final isMe =
         _myPubkey != null && partial.author.equals(other: _myPubkey!);
-    int? threshold;
-    if (requestState != null) {
-      final accessStruct = coord.getAccessStructure(
-          asRef: requestState.request.accessStructureRef);
-      threshold = accessStruct?.threshold();
-    }
-    return SigningEventCard.partial(
-      author: partial.author,
+    return _SigningEventLine(
       profile: _getProfile(partial.author),
+      author: partial.author,
       isMe: isMe,
-      isOrphaned: requestState == null,
-      requestState: requestState,
-      threshold: threshold,
-      onCopy: () => _copySigningText(partial),
-      onReply: () => _startReply(_signingReplyTarget(partial)),
+      text: 'signed',
+      timestamp: DateTime.fromMillisecondsSinceEpoch(partial.timestamp * 1000),
+      onTapReference: () => _scrollToAndHighlight(partial.requestId),
+      onTapAvatar: isMe ? null : () => _showMemberProfile(partial.author),
     );
   }
 
@@ -688,7 +789,7 @@ class _ChatPageState extends State<ChatPage> {
           accessStructureRef: pending.asRef,
           nsec: nsec,
           testMessage: pending.testMessage,
-          message: content.isEmpty ? null : content,
+          message: content,
         );
       } else {
         await _client!.sendMessage(
@@ -737,7 +838,7 @@ class _ChatPageState extends State<ChatPage> {
   void _copySigningText(FfiSigningEvent event) {
     final text = switch (event) {
       FfiSigningEvent_Request(:final signingDetails, :final message) =>
-        '${signingDetailsText(signingDetails)}${message != null ? '\n$message' : ''}',
+        '${signingDetailsText(signingDetails)}${message.isNotEmpty ? '\n$message' : ''}',
       FfiSigningEvent_Offer(:final shareIndex, :final author) =>
         '${_displayName(author)} offered to sign with key #$shareIndex',
       FfiSigningEvent_Partial(:final author) =>
@@ -802,7 +903,10 @@ class _ChatPageState extends State<ChatPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: theme.colorScheme.surface.withValues(alpha: 0.4),
+        scrolledUnderElevation: 0,
         title: Text(widget.walletName),
         actions: [
           _buildConnectionIndicator(),
@@ -814,12 +918,30 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(child: _buildTimeline(theme)),
-          _buildMessageInput(),
-        ],
-      ),
+      body: Builder(builder: (context) {
+        final taskCard = _activeSigningRequest != null
+            ? _buildTaskCard(_activeSigningRequest!)
+            : null;
+        return Column(
+          children: [
+            Expanded(
+              child: Stack(
+                children: [
+                  _buildTimeline(theme),
+                  if (taskCard != null)
+                    Positioned(
+                      top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+                      left: 0,
+                      right: 0,
+                      child: taskCard,
+                    ),
+                ],
+              ),
+            ),
+            _buildMessageInput(),
+          ],
+        );
+      }),
     );
   }
 
@@ -847,10 +969,17 @@ class _ChatPageState extends State<ChatPage> {
     final theme = Theme.of(context);
     final isConnected = _connectionState is FfiConnectionState_Connected;
 
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    final hasAttachment = _replyingTo != null || _pendingSignRequest != null;
+
+    return Container(
+      color: hasAttachment
+          ? theme.colorScheme.surface
+          : Colors.transparent,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
           if (_replyingTo != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -998,6 +1127,7 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
       ),
+      ),
     );
   }
 }
@@ -1005,15 +1135,22 @@ class _ChatPageState extends State<ChatPage> {
 class _MessageBubble extends StatefulWidget {
   final ChatMessage message;
   final FfiNostrProfile? profile;
+  final bool isHighlighted;
   final ChatMessage? replyToMessage;
+  final VoidCallback? onTapQuote;
+  final VoidCallback? onTapAvatar;
   final VoidCallback onReply;
   final VoidCallback onRetry;
   final VoidCallback onCopy;
 
   const _MessageBubble({
+    super.key,
     required this.message,
     this.profile,
+    this.isHighlighted = false,
     required this.replyToMessage,
+    this.onTapQuote,
+    this.onTapAvatar,
     required this.onReply,
     required this.onRetry,
     required this.onCopy,
@@ -1131,21 +1268,34 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final isMe = widget.message.isMe;
     final isFailed = widget.message.status == MessageStatus.failed;
 
-    return Container(
+    final baseColor = isFailed
+        ? theme.colorScheme.errorContainer
+        : isMe
+        ? theme.colorScheme.primaryContainer
+        : theme.colorScheme.surfaceContainerHighest;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.7,
       ),
       decoration: BoxDecoration(
-        color: isFailed
-            ? theme.colorScheme.errorContainer
-            : isMe
-            ? theme.colorScheme.primaryContainer
-            : theme.colorScheme.surfaceContainerHighest,
+        color: widget.isHighlighted
+            ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+            : baseColor,
         borderRadius: BorderRadius.circular(16),
+        boxShadow: widget.isHighlighted
+            ? [BoxShadow(
+                color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                blurRadius: 10,
+                spreadRadius: 1,
+              )]
+            : [],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           if (!isMe)
             Text(
@@ -1155,21 +1305,31 @@ class _MessageBubbleState extends State<_MessageBubble> {
               ),
             ),
           if (widget.replyToMessage != null) _buildReplyQuote(theme),
-          Text(widget.message.content),
-          const SizedBox(height: 2),
           Row(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                _formatTime(widget.message.timestamp),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              Flexible(child: Text(widget.message.content)),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 1),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _formatTime(widget.message.timestamp),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (isMe) ...[
+                      const SizedBox(width: 3),
+                      _buildStatusIndicator(theme),
+                    ],
+                  ],
                 ),
               ),
-              if (isMe) ...[
-                const SizedBox(width: 4),
-                _buildStatusIndicator(theme),
-              ],
             ],
           ),
           if (isFailed)
@@ -1244,11 +1404,14 @@ class _MessageBubbleState extends State<_MessageBubble> {
           );
 
     final avatar = !isMe
-        ? Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: NostrAvatar.small(
-              profile: widget.profile,
-              pubkey: widget.message.author,
+        ? GestureDetector(
+            onTap: widget.onTapAvatar,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: NostrAvatar.small(
+                profile: widget.profile,
+                pubkey: widget.message.author,
+              ),
             ),
           )
         : null;
@@ -1307,39 +1470,246 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
   Widget _buildReplyQuote(ThemeData theme) {
     final replyTo = widget.replyToMessage!;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(color: theme.colorScheme.primary, width: 2),
+    return GestureDetector(
+      onTap: widget.onTapQuote,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: theme.colorScheme.primary, width: 2),
+          ),
+          color: theme.colorScheme.surface.withValues(alpha: 0.5),
         ),
-        color: theme.colorScheme.surface.withValues(alpha: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            replyTo.isMe ? 'You' : getDisplayName(null, replyTo.author),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (replyTo.quoteIcon != null) ...[
+                  Icon(replyTo.quoteIcon, size: 12, color: theme.colorScheme.primary),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  replyTo.isMe ? 'You' : getDisplayName(null, replyTo.author),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-          ),
-          Text(
-            replyTo.content,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            Text(
+              replyTo.content,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _SigningEventLine extends StatelessWidget {
+  final FfiNostrProfile? profile;
+  final PublicKey author;
+  final bool isMe;
+  final String text;
+  final DateTime timestamp;
+  final VoidCallback? onTapReference;
+  final VoidCallback? onTapAvatar;
+
+  const _SigningEventLine({
+    required this.profile,
+    required this.author,
+    required this.isMe,
+    required this.text,
+    required this.timestamp,
+    this.onTapReference,
+    this.onTapAvatar,
+  });
+
+  String _formatTime(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isMe) ...[
+              GestureDetector(
+                onTap: onTapAvatar,
+                child: NostrAvatar.small(profile: profile, pubkey: author),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                text,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontStyle: FontStyle.italic,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            if (onTapReference != null) ...[
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onTapReference,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: theme.colorScheme.outlineVariant,
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    Icons.north,
+                    size: 10,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(width: 6),
+            Text(
+              _formatTime(timestamp),
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 10,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SigningCompleteCard extends StatelessWidget {
+  final String details;
+
+  const _SigningCompleteCard({required this.details});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, size: 18, color: Colors.green),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Signing Complete',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    details,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.copy, size: 18),
+              tooltip: 'Copy',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: details));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DateDivider extends StatelessWidget {
+  final DateTime date;
+  const _DateDivider({required this.date});
+
+  String _formatDate(DateTime d) {
+    final now = DateTime.now();
+    if (d.year == now.year && d.month == now.month && d.day == now.day) {
+      return 'Today';
+    }
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (d.year == yesterday.year &&
+        d.month == yesterday.month &&
+        d.day == yesterday.day) {
+      return 'Yesterday';
+    }
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${d.day} ${months[d.month - 1]} ${d.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              _formatDate(date),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+          ),
+        ],
+      ),
+    );
   }
 }

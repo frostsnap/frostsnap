@@ -115,14 +115,15 @@ run-dual INSTANCE="":
     just frostsnapp/maybe-gen
     BUILD_COMMIT=$(just frostsnapp/get-build-commit)
     BUILD_VERSION=$(just frostsnapp/get-build-version)
-    (cd frostsnapp && BUNDLE_FIRMWARE=1 flutter build linux --debug --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION")
+    DART_DEFINES="--dart-define=BUILD_COMMIT=$BUILD_COMMIT --dart-define=BUILD_VERSION=$BUILD_VERSION"
+    # Build once so the background instance can use the binary directly
+    (cd frostsnapp && BUNDLE_FIRMWARE=1 flutter build linux --debug $DART_DEFINES)
     case "{{INSTANCE}}" in
-        a) frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-a" ;;
-        b) frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-b" ;;
+        a) cd frostsnapp && exec env BUNDLE_FIRMWARE=1 flutter run $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-a" ;;
+        b) cd frostsnapp && exec env BUNDLE_FIRMWARE=1 flutter run $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-b" ;;
         *)
-            frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-a" &
             frostsnapp/build/linux/x64/debug/bundle/Frostsnap --data-dir="$HOME/tmp/frostsnap-b" &
-            wait
+            cd frostsnapp && exec env BUNDLE_FIRMWARE=1 flutter run $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-a"
             ;;
     esac
 

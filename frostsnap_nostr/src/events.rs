@@ -59,7 +59,7 @@ pub enum SigningEvent {
         author: PublicKey,
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
-        message: Option<String>,
+        message: String,
         timestamp: u64,
     },
     Offer {
@@ -88,7 +88,7 @@ pub enum SigningMessage {
     Request {
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
-        message: Option<String>,
+        message: String,
     },
     Offer {
         binonces: ParticipantBinonces,

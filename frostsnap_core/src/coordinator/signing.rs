@@ -218,10 +218,21 @@ pub struct StartSign {
 // ============================================================================
 
 /// Identifier for a nonce reservation, derived by hashing the reserved binonces.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, bincode::Encode, bincode::Decode,
-)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonceReservationId([u8; 32]);
+
+crate::impl_display_debug_serialize! {
+    fn to_bytes(value: &NonceReservationId) -> [u8;32] {
+        value.0
+    }
+}
+
+crate::impl_fromstr_deserialize! {
+    name => "nonce reservation id",
+    fn from_bytes(bytes: [u8;32]) -> NonceReservationId {
+        NonceReservationId(bytes)
+    }
+}
 
 impl NonceReservationId {
     pub fn from_binonces(binonces: &[schnorr_fun::binonce::Nonce]) -> Self {
@@ -1005,10 +1016,7 @@ impl FrostCoordinator {
 
         let key_data = match self.keys.get(&key_id) {
             Some(kd) => kd,
-            None => {
-                dbg!("can_sign: no key_data");
-                return false;
-            }
+            None => return false,
         };
 
         let access_structure = match key_data
@@ -1017,14 +1025,10 @@ impl FrostCoordinator {
             .get(&access_structure_id)
         {
             Some(a) => a,
-            None => {
-                dbg!("can_sign: no access_structure");
-                return false;
-            }
+            None => return false,
         };
 
         if all_binonces.len() < access_structure.threshold() as usize {
-            dbg!("can_sign: not enough binonces", all_binonces.len(), access_structure.threshold());
             return false;
         }
 
@@ -1033,7 +1037,6 @@ impl FrostCoordinator {
             .check(key_data.complete_key.master_appkey, key_data.purpose)
             .is_err()
         {
-            dbg!("can_sign: sign_task check failed");
             return false;
         }
 
@@ -1044,30 +1047,18 @@ impl FrostCoordinator {
             all_binonces,
         );
         let session_id = group_request.session_id();
-        dbg!(
-            "can_sign state",
-            self.signing.active_signing_sessions.contains_key(&session_id),
-            self.signing.nonce_reservations.len(),
-            self.signing.active_signing_sessions.len(),
-        );
         if let Some(session) = self.signing.active_signing_sessions.get(&session_id) {
-            let has_device = session.init.local_nonces.contains_key(&device_id);
-            dbg!("can_sign: session exists", has_device);
-            return has_device;
+            return session.init.local_nonces.contains_key(&device_id);
         }
 
         // Check if device has a matching nonce reservation
-        let has_reservation = all_binonces.iter().any(|p| {
+        all_binonces.iter().any(|p| {
             let id = NonceReservationId::from_binonces(&p.binonces);
-            let found = self.signing
+            self.signing
                 .nonce_reservations
                 .get(&id)
-                .is_some_and(|r| r.device_id == device_id);
-            dbg!("can_sign: checking reservation", &id, found);
-            found
-        });
-        dbg!("can_sign: reservation check result", has_reservation);
-        has_reservation
+                .is_some_and(|r| r.device_id == device_id)
+        })
     }
 
     /// Create a signing session from collected participant binonces, then immediately

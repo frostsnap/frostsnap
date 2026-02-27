@@ -295,7 +295,7 @@ impl NostrClient {
         access_structure_ref: AccessStructureRef,
         nsec: String,
         unsigned_tx: super::signing::UnsignedTx,
-        message: Option<String>,
+        message: String,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
         let sign_task = WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone());
@@ -312,7 +312,7 @@ impl NostrClient {
         access_structure_ref: AccessStructureRef,
         nsec: String,
         test_message: String,
-        message: Option<String>,
+        message: String,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
         let sign_task = WireSignTask::Test { message: test_message };
@@ -597,7 +597,7 @@ pub enum FfiSigningEvent {
         sign_task: crate::frb_generated::RustAutoOpaque<WireSignTask>,
         signing_details: super::signing::SigningDetails,
         access_structure_ref: AccessStructureRef,
-        message: Option<String>,
+        message: String,
         timestamp: u64,
     },
     Offer {

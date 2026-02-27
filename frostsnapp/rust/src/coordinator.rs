@@ -1005,10 +1005,6 @@ impl FfiCoordinator {
         let session_id = {
             let mut db = self.db.lock().unwrap();
             let mut coord = self.coordinator.lock().unwrap();
-            dbg!(
-                "sign_with_nonce_reservation entry",
-                coord.active_signing_sessions().count(),
-            );
             coord.staged_mutate(&mut *db, |coordinator| {
                 if !coordinator.can_sign_with_nonce_reservation(
                     &sign_task,

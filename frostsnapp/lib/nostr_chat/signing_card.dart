@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:glowy_borders/glowy_borders.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
-import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 
@@ -34,12 +34,6 @@ String signingDetailsText(SigningDetails details) => switch (details) {
       SigningDetails_Nostr(:final content) => content,
       SigningDetails_Transaction() => 'Bitcoin Transaction',
     };
-
-String _signersNeededText(int offerCount, int threshold) {
-  final remaining = threshold - offerCount;
-  if (remaining <= 0) return 'All signers ready';
-  return '$remaining more ${remaining == 1 ? 'signer' : 'signers'} needed';
-}
 
 Widget _buildSigningDetails(ThemeData theme, SigningDetails details) {
   final (IconData icon, String text) = switch (details) {
@@ -95,6 +89,7 @@ class _CardWrapper extends StatefulWidget {
   final FfiNostrProfile? profile;
   final VoidCallback? onCopy;
   final VoidCallback? onReply;
+  final VoidCallback? onTapAvatar;
 
   const _CardWrapper({
     required this.bubble,
@@ -103,6 +98,7 @@ class _CardWrapper extends StatefulWidget {
     this.profile,
     this.onCopy,
     this.onReply,
+    this.onTapAvatar,
   });
 
   @override
@@ -215,8 +211,11 @@ class _CardWrapperState extends State<_CardWrapper> {
                     ]
                   : [
                       if (widget.author != null) ...[
-                        NostrAvatar.small(
-                            profile: widget.profile, pubkey: widget.author!),
+                        GestureDetector(
+                          onTap: widget.onTapAvatar,
+                          child: NostrAvatar.small(
+                              profile: widget.profile, pubkey: widget.author!),
+                        ),
                         const SizedBox(width: 8),
                       ],
                       Flexible(child: widget.bubble),
@@ -233,208 +232,25 @@ class _CardWrapperState extends State<_CardWrapper> {
   }
 }
 
-/// Bubble for offer/partial/error signing events.
-class SigningEventCard extends StatelessWidget {
-  final IconData icon;
-  final Color? iconColor;
-  final String title;
-  final String? text;
-  final String? subtitle;
+class SigningErrorCard extends StatelessWidget {
+  final String text;
   final bool isMe;
-  final bool isOrphaned;
-  final Widget? quotedContent;
   final PublicKey? author;
   final FfiNostrProfile? profile;
-  final VoidCallback? onSign;
   final VoidCallback? onCopy;
   final VoidCallback? onReply;
+  final VoidCallback? onTapAvatar;
 
-  const SigningEventCard._({
+  const SigningErrorCard({
     super.key,
-    required this.icon,
-    this.iconColor,
-    required this.title,
-    this.text,
-    this.subtitle,
+    required this.text,
     this.isMe = false,
-    this.isOrphaned = false,
-    this.quotedContent,
     this.author,
     this.profile,
-    this.onSign,
     this.onCopy,
     this.onReply,
+    this.onTapAvatar,
   });
-
-  factory SigningEventCard.offer({
-    Key? key,
-    required PublicKey author,
-    required FfiNostrProfile? profile,
-    required bool isMe,
-    required int shareIndex,
-    bool isOrphaned = false,
-    SigningRequestState? requestState,
-    String? requestAuthorName,
-    int? threshold,
-    VoidCallback? onSign,
-    VoidCallback? onCopy,
-    VoidCallback? onReply,
-  }) {
-    final name = isMe ? 'You' : getDisplayName(profile, author);
-
-    String? subtitle;
-    if (requestState != null && threshold != null) {
-      subtitle = _signersNeededText(requestState.offers.length, threshold);
-    }
-
-    return SigningEventCard._(
-      key: key,
-      icon: Icons.draw,
-      title: 'Sign Offer',
-      text: '$name offered to sign with key #$shareIndex',
-      subtitle: subtitle,
-      isMe: isMe,
-      isOrphaned: isOrphaned,
-      author: author,
-      profile: profile,
-      onSign: onSign,
-      onCopy: onCopy,
-      onReply: onReply,
-      quotedContent: requestState != null
-          ? Builder(
-              builder: (context) {
-                final theme = Theme.of(context);
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(
-                          color: theme.colorScheme.primary, width: 2),
-                    ),
-                    color: theme.colorScheme.surface.withValues(alpha: 0.5),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (requestAuthorName != null)
-                        Text(
-                          requestAuthorName,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      Text(
-                        signingDetailsText(
-                            requestState.request.signingDetails),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      if (requestState.request.message != null)
-                        Text(
-                          requestState.request.message!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            )
-          : null,
-    );
-  }
-
-  factory SigningEventCard.partial({
-    Key? key,
-    required PublicKey author,
-    required FfiNostrProfile? profile,
-    required bool isMe,
-    bool isOrphaned = false,
-    SigningRequestState? requestState,
-    int? threshold,
-    VoidCallback? onCopy,
-    VoidCallback? onReply,
-  }) {
-    final name = isMe ? 'You' : getDisplayName(profile, author);
-
-    String? subtitle;
-    if (requestState != null && threshold != null) {
-      final signed = requestState.partials.length;
-      subtitle = '$signed/$threshold signed';
-    }
-
-    Widget? quotedContent;
-    if (requestState != null) {
-      final offer = requestState.offers[author.toHex()];
-      if (offer != null) {
-        quotedContent = Builder(builder: (context) {
-          final theme = Theme.of(context);
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(color: theme.colorScheme.primary, width: 2),
-              ),
-              color: theme.colorScheme.surface.withValues(alpha: 0.5),
-            ),
-            child: Text(
-              '${isMe ? 'Your' : '${getDisplayName(profile, author)}\'s'} offer — key #${offer.shareIndex}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          );
-        });
-      }
-    }
-
-    return SigningEventCard._(
-      key: key,
-      icon: Icons.check_circle,
-      iconColor: Colors.green,
-      title: 'Signed',
-      text: '$name signed',
-      subtitle: subtitle,
-      isMe: isMe,
-      isOrphaned: isOrphaned,
-      quotedContent: quotedContent,
-      author: author,
-      profile: profile,
-      onCopy: onCopy,
-      onReply: onReply,
-    );
-  }
-
-  factory SigningEventCard.error({
-    Key? key,
-    required String text,
-    PublicKey? author,
-    FfiNostrProfile? profile,
-    bool isMe = false,
-    VoidCallback? onCopy,
-    VoidCallback? onReply,
-  }) {
-    return SigningEventCard._(
-      key: key,
-      icon: Icons.error_outline,
-      iconColor: Colors.red,
-      title: 'Error',
-      text: text,
-      isMe: isMe,
-      author: author,
-      profile: profile,
-      onCopy: onCopy,
-      onReply: onReply,
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -449,42 +265,19 @@ class SigningEventCard extends StatelessWidget {
             ? theme.colorScheme.primaryContainer
             : theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
-        border: isOrphaned ? Border.all(color: Colors.red, width: 1) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _signingHeader(theme, icon: icon, iconColor: iconColor, title: title),
-          if (quotedContent != null) ...[
-            const SizedBox(height: 6),
-            quotedContent!,
-          ],
-          if (text != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              text!,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontStyle: FontStyle.italic,
-              ),
+          _signingHeader(theme, icon: Icons.error_outline, iconColor: Colors.red, title: 'Error'),
+          const SizedBox(height: 4),
+          Text(
+            text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontStyle: FontStyle.italic,
             ),
-          ],
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              subtitle!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          if (onSign != null) ...[
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: onSign,
-              child: const Text('Sign'),
-            ),
-          ],
+          ),
         ],
       ),
     );
@@ -496,6 +289,95 @@ class SigningEventCard extends StatelessWidget {
       profile: profile,
       onCopy: onCopy,
       onReply: onReply,
+      onTapAvatar: onTapAvatar,
+    );
+  }
+}
+
+class TransactionTaskCard extends StatelessWidget {
+  final SigningRequestState state;
+  final int threshold;
+  final VoidCallback onSign;
+
+  const TransactionTaskCard({
+    super.key,
+    required this.state,
+    required this.threshold,
+    required this.onSign,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final offerCount = state.offers.length;
+    final partialCount = state.partials.length;
+
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: AnimatedGradientBorder(
+          borderSize: 1.0,
+          glowSize: 4.0,
+          animationTime: 6,
+          borderRadius: BorderRadius.circular(12),
+          gradientColors: [
+            theme.colorScheme.outlineVariant,
+            theme.colorScheme.primary,
+            theme.colorScheme.secondary,
+            theme.colorScheme.tertiary,
+          ],
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _signingHeader(theme, icon: Icons.draw, title: 'Signing Request'),
+                  const SizedBox(height: 6),
+                  Text(
+                    signingDetailsText(state.request.signingDetails),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        'Offers: $offerCount/$threshold',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('·', style: theme.textTheme.bodySmall),
+                      ),
+                      Text(
+                        'Signed: $partialCount/$threshold',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: onSign,
+                      child: const Text('Sign'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -504,65 +386,67 @@ class SigningRequestCard extends StatelessWidget {
   final SigningRequestState state;
   final int threshold;
   final bool isMe;
+  final bool isHighlighted;
   final VoidCallback? onOfferToSign;
   final String Function(PublicKey) getDisplayName;
   final FfiNostrProfile? profile;
   final VoidCallback? onCopy;
   final VoidCallback? onReply;
+  final VoidCallback? onTapAvatar;
 
   const SigningRequestCard({
     super.key,
     required this.state,
     required this.threshold,
     required this.isMe,
+    this.isHighlighted = false,
     required this.getDisplayName,
     this.profile,
     this.onOfferToSign,
     this.onCopy,
     this.onReply,
+    this.onTapAvatar,
   });
+
+  String _formatTime(DateTime time) =>
+      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final request = state.request;
-    final offerCount = state.offers.length;
-    final partialCount = state.partials.length;
-    final isComplete = partialCount >= threshold;
+    final isComplete = state.partials.length >= threshold;
+    final time = DateTime.fromMillisecondsSinceEpoch(request.timestamp * 1000);
 
-    final bubble = Container(
+    final baseColor = isMe
+        ? theme.colorScheme.primaryContainer
+        : theme.colorScheme.surfaceContainerHighest;
+
+    final bubble = AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
       padding: const EdgeInsets.all(12),
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.7,
       ),
       decoration: BoxDecoration(
-        color: isMe
-            ? theme.colorScheme.primaryContainer
-            : theme.colorScheme.surfaceContainerHighest,
+        color: isHighlighted
+            ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+            : baseColor,
         borderRadius: BorderRadius.circular(16),
+        boxShadow: isHighlighted
+            ? [BoxShadow(
+                color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                blurRadius: 10,
+                spreadRadius: 1,
+              )]
+            : [],
       ),
       child: IntrinsicWidth(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _signingHeader(theme,
-                  icon: isComplete ? Icons.check_circle : Icons.draw,
-                  iconColor: isComplete ? Colors.green : null,
-                  title: isComplete ? 'Signed' : 'Signing Request',
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  _signersNeededText(offerCount, threshold),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+            _signingHeader(theme, icon: Icons.draw, title: 'Signing Request'),
             if (!isMe) ...[
               const SizedBox(height: 4),
               Text(
@@ -573,59 +457,39 @@ class SigningRequestCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: theme.colorScheme.outline.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildSigningDetails(theme, request.signingDetails),
-                  if (!isComplete && onOfferToSign != null) ...[
-                    const SizedBox(height: 10),
-                    FilledButton(
-                      onPressed: onOfferToSign,
-                      child: const Text('Offer to Sign'),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (state.offers.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ...state.offers.values.map((offer) {
-                final name = this.getDisplayName(offer.author);
-                return Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.person,
-                          size: 14,
-                          color: theme.colorScheme.onSurfaceVariant),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$name — key #${offer.shareIndex}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
-            if (request.message != null) ...[
-              const SizedBox(height: 8),
+            _buildSigningDetails(theme, request.signingDetails),
+            if (request.message.isNotEmpty) ...[
+              const SizedBox(height: 6),
               Text(
-                request.message!,
+                request.message,
                 style: theme.textTheme.bodyMedium,
               ),
             ],
+            if (!isComplete && onOfferToSign != null) ...[
+              const SizedBox(height: 10),
+              FilledButton(
+                onPressed: onOfferToSign,
+                child: const Text('Offer to Sign'),
+              ),
+            ],
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isComplete) ...[
+                  Icon(Icons.check_circle, size: 12, color: Colors.green),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  _formatTime(time),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -638,6 +502,7 @@ class SigningRequestCard extends StatelessWidget {
       profile: profile,
       onCopy: onCopy,
       onReply: onReply,
+      onTapAvatar: onTapAvatar,
     );
   }
 }
