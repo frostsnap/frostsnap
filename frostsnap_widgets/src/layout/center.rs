@@ -11,7 +11,7 @@ use embedded_graphics::{
 pub struct Center<W> {
     pub child: W,
     constraints: Option<Size>,
-    child_rect: Rectangle,
+    pub(crate) child_rect: Rectangle,
     sizing: crate::Sizing,
 }
 

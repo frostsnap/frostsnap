@@ -5,7 +5,7 @@ use esp_hal::prelude::*;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
 use frostsnap_widgets::{
-    backup::{BackupDisplay, EnterShareScreen},
+    backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     debug::OverlayDebug,
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
@@ -328,6 +328,19 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 }
             }
 
+            Workflow::CheckBackup {
+                backup,
+                rand_seed,
+            } => {
+                let word_indices = backup.to_word_indices();
+                let share_index: u16 = backup
+                    .index()
+                    .try_into()
+                    .expect("Share index should fit in u16");
+                let widget = Box::new(CheckBackupScreen::new(word_indices, share_index, rand_seed));
+                WidgetTree::CheckBackup { widget }
+            }
+
             Workflow::DisplayAddress {
                 address,
                 bip32_path,
@@ -470,6 +483,11 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     if let Some(name) = new_name.take() {
                         return Some(UiEvent::NameConfirm(name));
                     }
+                }
+            }
+            WidgetTree::CheckBackup { widget } => {
+                if widget.is_verified() {
+                    return Some(UiEvent::BackupVerified);
                 }
             }
             WidgetTree::EraseDevicePrompt { widget, confirmed } => {

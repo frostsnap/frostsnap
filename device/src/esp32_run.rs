@@ -656,6 +656,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     );
                     ui.set_workflow(default_workflow!(name, signer));
                 }
+                UiEvent::BackupVerified => {
+                    upstream_connection
+                        .send_to_coordinator([DeviceSendBody::Misc(CommsMisc::BackupChecked)]);
+                }
                 UiEvent::EraseDataConfirm => {
                     erase_state = Some(erase::Erase::new(&full_nvs));
                 }

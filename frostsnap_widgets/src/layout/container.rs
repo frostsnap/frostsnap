@@ -263,8 +263,8 @@ impl<W: Widget<Color = Rgb565>> Widget for Container<W> {
                         .draw(target)?;
                 }
 
-                // Draw SDF AA border on top
                 if let Some(border_color) = self.border_color {
+                    // Draw SDF AA border on top
                     let pixels = crate::sdf::render_rounded_rect_stroke_pixels(
                         0,
                         0,
@@ -275,6 +275,18 @@ impl<W: Widget<Color = Rgb565>> Widget for Container<W> {
                         border_color,
                         aa_bg,
                         self.fill_color,
+                    );
+                    target.draw_iter(pixels.into_iter())?;
+                } else if let Some(fill_color) = self.fill_color {
+                    // No border — draw SDF AA fringe for the fill edges
+                    let pixels = crate::sdf::render_rounded_rect_fill_aa_pixels(
+                        0,
+                        0,
+                        container_size.width,
+                        container_size.height,
+                        cr,
+                        fill_color,
+                        aa_bg,
                     );
                     target.draw_iter(pixels.into_iter())?;
                 }

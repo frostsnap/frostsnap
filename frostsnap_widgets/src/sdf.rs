@@ -184,6 +184,72 @@ pub fn render_circle_aa(
     }
 }
 
+/// Render anti-aliased fringe pixels for a rounded rectangle fill.
+///
+/// This draws only the 1-2px band around the edges where coverage transitions
+/// from 0 to 1, blending the fill color with the background. It should be drawn
+/// on top of a standard (non-AA) filled rounded rectangle to smooth its edges.
+pub fn render_rounded_rect_fill_aa_pixels(
+    rect_x: i32,
+    rect_y: i32,
+    rect_w: u32,
+    rect_h: u32,
+    corner_radius: f32,
+    fill_color: Rgb565,
+    bg_color: Rgb565,
+) -> alloc::vec::Vec<embedded_graphics::Pixel<Rgb565>> {
+    use embedded_graphics::prelude::Point;
+    use embedded_graphics::Pixel;
+
+    let mut pixels = alloc::vec::Vec::new();
+    let fill_lut = build_aa_lut(fill_color, bg_color);
+
+    let outer_half_w = rect_w as f32 * 0.5;
+    let outer_half_h = rect_h as f32 * 0.5;
+    let cx = rect_x as f32 + outer_half_w;
+    let cy = rect_y as f32 + outer_half_h;
+
+    // Only iterate near the corners and edges where AA matters (1px fringe)
+    let corner_margin = corner_radius as i32 + 2;
+
+    for y in rect_y..(rect_y + rect_h as i32) {
+        for x in rect_x..(rect_x + rect_w as i32) {
+            let local_x = x - rect_x;
+            let local_y = y - rect_y;
+
+            // Only process pixels in the corner regions where the rounded rect
+            // differs from a plain rectangle
+            let in_corner =
+                (local_x < corner_margin || local_x >= (rect_w as i32 - corner_margin))
+                    && (local_y < corner_margin || local_y >= (rect_h as i32 - corner_margin));
+
+            if !in_corner {
+                continue;
+            }
+
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+
+            let d = sdf_rounded_rect(px, py, cx, cy, outer_half_w, outer_half_h, corner_radius);
+            let cov = sdf_coverage(d);
+
+            // Only emit fringe pixels (partially covered)
+            if cov > 0.0 && cov < 1.0 {
+                let level = coverage_to_gray4(cov);
+                if level > 0 && level < 15 {
+                    pixels.push(Pixel(Point::new(x, y), fill_lut[level as usize]));
+                }
+            } else if cov == 0.0 {
+                // Outside the shape but inside the bounding box — clear to background
+                // (the standard RoundedRectangle may have drawn aliased pixels here)
+                pixels.push(Pixel(Point::new(x, y), bg_color));
+            }
+        }
+    }
+
+    pixels
+}
+
 /// Render an anti-aliased rounded rectangle stroke directly via pixel iterator.
 ///
 /// For each pixel in the border region, evaluates the SDF and emits a blended Rgb565 color.

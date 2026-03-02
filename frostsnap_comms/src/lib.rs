@@ -470,6 +470,8 @@ pub enum CommsMisc {
     /// Tells the coordinator that the user has confirmed they recorded the backup.
     /// This is sent after the user completes the final "Backup recorded?" hold-to-confirm.
     BackupRecorded,
+    /// Tells the coordinator that the user has verified their backup via the multiple-choice quiz.
+    BackupChecked,
     /// Tells the coordinator that the device erase has been confirmed and first sector erased.
     EraseConfirmed,
 }
