@@ -212,7 +212,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   set focus(ReceivePageFocus v) {
     if (v == _focus || _address == null) return;
     if (v == ReceivePageFocus.verify) {
-      _verifyStreamSub?.cancel();
+      _cancelVerify();
       _verifyStreamSub = coord
           .verifyAddress(
             keyId: widget.wallet.keyId(),
@@ -231,12 +231,17 @@ class _ReceiverPageState extends State<ReceivePage> {
       });
       return;
     }
-    if (_verifyStreamSub != null) coord.cancelProtocol();
-    _verifyStreamSub?.cancel();
-    _verifyStreamSub = null;
     setState(() {
       _focus = v;
     });
+  }
+
+  void _cancelVerify() {
+    if (_verifyStreamSub != null) {
+      coord.cancelProtocol();
+      _verifyStreamSub?.cancel();
+      _verifyStreamSub = null;
+    }
   }
 
   bool get isRevealed => _address?.revealed ?? false;
@@ -318,16 +323,16 @@ class _ReceiverPageState extends State<ReceivePage> {
 
   @override
   void dispose() {
-    if (_focus == ReceivePageFocus.verify) {
-      coord.cancelProtocol();
-    }
-    _verifyStreamSub?.cancel();
+    _cancelVerify();
     txStreamSub.cancel();
     fullscreenDialogController.dispose();
     super.dispose();
   }
 
   void updateToIndex(int index, {ReceivePageFocus? next}) {
+    if (_address != null && _address!.index != index) {
+      _cancelVerify();
+    }
     final addr = wallet.getAddressInfo(index);
     if (mounted) {
       setState(() {
