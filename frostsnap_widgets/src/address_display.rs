@@ -10,12 +10,11 @@ use alloc::{
     collections::BTreeSet,
     string::{String, ToString},
 };
-use embedded_graphics::{pixelcolor::Rgb565, text::Alignment};
-use frostsnap_fonts::{Gray4Font, NOTO_SANS_14_LIGHT, NOTO_SANS_MONO_24_BOLD};
+use embedded_graphics::pixelcolor::Rgb565;
+use frostsnap_fonts::{Gray4Font, NOTO_SANS_MONO_24_BOLD};
 use frostsnap_macros::Widget;
 
 const FONT_BITCOIN_ADDRESS: &Gray4Font = &NOTO_SANS_MONO_24_BOLD;
-const FONT_DERIVATION_PATH: &Gray4Font = &NOTO_SANS_14_LIGHT;
 const ADDRESS_HORIZONTAL_SPACING: u32 = 15;
 const ADDRESS_VERTICAL_SPACING: u32 = 3;
 const EMPTY_CHUNK: &str = "    ";
@@ -162,36 +161,15 @@ impl AddressDisplay {
     }
 }
 
-/// A widget that displays a Bitcoin address with its derivation path for receive flow
+/// A widget that displays a Bitcoin address with its index for the receive flow
 #[derive(Widget)]
-pub struct AddressWithPath {
+pub struct AddressWithIndex {
     #[widget_delegate]
-    container: Box<
-        crate::Center<
-            crate::Padding<Column<(Text<Gray4TextStyle>, AddressDisplay, Text<Gray4TextStyle>)>>,
-        >,
-    >,
+    container: Box<crate::Center<crate::Padding<Column<(Text<Gray4TextStyle>, AddressDisplay)>>>>,
 }
 
-impl AddressWithPath {
-    pub fn new(address: bitcoin::Address, derivation_path: String) -> Self {
-        Self::new_with_index(address, derivation_path, 0)
-    }
-
-    pub fn new_with_index(
-        address: bitcoin::Address,
-        derivation_path: String,
-        index: usize,
-    ) -> Self {
-        Self::new_with_seed(address, derivation_path, index, 0)
-    }
-
-    pub fn new_with_seed(
-        address: bitcoin::Address,
-        derivation_path: String,
-        index: usize,
-        seed: u32,
-    ) -> Self {
+impl AddressWithIndex {
+    pub fn new_with_seed(address: bitcoin::Address, index: usize, seed: u32) -> Self {
         use frostsnap_fonts::NOTO_SANS_18_LIGHT;
 
         let title = Text::new(
@@ -201,17 +179,10 @@ impl AddressWithPath {
 
         let address_display = AddressDisplay::new_with_seed(address, seed);
 
-        let path_text = Text::new(
-            derivation_path,
-            Gray4TextStyle::new(FONT_DERIVATION_PATH, PALETTE.text_secondary),
-        )
-        .with_alignment(Alignment::Center);
-
-        let mut column = Column::new((title, address_display, path_text))
+        let mut column = Column::new((title, address_display))
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
         column.set_gap(0, 10);
-        column.set_gap(1, 15);
 
         let padded = crate::Padding::only(column).bottom(40).build();
         let centered = crate::Center::new(padded);

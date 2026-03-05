@@ -337,15 +337,10 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 bip32_path,
                 rand_seed,
             } => {
-                use frostsnap_widgets::{AddressWithPath, Center};
+                use frostsnap_widgets::{AddressWithIndex, Center};
 
-                // Create address display with just the index - use empty string for path since it's not displayed
-                let address_display = AddressWithPath::new_with_seed(
-                    address,
-                    alloc::string::String::new(),
-                    bip32_path.index as usize,
-                    rand_seed,
-                );
+                let address_display =
+                    AddressWithIndex::new_with_seed(address, bip32_path.index as usize, rand_seed);
                 WidgetTree::AddressDisplay(Box::new(Center::new(address_display)))
             }
 

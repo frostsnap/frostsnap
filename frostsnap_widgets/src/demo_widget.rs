@@ -881,20 +881,17 @@ macro_rules! demo_widget {
                 let widget = AddressDisplay::new(address);
                 $run_macro!(widget);
             }
-            "address_with_path" => {
-                use $crate::AddressWithPath;
+            "address_with_index" => {
+                use $crate::AddressWithIndex;
                 use bitcoin::Address;
                 use core::str::FromStr;
 
-                // Sample Taproot address with actual device derivation path
-                // Path format: account_kind/account_index/keychain/address_index
-                // For Taproot (Segwitv1): 0/0/0/0 = first external address
+                // Sample Taproot address
                 let address_str = "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297";
                 let address = Address::from_str(address_str).unwrap().assume_checked();
-                let derivation_path = "0/0/0/0".to_string();
                 let index = 0;
 
-                let widget = AddressWithPath::new_with_seed(address, derivation_path, index, 42);
+                let widget = AddressWithIndex::new_with_seed(address, index, 42);
                 $run_macro!(widget);
             }
             "taproot_address" => {

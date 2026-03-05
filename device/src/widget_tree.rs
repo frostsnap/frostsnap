@@ -75,7 +75,7 @@ pub enum WidgetTree {
     },
 
     /// Display Bitcoin address screen with derivation path
-    AddressDisplay(Box<Center<frostsnap_widgets::AddressWithPath>>),
+    AddressDisplay(Box<Center<frostsnap_widgets::AddressWithIndex>>),
 
     /// Enter backup screen
     EnterBackup {

@@ -85,7 +85,7 @@ pub use widget_list::*;
 pub use tinybmp;
 
 // Re-export all widget items
-pub use address_display::{AddressDisplay, AddressWithPath};
+pub use address_display::{AddressDisplay, AddressWithIndex};
 pub use backup::*;
 pub use checkmark::*;
 pub use cursor::*;
