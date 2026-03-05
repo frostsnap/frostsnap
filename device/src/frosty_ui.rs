@@ -10,7 +10,7 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Widget,
-    HOLD_TO_CONFIRM_TIME_LONG_MS, HOLD_TO_CONFIRM_TIME_MS,
+    HOLD_TO_CONFIRM_TIME_MS,
 };
 
 use crate::touch_handler;
@@ -289,22 +289,10 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         }
                     }
                     Prompt::EraseDevice => {
-                        use frostsnap_widgets::DefaultTextStyle;
-                        use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
-
-                        // Create warning text for device erase
-                        let prompt_text = "WARNING!\n\nErase all data?\n\nHold to confirm";
-
-                        let text_widget =
-                            Text::new(prompt_text, DefaultTextStyle::new(FONT_MED, PALETTE.error))
-                                .with_alignment(embedded_graphics::text::Alignment::Center);
-
-                        // Create HoldToConfirm widget with 3 second hold time for wipe
-                        let hold_to_confirm =
-                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_LONG_MS, text_widget);
+                        use frostsnap_widgets::EraseDevice;
 
                         WidgetTree::EraseDevicePrompt {
-                            widget: Box::new(hold_to_confirm),
+                            widget: Box::new(EraseDevice::new()),
                             confirmed: false,
                         }
                     }
@@ -490,7 +478,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             }
             WidgetTree::EraseDevicePrompt { widget, confirmed } => {
                 // Check if the erase device prompt was confirmed and we haven't already sent the event
-                if widget.is_completed() && !*confirmed {
+                if widget.is_confirmed() && !*confirmed {
                     *confirmed = true;
                     return Some(UiEvent::EraseDataConfirm);
                 }
