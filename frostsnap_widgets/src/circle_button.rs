@@ -71,7 +71,11 @@ fn draw_icon(fb: &mut VecFramebuffer<Rgb565>, icon_color: Rgb565) {
 
 impl CircleButton {
     pub fn new() -> Self {
-        let checkmark = Center::new(Checkmark::new(50, PALETTE.on_tertiary_container));
+        let checkmark = Center::new(Checkmark::new(
+            50,
+            PALETTE.on_tertiary_container,
+            PALETTE.tertiary_container,
+        ));
 
         let mut idle_fb = circle_button_data::build_circle_fb(
             PALETTE.surface_variant,
@@ -106,6 +110,7 @@ impl CircleButton {
     /// Set custom colors for the pressed state
     pub fn set_pressed_colors(&mut self, pressed_fill: Rgb565, pressed_stroke: Rgb565) {
         // For danger actions (red), use white checkmark; otherwise use default
+        self.checkmark.child.set_bg_color(pressed_fill);
         let icon_color = if pressed_fill == PALETTE.error {
             self.checkmark.child.set_color(PALETTE.on_error);
             PALETTE.on_error
