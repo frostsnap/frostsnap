@@ -4,6 +4,7 @@ use embedded_graphics::{draw_target::DrawTarget, pixelcolor::BinaryColor, prelud
 
 /// A DrawTarget implementation that records pixel positions instead of drawing them.
 /// Useful for pre-computing pixel locations for animations.
+#[derive(Clone)]
 pub struct PixelRecorder {
     pub pixels: Vec<CompressedPoint>,
 }

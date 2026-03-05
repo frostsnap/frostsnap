@@ -137,5 +137,5 @@ backup +ARGS="":
 simulate +ARGS="":
     (cd widget_simulator && cargo run -- {{ARGS}}; )
 
-widget_dev +args="":
-    cd device && cargo run --bin widget_dev --release {{args}}
+widget_dev demo +args="":
+    cd device && DEMO={{demo}} cargo run --bin widget_dev --release {{args}}

@@ -11,6 +11,7 @@ use embedded_graphics::{
 };
 
 /// A widget that wraps any ImageDrawable as a widget
+#[derive(Clone)]
 pub struct Image<I> {
     image: I,
     needs_redraw: bool,
@@ -106,6 +107,7 @@ where
 /// The grayscale luma value is interpreted as alpha - dark pixels (0) use the foreground color,
 /// light pixels (255) use the background color from SuperDrawTarget, and intermediate values
 /// are interpolated between the two.
+#[derive(Clone)]
 pub struct GrayToAlpha<I, C> {
     image: I,
     foreground_color: C,

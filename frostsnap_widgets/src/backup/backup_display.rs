@@ -392,7 +392,9 @@ impl BackupPageList {
     }
 }
 
-impl WidgetList<BackupPage> for BackupPageList {
+impl WidgetList for BackupPageList {
+    type Widget = BackupPage;
+
     fn len(&self) -> usize {
         self.total_pages
     }
@@ -431,7 +433,7 @@ impl WidgetList<BackupPage> for BackupPageList {
         Some(page)
     }
 
-    fn can_go_prev(&self, from_index: usize, current_widget: &BackupPage) -> bool {
+    fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {
         // If we're on the last page (confirmation screen)
         if from_index == self.total_pages - 1 {
             // Check if the confirmation screen has been confirmed
@@ -450,13 +452,13 @@ impl WidgetList<BackupPage> for BackupPageList {
 #[derive(frostsnap_macros::Widget)]
 pub struct BackupDisplay {
     #[widget_delegate]
-    page_slider: PageSlider<BackupPageList, BackupPage>,
+    page_slider: PageSlider<BackupPageList>,
 }
 
 impl BackupDisplay {
     pub fn new(word_indices: [u16; 25], share_index: u16) -> Self {
         let page_list = BackupPageList::new(word_indices, share_index);
-        let page_slider = PageSlider::new(page_list, 40)
+        let page_slider = PageSlider::new(page_list)
             .with_on_page_ready(|page| {
                 // Try to downcast to BackupConfirmationScreen
                 if let Some(confirmation_screen) = page.downcast_mut::<BackupConfirmationScreen>() {

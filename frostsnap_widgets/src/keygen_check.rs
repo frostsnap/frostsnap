@@ -1,35 +1,31 @@
-use super::{Column, Container, HoldToConfirm, Padding, Row, Text};
-use crate::HOLD_TO_CONFIRM_TIME_MS;
-
-use crate::DefaultTextStyle;
-use crate::{palette::PALETTE, MainAxisAlignment};
-use alloc::format;
+use super::{Column, Container, HoldToConfirm, Padding};
+use crate::{
+    gray4_style::Gray4TextStyle, palette::PALETTE, CrossAxisAlignment, MainAxisAlignment, Text,
+    HOLD_TO_CONFIRM_TIME_MS,
+};
+use alloc::{format, string::ToString};
 use embedded_graphics::geometry::Size;
+use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_28_BOLD};
 
-type CodeText = Text;
-type TofNText = Text;
-type CodeColumn = Column<(TofNText, CodeText)>;
-type PaddedCodeColumn = Padding<CodeColumn>;
-type CodeContainer = Container<PaddedCodeColumn>;
-type ConfirmText = Text;
-type OnAllDevicesRow = Row<(ConfirmText, ConfirmText)>;
-type PromptColumn = Column<(ConfirmText, CodeContainer, OnAllDevicesRow)>;
+const FONT_CONFIRM_TITLE: &frostsnap_fonts::Gray4Font = &NOTO_SANS_18_MEDIUM;
+const FONT_CONFIRM_TEXT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_17_REGULAR;
+const FONT_SECURITY_CODE: &frostsnap_fonts::Gray4Font = &NOTO_SANS_MONO_28_BOLD;
+
+type CodeColumn = Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
+type CodeContainer = Container<Padding<CodeColumn>>;
+type SubtitleColumn = Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
+type PromptColumn = Column<(SubtitleColumn, CodeContainer, Text<Gray4TextStyle>)>;
 
 /// Widget for checking and confirming key generation
 #[derive(frostsnap_macros::Widget)]
 pub struct KeygenCheck {
-    /// The hold-to-confirm widget
     #[widget_delegate]
     hold_to_confirm: HoldToConfirm<PromptColumn>,
 }
 
 impl KeygenCheck {
-    /// Create a new keygen check widget
     pub fn new(t_of_n: (u16, u16), security_check_code: [u8; 4]) -> Self {
-        // Format the t of n string
         let t_of_n_text = format!("{} of {}", t_of_n.0, t_of_n.1);
-
-        // Format the security check code as hex
         let hex_code = format!(
             "{:02x}{:02x} {:02x}{:02x}",
             security_check_code[0],
@@ -38,50 +34,58 @@ impl KeygenCheck {
             security_check_code[3]
         );
 
-        // Create the t of n text widget
-        let t_of_n_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_surface);
-        let t_of_n_widget = Text::new(t_of_n_text.clone(), t_of_n_style.clone());
+        let t_of_n_widget = Text::new(
+            t_of_n_text,
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.primary),
+        );
 
-        // Create the hex code text widget using FONT_LARGE
-        let code_style = DefaultTextStyle::new(crate::FONT_HUGE_MONO, PALETTE.on_surface);
-        let code_widget = Text::new(hex_code.clone(), code_style);
+        let code_widget = Text::new(
+            hex_code,
+            Gray4TextStyle::new(FONT_SECURITY_CODE, PALETTE.primary),
+        );
 
-        // Create internal column with t_of_n and code
-        let code_column = Column::new((t_of_n_widget, code_widget));
+        let mut code_column = Column::new((t_of_n_widget, code_widget))
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        code_column.set_gap(0, 3);
 
-        // Put the column in a container with a border
-        let padded_code_column = Padding::all(10, code_column);
+        // ⚖️ extra top padding to balance font descender
+        let padded_code_column = Padding::only(code_column)
+            .left(10)
+            .right(10)
+            .top(7)
+            .bottom(4)
+            .build();
         let code_container = Container::new(padded_code_column)
             .with_border(PALETTE.outline, 2)
-            .with_fill(PALETTE.surface)
             .with_corner_radius(Size::new(8, 8));
 
-        // Create the "confirm identical" text
-        let confirm_style = DefaultTextStyle::new(crate::FONT_MED, PALETTE.on_background);
-        let confirm_identical_widget = Text::new("Confirm identical:", confirm_style.clone());
+        let subtitle_column = Column::new((
+            Text::new(
+                "Check this code matches".to_string(),
+                Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+            ),
+            Text::new(
+                "on every device".to_string(),
+                Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+            ),
+        ))
+        .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // Create the "on all devices" text with underline
-        let on_text = Text::new("on ", confirm_style.clone());
-        let all_devices_text =
-            Text::new("all devices", confirm_style).with_underline(PALETTE.on_background);
+        let title_text = Text::new(
+            "Hold to Confirm".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
+        );
 
-        let on_all_devices_row = Row::new((on_text, all_devices_text));
+        let prompt_column = Column::new((subtitle_column, code_container, title_text))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // Create the prompt column with SpaceEvenly alignment
-        let prompt_column =
-            Column::new((confirm_identical_widget, code_container, on_all_devices_row))
-                .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
-
-        // Create the hold-to-confirm widget
         let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, prompt_column);
 
         Self { hold_to_confirm }
     }
 
-    /// Check if the user has confirmed
     pub fn is_confirmed(&self) -> bool {
         self.hold_to_confirm.is_completed()
     }
 }
-
-// All trait implementations are now generated by the derive macro

@@ -13,12 +13,35 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
 };
 
-/// A widget that combines HoldToConfirmBorder with a hand gesture icon and transitions to a checkmark
+pub struct HoldToConfirmColors {
+    pub border: Rgb565,
+    pub button_fill: Rgb565,
+    pub button_stroke: Rgb565,
+    pub checkmark: Rgb565,
+}
+
+impl Default for HoldToConfirmColors {
+    fn default() -> Self {
+        Self {
+            border: PALETTE.confirm_progress,
+            button_fill: PALETTE.tertiary_container,
+            button_stroke: PALETTE.confirm_progress,
+            checkmark: PALETTE.on_tertiary_container,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct HoldToConfirm<W>
 where
     W: Widget<Color = Rgb565>,
 {
-    content: Box<HoldToConfirmBorder<Container<Center<Column<(W, Fader<CircleButton>)>>>, Rgb565>>,
+    content: Box<
+        HoldToConfirmBorder<
+            Container<Center<Column<(W, Fader<CircleButton>, SizedBox<Rgb565>)>>>,
+            Rgb565,
+        >,
+    >,
     last_update: Option<crate::Instant>,
     hold_duration_ms: u32,
     completed: bool,
@@ -31,15 +54,18 @@ where
     pub fn new(hold_duration_ms: u32, widget: W) -> Self {
         const BORDER_WIDTH: u32 = 5;
 
-        // Create the circle button wrapped in a fader (starts visible by default)
         let button = CircleButton::new();
         let faded_button = Fader::new(button);
 
-        // Create column with the widget (flex) and faded button
+        // Create a 10px spacer beneath the button
+        let bottom_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10));
+
+        // Create column with the widget (flex), faded button, and spacer
         let column = Column::builder()
             .push(widget)
             .flex(1)
             .push(faded_button)
+            .push(bottom_spacer)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
 
         // Center the column, then put it in an expanded container to fill available space
@@ -65,6 +91,16 @@ where
     /// Builder method to start with the button faded out
     pub fn with_faded_out_button(mut self) -> Self {
         self.button_fader_mut().set_faded_out();
+        self
+    }
+
+    pub fn with_colors(mut self, colors: HoldToConfirmColors) -> Self {
+        self.content.set_border_color(colors.border);
+        self.button_mut().set_pressed_colors(
+            colors.button_fill,
+            colors.button_stroke,
+            colors.checkmark,
+        );
         self
     }
 

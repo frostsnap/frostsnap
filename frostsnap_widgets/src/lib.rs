@@ -43,6 +43,7 @@ pub mod bobbing_carat;
 pub mod circle_button;
 pub mod demo_widget;
 pub mod device_name;
+pub mod erase_device;
 pub mod erase_progress;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
@@ -50,7 +51,6 @@ pub mod fps;
 pub mod gray4_style;
 pub mod keygen_check;
 pub mod layout;
-pub mod p2tr_address_display;
 pub mod prelude;
 pub mod screen_test;
 pub mod scroll_bar;
@@ -85,12 +85,12 @@ pub use widget_list::*;
 pub use tinybmp;
 
 // Re-export all widget items
-pub use address_display::{AddressDisplay, AddressWithPath};
+pub use address_display::{AddressDisplay, AddressWithIndex};
 pub use backup::*;
 pub use checkmark::*;
 pub use cursor::*;
 pub use fader::*;
-pub use hold_to_confirm::HoldToConfirm;
+pub use hold_to_confirm::{HoldToConfirm, HoldToConfirmColors};
 pub use hold_to_confirm_border::HoldToConfirmBorder;
 pub use image::{GrayToAlpha, Image};
 pub use layout::{
@@ -103,6 +103,7 @@ pub use rat::{Frac, Rat};
 pub use bobbing_carat::BobbingCarat;
 pub use circle_button::*;
 pub use device_name::*;
+pub use erase_device::*;
 pub use erase_progress::EraseProgress;
 pub use fade_switcher::FadeSwitcher;
 pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};

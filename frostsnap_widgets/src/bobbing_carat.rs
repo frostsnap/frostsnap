@@ -4,7 +4,7 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
 };
-use embedded_iconoir::{prelude::IconoirNewIcon, size24px::navigation::NavArrowUp};
+use embedded_iconoir::{icons::size16px::navigation::NavArrowUp, prelude::IconoirNewIcon};
 
 /// A carat icon that bobs up and down
 pub struct BobbingCarat<C: crate::WidgetColor> {

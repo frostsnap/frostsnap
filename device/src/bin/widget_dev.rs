@@ -6,8 +6,10 @@ use esp_hal::{entry, timer::Timer as _};
 use frostsnap_device::{peripherals::DevicePeripherals, touch_handler, DISPLAY_REFRESH_MS};
 use frostsnap_widgets::debug::{EnabledDebug, OverlayDebug};
 
-// Widget demo selection
-const DEMO: &str = "bip39_entry";
+const DEMO: &str = match option_env!("DEMO") {
+    Some(d) => d,
+    None => "hello_world",
+};
 
 #[entry]
 fn main() -> ! {

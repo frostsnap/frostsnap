@@ -1,141 +1,111 @@
-use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    palette::PALETTE, prelude::*, HoldToConfirm, Padding, ProgressIndicator, FONT_MED, FONT_SMALL,
+    gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, HoldToConfirm, Padding,
+    ProgressIndicator,
 };
-use alloc::{boxed::Box, format};
-use embedded_graphics::{geometry::Size, text::Alignment};
+use alloc::{boxed::Box, format, string::String, string::ToString};
+use embedded_graphics::geometry::Size;
+use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_17_REGULAR};
 
-/// Hold to confirm widget for firmware upgrades
-/// Displays the firmware hash and size
 #[derive(frostsnap_macros::Widget)]
 pub struct FirmwareUpgradeConfirm {
     #[widget_delegate]
     hold_to_confirm: HoldToConfirm<
         Column<(
-            Text,
-            Container<Padding<Column<(Text, Text, Text, Text)>>>,
-            Text,
+            Text<Gray4TextStyle>,
+            Container<
+                Padding<
+                    Column<(
+                        Text<Gray4TextStyle>,
+                        Text<Gray4TextStyle>,
+                        Text<Gray4TextStyle>,
+                        Text<Gray4TextStyle>,
+                    )>,
+                >,
+            >,
+            Text<Gray4TextStyle>,
+            Text<Gray4TextStyle>,
         )>,
     >,
 }
 
 impl FirmwareUpgradeConfirm {
     pub fn new(firmware_digest: [u8; 32], size_bytes: u32) -> Self {
-        // Format the full hash as 4 lines of 16 hex chars each
-        let hash_line1 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[0],
-            firmware_digest[1],
-            firmware_digest[2],
-            firmware_digest[3],
-            firmware_digest[4],
-            firmware_digest[5],
-            firmware_digest[6],
-            firmware_digest[7]
+        let mut chunks = firmware_digest.chunks(8);
+        let hash1 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
-        let hash_line2 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[8],
-            firmware_digest[9],
-            firmware_digest[10],
-            firmware_digest[11],
-            firmware_digest[12],
-            firmware_digest[13],
-            firmware_digest[14],
-            firmware_digest[15]
+        let hash2 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
-        let hash_line3 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[16],
-            firmware_digest[17],
-            firmware_digest[18],
-            firmware_digest[19],
-            firmware_digest[20],
-            firmware_digest[21],
-            firmware_digest[22],
-            firmware_digest[23]
+        let hash3 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
-        let hash_line4 = format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            firmware_digest[24],
-            firmware_digest[25],
-            firmware_digest[26],
-            firmware_digest[27],
-            firmware_digest[28],
-            firmware_digest[29],
-            firmware_digest[30],
-            firmware_digest[31]
+        let hash4 = Text::new(
+            chunks
+                .next()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
+            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
         );
 
-        // Format size in KB or MB
         let size_text = if size_bytes < 1024 * 1024 {
             format!("{} KB", size_bytes / 1024)
         } else {
             format!("{:.1} MB", size_bytes as f32 / (1024.0 * 1024.0))
         };
 
-        // Create the content with title, hash lines, and size
-        let title = Text::new(
-            "Upgrade firmware?",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+        let title_text = Text::new(
+            "Firmware upgrade".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
 
-        let hash1 = Text::new(
-            hash_line1,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
-
-        let hash2 = Text::new(
-            hash_line2,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
-
-        let hash3 = Text::new(
-            hash_line3,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
-
-        let hash4 = Text::new(
-            hash_line4,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
-
-        let size = Text::new(
+        let version_size_display = Text::new(
             size_text,
-            DefaultTextStyle::new(FONT_SMALL, PALETTE.on_surface_variant),
-        )
-        .with_alignment(Alignment::Center);
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
 
-        // Put just the hash lines in a container with rounded border, fill, and padding
-        let hash_column = Column::new((hash1, hash2, hash3, hash4));
-        let hash_with_padding = Padding::all(5, hash_column);
+        let hold_text = Text::new(
+            "Hold to upgrade".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
+        );
+
+        let hash_column = Column::new((hash1, hash2, hash3, hash4))
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let hash_with_padding = Padding::symmetric(10, 5, hash_column);
         let hash_container = Container::new(hash_with_padding)
             .with_border(PALETTE.outline, 2)
-            .with_fill(PALETTE.surface)
-            .with_corner_radius(Size::new(10, 10));
+            .with_corner_radius(Size::new(8, 8));
 
-        // Create main column with title, container, and size
-        let content = Column::builder()
-            .push(title)
-            .gap(8)
-            .push(hash_container)
-            .gap(8)
-            .push(size)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
+        let content = Column::new((title_text, hash_container, version_size_display, hold_text))
+            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // Create hold to confirm with 1 second hold time
         let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_SHORT_MS, content);
 
         Self { hold_to_confirm }
     }
 
-    /// Check if the confirmation is complete
     pub fn is_confirmed(&self) -> bool {
         self.hold_to_confirm.is_completed()
     }
@@ -146,78 +116,76 @@ impl FirmwareUpgradeConfirm {
 pub enum FirmwareUpgradeProgress {
     /// Actively erasing or downloading with progress
     Active {
-        widget: Box<Column<(Text, Padding<ProgressIndicator>)>>,
+        widget: Box<
+            Center<
+                Padding<
+                    Column<(
+                        Text<Gray4TextStyle>,
+                        Text<Gray4TextStyle>,
+                        ProgressIndicator,
+                    )>,
+                >,
+            >,
+        >,
     },
-    /// Passive state - just show text
-    Passive { widget: Center<Text> },
+    /// Passive state
+    Passive {
+        widget: Center<Text<Gray4TextStyle>>,
+    },
 }
 
 impl FirmwareUpgradeProgress {
-    /// Create a new firmware upgrade progress widget in erasing state
+    fn new_active(status_text: &str, progress: f32) -> Self {
+        let title = Text::new(
+            "Firmware upgrade".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
+        );
+
+        let status = Text::new(
+            status_text.to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
+
+        let mut progress_indicator = ProgressIndicator::new();
+        progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
+
+        let mut column = Column::new((title, status, progress_indicator))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        column.set_gap(1, 15);
+
+        let padded = Padding::symmetric(20, 20, column);
+
+        Self::Active {
+            widget: Box::new(Center::new(padded)),
+        }
+    }
+
     pub fn erasing(progress: f32) -> Self {
-        let title = Text::new(
-            "Preparing for\nupgrade...",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
-
-        let mut progress_indicator = ProgressIndicator::new();
-        progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
-
-        // Add horizontal padding around the progress indicator
-        let padded_progress = Padding::symmetric(20, 0, progress_indicator);
-
-        let widget = Column::new((title, padded_progress))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
-
-        Self::Active {
-            widget: Box::new(widget),
-        }
+        Self::new_active("Preparing device", progress)
     }
 
-    /// Create a new firmware upgrade progress widget in downloading state
     pub fn downloading(progress: f32) -> Self {
-        let title = Text::new(
-            "Downloading\nupgrade...",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+        Self::new_active("Receiving and verifying", progress)
+    }
 
-        let mut progress_indicator = ProgressIndicator::new();
-        progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
-
-        // Add horizontal padding around the progress indicator
-        let padded_progress = Padding::symmetric(20, 0, progress_indicator);
-
-        let widget = Column::new((title, padded_progress))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
-
-        Self::Active {
-            widget: Box::new(widget),
+    pub fn passive() -> Self {
+        let text = Text::new(
+            "not upgrading".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.primary),
+        );
+        Self::Passive {
+            widget: Center::new(text),
         }
     }
 
-    /// Create a new firmware upgrade progress widget in passive state
-    pub fn passive() -> Self {
-        // Show "Firmware Upgrade" text in passive state
-        let text = Text::new(
-            "Firmware\nUpgrade",
-            DefaultTextStyle::new(FONT_MED, PALETTE.primary),
-        )
-        .with_alignment(Alignment::Center);
-        let widget = Center::new(text);
-
-        Self::Passive { widget }
-    }
-
-    /// Update the progress for active states
     pub fn update_progress(&mut self, progress: f32) {
         if let Self::Active { widget } = self {
-            // Update the progress indicator through the padding wrapper
             widget
-                .children
-                .1
                 .child
+                .child
+                .children
+                .2
                 .set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
         }
     }
