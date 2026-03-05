@@ -193,6 +193,11 @@ impl AccessStructureId {
                 .into(),
         )
     }
+
+    pub fn from_root_shared_key(root_shared_key: &SharedKey<Normal>) -> Self {
+        let app_shared_key = Xpub::from_rootkey(root_shared_key.clone()).rootkey_to_master_appkey();
+        Self::from_app_poly(app_shared_key.into_key().point_polynomial())
+    }
 }
 
 impl_display_debug_serialize! {
@@ -325,14 +330,9 @@ pub struct AccessStructureRef {
 
 impl AccessStructureRef {
     pub fn from_root_shared_key(root_shared_key: &SharedKey<Normal>) -> Self {
-        let app_shared_key = Xpub::from_rootkey(root_shared_key.clone()).rootkey_to_master_appkey();
-        let master_appkey = MasterAppkey::from_xpub_unchecked(&app_shared_key);
-        let access_structure_id =
-            AccessStructureId::from_app_poly(app_shared_key.into_key().point_polynomial());
-
         AccessStructureRef {
-            key_id: master_appkey.key_id(),
-            access_structure_id,
+            key_id: KeyId::from_rootkey(root_shared_key.public_key()),
+            access_structure_id: AccessStructureId::from_root_shared_key(root_shared_key),
         }
     }
     pub fn range_for_key(key_id: KeyId) -> impl RangeBounds<AccessStructureRef> {

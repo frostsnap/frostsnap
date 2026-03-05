@@ -1,13 +1,18 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/keygen.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration.dart';
+import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/nostr.dart';
+import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/wallet_create.dart';
 
-enum AddType { newWallet, recoverWallet }
+enum AddType { newWallet, recoverWallet, joinFromLink }
 
 enum VerticalButtonGroupPosition { top, bottom, middle, single }
 
@@ -62,6 +67,15 @@ class WalletAddColumn extends StatelessWidget {
           icon: Icon(Icons.restore_rounded, size: iconSize),
           title: 'Restore wallet',
           subtitle: 'Use an existing device key or load a physical backup',
+        ),
+        buildTitle(context, text: 'Join wallet'),
+        buildCard(
+          context,
+          action: () => onPressed(AddType.joinFromLink),
+          isThreeLine: true,
+          icon: Icon(Icons.link_rounded, size: iconSize),
+          title: 'Join wallet from link',
+          subtitle: 'Join an existing wallet using a shared nostr link',
         ),
       ],
     );
@@ -205,6 +219,61 @@ class WalletAddColumn extends StatelessWidget {
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
   }
 
+  static void showJoinFromLinkDialog(BuildContext context, {String? initialLink}) async {
+    String? link = initialLink;
+    if (link == null) {
+      final controller = TextEditingController();
+      link = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Join wallet from link'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: 'frostsnap://channel/...',
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Join'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (link == null || link.isEmpty || !context.mounted) return;
+
+    try {
+      final hexStr = link.replaceFirst('frostsnap://channel/', '');
+      if (hexStr.length != 32) throw 'Invalid link: expected 32 hex characters';
+      final bytes = Uint8List(16);
+      for (var i = 0; i < 16; i++) {
+        bytes[i] = int.parse(hexStr.substring(i * 2, i * 2 + 2), radix: 16);
+      }
+      final channelSecret = ChannelSecret(field0: U8Array16(bytes));
+      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+      final client = await NostrClient.connect();
+      final stream = client.recoverFromNostrLink(
+        coord: coord,
+        channelSecret: channelSecret,
+        encryptionKey: encryptionKey,
+      );
+      // 🎣 kick off the stream; the wallet will appear in the list automatically
+      stream.listen((_) {});
+    } catch (e) {
+      if (context.mounted) {
+        showErrorSnackbar(context, 'Failed to join wallet: $e');
+      }
+    }
+  }
+
   static void showAddKeyDialog(
     BuildContext context,
     AccessStructureRef accessStructureRef,
@@ -228,6 +297,8 @@ Function(AddType) makeOnPressed(BuildContext context) {
         WalletAddColumn.showWalletCreateDialog(context);
       case AddType.recoverWallet:
         WalletAddColumn.showWalletRecoverDialog(context);
+      case AddType.joinFromLink:
+        WalletAddColumn.showJoinFromLinkDialog(context);
     }
   };
 }

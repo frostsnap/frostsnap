@@ -5,11 +5,11 @@ use flutter_rust_bridge::frb;
 use frostsnap_core::{
     coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
     message::EncodedSignature,
-    AccessStructureRef, KeyId, SignSessionId, WireSignTask,
+    AccessStructureId, AccessStructureRef, KeyId, SignSessionId, SymmetricKey, WireSignTask,
 };
 use frostsnap_nostr::{
-    ChannelClient, ChannelHandle, Client, Keys, NostrDatabaseExt, NostrLMDB, NostrProfile,
-    SigningChain, ToBech32,
+    ChannelClient, ChannelHandle, ChannelInitData, Client, Keys, NostrDatabaseExt, NostrLMDB,
+    NostrProfile, SigningChain, ToBech32,
 };
 use rusqlite::Connection;
 use std::{
@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-pub use frostsnap_nostr::{ChannelEvent, ConnectionState, EventId, GroupMember, PublicKey};
+pub use frostsnap_nostr::{ChannelEvent, ChannelSecret, ConnectionState, EventId, GroupMember, PublicKey};
 
 static NOSTR_LMDB: OnceLock<Arc<NostrLMDB>> = OnceLock::new();
 
@@ -200,7 +200,7 @@ impl NostrSettings {
 /// Create once and keep around - cloning shares the connection pool.
 pub struct NostrClient {
     client: Client,
-    channels: Mutex<HashMap<[u8; 32], ChannelHandle>>,
+    channels: Mutex<HashMap<AccessStructureId, ChannelHandle>>,
 }
 
 impl NostrClient {
@@ -253,9 +253,10 @@ impl NostrClient {
         &self,
         coord: &super::coordinator::Coordinator,
         access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
         sink: StreamSink<FfiChannelEvent>,
     ) {
-        let signing_key = {
+        let (signing_key, init_data) = {
             let inner = coord.0.inner();
             let key_data = inner
                 .get_frost_key(access_structure_ref.key_id)
@@ -263,13 +264,22 @@ impl NostrClient {
             let access_structure = key_data
                 .get_access_structure(access_structure_ref.access_structure_id)
                 .expect("access structure must exist");
-            KeyContext {
+            let signing_key = KeyContext {
                 app_shared_key: access_structure.app_shared_key(),
                 purpose: key_data.purpose,
-            }
+            };
+            let root_shared_key = key_data
+                .complete_key
+                .root_shared_key(access_structure_ref.access_structure_id, encryption_key);
+            let init_data = root_shared_key.map(|rsk| ChannelInitData {
+                key_name: key_data.key_name.clone(),
+                purpose: key_data.purpose,
+                root_shared_key: rsk,
+            });
+            (signing_key, init_data)
         };
-        let key_id = access_structure_ref.key_id;
-        let channel_client = ChannelClient::new(signing_key);
+        let as_id = access_structure_ref.access_structure_id;
+        let channel_client = ChannelClient::new(as_id, signing_key, init_data);
         let handle = match channel_client
             .run(self.client.clone(), SinkWrap(sink))
             .await
@@ -284,20 +294,70 @@ impl NostrClient {
         self.channels
             .lock()
             .unwrap()
-            .insert(key_id.to_bytes(), handle);
+            .insert(as_id, handle);
+    }
+
+    /// Join a wallet from a nostr link. Fetches the channel init data, adds the key
+    /// to the coordinator, and connects to the channel.
+    pub async fn recover_from_nostr_link(
+        &self,
+        coord: &super::coordinator::Coordinator,
+        channel_secret: ChannelSecret,
+        encryption_key: SymmetricKey,
+        sink: StreamSink<FfiChannelEvent>,
+    ) {
+        let result: Result<()> = async {
+            let init_data = frostsnap_nostr::fetch_channel_init(&self.client, &channel_secret)
+                .await?
+                .ok_or_else(|| anyhow!("no channel found for this link"))?;
+
+            let as_id = init_data.access_structure_id();
+
+            {
+                let mut db = coord.0.db.lock().unwrap();
+                let mut coordinator = coord.0.coordinator.lock().unwrap();
+                coordinator.staged_mutate(&mut *db, |coordinator| {
+                    Ok(coordinator.add_key_and_access_structure(
+                        init_data.key_name.clone(),
+                        init_data.root_shared_key.clone(),
+                        init_data.purpose,
+                        encryption_key,
+                        &mut rand::thread_rng(),
+                    ))
+                })?;
+            }
+
+            let signing_key = init_data.key_context();
+            let channel_client = ChannelClient::new(as_id, signing_key, None);
+            let handle = channel_client
+                .run(self.client.clone(), SinkWrap(sink))
+                .await?;
+
+            self.channels
+                .lock()
+                .unwrap()
+                .insert(as_id, handle);
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = result {
+            tracing::error!(error = %e, "failed to recover from nostr link");
+        }
     }
 
     /// Send a chat message to a channel, optionally as a reply.
     /// The nsec is used to sign the message.
     pub async fn send_message(
         &self,
-        key_id: KeyId,
+        access_structure_id: AccessStructureId,
         nsec: String,
         content: String,
         reply_to: Option<NostrEventId>,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
-        let handle = self.get_handle(key_id)?;
+        let handle = self.get_handle(access_structure_id)?;
         let event_id = handle
             .send_message(content, reply_to.map(|id| id.into()), &keys)
             .await?;
@@ -314,7 +374,7 @@ impl NostrClient {
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
         let sign_task = WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone());
-        let handle = self.get_handle(access_structure_ref.key_id)?;
+        let handle = self.get_handle(access_structure_ref.access_structure_id)?;
         let event_id = handle
             .send_sign_request(&keys, sign_task, access_structure_ref, message)
             .await?;
@@ -331,7 +391,7 @@ impl NostrClient {
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
         let sign_task = WireSignTask::Test { message: test_message };
-        let handle = self.get_handle(access_structure_ref.key_id)?;
+        let handle = self.get_handle(access_structure_ref.access_structure_id)?;
         let event_id = handle
             .send_sign_request(&keys, sign_task, access_structure_ref, message)
             .await?;
@@ -341,13 +401,13 @@ impl NostrClient {
     /// Send a signing offer with pre-allocated binonces over the channel.
     pub async fn send_sign_offer(
         &self,
-        key_id: KeyId,
+        access_structure_id: AccessStructureId,
         nsec: String,
         reply_to: NostrEventId,
         binonces: ParticipantBinonces,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
-        let handle = self.get_handle(key_id)?;
+        let handle = self.get_handle(access_structure_id)?;
         let event_id = handle
             .send_sign_offer(&keys, reply_to.into(), binonces)
             .await?;
@@ -358,14 +418,14 @@ impl NostrClient {
     /// Dart is responsible for getting shares from the coordinator first.
     pub async fn send_sign_partial(
         &self,
-        key_id: KeyId,
+        access_structure_id: AccessStructureId,
         nsec: String,
         request_id: NostrEventId,
         session_id: SignSessionId,
         shares: frostsnap_core::coordinator::ParticipantSignatureShares,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
-        let handle = self.get_handle(key_id)?;
+        let handle = self.get_handle(access_structure_id)?;
         let event_id = handle
             .send_sign_partial(&keys, request_id.into(), session_id, shares)
             .await?;
@@ -373,15 +433,15 @@ impl NostrClient {
     }
 
     /// Disconnect from a channel.
-    pub fn disconnect_channel(&self, key_id: KeyId) {
-        self.channels.lock().unwrap().remove(&key_id.to_bytes());
+    pub fn disconnect_channel(&self, access_structure_id: AccessStructureId) {
+        self.channels.lock().unwrap().remove(&access_structure_id);
     }
 
-    fn get_handle(&self, key_id: KeyId) -> Result<ChannelHandle> {
+    fn get_handle(&self, access_structure_id: AccessStructureId) -> Result<ChannelHandle> {
         self.channels
             .lock()
             .unwrap()
-            .get(&key_id.to_bytes())
+            .get(&access_structure_id)
             .cloned()
             .ok_or_else(|| anyhow!("channel not connected"))
     }
@@ -427,6 +487,18 @@ impl Nsec {
 // ============================================================================
 // PublicKey - Opaque mirror of nostr_sdk::PublicKey
 // ============================================================================
+
+#[frb(mirror(ChannelSecret))]
+pub struct _ChannelSecret(pub [u8; 16]);
+
+#[frb(external)]
+impl ChannelSecret {
+    #[frb(sync)]
+    pub fn from_access_structure_id(_id: &AccessStructureId) -> Self {}
+
+    #[frb(sync)]
+    pub fn invite_link(&self) -> String {}
+}
 
 #[frb(mirror(PublicKey), opaque)]
 pub struct _PublicKey {}

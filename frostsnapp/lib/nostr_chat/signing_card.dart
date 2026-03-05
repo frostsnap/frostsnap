@@ -297,86 +297,102 @@ class SigningErrorCard extends StatelessWidget {
 class TransactionTaskCard extends StatelessWidget {
   final SigningRequestState state;
   final int threshold;
-  final VoidCallback onSign;
+  final String? deviceName;
+  final VoidCallback? onSign;
+  final String Function(PublicKey) getDisplayName;
 
   const TransactionTaskCard({
     super.key,
     required this.state,
     required this.threshold,
-    required this.onSign,
+    required this.getDisplayName,
+    this.deviceName,
+    this.onSign,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final offerCount = state.offers.length;
-    final partialCount = state.partials.length;
+    final canSign = onSign != null;
+
+    final checklist = state.offers.values.map((offer) {
+      final hasSigned = state.partials.containsKey(offer.author.toHex());
+      final name = getDisplayName(offer.author);
+      return ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: EdgeInsets.zero,
+        title: Text('$name (key #${offer.shareIndex})'),
+        leading: Icon(
+          hasSigned ? Icons.check_circle : Icons.circle_outlined,
+          color: hasSigned ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }).toList();
+
+    final card = Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _signingHeader(theme, icon: Icons.draw, title: 'Signing Request'),
+            const SizedBox(height: 6),
+            Text(
+              signingDetailsText(state.request.signingDetails),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+            if (checklist.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...checklist,
+            ],
+            if (canSign) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: onSign,
+                  child: Text('Sign with ${deviceName ?? "device"}'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
 
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
-        child: AnimatedGradientBorder(
-          borderSize: 1.0,
-          glowSize: 4.0,
-          animationTime: 6,
-          borderRadius: BorderRadius.circular(12),
-          gradientColors: [
-            theme.colorScheme.outlineVariant,
-            theme.colorScheme.primary,
-            theme.colorScheme.secondary,
-            theme.colorScheme.tertiary,
-          ],
-          child: Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _signingHeader(theme, icon: Icons.draw, title: 'Signing Request'),
-                  const SizedBox(height: 6),
-                  Text(
-                    signingDetailsText(state.request.signingDetails),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Text(
-                        'Offers: $offerCount/$threshold',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text('·', style: theme.textTheme.bodySmall),
-                      ),
-                      Text(
-                        'Signed: $partialCount/$threshold',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: onSign,
-                      child: const Text('Sign'),
-                    ),
-                  ),
+        child: canSign
+            ? AnimatedGradientBorder(
+                borderSize: 1.0,
+                glowSize: 4.0,
+                animationTime: 6,
+                borderRadius: BorderRadius.circular(12),
+                gradientColors: [
+                  theme.colorScheme.outlineVariant,
+                  theme.colorScheme.primary,
+                  theme.colorScheme.secondary,
+                  theme.colorScheme.tertiary,
                 ],
+                child: card,
+              )
+            : Container(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: card,
               ),
-            ),
-          ),
-        ),
       ),
     );
   }

@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/nostr_chat/profile_settings_page.dart';
+import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 
 class GroupInfoPage extends StatelessWidget {
   final String walletName;
   final List<PublicKey> members;
+  final AccessStructureId accessStructureId;
 
   const GroupInfoPage({
     super.key,
     required this.walletName,
     required this.members,
+    required this.accessStructureId,
   });
 
   @override
@@ -101,6 +106,24 @@ class GroupInfoPage extends StatelessWidget {
               );
             },
           ),
+          const Divider(height: 32),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              'INVITE LINK',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.link_rounded),
+            title: const Text('Copy invite link'),
+            subtitle: const Text('Share this link to invite others to join'),
+            trailing: const Icon(Icons.copy_rounded),
+            onTap: () => _copyInviteLink(context),
+          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -117,6 +140,13 @@ class GroupInfoPage extends StatelessWidget {
       ),
       builder: (context) => MemberDetailSheet(pubkey: pubkey, profile: profile),
     );
+  }
+
+  void _copyInviteLink(BuildContext context) {
+    final secret = ChannelSecret.fromAccessStructureId(id: accessStructureId);
+    final link = secret.inviteLink();
+    Clipboard.setData(ClipboardData(text: link));
+    showMessageSnackbar(context, 'Invite link copied to clipboard');
   }
 
   void _openProfileSettings(BuildContext context) {

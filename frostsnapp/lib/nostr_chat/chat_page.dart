@@ -105,10 +105,13 @@ class TimelineSigningComplete extends TimelineItem {
 }
 
 class ChatPage extends StatefulWidget {
-  final KeyId keyId;
+  final AccessStructureRef accessStructureRef;
   final String walletName;
 
-  const ChatPage({super.key, required this.keyId, required this.walletName});
+  const ChatPage({super.key, required this.accessStructureRef, required this.walletName});
+
+  KeyId get keyId => accessStructureRef.keyId;
+  AccessStructureId get accessStructureId => accessStructureRef.accessStructureId;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -165,9 +168,12 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _connect() async {
     _client = await NostrClient.connect();
-    final frostKey = coord.getFrostKey(keyId: widget.keyId);
-    final asRef = frostKey!.accessStructures()[0].accessStructureRef();
-    final stream = _client!.connectToChannel(coord: coord, accessStructureRef: asRef);
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final stream = _client!.connectToChannel(
+      coord: coord,
+      accessStructureRef: widget.accessStructureRef,
+      encryptionKey: encryptionKey,
+    );
     _subscription = stream.listen(_handleEvent);
   }
 
@@ -356,7 +362,7 @@ class _ChatPageState extends State<ChatPage> {
     _timeline.insert(i, item);
   }
 
-  Widget? _buildTaskCard(SigningRequestState state) {
+  Widget _buildTaskCard(SigningRequestState state) {
     final accessStruct =
         coord.getAccessStructure(asRef: state.request.accessStructureRef);
     final threshold = accessStruct?.threshold() ?? 0;
@@ -365,13 +371,22 @@ class _ChatPageState extends State<ChatPage> {
         myPubkey != null && state.partials.containsKey(myPubkey.toHex());
     final sealed = state.sealedData;
     final myDevice = _getMyDevice(state);
-    final canSign = sealed != null && myDevice != null && !alreadySigned;
-    if (!canSign) return null;
+    final VoidCallback? onSign;
+    final String? deviceName;
+    if (sealed != null && myDevice != null && !alreadySigned) {
+      deviceName = coord.getDeviceName(id: myDevice);
+      onSign = () => _triggerDeviceSigning(state, sealed, myDevice);
+    } else {
+      deviceName = null;
+      onSign = null;
+    }
 
     return TransactionTaskCard(
       state: state,
       threshold: threshold,
-      onSign: () => _triggerDeviceSigning(state, sealed, myDevice),
+      getDisplayName: _displayName,
+      deviceName: deviceName,
+      onSign: onSign,
     );
   }
 
@@ -569,6 +584,7 @@ class _ChatPageState extends State<ChatPage> {
 
     final accessStructure = frostKey.accessStructures()[0];
     final devices = accessStructure.devices();
+    final offeredIndices = state.offers.values.map((o) => o.shareIndex).toSet();
 
     final selectedDevice = await showDialog<DeviceId>(
       context: context,
@@ -584,12 +600,19 @@ class _ChatPageState extends State<ChatPage> {
                 final id = devices[index];
                 final name = coord.getDeviceName(id: id);
                 final enoughNonces = coord.noncesAvailable(id: id) >= 1;
+                final shareIndex = accessStructure.getDeviceShortShareIndex(deviceId: id);
+                final alreadyOffered = offeredIndices.contains(shareIndex);
+                final enabled = enoughNonces && !alreadyOffered;
+                final subtitle = alreadyOffered
+                    ? 'already offered'
+                    : !enoughNonces
+                        ? 'no nonces'
+                        : null;
                 return ListTile(
-                  title: Text(
-                    '${name ?? '<unknown>'}${enoughNonces ? '' : ' (no nonces)'}',
-                  ),
-                  enabled: enoughNonces,
-                  onTap: enoughNonces ? () => Navigator.pop(context, id) : null,
+                  title: Text(name ?? '<unknown>'),
+                  subtitle: subtitle != null ? Text(subtitle) : null,
+                  enabled: enabled,
+                  onTap: enabled ? () => Navigator.pop(context, id) : null,
                 );
               },
             ),
@@ -613,7 +636,7 @@ class _ChatPageState extends State<ChatPage> {
         nSignatures: 1,
       );
       await _client!.sendSignOffer(
-        keyId: widget.keyId,
+        accessStructureId: widget.accessStructureId,
         nsec: nsec,
         replyTo: state.chainTip,
         binonces: binonces,
@@ -688,7 +711,7 @@ class _ChatPageState extends State<ChatPage> {
 
       final nsec = _nostrContext!.nostrSettings.getNsec();
       await _client!.sendSignPartial(
-        keyId: widget.keyId,
+        accessStructureId: widget.accessStructureId,
         nsec: nsec,
         requestId: state.request.eventId,
         sessionId: sessionId,
@@ -761,6 +784,7 @@ class _ChatPageState extends State<ChatPage> {
             decoration: const InputDecoration(
               labelText: 'Message to sign',
             ),
+            onSubmitted: (value) => Navigator.pop(context, value),
           ),
           actions: [
             TextButton(
@@ -821,7 +845,7 @@ class _ChatPageState extends State<ChatPage> {
         );
       } else {
         await _client!.sendMessage(
-          keyId: widget.keyId,
+          accessStructureId: widget.accessStructureId,
           nsec: nsec,
           content: content,
           replyTo: replyToId,
@@ -845,7 +869,7 @@ class _ChatPageState extends State<ChatPage> {
     });
 
     await _client!.sendMessage(
-      keyId: widget.keyId,
+      accessStructureId: widget.accessStructureId,
       nsec: nsec,
       content: message.content,
       replyTo: message.replyTo,
@@ -909,6 +933,7 @@ class _ChatPageState extends State<ChatPage> {
         builder: (context) => GroupInfoPage(
           walletName: widget.walletName,
           members: _memberPubkeys,
+          accessStructureId: widget.accessStructureId,
         ),
       ),
     );
@@ -917,7 +942,7 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void dispose() {
     _subscription?.cancel();
-    _client?.disconnectChannel(keyId: widget.keyId);
+    _client?.disconnectChannel(accessStructureId: widget.accessStructureId);
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -945,21 +970,19 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       body: Builder(builder: (context) {
-        final taskCard = _activeSigningRequest != null
-            ? _buildTaskCard(_activeSigningRequest!)
-            : null;
+        final activeRequest = _activeSigningRequest;
         return Column(
           children: [
             Expanded(
               child: Stack(
                 children: [
                   _buildTimeline(theme),
-                  if (taskCard != null)
+                  if (activeRequest != null)
                     Positioned(
                       top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
                       left: 0,
                       right: 0,
-                      child: taskCard,
+                      child: _buildTaskCard(activeRequest),
                     ),
                 ],
               ),
@@ -1596,7 +1619,7 @@ class _SigningEventLine extends StatelessWidget {
             Flexible(
               child: Text.rich(
                 TextSpan(children: [
-                  TextSpan(text: '$label ', style: eventStyle),
+                  TextSpan(text: '${isMe ? 'you ' : ''}$label ', style: eventStyle),
                   WidgetSpan(
                     alignment: PlaceholderAlignment.middle,
                     child: MouseRegion(

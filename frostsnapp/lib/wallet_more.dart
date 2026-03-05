@@ -249,7 +249,7 @@ class _WalletMoreState extends State<WalletMore> {
       context,
       MaterialPageRoute(
         builder: (context) =>
-            ChatPage(keyId: walletCtx.keyId, walletName: walletName),
+            ChatPage(accessStructureRef: frostKey!.accessStructures()[0].accessStructureRef(), walletName: walletName),
       ),
     );
   }

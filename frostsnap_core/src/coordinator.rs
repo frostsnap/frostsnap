@@ -953,6 +953,17 @@ impl FrostCoordinator {
         access_structure_ref
     }
 
+    pub fn add_key_and_access_structure(
+        &mut self,
+        key_name: String,
+        root_shared_key: SharedKey,
+        purpose: KeyPurpose,
+        encryption_key: SymmetricKey,
+        rng: &mut impl rand_core::RngCore,
+    ) -> AccessStructureRef {
+        self.mutate_new_key(key_name, root_shared_key, BTreeMap::new(), encryption_key, purpose, rng)
+    }
+
     pub fn delete_key(&mut self, key_id: KeyId) {
         if self.keys.contains_key(&key_id) {
             self.mutate(Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)));
@@ -1106,6 +1117,10 @@ impl CoordAccessStructure {
 
     pub fn access_structure_id(&self) -> AccessStructureId {
         AccessStructureId::from_app_poly(self.app_shared_key.key.point_polynomial())
+    }
+
+    pub fn kind(&self) -> AccessStructureKind {
+        self.kind
     }
 
     pub fn device_to_share_indicies(&self) -> BTreeMap<DeviceId, ShareIndex> {

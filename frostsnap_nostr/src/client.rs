@@ -10,7 +10,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{
     coordinator::{ParticipantBinonces, ParticipantSignatureShares, KeyContext},
-    AccessStructureRef, SignSessionId, WireSignTask,
+    AccessStructureId, AccessStructureRef, SignSessionId, WireSignTask,
 };
 use nostr_sdk::{
     nips::nip44::v2::{self, ConversationKey},
@@ -137,13 +137,13 @@ impl SigningEventTree {
 pub struct ChannelClient {
     channel_keys: ChannelKeys,
     signing_key: KeyContext,
+    init_data: Option<crate::ChannelInitData>,
 }
 
 impl ChannelClient {
-    pub fn new(signing_key: KeyContext) -> Self {
-        let key_id = signing_key.master_appkey().key_id();
-        let channel_keys = ChannelKeys::from_key_id(&key_id);
-        Self { channel_keys, signing_key }
+    pub fn new(access_structure_id: AccessStructureId, signing_key: KeyContext, init_data: Option<crate::ChannelInitData>) -> Self {
+        let channel_keys = ChannelKeys::from_access_structure_id(&access_structure_id);
+        Self { channel_keys, signing_key, init_data }
     }
 
     /// Start receiving channel events using the provided client.
@@ -156,6 +156,12 @@ impl ChannelClient {
         sink: impl Sink<ChannelEvent> + Clone,
     ) -> Result<ChannelHandle> {
         sink.send(ChannelEvent::ConnectionState(ConnectionState::Connecting));
+
+        if let Some(init_data) = &self.init_data {
+            if let Err(e) = publish_channel_init(&client, &self.channel_keys, init_data).await {
+                tracing::warn!(error = %e, "failed to publish channel init");
+            }
+        }
 
         let channel_id_hex = self.channel_keys.channel_id_hex();
         let filter = Filter::new()
@@ -626,41 +632,37 @@ fn process_signing_inner_event(
                 }
             };
 
-            let chain = {
+            let (request_id, sealed) = {
                 let mut cache = signing_events.lock().unwrap();
-                let chain = match cache.walk_chain(parent_id, signing_key) {
-                    Ok(c) => c,
-                    Err(reason) => {
-                        return ChannelEvent::Error {
-                            event_id,
-                            author,
-                            timestamp,
-                            reason,
-                        };
-                    }
-                };
+                // ⛓️ Insert before walking so the offer is in the tree even if the parent hasn't arrived yet
                 cache.add_offer(event_id, parent_id, binonces.clone());
-                chain
-            };
+                match cache.walk_chain(parent_id, signing_key) {
+                    Ok(chain) => {
+                        let request_id = chain.request_id;
+                        let mut all_binonces = chain.binonces;
+                        all_binonces.push(binonces.clone());
 
-            let request_id = chain.request_id;
+                        let mut seen_indices = std::collections::BTreeSet::new();
+                        all_binonces.retain(|b| seen_indices.insert(b.share_index));
 
-            let mut all_binonces = chain.binonces;
-            all_binonces.push(binonces.clone());
-
-            let mut seen_indices = std::collections::BTreeSet::new();
-            all_binonces.retain(|b| seen_indices.insert(b.share_index));
-
-            let sealed = if seen_indices.len() >= signing_key.threshold() {
-                Some(SigningChain {
-                    request_id,
-                    sign_task: chain.sign_task,
-                    access_structure_ref: chain.access_structure_ref,
-                    binonces: all_binonces,
-                    signing_key: signing_key.clone(),
-                })
-            } else {
-                None
+                        let sealed = if seen_indices.len() >= signing_key.threshold() {
+                            Some(SigningChain {
+                                request_id,
+                                sign_task: chain.sign_task,
+                                access_structure_ref: chain.access_structure_ref,
+                                binonces: all_binonces,
+                                signing_key: signing_key.clone(),
+                            })
+                        } else {
+                            None
+                        };
+                        (request_id, sealed)
+                    }
+                    Err(reason) => {
+                        tracing::debug!(%reason, "offer arrived before its parent; chain will resolve later");
+                        (parent_id, None)
+                    }
+                }
             };
 
             ChannelEvent::Frostsnap(FrostsnapEvent::Signing(SigningEvent::Offer {
@@ -815,4 +817,68 @@ fn encrypt_inner_event(inner_event: &Event, channel_keys: &ChannelKeys) -> Resul
     let conversation_key = ConversationKey::new(channel_keys.shared_secret);
     let encrypted_bytes = v2::encrypt_to_bytes(&conversation_key, inner_json.as_bytes())?;
     Ok(BASE64.encode(&encrypted_bytes))
+}
+
+async fn publish_channel_init(
+    client: &Client,
+    channel_keys: &ChannelKeys,
+    init_data: &crate::ChannelInitData,
+) -> Result<()> {
+    let encoded = bincode::encode_to_vec(init_data, BINCODE_CONFIG)?;
+    let content = BASE64.encode(&encoded);
+    let conversation_key = ConversationKey::new(channel_keys.shared_secret);
+    let encrypted_bytes = v2::encrypt_to_bytes(&conversation_key, content.as_bytes())?;
+    let encrypted_content = BASE64.encode(&encrypted_bytes);
+
+    let ephemeral_keys = Keys::generate();
+    let event = EventBuilder::new(Kind::ChannelCreation, encrypted_content)
+        .tag(Tag::custom(
+            TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H)),
+            vec![channel_keys.channel_id_hex()],
+        ))
+        .build(ephemeral_keys.public_key())
+        .sign_with_keys(&ephemeral_keys)?;
+
+    client.send_event(&event).await?;
+    tracing::info!("published channel init event");
+    Ok(())
+}
+
+pub async fn fetch_channel_init(
+    client: &Client,
+    channel_secret: &crate::ChannelSecret,
+) -> Result<Option<crate::ChannelInitData>> {
+    let channel_keys = ChannelKeys::from_channel_secret(channel_secret);
+    let filter = Filter::new()
+        .custom_tag(
+            SingleLetterTag::lowercase(Alphabet::H),
+            channel_keys.channel_id_hex(),
+        )
+        .kind(Kind::ChannelCreation)
+        .limit(1);
+
+    let events = client
+        .fetch_events(filter, std::time::Duration::from_secs(10))
+        .await?;
+    let event = match events.into_iter().next() {
+        Some(e) => e,
+        None => return Ok(None),
+    };
+
+    let payload = BASE64.decode(&event.content)?;
+    let conversation_key = ConversationKey::new(channel_keys.shared_secret);
+    let decrypted = v2::decrypt_to_bytes(&conversation_key, &payload)?;
+    let content = String::from_utf8(decrypted)?;
+    let raw = BASE64.decode(&content)?;
+    let (init_data, _) =
+        bincode::decode_from_slice::<crate::ChannelInitData, _>(&raw, BINCODE_CONFIG)?;
+
+    // 🔒 verify the init data produces the same channel secret
+    let derived_secret = crate::ChannelSecret::from_access_structure_id(&init_data.access_structure_id());
+    anyhow::ensure!(
+        derived_secret.0 == channel_secret.0,
+        "channel secret mismatch in channel init data"
+    );
+
+    Ok(Some(init_data))
 }
