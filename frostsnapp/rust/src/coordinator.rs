@@ -35,8 +35,8 @@ use frostsnap_core::coordinator::{
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
-    message, AccessStructureRef, DeviceId, KeyId, KeygenId, RestorationId, SignSessionId,
-    SymmetricKey, WireSignTask,
+    message, message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, KeygenId,
+    RestorationId, SignSessionId, SymmetricKey, WireSignTask,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ops::DerefMut;
@@ -519,8 +519,7 @@ impl FfiCoordinator {
         let coordinator = self.coordinator.lock().unwrap();
 
         let active_sign_session = coordinator
-            .active_signing_sessions_by_ssid()
-            .get(&session_id)
+            .get_active_sign_session(session_id)
             .ok_or(anyhow!("this signing session no longer exists"))?;
 
         let key_id = active_sign_session.key_id;
@@ -1014,18 +1013,14 @@ impl FfiCoordinator {
                 ) {
                     return Err(anyhow::anyhow!("device cannot sign with nonce reservation"));
                 }
-                Ok(coordinator.ensure_sign_session(sign_task, access_structure_ref, all_binonces)?)
+                Ok(coordinator.ensure_tmp_remote_sign_session(
+                    sign_task,
+                    access_structure_ref,
+                    all_binonces,
+                )?)
             })?
         };
-        self.emit_signing_signal(
-            self.coordinator
-                .lock()
-                .unwrap()
-                .active_signing_sessions_by_ssid()
-                .get(&session_id)
-                .expect("just created")
-                .key_id,
-        );
+        self.emit_signing_signal(access_structure_ref.key_id);
         Ok(session_id)
     }
 
@@ -1051,6 +1046,24 @@ impl FfiCoordinator {
             Ok(coordinator.add_remote_signature_shares(session_id, shares)?)
         })
     }
+
+    pub fn ensure_tmp_remote_sign_session(
+        &self,
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: &[ParticipantBinonces],
+    ) -> anyhow::Result<SignSessionId> {
+        let mut db = self.db.lock().unwrap();
+        let mut coord = self.coordinator.lock().unwrap();
+        coord.staged_mutate(&mut *db, |coordinator| {
+            Ok(coordinator.ensure_tmp_remote_sign_session(
+                sign_task,
+                access_structure_ref,
+                all_binonces,
+            )?)
+        })
+    }
+
 
     pub fn cancel_restoration(&self, restoration_id: RestorationId) -> anyhow::Result<()> {
         let mut db = self.db.lock().unwrap();

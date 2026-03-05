@@ -497,10 +497,21 @@ impl Coordinator {
     pub fn add_remote_signature_shares(
         &self,
         session_id: SignSessionId,
-        shares: ParticipantSignatureShares,
+        shares: &ParticipantSignatureShares,
     ) -> Result<()> {
-        self.0.add_remote_signature_shares(session_id, shares)
+        self.0.add_remote_signature_shares(session_id, shares.clone())
     }
+
+    pub fn ensure_tmp_remote_sign_session(
+        &self,
+        sign_task: WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: Vec<ParticipantBinonces>,
+    ) -> Result<SignSessionId> {
+        self.0
+            .ensure_tmp_remote_sign_session(sign_task, access_structure_ref, &all_binonces)
+    }
+
 }
 
 #[derive(Clone, Debug)]

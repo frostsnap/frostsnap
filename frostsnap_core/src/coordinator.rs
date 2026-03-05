@@ -47,6 +47,23 @@ pub struct FrostCoordinator {
     pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
 }
 
+/// The key data needed for signing: the shared key and its purpose.
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub struct KeyContext {
+    pub app_shared_key: Xpub<SharedKey>,
+    pub purpose: KeyPurpose,
+}
+
+impl KeyContext {
+    pub fn master_appkey(&self) -> MasterAppkey {
+        MasterAppkey::from_xpub_unchecked(&self.app_shared_key)
+    }
+
+    pub fn threshold(&self) -> usize {
+        self.app_shared_key.key.threshold()
+    }
+}
+
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct CoordFrostKey {
     pub key_id: KeyId,
@@ -949,6 +966,7 @@ impl FrostCoordinator {
     pub fn clear_tmp_data(&mut self) {
         self.pending_keygens.clear();
         self.restoration.clear_tmp_data();
+        self.signing.tmp_remote_sign_sessions.clear();
     }
 
     pub fn knows_about_share(

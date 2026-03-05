@@ -10,6 +10,7 @@ import 'package:frostsnap/device_action.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/sign_message.dart';
+import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -165,8 +166,8 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _connect() async {
     _client = await NostrClient.connect();
     final frostKey = coord.getFrostKey(keyId: widget.keyId);
-    final threshold = frostKey?.accessStructures()[0].threshold() ?? 2;
-    final stream = _client!.connectToChannel(keyId: widget.keyId, threshold: threshold);
+    final asRef = frostKey!.accessStructures()[0].accessStructureRef();
+    final stream = _client!.connectToChannel(coord: coord, accessStructureRef: asRef);
     _subscription = stream.listen(_handleEvent);
   }
 
@@ -443,6 +444,7 @@ class _ChatPageState extends State<ChatPage> {
           TimelineSigningComplete(:final requestState) =>
             _SigningCompleteCard(
               details: signingDetailsText(requestState.request.signingDetails),
+              onShowSignature: () => _completeAndShowSignature(requestState),
             ),
           TimelineError() => SigningErrorCard(
             text: item.reason,
@@ -521,16 +523,26 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  String _signingMessagePreview(NostrEventId requestId) {
+    final state = _signingRequests[requestId];
+    if (state == null) return '?';
+    final text = signingDetailsText(state.request.signingDetails);
+    return text.length > 30 ? '${text.substring(0, 30)}...' : text;
+  }
+
   Widget _buildOfferCard(FfiSigningEvent_Offer offer) {
     final isMe =
         _myPubkey != null && offer.author.equals(other: _myPubkey!);
+    final preview = _signingMessagePreview(offer.requestId);
     return _SigningEventLine(
       profile: _getProfile(offer.author),
       author: offer.author,
       isMe: isMe,
-      text: 'offered to sign with key #${offer.shareIndex}',
+      label: 'offered to sign',
+      messagePill: preview,
+      suffix: 'with key #${offer.shareIndex}',
       timestamp: DateTime.fromMillisecondsSinceEpoch(offer.timestamp * 1000),
-      onTapReference: () => _scrollToAndHighlight(offer.requestId),
+      onTapPill: () => _scrollToAndHighlight(offer.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(offer.author),
     );
   }
@@ -538,13 +550,15 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildPartialCard(FfiSigningEvent_Partial partial) {
     final isMe =
         _myPubkey != null && partial.author.equals(other: _myPubkey!);
+    final preview = _signingMessagePreview(partial.requestId);
     return _SigningEventLine(
       profile: _getProfile(partial.author),
       author: partial.author,
       isMe: isMe,
-      text: 'signed',
+      label: 'signed',
+      messagePill: preview,
       timestamp: DateTime.fromMillisecondsSinceEpoch(partial.timestamp * 1000),
-      onTapReference: () => _scrollToAndHighlight(partial.requestId),
+      onTapPill: () => _scrollToAndHighlight(partial.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(partial.author),
     );
   }
@@ -606,9 +620,7 @@ class _ChatPageState extends State<ChatPage> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to offer to sign: $e')),
-        );
+        showErrorSnackbar(context, 'Failed to offer to sign: $e');
       }
     }
   }
@@ -684,9 +696,25 @@ class _ChatPageState extends State<ChatPage> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Signing failed: $e')),
-        );
+        showErrorSnackbar(context, 'Signing failed: $e');
+      }
+    }
+  }
+
+  Future<void> _completeAndShowSignature(SigningRequestState state) async {
+    final sealed = state.sealedData;
+    if (sealed == null) return;
+
+    try {
+      final signatures = sealed.combineSignatures(
+        allShares: state.partials.values.map((p) => p.shares).toList(),
+      );
+      if (signatures.isNotEmpty && mounted) {
+        await showSignatureDialog(context, signatures[0]);
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackbar(context, 'Failed to complete signing: $e');
       }
     }
   }
@@ -801,9 +829,7 @@ class _ChatPageState extends State<ChatPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send: $e')),
-        );
+        showErrorSnackbar(context, 'Failed to send: $e');
       }
     }
     _inputFocusNode.requestFocus();
@@ -1523,18 +1549,22 @@ class _SigningEventLine extends StatelessWidget {
   final FfiNostrProfile? profile;
   final PublicKey author;
   final bool isMe;
-  final String text;
+  final String label;
+  final String messagePill;
+  final String? suffix;
   final DateTime timestamp;
-  final VoidCallback? onTapReference;
+  final VoidCallback? onTapPill;
   final VoidCallback? onTapAvatar;
 
   const _SigningEventLine({
     required this.profile,
     required this.author,
     required this.isMe,
-    required this.text,
+    required this.label,
+    required this.messagePill,
+    this.suffix,
     required this.timestamp,
-    this.onTapReference,
+    this.onTapPill,
     this.onTapAvatar,
   });
 
@@ -1544,6 +1574,11 @@ class _SigningEventLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final eventStyle = theme.textTheme.bodySmall?.copyWith(
+      fontStyle: FontStyle.italic,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
@@ -1559,35 +1594,38 @@ class _SigningEventLine extends StatelessWidget {
               const SizedBox(width: 8),
             ],
             Flexible(
-              child: Text(
-                text,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontStyle: FontStyle.italic,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: '$label ', style: eventStyle),
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: onTapPill,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            messagePill,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (suffix != null)
+                    TextSpan(text: ' $suffix', style: eventStyle),
+                ]),
               ),
             ),
-            if (onTapReference != null) ...[
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: onTapReference,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: theme.colorScheme.outlineVariant,
-                      width: 1,
-                    ),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Icon(
-                    Icons.north,
-                    size: 10,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
             const SizedBox(width: 6),
             Text(
               _formatTime(timestamp),
@@ -1605,14 +1643,18 @@ class _SigningEventLine extends StatelessWidget {
 
 class _SigningCompleteCard extends StatelessWidget {
   final String details;
+  final VoidCallback? onShowSignature;
 
-  const _SigningCompleteCard({required this.details});
+  const _SigningCompleteCard({
+    required this.details,
+    this.onShowSignature,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: Alignment.center,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1647,16 +1689,13 @@ class _SigningCompleteCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.copy, size: 18),
-              tooltip: 'Copy',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: details));
-              },
-            ),
+            if (onShowSignature != null) ...[
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: onShowSignature,
+                child: const Text('Show Signature'),
+              ),
+            ],
           ],
         ),
       ),

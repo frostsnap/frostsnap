@@ -1,9 +1,11 @@
-use crate::frb_generated::StreamSink;
+use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::sink_wrap::SinkWrap;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 use frostsnap_core::{
-    coordinator::ParticipantBinonces, AccessStructureRef, KeyId, SignSessionId, WireSignTask,
+    coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
+    message::EncodedSignature,
+    AccessStructureRef, KeyId, SignSessionId, WireSignTask,
 };
 use frostsnap_nostr::{
     ChannelClient, ChannelHandle, Client, Keys, NostrDatabaseExt, NostrLMDB, NostrProfile,
@@ -247,14 +249,27 @@ impl NostrClient {
 
     /// Connect to a channel for chat/signing coordination.
     /// Events are streamed to the sink. Use send_message to interact.
-    /// `threshold` is the number of signers needed (from the access structure).
     pub async fn connect_to_channel(
         &self,
-        key_id: KeyId,
-        threshold: u32,
+        coord: &super::coordinator::Coordinator,
+        access_structure_ref: AccessStructureRef,
         sink: StreamSink<FfiChannelEvent>,
     ) {
-        let channel_client = ChannelClient::new(&key_id, threshold as usize);
+        let signing_key = {
+            let inner = coord.0.inner();
+            let key_data = inner
+                .get_frost_key(access_structure_ref.key_id)
+                .expect("key must exist");
+            let access_structure = key_data
+                .get_access_structure(access_structure_ref.access_structure_id)
+                .expect("access structure must exist");
+            KeyContext {
+                app_shared_key: access_structure.app_shared_key(),
+                purpose: key_data.purpose,
+            }
+        };
+        let key_id = access_structure_ref.key_id;
+        let channel_client = ChannelClient::new(signing_key);
         let handle = match channel_client
             .run(self.client.clone(), SinkWrap(sink))
             .await
@@ -554,8 +569,7 @@ pub enum FfiChannelEvent {
     },
 }
 
-/// Opaque bundle of chain data needed to promote a sealed signing session.
-/// Dart holds this and passes it to `Coordinator.promoteSealedSigningSession`.
+/// Opaque bundle of chain data needed to combine signatures standalone.
 #[frb(opaque)]
 #[derive(Debug, Clone)]
 pub struct SealedSigningData(pub(crate) SigningChain);
@@ -586,6 +600,24 @@ impl SealedSigningData {
         )
         .session_id()
     }
+
+    #[frb(sync)]
+    pub fn combine_signatures(
+        &self,
+        all_shares: Vec<RustAutoOpaque<ParticipantSignatureShares>>,
+    ) -> anyhow::Result<Vec<EncodedSignature>> {
+        let guards: Vec<_> = all_shares
+            .iter()
+            .map(|s: &RustAutoOpaque<ParticipantSignatureShares>| s.blocking_read())
+            .collect();
+        let share_refs: Vec<&ParticipantSignatureShares> = guards.iter().map(|g| &**g).collect();
+        Ok(frostsnap_core::coordinator::signing::combine_signatures(
+            self.0.sign_task.clone(),
+            &self.0.signing_key,
+            &self.0.binonces,
+            &share_refs,
+        )?)
+    }
 }
 
 #[frb(non_opaque)]
@@ -612,6 +644,8 @@ pub enum FfiSigningEvent {
         event_id: NostrEventId,
         author: PublicKey,
         request_id: NostrEventId,
+        session_id: SignSessionId,
+        shares: frostsnap_core::coordinator::ParticipantSignatureShares,
         timestamp: u64,
     },
 }
@@ -707,12 +741,15 @@ impl From<ChannelEvent> for FfiChannelEvent {
                                 event_id,
                                 author,
                                 request_id,
+                                session_id,
+                                signature_shares,
                                 timestamp,
-                                ..
                             } => FfiSigningEvent::Partial {
                                 event_id: event_id.into(),
                                 author,
                                 request_id: request_id.into(),
+                                session_id,
+                                shares: signature_shares,
                                 timestamp,
                             },
                         })

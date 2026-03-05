@@ -48,8 +48,12 @@ pub enum SigningMutation {
         id: NonceReservationId,
         reservation: NonceReservation,
     },
+    CancelNonceReservation {
+        id: NonceReservationId,
+    },
     ConsumeNonceReservation {
         id: NonceReservationId,
+        n_signatures: usize,
     },
 }
 
@@ -67,6 +71,7 @@ impl SigningMutation {
                 Some(coord.get_sign_session(*session_id)?.key_id())
             }
             SigningMutation::NewNonceReservation { .. }
+            | SigningMutation::CancelNonceReservation { .. }
             | SigningMutation::ConsumeNonceReservation { .. } => None,
         }
     }
@@ -374,6 +379,115 @@ impl fmt::Display for SignShareError {
 #[cfg(feature = "std")]
 impl std::error::Error for SignShareError {}
 
+#[derive(Debug, Clone)]
+pub enum CombineSignatureError {
+    SignTask(SignTaskError),
+    NotEnoughShares { got: usize, threshold: usize },
+    WrongNumberOfShares { got: usize, expected: usize },
+    InvalidShare,
+}
+
+impl fmt::Display for CombineSignatureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CombineSignatureError::SignTask(e) => write!(f, "{e}"),
+            CombineSignatureError::NotEnoughShares { got, threshold } => {
+                write!(f, "not enough shares: got {got}, need {threshold}")
+            }
+            CombineSignatureError::WrongNumberOfShares { got, expected } => {
+                write!(f, "wrong number of shares: got {got}, expected {expected}")
+            }
+            CombineSignatureError::InvalidShare => write!(f, "invalid signature share"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for CombineSignatureError {}
+
+/// Combine FROST signature shares into final signatures without any coordinator state.
+pub fn combine_signatures(
+    sign_task: crate::WireSignTask,
+    signing_key: &super::KeyContext,
+    all_binonces: &[ParticipantBinonces],
+    all_shares: &[&ParticipantSignatureShares],
+) -> Result<Vec<EncodedSignature>, CombineSignatureError> {
+    let app_shared_key = &signing_key.app_shared_key;
+    let checked_sign_task = sign_task
+        .check(signing_key.master_appkey(), signing_key.purpose)
+        .map_err(CombineSignatureError::SignTask)?;
+    let sign_items = checked_sign_task.sign_items();
+    let n_signatures = sign_items.len();
+
+    let frost = frost::new_without_nonce_generation::<sha2::Sha256>();
+
+    let sessions: Vec<SignSessionProgress> = sign_items
+        .iter()
+        .enumerate()
+        .map(|(i, sign_item)| {
+            let indexed_nonces = all_binonces
+                .iter()
+                .map(|p| (p.share_index, p.binonces[i]))
+                .collect();
+
+            SignSessionProgress::new_deterministic(
+                &frost,
+                app_shared_key.clone(),
+                sign_item.clone(),
+                indexed_nonces,
+            )
+        })
+        .collect();
+
+    let threshold = app_shared_key.key.threshold();
+    if all_shares.len() < threshold {
+        return Err(CombineSignatureError::NotEnoughShares {
+            got: all_shares.len(),
+            threshold,
+        });
+    }
+
+    for shares in all_shares {
+        if shares.signature_shares.len() != n_signatures {
+            return Err(CombineSignatureError::WrongNumberOfShares {
+                got: shares.signature_shares.len(),
+                expected: n_signatures,
+            });
+        }
+
+        for (session, signature_share) in sessions.iter().zip(&shares.signature_shares) {
+            let xonly_frost_key = session.tweaked_frost_key();
+            if session
+                .sign_session
+                .verify_signature_share(
+                    xonly_frost_key.verification_share(shares.share_index),
+                    *signature_share,
+                )
+                .is_err()
+            {
+                return Err(CombineSignatureError::InvalidShare);
+            }
+        }
+    }
+
+    let schnorr = Schnorr::<sha2::Sha256, _>::verify_only();
+    let signatures = sessions
+        .iter()
+        .enumerate()
+        .map(|(i, session)| {
+            let shares = all_shares.iter().map(|p| p.signature_shares[i]);
+            let sig = session.sign_session.combine_signature_shares(shares);
+            assert!(
+                session.verify_final_signature(&schnorr, &sig),
+                "verified shares so combined signature must be valid"
+            );
+            EncodedSignature::new(sig)
+        })
+        .collect();
+
+    Ok(signatures)
+}
+
 // ============================================================================
 // State
 // ============================================================================
@@ -385,9 +499,24 @@ pub struct State {
     pub(super) active_sign_session_order: Vec<SignSessionId>,
     pub(super) finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
     pub(super) nonce_cache: crate::coord_nonces::NonceCache,
+    /// In-memory only signing sessions for remote signing. Not persisted via mutations —
+    /// cleared on restart. Nonces are consumed eagerly via `ConsumeNonceReservation`.
+    pub(super) tmp_remote_sign_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
 }
 
 impl State {
+    pub fn get_any_session(&self, id: &SignSessionId) -> Option<&ActiveSignSession> {
+        self.active_signing_sessions
+            .get(id)
+            .or_else(|| self.tmp_remote_sign_sessions.get(id))
+    }
+
+    fn get_any_session_mut(&mut self, id: &SignSessionId) -> Option<&mut ActiveSignSession> {
+        self.active_signing_sessions
+            .get_mut(id)
+            .or_else(|| self.tmp_remote_sign_sessions.get_mut(id))
+    }
+
     pub fn apply_mutation_signing(&mut self, mutation: SigningMutation) -> Option<SigningMutation> {
         match mutation {
             SigningMutation::NewNonces {
@@ -417,7 +546,7 @@ impl State {
                 device_id,
                 ref signature_shares,
             } => {
-                if let Some(session_state) = self.active_signing_sessions.get_mut(&session_id) {
+                if let Some(session_state) = self.get_any_session_mut(&session_id) {
                     for (progress, share) in session_state.progress.iter_mut().zip(signature_shares)
                     {
                         progress.signature_shares.insert(device_id, *share);
@@ -429,8 +558,7 @@ impl State {
                 device_id,
             } => {
                 if !self
-                    .active_signing_sessions
-                    .get_mut(&session_id)?
+                    .get_any_session_mut(&session_id)?
                     .sent_req_to_device
                     .insert(device_id)
                 {
@@ -441,36 +569,41 @@ impl State {
                 session_id,
                 ref finished,
             } => {
-                let (index, _) = self
+                if let Some((index, _)) = self
                     .active_sign_session_order
                     .iter()
                     .enumerate()
-                    .find(|(_, ssid)| **ssid == session_id)?;
-                self.active_sign_session_order.remove(index);
-                let session_state = self
-                    .active_signing_sessions
-                    .remove(&session_id)
-                    .expect("it existed in the order");
-                let n_sigs = session_state.init.group_request.n_signatures();
-                for (device_id, nonce_segment) in &session_state.init.local_nonces {
-                    if session_state.sent_req_to_device.contains(device_id) {
-                        let consume_to = nonce_segment
-                            .index
-                            .checked_add(n_sigs as _)
-                            .expect("no overflow");
-                        self.nonce_cache
-                            .consume(*device_id, nonce_segment.stream_id, consume_to);
+                    .find(|(_, ssid)| **ssid == session_id)
+                {
+                    self.active_sign_session_order.remove(index);
+                    let session_state = self
+                        .active_signing_sessions
+                        .remove(&session_id)
+                        .expect("it existed in the order");
+                    let n_sigs = session_state.init.group_request.n_signatures();
+                    for (device_id, nonce_segment) in &session_state.init.local_nonces {
+                        if session_state.sent_req_to_device.contains(device_id) {
+                            let consume_to = nonce_segment
+                                .index
+                                .checked_add(n_sigs as _)
+                                .expect("no overflow");
+
+                            self.nonce_cache
+                                .consume(*device_id, nonce_segment.stream_id, consume_to);
+                        }
                     }
-                }
-                if let Some(signatures) = finished {
-                    self.finished_signing_sessions.insert(
-                        session_id,
-                        FinishedSignSession {
-                            init: session_state.init,
-                            signatures: signatures.clone(),
-                            key_id: session_state.key_id,
-                        },
-                    );
+                    if let Some(signatures) = finished {
+                        self.finished_signing_sessions.insert(
+                            session_id,
+                            FinishedSignSession {
+                                init: session_state.init,
+                                signatures: signatures.clone(),
+                                key_id: session_state.key_id,
+                            },
+                        );
+                    }
+                } else if self.tmp_remote_sign_sessions.remove(&session_id).is_none() {
+                    return None;
                 }
             }
             SigningMutation::ForgetFinishedSignSession { session_id } => {
@@ -482,8 +615,21 @@ impl State {
             } => {
                 self.nonce_reservations.insert(id, reservation.clone());
             }
-            SigningMutation::ConsumeNonceReservation { id } => {
+            SigningMutation::CancelNonceReservation { id } => {
                 self.nonce_reservations.remove(&id);
+            }
+            SigningMutation::ConsumeNonceReservation { id, n_signatures } => {
+                let reservation = self.nonce_reservations.remove(&id)?;
+                let consume_to = reservation
+                    .nonce_state
+                    .index
+                    .checked_add(n_signatures as u32)
+                    .expect("no overflow");
+                self.nonce_cache.consume(
+                    reservation.device_id,
+                    reservation.nonce_state.stream_id,
+                    consume_to,
+                );
             }
         }
 
@@ -511,6 +657,8 @@ impl State {
         }
 
         self.finished_signing_sessions
+            .retain(|_, session| session.key_id != key_id);
+        self.tmp_remote_sign_sessions
             .retain(|_, session| session.key_id != key_id);
     }
 
@@ -672,8 +820,7 @@ impl FrostCoordinator {
     ) -> RequestDeviceSign {
         let active_sign_session = self
             .signing
-            .active_signing_sessions
-            .get(&session_id)
+            .get_any_session(&session_id)
             .expect("signing session doesn't exist");
 
         let nonces_for_device = *active_sign_session
@@ -719,7 +866,7 @@ impl FrostCoordinator {
         &mut self,
         session_id: SignSessionId,
     ) -> Option<Vec<EncodedSignature>> {
-        let sign_state = self.signing.active_signing_sessions.get(&session_id)?;
+        let sign_state = self.signing.get_any_session(&session_id)?;
         let sessions = &sign_state.progress;
 
         let all_finished = sessions.iter().all(|session| {
@@ -812,6 +959,13 @@ impl FrostCoordinator {
         }
     }
 
+    pub fn get_active_sign_session(
+        &self,
+        session_id: SignSessionId,
+    ) -> Option<&ActiveSignSession> {
+        self.signing.get_any_session(&session_id)
+    }
+
     pub fn active_signing_sessions_by_ssid(&self) -> &BTreeMap<SignSessionId, ActiveSignSession> {
         &self.signing.active_signing_sessions
     }
@@ -861,8 +1015,7 @@ impl FrostCoordinator {
             } => {
                 let active_sign_session = self
                     .signing
-                    .active_signing_sessions
-                    .get(&session_id)
+                    .get_any_session(&session_id)
                     .expect("invariant");
                 let sessions = &active_sign_session.progress;
                 let n_signatures = sessions.len();
@@ -997,7 +1150,7 @@ impl FrostCoordinator {
     pub fn cancel_nonce_reservation(&mut self, binonces: &[schnorr_fun::binonce::Nonce]) {
         let id = NonceReservationId::from_binonces(binonces);
         self.mutate(Mutation::Signing(
-            SigningMutation::ConsumeNonceReservation { id },
+            SigningMutation::CancelNonceReservation { id },
         ));
     }
 
@@ -1041,13 +1194,10 @@ impl FrostCoordinator {
         }
 
         // Check if session already exists with this device as local signer
-        let group_request = GroupSignReq::from_binonces(
-            sign_task.clone(),
-            access_structure_id,
-            all_binonces,
-        );
+        let group_request =
+            GroupSignReq::from_binonces(sign_task.clone(), access_structure_id, all_binonces);
         let session_id = group_request.session_id();
-        if let Some(session) = self.signing.active_signing_sessions.get(&session_id) {
+        if let Some(session) = self.signing.get_any_session(&session_id) {
             return session.init.local_nonces.contains_key(&device_id);
         }
 
@@ -1084,8 +1234,7 @@ impl FrostCoordinator {
             return Err(StartSignError::DeviceNotLocalSigner { device_id });
         }
 
-        let session_id =
-            self.ensure_sign_session(sign_task, access_structure_ref, all_binonces)?;
+        let session_id = self.ensure_sign_session(sign_task, access_structure_ref, all_binonces)?;
         Ok(self.request_device_sign(session_id, device_id, encryption_key))
     }
 
@@ -1105,11 +1254,7 @@ impl FrostCoordinator {
         let session_id = group_request.session_id();
 
         // ⚡ Idempotent: return existing session
-        if self
-            .signing
-            .active_signing_sessions
-            .contains_key(&session_id)
-        {
+        if self.signing.get_any_session(&session_id).is_some() {
             return Ok(session_id);
         }
 
@@ -1183,9 +1328,10 @@ impl FrostCoordinator {
             sent_req_to_device: Default::default(),
         };
 
+        let n_signatures = sign_items.len();
         for id in consumed_reservations {
             self.mutate(Mutation::Signing(
-                SigningMutation::ConsumeNonceReservation { id },
+                SigningMutation::ConsumeNonceReservation { id, n_signatures },
             ));
         }
         self.mutate(Mutation::Signing(SigningMutation::NewSigningSession(
@@ -1195,12 +1341,115 @@ impl FrostCoordinator {
         Ok(session_id)
     }
 
+    /// Like `ensure_sign_session` but stores the session in-memory only (not persisted).
+    /// Nonce reservations are consumed eagerly. On restart the session is gone but the nonces
+    /// are permanently consumed, preventing reuse.
+    pub fn ensure_tmp_remote_sign_session(
+        &mut self,
+        sign_task: crate::WireSignTask,
+        access_structure_ref: AccessStructureRef,
+        all_binonces: &[ParticipantBinonces],
+    ) -> Result<SignSessionId, StartSignError> {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+
+        let group_request =
+            GroupSignReq::from_binonces(sign_task.clone(), access_structure_id, all_binonces);
+        let session_id = group_request.session_id();
+
+        if self.signing.get_any_session(&session_id).is_some() {
+            return Ok(session_id);
+        }
+
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or(StartSignError::UnknownKey { key_id })?
+            .clone();
+
+        let access_structure = key_data
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or(StartSignError::NoSuchAccessStructure)?;
+
+        let app_shared_key = access_structure.app_shared_key().clone();
+        let threshold = access_structure.threshold();
+
+        if all_binonces.len() < threshold as usize {
+            return Err(StartSignError::NotEnoughDevicesSelected {
+                selected: all_binonces.len(),
+                threshold,
+            });
+        }
+
+        let checked_sign_task = sign_task
+            .check(key_data.complete_key.master_appkey, key_data.purpose)
+            .map_err(StartSignError::SignTask)?;
+        let sign_items = checked_sign_task.sign_items();
+
+        let frost = frost::new_without_nonce_generation::<Sha256>();
+        let sessions: Vec<SignSessionProgress> = sign_items
+            .iter()
+            .enumerate()
+            .map(|(i, sign_item)| {
+                let indexed_nonces = all_binonces
+                    .iter()
+                    .map(|p| (p.share_index, p.binonces[i]))
+                    .collect();
+
+                SignSessionProgress::new_deterministic(
+                    &frost,
+                    app_shared_key.clone(),
+                    sign_item.clone(),
+                    indexed_nonces,
+                )
+            })
+            .collect();
+
+        let mut local_nonces: BTreeMap<DeviceId, CoordNonceStreamState> = BTreeMap::new();
+
+        let n_signatures = sign_items.len();
+        for participant in all_binonces {
+            let reservation_id = NonceReservationId::from_binonces(&participant.binonces);
+            if let Some(reservation) = self.signing.nonce_reservations.get(&reservation_id) {
+                local_nonces.insert(reservation.device_id, reservation.nonce_state);
+                self.mutate(Mutation::Signing(
+                    SigningMutation::ConsumeNonceReservation {
+                        id: reservation_id,
+                        n_signatures,
+                    },
+                ));
+            }
+        }
+
+        let start_sign = StartSign {
+            local_nonces,
+            group_request,
+        };
+
+        let active_session = ActiveSignSession {
+            progress: sessions,
+            init: start_sign,
+            key_id,
+            sent_req_to_device: Default::default(),
+        };
+
+        self.signing
+            .tmp_remote_sign_sessions
+            .insert(session_id, active_session);
+
+        Ok(session_id)
+    }
+
     /// Get all signature shares from an active session, bundled with their share indices.
     pub fn get_signature_shares(
         &self,
         session_id: SignSessionId,
     ) -> Option<Vec<ParticipantSignatureShares>> {
-        let session = self.signing.active_signing_sessions.get(&session_id)?;
+        let session = self.signing.get_any_session(&session_id)?;
         let access_structure_ref = session.access_structure_ref();
         let access_structure = self.get_access_structure(access_structure_ref)?;
 
@@ -1226,7 +1475,7 @@ impl FrostCoordinator {
         session_id: SignSessionId,
         device_id: DeviceId,
     ) -> Option<ParticipantSignatureShares> {
-        let session = self.signing.active_signing_sessions.get(&session_id)?;
+        let session = self.signing.get_any_session(&session_id)?;
         if !session.received_from().any(|d| d == device_id) {
             return None;
         }
@@ -1252,8 +1501,7 @@ impl FrostCoordinator {
     ) -> Result<(), SignShareError> {
         let session = self
             .signing
-            .active_signing_sessions
-            .get(&session_id)
+            .get_any_session(&session_id)
             .ok_or(SignShareError::UnknownSession)?;
 
         let access_structure_ref = session.access_structure_ref();

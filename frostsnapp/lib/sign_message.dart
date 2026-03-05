@@ -206,7 +206,7 @@ Future<bool> signMessageWorkflowDialog(
     Text("signing ‘$message’"),
   );
   if (signatures != null && context.mounted) {
-    await _showSignatureDialog(context, signatures[0]);
+    await showSignatureDialog(context, signatures[0]);
   }
   return signatures == null;
 }
@@ -267,7 +267,7 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
   return result;
 }
 
-Future<void> _showSignatureDialog(
+Future<void> showSignatureDialog(
   BuildContext context,
   EncodedSignature signature,
 ) {

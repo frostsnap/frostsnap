@@ -9,8 +9,8 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{
-    coordinator::{ParticipantBinonces, ParticipantSignatureShares},
-    AccessStructureRef, KeyId, SignSessionId, WireSignTask,
+    coordinator::{ParticipantBinonces, ParticipantSignatureShares, KeyContext},
+    AccessStructureRef, SignSessionId, WireSignTask,
 };
 use nostr_sdk::{
     nips::nip44::v2::{self, ConversationKey},
@@ -56,6 +56,7 @@ pub struct SigningChain {
     pub sign_task: WireSignTask,
     pub access_structure_ref: AccessStructureRef,
     pub binonces: Vec<ParticipantBinonces>,
+    pub signing_key: KeyContext,
 }
 
 impl SigningEventTree {
@@ -90,7 +91,11 @@ impl SigningEventTree {
     }
 
     /// Walk from `start_id` back through the chain of offers to the root request.
-    pub fn walk_chain(&self, start_id: EventId) -> Result<SigningChain, String> {
+    fn walk_chain(
+        &self,
+        start_id: EventId,
+        signing_key: &KeyContext,
+    ) -> Result<SigningChain, String> {
         let mut collected = Vec::new();
         let mut current = start_id;
 
@@ -106,6 +111,7 @@ impl SigningEventTree {
                         sign_task: sign_task.clone(),
                         access_structure_ref: *access_structure_ref,
                         binonces: collected,
+                        signing_key: signing_key.clone(),
                     });
                 }
                 Some(CachedSigningData::Offer {
@@ -130,14 +136,14 @@ impl SigningEventTree {
 /// Client for connecting to and communicating on a Nostr channel.
 pub struct ChannelClient {
     channel_keys: ChannelKeys,
-    threshold: usize,
+    signing_key: KeyContext,
 }
 
 impl ChannelClient {
-    /// Create a new channel client for the given key_id and threshold.
-    pub fn new(key_id: &KeyId, threshold: usize) -> Self {
-        let channel_keys = ChannelKeys::from_key_id(key_id);
-        Self { channel_keys, threshold }
+    pub fn new(signing_key: KeyContext) -> Self {
+        let key_id = signing_key.master_appkey().key_id();
+        let channel_keys = ChannelKeys::from_key_id(&key_id);
+        Self { channel_keys, signing_key }
     }
 
     /// Start receiving channel events using the provided client.
@@ -176,7 +182,7 @@ impl ChannelClient {
                 &event,
                 &conversation_key,
                 &signing_events,
-                self.threshold,
+                &self.signing_key,
             );
             if let ChannelEvent::ChatMessage { ref author, .. } = channel_event {
                 if !members.contains_key(author) {
@@ -207,7 +213,7 @@ impl ChannelClient {
         let sync_sink = sink.clone();
         let sync_conversation_key = conversation_key.clone();
         let sync_cache = signing_events.clone();
-        let sync_threshold = self.threshold;
+        let sync_signing_key = self.signing_key.clone();
         tokio::spawn(async move {
             let sync_opts = SyncOptions::default();
             if let Err(e) = sync_client.sync(sync_filter.clone(), &sync_opts).await {
@@ -227,7 +233,7 @@ impl ChannelClient {
                             &event,
                             &sync_conversation_key,
                             &sync_cache,
-                            sync_threshold,
+                            &sync_signing_key,
                         );
                         sync_sink.send(channel_event);
                         new_count += 1;
@@ -242,8 +248,8 @@ impl ChannelClient {
 
         let client_for_task = client.clone();
         let channel_keys_for_task = self.channel_keys.clone();
-        let threshold = self.threshold;
         let task_signing_events = signing_events.clone();
+        let task_signing_key = self.signing_key.clone();
 
         tokio::spawn(async move {
             let mut notifications = client_for_task.notifications();
@@ -289,7 +295,7 @@ impl ChannelClient {
                                 let channel_event = process_signing_inner_event(
                                     &inner_event,
                                     &task_signing_events,
-                                    threshold,
+                                    &task_signing_key,
                                 );
                                 sink.send(channel_event);
                                 if let Err(e) = send_prepared_message(
@@ -314,7 +320,7 @@ impl ChannelClient {
                                     &event,
                                     &conversation_key,
                                     &task_signing_events,
-                                    threshold,
+                                    &task_signing_key,
                                 );
                                 if let ChannelEvent::ChatMessage { ref author, .. } = channel_event {
                                     if !members.contains_key(author) {
@@ -567,7 +573,7 @@ fn decode_bincode<T: bincode::Decode<()>>(inner_event: &Event) -> Result<T> {
 fn process_signing_inner_event(
     inner_event: &Event,
     signing_events: &Mutex<SigningEventTree>,
-    threshold: usize,
+    signing_key: &KeyContext,
 ) -> ChannelEvent {
     let event_id = inner_event.id;
     let author = inner_event.pubkey;
@@ -622,7 +628,7 @@ fn process_signing_inner_event(
 
             let chain = {
                 let mut cache = signing_events.lock().unwrap();
-                let chain = match cache.walk_chain(parent_id) {
+                let chain = match cache.walk_chain(parent_id, signing_key) {
                     Ok(c) => c,
                     Err(reason) => {
                         return ChannelEvent::Error {
@@ -645,12 +651,13 @@ fn process_signing_inner_event(
             let mut seen_indices = std::collections::BTreeSet::new();
             all_binonces.retain(|b| seen_indices.insert(b.share_index));
 
-            let sealed = if seen_indices.len() >= threshold {
+            let sealed = if seen_indices.len() >= signing_key.threshold() {
                 Some(SigningChain {
                     request_id,
                     sign_task: chain.sign_task,
                     access_structure_ref: chain.access_structure_ref,
                     binonces: all_binonces,
+                    signing_key: signing_key.clone(),
                 })
             } else {
                 None
@@ -698,7 +705,7 @@ fn process_event(
     outer_event: &Event,
     conversation_key: &ConversationKey,
     signing_events: &Mutex<SigningEventTree>,
-    threshold: usize,
+    signing_key: &KeyContext,
 ) -> ChannelEvent {
     let inner_event = match decrypt_inner_event(outer_event, conversation_key) {
         Ok(e) => e,
@@ -729,7 +736,7 @@ fn process_event(
             pending: false,
         }
     } else if kind == KIND_FROSTSNAP_SIGNING {
-        process_signing_inner_event(&inner_event, signing_events, threshold)
+        process_signing_inner_event(&inner_event, signing_events, signing_key)
     } else {
         tracing::warn!(event_id = %event_id, kind = ?kind, "unknown inner event kind");
         ChannelEvent::Error {

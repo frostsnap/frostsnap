@@ -307,8 +307,12 @@ fn test_all_coordinator_mutations() {
                 },
             },
         }),
+        Mutation::Signing(SigningMutation::CancelNonceReservation {
+            id: NonceReservationId::from_binonces(&[test_nonce]),
+        }),
         Mutation::Signing(SigningMutation::ConsumeNonceReservation {
             id: NonceReservationId::from_binonces(&[test_nonce]),
+            n_signatures: 1,
         }),
     ];
 
@@ -433,6 +437,12 @@ fn test_all_coordinator_mutations() {
                 );
             }
             Mutation::Signing(SigningMutation::NewNonceReservation { .. }) => {
+                let encoded =
+                    bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
+                let hex = frostsnap_core::hex::encode(&encoded);
+                assert_bincode_hex_eq!(mutation, &hex);
+            }
+            Mutation::Signing(SigningMutation::CancelNonceReservation { .. }) => {
                 let encoded =
                     bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
                 let hex = frostsnap_core::hex::encode(&encoded);
