@@ -1,16 +1,15 @@
 use crate::circle_button_data;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::vec_framebuffer::VecFramebuffer;
-use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*};
+use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*, ColorInterpolate, Frac};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    image::Image,
-    pixelcolor::Rgb565,
+    pixelcolor::{Gray8, GrayColor, Rgb565},
     prelude::*,
     primitives::Rectangle,
 };
-use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
+use tinybmp::Bmp;
 
 // Circle dimensions
 const CIRCLE_RADIUS: u32 = 50;
@@ -43,11 +42,31 @@ impl Default for CircleButton {
     }
 }
 
-/// Draw the hand icon centered on a framebuffer
+const TOUCH_ICON_DATA: &[u8] = include_bytes!("../assets/touch-icon-100x100.bmp");
+
+/// Draw the touch icon onto a framebuffer, blending grayscale values between
+/// icon_color (for dark pixels) and the existing framebuffer content (for light pixels).
 fn draw_icon(fb: &mut VecFramebuffer<Rgb565>, icon_color: Rgb565) {
-    let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
-    let icon = OpenSelectHandGesture::new(icon_color);
-    Image::with_center(&icon, center).draw(fb).unwrap();
+    let bmp = Bmp::<Gray8>::from_slice(TOUCH_ICON_DATA).expect("Failed to load touch icon BMP");
+    let icon_size = bmp.size();
+
+    // Center the icon in the circle
+    let offset_x = (CIRCLE_DIAMETER as i32 - icon_size.width as i32) / 2;
+    let offset_y = (CIRCLE_DIAMETER as i32 - icon_size.height as i32) / 2;
+
+    for Pixel(point, gray) in bmp.pixels() {
+        let intensity = gray.luma();
+        if intensity == 255 {
+            continue;
+        }
+        let dest = Point::new(point.x + offset_x, point.y + offset_y);
+        if let Some(bg_color) = fb.get_pixel(dest) {
+            // luma 0 = fully icon_color, luma 255 = fully background (skipped above)
+            let frac = Frac::from_ratio(intensity as u32, 255);
+            let blended = icon_color.interpolate(bg_color, frac);
+            fb.set_pixel(dest, blended);
+        }
+    }
 }
 
 impl CircleButton {
