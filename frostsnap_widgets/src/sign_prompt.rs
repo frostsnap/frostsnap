@@ -1,18 +1,19 @@
 use crate::{
     address_display::AddressDisplay, any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay,
     gray4_style::Gray4TextStyle, page_slider::PageSlider, palette::PALETTE, prelude::*,
-    widget_list::WidgetList, HoldToConfirm,
+    widget_list::WidgetList, GrayToAlpha, HoldToConfirm, Image,
 };
 use alloc::{format, string::ToString};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::Rgb565,
+    pixelcolor::{Gray8, Rgb565},
 };
 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
 };
+use tinybmp::Bmp;
 
 // Font constants to match deviceui version
 const FONT_PAGE_HEADER: &Gray4Font = &NOTO_SANS_18_LIGHT;
@@ -171,12 +172,7 @@ pub struct WarningPage {
     center: Center<
         Column<(
             Row<(
-                crate::icons::IconWidget<
-                    embedded_iconoir::Icon<
-                        Rgb565,
-                        embedded_iconoir::icons::size24px::actions::WarningTriangle,
-                    >,
-                >,
+                Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>,
                 SizedBox<Rgb565>,
                 Column<(SizedBox<Rgb565>, Text<Gray4TextStyle>)>,
             )>,
@@ -190,12 +186,10 @@ pub struct WarningPage {
 
 impl WarningPage {
     fn new(fee_sats: u64, _total_sent: u64) -> Self {
-        use embedded_iconoir::prelude::*;
-
-        // Use IconWidget with embedded_iconoir warning triangle
-        let warning_icon = crate::icons::IconWidget::new(
-            embedded_iconoir::icons::size24px::actions::WarningTriangle::new(PALETTE.warning),
-        );
+        const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
+        let warning_bmp =
+            Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
+        let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
 
         let icon_spacer = SizedBox::<Rgb565>::new(Size::new(5, 1)); // 5px horizontal spacing
 
