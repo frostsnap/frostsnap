@@ -1,9 +1,8 @@
-use frostsnap_core::{
-    coordinator::KeyContext,
-    device::KeyPurpose,
-    AccessStructureId, AccessStructureRef, KeyId, MasterAppkey,
-};
 use frostsnap_core::schnorr_fun::frost::SharedKey;
+use frostsnap_core::{
+    coordinator::KeyContext, device::KeyPurpose, AccessStructureId, AccessStructureRef, KeyId,
+    MasterAppkey,
+};
 use sha2::{Digest, Sha256};
 
 fn prefix_hash(prefix: &'static str, data: &[u8]) -> [u8; 32] {
@@ -23,7 +22,7 @@ pub struct ChannelSecret(pub [u8; 16]);
 impl ChannelSecret {
     pub fn from_access_structure_id(id: &AccessStructureId) -> Self {
         // 🧪 bump counter to create fresh channels during testing
-        let hash = prefix_hash("NOSTR_CHANNEL_SECRET/0", &id.0);
+        let hash = prefix_hash("NOSTR_CHANNEL_SECRET/1", &id.0);
         let mut secret = [0u8; 16];
         secret.copy_from_slice(&hash[..16]);
         ChannelSecret(secret)
@@ -90,8 +89,9 @@ impl ChannelInitData {
     }
 
     pub fn key_context(&self) -> KeyContext {
-        let app_shared_key = frostsnap_core::tweak::Xpub::from_rootkey(self.root_shared_key.clone())
-            .rootkey_to_master_appkey();
+        let app_shared_key =
+            frostsnap_core::tweak::Xpub::from_rootkey(self.root_shared_key.clone())
+                .rootkey_to_master_appkey();
         KeyContext {
             app_shared_key,
             purpose: self.purpose,
@@ -101,13 +101,15 @@ impl ChannelInitData {
 
 /// Parse a `frostsnap://channel/<channel_secret_hex>` link into a ChannelSecret.
 pub fn parse_frostsnap_link(url: &str) -> Result<ChannelSecret, String> {
-    let hex_str = url
-        .strip_prefix("frostsnap://channel/")
-        .ok_or_else(|| "invalid frostsnap link: expected frostsnap://channel/<secret_hex>".to_string())?;
-    let bytes = hex::decode(hex_str)
-        .map_err(|e| format!("invalid hex in frostsnap link: {e}"))?;
+    let hex_str = url.strip_prefix("frostsnap://channel/").ok_or_else(|| {
+        "invalid frostsnap link: expected frostsnap://channel/<secret_hex>".to_string()
+    })?;
+    let bytes = hex::decode(hex_str).map_err(|e| format!("invalid hex in frostsnap link: {e}"))?;
     if bytes.len() != 16 {
-        return Err(format!("invalid channel secret length: expected 16 bytes, got {}", bytes.len()));
+        return Err(format!(
+            "invalid channel secret length: expected 16 bytes, got {}",
+            bytes.len()
+        ));
     }
     let mut arr = [0u8; 16];
     arr.copy_from_slice(&bytes);

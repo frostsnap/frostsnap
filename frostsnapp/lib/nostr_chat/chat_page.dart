@@ -385,6 +385,8 @@ class _ChatPageState extends State<ChatPage> {
       state: state,
       threshold: threshold,
       getDisplayName: _displayName,
+      getProfile: _getProfile,
+      myPubkey: _myPubkey,
       deviceName: deviceName,
       onSign: onSign,
     );
@@ -396,6 +398,7 @@ class _ChatPageState extends State<ChatPage> {
     SigningRequestState? best;
     for (final state in _signingRequests.values) {
       if (state.partials.length >= threshold) continue;
+      if (state.sealedData == null) continue;
       if (best == null || state.timestamp.isAfter(best.timestamp)) {
         best = state;
       }
@@ -403,7 +406,7 @@ class _ChatPageState extends State<ChatPage> {
     return best;
   }
 
-  Widget _buildTimeline(ThemeData theme) {
+  Widget _buildTimeline(ThemeData theme, {bool hasTaskCard = false}) {
     if (_timeline.isEmpty) {
       return Center(
         child: _connectionState is FfiConnectionState_Connected
@@ -417,7 +420,9 @@ class _ChatPageState extends State<ChatPage> {
             : const CircularProgressIndicator(),
       );
     }
-    final topPadding = MediaQuery.of(context).padding.top + kToolbarHeight + 8;
+    final topPadding = hasTaskCard
+        ? 8.0
+        : MediaQuery.of(context).padding.top + kToolbarHeight + 8;
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.fromLTRB(16, topPadding, 16, 16),
@@ -971,23 +976,13 @@ class _ChatPageState extends State<ChatPage> {
       ),
       body: Builder(builder: (context) {
         final activeRequest = _activeSigningRequest;
+        final taskCard = activeRequest != null ? _buildTaskCard(activeRequest) : null;
+
         return Column(
           children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  _buildTimeline(theme),
-                  if (activeRequest != null)
-                    Positioned(
-                      top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
-                      left: 0,
-                      right: 0,
-                      child: _buildTaskCard(activeRequest),
-                    ),
-                ],
-              ),
-            ),
+            Expanded(child: _buildTimeline(theme)),
             _buildMessageInput(),
+            if (taskCard != null) taskCard,
           ],
         );
       }),
@@ -1323,12 +1318,13 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ? theme.colorScheme.primaryContainer
         : theme.colorScheme.surfaceContainerHighest;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.7,
       ),
+      child: AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: widget.isHighlighted
             ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
@@ -1394,7 +1390,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             ),
         ],
       ),
-    );
+    ));
   }
 
   @override

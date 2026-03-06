@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:glowy_borders/glowy_borders.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
@@ -300,14 +299,18 @@ class TransactionTaskCard extends StatelessWidget {
   final String? deviceName;
   final VoidCallback? onSign;
   final String Function(PublicKey) getDisplayName;
+  final FfiNostrProfile? Function(PublicKey) getProfile;
+  final PublicKey? myPubkey;
 
   const TransactionTaskCard({
     super.key,
     required this.state,
     required this.threshold,
     required this.getDisplayName,
+    required this.getProfile,
     this.deviceName,
     this.onSign,
+    this.myPubkey,
   });
 
   @override
@@ -318,81 +321,57 @@ class TransactionTaskCard extends StatelessWidget {
     final checklist = state.offers.values.map((offer) {
       final hasSigned = state.partials.containsKey(offer.author.toHex());
       final name = getDisplayName(offer.author);
+      final profile = getProfile(offer.author);
       return ListTile(
         dense: true,
         visualDensity: VisualDensity.compact,
-        contentPadding: EdgeInsets.zero,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
         title: Text('$name (key #${offer.shareIndex})'),
-        leading: Icon(
+        leading: NostrAvatar.small(profile: profile, pubkey: offer.author),
+        trailing: Icon(
           hasSigned ? Icons.check_circle : Icons.circle_outlined,
           color: hasSigned ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
         ),
       );
     }).toList();
 
-    final card = Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: Icon(Icons.draw, color: theme.colorScheme.primary),
+          title: Text(
+            'Ready to sign',
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            signingDetailsText(state.request.signingDetails),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
           children: [
-            _signingHeader(theme, icon: Icons.draw, title: 'Signing Request'),
-            const SizedBox(height: 6),
-            Text(
-              signingDetailsText(state.request.signingDetails),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium,
-            ),
-            if (checklist.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ...checklist,
-            ],
-            if (canSign) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: onSign,
-                  child: Text('Sign with ${deviceName ?? "device"}'),
+            ...checklist,
+            if (canSign)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Center(
+                  child: FilledButton.icon(
+                    onPressed: onSign,
+                    icon: const Icon(Icons.draw),
+                    label: const Text('Sign'),
+                  ),
                 ),
               ),
-            ],
           ],
         ),
-      ),
-    );
-
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: canSign
-            ? AnimatedGradientBorder(
-                borderSize: 1.0,
-                glowSize: 4.0,
-                animationTime: 6,
-                borderRadius: BorderRadius.circular(12),
-                gradientColors: [
-                  theme.colorScheme.outlineVariant,
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary,
-                  theme.colorScheme.tertiary,
-                ],
-                child: card,
-              )
-            : Container(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: card,
-              ),
       ),
     );
   }
