@@ -253,6 +253,19 @@ impl FfiCoordinator {
                             DeviceChange::NeedsName { id } => {
                                 ui_stack.connected(id, DeviceMode::Blank);
                             }
+                            DeviceChange::GenuineDevice {
+                                id, case_color, ..
+                            } => {
+                                // Set color in memory only — can't persist yet
+                                // because the DB row requires a name and the
+                                // genuine check fires before naming. The color
+                                // gets written to DB when the name is persisted.
+                                device_names
+                                    .lock()
+                                    .unwrap()
+                                    .MUTATE_NO_PERSIST()
+                                    .set_case_color(id, case_color.to_string());
+                            }
                             _ => { /* ignore rest */ }
                         }
                     }
@@ -619,6 +632,20 @@ impl FfiCoordinator {
 
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.device_names.lock().unwrap().get(id)
+    }
+
+    pub fn get_device_case_color(
+        &self,
+        id: DeviceId,
+    ) -> Option<crate::api::device_list::CaseColor> {
+        use std::str::FromStr;
+        let color_str = self.device_names.lock().unwrap().get_case_color(id)?;
+        let comms_color =
+            frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor::from_str(
+                &color_str,
+            )
+            .ok()?;
+        Some(crate::api::device_list::CaseColor::from_comms(comms_color))
     }
 
     pub fn finalize_keygen(

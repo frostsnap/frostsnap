@@ -19,6 +19,7 @@ use frostsnap_core::schnorr_fun::fun::marker::EvenY;
 use frostsnap_core::schnorr_fun::fun::Point;
 use frostsnap_core::sha2::Sha256;
 use frostsnap_core::{sha2, DeviceId, Gist};
+use rand::RngCore;
 use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::RsaPublicKey;
 use sha2::Digest;
@@ -114,6 +115,7 @@ impl UsbSerialManager {
                     changes.push(DeviceChange::Disconnected { id: device_id });
                 }
                 self.registered_devices.remove(&device_id);
+                self.challenges.remove(&device_id);
                 event!(
                     Level::DEBUG,
                     port = port,
@@ -428,6 +430,9 @@ impl UsbSerialManager {
                                                         device_changes.push(
                                                             DeviceChange::GenuineDevice {
                                                                 id: message.from,
+                                                                case_color: certificate_body.case_color(),
+                                                                serial_number: certificate_body.serial_number(),
+                                                                revision: certificate_body.revision().to_string(),
                                                             },
                                                         )
                                                     } // TODO: probably want to note if a device fails genuine
@@ -591,6 +596,17 @@ impl UsbSerialManager {
                 CoordinatorSendBody::AnnounceAck,
             ))
             .unwrap();
+
+        // Send genuine check challenge
+        let mut challenge = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut challenge);
+        self.outbox_sender
+            .send(CoordinatorSendMessage::to(
+                from,
+                CoordinatorSendBody::Challenge(Box::new(challenge)),
+            ))
+            .unwrap();
+        self.challenges.insert(from, challenge);
 
         self.reverse_device_ports
             .entry(port_name.to_string())
@@ -841,6 +857,9 @@ pub enum DeviceChange {
     AppMessage(AppMessage),
     GenuineDevice {
         id: DeviceId,
+        case_color: frostsnap_comms::genuine_certificate::CaseColor,
+        serial_number: String,
+        revision: String,
     },
 }
 

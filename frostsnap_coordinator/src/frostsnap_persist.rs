@@ -175,6 +175,7 @@ impl TakeStaged<Option<ActiveSignSession>> for Option<ActiveSignSession> {
 #[derive(Default)]
 pub struct DeviceNames {
     names: HashMap<DeviceId, String>,
+    case_colors: HashMap<DeviceId, String>,
     mutations: VecDeque<(DeviceId, String)>,
 }
 
@@ -185,8 +186,19 @@ impl DeviceNames {
         }
     }
 
+    /// Sets case color in memory only. The color gets persisted to DB when the
+    /// device name is next written (see `persist_update`), since `name` is NOT
+    /// NULL and the genuine check fires before the device has a name.
+    pub fn set_case_color(&mut self, device_id: DeviceId, case_color: String) {
+        self.case_colors.insert(device_id, case_color);
+    }
+
     pub fn get(&self, device_id: DeviceId) -> Option<String> {
         self.names.get(&device_id).cloned()
+    }
+
+    pub fn get_case_color(&self, device_id: DeviceId) -> Option<String> {
+        self.case_colors.get(&device_id).cloned()
     }
 }
 
@@ -212,6 +224,8 @@ impl Persist<rusqlite::Connection> for DeviceNames {
                 id BLOB PRIMARY KEY, \
                 name TEXT NOT NULL \
             )",
+            // Version 1: persist genuine device info
+            "ALTER TABLE fs_devices ADD COLUMN case_color TEXT",
         ];
 
         let db_tx = conn.transaction()?;
@@ -224,18 +238,22 @@ impl Persist<rusqlite::Connection> for DeviceNames {
     where
         Self: Sized,
     {
-        let mut stmt = conn.prepare("SELECT id, name FROM fs_devices")?;
+        let mut stmt = conn.prepare("SELECT id, name, case_color FROM fs_devices")?;
         let mut device_names = DeviceNames::default();
 
         let row_iter = stmt.query_map([], |row| {
             let device_id = row.get::<_, DeviceId>(0)?;
             let name = row.get::<_, String>(1)?;
-            Ok((device_id, name))
+            let case_color = row.get::<_, Option<String>>(2)?;
+            Ok((device_id, name, case_color))
         })?;
 
         for row in row_iter {
-            let (device_id, name) = row?;
+            let (device_id, name, case_color) = row?;
             device_names.names.insert(device_id, name);
+            if let Some(color) = case_color {
+                device_names.case_colors.insert(device_id, color);
+            }
         }
 
         Ok(device_names)
@@ -247,9 +265,15 @@ impl Persist<rusqlite::Connection> for DeviceNames {
         update: Self::Update,
     ) -> anyhow::Result<()> {
         for (id, name) in update {
+            // Also persist any known case_color from memory alongside the name.
+            // Case color is set via `MUTATE_NO_PERSIST` when the genuine check
+            // completes, because the genuine check fires before the device has
+            // a name (so we can't create the DB row yet). The color lives in
+            // memory until this name write carries it to the DB.
+            let case_color = self.case_colors.get(&id);
             conn.execute(
-                "INSERT OR REPLACE INTO fs_devices (id, name) VALUES (?1, ?2)",
-                params![id, name],
+                "INSERT OR REPLACE INTO fs_devices (id, name, case_color) VALUES (?1, ?2, ?3)",
+                params![id, name, case_color],
             )?;
         }
 
