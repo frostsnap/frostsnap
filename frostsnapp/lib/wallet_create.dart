@@ -13,6 +13,7 @@ import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
@@ -769,17 +770,15 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     void Function()? onPressed,
     bool enabled = true,
   }) {
-    final theme = Theme.of(context);
-    return Card.filled(
+    final colors = DeviceColorScheme.fromDevice(context, device);
+    return colors.buildGlowCard(
       margin: EdgeInsets.symmetric(vertical: 4),
-      color: theme.colorScheme.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
       child: ListTile(
         title: Text(
           device.name ?? _controller.form.deviceNames[device.id] ?? '',
           style: monospaceTextStyle,
         ),
-        leading: Icon(Icons.key),
+        leading: Icon(Icons.key, color: colors.accent),
         contentPadding: EdgeInsets.symmetric(
           horizontal: 16,
         ).copyWith(right: rightPadding),
@@ -885,12 +884,11 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       textController.text = currentName;
     }
 
-    return Card.filled(
+    final colors = DeviceColorScheme.fromDevice(context, device);
+    return colors.buildGlowCard(
       margin: EdgeInsets.symmetric(vertical: 4),
-      color: Theme.of(context).colorScheme.surface,
-      clipBehavior: Clip.hardEdge,
       child: ListTile(
-        leading: Icon(Icons.key),
+        leading: Icon(Icons.key, color: colors.accent),
         contentPadding: EdgeInsets.symmetric(horizontal: 12),
         title: TextField(
           decoration: InputDecoration(

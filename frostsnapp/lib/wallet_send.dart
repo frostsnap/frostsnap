@@ -12,6 +12,7 @@ import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
@@ -432,6 +433,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
               if (nonces == 0) state.deselectSigner(dId: id);
 
+              final deviceColors = DeviceColorScheme.fromDeviceId(context, id);
               return CheckboxListTile(
                 value: isSelected,
                 onChanged: remaining > 0 || isSelected
@@ -439,7 +441,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                           ? state.selectSigner(dId: id)
                           : state.deselectSigner(dId: id)
                     : null,
-                secondary: Icon(Icons.key),
+                secondary: Icon(Icons.key, color: deviceColors.accent),
                 title: Text(name ?? '<unknown>'),
                 subtitle: nonces == 0
                     ? Text(

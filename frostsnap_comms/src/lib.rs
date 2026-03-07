@@ -546,6 +546,12 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
+            DeviceSendBody::SignedChallenge { certificate, .. } => {
+                format!(
+                    "SignedChallenge(serial={})",
+                    certificate.unverified_raw_serial()
+                )
+            }
             _ => format!("{self:?}"),
         }
     }

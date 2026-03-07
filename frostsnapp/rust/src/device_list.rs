@@ -84,6 +84,7 @@ impl DeviceList {
                         name: None,
                         id,
                         recovery_mode: false,
+                        case_color: None,
                     },
                 );
             }
@@ -143,7 +144,24 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
-            DeviceChange::GenuineDevice { .. } => { /* not displayed in app yet */ }
+            DeviceChange::GenuineDevice {
+                id,
+                case_color,
+                ..
+            } => {
+                let index = self.index_of(id);
+                if let Some(connected) = self.connected.get_mut(&id) {
+                    connected.case_color =
+                        Some(api::CaseColor::from_comms(case_color));
+                    if let Some(index) = index {
+                        self.outbox.push(api::DeviceListChange {
+                            kind: api::DeviceListChangeKind::GenuineCheck,
+                            index: index as u32,
+                            device: connected.clone(),
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -166,6 +184,14 @@ impl DeviceList {
                 index: (self.devices.len() - 1) as u32,
                 device: self.get_device(id).expect("invariant"),
             });
+        }
+    }
+
+    pub fn set_case_color(&mut self, id: DeviceId, color: api::CaseColor) {
+        if let Some(connected) = self.connected.get_mut(&id) {
+            if connected.case_color.is_none() {
+                connected.case_color = Some(color);
+            }
         }
     }
 

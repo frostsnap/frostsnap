@@ -3,6 +3,7 @@ import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/wallet_add.dart';
 
 class AccessStructureListWidget extends StatelessWidget {
@@ -95,15 +96,17 @@ class _DeviceChip extends StatelessWidget {
     final shareIndex = accessStructure.getDeviceShortShareIndex(
       deviceId: deviceId,
     );
-    final theme = Theme.of(context);
+    final colors = DeviceColorScheme.fromDeviceId(context, deviceId);
 
     return Chip(
       label: DeviceWithShareIndex(
         shareIndex: shareIndex,
         deviceName: deviceName,
       ),
-      backgroundColor: theme.colorScheme.surfaceContainer,
-      deleteIcon: const Icon(Icons.close, size: 18),
+      side: colors.accent != null
+          ? BorderSide(color: colors.accent!.withValues(alpha: 0.5))
+          : null,
+      deleteIcon: Icon(Icons.close, size: 18, color: colors.accent),
       onDeleted: () => _showDeleteDialog(context, deviceName),
     );
   }

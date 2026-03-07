@@ -45,6 +45,19 @@ impl CertificateBody {
             CertificateBody::Frontier { ds_public_key, .. } => ds_public_key,
         }
     }
+
+    pub fn case_color(&self) -> CaseColor {
+        match self {
+            CertificateBody::Frontier { case_color, .. } => *case_color,
+        }
+    }
+
+    pub fn revision(&self) -> &str {
+        match self {
+            CertificateBody::Frontier { revision, .. } => revision,
+        }
+    }
+
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]

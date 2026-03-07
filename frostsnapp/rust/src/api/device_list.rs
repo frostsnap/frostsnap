@@ -12,6 +12,31 @@ pub enum DeviceListChangeKind {
     Removed,
     Named,
     RecoveryMode,
+    GenuineCheck,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CaseColor {
+    Black,
+    Orange,
+    Silver,
+    Blue,
+    Red,
+}
+
+impl CaseColor {
+    #[frb(ignore)]
+    pub fn from_comms(color: frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor) -> Self {
+        use frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor as C;
+        match color {
+            C::Black => CaseColor::Black,
+            C::Orange => CaseColor::Orange,
+            C::Silver => CaseColor::Silver,
+            C::Blue => CaseColor::Blue,
+            C::Red => CaseColor::Red,
+            _ => CaseColor::Black,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +65,7 @@ pub struct ConnectedDevice {
     pub latest_firmware: Option<FirmwareVersion>,
     pub id: DeviceId,
     pub recovery_mode: bool,
+    pub case_color: Option<CaseColor>,
 }
 
 impl ConnectedDevice {
