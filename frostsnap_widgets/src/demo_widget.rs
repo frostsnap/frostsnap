@@ -480,7 +480,7 @@ macro_rules! demo_widget {
                         usize::MAX // Infinite pages!
                     }
 
-                    fn get(&self, index: usize) -> Option<PageWidget> {
+                    fn get(&self, index: usize) -> Option<$crate::widget_list::WidgetListItem<PageWidget>> {
                         let number_words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
                                             "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
                                             "seventeen", "eighteen", "nineteen", "twenty"];
@@ -524,7 +524,7 @@ macro_rules! demo_widget {
                         let column = Column::new((row1, row2, row3));
                         let container = Container::new(column)
                             .with_border(PALETTE.primary, 2);
-                        Some(Center::new(container))
+                        Some($crate::widget_list::WidgetListItem::new(Center::new(container)))
                     }
                 }
 
