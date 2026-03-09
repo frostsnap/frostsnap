@@ -2,9 +2,13 @@ use crate::backup::LEGACY_FONT_SMALL;
 use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_MS;
 use crate::{
-    icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
-    share_index::ShareIndexWidget, widget_list::WidgetList, FadeSwitcher, HoldToConfirm,
-    U8g2TextStyle, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
+    icons::IconWidget,
+    page_slider::PageSlider,
+    palette::PALETTE,
+    prelude::*,
+    share_index::ShareIndexWidget,
+    widget_list::{WidgetList, WidgetListItem},
+    FadeSwitcher, HoldToConfirm, U8g2TextStyle, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
 };
 use alloc::{format, string::String, vec::Vec};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
@@ -135,7 +139,7 @@ impl WordsPage {
 type SingleWordRow = Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>;
 
 /// A page showing all 25 words in a simple scrollable format
-#[derive(frostsnap_macros::Widget)]
+#[derive(Clone, frostsnap_macros::Widget)]
 pub struct AllWordsPage {
     #[widget_delegate]
     content: Row<(Column<Vec<SingleWordRow>>, Column<Vec<SingleWordRow>>)>,
@@ -399,22 +403,23 @@ impl WidgetList for BackupPageList {
         self.total_pages
     }
 
-    fn get(&self, index: usize) -> Option<BackupPage> {
+    fn get(&self, index: usize) -> Option<WidgetListItem<BackupPage>> {
         if index >= self.total_pages {
             return None;
         }
 
-        let page = if index == 0 {
-            // Share index page
-            BackupPage::new(ShareIndexPage::new(self.share_index))
+        if index == 0 {
+            Some(WidgetListItem::new(BackupPage::new(ShareIndexPage::new(
+                self.share_index,
+            ))))
         } else if index == self.total_pages - 1 {
-            // Last page - Backup confirmation screen
-            BackupPage::new(BackupConfirmationScreen::new())
+            Some(WidgetListItem::new(BackupPage::new(
+                BackupConfirmationScreen::new(),
+            )))
         } else if index == self.total_pages - 2 {
-            // Second to last page - All words summary
-            BackupPage::new(AllWordsPage::new(&self.word_indices, self.share_index))
+            let page = BackupPage::new(AllWordsPage::new(&self.word_indices, self.share_index));
+            Some(WidgetListItem::new(page).with_framebuffer_transitions(true))
         } else {
-            // Words page
             let word_start_index = (index - 1) * WORDS_PER_PAGE;
             let mut words = Vec::new();
 
@@ -427,10 +432,8 @@ impl WidgetList for BackupPageList {
                 }
             }
 
-            BackupPage::new(WordsPage::new(words))
-        };
-
-        Some(page)
+            Some(WidgetListItem::new(BackupPage::new(WordsPage::new(words))))
+        }
     }
 
     fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {

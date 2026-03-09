@@ -1,7 +1,13 @@
 use crate::{
-    address_display::AddressDisplay, any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay,
-    gray4_style::Gray4TextStyle, page_slider::PageSlider, palette::PALETTE, prelude::*,
-    widget_list::WidgetList, HoldToConfirm,
+    address_display::AddressDisplay,
+    any_of::AnyOf,
+    bitcoin_amount_display::BitcoinAmountDisplay,
+    gray4_style::Gray4TextStyle,
+    page_slider::PageSlider,
+    palette::PALETTE,
+    prelude::*,
+    widget_list::{WidgetList, WidgetListItem},
+    HoldToConfirm,
 };
 use alloc::{format, string::ToString};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
@@ -68,14 +74,14 @@ impl AmountPage {
 }
 
 /// Page widget for displaying recipient address
-#[derive(frostsnap_macros::Widget)]
+#[derive(Clone, frostsnap_macros::Widget)]
 pub struct AddressPage {
     #[widget_delegate]
     center: Center<Padding<Column<(Text<Gray4TextStyle>, AddressDisplay)>>>,
 }
 
 impl AddressPage {
-    fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
+    pub fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
         let title = Text::new(
             format!("To Address #{}", index + 1),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
@@ -312,7 +318,7 @@ impl WidgetList for SignPromptPageList {
         self.total_pages
     }
 
-    fn get(&self, index: usize) -> Option<SignPromptPage> {
+    fn get(&self, index: usize) -> Option<WidgetListItem<SignPromptPage>> {
         if index >= self.total_pages {
             return None;
         }
@@ -321,20 +327,26 @@ impl WidgetList for SignPromptPageList {
         let recipient_pages = num_recipients * 2;
         let has_warning = Self::has_high_fee(&self.prompt);
 
-        let page = if index < recipient_pages {
+        let (page, use_fb) = if index < recipient_pages {
             let recipient_idx = index / 2;
             let is_amount = index.is_multiple_of(2);
 
             if is_amount {
                 let (_, amount) = &self.prompt.foreign_recipients[recipient_idx];
-                SignPromptPage::new(AmountPage::new(recipient_idx, amount.to_sat()))
+                (
+                    SignPromptPage::new(AmountPage::new(recipient_idx, amount.to_sat())),
+                    false,
+                )
             } else {
                 let (address, _) = &self.prompt.foreign_recipients[recipient_idx];
-                SignPromptPage::new(AddressPage::new_with_seed(
-                    recipient_idx,
-                    address,
-                    self.rand_seed,
-                ))
+                (
+                    SignPromptPage::new(AddressPage::new_with_seed(
+                        recipient_idx,
+                        address,
+                        self.rand_seed,
+                    )),
+                    true,
+                )
             }
         } else if has_warning && index == recipient_pages {
             let total_sent: u64 = self
@@ -343,19 +355,29 @@ impl WidgetList for SignPromptPageList {
                 .iter()
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
-            SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent))
+            (
+                SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent)),
+                false,
+            )
         } else if (has_warning && index == recipient_pages + 1)
             || (!has_warning && index == recipient_pages)
         {
-            SignPromptPage::new(FeePage::new(
-                self.prompt.fee.to_sat(),
-                self.prompt.fee_rate_sats_per_vbyte,
-            ))
+            (
+                SignPromptPage::new(FeePage::new(
+                    self.prompt.fee.to_sat(),
+                    self.prompt.fee_rate_sats_per_vbyte,
+                )),
+                false,
+            )
         } else {
-            SignPromptPage::new(ConfirmationPage::new())
+            (SignPromptPage::new(ConfirmationPage::new()), false)
         };
 
-        Some(page)
+        let mut item = WidgetListItem::new(page);
+        if use_fb {
+            item = item.with_framebuffer_transitions(true);
+        }
+        Some(item)
     }
 
     fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {

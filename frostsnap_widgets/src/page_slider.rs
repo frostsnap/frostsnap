@@ -43,15 +43,16 @@ where
     L::Widget: Widget<Color = Rgb565>,
 {
     pub fn new(list: L) -> Self {
-        let initial_widget = list
+        let item = list
             .get(0)
             .expect("PageSlider requires at least one widget in the list");
 
         let transition = SlideInTransition::new(
-            initial_widget,
+            item.widget,
             ANIMATION_DURATION_MS,
             Point::new(0, 0),
             PALETTE.background,
+            item.framebuffer_transitions,
         );
 
         let stack = Stack::builder()
@@ -152,18 +153,18 @@ where
         };
 
         // Get the new widget
-        if let Some(new_widget) = self.list.get(target_index) {
-            // Set slide direction based on slide_distance
+        if let Some(item) = self.list.get(target_index) {
+            let new_widget = item.widget;
+            let use_fb = item.framebuffer_transitions;
             let distance = self.slide_distance as i32;
             let slide_from = match direction {
-                Direction::Up => Point::new(0, distance), // Slide from bottom
-                Direction::Down => Point::new(0, -distance), // Slide from top
+                Direction::Up => Point::new(0, distance),
+                Direction::Down => Point::new(0, -distance),
             };
 
-            // Update the slide-from position and switch to the new widget
             let transition = &mut self.stack.children.0;
             transition.set_slide_from(slide_from);
-            transition.switch_to(new_widget);
+            transition.switch_to_with_framebuffer(new_widget, use_fb);
 
             self.current_index = target_index;
             // Reset the ready flag for the new page

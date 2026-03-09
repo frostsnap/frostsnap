@@ -1,3 +1,22 @@
+pub struct WidgetListItem<W> {
+    pub widget: W,
+    pub framebuffer_transitions: bool,
+}
+
+impl<W> WidgetListItem<W> {
+    pub fn new(widget: W) -> Self {
+        Self {
+            widget,
+            framebuffer_transitions: false,
+        }
+    }
+
+    pub fn with_framebuffer_transitions(mut self, framebuffer_transitions: bool) -> Self {
+        self.framebuffer_transitions = framebuffer_transitions;
+        self
+    }
+}
+
 /// A trait for providing a list of widgets by index
 pub trait WidgetList {
     type Widget;
@@ -6,7 +25,7 @@ pub trait WidgetList {
     fn len(&self) -> usize;
 
     /// Returns the widget at the given index, or None if out of bounds
-    fn get(&self, index: usize) -> Option<Self::Widget>;
+    fn get(&self, index: usize) -> Option<WidgetListItem<Self::Widget>>;
 
     /// Returns true if the list is empty
     fn is_empty(&self) -> bool {
@@ -31,8 +50,8 @@ impl<T: Clone> WidgetList for alloc::vec::Vec<T> {
         self.len()
     }
 
-    fn get(&self, index: usize) -> Option<T> {
-        <[T]>::get(self, index).cloned()
+    fn get(&self, index: usize) -> Option<WidgetListItem<T>> {
+        <[T]>::get(self, index).cloned().map(WidgetListItem::new)
     }
 }
 
@@ -45,9 +64,9 @@ macro_rules! impl_widget_list_for_tuple {
                 $len
             }
 
-            fn get(&self, index: usize) -> Option<Self::Widget> {
+            fn get(&self, index: usize) -> Option<WidgetListItem<Self::Widget>> {
                 match index {
-                    $($idx => Some(crate::any_of::AnyOf::new(self.$idx.clone())),)+
+                    $($idx => Some(WidgetListItem::new(crate::any_of::AnyOf::new(self.$idx.clone()))),)+
                     _ => None,
                 }
             }
