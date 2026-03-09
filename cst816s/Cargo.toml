@@ -20,6 +20,5 @@ readme = "README.md"
 
 [dependencies]
 embedded-hal.workspace = true
-esp-hal = { workspace = true, features = ["esp32c3"] }
+esp-hal = { workspace = true, features = ["esp32c3", "unstable"] }
 heapless = { version = "0.8", features = ["portable-atomic"] }
-

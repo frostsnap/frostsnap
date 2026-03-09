@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 use esp_hal::{
-    assist_debug::DebugAssist, macros::handler, peripherals::ASSIST_DEBUG,
-    InterruptConfigurable as _,
+    assist_debug::DebugAssist, handler, peripherals::ASSIST_DEBUG,
 };
 
 extern "C" {
@@ -9,7 +8,7 @@ extern "C" {
     static _stack_end: u32;
 }
 
-pub fn enable_stack_guard(assist_debug: &mut ASSIST_DEBUG) {
+pub fn enable_stack_guard(assist_debug: ASSIST_DEBUG<'_>) {
     let mut da = DebugAssist::new(assist_debug);
     da.set_interrupt_handler(interrupt_handler);
     let stack_top = unsafe { &_stack_start as *const u32 as u32 };

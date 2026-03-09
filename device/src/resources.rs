@@ -1,13 +1,14 @@
 //! Device resources including provisioned crypto state and partitions
 
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::cell::RefCell;
+use esp_hal::ds::Ds;
 use esp_storage::FlashStorage;
 use frostsnap_comms::{Downstream, Upstream};
 use rand_chacha::ChaCha20Rng;
 
 use crate::{
-    ds::HardwareDs,
     efuse::EfuseHmacKeys,
     flash::VersionedFactoryData,
     frosty_ui::FrostyUi,
@@ -18,13 +19,12 @@ use crate::{
 };
 
 /// Type alias for serial interfaces
-type Serial<'a, D> = SerialInterface<'a, Timer<Timer0<TIMG0>, Blocking>, D>;
+type Serial<'a, D> = SerialInterface<'a, Timer<'a>, D>;
 use esp_hal::{
-    gpio::{AnyPin, Input},
-    peripherals::TIMG0,
+    gpio::Input,
     rsa::Rsa,
     sha::Sha,
-    timer::timg::{Timer, Timer0},
+    timer::timg::Timer,
     uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
@@ -38,8 +38,8 @@ pub struct Resources<'a> {
     /// HMAC keys from efuses
     pub hmac_keys: EfuseHmacKeys<'a>,
 
-    /// Hardware Ds for attestation (None for dev devices)
-    pub ds: Option<HardwareDs<'a>>,
+    /// Hardware DS and encrypted parameters for attestation (None for dev devices)
+    pub ds: Option<(Ds<'a>, Vec<u8>)>,
 
     /// RSA hardware accelerator
     pub rsa: Rsa<'a, Blocking>,
@@ -57,21 +57,21 @@ pub struct Resources<'a> {
     pub ui: FrostyUi<'a>,
 
     // Runtime peripherals needed by esp32_run
-    pub timer: &'a Timer<Timer0<TIMG0>, Blocking>,
+    pub timer: &'a Timer<'a>,
     pub sha256: Sha<'a>,
     pub upstream_serial: Serial<'a, Upstream>,
     pub downstream_serial: Serial<'a, Downstream>,
-    pub downstream_detect: Input<'a, AnyPin>,
+    pub downstream_detect: Input<'a>,
 }
 
 impl<'a> Resources<'a> {
     /// Create serial interfaces from UARTs and JTAG
     fn create_serial_interfaces(
-        timer: &'static Timer<Timer0<TIMG0>, Blocking>,
+        timer: &'a Timer<'a>,
         uart_upstream: Option<Uart<'static, Blocking>>,
         uart_downstream: Uart<'static, Blocking>,
         jtag: UsbSerialJtag<'a, Blocking>,
-        upstream_detect: &Input<'a, AnyPin>,
+        upstream_detect: &Input<'a>,
     ) -> (Serial<'a, Upstream>, Serial<'a, Downstream>) {
         let detect_device_upstream = upstream_detect.is_low();
         let upstream_serial = if detect_device_upstream {
@@ -138,8 +138,8 @@ impl<'a> Resources<'a> {
         // Extract factory data
         let factory = factory_data.into_factory_data();
 
-        // Create HardwareDs for production devices
-        let ds = Some(HardwareDs::new(ds, factory.ds_encrypted_params.clone()));
+        // Create DS driver for production devices
+        let ds = Some((Ds::new(ds), factory.ds_encrypted_params.clone()));
 
         let rsa = Rsa::new(rsa);
 
@@ -213,13 +213,10 @@ impl<'a> Resources<'a> {
         // Create UI with display and touch receiver (using ui_timer)
         let ui = FrostyUi::new(display, touch_receiver, ui_timer);
 
-        // Create HardwareDs if factory data is present (dev devices might have it)
+        // Create DS driver if factory data is present (dev devices might have it)
         let (ds, certificate) = if let Some(factory_data) = factory_data {
             let factory = factory_data.into_factory_data();
-            (
-                Some(HardwareDs::new(ds, factory.ds_encrypted_params)),
-                Some(factory.certificate),
-            )
+            (Some((Ds::new(ds), factory.ds_encrypted_params)), Some(factory.certificate))
         } else {
             // Dev device without factory data - no hardware RSA
             (None, None)

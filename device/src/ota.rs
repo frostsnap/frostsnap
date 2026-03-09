@@ -319,7 +319,7 @@ impl FirmwareUpgradeMode<'_> {
         }
 
         let start = timer.now();
-        while timer.now().checked_duration_since(start).unwrap() < Duration::millis(100) {
+        while (timer.now() - start) < Duration::from_millis(100) {
             // wait for everyone to finish changing BAUD rates to prevent race condition
         }
 

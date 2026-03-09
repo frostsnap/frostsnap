@@ -16,17 +16,13 @@ const WR_DIS_KP_OFFSET: u8 = 8;
 const READ_COMMAND: u16 = 0x5AA5;
 const WRITE_COMMAND: u16 = 0x5A5A;
 
-use esp_hal::peripheral::{Peripheral, PeripheralRef};
-
 pub struct EfuseController<'a> {
-    pub efuse: PeripheralRef<'a, EFUSE>,
+    pub efuse: EFUSE<'a>,
 }
 
 impl<'a> EfuseController<'a> {
-    pub fn new(efuse: impl Peripheral<P = EFUSE> + 'a) -> Self {
-        Self {
-            efuse: efuse.into_ref(),
-        }
+    pub fn new(efuse: EFUSE<'a>) -> Self {
+        Self { efuse }
     }
 
     /// Check if HMAC keys have been initialized
@@ -162,12 +158,12 @@ impl<'a> EfuseController<'a> {
     pub fn read_efuse(&self, key_id: esp_hal::hmac::KeyId) -> Result<[u8; 32], EfuseError> {
         use esp_hal::hmac::KeyId;
         let field = match key_id {
-            KeyId::Key0 => hal_efuse::KEY0,
-            KeyId::Key1 => hal_efuse::KEY1,
-            KeyId::Key2 => hal_efuse::KEY2,
-            KeyId::Key3 => hal_efuse::KEY3,
-            KeyId::Key4 => hal_efuse::KEY4,
-            KeyId::Key5 => hal_efuse::KEY5,
+            KeyId::Key0 => hal_efuse::BLOCK_KEY0,
+            KeyId::Key1 => hal_efuse::BLOCK_KEY1,
+            KeyId::Key2 => hal_efuse::BLOCK_KEY2,
+            KeyId::Key3 => hal_efuse::BLOCK_KEY3,
+            KeyId::Key4 => hal_efuse::BLOCK_KEY4,
+            KeyId::Key5 => hal_efuse::BLOCK_KEY5,
         };
         let bytes: [u8; 32] = Efuse::read_field_le::<[u8; 32]>(field);
 
@@ -176,7 +172,7 @@ impl<'a> EfuseController<'a> {
 
     /// # Safety
     unsafe fn write_block(&self, data: &[u8; 32], block_number: u8) -> Result<(), EfuseError> {
-        let efuse = &*self.efuse;
+        let efuse = self.efuse.register_block();
         let mut to_burn: [u32; 11] = [0; 11];
 
         if block_number == 0 {
@@ -221,7 +217,7 @@ impl<'a> EfuseController<'a> {
     }
 
     unsafe fn send_write_command(&self, block_number: u8) {
-        let efuse = &self.efuse;
+        let efuse = self.efuse.register_block();
 
         // Send opcode, blknum and write command
         efuse.conf().write(|w| w.op_code().bits(WRITE_COMMAND));
@@ -248,7 +244,7 @@ impl<'a> EfuseController<'a> {
     }
 
     fn get_programming_error_record(&self, block_number: u8) -> bool {
-        let efuse = &self.efuse;
+        let efuse = self.efuse.register_block();
         match block_number {
             0 => {
                 (efuse.rd_repeat_err1().read().bits() > 0)
@@ -265,7 +261,7 @@ impl<'a> EfuseController<'a> {
     }
 
     unsafe fn update_read_registers(&self) {
-        let efuse = &self.efuse;
+        let efuse = self.efuse.register_block();
 
         // Send opcode and read command
         efuse.conf().write(|w| w.op_code().bits(READ_COMMAND));
