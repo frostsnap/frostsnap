@@ -69,6 +69,7 @@ impl<'a> FrostyUi<'a> {
         };
         let mut widget_with_debug = OverlayDebug::new(root_widget, debug_config);
         widget_with_debug.set_constraints(Size::new(240, 280));
+        widget_with_debug.force_full_redraw();
 
         Self {
             display: frostsnap_widgets::SuperDrawTarget::new(display, PALETTE.background),
@@ -77,7 +78,7 @@ impl<'a> FrostyUi<'a> {
             downstream_connection_state: DownstreamConnectionState::Disconnected,
             upstream_connection_state: None,
             last_touch: None,
-            last_redraw_time: esp_hal::time::Instant::now(),
+            last_redraw_time: esp_hal::time::Instant::EPOCH,
             current_widget_index: 0,
             timer,
             busy_task: Default::default(),

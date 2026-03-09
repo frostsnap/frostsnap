@@ -265,6 +265,12 @@ impl<'a> DevicePeripherals<'a> {
 
         let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
 
+        // Startup panel test to isolate display transport issues from the UI stack.
+        for color in [Rgb565::RED, Rgb565::GREEN, Rgb565::BLUE, Rgb565::BLACK] {
+            let _ = display.clear(color);
+            delay.delay_millis(250);
+        }
+
         // Initialize I2C for touch sensor
         let i2c = I2c::new(
             peripherals.I2C0.reborrow(),
