@@ -243,25 +243,29 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         leading: Icon(Icons.fingerprint_rounded),
         onTap: () => copyAction(context, 'Device ID', device.id.toHex()),
       ),
-      ListTile(
-        contentPadding: EdgeInsets.symmetric(horizontal: 16),
-        title: Text('Nonces'),
-        subtitle: Text('$noncesAvailable'),
-        leading: Icon(Icons.numbers_rounded),
-        onTap: () =>
-            copyAction(context, 'Remaining nonces', '$noncesAvailable'),
-      ),
-      ListTile(
-        contentPadding: EdgeInsets.symmetric(horizontal: 16),
-        title: Text('Erase device'),
-        subtitle: Text('Delete everything from this device'),
-        leading: Icon(Icons.delete_forever_rounded),
-        trailing: TextButton(
-          onPressed: () => showEraseDialog(context, device.id),
-          child: Text('Erase'),
-          style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+      if (!isEmpty)
+        ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          title: Text('Nonces'),
+          subtitle: Text('$noncesAvailable'),
+          leading: Icon(Icons.numbers_rounded),
+          onTap: () =>
+              copyAction(context, 'Remaining nonces', '$noncesAvailable'),
         ),
-      ),
+      if (!isEmpty)
+        ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          title: Text('Erase device'),
+          subtitle: Text('Delete everything from this device'),
+          leading: Icon(Icons.delete_forever_rounded),
+          trailing: TextButton(
+            onPressed: () => showEraseDialog(context, device.id),
+            child: Text('Erase'),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+          ),
+        ),
     ];
 
     final advancedRows = [
@@ -362,7 +366,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
             device.firmware.digest.toString(),
           ),
         ),
-        if (!isEmpty) ...advancedRows,
+        ...advancedRows,
       ],
     );
   }
