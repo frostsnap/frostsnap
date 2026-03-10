@@ -61,7 +61,7 @@ impl<'a> FrostyUi<'a> {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
-        let root_widget = RootWidget::new(WidgetTree::Standby(Box::new(Standby::new())), 200);
+        let root_widget = RootWidget::new(WidgetTree::Standby(Box::new(Standby::new())));
         let debug_config = EnabledDebug {
             logs: cfg!(feature = "debug_log"),
             memory: cfg!(feature = "debug_mem"),
@@ -107,10 +107,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             // If we're already showing Standby, just update its mode
             (WidgetTree::Standby(ref mut standby), Workflow::Startup) => {
                 standby.clear_content();
+                self.force_redraw();
                 return;
             }
             (WidgetTree::Standby(ref mut standby), Workflow::None) => {
                 standby.set_welcome();
+                self.force_redraw();
                 return;
             }
             (
@@ -121,6 +123,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 },
             ) => {
                 standby.set_key(device_name.to_string(), held_share.clone());
+                self.force_redraw();
                 return;
             }
 
@@ -130,6 +133,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 Workflow::NamingDevice { ref new_name },
             ) => {
                 device_name_screen.set_name(new_name.to_string());
+                self.force_redraw();
                 return;
             }
 
@@ -152,6 +156,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     ) => {
                         *status = *status_current;
                         widget.update_progress(*progress);
+                        self.force_redraw();
                         return;
                     }
                     _ => { /* we need a new widget */ }
@@ -161,6 +166,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             // If we're already showing EraseProgress, just update the progress
             (WidgetTree::EraseProgress { widget }, Workflow::EraseProgress { progress }) => {
                 widget.update_progress(*progress);
+                self.force_redraw();
                 return;
             }
 
@@ -364,6 +370,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
 
         // Switch to the new page with fade transition
         self.widget.inner_mut().switch_to(new_page);
+        self.force_redraw();
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
@@ -483,12 +490,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     fn set_busy_task(&mut self, task: BusyTask) {
         self.busy_task = Some(task);
         // TODO: Update widget tree based on busy task
-        self.widget.force_full_redraw();
+        self.force_redraw();
     }
 
     fn clear_busy_task(&mut self) {
         self.busy_task = None;
-        self.widget.force_full_redraw();
+        self.force_redraw();
     }
 
     fn force_redraw(&mut self) {

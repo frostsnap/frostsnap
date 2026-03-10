@@ -43,7 +43,7 @@ macro_rules! init_display {
         let spi = Spi::new(
             $peripherals.SPI2.reborrow(),
             SpiConfig::default()
-                .with_frequency(Rate::from_mhz(80))
+                .with_frequency(Rate::from_mhz(20))
                 .with_mode(SpiMode::_2),
         )
         .unwrap()
@@ -62,9 +62,9 @@ macro_rules! init_display {
             Box::leak(Box::new([0; 512])),
         );
 
-        let display = mipidsi::Builder::new(ST7789, di)
+        mipidsi::Builder::new(ST7789, di)
             .display_size(240, 280)
-            .display_offset(0, 20) // 240*280 panel
+            .display_offset(0, 20)
             .invert_colors(ColorInversion::Inverted)
             .reset_pin(Output::new(
                 $peripherals.GPIO6.reborrow(),
@@ -72,9 +72,7 @@ macro_rules! init_display {
                 OutputConfig::default(),
             ))
             .init($delay)
-            .unwrap();
-
-        display
+            .unwrap()
     }};
 }
 
@@ -263,13 +261,10 @@ impl<'a> DevicePeripherals<'a> {
             })
             .unwrap();
 
-        let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
+        // Turn the backlight on before the smoke test so raw panel fills are visible.
+        backlight.set_duty(100).unwrap();
 
-        // Startup panel test to isolate display transport issues from the UI stack.
-        for color in [Rgb565::RED, Rgb565::GREEN, Rgb565::BLUE, Rgb565::BLACK] {
-            let _ = display.clear(color);
-            delay.delay_millis(250);
-        }
+        let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
 
         // Initialize I2C for touch sensor
         let i2c = I2c::new(
@@ -290,9 +285,8 @@ impl<'a> DevicePeripherals<'a> {
         // Register the capsense instance with the interrupt handler
         let touch_receiver = frostsnap_cst816s::interrupt::register(capsense, &mut io);
 
-        // Clear display and turn on backlight
+        // Clear display after init; backlight is already on.
         let _ = display.clear(Rgb565::BLACK);
-        backlight.start_duty_fade(0, 100, 500).unwrap();
 
         // Initialize other crypto peripherals
         let efuse = EfuseController::new(peripherals.EFUSE.reborrow());

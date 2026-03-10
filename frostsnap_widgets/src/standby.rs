@@ -1,6 +1,6 @@
 use crate::DefaultTextStyle;
 use crate::{
-    any_of::AnyOf, device_name::DeviceName, palette::PALETTE, prelude::*, FadeSwitcher, GrayToAlpha,
+    any_of::AnyOf, device_name::DeviceName, palette::PALETTE, prelude::*, GrayToAlpha, Switcher,
 };
 use alloc::string::{String, ToString};
 use embedded_graphics::{
@@ -115,7 +115,7 @@ pub struct Standby {
     content: Center<
         Column<(
             Padding<Image>,
-            FadeSwitcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>>,
+            Switcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>>,
         )>,
     >,
 }
@@ -133,11 +133,11 @@ impl Standby {
         let logo = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
         let padded_logo = Padding::only(logo).top(30).bottom(20).build();
 
-        let fade_switcher = FadeSwitcher::new(None, 500);
+        let switcher = Switcher::new(None);
 
         let column = Column::builder()
             .push(padded_logo)
-            .push(fade_switcher)
+            .push(switcher)
             .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
         let content = Center::new(column);
