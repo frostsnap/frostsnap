@@ -261,9 +261,6 @@ impl<'a> DevicePeripherals<'a> {
             })
             .unwrap();
 
-        // Turn the backlight on before the smoke test so raw panel fills are visible.
-        backlight.set_duty(100).unwrap();
-
         let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
 
         // Initialize I2C for touch sensor
@@ -287,6 +284,7 @@ impl<'a> DevicePeripherals<'a> {
 
         // Clear display after init; backlight is already on.
         let _ = display.clear(Rgb565::BLACK);
+        backlight.start_duty_fade(0, 100, 500).unwrap();
 
         // Initialize other crypto peripherals
         let efuse = EfuseController::new(peripherals.EFUSE.reborrow());

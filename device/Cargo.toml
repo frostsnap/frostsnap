@@ -39,7 +39,7 @@ bincode = { workspace = true }
 display-interface = { version = "0.5.0" }
 display-interface-spi = { version = "0.5.0" }
 mipidsi = { version = "0.10.0", features = ["batch"] }
-embedded-graphics = "0.8.1"
+embedded-graphics = { workspace = true }
 rand_chacha = { workspace = true }
 frostsnap_cst816s = { workspace = true }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }

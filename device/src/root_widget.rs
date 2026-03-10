@@ -9,17 +9,22 @@ use frostsnap_widgets::{DynWidget, Widget};
 /// Root widget that contains the main widget tree
 pub struct RootWidget {
     current: WidgetTree,
+    constraints: Option<Size>,
 }
 
 impl RootWidget {
     pub fn new(initial_widget: WidgetTree) -> Self {
         Self {
             current: initial_widget,
+            constraints: None,
         }
     }
 
     pub fn switch_to(&mut self, new_widget: WidgetTree) {
         self.current = new_widget;
+        if let Some(max_size) = self.constraints {
+            self.current.set_constraints(max_size);
+        }
     }
 
     pub fn current_mut(&mut self) -> &mut WidgetTree {
@@ -29,6 +34,7 @@ impl RootWidget {
 
 impl DynWidget for RootWidget {
     fn set_constraints(&mut self, max_size: Size) {
+        self.constraints = Some(max_size);
         self.current.set_constraints(max_size);
     }
 
