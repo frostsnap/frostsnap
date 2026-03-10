@@ -1,4 +1,4 @@
-use crate::backup::LEGACY_FONT_SMALL;
+use crate::gray4_style::Gray4TextStyle;
 use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_MS;
 use crate::{
@@ -13,8 +13,9 @@ use crate::{
 use alloc::{format, string::String, vec::Vec};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
 use frost_backup::{bip39_words::BIP39_WORDS, NUM_WORDS};
-use u8g2_fonts::U8g2TextStyle;
+use frostsnap_fonts::NOTO_SANS_14_LIGHT;
 
+const FONT_ALL_WORDS: &frostsnap_fonts::Gray4Font = &NOTO_SANS_14_LIGHT;
 const WORDS_PER_PAGE: usize = 3;
 
 /// A single page showing the share index
@@ -136,8 +137,7 @@ impl WordsPage {
     }
 }
 
-// Helper type for a single word entry (number + word)
-type SingleWordRow = Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>;
+type SingleWordRow = Row<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
 
 /// A page showing all 25 words in a simple scrollable format
 #[derive(Clone, frostsnap_macros::Widget)]
@@ -148,32 +148,29 @@ pub struct AllWordsPage {
 
 impl AllWordsPage {
     pub fn new(word_indices: &[u16; 25], share_index: u16) -> Self {
-        // Helper to create a word row (word_idx is 0-based)
         let make_word_row = |word_idx: usize| -> SingleWordRow {
             Row::new((
                 Text::new(
                     format!("{:2}.", word_idx + 1),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
                 ),
                 Text::new(
                     format!("{:<8}", BIP39_WORDS[word_indices[word_idx] as usize]),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
                 ),
             ))
             .with_main_axis_alignment(MainAxisAlignment::Start)
         };
 
-        // Create left column: Share index, then words 1-12
         let left_column = {
-            // First row: share index
             let share_row = Row::new((
                 Text::new(
                     " #.",
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
                 ),
                 Text::new(
                     format!("{}", share_index),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
                 )
                 .with_underline(PALETTE.surface),
             ))
@@ -190,7 +187,6 @@ impl AllWordsPage {
                 .with_cross_axis_alignment(CrossAxisAlignment::Start)
         };
 
-        // Create right column: Words 13-25
         let mut right_rows = Vec::with_capacity(13);
         for i in 12..25 {
             right_rows.push(make_word_row(i));
@@ -200,13 +196,12 @@ impl AllWordsPage {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Start);
 
-        // Combine the two columns
         let two_columns = Row::new((left_column, right_column))
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
-        let content = two_columns;
-
-        Self { content }
+        Self {
+            content: two_columns,
+        }
     }
 }
 
