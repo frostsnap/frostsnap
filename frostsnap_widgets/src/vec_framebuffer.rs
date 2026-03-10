@@ -7,7 +7,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Point, Size},
     image::{ImageDrawable, ImageRaw},
-    iterator::raw::RawDataSlice,
     pixelcolor::{
         raw::{LittleEndian, RawData, RawU1, RawU16, RawU2, RawU4, RawU8},
         BinaryColor, Gray2, Gray4, Gray8, PixelColor, Rgb565,
@@ -82,37 +81,11 @@ where
     }
 }
 
-/// Iterator over colors in a VecFramebuffer
-pub struct ContiguousPixels<'a, C>
-where
-    C: PixelColor,
-    RawDataSlice<'a, C::Raw, LittleEndian>: IntoIterator<Item = C::Raw>,
-{
-    iter: <RawDataSlice<'a, C::Raw, LittleEndian> as IntoIterator>::IntoIter,
-}
-
-impl<'a, C> Iterator for ContiguousPixels<'a, C>
-where
-    C: PixelColor + From<C::Raw>,
-    RawDataSlice<'a, C::Raw, LittleEndian>: IntoIterator<Item = C::Raw>,
-{
-    type Item = C;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|raw| raw.into())
-    }
-}
-
-impl<C> VecFramebuffer<C>
-where
-    C: PixelColor,
-    for<'a> RawDataSlice<'a, C::Raw, LittleEndian>: IntoIterator<Item = C::Raw>,
-{
-    /// Returns an iterator over all colors in the framebuffer
-    pub fn contiguous_pixels(&self) -> ContiguousPixels<'_, C> {
-        ContiguousPixels {
-            iter: RawDataSlice::<C::Raw, LittleEndian>::new(&self.data).into_iter(),
-        }
+impl<C: FramebufferColor> VecFramebuffer<C> {
+    /// Returns an iterator over all pixels in the framebuffer
+    pub fn contiguous_pixels(&self) -> impl Iterator<Item = C> + '_ {
+        let total = self.width * self.height;
+        (0..total).map(|i| C::read_pixel(&self.data, i))
     }
 }
 
@@ -303,6 +276,15 @@ impl<C: FramebufferColor> VecFramebuffer<C> {
 
     pub fn clear(&mut self, color: C) {
         C::fill_data(&mut self.data, self.width * self.height, color);
+    }
+
+    pub fn blit<D: DrawTarget<Color = C>>(
+        &self,
+        target: &mut D,
+        position: Point,
+    ) -> Result<(), D::Error> {
+        let blit_rect = Rectangle::new(position, self.size());
+        target.fill_contiguous(&blit_rect, self.contiguous_pixels())
     }
 
     pub fn fill_rect(&mut self, rect: Rectangle, color: C) {
