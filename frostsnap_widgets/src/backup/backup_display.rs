@@ -8,11 +8,12 @@ use crate::{
     prelude::*,
     share_index::ShareIndexWidget,
     widget_list::{WidgetList, WidgetListItem},
-    FadeSwitcher, HoldToConfirm, U8g2TextStyle, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
+    FadeSwitcher, HoldToConfirm, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
 };
 use alloc::{format, string::String, vec::Vec};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
 use frost_backup::{bip39_words::BIP39_WORDS, NUM_WORDS};
+use u8g2_fonts::U8g2TextStyle;
 
 const WORDS_PER_PAGE: usize = 3;
 

@@ -1,5 +1,6 @@
 use crate::{
     circle_button::{CircleButton, CircleButtonState},
+    frame_cache::FrameCache,
     hold_to_confirm_border::HoldToConfirmBorder,
     palette::PALETTE,
     prelude::*,
@@ -38,7 +39,7 @@ where
 {
     content: Box<
         HoldToConfirmBorder<
-            Container<Center<Column<(W, Fader<CircleButton>, SizedBox<Rgb565>)>>>,
+            Container<Center<Column<(W, Fader<FrameCache<CircleButton>>, SizedBox<Rgb565>)>>>,
             Rgb565,
         >,
     >,
@@ -55,7 +56,8 @@ where
         const BORDER_WIDTH: u32 = 5;
 
         let button = CircleButton::new();
-        let faded_button = Fader::new(button);
+        let cached_button = FrameCache::new(button, PALETTE.background);
+        let faded_button = Fader::new(cached_button);
 
         // Create a 10px spacer beneath the button
         let bottom_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10));
@@ -112,14 +114,14 @@ where
     }
 
     pub fn button_mut(&mut self) -> &mut CircleButton {
-        &mut self.content.child.child.child.children.1.child
+        self.content.child.child.child.children.1.child.child_mut()
     }
 
     pub fn button(&self) -> &CircleButton {
-        &self.content.child.child.child.children.1.child
+        self.content.child.child.child.children.1.child.child()
     }
 
-    fn button_fader_mut(&mut self) -> &mut Fader<CircleButton> {
+    fn button_fader_mut(&mut self) -> &mut Fader<FrameCache<CircleButton>> {
         &mut self.content.child.child.child.children.1
     }
 
