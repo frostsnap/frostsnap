@@ -1197,6 +1197,152 @@ macro_rules! demo_widget {
                 let widget = StandbyTransitionsDemo::new();
                 $run_macro!(widget);
             }
+            "aa_compare" => {
+                use $crate::{Container, text::Text, palette::PALETTE, Center, SizedBox};
+                use embedded_graphics::primitives::{RoundedRectangle, PrimitiveStyleBuilder, StrokeAlignment};
+
+                const RECT_W: u32 = 180;
+                const RECT_H: u32 = 100;
+                const CR: u32 = 40;
+
+                // 🎯 Non-AA: raw embedded-graphics RoundedRectangle (fill only)
+                struct NonAA;
+
+                impl $crate::DynWidget for NonAA {
+                    fn set_constraints(&mut self, _max_size: Size) {}
+                    fn sizing(&self) -> $crate::Sizing {
+                        $crate::Sizing { width: RECT_W, height: RECT_H, dirty_rect: None }
+                    }
+                }
+
+                impl $crate::Widget for NonAA {
+                    type Color = Rgb565;
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        _current_time: $crate::Instant,
+                    ) -> Result<(), D::Error>
+                    where D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>
+                    {
+                        let rect = embedded_graphics::primitives::Rectangle::new(
+                            Point::zero(), Size::new(RECT_W, RECT_H),
+                        );
+                        let style = PrimitiveStyleBuilder::new()
+                            .fill_color(PALETTE.primary)
+                            .build();
+                        RoundedRectangle::with_equal_corners(rect, Size::new(CR, CR))
+                            .into_styled(style)
+                            .draw(target)?;
+                        Ok(())
+                    }
+                }
+
+                // 🎯 AA: uses AARoundedRectangle (fill only)
+                struct AA;
+
+                impl $crate::DynWidget for AA {
+                    fn set_constraints(&mut self, _max_size: Size) {}
+                    fn sizing(&self) -> $crate::Sizing {
+                        $crate::Sizing { width: RECT_W, height: RECT_H, dirty_rect: None }
+                    }
+                }
+
+                impl $crate::Widget for AA {
+                    type Color = Rgb565;
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        _current_time: $crate::Instant,
+                    ) -> Result<(), D::Error>
+                    where D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>
+                    {
+                        let rect = embedded_graphics::primitives::Rectangle::new(
+                            Point::zero(), Size::new(RECT_W, RECT_H),
+                        );
+                        $crate::aa_rounded_rect::AARoundedRectangle::new(rect, target.background_color())
+                            .with_corner_radius(CR)
+                            .with_fill(PALETTE.primary)
+                            .draw(target)?;
+                        Ok(())
+                    }
+                }
+
+                let col = Column::new((NonAA, AA))
+                    .with_main_axis_alignment($crate::MainAxisAlignment::SpaceEvenly)
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::Center);
+
+                let widget = Center::new(col);
+                $run_macro!(widget);
+            }
+            "border_iter" => {
+                use $crate::aa_rounded_rect::AARoundedRectIter;
+                use embedded_graphics::pixelcolor::RgbColor;
+
+                const BW: u32 = 5;
+                const CR: u32 = 20;
+                const RECT_W: u32 = 100;
+                const RECT_H: u32 = 200;
+
+                struct BorderIterDemo {
+                    size: Size,
+                }
+
+                impl $crate::DynWidget for BorderIterDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.size = max_size;
+                    }
+                    fn sizing(&self) -> $crate::Sizing { self.size.into() }
+                    fn force_full_redraw(&mut self) {}
+                }
+
+                impl $crate::Widget for BorderIterDemo {
+                    type Color = Rgb565;
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        _current_time: $crate::Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>,
+                    {
+                        let bg = target.background_color();
+                        target.clear(bg)?;
+
+                        let ox = (self.size.width - RECT_W) as i32 / 2;
+                        let oy = (self.size.height - RECT_H) as i32 / 2;
+                        let offset = Point::new(ox, oy);
+
+                        let right_color = PALETTE.primary;
+                        let left_color = Rgb565::new(31, 0, 0);
+
+                        let proto = AARoundedRectIter::new(RECT_W, RECT_H, CR, BW, right_color, bg, bg);
+                        let top = proto.top_center();
+                        let bottom = proto.bottom_center();
+                        let iter = proto.with_origin(top);
+
+                        // Right side: top-center → bottom-center (clockwise)
+                        let pixels = iter.clone().with_frac_range(top, bottom)
+                            .map(move |embedded_graphics::Pixel(point, c)| {
+                                embedded_graphics::Pixel(point + offset, c)
+                            });
+                        target.draw_iter(pixels)?;
+
+                        // Left side: bottom-center → top-center (wraps, reversed = counter-clockwise)
+                        let mut left_iter = iter;
+                        left_iter.set_border_color(left_color);
+                        let pixels = left_iter.with_frac_range(bottom, top).rev()
+                            .map(move |embedded_graphics::Pixel(point, c)| {
+                                embedded_graphics::Pixel(point + offset, c)
+                            });
+                        target.draw_iter(pixels)?;
+
+                        Ok(())
+                    }
+                }
+
+                let widget = BorderIterDemo { size: Size::zero() };
+                $run_macro!(widget);
+            }
             "erase_device" => {
                 use $crate::EraseDevice;
 
@@ -1204,7 +1350,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter", $demo);
             }
         }
     };
