@@ -13,6 +13,23 @@ members = [
     "frostsnap_widgets", "widget_simulator",
     "cst816s",
     "frostsnapp/desktop_camera",
+    "macros",
+]
+
+# device, cst816s require riscv32; widget_simulator needs SDL2.
+# Exclude from default so `cargo check` at the root just works.
+default-members = [
+    "frostsnap_core",
+    "frostsnap_coordinator",
+    "frostsnap_comms",
+    "frostsnapp/rust",
+    "frostsnap_embedded",
+    "frostsnap_factory",
+    "frost_backup",
+    "frostsnap_fonts",
+    "frostsnap_widgets",
+    "frostsnapp/desktop_camera",
+    "macros",
 ]
 resolver = "2"
 
