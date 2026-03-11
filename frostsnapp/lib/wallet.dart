@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/keygen.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/restoration/wallet_recovery_page.dart';
@@ -713,17 +713,37 @@ class WalletBottomBar extends StatelessWidget {
     );
 
     final receiveButton = TextButton.icon(
-      onPressed: () => showBottomSheetOrDialog(
-        context,
-        title: Text('Receive'),
-        builder: (context, scrollController) => walletCtx.wrap(
-          ReceivePage(
-            wallet: walletCtx.wallet,
-            txStream: walletCtx.txStream,
-            scrollController: scrollController,
+      onPressed: () async {
+        // Check if backups are incomplete — if so, show the secure wallet dialog first
+        final backupStream = walletCtx.backupStream;
+        if (backupStream is BehaviorSubject<BackupRun>) {
+          final backupRun = backupStream.valueOrNull;
+          if (backupRun != null &&
+              !backupRun.devices.every((device) => device.complete == true)) {
+            final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+            if (frostKey != null) {
+              final accessStructure = frostKey.accessStructures()[0];
+              final dismissed = await showWalletCreatedDialog(
+                context,
+                accessStructure,
+              );
+              if (!dismissed) return;
+            }
+          }
+        }
+        if (!context.mounted) return;
+        showBottomSheetOrDialog(
+          context,
+          title: Text('Receive'),
+          builder: (context, scrollController) => walletCtx.wrap(
+            ReceivePage(
+              wallet: walletCtx.wallet,
+              txStream: walletCtx.txStream,
+              scrollController: scrollController,
+            ),
           ),
-        ),
-      ),
+        );
+      },
       label: Text('Receive', softWrap: false, overflow: TextOverflow.fade),
       icon: Icon(Icons.south_east),
       style: textButtonStyle,
@@ -1208,53 +1228,56 @@ class BackupWarningBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
     final backupStream = walletCtx.backupStream;
-    final theme = Theme.of(context);
 
-    final button = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: IconButton(
-        onPressed: () => onTap(context, walletCtx),
-        icon: Icon(Icons.warning_rounded),
-        style: IconButton.styleFrom(foregroundColor: theme.colorScheme.error),
-        tooltip: 'This wallet has unfinished backups!',
-      ),
-    );
-
-    final banner = ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 16),
-      onTap: () => onTap(context, walletCtx),
-      iconColor: theme.colorScheme.error,
-      textColor: theme.colorScheme.error,
-      leading: Icon(Icons.warning_rounded),
-      trailing: Icon(Icons.chevron_right),
-      title: Text('This wallet has unfinished backups!'),
-    );
-
-    final widget = shrink ? button : banner;
-
-    final streamedBanner = StreamBuilder<BackupRun>(
+    return StreamBuilder<BackupRun>(
       stream: backupStream,
-      builder: (context, snapshot) {
-        final backupRun = snapshot.data;
+      builder: (context, backupSnapshot) {
+        final backupRun = backupSnapshot.data;
         final hideBanner = backupRun == null || isBackupDone(backupRun);
-        return hideBanner ? SizedBox.shrink() : widget;
+        if (hideBanner) return SizedBox.shrink();
+
+        return StreamBuilder<TxState>(
+          stream: walletCtx.txStream,
+          builder: (context, txSnapshot) {
+            final txState = txSnapshot.data;
+            final hasFunds =
+                (txState?.balance ?? 0) > 0 ||
+                (txState?.untrustedPendingBalance ?? 0) > 0;
+            final color = hasFunds
+                ? Theme.of(context).colorScheme.error
+                : cautionColor;
+
+            if (shrink) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: IconButton(
+                  onPressed: () => onTap(context, walletCtx),
+                  icon: Icon(Icons.warning_rounded),
+                  style: IconButton.styleFrom(foregroundColor: color),
+                  tooltip: 'This wallet has unfinished backups!',
+                ),
+              );
+            }
+
+            return ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 16),
+              onTap: () => onTap(context, walletCtx),
+              iconColor: color,
+              textColor: color,
+              leading: Icon(Icons.warning_rounded),
+              trailing: Icon(Icons.chevron_right),
+              title: Text('This wallet has unfinished backups!'),
+            );
+          },
+        );
       },
     );
-
-    return streamedBanner;
   }
 
   void onTap(BuildContext context, WalletContext walletContext) async {
-    await MaybeFullscreenDialog.show(
-      context: context,
-      child: walletContext.wrap(
-        BackupChecklist(
-          accessStructure: frostKey.accessStructures()[0],
-          showAppBar: true,
-        ),
-      ),
-    );
+    final accessStructure = frostKey.accessStructures()[0];
+    showWalletCreatedDialog(context, accessStructure);
   }
 
   bool isBackupDone(BackupRun backupRun) =>

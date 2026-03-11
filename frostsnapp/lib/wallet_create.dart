@@ -777,7 +777,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       child: ListTile(
         title: Text(
           device.name ?? _controller.form.deviceNames[device.id] ?? '',
-          style: monospaceTextStyle,
         ),
         leading: Icon(Icons.key),
         contentPadding: EdgeInsets.symmetric(
@@ -889,27 +888,34 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       margin: EdgeInsets.symmetric(vertical: 4),
       color: Theme.of(context).colorScheme.surface,
       clipBehavior: Clip.hardEdge,
-      child: ListTile(
-        leading: Icon(Icons.key),
-        contentPadding: EdgeInsets.symmetric(horizontal: 12),
-        title: TextField(
-          decoration: InputDecoration(
-            hintText: 'Enter device name',
-            border: OutlineInputBorder(
-              borderSide: BorderSide.none,
-              borderRadius: BorderRadius.all(Radius.circular(8)),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(padding: EdgeInsets.only(top: 12), child: Icon(Icons.key)),
+            SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Enter device name',
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                  suffixIcon: Icon(Icons.edit_rounded),
+                  filled: true,
+                ),
+                maxLength: DeviceName.maxLength(),
+                inputFormatters: [nameInputFormatter],
+                controller: textController,
+                onChanged: isPart
+                    ? (name) => _controller.setDeviceName(device.id, name)
+                    : null,
+                enabled: isPart,
+              ),
             ),
-            suffixIcon: Icon(Icons.edit_rounded),
-            filled: true,
-          ),
-          maxLength: DeviceName.maxLength(),
-          inputFormatters: [nameInputFormatter],
-          style: monospaceTextStyle,
-          controller: textController,
-          onChanged: isPart
-              ? (name) => _controller.setDeviceName(device.id, name)
-              : null,
-          enabled: isPart,
+          ],
         ),
       ),
     );
