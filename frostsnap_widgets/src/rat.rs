@@ -19,7 +19,9 @@ impl Rat {
             // everything over 0 should be large!
             return Self(u32::MAX);
         }
-        let value = ((numerator as u64 * DENOMINATOR as u64) / denominator as u64) as u32;
+        // 🎯 round to nearest Rat rather than truncating
+        let value = ((numerator as u64 * DENOMINATOR as u64 + denominator as u64 / 2)
+            / denominator as u64) as u32;
         Self(value)
     }
 
