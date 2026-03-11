@@ -17,4 +17,4 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 bincode.workspace = true
 
-mysql = "24.0"
+mysql = "27.0"
