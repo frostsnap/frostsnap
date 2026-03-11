@@ -2051,8 +2051,6 @@ dependencies = [
  "frostsnap_core",
  "hmac",
  "mysql",
- "num-bigint-dig",
- "num-traits",
  "rand 0.8.5",
  "rsa",
  "tracing",
@@ -3331,7 +3329,6 @@ dependencies = [
  "num-iter",
  "num-traits",
  "rand 0.8.5",
- "serde",
  "smallvec",
  "zeroize",
 ]
