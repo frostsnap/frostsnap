@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:ui';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -706,68 +707,151 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   Widget _dialogBodyBuilder(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 8,
+      children: [
+        const Text(
+          "Check the address you have copied to give to the sender against the address shown on your device.\n\nFor full verification, check directly with the sender.",
+          softWrap: true,
+        ),
+        if (_address != null) ...[
+          SizedBox(height: 8),
+          Text(
+            'Receive Address #${_address!.index}',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          _BlurredAddress(address: spacedHex(_address!.address.toString())),
+        ],
+      ],
+    );
+  }
+}
+
+class _BlurredAddress extends StatefulWidget {
+  final String address;
+
+  const _BlurredAddress({required this.address});
+
+  @override
+  State<_BlurredAddress> createState() => _BlurredAddressState();
+}
+
+class _BlurredAddressState extends State<_BlurredAddress>
+    with SingleTickerProviderStateMixin {
+  bool _revealed = false;
+  late final AnimationController _controller;
+  late final Animation<double> _blurSigma;
+  late final Animation<double> _overlayOpacity;
+  late final Animation<double> _cautionOpacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: Durations.medium4);
+    final curved = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _blurSigma = Tween(begin: 5.0, end: 0.0).animate(curved);
+    _overlayOpacity = Tween(begin: 1.0, end: 0.0).animate(curved);
+    _cautionOpacity = curved;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggleReveal() {
+    setState(() => _revealed = !_revealed);
+    if (_revealed) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 8,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          spacing: 12,
-          children: const [
-            Flexible(flex: 1, child: Icon(Icons.send)),
-            Flexible(
-              flex: 3,
-              child: Text(
-                "Give the address you have scanned/copied to the sender.",
-                softWrap: true,
-              ),
-            ),
-          ],
-        ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          spacing: 12,
-          children: [
-            Flexible(flex: 1, child: Icon(Icons.visibility)),
-            Expanded(
-              flex: 3,
-              child: Text.rich(
-                TextSpan(
+        GestureDetector(
+          onTap: _toggleReveal,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: AnimatedBuilder(
+              animation: _blurSigma,
+              builder: (context, child) {
+                return Stack(
                   children: [
-                    TextSpan(
-                      text:
-                          "Confirm they have the same address as shown on the device's screen.\nMake sure the two ",
+                    child!,
+                    Positioned.fill(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(
+                          sigmaX: _blurSigma.value,
+                          sigmaY: _blurSigma.value,
+                        ),
+                        child: FadeTransition(
+                          opacity: _overlayOpacity,
+                          child: Container(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              spacing: 8,
+                              children: [
+                                Icon(
+                                  Icons.visibility_off,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                Text(
+                                  'Tap to reveal address',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    TextSpan(
-                      text: "highlighted",
-                      style: TextStyle(color: theme.colorScheme.primary),
-                    ),
-                    TextSpan(text: " chunks are present."),
                   ],
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  widget.address,
+                  style: monospaceTextStyle.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-                softWrap: true,
               ),
             ),
-          ],
+          ),
         ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          spacing: 12,
-          children: const [
-            Flexible(flex: 1, child: Icon(Icons.block)),
-            Expanded(
-              flex: 3,
-              child: Text(
-                "Do not send the bitcoin if it doesn't match.",
-                softWrap: true,
+        FadeTransition(
+          opacity: _cautionOpacity,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 8,
+            children: [
+              Icon(Icons.warning_amber_rounded, color: cautionColor, size: 20),
+              Expanded(
+                child: Text(
+                  "Don't trust this screen — check where you have scanned or pasted the address against the address shown on your device.",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cautionColor,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
