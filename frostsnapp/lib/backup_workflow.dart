@@ -739,6 +739,28 @@ class _BackupChecklistState extends State<BackupChecklist> {
                     );
                   },
                 ),
+                if (!allComplete)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        textStyle: theme.textTheme.bodySmall,
+                      ),
+                      onPressed: () async {
+                        final accessStructureRef = accessStructure
+                            .accessStructureRef();
+                        for (final device in deviceInfoList) {
+                          if (device.complete != true) {
+                            await coord.markBackupComplete(
+                              accessStructureRef: accessStructureRef,
+                              shareIndex: device.shareIndex,
+                            );
+                          }
+                        }
+                      },
+                      child: const Text('Mark backups as complete'),
+                    ),
+                  ),
                 const SizedBox(height: 24),
                 Center(
                   child: allComplete

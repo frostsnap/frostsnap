@@ -11,6 +11,7 @@ import 'package:sliver_tools/sliver_tools.dart';
 final monospaceTextStyle = GoogleFonts.notoSansMono();
 final blurFilter = ImageFilter.blur(sigmaX: 21, sigmaY: 21);
 const seedColor = Color(0xFF1595B2);
+const cautionColor = Colors.amber;
 const double iconSize = 20.0;
 
 /// M3 standard dialog constraints

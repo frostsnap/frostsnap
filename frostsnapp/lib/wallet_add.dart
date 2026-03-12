@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/keygen.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -184,8 +183,6 @@ class WalletAddColumn extends StatelessWidget {
     );
 
     if (!context.mounted || asRef == null) return;
-    final accessStructure = coord.getAccessStructure(asRef: asRef)!;
-    showWalletCreatedDialog(context, accessStructure);
     homeCtx.openNewlyCreatedWallet(asRef.keyId);
   }
 
