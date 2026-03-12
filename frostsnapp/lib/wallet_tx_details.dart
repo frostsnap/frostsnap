@@ -818,37 +818,40 @@ Widget buildDetailsColumn(
   final walletCtx = WalletContext.of(context)!;
   final theme = Theme.of(context);
   final fee = txDetails.tx.fee();
+  final addressOutputs = txDetails.tx
+      .recipients()
+      .where((info) => txDetails.isSend ? !info.isMine : info.isMine)
+      .toList();
   return Column(
     children: [
-      if (txDetails.isSend)
-        ...txDetails.tx.recipients().where((info) => !info.isMine).map((info) {
-          final address = info.address(network: walletCtx.network)?.toString();
-          return Column(
-            children: [
-              ListTile(
-                dense: dense,
-                contentPadding: contentPadding,
-                leading: Text('Recipient #${info.vout}'),
-                title: Text(
-                  spacedHex(address ?? '<unknown>'),
-                  style: monospaceTextStyle,
-                  textAlign: TextAlign.end,
-                ),
-                onTap: address == null
-                    ? null
-                    : () => copyAction(context, 'Recipient address', address),
+      ...addressOutputs.map((info) {
+        final address = info.address(network: walletCtx.network)?.toString();
+        return Column(
+          children: [
+            ListTile(
+              dense: dense,
+              contentPadding: contentPadding,
+              leading: Text('Recipient #${info.vout}'),
+              title: Text(
+                spacedHex(address ?? '<unknown>'),
+                style: monospaceTextStyle,
+                textAlign: TextAlign.end,
               ),
-              ListTile(
-                dense: dense,
-                contentPadding: contentPadding,
-                leading: Text('\u2570 Amount'),
-                title: SatoshiText(value: info.amount, showSign: false),
-                onTap: () =>
-                    copyAction(context, 'Recipient amount', '${info.amount}'),
-              ),
-            ],
-          );
-        }),
+              onTap: address == null
+                  ? null
+                  : () => copyAction(context, 'Recipient address', address),
+            ),
+            ListTile(
+              dense: dense,
+              contentPadding: contentPadding,
+              leading: Text('\u2570 Amount'),
+              title: SatoshiText(value: info.amount, showSign: false),
+              onTap: () =>
+                  copyAction(context, 'Recipient amount', '${info.amount}'),
+            ),
+          ],
+        );
+      }),
       if (txDetails.isSend)
         ListTile(
           dense: dense,
