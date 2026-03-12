@@ -1,7 +1,6 @@
 import 'fetch.just'
 
 default_board := "dev"
-ordinary_crates := "-p frost_backup -p frostsnap_comms -p frostsnap_coordinator -p frostsnap_core -p frostsnap_desktop_camera -p frostsnap_embedded -p frostsnap_factory -p frostsnap_fonts -p frostsnap_macros -p frostsnap_widgets -p rust_lib_frostsnapp"
 device_crates := "-p frostsnap_device -p frostsnap_cst816s"
 
 alias erase := erase-device
@@ -61,19 +60,19 @@ sign-firmware INPUT="target/riscv32imc-unknown-none-elf/release/unsigned-firmwar
     espsecure.py sign_data -v 2 -k device/secure_boot_signing_key.pem -o {{OUTPUT}} {{INPUT}}
 
 test-ordinary +ARGS="":
-    cargo test {{ARGS}} {{ordinary_crates}}
+    cargo test {{ARGS}}
 
 test: test-ordinary
 
 check-ordinary +ARGS="":
-    cargo check {{ordinary_crates}} {{ARGS}} --all-features --tests --bins
+    cargo check {{ARGS}} --all-features --tests --bins
 
 check-device +ARGS="":
     cargo check --target riscv32imc-unknown-none-elf {{device_crates}} {{ARGS}} --all-features
 
 lint-ordinary +ARGS="":
-    cargo fmt {{ordinary_crates}} -- --check
-    cargo clippy {{ordinary_crates}} {{ARGS}} --all-features --tests --bins -- -Dwarnings
+    cargo fmt -- --check
+    cargo clippy {{ARGS}} --all-features --tests --bins -- -Dwarnings
 
 lint-device +ARGS="":
     cargo fmt {{device_crates}} -- --check
@@ -97,7 +96,7 @@ gen:
 fix: fix-dart fix-rust
 
 fix-rust:
-    cargo clippy --fix --allow-dirty --allow-staged {{ordinary_crates}} --all-features --tests --bins
+    cargo clippy --fix --allow-dirty --allow-staged --all-features --tests --bins
     cargo clippy --fix --allow-dirty --target riscv32imc-unknown-none-elf --allow-staged {{device_crates}} --all-features
     cargo fmt --all
 
