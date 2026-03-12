@@ -1258,5 +1258,5 @@ class BackupWarningBanner extends StatelessWidget {
   }
 
   bool isBackupDone(BackupRun backupRun) =>
-      backupRun.devices.every((device) => device.complete == true);
+      backupRun.devices.every((device) => device.complete != false);
 }

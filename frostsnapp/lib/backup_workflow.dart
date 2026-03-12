@@ -651,15 +651,14 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                           IconData icon;
                                           Color color;
 
-                                          if (complete == false) {
+                                          if (complete == true) {
+                                            icon = Icons.check_circle;
+                                            color = theme.colorScheme.primary;
+                                          } else {
                                             icon = Icons.circle_outlined;
                                             color = theme
                                                 .colorScheme
                                                 .onSurfaceVariant;
-                                          } else {
-                                            // complete == true or complete == null (treat null as backed up)
-                                            icon = Icons.check_circle;
-                                            color = theme.colorScheme.primary;
                                           }
 
                                           return ListTile(
