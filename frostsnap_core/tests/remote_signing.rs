@@ -1,5 +1,5 @@
 use common::TEST_ENCRYPTION_KEY;
-use frostsnap_core::coordinator::{KeyContext, ParticipantBinonces};
+use frostsnap_core::coordinator::{signing::NonceReservationId, KeyContext, ParticipantBinonces};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::GroupSignReq;
 use frostsnap_core::WireSignTask;
@@ -78,8 +78,10 @@ fn test_nonce_reservation_signing_two_coordinators() {
     // Each coordinator reserves nonces for its local device and wraps with share_index
     let binonces: Vec<_> = [(&mut run1, device_ids[0]), (&mut run2, device_ids[1])]
         .into_iter()
-        .map(|(run, device_id)| {
-            let raw_binonces = run.coordinator.reserve_nonces(device_id, 1).unwrap();
+        .enumerate()
+        .map(|(i, (run, device_id))| {
+            let id = NonceReservationId::new([i as u8; 32]);
+            let raw_binonces = run.coordinator.reserve_nonces(id, device_id, 1).unwrap();
             let share_index = *device_share_indices.get(&device_id).unwrap();
             ParticipantBinonces {
                 share_index,
@@ -98,21 +100,13 @@ fn test_nonce_reservation_signing_two_coordinators() {
     for run in [&mut run1, &mut run2] {
         let session_id = run
             .coordinator
-            .ensure_tmp_remote_sign_session(
-                sign_task.clone(),
-                access_structure_ref,
-                &all_binonces,
-            )
+            .ensure_tmp_remote_sign_session(sign_task.clone(), access_structure_ref, &all_binonces)
             .unwrap();
 
         // Idempotent: calling again returns same session
         let session_id2 = run
             .coordinator
-            .ensure_tmp_remote_sign_session(
-                sign_task.clone(),
-                access_structure_ref,
-                &all_binonces,
-            )
+            .ensure_tmp_remote_sign_session(sign_task.clone(), access_structure_ref, &all_binonces)
             .unwrap();
         assert_eq!(session_id, session_id2);
 
@@ -195,10 +189,12 @@ fn test_cancel_nonce_reservation_reuses_nonces() {
 
     let device_id = *run.devices.keys().next().unwrap();
 
-    let binonces_1 = run.coordinator.reserve_nonces(device_id, 1).unwrap();
+    let id1 = NonceReservationId::new([1u8; 32]);
+    let binonces_1 = run.coordinator.reserve_nonces(id1, device_id, 1).unwrap();
 
-    run.coordinator.cancel_nonce_reservation(&binonces_1);
+    run.coordinator.cancel_nonce_reservation(id1);
 
-    let binonces_2 = run.coordinator.reserve_nonces(device_id, 1).unwrap();
+    let id2 = NonceReservationId::new([2u8; 32]);
+    let binonces_2 = run.coordinator.reserve_nonces(id2, device_id, 1).unwrap();
     assert_eq!(binonces_1, binonces_2, "cancelled nonces should be reused");
 }

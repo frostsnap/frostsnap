@@ -257,7 +257,10 @@ class _MyHomePageState extends State<MyHomePage> {
     if (path.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      WalletAddColumn.showJoinFromLinkDialog(context, initialLink: 'frostsnap://channel/$path');
+      WalletAddColumn.showJoinFromLinkDialog(
+        context,
+        initialLink: 'frostsnap://channel/$path',
+      );
     });
   }
 

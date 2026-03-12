@@ -14,7 +14,6 @@ class DialogContentWithActions extends StatelessWidget {
     required this.actions,
     this.actionsAlignment = MainAxisAlignment.end,
   });
-
   @override
   Widget build(BuildContext context) {
     // 📱 Skip divider on mobile - fullscreen dialog doesn't need visual separation

@@ -5,7 +5,7 @@ use flutter_rust_bridge::frb;
 use frostsnap_core::{
     coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
     message::EncodedSignature,
-    AccessStructureId, AccessStructureRef, KeyId, SignSessionId, SymmetricKey, WireSignTask,
+    AccessStructureId, AccessStructureRef, SignSessionId, SymmetricKey, WireSignTask,
 };
 use frostsnap_nostr::{
     ChannelClient, ChannelHandle, ChannelInitData, Client, Keys, NostrDatabaseExt, NostrLMDB,
@@ -19,7 +19,16 @@ use std::{
     time::Duration,
 };
 
-pub use frostsnap_nostr::{ChannelEvent, ChannelSecret, ConnectionState, EventId, GroupMember, PublicKey};
+pub use frostsnap_nostr::{
+    ChannelEvent, ChannelSecret, ConnectionState, EventId, GroupMember, PublicKey,
+};
+
+#[frb(opaque)]
+pub struct ChannelConnectionParams {
+    pub(crate) as_id: AccessStructureId,
+    pub(crate) signing_key: KeyContext,
+    pub(crate) init_data: Option<ChannelInitData>,
+}
 
 static NOSTR_LMDB: OnceLock<Arc<NostrLMDB>> = OnceLock::new();
 
@@ -251,35 +260,10 @@ impl NostrClient {
     /// Events are streamed to the sink. Use send_message to interact.
     pub async fn connect_to_channel(
         &self,
-        coord: &super::coordinator::Coordinator,
-        access_structure_ref: AccessStructureRef,
-        encryption_key: SymmetricKey,
+        params: ChannelConnectionParams,
         sink: StreamSink<FfiChannelEvent>,
     ) {
-        let (signing_key, init_data) = {
-            let inner = coord.0.inner();
-            let key_data = inner
-                .get_frost_key(access_structure_ref.key_id)
-                .expect("key must exist");
-            let access_structure = key_data
-                .get_access_structure(access_structure_ref.access_structure_id)
-                .expect("access structure must exist");
-            let signing_key = KeyContext {
-                app_shared_key: access_structure.app_shared_key(),
-                purpose: key_data.purpose,
-            };
-            let root_shared_key = key_data
-                .complete_key
-                .root_shared_key(access_structure_ref.access_structure_id, encryption_key);
-            let init_data = root_shared_key.map(|rsk| ChannelInitData {
-                key_name: key_data.key_name.clone(),
-                purpose: key_data.purpose,
-                root_shared_key: rsk,
-            });
-            (signing_key, init_data)
-        };
-        let as_id = access_structure_ref.access_structure_id;
-        let channel_client = ChannelClient::new(as_id, signing_key, init_data);
+        let channel_client = ChannelClient::new(params.as_id, params.signing_key, params.init_data);
         let handle = match channel_client
             .run(self.client.clone(), SinkWrap(sink))
             .await
@@ -291,60 +275,37 @@ impl NostrClient {
             }
         };
 
-        self.channels
-            .lock()
-            .unwrap()
-            .insert(as_id, handle);
+        self.channels.lock().unwrap().insert(params.as_id, handle);
     }
 
-    /// Join a wallet from a nostr link. Fetches the channel init data, adds the key
-    /// to the coordinator, and connects to the channel.
-    pub async fn recover_from_nostr_link(
+    /// Join a wallet from a nostr invite link. Fetches channel data from relays,
+    /// adds the key to the coordinator, and returns the new wallet's KeyId.
+    pub async fn join_from_link(
         &self,
         coord: &super::coordinator::Coordinator,
         channel_secret: ChannelSecret,
         encryption_key: SymmetricKey,
-        sink: StreamSink<FfiChannelEvent>,
-    ) {
-        let result: Result<()> = async {
-            let init_data = frostsnap_nostr::fetch_channel_init(&self.client, &channel_secret)
-                .await?
-                .ok_or_else(|| anyhow!("no channel found for this link"))?;
+    ) -> Result<frostsnap_core::KeyId> {
+        let init_data = frostsnap_nostr::fetch_channel_init(&self.client, &channel_secret)
+            .await?
+            .ok_or_else(|| anyhow!("no channel found for this link"))?;
 
-            let as_id = init_data.access_structure_id();
+        let as_ref = {
+            let mut db = coord.0.db.lock().unwrap();
+            let mut coordinator = coord.0.coordinator.lock().unwrap();
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                Ok(coordinator.add_key_and_access_structure(
+                    init_data.key_name.clone(),
+                    init_data.root_shared_key.clone(),
+                    init_data.purpose,
+                    encryption_key,
+                    &mut rand::thread_rng(),
+                ))
+            })?
+        };
 
-            {
-                let mut db = coord.0.db.lock().unwrap();
-                let mut coordinator = coord.0.coordinator.lock().unwrap();
-                coordinator.staged_mutate(&mut *db, |coordinator| {
-                    Ok(coordinator.add_key_and_access_structure(
-                        init_data.key_name.clone(),
-                        init_data.root_shared_key.clone(),
-                        init_data.purpose,
-                        encryption_key,
-                        &mut rand::thread_rng(),
-                    ))
-                })?;
-            }
-
-            let signing_key = init_data.key_context();
-            let channel_client = ChannelClient::new(as_id, signing_key, None);
-            let handle = channel_client
-                .run(self.client.clone(), SinkWrap(sink))
-                .await?;
-
-            self.channels
-                .lock()
-                .unwrap()
-                .insert(as_id, handle);
-
-            Ok(())
-        }
-        .await;
-
-        if let Err(e) = result {
-            tracing::error!(error = %e, "failed to recover from nostr link");
-        }
+        coord.0.emit_key_state();
+        Ok(as_ref.key_id)
     }
 
     /// Send a chat message to a channel, optionally as a reply.
@@ -390,7 +351,9 @@ impl NostrClient {
         message: String,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
-        let sign_task = WireSignTask::Test { message: test_message };
+        let sign_task = WireSignTask::Test {
+            message: test_message,
+        };
         let handle = self.get_handle(access_structure_ref.access_structure_id)?;
         let event_id = handle
             .send_sign_request(&keys, sign_task, access_structure_ref, message)
@@ -429,6 +392,19 @@ impl NostrClient {
         let event_id = handle
             .send_sign_partial(&keys, request_id.into(), session_id, shares)
             .await?;
+        Ok(event_id.into())
+    }
+
+    /// Cancel a signing request. Only the original requester should call this.
+    pub async fn send_sign_cancel(
+        &self,
+        access_structure_id: AccessStructureId,
+        nsec: String,
+        request_id: NostrEventId,
+    ) -> Result<NostrEventId> {
+        let keys = Keys::parse(&nsec)?;
+        let handle = self.get_handle(access_structure_id)?;
+        let event_id = handle.send_sign_cancel(&keys, request_id.into()).await?;
         Ok(event_id.into())
     }
 
@@ -720,6 +696,12 @@ pub enum FfiSigningEvent {
         shares: frostsnap_core::coordinator::ParticipantSignatureShares,
         timestamp: u64,
     },
+    Cancel {
+        event_id: NostrEventId,
+        author: PublicKey,
+        request_id: NostrEventId,
+        timestamp: u64,
+    },
 }
 
 #[frb(non_opaque)]
@@ -803,9 +785,12 @@ impl From<ChannelEvent> for FfiChannelEvent {
                                 event_id: event_id.into(),
                                 author,
                                 request_id: request_id.into(),
-                                share_index: u32::try_from(binonces.share_index).expect("share index should fit in u32"),
+                                share_index: u32::try_from(binonces.share_index)
+                                    .expect("share index should fit in u32"),
                                 sealed: sealed.map(|chain| {
-                                    crate::frb_generated::RustAutoOpaque::new(SealedSigningData(chain))
+                                    crate::frb_generated::RustAutoOpaque::new(SealedSigningData(
+                                        chain,
+                                    ))
                                 }),
                                 timestamp,
                             },
@@ -822,6 +807,17 @@ impl From<ChannelEvent> for FfiChannelEvent {
                                 request_id: request_id.into(),
                                 session_id,
                                 shares: signature_shares,
+                                timestamp,
+                            },
+                            SigningEvent::Cancel {
+                                event_id,
+                                author,
+                                request_id,
+                                timestamp,
+                            } => FfiSigningEvent::Cancel {
+                                event_id: event_id.into(),
+                                author,
+                                request_id: request_id.into(),
                                 timestamp,
                             },
                         })

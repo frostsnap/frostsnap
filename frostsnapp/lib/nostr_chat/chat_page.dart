@@ -13,6 +13,7 @@ import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
+import 'package:frostsnap/src/rust/api/signing.dart' show NonceReservationId;
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/theme.dart';
@@ -73,13 +74,15 @@ class TimelineSigning extends TimelineItem {
   @override
   final DateTime timestamp;
   TimelineSigning(this.event)
-      : timestamp = DateTime.fromMillisecondsSinceEpoch(
-            switch (event) {
+    : timestamp = DateTime.fromMillisecondsSinceEpoch(
+        switch (event) {
               FfiSigningEvent_Request(:final timestamp) => timestamp,
               FfiSigningEvent_Offer(:final timestamp) => timestamp,
               FfiSigningEvent_Partial(:final timestamp) => timestamp,
+              FfiSigningEvent_Cancel(:final timestamp) => timestamp,
             } *
-            1000);
+            1000,
+      );
 }
 
 class TimelineError extends TimelineItem {
@@ -100,18 +103,25 @@ class TimelineSigningComplete extends TimelineItem {
   final SigningRequestState requestState;
   @override
   final DateTime timestamp;
-  TimelineSigningComplete(this.requestState)
-      : timestamp = DateTime.now();
+  TimelineSigningComplete(this.requestState, {required int completedAtSecs})
+    : timestamp = DateTime.fromMillisecondsSinceEpoch(completedAtSecs * 1000);
 }
 
 class ChatPage extends StatefulWidget {
   final AccessStructureRef accessStructureRef;
   final String walletName;
+  final ChannelConnectionParams channelParams;
 
-  const ChatPage({super.key, required this.accessStructureRef, required this.walletName});
+  const ChatPage({
+    super.key,
+    required this.accessStructureRef,
+    required this.walletName,
+    required this.channelParams,
+  });
 
   KeyId get keyId => accessStructureRef.keyId;
-  AccessStructureId get accessStructureId => accessStructureRef.accessStructureId;
+  AccessStructureId get accessStructureId =>
+      accessStructureRef.accessStructureId;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -168,12 +178,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _connect() async {
     _client = await NostrClient.connect();
-    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    final stream = _client!.connectToChannel(
-      coord: coord,
-      accessStructureRef: widget.accessStructureRef,
-      encryptionKey: encryptionKey,
-    );
+    final stream = _client!.connectToChannel(params: widget.channelParams);
     _subscription = stream.listen(_handleEvent);
   }
 
@@ -188,10 +193,8 @@ class _ChatPageState extends State<ChatPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => MemberDetailSheet(
-        pubkey: pubkey,
-        profile: _getProfile(pubkey),
-      ),
+      builder: (_) =>
+          MemberDetailSheet(pubkey: pubkey, profile: _getProfile(pubkey)),
     );
   }
 
@@ -209,146 +212,240 @@ class _ChatPageState extends State<ChatPage> {
     final accessStruct = coord.getAccessStructure(asRef: asRef);
     if (accessStruct == null) return null;
     for (final deviceId in accessStruct.devices()) {
-      if (accessStruct.getDeviceShortShareIndex(deviceId: deviceId) == shareIndex) {
+      if (accessStruct.getDeviceShortShareIndex(deviceId: deviceId) ==
+          shareIndex) {
         return deviceId;
       }
     }
     return null;
   }
 
+  final List<FfiChannelEvent> _pendingEvents = [];
+  bool _batchScheduled = false;
+
   void _handleEvent(FfiChannelEvent event) {
     if (!mounted) return;
+    _pendingEvents.add(event);
+    if (!_batchScheduled) {
+      _batchScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _flushPendingEvents(),
+      );
+    }
+  }
+
+  void _flushPendingEvents() {
+    _batchScheduled = false;
+    if (_pendingEvents.isEmpty || !mounted) return;
+
+    final events = List.of(_pendingEvents);
+    _pendingEvents.clear();
+
+    final wasAtBottom =
+        !_scrollController.hasClients ||
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 50;
 
     setState(() {
-      switch (event) {
-        case FfiChannelEvent_ChatMessage(
-          :final messageId,
-          :final author,
-          :final content,
-          :final timestamp,
-          :final replyTo,
-          :final pending,
-        ):
-          final existing = _messageById[messageId];
-          if (existing != null) {
-            return;
-          }
-          final isMe = _myPubkey != null && author.equals(other: _myPubkey!);
-          final message = ChatMessage(
-            messageId: messageId,
-            author: author,
-            content: content,
-            timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
-            isMe: isMe,
-            replyTo: replyTo,
-            status: pending ? MessageStatus.pending : MessageStatus.sent,
+      for (final event in events) {
+        _processEvent(event);
+      }
+    });
+
+    if (wasAtBottom) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) return;
+        final pos = _scrollController.position;
+        final distance = pos.maxScrollExtent - pos.pixels;
+        if (distance < 300) {
+          _scrollController.animateTo(
+            pos.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
           );
-          _messageById[messageId] = message;
-          _insertTimelineItem(TimelineChat(message));
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _scrollToBottom(),
-          );
+        } else {
+          _jumpToBottom();
+        }
+      });
+    }
+  }
 
-        case FfiChannelEvent_MessageSent(:final messageId):
-          // ✅ Our message was confirmed by relay
-          final msg = _messageById[messageId];
-          if (msg != null) {
-            msg.status = MessageStatus.sent;
-          }
+  void _processEvent(FfiChannelEvent event) {
+    switch (event) {
+      case FfiChannelEvent_ChatMessage(
+        :final messageId,
+        :final author,
+        :final content,
+        :final timestamp,
+        :final replyTo,
+        :final pending,
+      ):
+        final existing = _messageById[messageId];
+        if (existing != null) {
+          return;
+        }
+        final isMe = _myPubkey != null && author.equals(other: _myPubkey!);
+        final message = ChatMessage(
+          messageId: messageId,
+          author: author,
+          content: content,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
+          isMe: isMe,
+          replyTo: replyTo,
+          status: pending ? MessageStatus.pending : MessageStatus.sent,
+        );
+        _messageById[messageId] = message;
+        _insertTimelineItem(TimelineChat(message));
 
-        case FfiChannelEvent_MessageSendFailed(:final messageId, :final reason):
-          // ❌ Our message failed to send
-          final msg = _messageById[messageId];
-          if (msg != null) {
-            msg.status = MessageStatus.failed;
-            msg.failureReason = reason;
-          }
+      case FfiChannelEvent_MessageSent(:final messageId):
+        final msg = _messageById[messageId];
+        if (msg != null) {
+          msg.status = MessageStatus.sent;
+        }
 
-        case FfiChannelEvent_ConnectionState(:final field0):
-          _connectionState = field0;
+      case FfiChannelEvent_MessageSendFailed(:final messageId, :final reason):
+        final msg = _messageById[messageId];
+        if (msg != null) {
+          msg.status = MessageStatus.failed;
+          msg.failureReason = reason;
+        }
 
-        case FfiChannelEvent_GroupMetadata(:final members):
-          _memberPubkeys = members.map((m) => m.pubkey).toList();
-          _nostrContext!.updateProfilesFromChannel(members);
+      case FfiChannelEvent_ConnectionState(:final field0):
+        _connectionState = field0;
 
-        case FfiChannelEvent_SigningEvent(:final field0):
-          final eventId = switch (field0) {
-            FfiSigningEvent_Request(:final eventId) => eventId,
-            FfiSigningEvent_Offer(:final eventId) => eventId,
-            FfiSigningEvent_Partial(:final eventId) => eventId,
-          };
-          final idHex = eventId.toHex();
-          if (!_seenSigningEventIds.add(idHex)) break;
+      case FfiChannelEvent_GroupMetadata(:final members):
+        _memberPubkeys = members.map((m) => m.pubkey).toList();
+        _nostrContext!.updateProfilesFromChannel(members);
 
-          final (author, timestamp, content) = switch (field0) {
-            FfiSigningEvent_Request(:final author, :final timestamp, :final signingDetails, :final message) =>
-              (author, timestamp, message.isNotEmpty ? message : signingDetailsText(signingDetails)),
-            FfiSigningEvent_Offer(:final author, :final timestamp) =>
-              (author, timestamp, 'offered to sign'),
-            FfiSigningEvent_Partial(:final author, :final timestamp) =>
-              (author, timestamp, 'signed'),
-          };
-          _messageById[eventId] = ChatMessage(
-            messageId: eventId,
-            author: author,
-            content: content,
-            timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
-            isMe: _myPubkey != null && author.equals(other: _myPubkey!),
-            quoteIcon: Icons.draw,
-          );
+      case FfiChannelEvent_SigningEvent(:final field0):
+        final eventId = switch (field0) {
+          FfiSigningEvent_Request(:final eventId) => eventId,
+          FfiSigningEvent_Offer(:final eventId) => eventId,
+          FfiSigningEvent_Partial(:final eventId) => eventId,
+          FfiSigningEvent_Cancel(:final eventId) => eventId,
+        };
+        final idHex = eventId.toHex();
+        if (!_seenSigningEventIds.add(idHex)) break;
 
-          _insertTimelineItem(TimelineSigning(field0));
+        final (author, timestamp, content) = switch (field0) {
+          FfiSigningEvent_Request(
+            :final author,
+            :final timestamp,
+            :final signingDetails,
+            :final message,
+          ) =>
+            (
+              author,
+              timestamp,
+              message.isNotEmpty ? message : signingDetailsText(signingDetails),
+            ),
+          FfiSigningEvent_Offer(:final author, :final timestamp) => (
+            author,
+            timestamp,
+            'offered to sign',
+          ),
+          FfiSigningEvent_Partial(:final author, :final timestamp) => (
+            author,
+            timestamp,
+            'signed',
+          ),
+          FfiSigningEvent_Cancel(:final author, :final timestamp) => (
+            author,
+            timestamp,
+            'cancelled the signing request',
+          ),
+        };
+        _messageById[eventId] = ChatMessage(
+          messageId: eventId,
+          author: author,
+          content: content,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
+          isMe: _myPubkey != null && author.equals(other: _myPubkey!),
+          quoteIcon: Icons.draw,
+        );
 
-          switch (field0) {
-            case FfiSigningEvent_Request():
-              _signingRequests[field0.eventId] = SigningRequestState(field0);
-              for (final item in _timeline) {
-                if (item is! TimelineSigning) continue;
-                switch (item.event) {
-                  case FfiSigningEvent_Offer(:final requestId):
-                    if (requestId == field0.eventId) {
-                      _signingRequests[field0.eventId]!
-                          .offers[item.event.author.toHex()] = item.event as FfiSigningEvent_Offer;
-                    }
-                  case FfiSigningEvent_Partial(:final requestId):
-                    if (requestId == field0.eventId) {
-                      _signingRequests[field0.eventId]!
-                          .partials[item.event.author.toHex()] = item.event as FfiSigningEvent_Partial;
-                    }
-                  default:
-                    break;
-                }
+        _insertTimelineItem(TimelineSigning(field0));
+
+        switch (field0) {
+          case FfiSigningEvent_Request():
+            _signingRequests[field0.eventId] = SigningRequestState(field0);
+            for (final item in _timeline) {
+              if (item is! TimelineSigning) continue;
+              switch (item.event) {
+                case FfiSigningEvent_Offer(:final requestId):
+                  if (requestId == field0.eventId) {
+                    _signingRequests[field0.eventId]!.offers[item.event.author
+                            .toHex()] =
+                        item.event as FfiSigningEvent_Offer;
+                  }
+                case FfiSigningEvent_Partial(:final requestId):
+                  if (requestId == field0.eventId) {
+                    _signingRequests[field0.eventId]!.partials[item.event.author
+                            .toHex()] =
+                        item.event as FfiSigningEvent_Partial;
+                  }
+                default:
+                  break;
               }
-            case FfiSigningEvent_Offer():
-              final state = _signingRequests[field0.requestId];
-              if (state != null) {
-                state.offers[field0.author.toHex()] = field0;
+            }
+          case FfiSigningEvent_Offer():
+            final state = _signingRequests[field0.requestId];
+            if (state != null) {
+              state.offers[field0.author.toHex()] = field0;
+            }
+          case FfiSigningEvent_Partial():
+            final state = _signingRequests[field0.requestId];
+            if (state != null) {
+              state.partials[field0.author.toHex()] = field0;
+              final accessStruct = coord.getAccessStructure(
+                asRef: state.request.accessStructureRef,
+              );
+              final threshold = accessStruct?.threshold() ?? 0;
+              if (state.partials.length >= threshold) {
+                _insertTimelineItem(
+                  TimelineSigningComplete(
+                    state,
+                    completedAtSecs: field0.timestamp,
+                  ),
+                );
               }
-            case FfiSigningEvent_Partial():
-              final state = _signingRequests[field0.requestId];
-              if (state != null) {
-                state.partials[field0.author.toHex()] = field0;
-                final accessStruct = coord.getAccessStructure(
-                    asRef: state.request.accessStructureRef);
-                final threshold = accessStruct?.threshold() ?? 0;
-                if (state.partials.length >= threshold) {
-                  _insertTimelineItem(TimelineSigningComplete(state));
-                }
-              }
-          }
+            }
+          case FfiSigningEvent_Cancel():
+            final state = _signingRequests[field0.requestId];
+            if (state != null) {
+              state.cancelled = true;
+            }
+            coord.cancelNonceReservation(
+              id: NonceReservationId(field0: field0.requestId.field0),
+            );
+        }
 
-        case FfiChannelEvent_Error(
-          :final eventId,
-          :final author,
-          :final timestamp,
-          :final reason,
-        ):
-          _insertTimelineItem(TimelineError(
+      case FfiChannelEvent_Error(
+        :final eventId,
+        :final author,
+        :final timestamp,
+        :final reason,
+      ):
+        _insertTimelineItem(
+          TimelineError(
             eventId: eventId,
             author: author,
             timestamp: timestamp,
             reason: reason,
-          ));
+          ),
+        );
+    }
+  }
+
+  void _jumpToBottom() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    _scrollController.jumpTo(pos.maxScrollExtent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final pos = _scrollController.position;
+      if (pos.pixels < pos.maxScrollExtent - 1) {
+        _jumpToBottom();
       }
     });
   }
@@ -363,8 +460,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildTaskCard(SigningRequestState state) {
-    final accessStruct =
-        coord.getAccessStructure(asRef: state.request.accessStructureRef);
+    final accessStruct = coord.getAccessStructure(
+      asRef: state.request.accessStructureRef,
+    );
     final threshold = accessStruct?.threshold() ?? 0;
     final myPubkey = _myPubkey;
     final alreadySigned =
@@ -397,6 +495,7 @@ class _ChatPageState extends State<ChatPage> {
     final threshold = frostKey?.accessStructures()[0].threshold() ?? 0;
     SigningRequestState? best;
     for (final state in _signingRequests.values) {
+      if (state.cancelled) continue;
       if (state.partials.length >= threshold) continue;
       if (state.sealedData == null) continue;
       if (best == null || state.timestamp.isAfter(best.timestamp)) {
@@ -429,30 +528,35 @@ class _ChatPageState extends State<ChatPage> {
       itemCount: _timeline.length,
       itemBuilder: (context, index) {
         final item = _timeline[index];
-        final showDateDivider = index == 0 ||
+        final showDateDivider =
+            index == 0 ||
             !_isSameDay(item.timestamp, _timeline[index - 1].timestamp);
         final child = switch (item) {
           TimelineChat(:final message) => _MessageBubble(
             key: _timelineKeys.putIfAbsent(
-                message.messageId.toHex(), () => GlobalKey()),
+              message.messageId.toHex(),
+              () => GlobalKey(),
+            ),
             message: message,
             profile: _getProfile(message.author),
-            isHighlighted:
-                _highlightedId == message.messageId.toHex(),
-            replyToMessage:
-                message.replyTo != null ? _messageById[message.replyTo] : null,
+            isHighlighted: _highlightedId == message.messageId.toHex(),
+            replyToMessage: message.replyTo != null
+                ? _messageById[message.replyTo]
+                : null,
             onTapQuote: message.replyTo != null
                 ? () => _scrollToAndHighlight(message.replyTo!)
                 : null,
             onTapAvatar: message.isMe
                 ? null
                 : () => _showMemberProfile(message.author),
-            onReply: () => _startReply(ReplyTarget(
-              eventId: message.messageId,
-              author: message.author,
-              preview: message.content,
-              isMe: message.isMe,
-            )),
+            onReply: () => _startReply(
+              ReplyTarget(
+                eventId: message.messageId,
+                author: message.author,
+                preview: message.content,
+                isMe: message.isMe,
+              ),
+            ),
             onRetry: () => _retryMessage(message),
             onCopy: () => _copyMessage(message),
           ),
@@ -460,25 +564,29 @@ class _ChatPageState extends State<ChatPage> {
             FfiSigningEvent_Request() => _buildRequestCard(event),
             FfiSigningEvent_Offer() => _buildOfferCard(event),
             FfiSigningEvent_Partial() => _buildPartialCard(event),
+            FfiSigningEvent_Cancel() => _buildCancelCard(event),
           },
-          TimelineSigningComplete(:final requestState) =>
-            _SigningCompleteCard(
-              details: signingDetailsText(requestState.request.signingDetails),
-              onShowSignature: () => _completeAndShowSignature(requestState),
-            ),
+          TimelineSigningComplete(:final requestState) => _SigningCompleteCard(
+            details: signingDetailsText(requestState.request.signingDetails),
+            onShowSignature: () => _completeAndShowSignature(requestState),
+          ),
           TimelineError() => SigningErrorCard(
             text: item.reason,
             author: item.author,
             profile: _getProfile(item.author),
             isMe: _myPubkey != null && item.author.equals(other: _myPubkey!),
             onCopy: () => Clipboard.setData(ClipboardData(text: item.reason)),
-            onReply: () => _startReply(ReplyTarget(
-              eventId: item.eventId,
-              author: item.author,
-              preview: 'Error: ${item.reason}',
-              isMe: _myPubkey != null && item.author.equals(other: _myPubkey!),
-            )),
-            onTapAvatar: _myPubkey != null && item.author.equals(other: _myPubkey!)
+            onReply: () => _startReply(
+              ReplyTarget(
+                eventId: item.eventId,
+                author: item.author,
+                preview: 'Error: ${item.reason}',
+                isMe:
+                    _myPubkey != null && item.author.equals(other: _myPubkey!),
+              ),
+            ),
+            onTapAvatar:
+                _myPubkey != null && item.author.equals(other: _myPubkey!)
                 ? null
                 : () => _showMemberProfile(item.author),
           ),
@@ -522,12 +630,15 @@ class _ChatPageState extends State<ChatPage> {
     final myPubkey = _myPubkey;
     final iOffered =
         myPubkey != null && state.offers.containsKey(myPubkey.toHex());
-    final accessStruct =
-        coord.getAccessStructure(asRef: state.request.accessStructureRef);
+    final accessStruct = coord.getAccessStructure(
+      asRef: state.request.accessStructureRef,
+    );
     final threshold = accessStruct?.threshold() ?? 0;
-    final reqIsMe = myPubkey != null && state.request.author.equals(other: myPubkey);
+    final reqIsMe =
+        myPubkey != null && state.request.author.equals(other: myPubkey);
     final idHex = request.eventId.toHex();
     final key = _timelineKeys.putIfAbsent(idHex, () => GlobalKey());
+    final isComplete = state.partials.length >= threshold;
     return SigningRequestCard(
       key: key,
       state: state,
@@ -537,9 +648,14 @@ class _ChatPageState extends State<ChatPage> {
       profile: _getProfile(state.request.author),
       getDisplayName: (pubkey) => getDisplayName(_getProfile(pubkey), pubkey),
       onOfferToSign: iOffered ? null : () => _onOfferToSign(state),
+      onCancel: reqIsMe && !isComplete && !state.cancelled
+          ? () => _onCancelRequest(state)
+          : null,
       onCopy: () => _copySigningText(request),
       onReply: () => _startReply(_signingReplyTarget(request)),
-      onTapAvatar: reqIsMe ? null : () => _showMemberProfile(state.request.author),
+      onTapAvatar: reqIsMe
+          ? null
+          : () => _showMemberProfile(state.request.author),
     );
   }
 
@@ -551,8 +667,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildOfferCard(FfiSigningEvent_Offer offer) {
-    final isMe =
-        _myPubkey != null && offer.author.equals(other: _myPubkey!);
+    final isMe = _myPubkey != null && offer.author.equals(other: _myPubkey!);
     final preview = _signingMessagePreview(offer.requestId);
     return _SigningEventLine(
       profile: _getProfile(offer.author),
@@ -568,8 +683,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildPartialCard(FfiSigningEvent_Partial partial) {
-    final isMe =
-        _myPubkey != null && partial.author.equals(other: _myPubkey!);
+    final isMe = _myPubkey != null && partial.author.equals(other: _myPubkey!);
     final preview = _signingMessagePreview(partial.requestId);
     return _SigningEventLine(
       profile: _getProfile(partial.author),
@@ -581,6 +695,39 @@ class _ChatPageState extends State<ChatPage> {
       onTapPill: () => _scrollToAndHighlight(partial.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(partial.author),
     );
+  }
+
+  Widget _buildCancelCard(FfiSigningEvent_Cancel cancel) {
+    final isMe = _myPubkey != null && cancel.author.equals(other: _myPubkey!);
+    final preview = _signingMessagePreview(cancel.requestId);
+    return _SigningEventLine(
+      profile: _getProfile(cancel.author),
+      author: cancel.author,
+      isMe: isMe,
+      label: 'cancelled the signing request',
+      messagePill: preview,
+      timestamp: DateTime.fromMillisecondsSinceEpoch(cancel.timestamp * 1000),
+      onTapPill: () => _scrollToAndHighlight(cancel.requestId),
+      onTapAvatar: isMe ? null : () => _showMemberProfile(cancel.author),
+    );
+  }
+
+  Future<void> _onCancelRequest(SigningRequestState state) async {
+    if (_client == null) return;
+    setState(() => state.cancelled = true);
+    final nsec = _nostrContext!.nostrSettings.getNsec();
+    try {
+      await _client!.sendSignCancel(
+        accessStructureId: widget.accessStructureId,
+        nsec: nsec,
+        requestId: state.request.eventId,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => state.cancelled = false);
+        showErrorSnackbar(context, 'Failed to cancel signing request: $e');
+      }
+    }
   }
 
   Future<void> _onOfferToSign(SigningRequestState state) async {
@@ -605,14 +752,16 @@ class _ChatPageState extends State<ChatPage> {
                 final id = devices[index];
                 final name = coord.getDeviceName(id: id);
                 final enoughNonces = coord.noncesAvailable(id: id) >= 1;
-                final shareIndex = accessStructure.getDeviceShortShareIndex(deviceId: id);
+                final shareIndex = accessStructure.getDeviceShortShareIndex(
+                  deviceId: id,
+                );
                 final alreadyOffered = offeredIndices.contains(shareIndex);
                 final enabled = enoughNonces && !alreadyOffered;
                 final subtitle = alreadyOffered
                     ? 'already offered'
                     : !enoughNonces
-                        ? 'no nonces'
-                        : null;
+                    ? 'no nonces'
+                    : null;
                 return ListTile(
                   title: Text(name ?? '<unknown>'),
                   subtitle: subtitle != null ? Text(subtitle) : null,
@@ -636,7 +785,11 @@ class _ChatPageState extends State<ChatPage> {
 
     final nsec = _nostrContext!.nostrSettings.getNsec();
     try {
+      final reservationId = NonceReservationId(
+        field0: state.request.eventId.field0,
+      );
       final binonces = await coord.reserveNonces(
+        id: reservationId,
         deviceId: selectedDevice,
         nSignatures: 1,
       );
@@ -653,13 +806,20 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _triggerDeviceSigning(SigningRequestState state, SealedSigningData sealed, DeviceId deviceId) async {
+  Future<void> _triggerDeviceSigning(
+    SigningRequestState state,
+    SealedSigningData sealed,
+    DeviceId deviceId,
+  ) async {
     try {
+      final reservationId = NonceReservationId(
+        field0: state.request.eventId.field0,
+      );
       final sessionId = await coord.signWithNonceReservation(
         signTask: sealed.signTask(),
         accessStructureRef: sealed.accessStructureRef(),
         allBinonces: sealed.binonces(),
-        deviceId: deviceId,
+        id: reservationId,
       );
 
       final signingStream = coord
@@ -667,7 +827,9 @@ class _ChatPageState extends State<ChatPage> {
           .toBehaviorSubject();
 
       final gotShares = signingStream
-          .asyncMap((s) => deviceIdSet(s.gotShares).contains(deviceId) ? true : null)
+          .asyncMap(
+            (s) => deviceIdSet(s.gotShares).contains(deviceId) ? true : null,
+          )
           .firstWhere((done) => done != null);
 
       signingStream.forEach((signingState) async {
@@ -786,9 +948,7 @@ class _ChatPageState extends State<ChatPage> {
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Message to sign',
-            ),
+            decoration: const InputDecoration(labelText: 'Message to sign'),
             onSubmitted: (value) => Navigator.pop(context, value),
           ),
           actions: [
@@ -814,16 +974,6 @@ class _ChatPageState extends State<ChatPage> {
       _pendingSignRequest = (asRef: asRef, testMessage: testMessage.trim());
     });
     _inputFocusNode.requestFocus();
-  }
-
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
   }
 
   Future<void> _sendMessage() async {
@@ -869,7 +1019,9 @@ class _ChatPageState extends State<ChatPage> {
 
     final nsec = _nostrContext!.nostrSettings.getNsec();
     setState(() {
-      _timeline.removeWhere((item) => item is TimelineChat && item.message == message);
+      _timeline.removeWhere(
+        (item) => item is TimelineChat && item.message == message,
+      );
       _messageById.remove(message.messageId);
     });
 
@@ -898,15 +1050,27 @@ class _ChatPageState extends State<ChatPage> {
         '${_displayName(author)} offered to sign with key #$shareIndex',
       FfiSigningEvent_Partial(:final author) =>
         '${_displayName(author)} signed',
+      FfiSigningEvent_Cancel(:final author) =>
+        '${_displayName(author)} cancelled the signing request',
     };
     Clipboard.setData(ClipboardData(text: text));
   }
 
   ReplyTarget _signingReplyTarget(FfiSigningEvent event) {
     final (eventId, author) = switch (event) {
-      FfiSigningEvent_Request(:final eventId, :final author) => (eventId, author),
+      FfiSigningEvent_Request(:final eventId, :final author) => (
+        eventId,
+        author,
+      ),
       FfiSigningEvent_Offer(:final eventId, :final author) => (eventId, author),
-      FfiSigningEvent_Partial(:final eventId, :final author) => (eventId, author),
+      FfiSigningEvent_Partial(:final eventId, :final author) => (
+        eventId,
+        author,
+      ),
+      FfiSigningEvent_Cancel(:final eventId, :final author) => (
+        eventId,
+        author,
+      ),
     };
     final preview = switch (event) {
       FfiSigningEvent_Request(:final signingDetails) =>
@@ -914,6 +1078,7 @@ class _ChatPageState extends State<ChatPage> {
       FfiSigningEvent_Offer(:final shareIndex) =>
         'Sign offer — key #$shareIndex',
       FfiSigningEvent_Partial() => 'Signed',
+      FfiSigningEvent_Cancel() => 'Cancelled',
     };
     return ReplyTarget(
       eventId: eventId,
@@ -974,18 +1139,22 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
       ),
-      body: Builder(builder: (context) {
-        final activeRequest = _activeSigningRequest;
-        final taskCard = activeRequest != null ? _buildTaskCard(activeRequest) : null;
+      body: Builder(
+        builder: (context) {
+          final activeRequest = _activeSigningRequest;
+          final taskCard = activeRequest != null
+              ? _buildTaskCard(activeRequest)
+              : null;
 
-        return Column(
-          children: [
-            Expanded(child: _buildTimeline(theme)),
-            _buildMessageInput(),
-            if (taskCard != null) taskCard,
-          ],
-        );
-      }),
+          return Column(
+            children: [
+              Expanded(child: _buildTimeline(theme)),
+              _buildMessageInput(),
+              if (taskCard != null) taskCard,
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1016,161 +1185,168 @@ class _ChatPageState extends State<ChatPage> {
     final hasAttachment = _replyingTo != null || _pendingSignRequest != null;
 
     return Container(
-      color: hasAttachment
-          ? theme.colorScheme.surface
-          : Colors.transparent,
+      color: hasAttachment ? theme.colorScheme.surface : Colors.transparent,
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-          if (_replyingTo != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                border: Border(
-                  top: BorderSide(
-                    color: theme.colorScheme.outline.withValues(alpha: 0.2),
+            if (_replyingTo != null)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                    ),
                   ),
                 ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 32,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _replyingTo!.isMe
+                                ? 'Replying to yourself'
+                                : 'Replying to ${getDisplayName(_getProfile(_replyingTo!.author), _replyingTo!.author)}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            _replyingTo!.preview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: _cancelReply,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
               ),
+            if (_pendingSignRequest != null)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer.withValues(
+                    alpha: 0.5,
+                  ),
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 32,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Signing Request',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.secondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            _pendingSignRequest!.testMessage,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () =>
+                          setState(() => _pendingSignRequest = null),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(8),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Container(
-                    width: 3,
-                    height: 32,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _replyingTo!.isMe
-                              ? 'Replying to yourself'
-                              : 'Replying to ${getDisplayName(_getProfile(_replyingTo!.author), _replyingTo!.author)}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                    child: TextField(
+                      controller: _messageController,
+                      focusNode: _inputFocusNode,
+                      autofocus: true,
+                      enabled: isConnected,
+                      minLines: 1,
+                      maxLines: 6,
+                      decoration: InputDecoration(
+                        hintText: isConnected
+                            ? 'Type a message...'
+                            : 'Connecting...',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
                         ),
-                        Text(
-                          _replyingTo!.preview,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
-                      ],
+                      ),
+                      textInputAction: TextInputAction.newline,
                     ),
                   ),
+                  const SizedBox(width: 8),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: _cancelReply,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                    onPressed: isConnected ? _showActionMenu : null,
+                    icon: const Icon(Icons.add),
+                    tooltip: 'Actions',
                   ),
                 ],
               ),
             ),
-          if (_pendingSignRequest != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
-                border: Border(
-                  top: BorderSide(
-                    color: theme.colorScheme.outline.withValues(alpha: 0.2),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 3,
-                    height: 32,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.secondary,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Signing Request',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.secondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          _pendingSignRequest!.testMessage,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () => setState(() => _pendingSignRequest = null),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    focusNode: _inputFocusNode,
-                    autofocus: true,
-                    enabled: isConnected,
-                    minLines: 1,
-                    maxLines: 6,
-                    decoration: InputDecoration(
-                      hintText: isConnected
-                          ? 'Type a message...'
-                          : 'Connecting...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                    textInputAction: TextInputAction.newline,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: isConnected ? _showActionMenu : null,
-                  icon: const Icon(Icons.add),
-                  tooltip: 'Actions',
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1323,74 +1499,77 @@ class _MessageBubbleState extends State<_MessageBubble> {
         maxWidth: MediaQuery.of(context).size.width * 0.7,
       ),
       child: AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: widget.isHighlighted
-            ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
-            : baseColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: widget.isHighlighted
-            ? [BoxShadow(
-                color: theme.colorScheme.primary.withValues(alpha: 0.4),
-                blurRadius: 10,
-                spreadRadius: 1,
-              )]
-            : [],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!isMe)
-            Text(
-              getDisplayName(widget.profile, widget.message.author),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          if (widget.replyToMessage != null) _buildReplyQuote(theme),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Flexible(child: Text(widget.message.content)),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 1),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _formatTime(widget.message.timestamp),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (isMe) ...[
-                      const SizedBox(width: 3),
-                      _buildStatusIndicator(theme),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isFailed)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Tap to retry',
+        duration: const Duration(milliseconds: 400),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: widget.isHighlighted
+              ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+              : baseColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: widget.isHighlighted
+              ? [
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isMe)
+              Text(
+                getDisplayName(widget.profile, widget.message.author),
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.error,
-                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
                 ),
               ),
+            if (widget.replyToMessage != null) _buildReplyQuote(theme),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Flexible(child: Text(widget.message.content)),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 1),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _formatTime(widget.message.timestamp),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 10,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (isMe) ...[
+                        const SizedBox(width: 3),
+                        _buildStatusIndicator(theme),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
-        ],
+            if (isFailed)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Tap to retry',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
-    ));
+    );
   }
 
   @override
@@ -1402,51 +1581,51 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final bubble = _buildBubbleContent(context, theme);
 
     final hoverActions = AnimatedOpacity(
-            opacity: _isHovered ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 150),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isFailed)
-                  IconButton(
-                    icon: Icon(
-                      Icons.refresh,
-                      size: 18,
-                      color: theme.colorScheme.error,
-                    ),
-                    onPressed: widget.onRetry,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    splashRadius: 14,
-                    tooltip: 'Retry',
-                  ),
-                IconButton(
-                  icon: Icon(
-                    Icons.copy,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: widget.onCopy,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  splashRadius: 14,
-                  tooltip: 'Copy',
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.reply,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: widget.onReply,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  splashRadius: 14,
-                  tooltip: 'Reply',
-                ),
-              ],
+      opacity: _isHovered ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 150),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isFailed)
+            IconButton(
+              icon: Icon(
+                Icons.refresh,
+                size: 18,
+                color: theme.colorScheme.error,
+              ),
+              onPressed: widget.onRetry,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              splashRadius: 14,
+              tooltip: 'Retry',
             ),
-          );
+          IconButton(
+            icon: Icon(
+              Icons.copy,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            onPressed: widget.onCopy,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            splashRadius: 14,
+            tooltip: 'Copy',
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.reply,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            onPressed: widget.onReply,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            splashRadius: 14,
+            tooltip: 'Reply',
+          ),
+        ],
+      ),
+    );
 
     final avatar = !isMe
         ? GestureDetector(
@@ -1533,7 +1712,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (replyTo.quoteIcon != null) ...[
-                  Icon(replyTo.quoteIcon, size: 12, color: theme.colorScheme.primary),
+                  Icon(
+                    replyTo.quoteIcon,
+                    size: 12,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 4),
                 ],
                 Text(
@@ -1614,35 +1797,43 @@ class _SigningEventLine extends StatelessWidget {
             ],
             Flexible(
               child: Text.rich(
-                TextSpan(children: [
-                  TextSpan(text: '${isMe ? 'you ' : ''}$label ', style: eventStyle),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: GestureDetector(
-                        onTap: onTapPill,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            messagePill,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.primary,
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '${isMe ? 'you ' : ''}$label ',
+                      style: eventStyle,
+                    ),
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.middle,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: onTapPill,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              messagePill,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  if (suffix != null)
-                    TextSpan(text: ' $suffix', style: eventStyle),
-                ]),
+                    if (suffix != null)
+                      TextSpan(text: ' $suffix', style: eventStyle),
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 6),
@@ -1664,10 +1855,7 @@ class _SigningCompleteCard extends StatelessWidget {
   final String details;
   final VoidCallback? onShowSignature;
 
-  const _SigningCompleteCard({
-    required this.details,
-    this.onShowSignature,
-  });
+  const _SigningCompleteCard({required this.details, this.onShowSignature});
 
   @override
   Widget build(BuildContext context) {
@@ -1738,8 +1926,18 @@ class _DateDivider extends StatelessWidget {
       return 'Yesterday';
     }
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${d.day} ${months[d.month - 1]} ${d.year}';
   }
@@ -1752,7 +1950,9 @@ class _DateDivider extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Divider(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+            child: Divider(
+              color: theme.colorScheme.outline.withValues(alpha: 0.3),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1764,7 +1964,9 @@ class _DateDivider extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Divider(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+            child: Divider(
+              color: theme.colorScheme.outline.withValues(alpha: 0.3),
+            ),
           ),
         ],
       ),

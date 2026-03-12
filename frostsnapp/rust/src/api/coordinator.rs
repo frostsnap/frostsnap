@@ -6,15 +6,18 @@ use flutter_rust_bridge::frb;
 pub use frostsnap_core::coordinator::restoration::RestorationState;
 pub use frostsnap_core::coordinator::CoordAccessStructure as AccessStructure;
 use frostsnap_core::{
-    coordinator::CoordFrostKey,
+    coordinator::{CoordFrostKey, KeyContext},
     schnorr_fun::frost::{ShareIndex, SharedKey},
     tweak::Xpub,
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SymmetricKey,
 };
+use frostsnap_nostr::ChannelInitData;
 use std::collections::BTreeMap;
 use tracing::{event, Level};
 
-use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
+use crate::{
+    api::nostr::ChannelConnectionParams, coordinator::FfiCoordinator, frb_generated::StreamSink,
+};
 
 pub use super::backup_run::{BackupDevice, BackupRun};
 
@@ -160,6 +163,38 @@ impl Coordinator {
     #[frb(sync)]
     pub fn key_state(&self) -> KeyState {
         self.0.key_state()
+    }
+
+    #[frb(sync)]
+    pub fn channel_connection_params(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) -> ChannelConnectionParams {
+        let inner = self.0.inner();
+        let key_data = inner
+            .get_frost_key(access_structure_ref.key_id)
+            .expect("key must exist");
+        let access_structure = key_data
+            .get_access_structure(access_structure_ref.access_structure_id)
+            .expect("access structure must exist");
+        let signing_key = KeyContext {
+            app_shared_key: access_structure.app_shared_key(),
+            purpose: key_data.purpose,
+        };
+        let root_shared_key = key_data
+            .complete_key
+            .root_shared_key(access_structure_ref.access_structure_id, encryption_key);
+        let init_data = root_shared_key.map(|rsk| ChannelInitData {
+            key_name: key_data.key_name.clone(),
+            purpose: key_data.purpose,
+            root_shared_key: rsk,
+        });
+        ChannelConnectionParams {
+            as_id: access_structure_ref.access_structure_id,
+            signing_key,
+            init_data,
+        }
     }
 
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {

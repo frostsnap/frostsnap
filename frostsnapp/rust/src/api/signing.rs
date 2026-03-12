@@ -10,6 +10,7 @@ use bitcoin::ScriptBuf;
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
 pub use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+pub use frostsnap_core::coordinator::signing::NonceReservationId;
 pub use frostsnap_core::coordinator::ActiveSignSession;
 pub use frostsnap_core::coordinator::{
     ParticipantBinonces, ParticipantSignatureShares, SignSessionProgress, StartSign,
@@ -20,6 +21,9 @@ use frostsnap_core::{
     message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
 };
 use std::collections::{HashMap, HashSet};
+
+#[frb(mirror(NonceReservationId), non_opaque)]
+pub struct _NonceReservationId(pub [u8; 32]);
 
 /// An outgoing Bitcoin transaction that has not been successfully broadcast.
 ///
@@ -441,17 +445,15 @@ impl Coordinator {
 
     pub fn reserve_nonces(
         &self,
+        id: NonceReservationId,
         device_id: DeviceId,
         n_signatures: u32,
     ) -> Result<ParticipantBinonces> {
-        self.0.reserve_nonces(device_id, n_signatures as usize)
+        self.0.reserve_nonces(id, device_id, n_signatures as usize)
     }
 
-    pub fn cancel_nonce_reservation(
-        &self,
-        binonces: ParticipantBinonces,
-    ) -> Result<()> {
-        self.0.cancel_nonce_reservation(&binonces)
+    pub fn cancel_nonce_reservation(&self, id: NonceReservationId) -> Result<()> {
+        self.0.cancel_nonce_reservation(id)
     }
 
     #[frb(sync)]
@@ -460,14 +462,10 @@ impl Coordinator {
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
         all_binonces: Vec<ParticipantBinonces>,
-        device_id: DeviceId,
+        id: NonceReservationId,
     ) -> bool {
-        self.0.can_sign_with_nonce_reservation(
-            &sign_task,
-            access_structure_ref,
-            &all_binonces,
-            device_id,
-        )
+        self.0
+            .can_sign_with_nonce_reservation(&sign_task, access_structure_ref, &all_binonces, id)
     }
 
     pub fn sign_with_nonce_reservation(
@@ -475,14 +473,10 @@ impl Coordinator {
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
         all_binonces: Vec<ParticipantBinonces>,
-        device_id: DeviceId,
+        id: NonceReservationId,
     ) -> Result<SignSessionId> {
-        self.0.sign_with_nonce_reservation(
-            sign_task,
-            access_structure_ref,
-            &all_binonces,
-            device_id,
-        )
+        self.0
+            .sign_with_nonce_reservation(sign_task, access_structure_ref, &all_binonces, id)
     }
 
     #[frb(sync)]
@@ -499,7 +493,8 @@ impl Coordinator {
         session_id: SignSessionId,
         shares: &ParticipantSignatureShares,
     ) -> Result<()> {
-        self.0.add_remote_signature_shares(session_id, shares.clone())
+        self.0
+            .add_remote_signature_shares(session_id, shares.clone())
     }
 
     pub fn ensure_tmp_remote_sign_session(
@@ -511,7 +506,6 @@ impl Coordinator {
         self.0
             .ensure_tmp_remote_sign_session(sign_task, access_structure_ref, &all_binonces)
     }
-
 }
 
 #[derive(Clone, Debug)]

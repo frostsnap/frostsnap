@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{
-    coordinator::{ParticipantBinonces, ParticipantSignatureShares, KeyContext},
+    coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
     AccessStructureId, AccessStructureRef, SignSessionId, WireSignTask,
 };
 use nostr_sdk::{
@@ -41,6 +41,7 @@ pub struct SigningEventTree {
 
 enum CachedSigningData {
     Request {
+        author: PublicKey,
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
     },
@@ -63,24 +64,21 @@ impl SigningEventTree {
     fn add_request(
         &mut self,
         event_id: EventId,
+        author: PublicKey,
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
     ) {
         self.events.insert(
             event_id,
             CachedSigningData::Request {
+                author,
                 sign_task,
                 access_structure_ref,
             },
         );
     }
 
-    fn add_offer(
-        &mut self,
-        event_id: EventId,
-        parent_id: EventId,
-        binonces: ParticipantBinonces,
-    ) {
+    fn add_offer(&mut self, event_id: EventId, parent_id: EventId, binonces: ParticipantBinonces) {
         self.events.insert(
             event_id,
             CachedSigningData::Offer {
@@ -104,6 +102,7 @@ impl SigningEventTree {
                 Some(CachedSigningData::Request {
                     sign_task,
                     access_structure_ref,
+                    ..
                 }) => {
                     collected.reverse();
                     return Ok(SigningChain {
@@ -141,9 +140,17 @@ pub struct ChannelClient {
 }
 
 impl ChannelClient {
-    pub fn new(access_structure_id: AccessStructureId, signing_key: KeyContext, init_data: Option<crate::ChannelInitData>) -> Self {
+    pub fn new(
+        access_structure_id: AccessStructureId,
+        signing_key: KeyContext,
+        init_data: Option<crate::ChannelInitData>,
+    ) -> Self {
         let channel_keys = ChannelKeys::from_access_structure_id(&access_structure_id);
-        Self { channel_keys, signing_key, init_data }
+        Self {
+            channel_keys,
+            signing_key,
+            init_data,
+        }
     }
 
     /// Start receiving channel events using the provided client.
@@ -510,6 +517,13 @@ impl ChannelHandle {
             .await
     }
 
+    /// Cancel a signing request. Only the original requester should call this.
+    pub async fn send_sign_cancel(&self, keys: &Keys, request_id: EventId) -> Result<EventId> {
+        let message = SigningMessage::Cancel;
+        self.send_signing_event(keys, &message, Some(request_id))
+            .await
+    }
+
     async fn send_signing_event(
         &self,
         keys: &Keys,
@@ -542,10 +556,7 @@ impl ChannelHandle {
 // Event processing
 // ============================================================================
 
-fn decrypt_inner_event(
-    outer_event: &Event,
-    conversation_key: &ConversationKey,
-) -> Result<Event> {
+fn decrypt_inner_event(outer_event: &Event, conversation_key: &ConversationKey) -> Result<Event> {
     let encrypted_content = &outer_event.content;
     anyhow::ensure!(!encrypted_content.is_empty(), "empty content");
 
@@ -554,7 +565,10 @@ fn decrypt_inner_event(
     let decrypted = String::from_utf8(decrypted_bytes)?;
     let inner_event: Event = serde_json::from_str(&decrypted)?;
 
-    anyhow::ensure!(inner_event.verify().is_ok(), "inner event signature invalid");
+    anyhow::ensure!(
+        inner_event.verify().is_ok(),
+        "inner event signature invalid"
+    );
 
     Ok(inner_event)
 }
@@ -606,6 +620,7 @@ fn process_signing_inner_event(
         } => {
             signing_events.lock().unwrap().add_request(
                 event_id,
+                author,
                 sign_task.clone(),
                 access_structure_ref,
             );
@@ -696,6 +711,39 @@ fn process_signing_inner_event(
                 request_id,
                 session_id,
                 signature_shares,
+                timestamp,
+            }))
+        }
+        SigningMessage::Cancel => {
+            let request_id = match extract_e_tag(inner_event) {
+                Some(id) => id,
+                None => {
+                    return ChannelEvent::Error {
+                        event_id,
+                        author,
+                        timestamp,
+                        reason: "signing cancel missing e-tag".into(),
+                    };
+                }
+            };
+
+            // 🔒 Only the original request author can cancel
+            let is_authorized = signing_events.lock().unwrap().events.get(&request_id)
+                .is_some_and(|data| matches!(data, CachedSigningData::Request { author: req_author, .. } if *req_author == author));
+
+            if !is_authorized {
+                return ChannelEvent::Error {
+                    event_id,
+                    author,
+                    timestamp,
+                    reason: "cancel from non-request-author".into(),
+                };
+            }
+
+            ChannelEvent::Frostsnap(FrostsnapEvent::Signing(SigningEvent::Cancel {
+                event_id,
+                author,
+                request_id,
                 timestamp,
             }))
         }
@@ -874,7 +922,8 @@ pub async fn fetch_channel_init(
         bincode::decode_from_slice::<crate::ChannelInitData, _>(&raw, BINCODE_CONFIG)?;
 
     // 🔒 verify the init data produces the same channel secret
-    let derived_secret = crate::ChannelSecret::from_access_structure_id(&init_data.access_structure_id());
+    let derived_secret =
+        crate::ChannelSecret::from_access_structure_id(&init_data.access_structure_id());
     anyhow::ensure!(
         derived_secret.0 == channel_secret.0,
         "channel secret mismatch in channel init data"

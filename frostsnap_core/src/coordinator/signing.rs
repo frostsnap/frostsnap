@@ -224,7 +224,7 @@ pub struct StartSign {
 
 /// Identifier for a nonce reservation, derived by hashing the reserved binonces.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NonceReservationId([u8; 32]);
+pub struct NonceReservationId(pub [u8; 32]);
 
 crate::impl_display_debug_serialize! {
     fn to_bytes(value: &NonceReservationId) -> [u8;32] {
@@ -240,6 +240,10 @@ crate::impl_fromstr_deserialize! {
 }
 
 impl NonceReservationId {
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub fn from_binonces(binonces: &[schnorr_fun::binonce::Nonce]) -> Self {
         use sha2::{Digest, Sha256};
         let bytes = bincode::encode_to_vec(binonces, bincode::config::standard())
@@ -308,6 +312,7 @@ pub enum StartSignError {
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
     DeviceNotLocalSigner { device_id: DeviceId },
+    NoSuchNonceReservation,
 }
 
 impl fmt::Display for StartSignError {
@@ -348,6 +353,9 @@ impl fmt::Display for StartSignError {
                 f,
                 "device {device_id} did not provide nonces for this session"
             ),
+            StartSignError::NoSuchNonceReservation => {
+                write!(f, "no nonce reservation found with that id")
+            }
         }
     }
 }
@@ -588,8 +596,11 @@ impl State {
                                 .checked_add(n_sigs as _)
                                 .expect("no overflow");
 
-                            self.nonce_cache
-                                .consume(*device_id, nonce_segment.stream_id, consume_to);
+                            self.nonce_cache.consume(
+                                *device_id,
+                                nonce_segment.stream_id,
+                                consume_to,
+                            );
                         }
                     }
                     if let Some(signatures) = finished {
@@ -959,10 +970,7 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn get_active_sign_session(
-        &self,
-        session_id: SignSessionId,
-    ) -> Option<&ActiveSignSession> {
+    pub fn get_active_sign_session(&self, session_id: SignSessionId) -> Option<&ActiveSignSession> {
         self.signing.get_any_session(&session_id)
     }
 
@@ -1114,6 +1122,7 @@ impl FrostCoordinator {
     /// `CoordNonceStreamState` later in `ensure_sign_session`.
     pub fn reserve_nonces(
         &mut self,
+        id: NonceReservationId,
         device_id: DeviceId,
         n_signatures: usize,
     ) -> Result<Vec<schnorr_fun::binonce::Nonce>, StartSignError> {
@@ -1136,7 +1145,6 @@ impl FrostCoordinator {
             binonces: binonces.clone(),
             nonce_state: nonce_sub_segment.coord_nonce_state(),
         };
-        let id = NonceReservationId::from_binonces(&binonces);
 
         self.mutate(Mutation::Signing(SigningMutation::NewNonceReservation {
             id,
@@ -1147,11 +1155,10 @@ impl FrostCoordinator {
     }
 
     /// Cancel a nonce reservation, releasing the nonces for reuse.
-    pub fn cancel_nonce_reservation(&mut self, binonces: &[schnorr_fun::binonce::Nonce]) {
-        let id = NonceReservationId::from_binonces(binonces);
-        self.mutate(Mutation::Signing(
-            SigningMutation::CancelNonceReservation { id },
-        ));
+    pub fn cancel_nonce_reservation(&mut self, id: NonceReservationId) {
+        self.mutate(Mutation::Signing(SigningMutation::CancelNonceReservation {
+            id,
+        }));
     }
 
     /// Check whether `sign_with_nonce_reservation` would succeed for this device.
@@ -1160,7 +1167,7 @@ impl FrostCoordinator {
         sign_task: &crate::WireSignTask,
         access_structure_ref: AccessStructureRef,
         all_binonces: &[ParticipantBinonces],
-        device_id: DeviceId,
+        id: NonceReservationId,
     ) -> bool {
         let AccessStructureRef {
             key_id,
@@ -1198,17 +1205,14 @@ impl FrostCoordinator {
             GroupSignReq::from_binonces(sign_task.clone(), access_structure_id, all_binonces);
         let session_id = group_request.session_id();
         if let Some(session) = self.signing.get_any_session(&session_id) {
-            return session.init.local_nonces.contains_key(&device_id);
-        }
-
-        // Check if device has a matching nonce reservation
-        all_binonces.iter().any(|p| {
-            let id = NonceReservationId::from_binonces(&p.binonces);
-            self.signing
+            return self
+                .signing
                 .nonce_reservations
                 .get(&id)
-                .is_some_and(|r| r.device_id == device_id)
-        })
+                .is_some_and(|r| session.init.local_nonces.contains_key(&r.device_id));
+        }
+
+        self.signing.nonce_reservations.get(&id).is_some()
     }
 
     /// Create a signing session from collected participant binonces, then immediately
@@ -1222,15 +1226,18 @@ impl FrostCoordinator {
         sign_task: crate::WireSignTask,
         access_structure_ref: AccessStructureRef,
         all_binonces: &[ParticipantBinonces],
-        device_id: DeviceId,
+        id: NonceReservationId,
         encryption_key: SymmetricKey,
     ) -> Result<RequestDeviceSign, StartSignError> {
-        if !self.can_sign_with_nonce_reservation(
-            &sign_task,
-            access_structure_ref,
-            all_binonces,
-            device_id,
-        ) {
+        let device_id = self
+            .signing
+            .nonce_reservations
+            .get(&id)
+            .map(|r| r.device_id)
+            .ok_or(StartSignError::NoSuchNonceReservation)?;
+
+        if !self.can_sign_with_nonce_reservation(&sign_task, access_structure_ref, all_binonces, id)
+        {
             return Err(StartSignError::DeviceNotLocalSigner { device_id });
         }
 
@@ -1304,15 +1311,16 @@ impl FrostCoordinator {
             })
             .collect();
 
-        // Match participant binonces against nonce reservations to find local devices
         let mut local_nonces: BTreeMap<DeviceId, CoordNonceStreamState> = BTreeMap::new();
         let mut consumed_reservations: Vec<NonceReservationId> = Vec::new();
 
-        for participant in all_binonces {
-            let reservation_id = NonceReservationId::from_binonces(&participant.binonces);
-            if let Some(reservation) = self.signing.nonce_reservations.get(&reservation_id) {
+        for (id, reservation) in &self.signing.nonce_reservations {
+            if all_binonces
+                .iter()
+                .any(|p| p.binonces == reservation.binonces)
+            {
                 local_nonces.insert(reservation.device_id, reservation.nonce_state);
-                consumed_reservations.push(reservation_id);
+                consumed_reservations.push(*id);
             }
         }
 
@@ -1412,17 +1420,25 @@ impl FrostCoordinator {
         let mut local_nonces: BTreeMap<DeviceId, CoordNonceStreamState> = BTreeMap::new();
 
         let n_signatures = sign_items.len();
-        for participant in all_binonces {
-            let reservation_id = NonceReservationId::from_binonces(&participant.binonces);
-            if let Some(reservation) = self.signing.nonce_reservations.get(&reservation_id) {
-                local_nonces.insert(reservation.device_id, reservation.nonce_state);
-                self.mutate(Mutation::Signing(
-                    SigningMutation::ConsumeNonceReservation {
-                        id: reservation_id,
-                        n_signatures,
-                    },
-                ));
-            }
+        let matching_reservations: Vec<_> = self
+            .signing
+            .nonce_reservations
+            .iter()
+            .filter(|(_, reservation)| {
+                all_binonces
+                    .iter()
+                    .any(|p| p.binonces == reservation.binonces)
+            })
+            .map(|(id, reservation)| (*id, reservation.device_id, reservation.nonce_state))
+            .collect();
+        for (reservation_id, device_id, nonce_state) in matching_reservations {
+            local_nonces.insert(device_id, nonce_state);
+            self.mutate(Mutation::Signing(
+                SigningMutation::ConsumeNonceReservation {
+                    id: reservation_id,
+                    n_signatures,
+                },
+            ));
         }
 
         let start_sign = StartSign {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/nostr_chat/chat_page.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
@@ -818,12 +819,22 @@ class WalletBottomBar extends StatelessWidget {
 
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
     final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
+    final asRef = frostKey!.accessStructures()[0].accessStructureRef();
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final channelParams = coord.channelConnectionParams(
+      accessStructureRef: asRef,
+      encryptionKey: encryptionKey,
+    );
 
+    if (!context.mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            ChatPage(accessStructureRef: frostKey!.accessStructures()[0].accessStructureRef(), walletName: walletName),
+        builder: (context) => ChatPage(
+          accessStructureRef: asRef,
+          walletName: walletName,
+          channelParams: channelParams,
+        ),
       ),
     );
   }

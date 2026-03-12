@@ -80,6 +80,12 @@ pub enum SigningEvent {
         signature_shares: ParticipantSignatureShares,
         timestamp: u64,
     },
+    Cancel {
+        event_id: EventId,
+        author: PublicKey,
+        request_id: EventId,
+        timestamp: u64,
+    },
 }
 
 /// Wire format for all frostsnap signing messages in the channel.
@@ -97,6 +103,7 @@ pub enum SigningMessage {
         session_id: SignSessionId,
         signature_shares: ParticipantSignatureShares,
     },
+    Cancel,
 }
 
 #[derive(Debug, Clone)]

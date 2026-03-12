@@ -961,7 +961,14 @@ impl FrostCoordinator {
         encryption_key: SymmetricKey,
         rng: &mut impl rand_core::RngCore,
     ) -> AccessStructureRef {
-        self.mutate_new_key(key_name, root_shared_key, BTreeMap::new(), encryption_key, purpose, rng)
+        self.mutate_new_key(
+            key_name,
+            root_shared_key,
+            BTreeMap::new(),
+            encryption_key,
+            purpose,
+            rng,
+        )
     }
 
     pub fn delete_key(&mut self, key_id: KeyId) {

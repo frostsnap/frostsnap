@@ -30,8 +30,9 @@ use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
 };
 use frostsnap_core::coordinator::{
-    BeginKeygen, CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
-    FrostCoordinator, NonceReplenishRequest, ParticipantBinonces, ParticipantSignatureShares,
+    signing::NonceReservationId, BeginKeygen, CoordAccessStructure, CoordFrostKey, CoordinatorSend,
+    CoordinatorToUserMessage, FrostCoordinator, NonceReplenishRequest, ParticipantBinonces,
+    ParticipantSignatureShares,
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
@@ -950,6 +951,7 @@ impl FfiCoordinator {
     }
     pub fn reserve_nonces(
         &self,
+        id: NonceReservationId,
         device_id: DeviceId,
         n_signatures: usize,
     ) -> anyhow::Result<ParticipantBinonces> {
@@ -964,7 +966,7 @@ impl FfiCoordinator {
                 .device_to_share_indicies()
                 .get(&device_id)
                 .ok_or_else(|| anyhow::anyhow!("device has no share index"))?;
-            let binonces = coordinator.reserve_nonces(device_id, n_signatures)?;
+            let binonces = coordinator.reserve_nonces(id, device_id, n_signatures)?;
             Ok(ParticipantBinonces {
                 share_index,
                 binonces,
@@ -972,11 +974,11 @@ impl FfiCoordinator {
         })
     }
 
-    pub fn cancel_nonce_reservation(&self, binonces: &ParticipantBinonces) -> anyhow::Result<()> {
+    pub fn cancel_nonce_reservation(&self, id: NonceReservationId) -> anyhow::Result<()> {
         let mut db = self.db.lock().unwrap();
         let mut coord = self.coordinator.lock().unwrap();
         coord.staged_mutate(&mut *db, |coordinator| {
-            coordinator.cancel_nonce_reservation(&binonces.binonces);
+            coordinator.cancel_nonce_reservation(id);
             Ok(())
         })
     }
@@ -986,12 +988,12 @@ impl FfiCoordinator {
         sign_task: &WireSignTask,
         access_structure_ref: AccessStructureRef,
         all_binonces: &[ParticipantBinonces],
-        device_id: DeviceId,
+        id: NonceReservationId,
     ) -> bool {
         self.coordinator
             .lock()
             .unwrap()
-            .can_sign_with_nonce_reservation(sign_task, access_structure_ref, all_binonces, device_id)
+            .can_sign_with_nonce_reservation(sign_task, access_structure_ref, all_binonces, id)
     }
 
     pub fn sign_with_nonce_reservation(
@@ -999,7 +1001,7 @@ impl FfiCoordinator {
         sign_task: WireSignTask,
         access_structure_ref: AccessStructureRef,
         all_binonces: &[ParticipantBinonces],
-        device_id: DeviceId,
+        id: NonceReservationId,
     ) -> anyhow::Result<SignSessionId> {
         let session_id = {
             let mut db = self.db.lock().unwrap();
@@ -1009,7 +1011,7 @@ impl FfiCoordinator {
                     &sign_task,
                     access_structure_ref,
                     all_binonces,
-                    device_id,
+                    id,
                 ) {
                     return Err(anyhow::anyhow!("device cannot sign with nonce reservation"));
                 }
@@ -1063,7 +1065,6 @@ impl FfiCoordinator {
             )?)
         })
     }
-
 
     pub fn cancel_restoration(&self, restoration_id: RestorationId) -> anyhow::Result<()> {
         let mut db = self.db.lock().unwrap();

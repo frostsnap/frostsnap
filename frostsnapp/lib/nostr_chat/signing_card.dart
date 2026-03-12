@@ -7,6 +7,7 @@ class SigningRequestState {
   final FfiSigningEvent_Request request;
   final Map<String, FfiSigningEvent_Offer> offers = {};
   final Map<String, FfiSigningEvent_Partial> partials = {};
+  bool cancelled = false;
 
   SigningRequestState(this.request);
 
@@ -29,17 +30,19 @@ class SigningRequestState {
 }
 
 String signingDetailsText(SigningDetails details) => switch (details) {
-      SigningDetails_Message(:final message) => message,
-      SigningDetails_Nostr(:final content) => content,
-      SigningDetails_Transaction() => 'Bitcoin Transaction',
-    };
+  SigningDetails_Message(:final message) => message,
+  SigningDetails_Nostr(:final content) => content,
+  SigningDetails_Transaction() => 'Bitcoin Transaction',
+};
 
 Widget _buildSigningDetails(ThemeData theme, SigningDetails details) {
   final (IconData icon, String text) = switch (details) {
     SigningDetails_Message(:final message) => (Icons.message, message),
     SigningDetails_Nostr(:final content) => (Icons.tag, content),
-    SigningDetails_Transaction() =>
-      (Icons.currency_bitcoin, 'Bitcoin Transaction'),
+    SigningDetails_Transaction() => (
+      Icons.currency_bitcoin,
+      'Bitcoin Transaction',
+    ),
   };
 
   return Container(
@@ -60,7 +63,8 @@ Widget _buildSigningDetails(ThemeData theme, SigningDetails details) {
 }
 
 /// Common header row for all signing cards.
-Widget _signingHeader(ThemeData theme, {
+Widget _signingHeader(
+  ThemeData theme, {
   required IconData icon,
   Color? iconColor,
   required String title,
@@ -159,8 +163,11 @@ class _CardWrapperState extends State<_CardWrapper> {
           children: [
             if (widget.onCopy != null)
               IconButton(
-                icon: Icon(Icons.copy, size: 18,
-                    color: theme.colorScheme.onSurfaceVariant),
+                icon: Icon(
+                  Icons.copy,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
                 onPressed: widget.onCopy,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -169,8 +176,11 @@ class _CardWrapperState extends State<_CardWrapper> {
               ),
             if (widget.onReply != null)
               IconButton(
-                icon: Icon(Icons.reply, size: 18,
-                    color: theme.colorScheme.onSurfaceVariant),
+                icon: Icon(
+                  Icons.reply,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
                 onPressed: widget.onReply,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -213,7 +223,9 @@ class _CardWrapperState extends State<_CardWrapper> {
                         GestureDetector(
                           onTap: widget.onTapAvatar,
                           child: NostrAvatar.small(
-                              profile: widget.profile, pubkey: widget.author!),
+                            profile: widget.profile,
+                            pubkey: widget.author!,
+                          ),
                         ),
                         const SizedBox(width: 8),
                       ],
@@ -269,7 +281,12 @@ class SigningErrorCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _signingHeader(theme, icon: Icons.error_outline, iconColor: Colors.red, title: 'Error'),
+          _signingHeader(
+            theme,
+            icon: Icons.error_outline,
+            iconColor: Colors.red,
+            title: 'Error',
+          ),
           const SizedBox(height: 4),
           Text(
             text,
@@ -330,7 +347,9 @@ class TransactionTaskCard extends StatelessWidget {
         leading: NostrAvatar.small(profile: profile, pubkey: offer.author),
         trailing: Icon(
           hasSigned ? Icons.check_circle : Icons.circle_outlined,
-          color: hasSigned ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+          color: hasSigned
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
         ),
       );
     }).toList();
@@ -338,7 +357,9 @@ class TransactionTaskCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant)),
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -349,7 +370,9 @@ class TransactionTaskCard extends StatelessWidget {
           leading: Icon(Icons.draw, color: theme.colorScheme.primary),
           title: Text(
             'Ready to sign',
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
           subtitle: Text(
             signingDetailsText(state.request.signingDetails),
@@ -383,6 +406,7 @@ class SigningRequestCard extends StatelessWidget {
   final bool isMe;
   final bool isHighlighted;
   final VoidCallback? onOfferToSign;
+  final VoidCallback? onCancel;
   final String Function(PublicKey) getDisplayName;
   final FfiNostrProfile? profile;
   final VoidCallback? onCopy;
@@ -398,6 +422,7 @@ class SigningRequestCard extends StatelessWidget {
     required this.getDisplayName,
     this.profile,
     this.onOfferToSign,
+    this.onCancel,
     this.onCopy,
     this.onReply,
     this.onTapAvatar,
@@ -410,6 +435,7 @@ class SigningRequestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final request = state.request;
+    final isCancelled = state.cancelled;
     final isComplete = state.partials.length >= threshold;
     final time = DateTime.fromMillisecondsSinceEpoch(request.timestamp * 1000);
 
@@ -417,75 +443,89 @@ class SigningRequestCard extends StatelessWidget {
         ? theme.colorScheme.primaryContainer
         : theme.colorScheme.surfaceContainerHighest;
 
-    final bubble = AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      padding: const EdgeInsets.all(12),
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.7,
-      ),
-      decoration: BoxDecoration(
-        color: isHighlighted
-            ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
-            : baseColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: isHighlighted
-            ? [BoxShadow(
-                color: theme.colorScheme.primary.withValues(alpha: 0.4),
-                blurRadius: 10,
-                spreadRadius: 1,
-              )]
-            : [],
-      ),
-      child: IntrinsicWidth(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _signingHeader(theme, icon: Icons.draw, title: 'Signing Request'),
-            if (!isMe) ...[
-              const SizedBox(height: 4),
-              Text(
-                this.getDisplayName(request.author),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
+    final bubble = Opacity(
+      opacity: isCancelled ? 0.5 : 1.0,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
+        padding: const EdgeInsets.all(12),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: isHighlighted
+              ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+              : baseColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: isHighlighted
+              ? [
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [],
+        ),
+        child: IntrinsicWidth(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _signingHeader(
+                theme,
+                icon: isCancelled ? Icons.cancel : Icons.draw,
+                iconColor: isCancelled ? theme.colorScheme.error : null,
+                title: isCancelled ? 'Cancelled' : 'Signing Request',
               ),
-            ],
-            const SizedBox(height: 8),
-            _buildSigningDetails(theme, request.signingDetails),
-            if (request.message.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                request.message,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ],
-            if (!isComplete && onOfferToSign != null) ...[
-              const SizedBox(height: 10),
-              FilledButton(
-                onPressed: onOfferToSign,
-                child: const Text('Offer to Sign'),
-              ),
-            ],
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isComplete) ...[
-                  Icon(Icons.check_circle, size: 12, color: Colors.green),
-                  const SizedBox(width: 4),
-                ],
+              if (!isMe) ...[
+                const SizedBox(height: 4),
                 Text(
-                  _formatTime(time),
+                  this.getDisplayName(request.author),
                   style: theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 10,
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: theme.colorScheme.primary,
                   ),
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 8),
+              _buildSigningDetails(theme, request.signingDetails),
+              if (request.message.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(request.message, style: theme.textTheme.bodyMedium),
+              ],
+              if (!isCancelled && !isComplete && onOfferToSign != null) ...[
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: onOfferToSign,
+                  child: const Text('Offer to Sign'),
+                ),
+              ],
+              if (!isCancelled && !isComplete && onCancel != null) ...[
+                const SizedBox(height: 6),
+                OutlinedButton(
+                  onPressed: onCancel,
+                  child: const Text('Cancel'),
+                ),
+              ],
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isComplete) ...[
+                    Icon(Icons.check_circle, size: 12, color: Colors.green),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    _formatTime(time),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
