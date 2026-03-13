@@ -830,10 +830,12 @@ class WalletBottomBar extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatPage(
-          accessStructureRef: asRef,
-          walletName: walletName,
-          channelParams: channelParams,
+        builder: (context) => walletCtx.wrap(
+          ChatPage(
+            accessStructureRef: asRef,
+            walletName: walletName,
+            channelParams: channelParams,
+          ),
         ),
       ),
     );

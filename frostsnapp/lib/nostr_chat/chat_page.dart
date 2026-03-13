@@ -12,11 +12,17 @@ import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart' show NonceReservationId;
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_tx_details.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 
 enum MessageStatus { pending, sent, failed }
 
@@ -107,6 +113,17 @@ class TimelineSigningComplete extends TimelineItem {
     : timestamp = DateTime.fromMillisecondsSinceEpoch(completedAtSecs * 1000);
 }
 
+enum TxTimelineKind { mempool, confirmed }
+
+class TimelineTransaction extends TimelineItem {
+  final Transaction tx;
+  final TxTimelineKind kind;
+  @override
+  final DateTime timestamp;
+  TimelineTransaction(this.tx, {required this.kind, required int timestampSecs})
+    : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
+}
+
 class ChatPage extends StatefulWidget {
   final AccessStructureRef accessStructureRef;
   final String walletName;
@@ -139,6 +156,9 @@ class _ChatPageState extends State<ChatPage> {
   final Set<String> _seenSigningEventIds = {};
   List<PublicKey> _memberPubkeys = [];
   StreamSubscription<FfiChannelEvent>? _subscription;
+  StreamSubscription<TxState>? _txSubscription;
+  final Set<String> _mempoolTxids = {};
+  final Set<String> _confirmedTxids = {};
   NostrClient? _client;
   FfiConnectionState _connectionState = const FfiConnectionState.connecting();
   ReplyTarget? _replyingTo;
@@ -163,7 +183,60 @@ class _ChatPageState extends State<ChatPage> {
     if (_nostrContext == null) {
       _nostrContext = nostr;
       _connect();
+      _subscribeTxStream();
     }
+  }
+
+  void _subscribeTxStream() {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    _txSubscription = walletCtx.txStream.listen(_handleTxState);
+  }
+
+  TxState? _pendingTxState;
+
+  void _handleTxState(TxState state) {
+    if (!mounted) return;
+    if (_connectionState is! FfiConnectionState_Connected) {
+      _pendingTxState = state;
+      return;
+    }
+    _applyTxState(state);
+  }
+
+  void _applyTxState(TxState state) {
+    bool changed = false;
+    for (final tx in state.txs) {
+      final txid = tx.txid;
+      final lastSeen = tx.lastSeen;
+      final confirmTime = tx.confirmationTime;
+
+      if (lastSeen != null && _mempoolTxids.add(txid)) {
+        _insertTimelineItem(
+          TimelineTransaction(
+            tx,
+            kind: TxTimelineKind.mempool,
+            timestampSecs: lastSeen,
+          ),
+        );
+        changed = true;
+      }
+
+      if (confirmTime != null &&
+          !_confirmedTxids.contains(txid) &&
+          (lastSeen == null || confirmTime.time != lastSeen)) {
+        _confirmedTxids.add(txid);
+        _insertTimelineItem(
+          TimelineTransaction(
+            tx,
+            kind: TxTimelineKind.confirmed,
+            timestampSecs: confirmTime.time,
+          ),
+        );
+        changed = true;
+      }
+    }
+    if (changed) setState(() {});
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
@@ -312,6 +385,10 @@ class _ChatPageState extends State<ChatPage> {
 
       case FfiChannelEvent_ConnectionState(:final field0):
         _connectionState = field0;
+        if (field0 is FfiConnectionState_Connected && _pendingTxState != null) {
+          _applyTxState(_pendingTxState!);
+          _pendingTxState = null;
+        }
 
       case FfiChannelEvent_GroupMetadata(:final members):
         _memberPubkeys = members.map((m) => m.pubkey).toList();
@@ -570,6 +647,21 @@ class _ChatPageState extends State<ChatPage> {
             details: signingDetailsText(requestState.request.signingDetails),
             onShowSignature: () => _completeAndShowSignature(requestState),
           ),
+          TimelineTransaction(:final tx, :final kind, :final timestamp) =>
+            switch (kind) {
+              TxTimelineKind.mempool => _TransactionCard(
+                key: _timelineKeys.putIfAbsent(tx.txid, () => GlobalKey()),
+                tx: tx,
+                timestamp: timestamp,
+                isHighlighted: _highlightedId == tx.txid,
+                onTap: () => _showTxDetails(tx),
+              ),
+              TxTimelineKind.confirmed => _TxConfirmedLine(
+                tx: tx,
+                timestamp: timestamp,
+                onTapPill: () => _scrollToByStringId(tx.txid),
+              ),
+            },
           TimelineError() => SigningErrorCard(
             text: item.reason,
             author: item.author,
@@ -607,8 +699,11 @@ class _ChatPageState extends State<ChatPage> {
       a.year == b.year && a.month == b.month && a.day == b.day;
 
   void _scrollToAndHighlight(NostrEventId eventId) {
-    final idHex = eventId.toHex();
-    final key = _timelineKeys[idHex];
+    _scrollToByStringId(eventId.toHex());
+  }
+
+  void _scrollToByStringId(String id) {
+    final key = _timelineKeys[id];
     if (key?.currentContext == null) return;
     Scrollable.ensureVisible(
       key!.currentContext!,
@@ -616,7 +711,7 @@ class _ChatPageState extends State<ChatPage> {
       curve: Curves.easeOut,
       alignment: 0.3,
     );
-    setState(() => _highlightedId = idHex);
+    setState(() => _highlightedId = id);
     Future.delayed(const Duration(milliseconds: 1200), () {
       if (mounted) setState(() => _highlightedId = null);
     });
@@ -909,6 +1004,31 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  void _showTxDetails(Transaction tx) {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    final fsCtx = FrostsnapContext.of(context);
+    if (fsCtx == null) return;
+    final chainTipHeight = walletCtx.superWallet.height();
+    final txDetails = TxDetailsModel(
+      tx: tx,
+      chainTipHeight: chainTipHeight,
+      now: DateTime.now(),
+    );
+    showBottomSheetOrDialog(
+      context,
+      title: const Text('Transaction Details'),
+      builder: (context, scrollController) => walletCtx.wrap(
+        TxDetailsPage(
+          scrollController: scrollController,
+          txStates: walletCtx.txStream,
+          txDetails: txDetails,
+          psbtMan: fsCtx.psbtManager,
+        ),
+      ),
+    );
+  }
+
   void _showActionMenu() {
     showBottomSheetOrDialog(
       context,
@@ -1112,6 +1232,7 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _txSubscription?.cancel();
     _client?.disconnectChannel(accessStructureId: widget.accessStructureId);
     _messageController.dispose();
     _scrollController.dispose();
@@ -1903,6 +2024,217 @@ class _SigningCompleteCard extends StatelessWidget {
                 child: const Text('Show Signature'),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TransactionCard extends StatelessWidget {
+  final Transaction tx;
+  final DateTime timestamp;
+  final bool isHighlighted;
+  final VoidCallback onTap;
+
+  const _TransactionCard({
+    super.key,
+    required this.tx,
+    required this.timestamp,
+    this.isHighlighted = false,
+    required this.onTap,
+  });
+
+  static String _formatTime(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final walletCtx = WalletContext.of(context);
+    final chainTipHeight = walletCtx?.superWallet.height() ?? 0;
+    final txDetails = TxDetailsModel(
+      tx: tx,
+      chainTipHeight: chainTipHeight,
+      now: DateTime.now(),
+    );
+    final isSend = txDetails.isSend;
+    final accentColor = isSend
+        ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
+        : Colors.green.harmonizeWith(theme.colorScheme.primary);
+
+    final statusText = isSend ? 'Sending...' : 'Receiving...';
+
+    final recipients = tx.recipients();
+    final relevantOutput = isSend
+        ? recipients.where((r) => !r.isMine).firstOrNull
+        : recipients.where((r) => r.isMine).firstOrNull;
+    final addressIndex = relevantOutput?.derivationIndex;
+
+    final baseColor = theme.colorScheme.surfaceContainerHighest;
+    return Align(
+      alignment: Alignment.center,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isHighlighted
+                ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+                : baseColor,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: isHighlighted
+                ? [
+                    BoxShadow(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : [],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isSend ? Icons.north_east : Icons.south_east,
+                size: 18,
+                color: accentColor,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          statusText,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (addressIndex != null) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '#$addressIndex',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    SatoshiText(
+                      value: txDetails.netValue,
+                      showSign: true,
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _formatTime(timestamp),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 10,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TxConfirmedLine extends StatelessWidget {
+  final Transaction tx;
+  final DateTime timestamp;
+  final VoidCallback onTapPill;
+
+  const _TxConfirmedLine({
+    required this.tx,
+    required this.timestamp,
+    required this.onTapPill,
+  });
+
+  static String _formatTime(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final walletCtx = WalletContext.of(context);
+    final chainTipHeight = walletCtx?.superWallet.height() ?? 0;
+    final txDetails = TxDetailsModel(
+      tx: tx,
+      chainTipHeight: chainTipHeight,
+      now: DateTime.now(),
+    );
+    final isSend = txDetails.isSend;
+    final accentColor = isSend
+        ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
+        : Colors.green.harmonizeWith(theme.colorScheme.primary);
+    final eventStyle = theme.textTheme.bodySmall?.copyWith(
+      fontStyle: FontStyle.italic,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    return Align(
+      alignment: Alignment.center,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('confirmed ', style: eventStyle),
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: onTapPill,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isSend ? Icons.north_east : Icons.south_east,
+                        size: 14,
+                        color: accentColor,
+                      ),
+                      const SizedBox(width: 2),
+                      SatoshiText(
+                        value: txDetails.netValue,
+                        showSign: true,
+                        hideLeadingWhitespace: true,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              _formatTime(timestamp),
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 10,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
       ),
