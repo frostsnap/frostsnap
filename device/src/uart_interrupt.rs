@@ -1,17 +1,15 @@
 use core::cell::RefCell;
 /// UART interrupt handling module
 use critical_section::Mutex;
-use esp_hal::macros::{handler, ram};
-use esp_hal::uart::{self, AnyUart, Uart, UartInterrupt};
-use esp_hal::{Blocking, InterruptConfigurable};
+use esp_hal::uart::{RxConfig, TxError, Uart, UartInterrupt};
+use esp_hal::{handler, ram, Blocking};
 use heapless::spsc::{Consumer, Producer, Queue};
-use nb;
 
 /// Queue capacity for UART receive buffers
 pub const QUEUE_CAPACITY: usize = 8192;
 
 /// Type alias for the UART byte receiver
-pub type UartReceiver = Consumer<'static, u8, QUEUE_CAPACITY>;
+pub type UartReceiver = Consumer<'static, u8>;
 pub const RX_FIFO_THRESHOLD: u16 = 32;
 
 /// Number of UARTs supported
@@ -35,9 +33,10 @@ fn drain_uart_to_queue(cs: critical_section::CriticalSection) {
 
         // Try to read from UART0 if it exists
         if let (Some(uart), Some(producer)) = (uart0.as_mut(), producer0.as_mut()) {
-            if let Ok(byte) = uart.read_byte() {
+            let mut buf = [0u8; 1];
+            if matches!(uart.read_buffered(&mut buf), Ok(1)) {
                 producer
-                    .enqueue(byte)
+                    .enqueue(buf[0])
                     .expect("UART0 receive queue overflow - consumer too slow");
                 any_data = true;
             }
@@ -45,9 +44,10 @@ fn drain_uart_to_queue(cs: critical_section::CriticalSection) {
 
         // Try to read from UART1 if it exists (upstream)
         if let (Some(uart), Some(producer)) = (uart1.as_mut(), producer1.as_mut()) {
-            if let Ok(byte) = uart.read_byte() {
+            let mut buf = [0u8; 1];
+            if matches!(uart.read_buffered(&mut buf), Ok(1)) {
                 producer
-                    .enqueue(byte)
+                    .enqueue(buf[0])
                     .expect("UART1 receive queue overflow - consumer too slow");
                 any_data = true;
             }
@@ -56,10 +56,10 @@ fn drain_uart_to_queue(cs: critical_section::CriticalSection) {
 }
 
 /// Type alias for UART instance stored in static memory
-type UartInstance = Mutex<RefCell<Option<Uart<'static, Blocking, AnyUart>>>>;
+type UartInstance = Mutex<RefCell<Option<Uart<'static, Blocking>>>>;
 
 /// Type alias for UART producer stored in static memory
-type UartProducer = Mutex<RefCell<Option<Producer<'static, u8, QUEUE_CAPACITY>>>>;
+type UartProducer = Mutex<RefCell<Option<Producer<'static, u8>>>>;
 
 /// Global UART instances for interrupt handling
 static UARTS: [UartInstance; NUM_UARTS] = [
@@ -115,30 +115,14 @@ impl UartHandle {
         self.uart_num as usize
     }
 
-    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), uart::Error> {
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), TxError> {
         let mut up_to = 0;
         let uart_index = self.uart_index();
         while up_to < bytes.len() {
             critical_section::with(|cs| {
                 let mut uart_opt = UARTS[uart_index].borrow_ref_mut(cs);
                 let uart = uart_opt.as_mut().unwrap();
-                // Write as many bytes as possible until the TX FIFO is full
-                while up_to < bytes.len() {
-                    match uart.write_byte(bytes[up_to]) {
-                        Ok(_) => {
-                            up_to += 1;
-                        }
-                        Err(nb::Error::WouldBlock) => {
-                            // TX FIFO is full, exit inner loop to release critical section
-                            // The hope is that this break will allow other interrupts to fire.
-                            break;
-                        }
-                        Err(nb::Error::Other(e)) => {
-                            // Actual UART error
-                            return Err(e);
-                        }
-                    }
-                }
+                up_to += uart.write(&bytes[up_to..])?;
                 Ok(())
             })?;
         }
@@ -146,14 +130,14 @@ impl UartHandle {
         Ok(())
     }
 
-    pub fn flush_tx(&mut self) -> nb::Result<(), esp_hal::uart::Error> {
+    pub fn flush_tx(&mut self) -> Result<(), TxError> {
         critical_section::with(|cs| {
             let uart_index = self.uart_index();
             let mut uart_opt = UARTS[uart_index].borrow_ref_mut(cs);
 
             // Safe to unwrap: UartHandle is only created when UART exists
             let uart = uart_opt.as_mut().unwrap();
-            uart.flush_tx()
+            uart.flush()
         })
     }
 
@@ -164,11 +148,11 @@ impl UartHandle {
 
             // Safe to unwrap: UartHandle is only created when UART exists
             let uart = uart_opt.as_mut().unwrap();
-            uart.apply_config(&esp_hal::uart::Config {
-                baudrate,
-                rx_fifo_full_threshold: RX_FIFO_THRESHOLD,
-                ..Default::default()
-            })
+            uart.apply_config(
+                &esp_hal::uart::Config::default()
+                    .with_baudrate(baudrate)
+                    .with_rx(RxConfig::default().with_fifo_full_threshold(RX_FIFO_THRESHOLD)),
+            )
             .unwrap();
         })
     }
@@ -184,7 +168,7 @@ impl UartHandle {
 
 /// Register a UART for interrupt handling
 pub fn register_uart(
-    mut uart: Uart<'static, Blocking, AnyUart>,
+    mut uart: Uart<'static, Blocking>,
     uart_num: UartNum,
 ) -> (UartHandle, UartReceiver) {
     let uart_index = uart_num as usize;

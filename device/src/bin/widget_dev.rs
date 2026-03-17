@@ -2,7 +2,7 @@
 #![no_main]
 
 extern crate alloc;
-use esp_hal::{entry, timer::Timer as _};
+use esp_hal::{clock::CpuClock, main, timer::Timer as _};
 use frostsnap_device::{peripherals::DevicePeripherals, touch_handler, DISPLAY_REFRESH_MS};
 use frostsnap_widgets::debug::{EnabledDebug, OverlayDebug};
 
@@ -11,16 +11,12 @@ const DEMO: &str = match option_env!("DEMO") {
     None => "hello_world",
 };
 
-#[entry]
+#[main]
 fn main() -> ! {
-    esp_alloc::heap_allocator!(256 * 1024);
+    esp_alloc::heap_allocator!(size: 256 * 1024);
 
     // Initialize ESP32 hardware
-    let peripherals = esp_hal::init({
-        let mut config = esp_hal::Config::default();
-        config.cpu_clock = esp_hal::clock::CpuClock::max();
-        config
-    });
+    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
 
     // Initialize all device peripherals
     let device = DevicePeripherals::init(peripherals);
@@ -71,7 +67,7 @@ fn main() -> ! {
                 loop {
                     let now = timer.now();
                     let now_ms = frostsnap_widgets::Instant::from_millis(
-                        now.duration_since_epoch().to_millis(),
+                        now.duration_since_epoch().as_millis(),
                     );
 
                     // Process all pending touch events
@@ -84,7 +80,7 @@ fn main() -> ! {
                     );
 
                     // Only redraw if enough time has passed since last redraw
-                    let elapsed_ms = (now - last_redraw_time).to_millis();
+                    let elapsed_ms = (now - last_redraw_time).as_millis();
                     if elapsed_ms >= DISPLAY_REFRESH_MS {
                         // Update last redraw time
                         last_redraw_time = now;

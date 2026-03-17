@@ -92,7 +92,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
 
         // Wait 1 second
         let start = timer.now();
-        while timer.now().checked_duration_since(start).unwrap() < Duration::millis(1000) {}
+        while (timer.now() - start) < Duration::from_millis(1000) {}
     }
 
     // Show provisioning message
@@ -119,8 +119,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
     text_display!(&mut display, "Dev device initialized!\n\nRestarting...");
 
     // Reset the device
-    esp_hal::reset::software_reset();
-    unreachable!()
+    esp_hal::system::software_reset();
 }
 
 /// Run factory provisioning for a device that needs provisioning
@@ -222,6 +221,5 @@ pub fn run_factory_provisioning(
     );
 
     // Reset the device
-    esp_hal::reset::software_reset();
-    unreachable!()
+    esp_hal::system::software_reset();
 }
