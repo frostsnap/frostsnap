@@ -1,3 +1,4 @@
+use crate::aa::circle::AACircle;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*};
 use embedded_graphics::{
@@ -6,7 +7,6 @@ use embedded_graphics::{
     image::Image,
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::{Circle, PrimitiveStyleBuilder},
 };
 use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
 
@@ -161,46 +161,49 @@ impl Widget for CircleButton {
         let should_redraw = self.last_drawn_state != Some(self.state);
 
         if should_redraw {
+            let bg = target.background_color();
+            let radius = (CIRCLE_DIAMETER - 4) / 2;
+            const STROKE_WIDTH: u32 = 2;
+
             match self.state {
                 CircleButtonState::Idle => {
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(PALETTE.surface_variant)
-                        .stroke_color(self.idle_stroke_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
+                    AACircle::new(
+                        center,
+                        radius,
+                        STROKE_WIDTH,
+                        PALETTE.surface_variant,
+                        self.idle_stroke_color,
+                        bg,
+                    )
+                    .draw(target)?;
 
                     let icon = OpenSelectHandGesture::new(PALETTE.on_surface_variant);
                     Image::with_center(&icon, center).draw(target)?;
                 }
                 CircleButtonState::Pressed => {
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(self.pressed_fill_color)
-                        .stroke_color(self.pressed_stroke_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
+                    AACircle::new(
+                        center,
+                        radius,
+                        STROKE_WIDTH,
+                        self.pressed_fill_color,
+                        self.pressed_stroke_color,
+                        bg,
+                    )
+                    .draw(target)?;
 
                     let icon = OpenSelectHandGesture::new(PALETTE.on_tertiary_container);
                     Image::with_center(&icon, center).draw(target)?;
                 }
                 CircleButtonState::ShowingCheckmark => {
-                    // Draw solid circle using the pressed colors (green for normal, red for danger)
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(self.pressed_fill_color)
-                        .stroke_color(self.pressed_fill_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
+                    AACircle::new(
+                        center,
+                        radius,
+                        STROKE_WIDTH,
+                        self.pressed_fill_color,
+                        self.pressed_fill_color,
+                        bg,
+                    )
+                    .draw(target)?;
                 }
             }
 

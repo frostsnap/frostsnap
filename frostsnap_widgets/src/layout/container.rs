@@ -206,7 +206,7 @@ impl<W: Widget> Widget for Container<W> {
             let border_rect = Rectangle::new(Point::zero(), container_size);
 
             if let Some(corner_radius) = self.corner_radius {
-                let aa_rect = crate::aa_rounded_rect::AARoundedRectangle::new(
+                let aa_rect = crate::aa::rounded_rect::AARoundedRectangle::new(
                     border_rect,
                     target.background_color(),
                 )
@@ -226,8 +226,7 @@ impl<W: Widget> Widget for Container<W> {
 
                 aa_rect.draw(target)?;
             } else {
-                let mut style_builder =
-                    embedded_graphics::primitives::PrimitiveStyleBuilder::new();
+                let mut style_builder = embedded_graphics::primitives::PrimitiveStyleBuilder::new();
 
                 if let Some(fill_color) = self.fill_color {
                     style_builder = style_builder.fill_color(fill_color);

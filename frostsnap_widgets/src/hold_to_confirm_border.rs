@@ -1,5 +1,5 @@
 use super::{rat::Frac, DynWidget, Widget};
-use crate::aa_rounded_rect::AARoundedRectIter;
+use crate::aa::rounded_rect::AARoundedRectIter;
 use crate::fader::FadingDrawTarget;
 use crate::super_draw_target::SuperDrawTarget;
 use embedded_graphics::{
@@ -174,16 +174,19 @@ where
         let make_iter = |color: Rgb565| -> AARoundedRectIter<Rgb565> {
             let bg = self.background_color;
             AARoundedRectIter::new(
-                size.width, size.height,
-                CORNER_RADIUS, self.border_width,
-                color, bg, bg,
+                size.width,
+                size.height,
+                CORNER_RADIUS,
+                self.border_width,
+                color,
+                bg,
+                bg,
             )
         };
 
         let w = size.width as i32;
-        let mirror = move |Pixel(p, c): Pixel<Rgb565>| {
-            [Pixel(p, c), Pixel(Point::new(w - 1 - p.x, p.y), c)]
-        };
+        let mirror =
+            move |Pixel(p, c): Pixel<Rgb565>| [Pixel(p, c), Pixel(Point::new(w - 1 - p.x, p.y), c)];
 
         if self.is_fading {
             let start_time = self.fade_start_time.get_or_insert(current_time);
@@ -199,9 +202,7 @@ where
             let proto = make_iter(self.border_color);
             let top = proto.top_center();
             let bottom = proto.bottom_center();
-            fading_target.draw_iter(
-                proto.with_frac_range(top, bottom).flat_map(mirror),
-            )
+            fading_target.draw_iter(proto.with_frac_range(top, bottom).flat_map(mirror))
         } else {
             let proto = make_iter(self.border_color);
             let top = proto.top_center();
