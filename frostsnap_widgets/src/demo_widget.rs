@@ -1259,7 +1259,7 @@ macro_rules! demo_widget {
                         let rect = embedded_graphics::primitives::Rectangle::new(
                             Point::zero(), Size::new(RECT_W, RECT_H),
                         );
-                        $crate::aa_rounded_rect::AARoundedRectangle::new(rect, target.background_color())
+                        $crate::aa::rounded_rect::AARoundedRectangle::new(rect, target.background_color())
                             .with_corner_radius(CR)
                             .with_fill(PALETTE.primary)
                             .draw(target)?;
@@ -1275,7 +1275,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             "border_iter" => {
-                use $crate::aa_rounded_rect::AARoundedRectIter;
+                use $crate::aa::rounded_rect::AARoundedRectIter;
                 use embedded_graphics::pixelcolor::RgbColor;
 
                 const BW: u32 = 5;

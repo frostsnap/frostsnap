@@ -10,7 +10,7 @@ pub extern crate alloc;
 
 use embedded_graphics::prelude::*;
 
-pub mod aa_rounded_rect;
+pub mod aa;
 pub mod compressed_point;
 pub mod palette;
 pub mod pixel_recorder;
