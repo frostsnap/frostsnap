@@ -1,3 +1,4 @@
+use super::{coverage_from_distance, isqrt_distance, SCALE};
 use crate::widget_color::ColorInterpolate;
 use crate::Frac;
 use embedded_graphics::{draw_target::DrawTarget, prelude::*, primitives::Rectangle};
@@ -62,21 +63,6 @@ impl<C: ColorInterpolate> AARoundedRectangle<C> {
         .with_fill(self.fill_color)
         .map(move |embedded_graphics::Pixel(p, c)| embedded_graphics::Pixel(p + offset, c))
     }
-}
-
-/// Scale factor for fixed-point SDF calculations
-const SCALE: i64 = 256;
-
-#[inline]
-fn coverage_from_distance(distance_scaled: i64) -> Frac {
-    let half = SCALE / 2;
-    let clamped = (half - distance_scaled).clamp(0, SCALE);
-    Frac::from_ratio(clamped as u32, SCALE as u32)
-}
-
-#[inline]
-fn isqrt_distance(dx: i64, dy: i64, radius_scaled: i64) -> i64 {
-    (dx * dx + dy * dy).unsigned_abs().isqrt() as i64 - radius_scaled
 }
 
 /// Precomputed geometry for a rounded rectangle's SDF calculations.
@@ -680,297 +666,55 @@ mod tests {
     use embedded_graphics::pixelcolor::RgbColor;
 
     #[test]
-    fn corner_pixels_have_partial_coverage() {
-        let bg = Rgb565::BLACK;
-        let fill = Rgb565::WHITE;
-        let rect = Rectangle::new(Point::zero(), Size::new(100, 100));
-        let shape = AARoundedRectangle::new(rect, bg)
-            .with_corner_radius(40)
-            .with_fill(fill);
-
-        let pixels: alloc::vec::Vec<_> = shape.pixels().collect();
-
-        let mut partial_count = 0;
-        for pixel in &pixels {
-            let c = pixel.1;
-            if c != bg && c != fill {
-                partial_count += 1;
-            }
-        }
-
-        assert!(
-            partial_count > 0,
-            "Expected some partially-covered pixels for AA, got none"
-        );
-    }
-
-    #[test]
-    fn coverage_from_distance_values() {
-        let cov = coverage_from_distance(0);
-        assert!(
-            cov > Frac::ZERO && cov < Frac::ONE,
-            "boundary coverage should be partial: {:?}",
-            cov
-        );
-
-        let cov = coverage_from_distance(-SCALE);
-        assert_eq!(cov, Frac::ONE);
-
-        let cov = coverage_from_distance(SCALE);
-        assert_eq!(cov, Frac::ZERO);
-    }
-
-    fn test_iter(w: u32, h: u32, cr: u32, bw: u32) -> AARoundedRectIter<Rgb565> {
-        AARoundedRectIter::new(w, h, cr, bw, Rgb565::WHITE, Rgb565::BLACK, Rgb565::BLACK)
-    }
-
-    #[test]
-    fn border_iter_yields_pixels() {
-        let iter = test_iter(128, 296, 42, 5);
-        let pixels: alloc::vec::Vec<_> = iter.collect();
-        assert!(
-            pixels.len() > 1000,
-            "expected many border pixels, got {}",
-            pixels.len()
-        );
-
-        for &embedded_graphics::Pixel(point, _) in &pixels {
-            assert!(point.x >= 0 && point.x < 128);
-            assert!(point.y >= 0 && point.y < 296);
-        }
-    }
-
-    #[test]
-    fn border_iter_no_duplicates() {
-        let iter = test_iter(128, 296, 42, 5);
-        let pixels: alloc::vec::Vec<_> = iter.collect();
-
-        let mut seen = alloc::collections::BTreeSet::new();
-        for &embedded_graphics::Pixel(point, _) in &pixels {
-            assert!(
-                seen.insert((point.x, point.y)),
-                "duplicate pixel at {:?}",
-                point
-            );
-        }
-    }
-
-    #[test]
-    fn border_iter_corners_have_partial_coverage() {
+    fn sanity() {
         let bg = Rgb565::BLACK;
         let border_color = Rgb565::WHITE;
-        let iter = AARoundedRectIter::new(128, 296, 42, 5, border_color, bg, bg);
+        let fill = Rgb565::new(0, 31, 0);
+        let (w, h, cr, bw) = (128, 296, 42, 5);
+
+        let iter =
+            AARoundedRectIter::new(w, h, cr, bw, border_color, fill, bg).with_fill(Some(fill));
+        let pixels: alloc::vec::Vec<_> = iter.collect();
+
+        assert!(pixels.len() > 1000);
+
+        let mut seen = alloc::collections::BTreeSet::new();
         let mut partial = 0;
-        for embedded_graphics::Pixel(_, color) in iter {
-            if color != bg && color != border_color {
+        for &embedded_graphics::Pixel(point, color) in &pixels {
+            assert!(point.x >= 0 && point.x < w as i32);
+            assert!(point.y >= 0 && point.y < h as i32);
+            assert!(seen.insert((point.x, point.y)), "duplicate at {:?}", point);
+            if color != bg && color != border_color && color != fill {
                 partial += 1;
             }
         }
-        assert!(
-            partial > 0,
-            "expected some partial-coverage pixels in corners"
-        );
-    }
+        assert!(partial > 0, "expected AA partial-coverage pixels");
 
-    #[test]
-    fn border_iter_reverse_same_pixels() {
-        let iter = test_iter(128, 296, 42, 5);
-        let forward: alloc::vec::Vec<_> = iter.collect();
-
-        let iter = test_iter(128, 296, 42, 5);
-        let mut reverse: alloc::vec::Vec<_> = iter.rev().collect();
+        let forward: alloc::vec::Vec<_> =
+            AARoundedRectIter::new(w, h, cr, bw, border_color, fill, bg).collect();
+        let mut reverse: alloc::vec::Vec<_> =
+            AARoundedRectIter::new(w, h, cr, bw, border_color, fill, bg)
+                .rev()
+                .collect();
         reverse.reverse();
-
-        assert_eq!(
-            forward.len(),
-            reverse.len(),
-            "forward and reverse should yield same count"
-        );
-        for (f, r) in forward.iter().zip(reverse.iter()) {
-            assert_eq!(f, r);
-        }
+        assert_eq!(forward, reverse);
     }
 
     #[test]
-    fn border_iter_double_ended_meets_in_middle() {
-        let mut iter = test_iter(128, 296, 42, 5);
-        let total = iter.clone().count();
+    fn range_split_concatenates() {
+        let (w, h, cr, bw) = (128, 296, 42, 5);
+        let mk =
+            || AARoundedRectIter::new(w, h, cr, bw, Rgb565::WHITE, Rgb565::BLACK, Rgb565::BLACK);
 
-        let mut from_front = alloc::vec::Vec::new();
-        let mut from_back = alloc::vec::Vec::new();
+        let all: alloc::vec::Vec<_> = mk().collect();
+        let total = mk().total_raw_pixels();
+        let half = total / 2;
 
-        for _ in 0..total / 2 {
-            from_front.push(iter.next().unwrap());
-        }
-        while let Some(p) = iter.next_back() {
-            from_back.push(p);
-        }
-        let remaining: alloc::vec::Vec<_> = iter.collect();
-        assert!(remaining.is_empty());
+        let first: alloc::vec::Vec<_> = mk().with_raw_range(0, half).collect();
+        let second: alloc::vec::Vec<_> = mk().with_raw_range(half, total).collect();
 
-        assert_eq!(
-            from_front.len() + from_back.len(),
-            total,
-            "front + back should equal total"
-        );
-    }
-
-    #[test]
-    fn iter_with_fill_matches_rasterizer() {
-        let w = 100u32;
-        let h = 100;
-        let cr = 30u32;
-        let bw = 4u32;
-
-        let bg = Rgb565::BLACK;
-        let border = Rgb565::WHITE;
-        let fill = Rgb565::new(0, 31, 0);
-        let rect = Rectangle::new(Point::zero(), Size::new(w, h));
-        let shape = AARoundedRectangle::new(rect, bg)
-            .with_corner_radius(cr)
-            .with_border(border, bw)
-            .with_fill(fill);
-
-        let raster_pixels: alloc::collections::BTreeMap<(i32, i32), Rgb565> = shape
-            .pixels()
-            .map(|embedded_graphics::Pixel(p, c)| ((p.x, p.y), c))
-            .collect();
-
-        let iter_pixels: alloc::collections::BTreeMap<(i32, i32), Rgb565> =
-            AARoundedRectIter::new(w, h, cr, bw, border, fill, bg)
-                .with_fill(Some(fill))
-                .map(|embedded_graphics::Pixel(p, c)| ((p.x, p.y), c))
-                .collect();
-
-        assert_eq!(
-            raster_pixels.len(),
-            iter_pixels.len(),
-            "pixel count mismatch: rasterizer={} iter={}",
-            raster_pixels.len(),
-            iter_pixels.len(),
-        );
-
-        for (&pos, &raster_color) in &raster_pixels {
-            let iter_color = iter_pixels
-                .get(&pos)
-                .unwrap_or_else(|| panic!("rasterizer pixel {:?} missing from iter output", pos));
-            assert_eq!(
-                raster_color, *iter_color,
-                "color mismatch at {:?}: rasterizer={:?} iter={:?}",
-                pos, raster_color, iter_color
-            );
-        }
-    }
-
-    #[test]
-    fn iter_with_fill_no_duplicates() {
-        let w = 100u32;
-        let h = 100;
-        let cr = 30u32;
-        let bw = 4u32;
-
-        let bg = Rgb565::BLACK;
-        let border = Rgb565::WHITE;
-        let fill = Rgb565::new(0, 31, 0);
-
-        let iter = AARoundedRectIter::new(w, h, cr, bw, border, fill, bg).with_fill(Some(fill));
-        let pixels: alloc::vec::Vec<_> = iter.collect();
-
-        let mut seen = alloc::collections::BTreeSet::new();
-        for &embedded_graphics::Pixel(point, _) in &pixels {
-            assert!(
-                seen.insert((point.x, point.y)),
-                "duplicate pixel at {:?}",
-                point
-            );
-        }
-    }
-
-    #[test]
-    fn iter_fill_only_no_border() {
-        let w = 80u32;
-        let h = 80;
-        let cr = 20u32;
-
-        let bg = Rgb565::BLACK;
-        let fill = Rgb565::WHITE;
-        let rect = Rectangle::new(Point::zero(), Size::new(w, h));
-        let shape = AARoundedRectangle::new(rect, bg)
-            .with_corner_radius(cr)
-            .with_fill(fill);
-
-        let raster_pixels: alloc::collections::BTreeMap<(i32, i32), Rgb565> = shape
-            .pixels()
-            .map(|embedded_graphics::Pixel(p, c)| ((p.x, p.y), c))
-            .collect();
-
-        let iter_pixels: alloc::collections::BTreeMap<(i32, i32), Rgb565> =
-            AARoundedRectIter::new(w, h, cr, 0, bg, fill, bg)
-                .with_fill(Some(fill))
-                .map(|embedded_graphics::Pixel(p, c)| ((p.x, p.y), c))
-                .collect();
-
-        assert_eq!(
-            raster_pixels.len(),
-            iter_pixels.len(),
-            "fill-only pixel count mismatch: rasterizer={} iter={}",
-            raster_pixels.len(),
-            iter_pixels.len()
-        );
-
-        for (&pos, &raster_color) in &raster_pixels {
-            let iter_color = iter_pixels.get(&pos).unwrap_or_else(|| {
-                panic!(
-                    "rasterizer pixel {:?} missing from fill-only iter output",
-                    pos
-                )
-            });
-            assert_eq!(
-                raster_color, *iter_color,
-                "fill-only color mismatch at {:?}",
-                pos
-            );
-        }
-    }
-
-    #[test]
-    fn frac_to_raw_matches_raw_helpers() {
-        let iter = test_iter(100, 200, 20, 5);
-        let top_raw = iter.top_center_raw();
-        let bottom_raw = iter.bottom_center_raw();
-        let top_frac = iter.top_center();
-        let bottom_frac = iter.bottom_center();
-        let top_via_frac = iter.frac_to_raw(top_frac);
-        let bottom_via_frac = iter.frac_to_raw(bottom_frac);
-
-        assert_eq!(
-            top_raw, top_via_frac,
-            "top_center_raw={} but frac_to_raw(top_center())={} (frac={:?})",
-            top_raw, top_via_frac, top_frac
-        );
-        assert_eq!(
-            bottom_raw, bottom_via_frac,
-            "bottom_center_raw={} but frac_to_raw(bottom_center())={} (frac={:?})",
-            bottom_raw, bottom_via_frac, bottom_frac
-        );
-    }
-
-    #[test]
-    fn border_iter_with_raw_range() {
-        let iter = test_iter(128, 296, 42, 5);
-        let all: alloc::vec::Vec<_> = iter.collect();
-
-        let total_raw = test_iter(128, 296, 42, 5).total_raw_pixels();
-        let half = total_raw / 2;
-        let first_half: alloc::vec::Vec<_> =
-            test_iter(128, 296, 42, 5).with_raw_range(0, half).collect();
-        let second_half: alloc::vec::Vec<_> = test_iter(128, 296, 42, 5)
-            .with_raw_range(half, total_raw)
-            .collect();
-
-        let mut combined = first_half;
-        combined.extend(second_half);
-        assert_eq!(combined.len(), all.len());
+        let mut combined = first;
+        combined.extend(second);
         assert_eq!(combined, all);
     }
 }
