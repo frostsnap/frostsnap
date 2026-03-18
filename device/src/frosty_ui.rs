@@ -51,6 +51,7 @@ pub struct FrostyUi<'a> {
     >,
     pub busy_task: Option<BusyTask>,
     pub current_widget_index: usize,
+    default_workflow: Option<Workflow>,
 }
 
 impl<'a> FrostyUi<'a> {
@@ -86,6 +87,7 @@ impl<'a> FrostyUi<'a> {
             current_widget_index: 0,
             timer,
             busy_task: Default::default(),
+            default_workflow: None,
         }
     }
 }
@@ -100,6 +102,16 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState) {
         if Some(state) != self.upstream_connection_state {
             self.upstream_connection_state = Some(state);
+        }
+    }
+
+    fn set_default_workflow(&mut self, workflow: Workflow) {
+        self.default_workflow = Some(workflow);
+    }
+
+    fn go_to_default(&mut self) {
+        if let Some(workflow) = self.default_workflow.clone() {
+            self.set_workflow(workflow);
         }
     }
 
@@ -412,21 +424,23 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 widget: sign_prompt,
                 phase,
             } => {
-                // Check if confirmed and we still have the phase
                 if sign_prompt.is_confirmed() {
-                    // Take the phase (move it out of the Option)
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });
                     }
                 }
+                if phase.is_none() && sign_prompt.is_finished() {
+                    self.go_to_default();
+                }
             }
             WidgetTree::SignTestPrompt { widget, phase } => {
-                // Check if confirmed and we still have the phase
                 if widget.is_confirmed() {
-                    // Take the phase (move it out of the Option)
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });
                     }
+                }
+                if phase.is_none() && widget.is_finished() {
+                    self.go_to_default();
                 }
             }
             WidgetTree::FirmwareUpgradeConfirm {
@@ -442,7 +456,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 widget,
                 access_structure_ref,
             } => {
-                if widget.is_confirmed() {
+                if widget.is_finished() {
                     if let Some(access_structure_ref_data) = access_structure_ref.take() {
                         return Some(UiEvent::BackupRecorded {
                             access_structure_ref: access_structure_ref_data,
@@ -465,7 +479,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             }
             WidgetTree::NewNamePrompt { widget, new_name } => {
                 // Check if the name prompt was confirmed and we haven't already sent the event
-                if widget.is_completed() {
+                if widget.is_confirmed() {
                     if let Some(name) = new_name.take() {
                         return Some(UiEvent::NameConfirm(name));
                     }

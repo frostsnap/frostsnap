@@ -46,6 +46,9 @@ where
     last_update: Option<crate::Instant>,
     hold_duration_ms: u32,
     completed: bool,
+    completed_at: Option<crate::Instant>,
+    finished: bool,
+    dwell_ms: u64,
 }
 
 impl<W> HoldToConfirm<W>
@@ -87,6 +90,9 @@ where
             last_update: None,
             hold_duration_ms,
             completed: false,
+            completed_at: None,
+            finished: false,
+            dwell_ms: 2000,
         }
     }
 
@@ -135,8 +141,12 @@ where
         &self.content.child.child.child.children.0
     }
 
-    pub fn is_completed(&self) -> bool {
+    pub fn is_confirmed(&self) -> bool {
         self.button().state() == CircleButtonState::ShowingCheckmark
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
     }
 
     fn is_holding(&self) -> bool {
@@ -249,6 +259,16 @@ where
 
         if self.content.is_faded_out() && !self.button().checkmark().drawing_started() {
             self.button_mut().checkmark_mut().start_drawing()
+        }
+
+        if self.completed_at.is_none() && self.button().checkmark().is_complete() {
+            self.completed_at = Some(current_time);
+        }
+
+        if let Some(at) = self.completed_at {
+            if current_time.saturating_duration_since(at) >= self.dwell_ms {
+                self.finished = true;
+            }
         }
 
         Ok(())
