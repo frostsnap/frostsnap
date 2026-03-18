@@ -171,7 +171,7 @@ impl EraseConfirmationPage {
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.hold_confirm.is_completed()
+        self.hold_confirm.is_confirmed()
     }
 
     pub fn fade_in_button(&mut self) {

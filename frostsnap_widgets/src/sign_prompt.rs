@@ -265,7 +265,11 @@ impl ConfirmationPage {
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.hold_confirm.is_completed()
+        self.hold_confirm.is_confirmed()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.hold_confirm.is_finished()
     }
 }
 
@@ -423,6 +427,16 @@ impl SignTxPrompt {
             let current_widget = self.page_slider.current_widget();
             if let Some(confirmation_page) = current_widget.downcast_ref::<ConfirmationPage>() {
                 return confirmation_page.is_confirmed();
+            }
+        }
+        false
+    }
+
+    pub fn is_finished(&mut self) -> bool {
+        if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
+            let current_widget = self.page_slider.current_widget();
+            if let Some(confirmation_page) = current_widget.downcast_ref::<ConfirmationPage>() {
+                return confirmation_page.is_finished();
             }
         }
         false
