@@ -39,7 +39,7 @@ where
             last_redraw_time = now;
         }
 
-        if screen_test_widget.is_completed() {
+        if screen_test_widget.is_finished() {
             break;
         }
     }

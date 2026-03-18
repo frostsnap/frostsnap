@@ -247,10 +247,37 @@ macro_rules! demo_widget {
                 use $crate::backup::BackupDisplay;
                 use embedded_graphics::prelude::*;
 
-                let share_index = 42;
+                struct BackupDemo {
+                    inner: $crate::Fader<BackupDisplay>,
+                }
 
-                // Create the backup display - it now uses PageSlider internally and outputs Rgb565
-                let widget = BackupDisplay::new(TEST_WORD_INDICES, share_index);
+                impl $crate::DynWidget for BackupDemo {
+                    fn set_constraints(&mut self, max_size: Size) { self.inner.set_constraints(max_size) }
+                    fn sizing(&self) -> $crate::Sizing { self.inner.sizing() }
+                    fn handle_touch(&mut self, p: Point, t: Instant, r: bool) -> Option<$crate::KeyTouch> { self.inner.handle_touch(p, t, r) }
+                    fn handle_vertical_drag(&mut self, p: Option<u32>, n: u32, r: bool) { self.inner.handle_vertical_drag(p, n, r) }
+                    fn force_full_redraw(&mut self) { self.inner.force_full_redraw() }
+                }
+
+                impl $crate::Widget for BackupDemo {
+                    type Color = Rgb565;
+                    fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error> {
+                        self.inner.draw(target, current_time)?;
+                        if self.inner.is_not_faded() && self.inner.child.is_finished() {
+                            self.inner.start_fade(500);
+                        }
+                        Ok(())
+                    }
+                }
+
+                let share_index = 42;
+                let widget = BackupDemo {
+                    inner: $crate::Fader::new(BackupDisplay::new(TEST_WORD_INDICES, share_index)),
+                };
 
                 $run_macro!(widget);
             }

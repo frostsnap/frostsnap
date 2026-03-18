@@ -1,19 +1,21 @@
 use crate::gray4_style::Gray4TextStyle;
 use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_MS;
+use frostsnap_fonts::{NOTO_SANS_14_LIGHT, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM};
+
+const FONT_CONFIRM_TITLE: &frostsnap_fonts::Gray4Font = &NOTO_SANS_18_MEDIUM;
+const FONT_CONFIRM_TEXT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_17_REGULAR;
 use crate::{
-    icons::IconWidget,
     page_slider::PageSlider,
     palette::PALETTE,
     prelude::*,
     share_index::ShareIndexWidget,
     widget_list::{WidgetList, WidgetListItem},
-    FadeSwitcher, HoldToConfirm, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
+    FadeSwitcher, HoldToConfirm, FONT_HUGE_MONO, FONT_MED,
 };
-use alloc::{format, string::String, vec::Vec};
+use alloc::{format, string::String, string::ToString, vec::Vec};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
 use frost_backup::{bip39_words::BIP39_WORDS, NUM_WORDS};
-use frostsnap_fonts::NOTO_SANS_14_LIGHT;
 
 const FONT_ALL_WORDS: &frostsnap_fonts::Gray4Font = &NOTO_SANS_14_LIGHT;
 const WORDS_PER_PAGE: usize = 3;
@@ -49,7 +51,7 @@ impl ShareIndexPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct WordRow {
     #[widget_delegate]
-    row: Row<(Text, SizedBox<Rgb565>, Text)>,
+    row: Row<(Text, Text)>,
 }
 
 impl WordRow {
@@ -66,8 +68,7 @@ impl WordRow {
         )
         .with_alignment(Alignment::Left);
 
-        let spacer = SizedBox::width(10); // 10 pixels of space between number and word
-        let row = Row::new((number_text, spacer, word_text));
+        let row = Row::builder().push(number_text).gap(10).push(word_text);
 
         Self { row }
     }
@@ -218,40 +219,59 @@ pub struct BackupConfirmationScreen {
 #[derive(frostsnap_macros::Widget)]
 pub struct ConfirmContent {
     #[widget_delegate]
-    column: Column<(Text, Text)>,
+    column: Column<(
+        Column<(
+            Text<Gray4TextStyle>,
+            Text<Gray4TextStyle>,
+            Text<Gray4TextStyle>,
+        )>,
+        Text<Gray4TextStyle>,
+    )>,
 }
 
-/// The safety reminder that fades in after confirmation
+/// The completion message that fades in after confirmation
 #[derive(frostsnap_macros::Widget)]
 pub struct SafetyReminder {
     #[widget_delegate]
     content: Column<(
-        IconWidget<
-            embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::security::Shield>,
-        >,
-        Text,
-        Text,
+        Text<Gray4TextStyle>,
+        Text<Gray4TextStyle>,
+        Text<Gray4TextStyle>,
     )>,
 }
 
 impl ConfirmContent {
     fn new() -> Self {
-        let title = Text::new(
-            "Backup\nrecorded?",
-            DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+        let line1 = Text::new(
+            "Verify you've recorded:".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line2 = Text::new(
+            "- Key number".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line3 = Text::new(
+            "- All 25 words".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let subtitle = Column::builder()
+            .push(line1)
+            .gap(4)
+            .push(line2)
+            .push(line3)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let subtitle = Text::new(
-            "I've written down:\n  - The key number\n  - All 25 words",
-            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
+        let title = Text::new(
+            "Hold to Confirm".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
         );
 
         let column = Column::builder()
-            .push(title)
-            .gap(10)
             .push(subtitle)
-            .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+            .gap(15)
+            .push(title)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { column }
     }
@@ -259,30 +279,27 @@ impl ConfirmContent {
 
 impl SafetyReminder {
     fn new() -> Self {
-        use embedded_iconoir::prelude::*;
-
-        let shield_icon = IconWidget::new(
-            embedded_iconoir::icons::size48px::security::Shield::new(PALETTE.primary),
+        let title = Text::new(
+            "Backup Completed".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
         );
 
-        let title = Text::new(
-            "Keep it secret",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
-
-        let subtitle = Text::new(
-            "Keep it safe",
-            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
-        )
-        .with_alignment(Alignment::Center);
+        let line1 = Text::new(
+            "Store it safely in a".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line2 = Text::new(
+            "secure location".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
 
         let column = Column::builder()
-            .push(shield_icon)
             .push(title)
-            .gap(20)
-            .push(subtitle)
-            .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+            .gap(15)
+            .push(line1)
+            .push(line2)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { content: column }
     }
@@ -308,7 +325,7 @@ impl BackupConfirmationScreen {
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.hold_confirm.is_completed()
+        self.hold_confirm.is_confirmed()
     }
 }
 
@@ -350,7 +367,7 @@ impl crate::Widget for BackupConfirmationScreen {
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         // Check if we should trigger the fade
-        if !self.fade_triggered && self.hold_confirm.is_completed() {
+        if !self.fade_triggered && self.hold_confirm.is_confirmed() {
             self.fade_triggered = true;
             // Switch to the safety reminder
             let safety_reminder = SafetyReminder::new();
@@ -462,9 +479,7 @@ impl BackupDisplay {
         let page_list = BackupPageList::new(word_indices, share_index);
         let page_slider = PageSlider::new(page_list)
             .with_on_page_ready(|page| {
-                // Try to downcast to BackupConfirmationScreen
                 if let Some(confirmation_screen) = page.downcast_mut::<BackupConfirmationScreen>() {
-                    // Fade in the button when the confirmation page is ready
                     confirmation_screen.hold_confirm.fade_in_button();
                 }
             })
@@ -473,15 +488,25 @@ impl BackupDisplay {
         Self { page_slider }
     }
 
-    /// Check if the backup has been confirmed via the hold-to-confirm on the last page
     pub fn is_confirmed(&mut self) -> bool {
-        // Check if we're on the last page
         if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
             let current_widget = self.page_slider.current_widget();
             if let Some(confirmation_screen) =
                 current_widget.downcast_ref::<BackupConfirmationScreen>()
             {
                 return confirmation_screen.is_confirmed();
+            }
+        }
+        false
+    }
+
+    pub fn is_finished(&mut self) -> bool {
+        if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
+            let current_widget = self.page_slider.current_widget();
+            if let Some(confirmation_screen) =
+                current_widget.downcast_ref::<BackupConfirmationScreen>()
+            {
+                return confirmation_screen.hold_confirm.is_finished();
             }
         }
         false

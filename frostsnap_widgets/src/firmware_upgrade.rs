@@ -107,7 +107,7 @@ impl FirmwareUpgradeConfirm {
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.hold_to_confirm.is_completed()
+        self.hold_to_confirm.is_confirmed()
     }
 }
 
