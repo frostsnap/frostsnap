@@ -30,7 +30,7 @@ impl ProgressBars {
             // Create container with the "off" color (surface_variant gray)
             // Fixed height of 8px, width will be determined by flex
             let container =
-                Container::with_size((), Size::new(u32::MAX, 8)).with_fill(BAR_INCOMPLETE);
+                Container::with_size((), Size::new(u32::MAX, 4)).with_fill(BAR_INCOMPLETE);
             bars.push(container);
         }
 

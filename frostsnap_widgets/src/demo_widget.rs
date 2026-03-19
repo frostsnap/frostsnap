@@ -317,7 +317,8 @@ macro_rules! demo_widget {
                             .with_border(PALETTE.primary, 2);
 
                         Self {
-                            fade_switcher: FadeSwitcher::new(Center::new(widget_a), 500),
+                            fade_switcher: FadeSwitcher::new(Center::new(widget_a))
+                                .with_fade_config($crate::fade_switcher::FadeConfig::new(500)),
                             last_switch_time: None,
                             showing_a: true,
                         }
@@ -1060,7 +1061,8 @@ macro_rules! demo_widget {
                         let centered = Center::new(logo);
 
                         Self {
-                            fade_switcher: FadeSwitcher::new(centered, 500),
+                            fade_switcher: FadeSwitcher::new(centered)
+                                .with_fade_config($crate::fade_switcher::FadeConfig::new(500)),
                             last_switch_time: None,
                             color_index: 0,
                         }
@@ -1376,8 +1378,14 @@ macro_rules! demo_widget {
                 let widget = EraseDevice::new();
                 $run_macro!(widget);
             }
+            "check_backup" => {
+                use $crate::backup::CheckBackupScreen;
+
+                let widget = CheckBackupScreen::new(TEST_WORD_INDICES, 42, 0xDEAD_BEEF);
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
             }
         }
     };
