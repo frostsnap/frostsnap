@@ -666,6 +666,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     );
                     ui.go_to_default();
                 }
+                UiEvent::BackupVerified => {
+                    upstream_connection
+                        .send_to_coordinator([DeviceSendBody::Misc(CommsMisc::BackupChecked)]);
+                }
                 UiEvent::EraseDataConfirm => {
                     erase_state = Some(erase::Erase::new(&full_nvs));
                 }

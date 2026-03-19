@@ -84,7 +84,7 @@ impl UiProtocol for DisplayBackupProtocol {
             return false;
         }
         match message {
-            CommsMisc::BackupRecorded => {
+            CommsMisc::BackupRecorded | CommsMisc::BackupChecked => {
                 self.sink.send(DisplayBackupState {
                     confirmed: true,
                     close_dialog: true,

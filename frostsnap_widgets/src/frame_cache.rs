@@ -60,7 +60,7 @@ where
         self.dirty_rect_offset = dirty_rect.top_left;
         let w = dirty_rect.size.width as usize;
         let h = dirty_rect.size.height as usize;
-        if self.framebuffer.width != w || self.framebuffer.height != h {
+        if self.framebuffer.width() != w || self.framebuffer.height() != h {
             self.framebuffer = VecFramebuffer::new(w, h);
             self.needs_reblit = true;
         }
@@ -106,9 +106,12 @@ where
         let mut fb_target = SuperDrawTarget::new(&mut self.framebuffer, self.background_color)
             .translate(-self.dirty_rect_offset);
         self.child.draw(&mut fb_target, current_time).unwrap();
+        drop(fb_target);
 
-        self.framebuffer.blit(target, self.dirty_rect_offset)?;
-        self.needs_reblit = false;
+        if self.needs_reblit || self.framebuffer.take_dirty() {
+            self.framebuffer.blit(target, self.dirty_rect_offset)?;
+            self.needs_reblit = false;
+        }
         Ok(())
     }
 }

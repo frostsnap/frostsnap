@@ -53,6 +53,7 @@ pub struct Translate<W: Widget> {
     pixels_tracked: bool,
     /// Whether to use framebuffer mode for this widget
     use_framebuffer: bool,
+    aggressive_framebuffer: bool,
     mode: TranslateMode<W>,
 }
 
@@ -62,6 +63,7 @@ enum TranslateMode<W: Widget> {
     Framebuffer {
         framebuffer: Option<VecFramebuffer<W::Color>>,
         needs_reblit: bool,
+        aggressive: bool,
     },
 }
 
@@ -96,12 +98,19 @@ where
             child_dirty_rect: Rectangle::zero(),
             pixels_tracked: false,
             use_framebuffer: false,
+            aggressive_framebuffer: false,
             mode: Default::default(),
         }
     }
 
     pub fn with_framebuffer(mut self, use_framebuffer: bool) -> Self {
         self.use_framebuffer = use_framebuffer;
+        self
+    }
+
+    pub fn with_aggressive_framebuffer(mut self) -> Self {
+        self.use_framebuffer = true;
+        self.aggressive_framebuffer = true;
         self
     }
 
@@ -185,7 +194,31 @@ where
 
                 let elapsed_ms = current_time.saturating_duration_since(start) as u32;
 
-                if elapsed_ms >= duration as u32 {
+                if let AnimationSpeed::DampedShake { half_cycles } = self.animation_speed {
+                    if elapsed_ms >= duration as u32 {
+                        self.translation_direction = TranslationDirection::Idle {
+                            offset: Point::zero(),
+                        };
+                        Point::zero()
+                    } else {
+                        // 🫨 Damped triangle wave: oscillates with linearly decaying amplitude
+                        let progress = (elapsed_ms as i64 * 1024 / duration as i64) as i32;
+                        let decay = 1024 - progress;
+                        let phase = (elapsed_ms as i64 * half_cycles as i64 * 1024
+                            / duration as i64) as i32;
+                        let cycle_pos = phase % 2048;
+                        let triangle = if cycle_pos < 1024 {
+                            cycle_pos
+                        } else {
+                            2048 - cycle_pos
+                        };
+                        let wave = triangle * 2 - 1024;
+                        Point::new(
+                            (offset.x as i64 * decay as i64 * wave as i64 / (1024 * 1024)) as i32,
+                            (offset.y as i64 * decay as i64 * wave as i64 / (1024 * 1024)) as i32,
+                        )
+                    }
+                } else if elapsed_ms >= duration as u32 {
                     // Animation complete
                     let final_position = if from_offset {
                         Point::zero() // Ended at rest
@@ -251,6 +284,7 @@ where
             self.mode = TranslateMode::Framebuffer {
                 framebuffer: Some(VecFramebuffer::new(w, h)),
                 needs_reblit: false,
+                aggressive: self.aggressive_framebuffer,
             };
         } else {
             self.mode = TranslateMode::Bitmap(BitmapState {
@@ -278,8 +312,15 @@ where
 
     fn force_full_redraw(&mut self) {
         match &mut self.mode {
-            TranslateMode::Framebuffer { needs_reblit, .. } => {
+            TranslateMode::Framebuffer {
+                needs_reblit,
+                aggressive,
+                ..
+            } => {
                 *needs_reblit = true;
+                if !*aggressive {
+                    self.child.force_full_redraw();
+                }
             }
             TranslateMode::Bitmap(_) => {
                 self.child.force_full_redraw();
@@ -309,29 +350,27 @@ where
             TranslateMode::Framebuffer {
                 framebuffer,
                 needs_reblit,
+                aggressive,
             } => {
-                if is_idle {
-                    // ✋ Animation finished — hand off to child drawing directly
+                if is_idle && !*aggressive {
                     if *needs_reblit {
-                        // Clear the framebuffer area so child starts fresh
-                        let pos = self.dirty_rect_offset + offset;
-                        let size = self.child_dirty_rect.size;
-                        target.fill_solid(&Rectangle::new(pos, size), self.background_color)?;
                         self.child.force_full_redraw();
                         *needs_reblit = false;
                     }
                     let mut translated_target = target.clone().translate(offset);
                     self.child.draw(&mut translated_target, current_time)?;
                 } else {
-                    // 🎬 Animating — draw child into framebuffer, blit to screen
+                    // 🎬 Draw child into framebuffer, blit to screen
                     let fb = framebuffer.as_mut().unwrap();
                     let mut fb_target =
                         crate::SuperDrawTarget::new(&mut *fb, self.background_color)
                             .translate(Point::zero() - self.dirty_rect_offset);
                     self.child.draw(&mut fb_target, current_time).unwrap();
                     drop(fb_target);
+                    let fb = framebuffer.as_mut().unwrap();
+                    let fb_dirty = fb.take_dirty();
 
-                    if offset != self.current_offset || !self.pixels_tracked || *needs_reblit {
+                    if offset != self.current_offset || !self.pixels_tracked || *needs_reblit || fb_dirty {
                         let old_pos = self.dirty_rect_offset + self.current_offset;
                         let new_pos = self.dirty_rect_offset + offset;
                         let size = self.child_dirty_rect.size;
@@ -372,7 +411,7 @@ where
 
                         let blit_rect = Rectangle::new(new_pos, size);
                         let pixels =
-                            (0..fb.width * fb.height).map(|i| W::Color::read_pixel(&fb.data, i));
+                            (0..fb.width() * fb.height()).map(|i| W::Color::read_pixel(fb.data(), i));
                         target.fill_contiguous(&blit_rect, pixels)?;
 
                         self.current_offset = offset;

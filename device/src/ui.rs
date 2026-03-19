@@ -80,6 +80,10 @@ pub enum Workflow {
         access_structure_ref: AccessStructureRef,
     },
     EnteringBackup(EnterBackupPhase),
+    CheckBackup {
+        backup: ShareBackup,
+        rand_seed: u32,
+    },
     DisplayAddress {
         address: bitcoin::Address,
         bip32_path: BitcoinBip32Path,
@@ -151,5 +155,6 @@ pub enum UiEvent {
         access_structure_ref: AccessStructureRef,
     },
     UpgradeConfirm,
+    BackupVerified,
     EraseDataConfirm,
 }

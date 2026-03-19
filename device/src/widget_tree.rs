@@ -4,7 +4,7 @@ use frostsnap_core::{
     AccessStructureRef,
 };
 use frostsnap_widgets::{
-    backup::{BackupDisplay, EnterShareScreen},
+    backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     keygen_check::KeygenCheck,
     layout::*,
     sign_prompt::SignTxPrompt,
@@ -81,6 +81,11 @@ pub enum WidgetTree {
     EnterBackup {
         widget: Box<EnterShareScreen>,
         phase: Option<EnterBackupPhase>,
+    },
+
+    /// Check backup quiz screen
+    CheckBackup {
+        widget: Box<CheckBackupScreen>,
     },
 
     /// Erase progress screen

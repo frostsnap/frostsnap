@@ -4,7 +4,7 @@ use embedded_graphics::{
     geometry::{Point, Size},
     pixelcolor::Rgb565,
 };
-use frostsnap_widgets::{DynWidget, FadeSwitcher, Widget};
+use frostsnap_widgets::{DynWidget, FadeConfig, FadeSwitcher, Widget};
 
 /// Root widget that contains the main widget tree
 pub struct RootWidget {
@@ -13,7 +13,8 @@ pub struct RootWidget {
 
 impl RootWidget {
     pub fn new(initial_widget: WidgetTree, fade_duration_ms: u32) -> Self {
-        let page_switcher = FadeSwitcher::new(initial_widget, fade_duration_ms);
+        let page_switcher = FadeSwitcher::new(initial_widget)
+            .with_fade_config(FadeConfig::new(fade_duration_ms));
 
         Self { page_switcher }
     }

@@ -2,6 +2,8 @@ mod alphabetic_keyboard;
 mod backup_display;
 mod backup_model;
 mod backup_status_bar;
+mod check_backup;
+mod distractor;
 mod enter_share_screen;
 mod entered_words;
 mod input_preview;
@@ -11,6 +13,7 @@ mod word_selector;
 
 pub use alphabetic_keyboard::AlphabeticKeyboard;
 pub use backup_display::{AllWordsPage, BackupDisplay};
+pub use check_backup::CheckBackupScreen;
 pub use backup_model::{BackupModel, FramebufferMutation, MainViewState, ViewState};
 pub use enter_share_screen::EnterShareScreen;
 pub use entered_words::EnteredWords;

@@ -472,6 +472,8 @@ pub enum CommsMisc {
     BackupRecorded,
     /// Tells the coordinator that the device erase has been confirmed and first sector erased.
     EraseConfirmed,
+    /// Tells the coordinator that the user has verified their backup via the multiple-choice quiz.
+    BackupChecked,
 }
 
 impl Gist for CommsMisc {

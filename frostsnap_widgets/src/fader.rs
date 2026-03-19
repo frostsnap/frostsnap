@@ -63,6 +63,16 @@ impl<W: Widget<Color = Rgb565>> Fader<W> {
         self.animation_speed = speed;
     }
 
+    pub fn start_fade_in_with(&mut self, config: crate::FadeConfig) {
+        self.set_animation_speed(config.speed);
+        self.start_fade_in(config.duration_ms as u64);
+    }
+
+    pub fn start_fade_with(&mut self, config: crate::FadeConfig) {
+        self.set_animation_speed(config.speed);
+        self.start_fade(config.duration_ms as u64);
+    }
+
     /// Start fading out over the specified duration
     /// This function is monotonic - it can only make fades happen faster, never slower
     pub fn start_fade(&mut self, duration_ms: u64) {

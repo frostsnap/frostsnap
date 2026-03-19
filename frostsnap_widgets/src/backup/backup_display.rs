@@ -311,10 +311,8 @@ impl BackupConfirmationScreen {
         let initial_content = ConfirmationContent::new(confirm_content);
         let centered_content = Center::new(initial_content);
 
-        let fade_switcher = FadeSwitcher::new(
-            centered_content,
-            500, // 500ms fade duration
-        );
+        let fade_switcher = FadeSwitcher::new(centered_content)
+            .with_fade_config(crate::fade_switcher::FadeConfig::new(500));
         let hold_confirm =
             HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, fade_switcher).with_faded_out_button();
 
