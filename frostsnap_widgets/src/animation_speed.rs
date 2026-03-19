@@ -9,6 +9,9 @@ pub enum AnimationSpeed {
     EaseIn,
     /// Cubic ease-out: starts fast and slows down. Formula: 1 - (1 - t)³
     EaseOut,
+    /// Damped triangle wave — oscillates with linearly decaying amplitude.
+    /// Handled specially in `Translate::calculate_offset`; `apply()` is a no-op.
+    DampedShake { half_cycles: u32 },
 }
 
 impl AnimationSpeed {
@@ -30,6 +33,7 @@ impl AnimationSpeed {
                 let one_minus_t_cubed = one_minus_t_squared * one_minus_t;
                 Frac::ONE - one_minus_t_cubed
             }
+            AnimationSpeed::DampedShake { .. } => progress,
         }
     }
 }

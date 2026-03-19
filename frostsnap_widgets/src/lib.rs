@@ -107,7 +107,7 @@ pub use circle_button::*;
 pub use device_name::*;
 pub use erase_device::*;
 pub use erase_progress::EraseProgress;
-pub use fade_switcher::FadeSwitcher;
+pub use fade_switcher::{FadeConfig, FadeSwitcher};
 pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};
 pub use fps::Fps;
 pub use frame_cache::FrameCache;

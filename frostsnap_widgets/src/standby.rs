@@ -133,7 +133,8 @@ impl Standby {
         let logo = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
         let padded_logo = Padding::only(logo).top(30).bottom(20).build();
 
-        let fade_switcher = FadeSwitcher::new(None, 500);
+        let fade_switcher =
+            FadeSwitcher::new(None).with_fade_config(crate::fade_switcher::FadeConfig::new(500));
 
         let column = Column::builder()
             .push(padded_logo)

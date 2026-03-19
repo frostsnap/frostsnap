@@ -18,6 +18,7 @@ where
     border_width: u32,
     fill_color: Option<W::Color>,
     corner_radius: Option<Size>,
+    anti_aliasing: bool,
     border_needs_redraw: bool,
     computed_sizing: Option<crate::Sizing>,
     child_rect: Option<Rectangle>,
@@ -33,6 +34,7 @@ impl<W: Widget> Container<W> {
             border_width: 0,
             fill_color: None,
             corner_radius: None,
+            anti_aliasing: true,
             border_needs_redraw: true,
             computed_sizing: None,
             child_rect: None,
@@ -48,6 +50,7 @@ impl<W: Widget> Container<W> {
             border_width: 0,
             fill_color: None,
             corner_radius: None,
+            anti_aliasing: true,
             border_needs_redraw: true,
             computed_sizing: None,
             child_rect: None,
@@ -90,6 +93,11 @@ impl<W: Widget> Container<W> {
         self
     }
 
+    pub fn with_anti_aliasing(mut self, anti_aliasing: bool) -> Self {
+        self.anti_aliasing = anti_aliasing;
+        self
+    }
+
     pub fn with_expanded(mut self) -> Self {
         self.width = Some(u32::MAX);
         self.height = Some(u32::MAX);
@@ -122,9 +130,10 @@ impl<W: Widget> crate::DynWidget for Container<W> {
             child_sizing.height + 2 * self.border_width
         };
 
-        let dirty_rect = if self.border_width == 0 {
+        let dirty_rect = if self.border_width == 0 && self.fill_color.is_none() {
             self.child.sizing().dirty_rect
         } else {
+            // ✏️ fill or border covers the full area
             None
         };
 
@@ -205,7 +214,7 @@ impl<W: Widget> Widget for Container<W> {
 
             let border_rect = Rectangle::new(Point::zero(), container_size);
 
-            if let Some(corner_radius) = self.corner_radius {
+            if let (Some(corner_radius), true) = (self.corner_radius, self.anti_aliasing) {
                 let aa_rect = crate::aa::rounded_rect::AARoundedRectangle::new(
                     border_rect,
                     target.background_color(),
@@ -240,7 +249,17 @@ impl<W: Widget> Widget for Container<W> {
                 }
 
                 let style = style_builder.build();
-                border_rect.into_styled(style).draw(target)?;
+
+                if let Some(corner_radius) = self.corner_radius {
+                    embedded_graphics::primitives::RoundedRectangle::with_equal_corners(
+                        border_rect,
+                        corner_radius,
+                    )
+                    .into_styled(style)
+                    .draw(target)?;
+                } else {
+                    border_rect.into_styled(style).draw(target)?;
+                }
             }
 
             self.border_needs_redraw = false;

@@ -21,12 +21,10 @@ pub struct VecFramebuffer<C>
 where
     C: PixelColor,
 {
-    /// Raw pixel data stored in a Vec
-    pub data: Vec<u8>,
-    /// Width of the framebuffer in pixels
-    pub width: usize,
-    /// Height of the framebuffer in pixels
-    pub height: usize,
+    data: Vec<u8>,
+    width: usize,
+    height: usize,
+    dirty: bool,
     _phantom: core::marker::PhantomData<C>,
 }
 
@@ -48,27 +46,32 @@ where
         total_bits.div_ceil(8)
     }
 
-    /// Create a new framebuffer with the given dimensions
     pub fn new(width: usize, height: usize) -> Self {
         let buffer_size = Self::buffer_size(width, height);
         Self {
             data: vec![0; buffer_size],
             width,
             height,
+            dirty: false,
             _phantom: core::marker::PhantomData,
         }
     }
 
-    /// Get the raw data as a slice
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
     #[inline]
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
-    /// Get the raw data as a mutable slice
-    #[inline]
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        &mut self.data
+    pub fn take_dirty(&mut self) -> bool {
+        core::mem::take(&mut self.dirty)
     }
 }
 
@@ -259,6 +262,7 @@ impl<C: FramebufferColor> VecFramebuffer<C> {
             if x < self.width && y < self.height {
                 let pixel_index = y * self.width + x;
                 C::write_pixel(&mut self.data, pixel_index, color);
+                self.dirty = true;
             }
         }
     }
@@ -276,6 +280,7 @@ impl<C: FramebufferColor> VecFramebuffer<C> {
 
     pub fn clear(&mut self, color: C) {
         C::fill_data(&mut self.data, self.width * self.height, color);
+        self.dirty = true;
     }
 
     pub fn blit<D: DrawTarget<Color = C>>(
@@ -293,6 +298,9 @@ impl<C: FramebufferColor> VecFramebuffer<C> {
         let end_x = ((rect.top_left.x + rect.size.width as i32).min(self.width as i32)) as usize;
         let end_y = ((rect.top_left.y + rect.size.height as i32).min(self.height as i32)) as usize;
 
+        if start_x < end_x && start_y < end_y {
+            self.dirty = true;
+        }
         for y in start_y..end_y {
             for x in start_x..end_x {
                 let pixel_index = y * self.width + x;
