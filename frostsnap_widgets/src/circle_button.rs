@@ -255,6 +255,9 @@ impl Widget for CircleButton {
 
         // Draw checkmark animation when in ShowingCheckmark state
         if self.state == CircleButtonState::ShowingCheckmark {
+            self.checkmark
+                .child
+                .set_bg_color(self.pressed_fill_color);
             self.checkmark.draw(target, current_time)?;
         }
 

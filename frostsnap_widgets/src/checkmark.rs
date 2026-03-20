@@ -1,26 +1,33 @@
-use super::{pixel_recorder::PixelRecorder, DynWidget, Widget};
-use crate::{
-    compressed_point::CompressedPoint, super_draw_target::SuperDrawTarget, Frac, Instant, Rat,
-};
+use super::{DynWidget, Widget};
+use crate::{super_draw_target::SuperDrawTarget, Frac, Instant, Rat};
 use alloc::vec::Vec;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::{BinaryColor, PixelColor},
+    pixelcolor::PixelColor,
     prelude::*,
-    primitives::{Circle, Line, PrimitiveStyle},
 };
+
+/// A checkmark pixel with SDF coverage for anti-aliased rendering.
+#[derive(Clone, Copy, PartialEq)]
+struct CoveragePoint {
+    x: u8,
+    y: u16,
+    /// Coverage level 1-15 (0 means invisible, not stored).
+    coverage: u8,
+}
 
 #[derive(Clone, PartialEq)]
 pub struct Checkmark<C> {
     width: u32,
     color: C,
-    check_pixels: Vec<CompressedPoint>,
+    bg_color: Option<C>,
+    check_pixels: Vec<CoveragePoint>,
     progress: Frac,
     last_drawn_check_progress: Option<Frac>,
     animation_state: AnimationState,
     enabled: bool,
-    animation_start_time: Option<crate::Instant>,
+    animation_start_time: Option<Instant>,
     check_width: u32,
     check_height: u32,
 }
@@ -37,6 +44,7 @@ impl<C: PixelColor> Checkmark<C> {
         Self {
             width,
             color,
+            bg_color: None,
             check_pixels: Vec::new(),
             progress: Frac::ZERO,
             last_drawn_check_progress: None,
@@ -53,12 +61,18 @@ impl<C: PixelColor> Checkmark<C> {
         self.force_full_redraw();
     }
 
+    /// Set the background color for AA blending. Call this before drawing
+    /// when the checkmark is rendered on top of a known solid color.
+    pub fn set_bg_color(&mut self, bg_color: C) {
+        self.bg_color = Some(bg_color);
+    }
+
     pub fn start_drawing(&mut self) {
         self.enabled = true;
         self.progress = Frac::ZERO;
         self.last_drawn_check_progress = None;
         self.animation_state = AnimationState::Drawing;
-        self.animation_start_time = None; // Will be set on first draw
+        self.animation_start_time = None;
     }
 
     pub fn reset(&mut self) {
@@ -80,92 +94,91 @@ impl<C: PixelColor> Checkmark<C> {
     }
 
     fn record_pixels(&mut self) {
-        let mut recorder = PixelRecorder::new();
+        #[allow(unused_imports)]
+        use micromath::F32Ext as _;
 
-        // Define checkmark points for perfect right angle
-        // Second segment is 2.2x the length of the first segment
         let width = self.width;
-
-        // Calculate segment lengths to use full width
-        // The checkmark total width = first_x + second_x
-        // We want: (first_x + second_x) + margins = width
-        // With stroke width 8, we need margin of 4 on each side
-        let margin = 5i32; // Radius of cap circle + 1
+        let margin = 5i32;
         let available_width = width - (2 * margin as u32);
 
-        // For 45-degree angles, x and y components are length / sqrt(2)
-        // sqrt(2) ≈ 1.414213562373095
-        // To avoid division, we multiply by inverse: 1/sqrt(2) ≈ 0.7071067811865476
-        // As a fraction: 7071/10000
         let inv_sqrt_2 = Rat::from_ratio(7071, 10000);
 
-        // With ratio of 2.2:1 for second:first segment
-        // Total horizontal span = first_x + second_x = available_width
-        // first_x = first_length * inv_sqrt_2
-        // second_x = second_length * inv_sqrt_2 = 2.2 * first_length * inv_sqrt_2
-        // So: first_length * inv_sqrt_2 * (1 + 2.2) = available_width
-        // first_length * inv_sqrt_2 * 3.2 = available_width
-        // first_length = available_width / (inv_sqrt_2 * 3.2)
-        // Since inv_sqrt_2 ≈ 0.7071, inv_sqrt_2 * 3.2 ≈ 2.263
-        // So first_length ≈ available_width / 2.263 ≈ available_width * 0.442
         let first_segment_length = (Rat::from_ratio(4420, 10000) * available_width).round();
         let second_segment_length = (Rat::from_ratio(22, 10) * first_segment_length).round();
 
-        // First segment: 45 degrees down-right
         let first_x_offset = (inv_sqrt_2 * first_segment_length).round() as i32;
         let first_y_offset = (inv_sqrt_2 * first_segment_length).round() as i32;
 
-        // Second segment: 45 degrees up-right (perpendicular to first)
         let second_x_offset = (inv_sqrt_2 * second_segment_length).round() as i32;
         let second_y_offset = (inv_sqrt_2 * second_segment_length).round() as i32;
 
-        // Position the middle point with margin
         let middle = Point::new(first_x_offset + margin, second_y_offset + margin);
-
-        // Calculate the other points based on the middle point
         let left_start = Point::new(middle.x - first_x_offset, middle.y - first_y_offset);
         let right_end = Point::new(middle.x + second_x_offset, middle.y - second_y_offset);
 
-        // Draw with thicker lines for better visibility
-        let stroke_width = 8;
-        let style = PrimitiveStyle::with_stroke(BinaryColor::On, stroke_width);
+        let stroke_radius = 4.0_f32;
 
-        Line::new(left_start, middle)
-            .into_styled(style)
-            .draw(&mut recorder)
-            .ok();
+        let max_x = (right_end.x + stroke_radius as i32 + 2).min(width as i32);
+        let max_y = middle.y + stroke_radius as i32 + 2;
 
-        Line::new(middle, right_end)
-            .into_styled(style)
-            .draw(&mut recorder)
-            .ok();
+        let ax = left_start.x as f32;
+        let ay = left_start.y as f32;
+        let bx = middle.x as f32;
+        let by = middle.y as f32;
+        let cx = right_end.x as f32;
+        let cy = right_end.y as f32;
 
-        // Add rounded caps at the ends - matching stroke width for subtle rounding
-        let cap_diameter = stroke_width; // Same as stroke width for natural rounding
-        let cap_style = PrimitiveStyle::with_fill(BinaryColor::On);
+        let mut first_leg: Vec<CoveragePoint> = Vec::new();
+        let mut second_leg: Vec<CoveragePoint> = Vec::new();
 
-        // Round cap at left start
-        Circle::with_center(left_start, cap_diameter)
-            .into_styled(cap_style)
-            .draw(&mut recorder)
-            .ok();
+        for y in 0..max_y {
+            for x in 0..max_x {
+                let px = x as f32 + 0.5;
+                let py = y as f32 + 0.5;
 
-        // Round cap at right end
-        Circle::with_center(right_end - Point::new(1, 0), cap_diameter)
-            .into_styled(cap_style)
-            .draw(&mut recorder)
-            .ok();
+                let d1 = sdf_capsule(px, py, ax, ay, bx, by, stroke_radius);
+                let d2 = sdf_capsule(px, py, bx, by, cx, cy, stroke_radius);
 
-        // Round cap at middle joint
-        Circle::with_center(middle - Point::new(1, 1), cap_diameter)
-            .into_styled(cap_style)
-            .draw(&mut recorder)
-            .ok();
+                let d = d1.min(d2);
+                let cov = (0.5 - d).clamp(0.0, 1.0);
+                let level = (cov * 15.0 + 0.5) as u8;
+                if level == 0 {
+                    continue;
+                }
 
-        self.check_pixels = recorder.pixels;
-        self.check_pixels.sort_unstable_by_key(|cp| cp.x);
+                let cp = CoveragePoint {
+                    x: x as u8,
+                    y: y as u16,
+                    coverage: level,
+                };
 
-        // Find the actual bounds of the recorded pixels
+                if d1 <= d2 {
+                    first_leg.push(cp);
+                } else {
+                    second_leg.push(cp);
+                }
+            }
+        }
+
+        // Sort each leg by projection onto the stroke direction for path-following reveal.
+        let d1x = bx - ax;
+        let d1y = by - ay;
+        first_leg.sort_unstable_by(|a, b| {
+            let pa = a.x as f32 * d1x + a.y as f32 * d1y;
+            let pb = b.x as f32 * d1x + b.y as f32 * d1y;
+            pa.partial_cmp(&pb).unwrap_or(core::cmp::Ordering::Equal)
+        });
+        let d2x = cx - bx;
+        let d2y = cy - by;
+        second_leg.sort_unstable_by(|a, b| {
+            let pa = a.x as f32 * d2x + a.y as f32 * d2y;
+            let pb = b.x as f32 * d2x + b.y as f32 * d2y;
+            pa.partial_cmp(&pb).unwrap_or(core::cmp::Ordering::Equal)
+        });
+
+        self.check_pixels = first_leg;
+        self.check_pixels.extend(second_leg);
+
         if !self.check_pixels.is_empty() {
             let max_x = self.check_pixels.iter().map(|cp| cp.x).max().unwrap_or(0);
             let max_y = self
@@ -174,23 +187,20 @@ impl<C: PixelColor> Checkmark<C> {
                 .map(|cp| cp.y as u32)
                 .max()
                 .unwrap_or(0);
-            self.check_width = (max_x + 1) as u32; // +1 because coordinates are 0-based
+            self.check_width = (max_x + 1) as u32;
             self.check_height = max_y + 1;
         } else {
-            // Fallback to calculated values
             self.check_width = self.width;
-            // Approximate height based on width
             self.check_height = (self.width * 2) / 3;
         }
     }
 
-    fn update_animation(&mut self, current_time: crate::Instant) {
+    fn update_animation(&mut self, current_time: Instant) {
         if !self.enabled {
             return;
         }
 
-        // Animation duration in milliseconds
-        const CHECK_DURATION_MS: u64 = 800;
+        const CHECK_DURATION_MS: u64 = 400;
 
         if self.animation_start_time.is_none() {
             self.animation_start_time = Some(current_time);
@@ -201,9 +211,13 @@ impl<C: PixelColor> Checkmark<C> {
             AnimationState::Drawing => {
                 let start = self.animation_start_time.unwrap();
                 let elapsed = current_time.saturating_duration_since(start) as u32;
-                self.progress = Frac::from_ratio(elapsed, CHECK_DURATION_MS as u32);
+                let linear = Frac::from_ratio(elapsed, CHECK_DURATION_MS as u32);
 
-                if self.progress >= Frac::ONE {
+                // Ease-out: progress = 1 - (1 - t)^2
+                let inv = Frac::ONE - linear;
+                self.progress = Frac::ONE - inv * inv;
+
+                if linear >= Frac::ONE {
                     self.progress = Frac::ONE;
                     self.animation_state = AnimationState::Complete;
                 }
@@ -213,7 +227,25 @@ impl<C: PixelColor> Checkmark<C> {
     }
 }
 
-impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
+/// SDF for a capsule (line segment with rounded ends).
+/// Returns signed distance: negative inside, positive outside.
+#[inline]
+fn sdf_capsule(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32, radius: f32) -> f32 {
+    #[allow(unused_imports)]
+    use micromath::F32Ext as _;
+
+    let pax = px - ax;
+    let pay = py - ay;
+    let bax = bx - ax;
+    let bay = by - ay;
+    let dot_ab = bax * bax + bay * bay;
+    let t = ((pax * bax + pay * bay) / dot_ab).clamp(0.0, 1.0);
+    let dx = pax - bax * t;
+    let dy = pay - bay * t;
+    (dx * dx + dy * dy).sqrt() - radius
+}
+
+impl<C: PixelColor> DynWidget for Checkmark<C> {
     fn set_constraints(&mut self, _max_size: Size) {
         if self.check_pixels.is_empty() {
             self.record_pixels();
@@ -231,7 +263,7 @@ impl<C: PixelColor> crate::DynWidget for Checkmark<C> {
     fn handle_touch(
         &mut self,
         _point: Point,
-        _current_time: crate::Instant,
+        _current_time: Instant,
         _is_release: bool,
     ) -> Option<crate::KeyTouch> {
         None
@@ -258,7 +290,6 @@ impl<C: crate::WidgetColor> Widget for Checkmark<C> {
         if self.enabled {
             self.update_animation(current_time);
 
-            // Draw animation inline
             match self.animation_state {
                 AnimationState::Idle => {}
                 AnimationState::Drawing | AnimationState::Complete => {
@@ -272,10 +303,16 @@ impl<C: crate::WidgetColor> Widget for Checkmark<C> {
                     };
 
                     if current_pixels > last_pixels && current_pixels <= self.check_pixels.len() {
+                        let color = self.color;
+                        let bg = self.bg_color.unwrap_or_else(|| target.background_color());
                         target.draw_iter(
                             self.check_pixels[last_pixels..current_pixels]
                                 .iter()
-                                .map(|cp| Pixel(cp.to_point(), self.color)),
+                                .map(|cp| {
+                                    let frac = Frac::from_ratio(cp.coverage as u32, 15);
+                                    let blended = bg.interpolate(color, frac);
+                                    Pixel(Point::new(cp.x as i32, cp.y as i32), blended)
+                                }),
                         )?;
                     }
 
