@@ -7,14 +7,18 @@ use crate::{
     palette::PALETTE,
     prelude::*,
     widget_list::{WidgetList, WidgetListItem},
-    HoldToConfirm,
+    GrayToAlpha, HoldToConfirm, Image,
 };
 use alloc::{format, string::ToString};
-use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
+use embedded_graphics::{
+    geometry::Size,
+    pixelcolor::{Gray8, Rgb565},
+};
 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
 };
+use tinybmp::Bmp;
 
 const FONT_PAGE_HEADER: &Gray4Font = &NOTO_SANS_18_LIGHT;
 const FONT_CONFIRM_TITLE: &Gray4Font = &NOTO_SANS_18_MEDIUM;
@@ -146,9 +150,7 @@ impl FeePage {
     }
 }
 
-type WarningIcon = crate::icons::IconWidget<
-    embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size24px::actions::WarningTriangle>,
->;
+const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
 /// Page widget for high fee warning
 #[derive(frostsnap_macros::Widget)]
@@ -157,7 +159,8 @@ pub struct WarningPage {
     center: Center<
         Column<(
             Row<(
-                WarningIcon,
+                Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>,
+                SizedBox<Rgb565>,
                 Column<(SizedBox<Rgb565>, Text<Gray4TextStyle>)>,
             )>,
             Text<Gray4TextStyle>,
@@ -168,11 +171,11 @@ pub struct WarningPage {
 
 impl WarningPage {
     fn new(fee_sats: u64, _total_sent: u64) -> Self {
-        use embedded_iconoir::prelude::*;
+        let warning_bmp =
+            Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
+        let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
 
-        let warning_icon = crate::icons::IconWidget::new(
-            embedded_iconoir::icons::size24px::actions::WarningTriangle::new(PALETTE.warning),
-        );
+        let icon_spacer = SizedBox::<Rgb565>::new(Size::new(5, 1));
 
         let caution_text = Text::new(
             "Caution".to_string(),
@@ -182,9 +185,8 @@ impl WarningPage {
         let text_with_spacer =
             Column::new((SizedBox::<Rgb565>::new(Size::new(1, 5)), caution_text));
 
-        let mut caution_row = Row::new((warning_icon, text_with_spacer))
+        let caution_row = Row::new((warning_icon, icon_spacer, text_with_spacer))
             .with_main_axis_alignment(MainAxisAlignment::Center);
-        caution_row.set_gap(0, 5);
 
         let title_text = Text::new(
             "High Fee".to_string(),
