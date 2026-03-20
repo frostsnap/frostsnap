@@ -1,14 +1,13 @@
 use crate::aa::circle::AACircle;
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*};
+use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*, ColorInterpolate, Frac};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    image::Image,
-    pixelcolor::Rgb565,
+    pixelcolor::{Gray8, GrayColor, Rgb565},
     prelude::*,
 };
-use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
+use tinybmp::Bmp;
 
 // Circle dimensions
 const CIRCLE_RADIUS: u32 = 50;
@@ -37,6 +36,48 @@ impl Default for CircleButton {
     fn default() -> Self {
         Self::new()
     }
+}
+
+const TOUCH_ICON_DATA: &[u8] = include_bytes!("../assets/touch-icon-100x100.bmp");
+
+/// Draw the touch icon centered in the circle, blending grayscale values between
+/// icon_color (for dark pixels) and bg_color (for light pixels).
+/// Only draws pixels that fall inside the circle to avoid bleeding outside the AA border.
+fn draw_icon<D: DrawTarget<Color = Rgb565>>(
+    target: &mut D,
+    icon_color: Rgb565,
+    bg_color: Rgb565,
+) -> Result<(), D::Error> {
+    let bmp = Bmp::<Gray8>::from_slice(TOUCH_ICON_DATA).expect("Failed to load touch icon BMP");
+    let icon_size = bmp.size();
+
+    let offset_x = (CIRCLE_DIAMETER as i32 - icon_size.width as i32) / 2;
+    let offset_y = (CIRCLE_DIAMETER as i32 - icon_size.height as i32) / 2;
+
+    let center_x = CIRCLE_RADIUS as i32;
+    let center_y = CIRCLE_RADIUS as i32;
+    // Clip to the inner edge of the circle stroke (radius 48, stroke 2 → inner radius 46)
+    // so icon pixels don't overwrite the AA-blended border
+    let inner_radius = ((CIRCLE_DIAMETER - 4) / 2 - 2) as i32;
+    let clip_radius_sq = inner_radius * inner_radius;
+
+    target.draw_iter(bmp.pixels().filter_map(|Pixel(point, gray)| {
+        let intensity = gray.luma();
+        if intensity == 255 {
+            return None;
+        }
+        let dest = Point::new(point.x + offset_x, point.y + offset_y);
+        // Skip pixels outside the circle
+        let dx = dest.x - center_x;
+        let dy = dest.y - center_y;
+        if dx * dx + dy * dy > clip_radius_sq {
+            return None;
+        }
+        // luma 0 = fully icon_color, luma 255 = fully bg_color (skipped above)
+        let frac = Frac::from_ratio(intensity as u32, 255);
+        let blended = icon_color.interpolate(bg_color, frac);
+        Some(Pixel(dest, blended))
+    }))
 }
 
 impl CircleButton {
@@ -177,8 +218,7 @@ impl Widget for CircleButton {
                     )
                     .draw(target)?;
 
-                    let icon = OpenSelectHandGesture::new(PALETTE.on_surface_variant);
-                    Image::with_center(&icon, center).draw(target)?;
+                    draw_icon(target, PALETTE.on_surface_variant, PALETTE.surface_variant)?;
                 }
                 CircleButtonState::Pressed => {
                     AACircle::new(
@@ -191,8 +231,7 @@ impl Widget for CircleButton {
                     )
                     .draw(target)?;
 
-                    let icon = OpenSelectHandGesture::new(PALETTE.on_tertiary_container);
-                    Image::with_center(&icon, center).draw(target)?;
+                    draw_icon(target, PALETTE.on_tertiary_container, self.pressed_fill_color)?;
                 }
                 CircleButtonState::ShowingCheckmark => {
                     AACircle::new(
