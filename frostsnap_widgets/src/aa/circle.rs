@@ -1,6 +1,6 @@
 use super::{coverage_from_distance, isqrt_distance, SCALE};
 use crate::widget_color::ColorInterpolate;
-use crate::Frac;
+use crate::{Frac, Rat};
 use embedded_graphics::{draw_target::DrawTarget, prelude::*};
 
 pub struct AACircle<C: ColorInterpolate> {
@@ -125,15 +125,19 @@ impl<C: ColorInterpolate> Iterator for AACircleIter<C> {
             let color = if self.has_stroke {
                 let inner_dist = isqrt_distance(dx, dy, self.inner_r_scaled);
                 let fill_cov = coverage_from_distance(inner_dist);
-                let border_cov =
-                    Frac::new((shape_cov.as_rat() - fill_cov.as_rat()).max(crate::Rat::ZERO));
+                let stroke_cov =
+                    Frac::new((shape_cov.as_rat() - fill_cov.as_rat()).max(Rat::ZERO));
 
-                let mut color = self.bg_color;
-                color = color.interpolate(self.fill_color, fill_cov);
-                if border_cov > Frac::ZERO {
-                    color = color.interpolate(self.stroke_color, border_cov);
-                }
-                color
+                // Blend fill and stroke within the shape, then composite over bg.
+                // This avoids the dark-pixel artifacts at the stroke/fill boundary
+                // that two-step interpolation (bg→fill then result→stroke) causes.
+                let stroke_ratio = if shape_cov.as_rat().0 > 0 {
+                    Frac::new(Rat::from_ratio(stroke_cov.as_rat().0, shape_cov.as_rat().0))
+                } else {
+                    Frac::ZERO
+                };
+                let shape_color = self.fill_color.interpolate(self.stroke_color, stroke_ratio);
+                self.bg_color.interpolate(shape_color, shape_cov)
             } else {
                 self.bg_color.interpolate(self.fill_color, shape_cov)
             };

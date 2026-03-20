@@ -163,7 +163,7 @@ impl EraseConfirmationPage {
                 border: ERASE_BUTTON_BORDER_COLOR,
                 button_fill: ERASE_BUTTON_FILL_COLOR,
                 button_stroke: ERASE_BUTTON_BORDER_COLOR,
-                checkmark: PALETTE.on_error,
+                checkmark: PALETTE.on_background,
             })
             .with_faded_out_button();
 
