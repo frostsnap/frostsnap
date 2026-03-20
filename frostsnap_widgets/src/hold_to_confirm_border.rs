@@ -25,7 +25,7 @@ where
     border_width: u32,
     border_color: C,
     background_color: C,
-    needs_full_redraw: bool,
+    max_drawn_progress: Frac,
     fade_progress: Frac,
     fade_start_time: Option<crate::Instant>,
     fade_duration_ms: u64,
@@ -51,7 +51,7 @@ where
             border_width,
             border_color,
             background_color,
-            needs_full_redraw: false,
+            max_drawn_progress: Frac::ZERO,
             fade_progress: Frac::ZERO,
             fade_start_time: None,
             fade_duration_ms: 0,
@@ -137,7 +137,11 @@ where
     }
 
     fn force_full_redraw(&mut self) {
-        self.needs_full_redraw = true;
+        // Restore progress to the high-water mark so the border is fully
+        // redrawn. Subsequent frames will decrement back to the real progress
+        // and properly erase the excess pixels.
+        self.progress = self.max_drawn_progress;
+        self.last_drawn_progress = Frac::ZERO;
         self.child.force_full_redraw();
     }
 }
@@ -210,15 +214,8 @@ where
             let top = proto.top_center();
             let bottom = proto.bottom_center();
 
-            let effective_last = if self.needs_full_redraw {
-                self.needs_full_redraw = false;
-                Frac::ZERO
-            } else {
-                self.last_drawn_progress
-            };
-
             let mut new_progress = self.progress;
-            let mut old_progress = effective_last;
+            let mut old_progress = self.last_drawn_progress;
 
             let color = if new_progress > old_progress {
                 self.border_color
@@ -236,6 +233,9 @@ where
             target.draw_iter(iter)?;
 
             self.last_drawn_progress = self.progress;
+            if self.progress > self.max_drawn_progress {
+                self.max_drawn_progress = self.progress;
+            }
             Ok(())
         }
     }
