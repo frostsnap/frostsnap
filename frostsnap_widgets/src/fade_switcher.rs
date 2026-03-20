@@ -30,7 +30,6 @@ impl FadeConfig {
         self.speed = speed;
         self
     }
-
 }
 
 impl Default for FadeConfig {

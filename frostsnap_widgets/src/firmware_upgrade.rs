@@ -130,12 +130,14 @@ pub enum FirmwareUpgradeProgress {
     },
     /// Passive state - title and status, no progress bar
     Passive {
-        widget: Center<
-            Padding<
-                Column<(
-                    Text<Gray4TextStyle>, // Title
-                    Text<Gray4TextStyle>, // Status
-                )>,
+        widget: Box<
+            Center<
+                Padding<
+                    Column<(
+                        Text<Gray4TextStyle>, // Title
+                        Text<Gray4TextStyle>, // Status
+                    )>,
+                >,
             >,
         >,
     },
@@ -194,7 +196,9 @@ impl FirmwareUpgradeProgress {
         let padded = Padding::symmetric(20, 20, column);
         let widget = Center::new(padded);
 
-        Self::Passive { widget }
+        Self::Passive {
+            widget: Box::new(widget),
+        }
     }
 
     /// Update the progress for active states

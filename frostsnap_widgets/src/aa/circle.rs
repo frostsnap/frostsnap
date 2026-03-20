@@ -125,8 +125,7 @@ impl<C: ColorInterpolate> Iterator for AACircleIter<C> {
             let color = if self.has_stroke {
                 let inner_dist = isqrt_distance(dx, dy, self.inner_r_scaled);
                 let fill_cov = coverage_from_distance(inner_dist);
-                let stroke_cov =
-                    Frac::new((shape_cov.as_rat() - fill_cov.as_rat()).max(Rat::ZERO));
+                let stroke_cov = Frac::new((shape_cov.as_rat() - fill_cov.as_rat()).max(Rat::ZERO));
 
                 // Blend fill and stroke within the shape, then composite over bg.
                 // This avoids the dark-pixel artifacts at the stroke/fill boundary

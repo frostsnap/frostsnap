@@ -13,8 +13,8 @@ pub struct RootWidget {
 
 impl RootWidget {
     pub fn new(initial_widget: WidgetTree, fade_duration_ms: u32) -> Self {
-        let page_switcher = FadeSwitcher::new(initial_widget)
-            .with_fade_config(FadeConfig::new(fade_duration_ms));
+        let page_switcher =
+            FadeSwitcher::new(initial_widget).with_fade_config(FadeConfig::new(fade_duration_ms));
 
         Self { page_switcher }
     }

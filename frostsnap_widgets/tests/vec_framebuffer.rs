@@ -11,25 +11,25 @@ use frostsnap_widgets::vec_framebuffer::VecFramebuffer;
 #[test]
 fn test_framebuffer_creation_rgb565() {
     let fb: VecFramebuffer<Rgb565> = VecFramebuffer::new(240, 280);
-    assert_eq!(fb.width, 240);
-    assert_eq!(fb.height, 280);
-    assert_eq!(fb.data.len(), 240 * 280 * 2); // 2 bytes per pixel
+    assert_eq!(fb.width(), 240);
+    assert_eq!(fb.height(), 280);
+    assert_eq!(fb.data().len(), 240 * 280 * 2); // 2 bytes per pixel
 }
 
 #[test]
 fn test_framebuffer_creation_gray8() {
     let fb: VecFramebuffer<Gray8> = VecFramebuffer::new(100, 100);
-    assert_eq!(fb.width, 100);
-    assert_eq!(fb.height, 100);
-    assert_eq!(fb.data.len(), 100 * 100); // 1 byte per pixel
+    assert_eq!(fb.width(), 100);
+    assert_eq!(fb.height(), 100);
+    assert_eq!(fb.data().len(), 100 * 100); // 1 byte per pixel
 }
 
 #[test]
 fn test_framebuffer_creation_binary() {
     let fb: VecFramebuffer<BinaryColor> = VecFramebuffer::new(128, 64);
-    assert_eq!(fb.width, 128);
-    assert_eq!(fb.height, 64);
-    assert_eq!(fb.data.len(), 128 * 64 / 8); // 1 bit per pixel
+    assert_eq!(fb.width(), 128);
+    assert_eq!(fb.height(), 64);
+    assert_eq!(fb.data().len(), 128 * 64 / 8); // 1 bit per pixel
 }
 
 #[test]

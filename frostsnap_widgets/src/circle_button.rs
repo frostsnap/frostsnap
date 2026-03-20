@@ -231,7 +231,11 @@ impl Widget for CircleButton {
                     )
                     .draw(target)?;
 
-                    draw_icon(target, PALETTE.on_tertiary_container, self.pressed_fill_color)?;
+                    draw_icon(
+                        target,
+                        PALETTE.on_tertiary_container,
+                        self.pressed_fill_color,
+                    )?;
                 }
                 CircleButtonState::ShowingCheckmark => {
                     AACircle::new(

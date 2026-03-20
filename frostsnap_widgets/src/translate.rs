@@ -370,7 +370,11 @@ where
                     let fb = framebuffer.as_mut().unwrap();
                     let fb_dirty = fb.take_dirty();
 
-                    if offset != self.current_offset || !self.pixels_tracked || *needs_reblit || fb_dirty {
+                    if offset != self.current_offset
+                        || !self.pixels_tracked
+                        || *needs_reblit
+                        || fb_dirty
+                    {
                         let old_pos = self.dirty_rect_offset + self.current_offset;
                         let new_pos = self.dirty_rect_offset + offset;
                         let size = self.child_dirty_rect.size;
@@ -410,8 +414,8 @@ where
                         }
 
                         let blit_rect = Rectangle::new(new_pos, size);
-                        let pixels =
-                            (0..fb.width() * fb.height()).map(|i| W::Color::read_pixel(fb.data(), i));
+                        let pixels = (0..fb.width() * fb.height())
+                            .map(|i| W::Color::read_pixel(fb.data(), i));
                         target.fill_contiguous(&blit_rect, pixels)?;
 
                         self.current_offset = offset;

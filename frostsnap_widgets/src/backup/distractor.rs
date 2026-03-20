@@ -6,21 +6,17 @@ fn levenshtein(a: &[u8], b: &[u8]) -> usize {
     let mut curr = [0usize; MAX_LEN];
 
     let b_len = b.len();
-    for j in 0..=b_len {
-        prev[j] = j;
+    for (j, slot) in prev.iter_mut().enumerate().take(b_len + 1) {
+        *slot = j;
     }
 
     for i in 1..=a.len() {
         curr[0] = i;
         for j in 1..=b_len {
             let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-            curr[j] = (prev[j] + 1)
-                .min(curr[j - 1] + 1)
-                .min(prev[j - 1] + cost);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
         }
-        let tmp = prev;
-        prev = curr;
-        curr = tmp;
+        core::mem::swap(&mut prev, &mut curr);
     }
     prev[b_len]
 }

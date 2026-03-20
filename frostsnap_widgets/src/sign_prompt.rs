@@ -14,11 +14,11 @@ use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
 };
-use tinybmp::Bmp;
 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
 };
+use tinybmp::Bmp;
 
 const FONT_PAGE_HEADER: &Gray4Font = &NOTO_SANS_18_LIGHT;
 const FONT_CONFIRM_TITLE: &Gray4Font = &NOTO_SANS_18_MEDIUM;

@@ -84,9 +84,7 @@ pub enum WidgetTree {
     },
 
     /// Check backup quiz screen
-    CheckBackup {
-        widget: Box<CheckBackupScreen>,
-    },
+    CheckBackup { widget: Box<CheckBackupScreen> },
 
     /// Erase progress screen
     EraseProgress { widget: Box<EraseProgress> },

@@ -127,7 +127,10 @@ impl RoundedRectGeom {
         // Blend fill and border within the shape, then composite over background.
         // This avoids dark-pixel artifacts at the border/fill boundary.
         let border_ratio = if shape_cov.as_rat().0 > 0 {
-            Frac::new(crate::Rat::from_ratio(border_cov.as_rat().0, shape_cov.as_rat().0))
+            Frac::new(crate::Rat::from_ratio(
+                border_cov.as_rat().0,
+                shape_cov.as_rat().0,
+            ))
         } else {
             Frac::ZERO
         };

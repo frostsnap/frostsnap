@@ -344,10 +344,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 }
             }
 
-            Workflow::CheckBackup {
-                backup,
-                rand_seed,
-            } => {
+            Workflow::CheckBackup { backup, rand_seed } => {
                 let word_indices = backup.to_word_indices();
                 let share_index: u16 = backup
                     .index()

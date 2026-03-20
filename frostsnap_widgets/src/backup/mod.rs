@@ -13,8 +13,8 @@ mod word_selector;
 
 pub use alphabetic_keyboard::AlphabeticKeyboard;
 pub use backup_display::{AllWordsPage, BackupDisplay};
-pub use check_backup::CheckBackupScreen;
 pub use backup_model::{BackupModel, FramebufferMutation, MainViewState, ViewState};
+pub use check_backup::CheckBackupScreen;
 pub use enter_share_screen::EnterShareScreen;
 pub use entered_words::EnteredWords;
 pub use input_preview::InputPreview;
