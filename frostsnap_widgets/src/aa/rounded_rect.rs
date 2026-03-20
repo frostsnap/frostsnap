@@ -322,7 +322,7 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
         let mut raw_end = self.actual_to_logical(self.frac_to_raw(end));
         if raw_end <= raw_start && start != end {
             // ↻ wrapping range
-            raw_end += self.total_raw_pixels();
+            raw_end += self.total_border_pixels();
         }
         self.with_raw_range(raw_start, raw_end)
     }
@@ -334,7 +334,7 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
     }
 
     fn logical_to_actual(&self, logical: u32) -> u32 {
-        let total = self.total_raw_pixels();
+        let total = self.total_border_pixels();
         if total == 0 {
             return 0;
         }
@@ -342,14 +342,14 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
     }
 
     fn actual_to_logical(&self, actual: u32) -> u32 {
-        let total = self.total_raw_pixels();
+        let total = self.total_border_pixels();
         if total == 0 {
             return 0;
         }
         (actual + total - self.origin_offset) % total
     }
 
-    fn total_raw_pixels(&self) -> u32 {
+    pub fn total_border_pixels(&self) -> u32 {
         self.seg_sizes.iter().sum()
     }
 
@@ -408,7 +408,7 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
             }
             cumulative += seg_perim;
         }
-        self.total_raw_pixels()
+        self.total_border_pixels()
     }
 
     /// Perimeter lengths for each segment, scaled by 226 (= 2 * 113) to keep integer math.
@@ -712,7 +712,7 @@ mod tests {
             || AARoundedRectIter::new(w, h, cr, bw, Rgb565::WHITE, Rgb565::BLACK, Rgb565::BLACK);
 
         let all: alloc::vec::Vec<_> = mk().collect();
-        let total = mk().total_raw_pixels();
+        let total = mk().total_border_pixels();
         let half = total / 2;
 
         let first: alloc::vec::Vec<_> = mk().with_raw_range(0, half).collect();

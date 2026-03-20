@@ -194,6 +194,16 @@ where
         let mirror =
             move |Pixel(p, c): Pixel<Rgb565>| [Pixel(p, c), Pixel(Point::new(w - 1 - p.x, p.y), c)];
 
+        // Compute the half-perimeter endpoints. with_frac_range is exclusive
+        // on the end, so bump bottom past the seam pixel to include it.
+        let proto = make_iter(self.border_color);
+        let top = proto.top_center();
+        let bottom = {
+            let bc = proto.bottom_center();
+            let one_pixel = Frac::from_ratio(1, proto.total_border_pixels());
+            Frac::new(bc.as_rat() + one_pixel.as_rat())
+        };
+
         if self.is_fading {
             let start_time = self.fade_start_time.get_or_insert(current_time);
             let elapsed = current_time.saturating_duration_since(*start_time);
@@ -205,14 +215,9 @@ where
                 target_color: self.background_color,
             };
 
-            let proto = make_iter(self.border_color);
-            let top = proto.top_center();
-            let bottom = proto.bottom_center();
-            fading_target.draw_iter(proto.with_frac_range(top, bottom).flat_map(mirror))
+            fading_target
+                .draw_iter(make_iter(self.border_color).with_frac_range(top, bottom).flat_map(mirror))
         } else {
-            let proto = make_iter(self.border_color);
-            let top = proto.top_center();
-            let bottom = proto.bottom_center();
 
             let mut new_progress = self.progress;
             let mut old_progress = self.last_drawn_progress;
