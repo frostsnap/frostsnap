@@ -26,6 +26,10 @@ where
     border_color: C,
     background_color: C,
     max_drawn_progress: Frac,
+    /// Total visible border pixels in the right half (top_center → bottom_center).
+    /// Computed lazily on first draw. Progress maps linearly to this count
+    /// so drawing speed is uniform regardless of corner pixel density.
+    half_visible_count: u32,
     fade_progress: Frac,
     fade_start_time: Option<crate::Instant>,
     fade_duration_ms: u64,
@@ -52,6 +56,7 @@ where
             border_color,
             background_color,
             max_drawn_progress: Frac::ZERO,
+            half_visible_count: 0,
             fade_progress: Frac::ZERO,
             fade_start_time: None,
             fade_duration_ms: 0,
@@ -146,12 +151,6 @@ where
     }
 }
 
-/// Interpolate a Frac position between two perimeter points.
-fn lerp_frac(a: Frac, b: Frac, t: Frac) -> Frac {
-    let span = Frac::new(b.as_rat() - a.as_rat());
-    Frac::new(a.as_rat() + (t * span).as_rat())
-}
-
 impl<W> Widget for HoldToConfirmBorder<W, Rgb565>
 where
     W: Widget<Color = Rgb565>,
@@ -177,9 +176,9 @@ where
         }
 
         let size = self.screen_size.unwrap();
-        let make_iter = |color: Rgb565| -> AARoundedRectIter<Rgb565> {
+        let make_half_iter = |color: Rgb565| -> AARoundedRectIter<Rgb565> {
             let bg = self.background_color;
-            AARoundedRectIter::new(
+            let proto = AARoundedRectIter::new(
                 size.width,
                 size.height,
                 CORNER_RADIUS,
@@ -187,22 +186,26 @@ where
                 color,
                 bg,
                 bg,
-            )
+            );
+            let top = proto.top_center();
+            let bottom = {
+                let bc = proto.bottom_center();
+                let one_pixel = Frac::from_ratio(1, proto.total_border_pixels());
+                Frac::new(bc.as_rat() + one_pixel.as_rat())
+            };
+            proto.with_frac_range(top, bottom)
         };
+
+        // Lazily compute the total visible pixel count for the half-perimeter.
+        // This count drives progress mapping so drawing speed is uniform.
+        if self.half_visible_count == 0 {
+            self.half_visible_count = make_half_iter(self.border_color).count() as u32;
+        }
+        let total = self.half_visible_count;
 
         let w = size.width as i32;
         let mirror =
             move |Pixel(p, c): Pixel<Rgb565>| [Pixel(p, c), Pixel(Point::new(w - 1 - p.x, p.y), c)];
-
-        // Compute the half-perimeter endpoints. with_frac_range is exclusive
-        // on the end, so bump bottom past the seam pixel to include it.
-        let proto = make_iter(self.border_color);
-        let top = proto.top_center();
-        let bottom = {
-            let bc = proto.bottom_center();
-            let one_pixel = Frac::from_ratio(1, proto.total_border_pixels());
-            Frac::new(bc.as_rat() + one_pixel.as_rat())
-        };
 
         if self.is_fading {
             let start_time = self.fade_start_time.get_or_insert(current_time);
@@ -215,25 +218,25 @@ where
                 target_color: self.background_color,
             };
 
-            fading_target
-                .draw_iter(make_iter(self.border_color).with_frac_range(top, bottom).flat_map(mirror))
+            fading_target.draw_iter(make_half_iter(self.border_color).flat_map(mirror))
         } else {
-
             let mut new_progress = self.progress;
             let mut old_progress = self.last_drawn_progress;
 
-            let color = if new_progress > old_progress {
+            let erasing = new_progress < old_progress;
+            let color = if !erasing {
                 self.border_color
             } else {
                 core::mem::swap(&mut new_progress, &mut old_progress);
                 self.background_color
             };
 
-            let old_end = lerp_frac(top, bottom, old_progress);
-            let new_end = lerp_frac(top, bottom, new_progress);
+            let old_count = (old_progress * total).round() as usize;
+            let new_count = (new_progress * total).round() as usize;
 
-            let iter = make_iter(color)
-                .with_frac_range(old_end, new_end)
+            let iter = make_half_iter(color)
+                .skip(old_count)
+                .take(new_count - old_count)
                 .flat_map(mirror);
             target.draw_iter(iter)?;
 

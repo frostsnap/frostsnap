@@ -458,6 +458,24 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
         }
     }
 
+    /// Map a flat index to (row, col) in anti-diagonal order within an n×n grid.
+    /// Anti-diagonals are lines where `row + col = d`, swept from d=0 to d=2*(n-1).
+    /// Within each diagonal, pixels go from top-right to bottom-left (increasing row).
+    fn antidiag_to_rowcol(n: u32, flat: u32) -> (u32, u32) {
+        let mut remaining = flat;
+        let max_d = 2 * (n - 1);
+        for d in 0..=max_d {
+            let diag_len = (d + 1).min(n).min(max_d + 1 - d);
+            if remaining < diag_len {
+                let row = if d < n { remaining } else { d - n + 1 + remaining };
+                let col = d - row;
+                return (row, col);
+            }
+            remaining -= diag_len;
+        }
+        (n - 1, n - 1)
+    }
+
     fn flat_to_rowcol(&self, seg: u8, flat: u32) -> (u32, u32) {
         let (rs, re, cs, ce) = self.segment_bounds(seg);
         let rows = re - rs;
@@ -487,11 +505,29 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
                 let col_idx = flat % cols;
                 (re - 1 - row_idx, cs + col_idx)
             }
-            _ => {
-                let row_idx = flat / cols;
-                let col_idx = flat % cols;
-                (rs + row_idx, cs + col_idx)
+            // Corner arcs: iterate along anti-diagonals to approximate
+            // angular sweep order for smooth perimeter-proportional progress.
+            0 => {
+                // TL: top→left. Sweep diagonals where row-col increases.
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (rs + r, ce - 1 - c)
             }
+            2 => {
+                // TR: top→right. Standard anti-diagonal sweep.
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (rs + r, cs + c)
+            }
+            4 => {
+                // BR: right→bottom. Sweep diagonals where row-col increases.
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (rs + r, ce - 1 - c)
+            }
+            6 => {
+                // BL: bottom→left. Reverse anti-diagonal sweep.
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (re - 1 - r, cs + c)
+            }
+            _ => unreachable!(),
         }
     }
 
