@@ -82,8 +82,8 @@ impl ChunkedAddressDisplay {
 }
 
 /// Chunks an address string into 4-char pieces padded to exactly 18 slots.
-/// For addresses whose last chunk has fewer than 4 chars, the remainder is
-/// centered in the middle column of the last row.
+/// If a short remainder chunk ends up alone on its row (column 0), it is
+/// centered in the middle column instead.
 fn chunk_address(address: &str) -> [String; 18] {
     let mut chunks: [String; 18] = core::array::from_fn(|_| EMPTY_CHUNK.to_string());
     let mut i = 0;
@@ -100,18 +100,15 @@ fn chunk_address(address: &str) -> [String; 18] {
     let remainder = address.len() % 4;
 
     if remainder > 0 && total_full_chunks < 18 {
-        // ⚖️ center the short last chunk in the middle column of its row
-        let last_full_row_start = (total_full_chunks / 3) * 3;
-        let col_in_row = total_full_chunks - last_full_row_start;
+        let last_row_start = (total_full_chunks / 3) * 3;
+        let col_in_row = total_full_chunks - last_row_start;
 
-        if col_in_row != 1 {
+        // Only center if the partial chunk is alone on its row
+        if col_in_row == 0 {
             let tail = &address[total_full_chunks * 4..];
             let padded = alloc::format!("{:^4}", tail);
-
             chunks[total_full_chunks] = EMPTY_CHUNK.to_string();
-            chunks[last_full_row_start] = EMPTY_CHUNK.to_string();
-            chunks[last_full_row_start + 1] = padded;
-            chunks[last_full_row_start + 2] = EMPTY_CHUNK.to_string();
+            chunks[last_row_start + 1] = padded;
         }
     }
 
