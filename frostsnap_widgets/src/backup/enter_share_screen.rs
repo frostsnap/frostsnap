@@ -4,10 +4,13 @@ use super::{
     AlphabeticKeyboard, BackupModel, EnteredWords, InputPreview, MainViewState, NumericKeyboard,
     WordSelector,
 };
+use crate::gray4_style::Gray4TextStyle;
+use crate::palette::PALETTE;
 use crate::super_draw_target::SuperDrawTarget;
+use crate::text::Text;
 use crate::OneTimeClearHack;
 use crate::{DynWidget, Key, KeyTouch, Widget};
-use alloc::{vec, vec::Vec};
+use alloc::{string::String, vec, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
 
 // Test word sets for auto-fill feature
@@ -60,6 +63,8 @@ pub struct EnterShareScreen {
     keyboard_rect: Rectangle,
     needs_redraw: bool,
     pending_model_update: bool,
+    /// Show "Enter Key Number" until the first digit is entered
+    show_key_number_hint: bool,
     /// When the word selector appears, briefly ignore word selection touches
     /// to prevent accidental selection when the user double-taps a letter.
     word_selector_shown_at: Option<crate::Instant>,
@@ -91,6 +96,7 @@ impl EnterShareScreen {
             keyboard_rect: Rectangle::zero(),
             needs_redraw: true,
             pending_model_update: false,
+            show_key_number_hint: true,
             word_selector_shown_at: None,
             size: Size::zero(),
             auto_fill_enabled: false,
@@ -175,7 +181,7 @@ impl EnterShareScreen {
                 // Hide keyboards and word selector
                 self.numeric_keyboard = None;
                 self.word_selector = None;
-                    self.word_selector_shown_at = None;
+                self.word_selector_shown_at = None;
                 self.cancel_all_touches();
             }
             MainViewState::EnterShareIndex { ref current } => {
@@ -266,34 +272,54 @@ impl Widget for EnterShareScreen {
             Size::new(target.bounding_box().size.width, 60),
         );
 
-        if let Some(ref mut entered_words) = self.entered_words {
+        // Determine which hint to show (if any)
+        let hint_text: Option<&str> = if let Some(ref mut entered_words) = self.entered_words {
             // Full-screen entered words view
             entered_words.draw(target, current_time);
+            None
         } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
-            self.input_preview
-                .draw(&mut target.clone().crop(input_display_rect), current_time)?;
-            // Draw input preview
+            if !self.show_key_number_hint {
+                self.input_preview
+                    .draw(&mut target.clone().crop(input_display_rect), current_time)?;
+            } else {
+                self.input_preview.draw_progress_only(
+                    &mut target.clone().crop(input_display_rect),
+                    current_time,
+                )?;
+            }
             numeric_keyboard.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
+            if self.show_key_number_hint {
+                Some("Enter Key Number")
+            } else {
+                None
+            }
         } else if let Some(ref mut word_selector) = self.word_selector {
-            // Draw input preview at top
             let _ = self
                 .input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time);
-
-            // Draw word selector in keyboard area
             word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
+            None
         } else {
-            // Normal keyboard and input preview
             self.alphabetic_keyboard
                 .draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
-
-            // Draw input preview
             let input_display_rect = Rectangle::new(
                 Point::zero(),
                 Size::new(target.bounding_box().size.width, 60),
             );
             self.input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time)?;
+            None
+        };
+
+        // Draw hint text centered over the input preview area
+        if let Some(text) = hint_text {
+            let style =
+                Gray4TextStyle::new(&frostsnap_fonts::NOTO_SANS_17_REGULAR, PALETTE.outline);
+            let hint_widget = Text::new(String::from(text), style);
+            // Center horizontally, vertically aligned with the key number row
+            let mut hint = crate::Center::new(hint_widget);
+            hint.set_constraints(input_display_rect.size);
+            hint.draw(&mut target.clone().crop(input_display_rect), current_time)?;
         }
 
         Ok(())
@@ -386,7 +412,10 @@ impl crate::DynWidget for EnterShareScreen {
                             }
                         }
                         Key::Keyboard(c) if c.is_alphabetic() || c.is_numeric() => {
-                            // Just pass character to model
+                            if c.is_numeric() {
+                                self.show_key_number_hint = false;
+                                self.input_preview.force_redraw();
+                            }
                             let mutations = self.model.add_character(c);
                             self.input_preview.apply_mutations(&mutations);
                             self.pending_model_update = true;
@@ -495,11 +524,9 @@ impl crate::DynWidget for EnterShareScreen {
                 } else {
                     200
                 };
-                let grace_expired = self
-                    .word_selector_shown_at
-                    .is_none_or(|shown_at| {
-                        current_time.saturating_duration_since(shown_at) >= grace_ms
-                    });
+                let grace_expired = self.word_selector_shown_at.is_none_or(|shown_at| {
+                    current_time.saturating_duration_since(shown_at) >= grace_ms
+                });
                 if !grace_expired {
                     return None;
                 }

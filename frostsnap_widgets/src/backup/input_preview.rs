@@ -171,6 +171,16 @@ impl InputPreview {
     }
 
     /// Force redraw of the input preview (including progress bar)
+    /// Draw only the progress bar (used when the input preview content is hidden)
+    pub fn draw_progress_only<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Rgb565>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error> {
+        self.progress
+            .draw(&mut target.clone().crop(self.progress_rect), current_time)
+    }
+
     pub fn force_redraw(&mut self) {
         self.init_draw = false;
         self.framebuf.redraw = true;

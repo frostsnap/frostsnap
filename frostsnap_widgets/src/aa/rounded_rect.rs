@@ -467,7 +467,11 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
         for d in 0..=max_d {
             let diag_len = (d + 1).min(n).min(max_d + 1 - d);
             if remaining < diag_len {
-                let row = if d < n { remaining } else { d - n + 1 + remaining };
+                let row = if d < n {
+                    remaining
+                } else {
+                    d - n + 1 + remaining
+                };
                 let col = d - row;
                 return (row, col);
             }
