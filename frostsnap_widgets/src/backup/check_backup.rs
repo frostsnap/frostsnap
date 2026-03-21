@@ -134,7 +134,7 @@ impl OptionButton {
             Container::with_size(Center::new(text), Size::new(BUTTON_WIDTH, BUTTON_HEIGHT))
                 .with_fill(PALETTE.surface)
                 .with_corner_radius(Size::new(BUTTON_CORNER_RADIUS, BUTTON_CORNER_RADIUS))
-                .with_anti_aliasing(false);
+                .with_anti_aliasing(true);
         let mut translate =
             Translate::new(container, PALETTE.background).with_aggressive_framebuffer();
         translate.set_animation_speed(AnimationSpeed::DampedShake {
