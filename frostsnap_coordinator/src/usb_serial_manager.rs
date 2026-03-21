@@ -193,12 +193,15 @@ impl UsbSerialManager {
                     PortOpenError::PermissionDenied => {
                         if !self.ignored.contains(&port_name) {
                             event!(
-                                Level::ERROR,
+                                Level::WARN,
                                 port = port_name,
-                                "Could not open port: permission denied (udev rules may not be installed)"
+                                "Could not open port: permission denied, retrying (udev rules may not be installed)"
                             );
                             self.ignored.insert(port_name.clone());
                         }
+                        // Always retry — the port often appears before udev has
+                        // finished applying permission rules.
+                        self.pending.insert(port_name);
                     }
                     PortOpenError::Other(e) => {
                         event!(
