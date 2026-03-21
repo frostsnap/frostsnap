@@ -63,12 +63,13 @@ impl WordButton {
 type WordColumn = Column<Vec<Fader<TouchListener<WordButton>>>>;
 
 /// A widget that displays words in two columns for selection
-#[derive(Widget)]
 pub struct WordSelector {
     words: &'static [&'static str],
-    // Two columns of words
-    #[widget_delegate]
     columns: Row<(WordColumn, WordColumn)>,
+    /// Ignore touches briefly after appearing to prevent accidental
+    /// word selection when double-tapping a letter.
+    grace_ms: u64,
+    shown_at: Option<crate::Instant>,
 }
 
 impl WordSelector {
@@ -104,7 +105,60 @@ impl WordSelector {
         let columns = Row::new((left_column, right_column))
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
-        Self { words, columns }
+        let bytes = prefix.as_bytes();
+        let has_repeated_letter =
+            bytes.len() >= 2 && bytes[bytes.len() - 1] == bytes[bytes.len() - 2];
+        let grace_ms = if has_repeated_letter { 400 } else { 200 };
+
+        Self {
+            words,
+            columns,
+            grace_ms,
+            shown_at: None,
+        }
+    }
+}
+
+impl crate::DynWidget for WordSelector {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.columns.set_constraints(max_size);
+    }
+
+    fn sizing(&self) -> crate::Sizing {
+        self.columns.sizing()
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        current_time: crate::Instant,
+        is_release: bool,
+    ) -> Option<crate::KeyTouch> {
+        let shown_at = self.shown_at?;
+        if current_time.saturating_duration_since(shown_at) < self.grace_ms {
+            return None;
+        }
+        self.columns.handle_touch(point, current_time, is_release)
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.columns.force_full_redraw();
+    }
+}
+
+impl crate::Widget for WordSelector {
+    type Color = embedded_graphics::pixelcolor::Rgb565;
+
+    fn draw<D>(
+        &mut self,
+        target: &mut crate::SuperDrawTarget<D, Self::Color>,
+        current_time: crate::Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: embedded_graphics::draw_target::DrawTarget<Color = Self::Color>,
+    {
+        self.shown_at.get_or_insert(current_time);
+        self.columns.draw(target, current_time)
     }
 }
 
