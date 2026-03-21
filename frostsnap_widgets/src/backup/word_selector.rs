@@ -7,7 +7,7 @@ use embedded_graphics::prelude::*;
 use frostsnap_macros::Widget;
 
 // Type aliases to simplify the complex type
-/// A button widget that displays a BIP39 word with prefix highlighting
+/// A button widget that displays a word with prefix highlighting
 #[derive(Widget)]
 pub struct WordButton {
     word: &'static str,
@@ -37,7 +37,7 @@ impl WordButton {
 
         let word_row = Padding::only(word_row).top(15).bottom(8).build();
         // Wrap in a Container with fixed width, rounded corners, and button styling
-        // Width of 110px should fit most BIP39 words comfortably
+        // Width of 110px should fit most words comfortably
         // Using surface_variant as the button background color (Material Design elevated button)
         let container = Container::new(word_row)
             .with_width(110)
@@ -62,7 +62,7 @@ impl WordButton {
 
 type WordColumn = Column<Vec<Fader<TouchListener<WordButton>>>>;
 
-/// A widget that displays BIP39 words in two columns for selection
+/// A widget that displays words in two columns for selection
 #[derive(Widget)]
 pub struct WordSelector {
     words: &'static [&'static str],

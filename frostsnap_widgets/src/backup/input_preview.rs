@@ -20,7 +20,7 @@ use embedded_graphics::{
 use frost_backup::NUM_WORDS;
 use frostsnap_fonts::Gray4Font;
 
-// Constants for vertical BIP39 word display
+// Constants for vertical word display
 pub(super) const TOTAL_WORDS: usize = NUM_WORDS;
 pub(super) const FONT_SIZE: Size = Size::new(17, 29);
 pub(super) const TOP_PADDING: u32 = 10;
