@@ -262,7 +262,7 @@ impl Widget for EnterShareScreen {
         } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
             self.input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time)?;
-            // Draw BIP39 input preview
+            // Draw input preview
             numeric_keyboard.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else if let Some(ref mut word_selector) = self.word_selector {
             // Draw input preview at top
@@ -277,7 +277,7 @@ impl Widget for EnterShareScreen {
             self.alphabetic_keyboard
                 .draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
 
-            // Draw BIP39 input preview
+            // Draw input preview
             let input_display_rect = Rectangle::new(
                 Point::zero(),
                 Size::new(target.bounding_box().size.width, 60),
