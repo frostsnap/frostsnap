@@ -52,15 +52,15 @@ macro_rules! demo_widget {
                 let widget = Text::new("Hello World!", DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background));
                 $run_macro!(widget);
             }
-            "bip39_entry" => {
+            "backup_entry" => {
                 use $crate::{text::Text, Center, Align, Alignment};
-                struct Bip39Demo {
+                struct BackupEntryDemo {
                     screen: $crate::backup::EnterShareScreen,
                     done: Center<Text<DefaultTextStyle>>,
                     finished: bool,
                 }
 
-                impl $crate::DynWidget for Bip39Demo {
+                impl $crate::DynWidget for BackupEntryDemo {
                     fn set_constraints(&mut self, max_size: Size) {
                         self.screen.set_constraints(max_size);
                         self.done.set_constraints(max_size);
@@ -78,7 +78,7 @@ macro_rules! demo_widget {
                     }
                 }
 
-                impl $crate::Widget for Bip39Demo {
+                impl $crate::Widget for BackupEntryDemo {
                     type Color = Rgb565;
                     fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
                         &mut self,
@@ -106,7 +106,7 @@ macro_rules! demo_widget {
                     "DONE",
                     DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
                 ));
-                let widget = Bip39Demo { screen, done, finished: false };
+                let widget = BackupEntryDemo { screen, done, finished: false };
                 $run_macro!(widget);
             }
             "log_touches" => {
@@ -243,7 +243,7 @@ macro_rules! demo_widget {
                 let widget = Column::new((start_container, center_container));
                 $run_macro!(widget);
             }
-            "bip39_backup" => {
+            "record_backup" => {
                 use $crate::backup::BackupDisplay;
                 use embedded_graphics::prelude::*;
 
@@ -782,7 +782,7 @@ macro_rules! demo_widget {
                 use $crate::backup::WordSelector;
                 use frost_backup::bip39_words::words_with_prefix;
 
-                // Get all words starting with "CAR" (BIP39 words are uppercase)
+                // Get all words starting with "CAR" (wordlist words are uppercase)
                 let words = words_with_prefix("CAR");
                 let widget = WordSelector::new(words, "CAR");
 

@@ -7,7 +7,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, Rectangle},
 };
 
-// Font size matching the one used in bip39_input_preview
+// Font size matching the one used in input_preview
 const FONT_SIZE: Size = Size::new(17, 29);
 
 #[derive(Debug)]
