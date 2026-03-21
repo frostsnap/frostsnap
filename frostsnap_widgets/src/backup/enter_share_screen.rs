@@ -60,6 +60,9 @@ pub struct EnterShareScreen {
     keyboard_rect: Rectangle,
     needs_redraw: bool,
     pending_model_update: bool,
+    /// When the word selector appears, briefly ignore word selection touches
+    /// to prevent accidental selection when the user double-taps a letter.
+    word_selector_shown_at: Option<crate::Instant>,
     size: Size,
     auto_fill_enabled: bool,
     completion: CompletionState,
@@ -88,6 +91,7 @@ impl EnterShareScreen {
             keyboard_rect: Rectangle::zero(),
             needs_redraw: true,
             pending_model_update: false,
+            word_selector_shown_at: None,
             size: Size::zero(),
             auto_fill_enabled: false,
             completion: CompletionState::InProgress,
@@ -171,6 +175,7 @@ impl EnterShareScreen {
                 // Hide keyboards and word selector
                 self.numeric_keyboard = None;
                 self.word_selector = None;
+                    self.word_selector_shown_at = None;
                 self.cancel_all_touches();
             }
             MainViewState::EnterShareIndex { ref current } => {
@@ -190,6 +195,7 @@ impl EnterShareScreen {
                 if self.numeric_keyboard.is_some() || self.word_selector.is_some() {
                     self.numeric_keyboard = None;
                     self.word_selector = None;
+                    self.word_selector_shown_at = None;
                     self.cancel_all_touches();
                 }
 
@@ -248,7 +254,11 @@ impl Widget for EnterShareScreen {
         // Apply deferred keyboard update once all touches have faded out
         if self.pending_model_update && self.touches.is_empty() {
             self.pending_model_update = false;
+            let had_word_selector = self.word_selector.is_some();
             self.update_from_model();
+            if !had_word_selector && self.word_selector.is_some() {
+                self.word_selector_shown_at = Some(current_time);
+            }
         }
 
         let input_display_rect = Rectangle::new(
@@ -468,6 +478,31 @@ impl crate::DynWidget for EnterShareScreen {
                         .handle_touch(point, current_time, lift_up)
                 }
             } else if let Some(ref mut word_selector) = self.word_selector {
+                // Briefly ignore touches after the word selector appears to
+                // prevent accidental selection when double-tapping a letter.
+                // Use a longer grace period when the prefix has a repeated
+                // letter (e.g. "IMM") since the user is more likely to be
+                // double-tapping intentionally.
+                let grace_ms = if let MainViewState::WordSelect { ref current, .. } =
+                    self.model.view_state().main_view
+                {
+                    let bytes = current.as_bytes();
+                    if bytes.len() >= 2 && bytes[bytes.len() - 1] == bytes[bytes.len() - 2] {
+                        400
+                    } else {
+                        200
+                    }
+                } else {
+                    200
+                };
+                let grace_expired = self
+                    .word_selector_shown_at
+                    .is_none_or(|shown_at| {
+                        current_time.saturating_duration_since(shown_at) >= grace_ms
+                    });
+                if !grace_expired {
+                    return None;
+                }
                 // Word selector is in keyboard area, input preview is visible
                 if self.keyboard_rect.contains(point) {
                     let translated_point = point - self.keyboard_rect.top_left;
