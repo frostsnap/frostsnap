@@ -125,15 +125,19 @@ impl<C: ColorInterpolate> Iterator for AACircleIter<C> {
             let color = if self.has_stroke {
                 let inner_dist = isqrt_distance(dx, dy, self.inner_r_scaled);
                 let fill_cov = coverage_from_distance(inner_dist);
-                let border_cov =
+                let stroke_cov =
                     Frac::new((shape_cov.as_rat() - fill_cov.as_rat()).max(crate::Rat::ZERO));
 
-                let mut color = self.bg_color;
-                color = color.interpolate(self.fill_color, fill_cov);
-                if border_cov > Frac::ZERO {
-                    color = color.interpolate(self.stroke_color, border_cov);
-                }
-                color
+                // 🎨 blend fill and stroke independently, then composite over bg
+                let inner_color = if stroke_cov == Frac::ZERO {
+                    self.fill_color
+                } else if fill_cov == Frac::ZERO {
+                    self.stroke_color
+                } else {
+                    let stroke_ratio = Frac::new(stroke_cov / shape_cov);
+                    self.fill_color.interpolate(self.stroke_color, stroke_ratio)
+                };
+                self.bg_color.interpolate(inner_color, shape_cov)
             } else {
                 self.bg_color.interpolate(self.fill_color, shape_cov)
             };

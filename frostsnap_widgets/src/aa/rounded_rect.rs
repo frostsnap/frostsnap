@@ -123,14 +123,16 @@ impl RoundedRectGeom {
         if !self.in_corner(row, col) {
             return border_color;
         }
-        let (outer_cov, border_cov) = self.coverages(row, col);
-        let fill_cov = Frac::new((outer_cov.as_rat() - border_cov.as_rat()).max(crate::Rat::ZERO));
-        let mut color = outer_color;
-        color = color.interpolate(inner_color, fill_cov);
-        if border_cov > Frac::ZERO {
-            color = color.interpolate(border_color, border_cov);
-        }
-        color
+        let (shape_cov, border_cov) = self.coverages(row, col);
+        // Blend fill and border within the shape, then composite over background.
+        // This avoids dark-pixel artifacts at the border/fill boundary.
+        let border_ratio = if shape_cov > Frac::ZERO {
+            Frac::new(border_cov / shape_cov)
+        } else {
+            Frac::ZERO
+        };
+        let shape_color = inner_color.interpolate(border_color, border_ratio);
+        outer_color.interpolate(shape_color, shape_cov)
     }
 
     /// Blend a fill pixel color in a corner region.
