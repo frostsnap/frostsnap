@@ -6,7 +6,7 @@ const DENOMINATOR: u32 = 10_000;
 
 /// A rational number represented as (numerator * DENOMINATOR) / denominator
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Rat(pub(crate) u32);
+pub struct Rat(u32);
 
 impl Rat {
     pub const fn from_int(int: u32) -> Self {
@@ -109,6 +109,18 @@ impl Div<u32> for Rat {
 
     fn div(self, rhs: u32) -> Self::Output {
         self.0 / rhs
+    }
+}
+
+impl Div for Rat {
+    type Output = Rat;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        if rhs.0 == 0 {
+            return Rat::MAX;
+        }
+        let result = (self.0 as u64 * DENOMINATOR as u64) / rhs.0 as u64;
+        Rat(result.min(u32::MAX as u64) as u32)
     }
 }
 
@@ -279,6 +291,14 @@ impl Sub for Frac {
     fn sub(self, rhs: Self) -> Self::Output {
         // Subtract and clamp at 0 (since Rat uses saturating_sub)
         Self(self.0 - rhs.0)
+    }
+}
+
+impl Div for Frac {
+    type Output = Rat;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.0 / rhs.0
     }
 }
 
