@@ -3,7 +3,7 @@ description: "Builds Windows app"
 
 inputs:
   firmware_path:
-    description: "Path to firmware.bin file"
+    description: "Path to signed firmware binary"
     required: true
 
 runs:
@@ -18,4 +18,4 @@ runs:
         key: "app-build-windows-v0"
     - name: Build App Windows
       shell: bash
-      run: just frostsnapp/build windows --release
+      run: just build windows --release
