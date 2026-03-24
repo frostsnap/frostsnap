@@ -210,30 +210,36 @@ where
             let top = proto.top_center();
             let bottom = proto.bottom_center();
 
-            let effective_last = if self.needs_full_redraw {
+            let draw_range =
+                |target: &mut SuperDrawTarget<D, Rgb565>, from: Frac, to: Frac, color: Rgb565| {
+                    let from_pt = lerp_frac(top, bottom, from);
+                    let to_pt = lerp_frac(top, bottom, to);
+                    let iter = make_iter(color)
+                        .with_frac_range(from_pt, to_pt)
+                        .flat_map(&mirror);
+                    target.draw_iter(iter)
+                };
+
+            if self.needs_full_redraw {
                 self.needs_full_redraw = false;
-                Frac::ZERO
-            } else {
-                self.last_drawn_progress
-            };
+                draw_range(target, Frac::ZERO, self.progress, self.border_color)?;
+            } else if self.progress > self.last_drawn_progress {
+                draw_range(
+                    target,
+                    self.last_drawn_progress,
+                    self.progress,
+                    self.border_color,
+                )?;
+            }
 
-            let mut new_progress = self.progress;
-            let mut old_progress = effective_last;
-
-            let color = if new_progress > old_progress {
-                self.border_color
-            } else {
-                core::mem::swap(&mut new_progress, &mut old_progress);
-                self.background_color
-            };
-
-            let old_end = lerp_frac(top, bottom, old_progress);
-            let new_end = lerp_frac(top, bottom, new_progress);
-
-            let iter = make_iter(color)
-                .with_frac_range(old_end, new_end)
-                .flat_map(mirror);
-            target.draw_iter(iter)?;
+            if self.progress < self.last_drawn_progress {
+                draw_range(
+                    target,
+                    self.progress,
+                    self.last_drawn_progress,
+                    self.background_color,
+                )?;
+            }
 
             self.last_drawn_progress = self.progress;
             Ok(())
