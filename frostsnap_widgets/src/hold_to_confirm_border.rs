@@ -11,6 +11,9 @@ use embedded_graphics::{
 
 const CORNER_RADIUS: u32 = 42;
 
+/// A border that fills progressively around a rounded rectangle as the user
+/// holds down on the button. Draws only the left half of the perimeter and
+/// mirrors horizontally to produce a symmetric animation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HoldToConfirmBorder<W, C>
 where
@@ -18,14 +21,21 @@ where
     C: PixelColor,
 {
     pub child: W,
+    /// The current progress as a fraction (0→1), set by the caller.
     progress: Frac,
-    last_drawn_progress: Frac,
+    /// The pixel index that `progress` maps to in the half-perimeter iterator.
+    target_pixel: u32,
+    /// The pixel index up to which the border has been drawn on screen.
+    last_drawn_pixel: u32,
+    /// Total visible pixels in the half-perimeter (top_center → bottom_center).
+    /// Computed lazily on first draw.
+    half_pixel_count: u32,
     screen_size: Option<Size>,
     sizing: crate::Sizing,
     border_width: u32,
     border_color: C,
-    background_color: C,
     needs_full_redraw: bool,
+    /// How far through the fade-out animation (0→1).
     fade_progress: Frac,
     fade_start_time: Option<crate::Instant>,
     fade_duration_ms: u64,
@@ -35,13 +45,15 @@ where
 impl<W, C> HoldToConfirmBorder<W, C>
 where
     W: Widget<Color = C>,
-    C: PixelColor,
+    C: PixelColor + crate::widget_color::ColorInterpolate,
 {
-    pub fn new(child: W, border_width: u32, border_color: C, background_color: C) -> Self {
+    pub fn new(child: W, border_width: u32, border_color: C) -> Self {
         Self {
             child,
             progress: Frac::ZERO,
-            last_drawn_progress: Frac::ZERO,
+            target_pixel: 0,
+            last_drawn_pixel: 0,
+            half_pixel_count: 0,
             screen_size: None,
             sizing: crate::Sizing {
                 width: 0,
@@ -50,7 +62,6 @@ where
             },
             border_width,
             border_color,
-            background_color,
             needs_full_redraw: false,
             fade_progress: Frac::ZERO,
             fade_start_time: None,
@@ -61,6 +72,7 @@ where
 
     pub fn set_progress(&mut self, progress: Frac) {
         self.progress = progress;
+        self.target_pixel = (progress * self.half_pixel_count).round();
     }
 
     pub fn get_progress(&self) -> Frac {
@@ -90,17 +102,12 @@ where
         self.border_color = color;
         self.force_full_redraw();
     }
-
-    pub fn set_background_color(&mut self, color: C) {
-        self.background_color = color;
-        self.force_full_redraw();
-    }
 }
 
 impl<W, C> crate::DynWidget for HoldToConfirmBorder<W, C>
 where
     W: Widget<Color = C>,
-    C: PixelColor,
+    C: PixelColor + crate::widget_color::ColorInterpolate,
 {
     fn set_constraints(&mut self, max_size: Size) {
         self.screen_size = Some(max_size);
@@ -117,6 +124,20 @@ where
             height: child_sizing.height + 2 * self.border_width,
             ..Default::default()
         };
+
+        let dummy = self.border_color;
+        let proto = AARoundedRectIter::new(
+            max_size.width,
+            max_size.height,
+            CORNER_RADIUS,
+            self.border_width,
+            dummy,
+            dummy,
+            dummy,
+        );
+        let top = proto.top_center();
+        let bottom = proto.bottom_center();
+        self.half_pixel_count = proto.with_frac_range(top, bottom).count() as u32;
     }
 
     fn sizing(&self) -> crate::Sizing {
@@ -142,12 +163,6 @@ where
     }
 }
 
-/// Interpolate a Frac position between two perimeter points.
-fn lerp_frac(a: Frac, b: Frac, t: Frac) -> Frac {
-    let span = Frac::new(b.as_rat() - a.as_rat());
-    Frac::new(a.as_rat() + (t * span).as_rat())
-}
-
 impl<W> Widget for HoldToConfirmBorder<W, Rgb565>
 where
     W: Widget<Color = Rgb565>,
@@ -164,7 +179,7 @@ where
     {
         let offset = Point::new(self.border_width as i32, self.border_width as i32);
         let child_size = self.child.sizing();
-        let child_area = Rectangle::new(offset, Size::new(child_size.width, child_size.height));
+        let child_area = Rectangle::new(offset, child_size.into());
         let mut cropped = target.clone().crop(child_area);
         self.child.draw(&mut cropped, current_time)?;
 
@@ -173,9 +188,9 @@ where
         }
 
         let size = self.screen_size.unwrap();
-        let make_iter = |color: Rgb565| -> AARoundedRectIter<Rgb565> {
-            let bg = self.background_color;
-            AARoundedRectIter::new(
+        let bg = target.background_color();
+        let make_half_iter = |color: Rgb565| -> AARoundedRectIter<Rgb565> {
+            let proto = AARoundedRectIter::new(
                 size.width,
                 size.height,
                 CORNER_RADIUS,
@@ -183,7 +198,10 @@ where
                 color,
                 bg,
                 bg,
-            )
+            );
+            let top = proto.top_center();
+            let bottom = proto.bottom_center();
+            proto.with_frac_range(top, bottom)
         };
 
         let w = size.width as i32;
@@ -198,50 +216,37 @@ where
             let mut fading_target = FadingDrawTarget {
                 target,
                 fade_progress: self.fade_progress,
-                target_color: self.background_color,
+                target_color: bg,
             };
 
-            let proto = make_iter(self.border_color);
-            let top = proto.top_center();
-            let bottom = proto.bottom_center();
-            fading_target.draw_iter(proto.with_frac_range(top, bottom).flat_map(mirror))
+            fading_target.draw_iter(make_half_iter(self.border_color).flat_map(mirror))
         } else {
-            let proto = make_iter(self.border_color);
-            let top = proto.top_center();
-            let bottom = proto.bottom_center();
-
-            let draw_range =
-                |target: &mut SuperDrawTarget<D, Rgb565>, from: Frac, to: Frac, color: Rgb565| {
-                    let from_pt = lerp_frac(top, bottom, from);
-                    let to_pt = lerp_frac(top, bottom, to);
-                    let iter = make_iter(color)
-                        .with_frac_range(from_pt, to_pt)
+            let draw_pixels =
+                |target: &mut SuperDrawTarget<D, Rgb565>, from: u32, to: u32, color: Rgb565| {
+                    let iter = make_half_iter(color)
+                        .skip(from as usize)
+                        .take((to - from) as usize)
                         .flat_map(&mirror);
                     target.draw_iter(iter)
                 };
 
             if self.needs_full_redraw {
                 self.needs_full_redraw = false;
-                draw_range(target, Frac::ZERO, self.progress, self.border_color)?;
-            } else if self.progress > self.last_drawn_progress {
-                draw_range(
+                draw_pixels(target, 0, self.target_pixel, self.border_color)?;
+            } else if self.target_pixel > self.last_drawn_pixel {
+                draw_pixels(
                     target,
-                    self.last_drawn_progress,
-                    self.progress,
+                    self.last_drawn_pixel,
+                    self.target_pixel,
                     self.border_color,
                 )?;
             }
 
-            if self.progress < self.last_drawn_progress {
-                draw_range(
-                    target,
-                    self.progress,
-                    self.last_drawn_progress,
-                    self.background_color,
-                )?;
+            if self.target_pixel < self.last_drawn_pixel {
+                draw_pixels(target, self.target_pixel, self.last_drawn_pixel, bg)?;
             }
 
-            self.last_drawn_progress = self.progress;
+            self.last_drawn_pixel = self.target_pixel;
             Ok(())
         }
     }

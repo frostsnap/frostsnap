@@ -456,6 +456,27 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
         }
     }
 
+    /// Map a flat index to (row, col) in anti-diagonal order within an n×n grid.
+    /// Anti-diagonals are lines where `row + col = d`, swept from d=0 to d=2*(n-1).
+    fn antidiag_to_rowcol(n: u32, flat: u32) -> (u32, u32) {
+        let mut remaining = flat;
+        let max_d = 2 * (n - 1);
+        for d in 0..=max_d {
+            let diag_len = (d + 1).min(n).min(max_d + 1 - d);
+            if remaining < diag_len {
+                let row = if d < n {
+                    remaining
+                } else {
+                    d - n + 1 + remaining
+                };
+                let col = d - row;
+                return (row, col);
+            }
+            remaining -= diag_len;
+        }
+        (n - 1, n - 1)
+    }
+
     fn flat_to_rowcol(&self, seg: u8, flat: u32) -> (u32, u32) {
         let (rs, re, cs, ce) = self.segment_bounds(seg);
         let rows = re - rs;
@@ -465,6 +486,7 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
         }
 
         match seg {
+            // Straight edges
             1 => {
                 let col_idx = flat / rows;
                 let row_idx = flat % rows;
@@ -485,11 +507,24 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
                 let col_idx = flat % cols;
                 (re - 1 - row_idx, cs + col_idx)
             }
-            _ => {
-                let row_idx = flat / cols;
-                let col_idx = flat % cols;
-                (rs + row_idx, cs + col_idx)
+            // Corner arcs: anti-diagonal sweep for smooth angular progress
+            0 => {
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (rs + r, ce - 1 - c)
             }
+            2 => {
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (rs + r, cs + c)
+            }
+            4 => {
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (rs + r, ce - 1 - c)
+            }
+            6 => {
+                let (r, c) = Self::antidiag_to_rowcol(cols, flat);
+                (re - 1 - r, cs + c)
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -712,14 +747,21 @@ mod tests {
         let top = mk().top_center();
         let bottom = mk().bottom_center();
 
-        let pixels: alloc::vec::Vec<_> = mk().with_frac_range(top, bottom).collect();
+        let all: alloc::collections::BTreeSet<_> = mk().map(|Pixel(p, _)| (p.x, p.y)).collect();
 
-        let last = pixels.last().expect("should have pixels");
-        let bottom_y = h as i32 - 1;
-        assert_eq!(
-            last.0.y, bottom_y,
-            "last pixel should be at bottom row {}, got {}",
-            bottom_y, last.0.y
+        // 🪞 simulate hold_to_confirm: draw top→bottom, mirror horizontally
+        let w_i32 = w as i32;
+        let mirrored: alloc::collections::BTreeSet<_> = mk()
+            .with_frac_range(top, bottom)
+            .flat_map(|Pixel(p, _)| [(p.x, p.y), (w_i32 - 1 - p.x, p.y)])
+            .collect();
+
+        let missing: alloc::vec::Vec<_> = all.difference(&mirrored).collect();
+        assert!(
+            missing.is_empty(),
+            "mirrored half missed {} pixels: {:?}",
+            missing.len(),
+            &missing[..missing.len().min(10)]
         );
     }
 
