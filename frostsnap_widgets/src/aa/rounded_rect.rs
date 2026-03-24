@@ -312,7 +312,8 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
         self
     }
 
-    /// Restrict iteration to a perimeter fraction range `[start, end)`.
+    /// Restrict iteration to pixels in the perimeter fraction range, including
+    /// the pixel that `end` lands on.
     /// If `start > end` in logical space, the range wraps around the perimeter.
     pub fn with_frac_range(self, start: Frac, end: Frac) -> Self {
         let raw_start = self.actual_to_logical(self.frac_to_raw(start));
@@ -321,7 +322,7 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
             // ↻ wrapping range
             raw_end += self.total_raw_pixels();
         }
-        self.with_raw_range(raw_start, raw_end)
+        self.with_raw_range(raw_start, raw_end + 1)
     }
 
     fn with_raw_range(mut self, start: u32, end: u32) -> Self {
@@ -700,6 +701,26 @@ mod tests {
                 .collect();
         reverse.reverse();
         assert_eq!(forward, reverse);
+    }
+
+    #[test]
+    fn frac_range_endpoint_is_inclusive() {
+        let (w, h, cr, bw) = (240, 280, 42, 5);
+        let mk =
+            || AARoundedRectIter::new(w, h, cr, bw, Rgb565::WHITE, Rgb565::BLACK, Rgb565::BLACK);
+
+        let top = mk().top_center();
+        let bottom = mk().bottom_center();
+
+        let pixels: alloc::vec::Vec<_> = mk().with_frac_range(top, bottom).collect();
+
+        let last = pixels.last().expect("should have pixels");
+        let bottom_y = h as i32 - 1;
+        assert_eq!(
+            last.0.y, bottom_y,
+            "last pixel should be at bottom row {}, got {}",
+            bottom_y, last.0.y
+        );
     }
 
     #[test]
