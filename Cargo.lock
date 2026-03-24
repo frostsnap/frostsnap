@@ -1890,6 +1890,7 @@ dependencies = [
  "bincode",
  "cbc",
  "clap",
+ "crc",
  "frostsnap_comms",
  "frostsnap_coordinator",
  "frostsnap_core",
@@ -1897,6 +1898,7 @@ dependencies = [
  "mysql",
  "rand 0.8.5",
  "rsa",
+ "sha2",
  "tracing",
  "tracing-subscriber",
 ]

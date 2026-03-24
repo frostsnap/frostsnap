@@ -3,7 +3,7 @@ description: "Builds Linux app bundle"
 
 inputs:
   firmware_path:
-    description: "Path to firmware.bin file"
+    description: "Path to signed firmware binary"
     required: true
 
 runs:
@@ -22,4 +22,4 @@ runs:
         sudo apt-get install -y ninja-build libstdc++-12-dev libgtk-3-0 libgtk-3-dev cmake clang
     - name: Build App Linux
       shell: bash
-      run: just frostsnapp/build linux --release
+      run: just build linux --release

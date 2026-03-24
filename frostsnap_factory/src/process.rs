@@ -1,19 +1,14 @@
 use frostsnap_comms::factory::{DeviceFactorySend, FactoryDownstream, FactorySend};
 use frostsnap_comms::genuine_certificate::CertificateVerifier;
-use frostsnap_comms::{
-    CoordinatorSendBody, CoordinatorSendMessage, DeviceSendBody, Direction, Downstream,
-    ReceiveSerial, Sha256Digest, MAGIC_BYTES_PERIOD,
-};
+use frostsnap_comms::{Direction, Downstream, ReceiveSerial, Sha256Digest, MAGIC_BYTES_PERIOD};
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun;
 use frostsnap_core::schnorr_fun::fun::marker::EvenY;
 use frostsnap_core::schnorr_fun::fun::Point;
-use frostsnap_core::sha2;
 use frostsnap_core::sha2::Sha256;
-use hmac::digest::Digest;
 use rand::rngs::ThreadRng;
 use rand::{CryptoRng, RngCore};
-use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
+use rsa::pkcs1::EncodeRsaPublicKey;
 use rsa::RsaPublicKey;
 use std::collections::HashMap;
 use std::time::{self, Instant};
@@ -63,21 +58,8 @@ enum ConnectionState {
     FactoryDone {
         serial: String,
     },
-    // Main states
-    WaitingForMainMagic {
-        last_wrote: Option<Instant>,
-    },
-    WaitingForAnnounce,
-    ProcessingGenuineCheck {
-        firmware_digest: Sha256Digest,
-        challenge: Box<[u8; 32]>,
-    },
-    GenuineVerified {
-        firmware_digest: Sha256Digest,
-        serial: String,
-    },
-    // Fully finished
-    AwaitingDisconnection,
+    // Genuine check (delegates to genuine_check module)
+    GenuineCheck(crate::genuine_check::GenuineCheckState),
 }
 
 impl<T: Direction> Connection<T> {
@@ -90,7 +72,7 @@ impl<T: Direction> Connection<T> {
     }
 }
 
-pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
+pub fn run_with_state<D: crate::db::FactoryDatabase>(factory_state: &mut FactoryState<D>) {
     tracing_subscriber::fmt().pretty().init();
     let desktop_serial = DesktopSerial;
     let mut rng = rand::thread_rng();
@@ -131,7 +113,10 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                         AnyConnection::Factory(conn) => {
                             process_factory_connection(conn, factory_state, &mut rng)
                         }
-                        AnyConnection::Main(conn) => process_main_connection(conn),
+                        AnyConnection::Main(conn) => process_main_connection(
+                            conn,
+                            factory_state.genuine_keypair.public_key(),
+                        ),
                     },
                 );
             connection_results.insert(port_id.clone(), result);
@@ -154,7 +139,11 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                             port_id,
                             AnyConnection::Main(Connection::new(
                                 FramedSerialPort::<frostsnap_comms::Downstream>::new(port),
-                                ConnectionState::WaitingForMainMagic { last_wrote: None },
+                                ConnectionState::GenuineCheck(
+                                    crate::genuine_check::GenuineCheckState::WaitingForMagic {
+                                        last_wrote: None,
+                                    },
+                                ),
                             )),
                         );
                         info!("Successfully created main connection");
@@ -193,7 +182,7 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
                     // Check if batch is complete
                     if factory_state.is_complete() {
                         println!("Batch complete! All devices factory setup + genuine verified");
-                        std::process::exit(0);
+                        return;
                     }
                 }
                 FactoryResult::Failed(serial, reason) => {
@@ -218,9 +207,9 @@ pub fn run_with_state(factory_state: &mut FactoryState) -> ! {
     }
 }
 
-fn process_factory_connection(
+fn process_factory_connection<D: crate::db::FactoryDatabase>(
     connection: &mut Connection<FactoryDownstream>,
-    factory_state: &FactoryState,
+    factory_state: &FactoryState<D>,
     rng: &mut (impl RngCore + CryptoRng),
 ) -> FactoryResult {
     connection.last_activity = Instant::now();
@@ -333,7 +322,7 @@ fn process_factory_connection(
                         factory_state.revision.clone(),
                         provisioned_serial.to_string(),
                         timestamp,
-                        factory_state.factory_keypair,
+                        factory_state.genuine_keypair,
                     );
 
                     match connection.port.raw_send(ReceiveSerial::Message(
@@ -367,162 +356,25 @@ fn process_factory_connection(
     }
 }
 
-fn process_main_connection(connection: &mut Connection<Downstream>) -> FactoryResult {
+fn process_main_connection(
+    connection: &mut Connection<Downstream>,
+    genuine_public_key: Point<EvenY>,
+) -> FactoryResult {
     connection.last_activity = Instant::now();
 
-    if let Err(e) = connection.port.poll_send() {
-        // we only care about send failures if we're not waiting for a disconnect (conch keeps going)
-        if !matches!(connection.state, ConnectionState::AwaitingDisconnection) {
-            return FactoryResult::Failed(None, format!("Lost communication with device {}", e));
-        }
+    let genuine_state = match &mut connection.state {
+        ConnectionState::GenuineCheck(state) => state,
+        _ => return FactoryResult::Continue,
     };
 
-    match &connection.state {
-        ConnectionState::WaitingForMainMagic { last_wrote } => {
-            match connection.port.read_for_magic_bytes() {
-                Ok(supported_features) => match supported_features {
-                    Some(features) => {
-                        connection.port.set_conch_enabled(features.conch_enabled);
-                        // println!("Read device magic bytes");
-                        connection.state = ConnectionState::WaitingForAnnounce;
-                        FactoryResult::Continue
-                    }
-                    None => {
-                        if last_wrote.is_none()
-                            || last_wrote.as_ref().unwrap().elapsed().as_millis() as u64
-                                > MAGIC_BYTES_PERIOD
-                        {
-                            connection.state = ConnectionState::WaitingForMainMagic {
-                                last_wrote: Some(Instant::now()),
-                            };
-                            // println!("Writing MAIN magic bytes");
-                            let _ = connection.port.write_magic_bytes().inspect_err(|e| {
-                                error!(error = e.to_string(), "failed to write main magic bytes");
-                            });
-                        }
-                        FactoryResult::Continue
-                    }
-                },
-                Err(e) => {
-                    error!(error = e.to_string(), "failed to read main magic bytes");
-                    FactoryResult::Continue
-                }
-            }
-        }
-        ConnectionState::WaitingForAnnounce => {
-            match connection.port.try_read_message() {
-                Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::Announce { firmware_digest }) = msg.body.decode() {
-                        // first, reply with announce ack
-                        connection.port.queue_send(
-                            CoordinatorSendMessage::to(msg.from, CoordinatorSendBody::AnnounceAck)
-                                .into(),
-                        );
-
-                        let mut challenge = [0u8; 32];
-                        rand::thread_rng().fill_bytes(&mut challenge);
-
-                        connection.port.queue_send(
-                            CoordinatorSendMessage::to(
-                                msg.from,
-                                CoordinatorSendBody::Challenge(Box::new(challenge)),
-                            )
-                            .into(),
-                        );
-                        connection.state = ConnectionState::ProcessingGenuineCheck {
-                            firmware_digest,
-                            challenge: Box::new(challenge),
-                        };
-                    }
-                }
-                Ok(_) => {
-                    // Keep waiting
-                }
-                Err(e) => {
-                    return FactoryResult::Failed(None, format!("Read error: {}", e));
-                }
-            }
-            FactoryResult::Continue
-        }
-        ConnectionState::ProcessingGenuineCheck {
-            challenge,
-            firmware_digest,
-        } => {
-            match connection.port.try_read_message() {
-                Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::SignedChallenge {
-                        signature,
-                        certificate,
-                    }) = msg.body.decode()
-                    {
-                        let factory_key: Point<EvenY> =
-                            Point::from_xonly_bytes(frostsnap_comms::FACTORY_PUBLIC_KEY).unwrap();
-
-                        let certificate_body =
-                            match CertificateVerifier::verify(&certificate, factory_key) {
-                                Some(certificate_body) => certificate_body,
-                                None => {
-                                    return FactoryResult::Failed(
-                                        Some(certificate.unverified_raw_serial()),
-                                        "genuine check failed to verify!".to_string(),
-                                    )
-                                }
-                            };
-                        let serial = certificate_body.raw_serial();
-
-                        let ds_public_key =
-                            match RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key()) {
-                                Ok(key) => key,
-                                Err(_) => {
-                                    return FactoryResult::Failed(
-                                        Some(certificate_body.raw_serial()),
-                                        "invalid RSA key in certificate".to_string(),
-                                    );
-                                }
-                            };
-                        let padding = rsa::Pkcs1v15Sign::new::<sha2::Sha256>();
-                        let message_digest: [u8; 32] =
-                            sha2::Sha256::digest(challenge.as_ref()).into();
-                        match ds_public_key.verify(padding, &message_digest, signature.as_ref()) {
-                            Ok(_) => {
-                                connection.state = ConnectionState::GenuineVerified {
-                                    firmware_digest: *firmware_digest,
-                                    serial: serial.to_string(),
-                                };
-                            }
-                            Err(_) => {
-                                return FactoryResult::Failed(
-                                    Some(serial.clone()),
-                                    "Device failed genuine check {}!".to_string(),
-                                );
-                            }
-                        }
-                    }
-                }
-                Ok(_) => {} // Keep waiting
-                Err(e) => {
-                    return FactoryResult::Failed(None, format!("Read error: {}", e));
-                }
-            }
-            FactoryResult::Continue
-        }
-        ConnectionState::GenuineVerified {
+    use crate::genuine_check::{poll_genuine_check, GenuineCheckPollResult};
+    match poll_genuine_check(&mut connection.port, genuine_state, genuine_public_key) {
+        GenuineCheckPollResult::Continue => FactoryResult::Continue,
+        GenuineCheckPollResult::Verified {
             serial,
             firmware_digest,
-        } => {
-            let serial = serial.clone();
-            let firmware_digest = *firmware_digest;
-            connection.state = ConnectionState::AwaitingDisconnection;
-
-            FactoryResult::GenuineComplete(serial, firmware_digest)
-        }
-        ConnectionState::AwaitingDisconnection => {
-            if connection.port.try_read_message().is_ok() {
-                FactoryResult::Continue
-            } else {
-                FactoryResult::FinishedAndDisconnected
-            }
-        }
-        _ => FactoryResult::Continue,
+        } => FactoryResult::GenuineComplete(serial, firmware_digest),
+        GenuineCheckPollResult::Disconnected => FactoryResult::FinishedAndDisconnected,
+        GenuineCheckPollResult::Failed(serial, reason) => FactoryResult::Failed(serial, reason),
     }
 }

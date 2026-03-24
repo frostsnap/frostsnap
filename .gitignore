@@ -4,8 +4,13 @@
 tmp/
 target/
 .vscode
+.venv/
 /riscv
-*.hex
-*.pem
 *.db
 .dir-locals.el
+frostsnap_factory/bootloader/build/
+frostsnap_factory/bootloader/result
+frostsnap_factory/bootloader/dev/*.bin
+frostsnap_factory/bootloader/prod/bootloader.bin
+frostsnap_factory/bootloader/prod/secure-boot-key.pem
+frostsnap_factory/genuine/prod/secret_key.hex
