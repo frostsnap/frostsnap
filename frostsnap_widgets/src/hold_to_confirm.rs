@@ -82,7 +82,6 @@ where
             content,
             BORDER_WIDTH,
             PALETTE.confirm_progress,
-            PALETTE.background,
         ));
 
         Self {
