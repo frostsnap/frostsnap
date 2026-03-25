@@ -122,6 +122,7 @@ pub struct InputPreview {
     init_draw: bool,
     cursor: Cursor,
     current_view_state: Option<ViewState>,
+    hint_dismissed: bool,
 }
 
 impl Default for InputPreview {
@@ -151,6 +152,7 @@ impl InputPreview {
             init_draw: false,
             cursor: Cursor::new(Point::zero()),
             current_view_state: None,
+            hint_dismissed: false,
         }
     }
 
@@ -170,7 +172,18 @@ impl InputPreview {
         self.framebuf.framebuffer.clone()
     }
 
-    /// Force redraw of the input preview (including progress bar)
+    fn hint_text(&self) -> Option<&'static str> {
+        if self.hint_dismissed {
+            return None;
+        }
+        match self.current_view_state.as_ref()?.main_view {
+            MainViewState::EnterShareIndex { ref current } if current.is_empty() => {
+                Some("Enter Key Number")
+            }
+            _ => None,
+        }
+    }
+
     pub fn force_redraw(&mut self) {
         self.init_draw = false;
         self.framebuf.redraw = true;
@@ -182,12 +195,23 @@ impl InputPreview {
         self.framebuf.fast_forward_scrolling();
     }
 
+    fn should_show_cursor(&self) -> bool {
+        let state_allows = match self.current_view_state.as_ref().map(|s| &s.main_view) {
+            Some(MainViewState::EnterShareIndex { current }) => !current.is_empty(),
+            Some(MainViewState::EnterWord { .. }) => true,
+            _ => false,
+        };
+        state_allows && !self.is_scrolling()
+    }
+
     pub fn is_scrolling(&self) -> bool {
         self.framebuf.is_scrolling()
     }
 
     pub fn update_from_view_state(&mut self, view_state: &ViewState) {
-        // Store the current view state
+        if self.hint_text().is_some() {
+            self.hint_dismissed = true;
+        }
         self.current_view_state = Some(view_state.clone());
         // Update cursor position based on view state
         let x = ((INDEX_CHARS + SPACE_BETWEEN) + view_state.cursor_pos) * FONT_SIZE.width as usize;
@@ -200,28 +224,9 @@ impl InputPreview {
             (self.preview_rect.size.height as i32 + FONT_SIZE.height as i32) / 2 - cursor_height;
         self.cursor.set_position(Point::new(x as i32, y));
 
-        // Enable cursor when there's text but row isn't complete (not in word selection)
-        let cursor_enabled = match &view_state.main_view {
-            MainViewState::EnterShareIndex { current } => !current.is_empty(),
-            MainViewState::EnterWord { .. } => view_state.cursor_pos > 0,
-            MainViewState::WordSelect { .. } => false, // No cursor during word selection
-            MainViewState::AllWordsEntered { .. } => false, // No cursor when all words entered
-        };
-        self.cursor.enabled(cursor_enabled);
-
         // Update scroll position to show the current row
         self.framebuf
             .update_scroll_position_for_row(view_state.row, false);
-    }
-
-    fn draw_cursor<D: DrawTarget<Color = Rgb565>>(
-        &mut self,
-        target: &mut SuperDrawTarget<D, Rgb565>,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        // Let the cursor handle its own drawing and blinking
-        self.cursor.draw(target, current_time)?;
-        Ok(())
     }
 }
 
@@ -316,13 +321,24 @@ impl Widget for InputPreview {
             self.init_draw = true;
         }
 
-        self.framebuf
-            .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
+        if let Some(hint) = self.hint_text() {
+            let style = crate::gray4_style::Gray4TextStyle::new(
+                &frostsnap_fonts::NOTO_SANS_17_REGULAR,
+                PALETTE.outline,
+            );
+            let hint_widget = crate::text::Text::new(alloc::string::String::from(hint), style);
+            let mut centered = crate::Center::new(hint_widget);
+            centered.set_constraints(self.preview_rect.size);
+            centered.draw(&mut target.clone().crop(self.preview_rect), current_time)?;
+        } else {
+            self.framebuf
+                .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
 
-        // Draw cursor when enabled (text entered but row not complete)
-        let _ = self.draw_cursor(&mut target.clone().crop(self.preview_rect), current_time);
+            self.cursor.enabled(self.should_show_cursor());
+            self.cursor
+                .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
+        }
 
-        // Always draw progress bars (they have their own redraw logic)
         self.progress
             .draw(&mut target.clone().crop(self.progress_rect), current_time)?;
 
