@@ -1756,8 +1756,10 @@ dependencies = [
  "bincode",
  "frostsnap_core",
  "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
  "rsa",
  "serde",
+ "sha2",
 ]
 
 [[package]]

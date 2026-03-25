@@ -1,14 +1,10 @@
-use frostsnap_comms::genuine_certificate::{CaseColor, CertificateBody, CertificateVerifier};
+use frostsnap_comms::genuine_certificate::{self, CaseColor, CertificateBody};
 use frostsnap_comms::{
-    CoordinatorSendBody, CoordinatorSendMessage, DeviceSendBody, Downstream, ReceiveSerial,
-    Sha256Digest, MAGIC_BYTES_PERIOD,
+    CoordinatorSendBody, CoordinatorSendMessage, DeviceSendBody, Downstream, GenuineChallenge,
+    ReceiveSerial, Sha256Digest, MAGIC_BYTES_PERIOD,
 };
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
-use rand::RngCore;
-use rsa::pkcs1::DecodeRsaPublicKey;
-use rsa::RsaPublicKey;
-use sha2::Digest;
 use std::time::Instant;
 
 use crate::{USB_PID, USB_VID};
@@ -20,7 +16,7 @@ pub enum GenuineCheckState {
     WaitingForAnnounce,
     ProcessingChallenge {
         firmware_digest: Sha256Digest,
-        challenge: Box<[u8; 32]>,
+        challenge: GenuineChallenge,
     },
     Complete {
         firmware_digest: Sha256Digest,
@@ -84,8 +80,7 @@ pub fn poll_genuine_check(
                                 .into(),
                         );
 
-                        let mut challenge = [0u8; 32];
-                        rand::thread_rng().fill_bytes(&mut challenge);
+                        let challenge = GenuineChallenge::random(&mut rand::thread_rng());
 
                         port.queue_send(
                             CoordinatorSendMessage::to(
@@ -96,7 +91,7 @@ pub fn poll_genuine_check(
                         );
                         *state = GenuineCheckState::ProcessingChallenge {
                             firmware_digest,
-                            challenge: Box::new(challenge),
+                            challenge,
                         };
                     }
                 }
@@ -118,19 +113,22 @@ pub fn poll_genuine_check(
                         certificate,
                     }) = msg.body.decode()
                     {
-                        let certificate_body =
-                            match CertificateVerifier::verify(&certificate, genuine_key) {
-                                Some(body) => body,
-                                None => {
-                                    return GenuineCheckPollResult::Failed(
-                                        Some(certificate.unverified_raw_serial()),
-                                        "genuine check failed to verify!".to_string(),
-                                    );
-                                }
-                            };
+                        let certificate_body = match genuine_certificate::verify_certificate(
+                            &certificate,
+                            genuine_key,
+                        ) {
+                            Some(body) => body,
+                            None => {
+                                return GenuineCheckPollResult::Failed(
+                                    Some(certificate.unverified_raw_serial()),
+                                    "genuine check failed to verify!".to_string(),
+                                );
+                            }
+                        };
                         let serial = certificate_body.raw_serial();
 
-                        match verify_challenge_signature(&certificate_body, challenge, &signature) {
+                        match verify_challenge_signature(&certificate_body, *challenge, &signature)
+                        {
                             Ok(_) => {
                                 *state = GenuineCheckState::Complete {
                                     firmware_digest: *firmware_digest,
@@ -246,7 +244,7 @@ fn try_verify_certificate<'a>(
     known_keys: &[(&'a str, Point<EvenY>)],
 ) -> Result<(&'a str, CertificateBody), Box<dyn std::error::Error>> {
     for (env, key) in known_keys {
-        if let Some(body) = CertificateVerifier::verify(certificate, *key) {
+        if let Some(body) = genuine_certificate::verify_certificate(certificate, *key) {
             return Ok((env, body));
         }
     }
@@ -255,16 +253,10 @@ fn try_verify_certificate<'a>(
 
 pub fn verify_challenge_signature(
     certificate_body: &CertificateBody,
-    challenge: &[u8; 32],
+    challenge: GenuineChallenge,
     signature: &[u8; 384],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ds_public_key = RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key())?;
-    let padding = rsa::Pkcs1v15Sign::new::<sha2::Sha256>();
-    let message_digest: [u8; 32] = sha2::Sha256::digest(challenge).into();
-    ds_public_key
-        .verify(padding, &message_digest, signature.as_ref())
-        .map_err(|e| format!("Challenge signature verification failed: {e}"))?;
-    Ok(())
+    genuine_certificate::verify_challenge(certificate_body, challenge, signature)
 }
 
 pub struct GenuineCheckResult {
@@ -302,8 +294,7 @@ pub fn run_genuine_check(
     let (device_id, firmware_digest) = wait_for_announce(&mut port)?;
 
     println!("Sending challenge...");
-    let mut challenge = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut challenge);
+    let challenge = GenuineChallenge::random(&mut rand::thread_rng());
     port.queue_send(CoordinatorSendMessage::to(device_id, CoordinatorSendBody::AnnounceAck).into());
     port.queue_send(
         CoordinatorSendMessage::to(
@@ -317,7 +308,7 @@ pub fn run_genuine_check(
     let (certificate, signature) = wait_for_signed_challenge(&mut port)?;
 
     let (env_name, certificate_body) = try_verify_certificate(&certificate, known_keys)?;
-    verify_challenge_signature(&certificate_body, &challenge, &signature)?;
+    verify_challenge_signature(&certificate_body, challenge, &signature)?;
 
     let CertificateBody::Frontier {
         case_color,

@@ -113,61 +113,92 @@ impl core::str::FromStr for CaseColor {
     }
 }
 
-pub struct CertificateVerifier;
+/// Sign a new genuine certificate using the factory keypair
+pub fn sign_certificate<NG: NonceGen>(
+    schnorr: Schnorr<Sha256, NG>,
+    ds_public_key: Vec<u8>,
+    case_color: CaseColor,
+    revision: String,
+    serial: String,
+    timestamp: u64,
+    factory_keypair: KeyPair<EvenY>,
+) -> Certificate {
+    let certificate_body = CertificateBody::Frontier {
+        ds_public_key,
+        case_color,
+        timestamp,
+        revision,
+        serial,
+    };
 
-impl CertificateVerifier {
-    /// Sign a new genuine certificate using the factory keypair
-    pub fn sign<NG: NonceGen>(
-        schnorr: Schnorr<Sha256, NG>,
-        // RSA der bytes
-        ds_public_key: Vec<u8>,
-        case_color: CaseColor,
-        revision: String,
-        serial: String,
-        timestamp: u64,
-        factory_keypair: KeyPair<EvenY>,
-    ) -> Certificate {
-        let certificate_body = CertificateBody::Frontier {
-            ds_public_key,
-            case_color,
-            timestamp,
-            revision,
-            serial,
-        };
+    let certificate_bytes =
+        bincode::encode_to_vec(&certificate_body, CERTIFICATE_BINCODE_CONFIG).unwrap();
+    let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
+    let factory_signature = FrostsnapFactorySignature {
+        factory_key: factory_keypair.public_key(),
+        signature: schnorr.sign(&factory_keypair, message),
+    };
 
-        let certificate_bytes =
-            bincode::encode_to_vec(&certificate_body, CERTIFICATE_BINCODE_CONFIG).unwrap();
-        let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
-        let factory_signature = FrostsnapFactorySignature {
-            factory_key: factory_keypair.public_key(),
-            signature: schnorr.sign(&factory_keypair, message),
-        };
-
-        Certificate {
-            body: certificate_body,
-            factory_signature: Versioned::V0(factory_signature),
-        }
+    Certificate {
+        body: certificate_body,
+        factory_signature: Versioned::V0(factory_signature),
     }
+}
 
-    /// Verify a genuine certificate before accessing the contents
-    pub fn verify(certificate: &Certificate, factory_key: Point<EvenY>) -> Option<CertificateBody> {
-        match &certificate.factory_signature {
-            frostsnap_core::Versioned::V0(factory_signature) => {
-                if factory_key != factory_signature.factory_key {
-                    // TODO: return error of UnknownFactoryKey
-                    return None;
-                }
-
-                let certificate_bytes =
-                    bincode::encode_to_vec(&certificate.body, CERTIFICATE_BINCODE_CONFIG).unwrap();
-                let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
-                let schnorr = Schnorr::<Sha256>::verify_only();
-                schnorr
-                    .verify(&factory_key, message, &factory_signature.signature)
-                    .then_some(certificate.body.clone())
+/// Verify a genuine certificate's Schnorr signature against a known factory key
+pub fn verify_certificate(
+    certificate: &Certificate,
+    factory_key: Point<EvenY>,
+) -> Option<CertificateBody> {
+    match &certificate.factory_signature {
+        frostsnap_core::Versioned::V0(factory_signature) => {
+            if factory_key != factory_signature.factory_key {
+                return None;
             }
+
+            let certificate_bytes =
+                bincode::encode_to_vec(&certificate.body, CERTIFICATE_BINCODE_CONFIG).unwrap();
+            let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
+            let schnorr = Schnorr::<Sha256>::verify_only();
+            schnorr
+                .verify(&factory_key, message, &factory_signature.signature)
+                .then_some(certificate.body.clone())
         }
     }
+}
+
+/// Verify a certificate and its challenge-response in one step.
+/// Returns the verified certificate body on success.
+#[cfg(feature = "coordinator")]
+pub fn verify_genuine(
+    certificate: &Certificate,
+    factory_key: Point<EvenY>,
+    challenge: crate::GenuineChallenge,
+    signature: &[u8; 384],
+) -> Option<CertificateBody> {
+    let body = verify_certificate(certificate, factory_key)?;
+    verify_challenge(&body, challenge, signature).ok()?;
+    Some(body)
+}
+
+/// Verify the RSA challenge-response signature from a device.
+/// The device signs SHA256(challenge) with its DS private key.
+#[cfg(feature = "coordinator")]
+pub fn verify_challenge(
+    certificate_body: &CertificateBody,
+    challenge: crate::GenuineChallenge,
+    signature: &[u8; 384],
+) -> Result<(), alloc::boxed::Box<dyn core::error::Error>> {
+    use rsa::pkcs1::DecodeRsaPublicKey;
+    use sha2::Digest;
+
+    let ds_public_key = rsa::RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key())?;
+    let padding = rsa::Pkcs1v15Sign::new::<sha2::Sha256>();
+    let message_digest: [u8; 32] = sha2::Sha256::digest(challenge.0).into();
+    ds_public_key
+        .verify(padding, &message_digest, signature.as_ref())
+        .map_err(|e| alloc::format!("Challenge signature verification failed: {e}"))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -195,7 +226,7 @@ mod test {
 
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<sha2::Sha256>();
 
-        let certificate = CertificateVerifier::sign(
+        let certificate = sign_certificate(
             schnorr,
             ds_public_key.to_pkcs1_der().unwrap().to_vec(),
             CaseColor::Orange,
@@ -205,8 +236,7 @@ mod test {
             factory_keypair,
         );
 
-        let verified_cert =
-            CertificateVerifier::verify(&certificate, factory_keypair.public_key()).unwrap();
+        let verified_cert = verify_certificate(&certificate, factory_keypair.public_key()).unwrap();
 
         std::dbg!(verified_cert.serial_number());
     }
