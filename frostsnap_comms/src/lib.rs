@@ -225,7 +225,7 @@ pub enum CoordinatorSendBody {
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
     DataErase,
-    Challenge(Box<[u8; 32]>),
+    Challenge(Box<GenuineChallenge>),
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
@@ -613,6 +613,30 @@ frostsnap_core::impl_fromstr_deserialize! {
     name => "sha256 digest",
     fn from_bytes(bytes: [u8;32]) -> Sha256Digest {
         Sha256Digest(bytes)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GenuineChallenge(pub [u8; 32]);
+
+impl GenuineChallenge {
+    pub fn random(rng: &mut impl rand_core::RngCore) -> Self {
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+}
+
+frostsnap_core::impl_display_debug_serialize! {
+    fn to_bytes(challenge: &GenuineChallenge) -> [u8;32] {
+        challenge.0
+    }
+}
+
+frostsnap_core::impl_fromstr_deserialize! {
+    name => "genuine challenge",
+    fn from_bytes(bytes: [u8;32]) -> GenuineChallenge {
+        GenuineChallenge(bytes)
     }
 }
 

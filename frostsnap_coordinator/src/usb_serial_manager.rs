@@ -53,7 +53,9 @@ pub struct UsbSerialManager {
     /// Genuine certificate public key for verifying device certificates
     genuine_cert_key: Option<Point<EvenY>>,
     /// Ongoing genuine check challenges to devices
-    challenges: HashMap<DeviceId, [u8; 32]>,
+    challenges: HashMap<DeviceId, frostsnap_comms::GenuineChallenge>,
+    /// Devices that passed genuine certificate verification
+    genuine_devices: HashMap<DeviceId, frostsnap_comms::genuine_certificate::CertificateBody>,
 }
 
 pub struct DevicePort {
@@ -89,6 +91,7 @@ impl UsbSerialManager {
             firmware_bin: None,
             genuine_cert_key: None,
             challenges: Default::default(),
+            genuine_devices: Default::default(),
         }
     }
 
@@ -100,30 +103,6 @@ impl UsbSerialManager {
     pub fn with_genuine_cert_key(mut self, key: Point<EvenY>) -> Self {
         self.genuine_cert_key = Some(key);
         self
-    }
-
-    fn verify_genuine_challenge(
-        &self,
-        device_id: DeviceId,
-        challenge: &[u8; 32],
-        signature: &[u8; 384],
-        certificate: &frostsnap_comms::genuine_certificate::Certificate,
-    ) -> Option<DeviceChange> {
-        use frostsnap_comms::genuine_certificate::CertificateVerifier;
-        use rsa::pkcs1::DecodeRsaPublicKey;
-        use rsa::RsaPublicKey;
-        use sha2::Digest;
-
-        let factory_key = self.genuine_cert_key?;
-        let certificate_body = CertificateVerifier::verify(certificate, factory_key)?;
-        let ds_public_key = RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key()).ok()?;
-        let padding = rsa::Pkcs1v15Sign::new::<frostsnap_core::sha2::Sha256>();
-        let message_digest: [u8; 32] = sha2::Sha256::digest(challenge).into();
-        ds_public_key
-            .verify(padding, &message_digest, signature.as_ref())
-            .ok()?;
-
-        Some(DeviceChange::GenuineDevice { id: device_id })
     }
 
     pub fn usb_sender(&self) -> UsbSender {
@@ -145,6 +124,8 @@ impl UsbSerialManager {
                     changes.push(DeviceChange::Disconnected { id: device_id });
                 }
                 self.registered_devices.remove(&device_id);
+                self.challenges.remove(&device_id);
+                self.genuine_devices.remove(&device_id);
                 event!(
                     Level::DEBUG,
                     port = port,
@@ -429,16 +410,33 @@ impl UsbSerialManager {
                                     signature,
                                     certificate,
                                 } => {
-                                    if let Some(challenge) = self.challenges.remove(&message.from) {
-                                        if let Some(genuine_verified) = self
-                                            .verify_genuine_challenge(
-                                                message.from,
-                                                &challenge,
-                                                &signature,
-                                                &certificate,
-                                            )
-                                        {
-                                            device_changes.push(genuine_verified);
+                                    let Some(challenge) = self.challenges.remove(&message.from)
+                                    else {
+                                        event!(
+                                            Level::WARN,
+                                            device = message.from.to_string(),
+                                            "received SignedChallenge but no challenge was pending"
+                                        );
+                                        continue;
+                                    };
+                                    match self.genuine_cert_key.and_then(|key| {
+                                        frostsnap_comms::genuine_certificate::verify_genuine(
+                                            &certificate,
+                                            key,
+                                            challenge,
+                                            &signature,
+                                        )
+                                    }) {
+                                        Some(certificate_body) => {
+                                            self.genuine_devices
+                                                .insert(message.from, certificate_body.clone());
+                                            device_changes.push(DeviceChange::GenuineDevice {
+                                                id: message.from,
+                                                certificate: certificate_body,
+                                            });
+                                        }
+                                        None => {
+                                            event!(Level::WARN, device = message.from.to_string(), "genuine check failed — invalid certificate or challenge response");
                                         }
                                     }
                                 }
@@ -597,6 +595,17 @@ impl UsbSerialManager {
                 CoordinatorSendBody::AnnounceAck,
             ))
             .unwrap();
+
+        if self.genuine_cert_key.is_some() {
+            let challenge = frostsnap_comms::GenuineChallenge::random(&mut rand::thread_rng());
+            self.challenges.insert(from, challenge);
+            self.outbox_sender
+                .send(CoordinatorSendMessage::to(
+                    from,
+                    CoordinatorSendBody::Challenge(Box::new(challenge)),
+                ))
+                .unwrap();
+        }
 
         self.reverse_device_ports
             .entry(port_name.to_string())
@@ -847,6 +856,7 @@ pub enum DeviceChange {
     AppMessage(AppMessage),
     GenuineDevice {
         id: DeviceId,
+        certificate: frostsnap_comms::genuine_certificate::CertificateBody,
     },
 }
 

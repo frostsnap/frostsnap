@@ -253,6 +253,14 @@ impl FfiCoordinator {
                             DeviceChange::NeedsName { id } => {
                                 ui_stack.connected(id, DeviceMode::Blank);
                             }
+                            DeviceChange::GenuineDevice { id, certificate } => {
+                                event!(
+                                    Level::INFO,
+                                    device = id.to_string(),
+                                    serial = certificate.serial_number(),
+                                    "device passed genuine check"
+                                );
+                            }
                             _ => { /* ignore rest */ }
                         }
                     }

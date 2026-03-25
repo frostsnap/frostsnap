@@ -1,5 +1,5 @@
 use frostsnap_comms::factory::{DeviceFactorySend, FactoryDownstream, FactorySend};
-use frostsnap_comms::genuine_certificate::CertificateVerifier;
+use frostsnap_comms::genuine_certificate;
 use frostsnap_comms::{Direction, Downstream, ReceiveSerial, Sha256Digest, MAGIC_BYTES_PERIOD};
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun;
@@ -315,7 +315,7 @@ fn process_factory_connection<D: crate::db::FactoryDatabase>(
                         .expect("Time went backwards")
                         .as_secs();
 
-                    let genuine_certificate = CertificateVerifier::sign(
+                    let genuine_certificate = genuine_certificate::sign_certificate(
                         schnorr,
                         rsa_der_bytes,
                         factory_state.target_color,
