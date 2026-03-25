@@ -5,8 +5,6 @@ use cbc::Encryptor;
 use frostsnap_comms::factory::{pad_message_for_rsa, Esp32DsKey, DS_KEY_SIZE_BITS};
 use frostsnap_core::sha2::{Digest, Sha256};
 use hmac::{Hmac, Mac};
-use num_traits::ToPrimitive;
-use num_traits::{One, Zero};
 use rand::{CryptoRng, RngCore};
 use rsa::traits::PublicKeyParts as _;
 use rsa::BigUint;
@@ -102,16 +100,16 @@ impl EspDsPData {
         let m_arr = vec_to_fixed(&m_vec, DS_NUM_WORDS);
 
         // Compute m_prime = - modinv(M mod 2^32, 2^32) & 0xFFFFFFFF.
-        let n0 = (m_big & BigUint::from(0xffffffffu32))
-            .to_u32()
-            .ok_or("Failed to convert modulus remainder to u32")?;
+        let mut n0_bytes = (m_big & BigUint::from(0xffffffffu32)).to_bytes_le();
+        n0_bytes.resize(4, 0);
+        let n0 = u32::from_le_bytes(n0_bytes.try_into().unwrap());
         let inv_n0 = modinv_u32(n0).ok_or("Failed to compute modular inverse for m_prime")?;
         let m_prime = (!inv_n0).wrapping_add(1);
 
         // Compute Montgomery value as per Python:
         // rr = 1 << (DS_KEY_SIZE_BITS * 2)
         // rb = rr % M
-        let rr = BigUint::one() << (DS_KEY_SIZE_BITS * 2);
+        let rr = BigUint::from(1u32) << (DS_KEY_SIZE_BITS * 2);
         let rb_big = &rr % m_big;
         let rb_vec = big_number_to_words(&rb_big);
         let rb_arr = vec_to_fixed(&rb_vec, DS_NUM_WORDS);
@@ -132,8 +130,10 @@ fn big_number_to_words(num: &BigUint) -> Vec<u32> {
     let mut vec = Vec::new();
     let mut n = num.clone();
     let mask = BigUint::from(0xffffffffu32);
-    while n > BigUint::zero() {
-        let word = (&n & &mask).to_u32().unwrap();
+    while n > BigUint::from(0u32) {
+        let mut word_bytes = (&n & &mask).to_bytes_le();
+        word_bytes.resize(4, 0);
+        let word = u32::from_le_bytes(word_bytes.try_into().unwrap());
         vec.push(word);
         n >>= 32;
     }
