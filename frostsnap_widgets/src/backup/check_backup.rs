@@ -569,11 +569,33 @@ impl DynWidget for CheckBackupScreen {
         current_time: crate::Instant,
         lift_up: bool,
     ) -> Option<KeyTouch> {
-        if self.current_screen >= TOTAL_SCREENS || self.feedback.is_some() {
+        if self.current_screen >= TOTAL_SCREENS {
+            return None;
+        }
+
+        // Block input during correct feedback (about to advance)
+        if matches!(self.feedback, Some((FeedbackKind::Correct, _))) {
             return None;
         }
 
         self.current_time = Some(current_time);
+
+        // If wrong feedback is showing and user taps again, clear it
+        if let Some((FeedbackKind::Wrong, button_index)) = self.feedback {
+            if !lift_up {
+                if let Some(page) = self.quiz_page_mut() {
+                    page.quiz_buttons_mut().set_button_style(
+                        button_index,
+                        PALETTE.surface,
+                        PALETTE.primary,
+                    );
+                }
+                self.feedback = None;
+                self.feedback_since = None;
+            } else {
+                return None;
+            }
+        }
 
         if lift_up {
             self.handle_release(current_time);
