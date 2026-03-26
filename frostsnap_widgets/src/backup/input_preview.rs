@@ -51,66 +51,8 @@ pub(super) type Fb = Framebuffer<
     { buffer_size::<Gray4>(FB_WIDTH as usize, FB_HEIGHT as usize) },
 >;
 
-/// Draw a single character from a Gray4Font into a Gray4 DrawTarget.
-/// Positioned at the given point using left alignment and top baseline.
-fn draw_gray4_char<D: DrawTarget<Color = Gray4>>(
-    target: &mut D,
-    font: &'static Gray4Font,
-    ch: char,
-    position: Point,
-    scale: u8,
-) {
-    let glyph = match font.get_glyph(ch) {
-        Some(g) => g,
-        None => return,
-    };
-
-    let draw_x = position.x + glyph.x_offset as i32;
-    let draw_y = position.y + glyph.y_offset as i32;
-
-    for Pixel(point, gray) in font.glyph_pixels(glyph) {
-        let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
-        if scaled > 0 {
-            let _ = Pixel(
-                Point::new(draw_x + point.x, draw_y + point.y),
-                Gray4::new(scaled),
-            )
-            .draw(target);
-        }
-    }
-}
-
-/// Draw a string of characters from a Gray4Font into a Gray4 DrawTarget.
-/// Characters are drawn left-to-right using each glyph's x_advance.
-fn draw_gray4_string<D: DrawTarget<Color = Gray4>>(
-    target: &mut D,
-    font: &'static Gray4Font,
-    text: &str,
-    position: Point,
-    scale: u8,
-) {
-    let mut x = position.x;
-    for ch in text.chars() {
-        if let Some(glyph) = font.get_glyph(ch) {
-            let draw_x = x + glyph.x_offset as i32;
-            let draw_y = position.y + glyph.y_offset as i32;
-
-            for Pixel(point, gray) in font.glyph_pixels(glyph) {
-                let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
-                if scaled > 0 {
-                    let _ = Pixel(
-                        Point::new(draw_x + point.x, draw_y + point.y),
-                        Gray4::new(scaled),
-                    )
-                    .draw(target);
-                }
-            }
-            x += glyph.x_advance as i32;
-        } else if ch == ' ' {
-            x += (font.line_height / 4) as i32;
-        }
-    }
-}
+use crate::gray4_style::Gray4DirectStyle;
+use embedded_graphics::text::{Baseline, Text as EgText, TextStyleBuilder};
 
 pub struct InputPreview {
     pub(super) area: Rectangle,
@@ -367,13 +309,15 @@ impl Framebuf {
 
         // Pre-render share index placeholder with '#' prefix (no dot for share index)
         let share_y = TOP_PADDING as i32 + (VERTICAL_PAD / 2) as i32;
-        draw_gray4_string(
-            &mut *fb.borrow_mut(),
-            FB_FONT,
+        let index_style = Gray4DirectStyle::new(FB_FONT, Gray4::new(INDEX_GRAY));
+        EgText::with_text_style(
             " #",
             Point::new(0, share_y),
-            INDEX_GRAY,
-        );
+            index_style,
+            TextStyleBuilder::new().baseline(Baseline::Top).build(),
+        )
+        .draw(&mut *fb.borrow_mut())
+        .ok();
 
         // Pre-render word indices with dots
         for i in 0..TOTAL_WORDS {
@@ -396,13 +340,14 @@ impl Framebuf {
                 0
             };
 
-            draw_gray4_string(
-                &mut *fb.borrow_mut(),
-                FB_FONT,
+            EgText::with_text_style(
                 &number_with_dot,
                 Point::new(number_x, y),
-                INDEX_GRAY,
-            );
+                index_style,
+                TextStyleBuilder::new().baseline(Baseline::Top).build(),
+            )
+            .draw(&mut *fb.borrow_mut())
+            .ok();
         }
 
         Self {
@@ -435,7 +380,17 @@ impl Framebuf {
                     ));
 
                     let _ = char_frame.clear(Gray4::new(0));
-                    draw_gray4_char(&mut char_frame, FB_FONT, *ch, Point::zero(), TEXT_GRAY);
+                    let text_style = Gray4DirectStyle::new(FB_FONT, Gray4::new(TEXT_GRAY));
+                    let ch_str = &mut [0u8; 4];
+                    let ch_str = ch.encode_utf8(ch_str);
+                    EgText::with_text_style(
+                        ch_str,
+                        Point::zero(),
+                        text_style,
+                        TextStyleBuilder::new().baseline(Baseline::Top).build(),
+                    )
+                    .draw(&mut char_frame)
+                    .ok();
                 }
                 FramebufferMutation::DelCharacter { row, pos } => {
                     let x = ((INDEX_CHARS + SPACE_BETWEEN) + pos) * FONT_SIZE.width as usize;
