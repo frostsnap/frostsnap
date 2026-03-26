@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::{Context as _, Result};
 use frostsnap_coordinator::{DesktopSerial, UsbSerialManager, ValidatedFirmwareBin};
+use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
 use std::{
     path::PathBuf,
     str::FromStr,
@@ -70,8 +71,13 @@ impl super::Api {
         use super::port::FfiSerial;
         let app_dir = PathBuf::from_str(&app_dir)?;
         let ffi_serial = FfiSerial::default();
-        let firmware = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()?;
-        let usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()), firmware);
+        let mut usb_manager = UsbSerialManager::new(Box::new(ffi_serial.clone()));
+        if let Some(firmware) = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()? {
+            usb_manager = usb_manager.with_firmware_bin(firmware);
+        }
+        if let Some(key) = load_genuine_cert_key() {
+            usb_manager = usb_manager.with_genuine_cert_key(key);
+        }
         let (coord, app_state) = load_internal(app_dir, usb_manager)?;
         Ok((coord, app_state, ffi_serial))
     }
@@ -79,10 +85,28 @@ impl super::Api {
     // Desktop function using DesktopSerial
     pub fn load(&self, app_dir: String) -> anyhow::Result<(Coordinator, AppCtx)> {
         let app_dir = PathBuf::from_str(&app_dir)?;
-        let firmware = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()?;
-        let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial), firmware);
+        let mut usb_manager = UsbSerialManager::new(Box::new(DesktopSerial));
+        if let Some(firmware) = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()? {
+            usb_manager = usb_manager.with_firmware_bin(firmware);
+        }
+        if let Some(key) = load_genuine_cert_key() {
+            usb_manager = usb_manager.with_genuine_cert_key(key);
+        }
         load_internal(app_dir, usb_manager)
     }
+}
+
+#[cfg(genuine_cert_key)]
+fn load_genuine_cert_key() -> Option<Point<EvenY>> {
+    const HEX: &str = include_str!(concat!(env!("OUT_DIR"), "/genuine_cert_key.hex"));
+    let bytes = frostsnap_core::hex::decode(HEX.trim()).ok()?;
+    let array: [u8; 32] = bytes.try_into().ok()?;
+    Point::<EvenY>::from_xonly_bytes(array)
+}
+
+#[cfg(not(genuine_cert_key))]
+fn load_genuine_cert_key() -> Option<Point<EvenY>> {
+    None
 }
 
 fn load_internal(

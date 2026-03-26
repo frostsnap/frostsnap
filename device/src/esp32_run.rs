@@ -457,7 +457,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     if let (Some(hw_rsa), Some(cert)) =
                         (hardware_rsa.as_mut(), certificate.as_ref())
                     {
-                        let signature = hw_rsa.sign(challenge.as_ref(), sha256);
+                        let signature = hw_rsa.sign(&challenge.0, sha256);
                         upstream_connection.send_to_coordinator([
                             DeviceSendBody::SignedChallenge {
                                 signature: Box::new(signature),

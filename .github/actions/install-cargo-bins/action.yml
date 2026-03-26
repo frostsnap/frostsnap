@@ -29,7 +29,7 @@ runs:
       shell: sh
       run: |
         # hash all the cargo binary versions
-        hash=$( (cd frostsnapp; just flutter_rust_bridge_version; just --show install-cargo-bins) | sha256sum | cut -d ' ' -f1)
+        hash=$( (just flutter-rust-bridge-version; just --show install-cargo-bins) | sha256sum | cut -d ' ' -f1)
         echo "hash=$hash" >> $GITHUB_OUTPUT
 
     - name: Cache Rust Binaries
@@ -55,5 +55,5 @@ runs:
 
     - name: Install Cargo Binaries
       if: steps.cache-rust-bins.outputs.cache-hit != 'true'
-      run: just frostsnapp/install-cargo-bins
+      run: just install-cargo-bins
       shell: sh

@@ -23,11 +23,6 @@ pub use fixed_string::{
 
 use genuine_certificate::Certificate;
 
-pub const FACTORY_PUBLIC_KEY: [u8; 32] = [
-    0xf3, 0xdb, 0x4b, 0x52, 0x53, 0xe7, 0xc5, 0x66, 0x9a, 0x7a, 0xe9, 0x52, 0x8a, 0x58, 0x51, 0x12,
-    0x7c, 0x4f, 0x70, 0x0c, 0x38, 0xfa, 0xe4, 0xeb, 0xac, 0x03, 0x40, 0x9d, 0x7d, 0x46, 0xea, 0x0b,
-];
-
 /// We choose this baudrate because esp32c3 freezes interrupts during flash
 /// erase cycles somtimes ~30ms. This is slow enough that the 128 byte uart
 /// FIFOs don't overlfow in that time.
@@ -230,7 +225,7 @@ pub enum CoordinatorSendBody {
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
     DataErase,
-    Challenge(Box<[u8; 32]>),
+    Challenge(Box<GenuineChallenge>),
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
@@ -618,6 +613,30 @@ frostsnap_core::impl_fromstr_deserialize! {
     name => "sha256 digest",
     fn from_bytes(bytes: [u8;32]) -> Sha256Digest {
         Sha256Digest(bytes)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GenuineChallenge(pub [u8; 32]);
+
+impl GenuineChallenge {
+    pub fn random(rng: &mut impl rand_core::RngCore) -> Self {
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+}
+
+frostsnap_core::impl_display_debug_serialize! {
+    fn to_bytes(challenge: &GenuineChallenge) -> [u8;32] {
+        challenge.0
+    }
+}
+
+frostsnap_core::impl_fromstr_deserialize! {
+    name => "genuine challenge",
+    fn from_bytes(bytes: [u8;32]) -> GenuineChallenge {
+        GenuineChallenge(bytes)
     }
 }
 
