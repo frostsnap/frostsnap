@@ -257,27 +257,19 @@ impl Widget for EnterShareScreen {
         );
 
         if let Some(ref mut entered_words) = self.entered_words {
-            // Full-screen entered words view
             entered_words.draw(target, current_time);
         } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
             self.input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time)?;
-            // Draw BIP39 input preview
             numeric_keyboard.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else if let Some(ref mut word_selector) = self.word_selector {
-            // Draw input preview at top
             let _ = self
                 .input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time);
-
-            // Draw word selector in keyboard area
             word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else {
-            // Normal keyboard and input preview
             self.alphabetic_keyboard
                 .draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
-
-            // Draw BIP39 input preview
             let input_display_rect = Rectangle::new(
                 Point::zero(),
                 Size::new(target.bounding_box().size.width, 60),
@@ -376,7 +368,6 @@ impl crate::DynWidget for EnterShareScreen {
                             }
                         }
                         Key::Keyboard(c) if c.is_alphabetic() || c.is_numeric() => {
-                            // Just pass character to model
                             let mutations = self.model.add_character(c);
                             self.input_preview.apply_mutations(&mutations);
                             self.pending_model_update = true;

@@ -14,6 +14,8 @@ pub trait UserInteraction {
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState);
     fn set_upstream_connection_state(&mut self, state: crate::UpstreamConnectionState);
     fn set_workflow(&mut self, workflow: Workflow);
+    fn set_default_workflow(&mut self, workflow: Workflow);
+    fn go_to_default(&mut self);
     fn set_busy_task(&mut self, task: BusyTask);
     fn clear_busy_task(&mut self);
     fn poll(&mut self) -> Option<UiEvent>;
@@ -34,6 +36,14 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
         (**self).set_workflow(workflow)
     }
 
+    fn set_default_workflow(&mut self, workflow: Workflow) {
+        (**self).set_default_workflow(workflow)
+    }
+
+    fn go_to_default(&mut self) {
+        (**self).go_to_default()
+    }
+
     fn set_busy_task(&mut self, task: BusyTask) {
         (**self).set_busy_task(task)
     }
@@ -51,7 +61,7 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum Workflow {
     #[default]
     Startup,

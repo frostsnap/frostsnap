@@ -32,6 +32,7 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
         transition_duration_ms: u64,
         slide_from_position: Point,
         bg_color: Rgb565,
+        use_framebuffer: bool,
     ) -> Self {
         let mut self_ = Self {
             current: None,
@@ -41,7 +42,7 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
             bg_color,
             constraints: None,
         };
-        self_.switch_to(initial);
+        self_.switch_to_with_framebuffer(initial, use_framebuffer);
         self_
     }
 
@@ -75,8 +76,12 @@ impl<T: Widget<Color = Rgb565>> SlideInTransition<T> {
 
     /// Switch to a new widget with slide-in transition
     pub fn switch_to(&mut self, widget: T) {
-        // Create translate widget and start the slide animation from the offset
-        let mut new_translate = Translate::new(widget, self.bg_color);
+        self.switch_to_with_framebuffer(widget, false);
+    }
+
+    pub fn switch_to_with_framebuffer(&mut self, widget: T, use_framebuffer: bool) {
+        let mut new_translate =
+            Translate::new(widget, self.bg_color).with_framebuffer(use_framebuffer);
         new_translate.set_animation_speed(AnimationSpeed::EaseOut);
         new_translate.animate_from(self.slide_from_position, self.transition_duration_ms);
 

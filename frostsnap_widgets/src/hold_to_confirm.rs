@@ -1,5 +1,6 @@
 use crate::{
     circle_button::{CircleButton, CircleButtonState},
+    frame_cache::FrameCache,
     hold_to_confirm_border::HoldToConfirmBorder,
     palette::PALETTE,
     prelude::*,
@@ -38,13 +39,16 @@ where
 {
     content: Box<
         HoldToConfirmBorder<
-            Container<Center<Column<(W, Fader<CircleButton>, SizedBox<Rgb565>)>>>,
+            Container<Center<Column<(W, Fader<FrameCache<CircleButton>>, SizedBox<Rgb565>)>>>,
             Rgb565,
         >,
     >,
     last_update: Option<crate::Instant>,
     hold_duration_ms: u32,
     completed: bool,
+    completed_at: Option<crate::Instant>,
+    finished: bool,
+    dwell_ms: u64,
 }
 
 impl<W> HoldToConfirm<W>
@@ -55,7 +59,8 @@ where
         const BORDER_WIDTH: u32 = 5;
 
         let button = CircleButton::new();
-        let faded_button = Fader::new(button);
+        let cached_button = FrameCache::new(button, PALETTE.background);
+        let faded_button = Fader::new(cached_button);
 
         // Create a 10px spacer beneath the button
         let bottom_spacer = SizedBox::<Rgb565>::new(Size::new(1, 10));
@@ -77,7 +82,6 @@ where
             content,
             BORDER_WIDTH,
             PALETTE.confirm_progress,
-            PALETTE.background,
         ));
 
         Self {
@@ -85,6 +89,9 @@ where
             last_update: None,
             hold_duration_ms,
             completed: false,
+            completed_at: None,
+            finished: false,
+            dwell_ms: 2000,
         }
     }
 
@@ -112,14 +119,14 @@ where
     }
 
     pub fn button_mut(&mut self) -> &mut CircleButton {
-        &mut self.content.child.child.child.children.1.child
+        self.content.child.child.child.children.1.child.child_mut()
     }
 
     pub fn button(&self) -> &CircleButton {
-        &self.content.child.child.child.children.1.child
+        self.content.child.child.child.children.1.child.child()
     }
 
-    fn button_fader_mut(&mut self) -> &mut Fader<CircleButton> {
+    fn button_fader_mut(&mut self) -> &mut Fader<FrameCache<CircleButton>> {
         &mut self.content.child.child.child.children.1
     }
 
@@ -133,8 +140,12 @@ where
         &self.content.child.child.child.children.0
     }
 
-    pub fn is_completed(&self) -> bool {
+    pub fn is_confirmed(&self) -> bool {
         self.button().state() == CircleButtonState::ShowingCheckmark
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
     }
 
     fn is_holding(&self) -> bool {
@@ -164,12 +175,10 @@ where
                 self.content.set_progress(new_progress);
 
                 if new_progress >= Frac::ONE {
+                    // 🎬 don't start fade/checkmark yet — let the border
+                    // draw one more frame at progress=1.0 before the button
+                    // state change triggers a large SPI blit
                     self.completed = true;
-
-                    // Start fading out the border only
-                    self.content.start_fade_out(500);
-                    self.button_mut()
-                        .set_state(CircleButtonState::ShowingCheckmark);
                 }
             } else if !holding && current_progress > Frac::ZERO && !self.completed {
                 let decrement = Frac::from_ratio(elapsed_ms, 1000);
@@ -241,8 +250,24 @@ where
         // Draw the border (which includes the content)
         self.content.draw(target, current_time)?;
 
+        if self.completed && !self.content.is_fading() {
+            self.content.start_fade_out(500);
+            self.button_mut()
+                .set_state(CircleButtonState::ShowingCheckmark);
+        }
+
         if self.content.is_faded_out() && !self.button().checkmark().drawing_started() {
             self.button_mut().checkmark_mut().start_drawing()
+        }
+
+        if self.completed_at.is_none() && self.button().checkmark().is_complete() {
+            self.completed_at = Some(current_time);
+        }
+
+        if let Some(at) = self.completed_at {
+            if current_time.saturating_duration_since(at) >= self.dwell_ms {
+                self.finished = true;
+            }
         }
 
         Ok(())

@@ -1,15 +1,23 @@
-use crate::backup::LEGACY_FONT_SMALL;
+use crate::gray4_style::Gray4TextStyle;
 use crate::DefaultTextStyle;
 use crate::HOLD_TO_CONFIRM_TIME_MS;
+use frostsnap_fonts::{NOTO_SANS_14_LIGHT, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM};
+
+const FONT_CONFIRM_TITLE: &frostsnap_fonts::Gray4Font = &NOTO_SANS_18_MEDIUM;
+const FONT_CONFIRM_TEXT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_17_REGULAR;
 use crate::{
-    icons::IconWidget, page_slider::PageSlider, palette::PALETTE, prelude::*,
-    share_index::ShareIndexWidget, widget_list::WidgetList, FadeSwitcher, HoldToConfirm,
-    U8g2TextStyle, FONT_HUGE_MONO, FONT_LARGE, FONT_MED,
+    page_slider::PageSlider,
+    palette::PALETTE,
+    prelude::*,
+    share_index::ShareIndexWidget,
+    widget_list::{WidgetList, WidgetListItem},
+    FadeSwitcher, HoldToConfirm, FONT_HUGE_MONO, FONT_MED,
 };
-use alloc::{format, string::String, vec::Vec};
+use alloc::{format, string::String, string::ToString, vec::Vec};
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565, prelude::*, text::Alignment};
 use frost_backup::{bip39_words::BIP39_WORDS, NUM_WORDS};
 
+const FONT_ALL_WORDS: &frostsnap_fonts::Gray4Font = &NOTO_SANS_14_LIGHT;
 const WORDS_PER_PAGE: usize = 3;
 
 /// A single page showing the share index
@@ -43,7 +51,7 @@ impl ShareIndexPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct WordRow {
     #[widget_delegate]
-    row: Row<(Text, SizedBox<Rgb565>, Text)>,
+    row: Row<(Text, Text)>,
 }
 
 impl WordRow {
@@ -60,8 +68,7 @@ impl WordRow {
         )
         .with_alignment(Alignment::Left);
 
-        let spacer = SizedBox::width(10); // 10 pixels of space between number and word
-        let row = Row::new((number_text, spacer, word_text));
+        let row = Row::builder().push(number_text).gap(10).push(word_text);
 
         Self { row }
     }
@@ -131,11 +138,10 @@ impl WordsPage {
     }
 }
 
-// Helper type for a single word entry (number + word)
-type SingleWordRow = Row<(Text<U8g2TextStyle<Rgb565>>, Text<U8g2TextStyle<Rgb565>>)>;
+type SingleWordRow = Row<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
 
 /// A page showing all 25 words in a simple scrollable format
-#[derive(frostsnap_macros::Widget)]
+#[derive(Clone, frostsnap_macros::Widget)]
 pub struct AllWordsPage {
     #[widget_delegate]
     content: Row<(Column<Vec<SingleWordRow>>, Column<Vec<SingleWordRow>>)>,
@@ -143,32 +149,29 @@ pub struct AllWordsPage {
 
 impl AllWordsPage {
     pub fn new(word_indices: &[u16; 25], share_index: u16) -> Self {
-        // Helper to create a word row (word_idx is 0-based)
         let make_word_row = |word_idx: usize| -> SingleWordRow {
             Row::new((
                 Text::new(
                     format!("{:2}.", word_idx + 1),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
                 ),
                 Text::new(
                     format!("{:<8}", BIP39_WORDS[word_indices[word_idx] as usize]),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
                 ),
             ))
             .with_main_axis_alignment(MainAxisAlignment::Start)
         };
 
-        // Create left column: Share index, then words 1-12
         let left_column = {
-            // First row: share index
             let share_row = Row::new((
                 Text::new(
                     " #.",
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.text_secondary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
                 ),
                 Text::new(
                     format!("{}", share_index),
-                    U8g2TextStyle::new(LEGACY_FONT_SMALL, PALETTE.primary),
+                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
                 )
                 .with_underline(PALETTE.surface),
             ))
@@ -185,7 +188,6 @@ impl AllWordsPage {
                 .with_cross_axis_alignment(CrossAxisAlignment::Start)
         };
 
-        // Create right column: Words 13-25
         let mut right_rows = Vec::with_capacity(13);
         for i in 12..25 {
             right_rows.push(make_word_row(i));
@@ -195,13 +197,12 @@ impl AllWordsPage {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Start);
 
-        // Combine the two columns
         let two_columns = Row::new((left_column, right_column))
             .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 
-        let content = two_columns;
-
-        Self { content }
+        Self {
+            content: two_columns,
+        }
     }
 }
 
@@ -218,40 +219,59 @@ pub struct BackupConfirmationScreen {
 #[derive(frostsnap_macros::Widget)]
 pub struct ConfirmContent {
     #[widget_delegate]
-    column: Column<(Text, Text)>,
+    column: Column<(
+        Column<(
+            Text<Gray4TextStyle>,
+            Text<Gray4TextStyle>,
+            Text<Gray4TextStyle>,
+        )>,
+        Text<Gray4TextStyle>,
+    )>,
 }
 
-/// The safety reminder that fades in after confirmation
+/// The completion message that fades in after confirmation
 #[derive(frostsnap_macros::Widget)]
 pub struct SafetyReminder {
     #[widget_delegate]
     content: Column<(
-        IconWidget<
-            embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size48px::security::Shield>,
-        >,
-        Text,
-        Text,
+        Text<Gray4TextStyle>,
+        Text<Gray4TextStyle>,
+        Text<Gray4TextStyle>,
     )>,
 }
 
 impl ConfirmContent {
     fn new() -> Self {
-        let title = Text::new(
-            "Backup\nrecorded?",
-            DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
-        )
-        .with_alignment(Alignment::Center);
+        let line1 = Text::new(
+            "Verify you've recorded:".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line2 = Text::new(
+            "- Key number".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line3 = Text::new(
+            "- All 25 words".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let subtitle = Column::builder()
+            .push(line1)
+            .gap(4)
+            .push(line2)
+            .push(line3)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let subtitle = Text::new(
-            "I've written down:\n  - The key number\n  - All 25 words",
-            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
+        let title = Text::new(
+            "Hold to Confirm".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
         );
 
         let column = Column::builder()
-            .push(title)
-            .gap(10)
             .push(subtitle)
-            .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+            .gap(15)
+            .push(title)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { column }
     }
@@ -259,30 +279,27 @@ impl ConfirmContent {
 
 impl SafetyReminder {
     fn new() -> Self {
-        use embedded_iconoir::prelude::*;
-
-        let shield_icon = IconWidget::new(
-            embedded_iconoir::icons::size48px::security::Shield::new(PALETTE.primary),
+        let title = Text::new(
+            "Backup Completed".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
         );
 
-        let title = Text::new(
-            "Keep it secret",
-            DefaultTextStyle::new(FONT_MED, PALETTE.on_surface),
-        )
-        .with_alignment(Alignment::Center);
-
-        let subtitle = Text::new(
-            "Keep it safe",
-            DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
-        )
-        .with_alignment(Alignment::Center);
+        let line1 = Text::new(
+            "Store it safely in a".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
+        let line2 = Text::new(
+            "secure location".to_string(),
+            Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
+        );
 
         let column = Column::builder()
-            .push(shield_icon)
             .push(title)
-            .gap(20)
-            .push(subtitle)
-            .with_main_axis_alignment(crate::MainAxisAlignment::SpaceEvenly);
+            .gap(15)
+            .push(line1)
+            .push(line2)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         Self { content: column }
     }
@@ -294,10 +311,8 @@ impl BackupConfirmationScreen {
         let initial_content = ConfirmationContent::new(confirm_content);
         let centered_content = Center::new(initial_content);
 
-        let fade_switcher = FadeSwitcher::new(
-            centered_content,
-            500, // 500ms fade duration
-        );
+        let fade_switcher = FadeSwitcher::new(centered_content)
+            .with_fade_config(crate::fade_switcher::FadeConfig::new(500));
         let hold_confirm =
             HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, fade_switcher).with_faded_out_button();
 
@@ -308,7 +323,7 @@ impl BackupConfirmationScreen {
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.hold_confirm.is_completed()
+        self.hold_confirm.is_confirmed()
     }
 }
 
@@ -350,7 +365,7 @@ impl crate::Widget for BackupConfirmationScreen {
         current_time: crate::Instant,
     ) -> Result<(), D::Error> {
         // Check if we should trigger the fade
-        if !self.fade_triggered && self.hold_confirm.is_completed() {
+        if !self.fade_triggered && self.hold_confirm.is_confirmed() {
             self.fade_triggered = true;
             // Switch to the safety reminder
             let safety_reminder = SafetyReminder::new();
@@ -399,22 +414,23 @@ impl WidgetList for BackupPageList {
         self.total_pages
     }
 
-    fn get(&self, index: usize) -> Option<BackupPage> {
+    fn get(&self, index: usize) -> Option<WidgetListItem<BackupPage>> {
         if index >= self.total_pages {
             return None;
         }
 
-        let page = if index == 0 {
-            // Share index page
-            BackupPage::new(ShareIndexPage::new(self.share_index))
+        if index == 0 {
+            Some(WidgetListItem::new(BackupPage::new(ShareIndexPage::new(
+                self.share_index,
+            ))))
         } else if index == self.total_pages - 1 {
-            // Last page - Backup confirmation screen
-            BackupPage::new(BackupConfirmationScreen::new())
+            Some(WidgetListItem::new(BackupPage::new(
+                BackupConfirmationScreen::new(),
+            )))
         } else if index == self.total_pages - 2 {
-            // Second to last page - All words summary
-            BackupPage::new(AllWordsPage::new(&self.word_indices, self.share_index))
+            let page = BackupPage::new(AllWordsPage::new(&self.word_indices, self.share_index));
+            Some(WidgetListItem::new(page).with_framebuffer_transitions(true))
         } else {
-            // Words page
             let word_start_index = (index - 1) * WORDS_PER_PAGE;
             let mut words = Vec::new();
 
@@ -427,13 +443,14 @@ impl WidgetList for BackupPageList {
                 }
             }
 
-            BackupPage::new(WordsPage::new(words))
-        };
-
-        Some(page)
+            Some(WidgetListItem::new(BackupPage::new(WordsPage::new(words))))
+        }
     }
 
-    fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {
+    fn can_go_prev(&self, from_index: usize, current_widget: &BackupPage) -> bool {
+        if from_index == 0 {
+            return false;
+        }
         // If we're on the last page (confirmation screen)
         if from_index == self.total_pages - 1 {
             // Check if the confirmation screen has been confirmed
@@ -460,9 +477,7 @@ impl BackupDisplay {
         let page_list = BackupPageList::new(word_indices, share_index);
         let page_slider = PageSlider::new(page_list)
             .with_on_page_ready(|page| {
-                // Try to downcast to BackupConfirmationScreen
                 if let Some(confirmation_screen) = page.downcast_mut::<BackupConfirmationScreen>() {
-                    // Fade in the button when the confirmation page is ready
                     confirmation_screen.hold_confirm.fade_in_button();
                 }
             })
@@ -471,15 +486,25 @@ impl BackupDisplay {
         Self { page_slider }
     }
 
-    /// Check if the backup has been confirmed via the hold-to-confirm on the last page
     pub fn is_confirmed(&mut self) -> bool {
-        // Check if we're on the last page
         if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
             let current_widget = self.page_slider.current_widget();
             if let Some(confirmation_screen) =
                 current_widget.downcast_ref::<BackupConfirmationScreen>()
             {
                 return confirmation_screen.is_confirmed();
+            }
+        }
+        false
+    }
+
+    pub fn is_finished(&mut self) -> bool {
+        if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
+            let current_widget = self.page_slider.current_widget();
+            if let Some(confirmation_screen) =
+                current_widget.downcast_ref::<BackupConfirmationScreen>()
+            {
+                return confirmation_screen.hold_confirm.is_finished();
             }
         }
         false
