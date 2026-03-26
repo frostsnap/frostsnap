@@ -1,7 +1,7 @@
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::{GrayColor, Rgb565, RgbColor},
+    pixelcolor::{Gray4, GrayColor, Rgb565, RgbColor},
     primitives::{Line, Primitive, PrimitiveStyle, Rectangle},
     text::{
         renderer::{CharacterStyle, TextMetrics, TextRenderer},
@@ -256,4 +256,113 @@ impl CharacterStyle for Gray4TextStyle {
     fn set_strikethrough_color(&mut self, strikethrough_color: DecorationColor<Self::Color>) {
         self.strikethrough_color = strikethrough_color;
     }
+}
+
+/// Text style for rendering Gray4 fonts directly into a Gray4 draw target.
+/// The `color` parameter sets the max intensity (0-15) of the rendered text.
+#[derive(Clone, Copy)]
+pub struct Gray4DirectStyle {
+    pub font: &'static Gray4Font,
+    color: Gray4,
+}
+
+impl Gray4DirectStyle {
+    pub fn new(font: &'static Gray4Font, color: Gray4) -> Self {
+        Self { font, color }
+    }
+}
+
+impl TextRenderer for Gray4DirectStyle {
+    type Color = Gray4;
+
+    fn draw_string<D>(
+        &self,
+        text: &str,
+        position: Point,
+        baseline: Baseline,
+        target: &mut D,
+    ) -> Result<Point, D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        let y_offset = match baseline {
+            Baseline::Top => 0,
+            Baseline::Bottom => -(self.font.line_height as i32),
+            Baseline::Middle => -(self.font.line_height as i32 / 2),
+            Baseline::Alphabetic => -(self.font.baseline as i32),
+        };
+
+        let mut x = position.x;
+        let y = position.y + y_offset;
+        let scale = self.color.luma();
+
+        for ch in text.chars() {
+            if let Some(glyph) = self.font.get_glyph(ch) {
+                let draw_x = x + glyph.x_offset as i32;
+                let draw_y = y + glyph.y_offset as i32;
+
+                let pixels = self.font.glyph_pixels(glyph).map(|Pixel(point, gray)| {
+                    let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
+                    Pixel(
+                        Point::new(draw_x + point.x, draw_y + point.y),
+                        Gray4::new(scaled),
+                    )
+                });
+                target.draw_iter(pixels)?;
+                x += glyph.x_advance as i32;
+            } else if ch == ' ' {
+                x += (self.font.line_height / 4) as i32;
+            }
+        }
+
+        Ok(Point::new(x, position.y))
+    }
+
+    fn draw_whitespace<D>(
+        &self,
+        width: u32,
+        position: Point,
+        _baseline: Baseline,
+        _target: &mut D,
+    ) -> Result<Point, D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        Ok(Point::new(position.x + width as i32, position.y))
+    }
+
+    fn measure_string(&self, text: &str, position: Point, _baseline: Baseline) -> TextMetrics {
+        let mut width = 0u32;
+
+        for ch in text.chars() {
+            if let Some(glyph) = self.font.get_glyph(ch) {
+                width += glyph.x_advance as u32;
+            } else if ch == ' ' {
+                width += self.font.line_height / 4;
+            }
+        }
+
+        TextMetrics {
+            bounding_box: Rectangle::new(position, Size::new(width, self.font.line_height)),
+            next_position: Point::new(position.x + width as i32, position.y),
+        }
+    }
+
+    fn line_height(&self) -> u32 {
+        self.font.line_height
+    }
+}
+
+impl CharacterStyle for Gray4DirectStyle {
+    type Color = Gray4;
+
+    fn set_text_color(&mut self, text_color: Option<Self::Color>) {
+        if let Some(color) = text_color {
+            self.color = color;
+        }
+    }
+
+    fn set_background_color(&mut self, _background_color: Option<Self::Color>) {}
+    fn set_underline_color(&mut self, _underline_color: DecorationColor<Self::Color>) {}
+    fn set_strikethrough_color(&mut self, _strikethrough_color: DecorationColor<Self::Color>) {}
 }

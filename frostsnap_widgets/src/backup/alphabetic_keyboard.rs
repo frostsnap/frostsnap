@@ -16,7 +16,6 @@ use embedded_iconoir::{
     size32px::navigation::{NavArrowLeft, NavArrowRight},
 };
 use frost_backup::bip39_words::ValidLetters;
-use frostsnap_fonts::Gray4Font;
 
 const FRAMEBUFFER_WIDTH: u32 = 240;
 const TOTAL_COLS: usize = 4;
@@ -38,44 +37,6 @@ type Fb = Framebuffer<
     { FRAMEBUFFER_HEIGHT as usize },
     { buffer_size::<Gray4>(FRAMEBUFFER_WIDTH as usize, FRAMEBUFFER_HEIGHT as usize) },
 >;
-
-/// Draw a single character from a Gray4Font into a Gray4 framebuffer, centered in a cell.
-/// The `scale` parameter scales the glyph's gray values: pixel = glyph_gray * scale / 15.
-fn draw_char_to_framebuffer(
-    fb: &mut Fb,
-    font: &'static Gray4Font,
-    ch: char,
-    cell_x: i32,
-    cell_y: i32,
-    scale: u8,
-) {
-    let glyph = match font.get_glyph(ch) {
-        Some(g) => g,
-        None => return,
-    };
-
-    // Center the glyph in the cell
-    let glyph_center_x = cell_x + KEY_WIDTH as i32 / 2;
-    let glyph_center_y = cell_y + KEY_HEIGHT as i32 / 2;
-
-    // Position the glyph baseline-centered vertically
-    let draw_x = glyph_center_x - glyph.x_advance as i32 / 2 + glyph.x_offset as i32;
-    let draw_y = glyph_center_y - font.line_height as i32 / 2 + glyph.y_offset as i32;
-
-    for Pixel(point, gray) in font.glyph_pixels(glyph) {
-        let px = draw_x + point.x;
-        let py = draw_y + point.y;
-
-        if px >= 0 && py >= 0 && (px as u32) < FRAMEBUFFER_WIDTH && (py as u32) < FRAMEBUFFER_HEIGHT
-        {
-            // Scale the gray value
-            let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
-            if scaled > 0 {
-                let _ = Pixel(Point::new(px, py), Gray4::new(scaled)).draw(fb);
-            }
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct AlphabeticKeyboard {
@@ -328,4 +289,29 @@ impl Widget for AlphabeticKeyboard {
         self.needs_redraw = false;
         Ok(())
     }
+}
+
+fn draw_char_to_framebuffer(
+    fb: &mut Fb,
+    font: &'static frostsnap_fonts::Gray4Font,
+    ch: char,
+    cell_x: i32,
+    cell_y: i32,
+    scale: u8,
+) {
+    use crate::gray4_style::Gray4DirectStyle;
+    use embedded_graphics::text::{Alignment, Baseline, Text, TextStyleBuilder};
+
+    let style = Gray4DirectStyle::new(font, Gray4::new(scale));
+    let text_style = TextStyleBuilder::new()
+        .alignment(Alignment::Center)
+        .baseline(Baseline::Middle)
+        .build();
+    let center = Point::new(
+        cell_x + KEY_WIDTH as i32 / 2,
+        cell_y + KEY_HEIGHT as i32 / 2,
+    );
+    let mut buf = [0u8; 4];
+    let s = ch.encode_utf8(&mut buf);
+    let _ = Text::with_text_style(s, center, style, text_style).draw(fb);
 }
