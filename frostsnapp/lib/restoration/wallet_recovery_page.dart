@@ -159,11 +159,11 @@ class WalletRecoveryPage extends StatelessWidget {
                     ),
                   ),
                   Flexible(
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.check_rounded),
-                      label: const Text('Restore'),
-                      onPressed: isReady
-                          ? () async {
+                    child: isReady
+                        ? FilledButton.icon(
+                            icon: const Icon(Icons.check_rounded),
+                            label: const Text('Restore'),
+                            onPressed: () async {
                               try {
                                 final encryptionKey =
                                     await SecureKeyProvider.getEncryptionKey();
@@ -183,9 +183,18 @@ class WalletRecoveryPage extends StatelessWidget {
                                   );
                                 }
                               }
-                            }
-                          : null,
-                    ),
+                            },
+                          )
+                        : FilledButton.icon(
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add another key'),
+                            onPressed: () {
+                              continueWalletRecoveryFlowDialog(
+                                context,
+                                restorationId: restorationState.restorationId,
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
@@ -400,20 +409,20 @@ class WalletRecoveryPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       devicesColumn,
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: TextButton.icon(
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add another key'),
-                          onPressed: () {
-                            continueWalletRecoveryFlowDialog(
-                              context,
-                              restorationId: restorationState.restorationId,
-                            );
-                          },
+                      if (isReady)
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add another key'),
+                            onPressed: () {
+                              continueWalletRecoveryFlowDialog(
+                                context,
+                                restorationId: restorationState.restorationId,
+                              );
+                            },
+                          ),
                         ),
-                      ),
                       SizedBox(height: 16),
                       progressActionCard,
                     ],
