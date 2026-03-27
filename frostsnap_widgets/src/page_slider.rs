@@ -76,24 +76,19 @@ where
         self
     }
 
-    /// Builder method to set a callback that's called when a page is ready (animation complete)
-    pub fn with_on_page_ready<F>(mut self, callback: F) -> Self
+    /// Set a callback that's called when a page is ready (animation complete)
+    pub fn set_on_page_ready<F>(&mut self, callback: F)
     where
         F: FnMut(&mut L::Widget) + 'static,
     {
         self.on_page_ready = Some(Box::new(callback));
-        self
     }
 
-    /// Builder method to enable swipe up chevron indicator
-    pub fn with_swipe_up_chevron(mut self) -> Self {
-        // Create chevron
+    /// Enable swipe up chevron indicator
+    pub fn enable_swipe_up_chevron(&mut self) {
         let chevron = SwipeUpChevron::new(PALETTE.on_surface, PALETTE.background);
         let fader = Fader::new_faded_out(chevron);
-
-        // Set the chevron in the stack (it's already positioned with BottomCenter alignment)
         self.stack.children.1 = Some(fader);
-        self
     }
 
     pub fn current_index(&self) -> usize {

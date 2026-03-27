@@ -9,7 +9,7 @@ use crate::{
     widget_list::{WidgetList, WidgetListItem},
     GrayToAlpha, HoldToConfirm, Image,
 };
-use alloc::{format, string::ToString};
+use alloc::{boxed::Box, format, string::ToString};
 use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
@@ -403,7 +403,7 @@ impl WidgetList for SignPromptPageList {
 #[derive(frostsnap_macros::Widget)]
 pub struct SignTxPrompt {
     #[widget_delegate]
-    page_slider: PageSlider<SignPromptPageList>,
+    page_slider: Box<PageSlider<SignPromptPageList>>,
 }
 
 impl SignTxPrompt {
@@ -413,13 +413,13 @@ impl SignTxPrompt {
 
     pub fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
         let page_list = SignPromptPageList::new_with_seed(prompt, rand_seed);
-        let page_slider = PageSlider::new(page_list)
-            .with_on_page_ready(|page| {
-                if let Some(confirmation_page) = page.downcast_mut::<ConfirmationPage>() {
-                    confirmation_page.hold_confirm.fade_in_button();
-                }
-            })
-            .with_swipe_up_chevron();
+        let mut page_slider = Box::new(PageSlider::new(page_list));
+        page_slider.set_on_page_ready(|page| {
+            if let Some(confirmation_page) = page.downcast_mut::<ConfirmationPage>() {
+                confirmation_page.hold_confirm.fade_in_button();
+            }
+        });
+        page_slider.enable_swipe_up_chevron();
 
         Self { page_slider }
     }

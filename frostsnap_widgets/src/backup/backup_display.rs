@@ -475,13 +475,13 @@ pub struct BackupDisplay {
 impl BackupDisplay {
     pub fn new(word_indices: [u16; 25], share_index: u16) -> Self {
         let page_list = BackupPageList::new(word_indices, share_index);
-        let page_slider = PageSlider::new(page_list)
-            .with_on_page_ready(|page| {
-                if let Some(confirmation_screen) = page.downcast_mut::<BackupConfirmationScreen>() {
-                    confirmation_screen.hold_confirm.fade_in_button();
-                }
-            })
-            .with_swipe_up_chevron();
+        let mut page_slider = PageSlider::new(page_list);
+        page_slider.set_on_page_ready(|page| {
+            if let Some(confirmation_screen) = page.downcast_mut::<BackupConfirmationScreen>() {
+                confirmation_screen.hold_confirm.fade_in_button();
+            }
+        });
+        page_slider.enable_swipe_up_chevron();
 
         Self { page_slider }
     }
