@@ -46,14 +46,48 @@ class _EnterBackupViewState extends State<EnterBackupView> {
         return Card.filled(
           margin: EdgeInsets.zero,
           color: theme.colorScheme.surfaceContainerHigh,
-          child: ListTile(
-            leading: Icon(Icons.keyboard_rounded),
-            title: Text('Enter backup on ${widget.deviceName ?? "device"}'),
-            subtitle: Text(
-              'Enter the backup on the device screen. The app will continue automatically once complete.',
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'On your device${widget.deviceName != null ? " ${widget.deviceName}" : ""}',
+                  style: theme.textTheme.titleMedium,
+                ),
+                SizedBox(height: 12),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '1. Enter the Key Number. ',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      TextSpan(
+                        text:
+                            '\nYou can find this on the inside of your backup card, labeled "Key Number".',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '2. Enter all 25 seed words in order.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'The app will continue automatically once complete.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-            isThreeLine: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 16),
           ),
         );
       },
