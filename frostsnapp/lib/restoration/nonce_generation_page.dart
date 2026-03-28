@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
@@ -34,7 +33,6 @@ class NonceGenerationPage extends StatefulWidget with TitledWidget {
 class _NonceGenerationPageState extends State<NonceGenerationPage> {
   bool _hasCompleted = false;
   bool _hasErrored = false;
-  StreamSubscription? _streamSubscription;
 
   @override
   void initState() {
@@ -44,12 +42,6 @@ class _NonceGenerationPageState extends State<NonceGenerationPage> {
         widget.onDeviceDisconnected();
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _streamSubscription?.cancel();
-    super.dispose();
   }
 
   @override
@@ -66,29 +58,6 @@ class _NonceGenerationPageState extends State<NonceGenerationPage> {
           });
         }
 
-        final state = snapshot.data;
-
-        if (state != null && !_hasCompleted && !_hasErrored) {
-          final isComplete = state.isFinished();
-          if (isComplete) {
-            _hasCompleted = true;
-            Future.delayed(Durations.long1, () {
-              if (mounted) {
-                widget.onComplete();
-              }
-            });
-          }
-        }
-
-        if (state?.abort == true && !_hasCompleted && !_hasErrored) {
-          _hasErrored = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              widget.onError('Device disconnected during preparation');
-            }
-          });
-        }
-
         return Column(
           key: const ValueKey('nonceGeneration'),
           mainAxisSize: MainAxisSize.min,
@@ -98,7 +67,19 @@ class _NonceGenerationPageState extends State<NonceGenerationPage> {
               constraints: BoxConstraints(minHeight: 120),
               child: MinimalNonceReplenishWidget(
                 stream: widget.stream,
-                autoAdvance: false,
+                autoAdvance: true,
+                onComplete: () {
+                  if (mounted && !_hasCompleted && !_hasErrored) {
+                    _hasCompleted = true;
+                    widget.onComplete();
+                  }
+                },
+                onAbort: () {
+                  if (mounted && !_hasCompleted && !_hasErrored) {
+                    _hasErrored = true;
+                    widget.onError('Device disconnected during preparation');
+                  }
+                },
               ),
             ),
           ],
