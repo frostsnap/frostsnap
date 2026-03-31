@@ -1203,8 +1203,16 @@ macro_rules! demo_widget {
                 let widget = EraseDevice::new();
                 $run_macro!(widget);
             }
+            "scrollable_debug_text" => {
+                use $crate::scrollable_debug_text::ScrollableDebugText;
+                use $crate::Padding;
+
+                let text = "=== ScrollableDebugText ===\nThis is a test of the scrollable\ndebug text widget.\n\nSwipe up/down to scroll.\n\nLine 7\nLine 8\nLine 9\nLine 10\nLine 11\nLine 12\nLine 13\nLine 14\nLine 15\nLine 16\nLine 17\nLine 18\nLine 19\nLine 20\nLine 21\nLine 22\nLine 23\nLine 24\nLine 25\nLine 26\nLine 27\nLine 28\nLine 29\nLine 30\nLine 31\nLine 32\nLine 33\nLine 34\nLine 35\nLine 36\nLine 37\nLine 38\nLine 39\nLine 40\nEnd of text.";
+                let widget = Padding::symmetric(5, 20, ScrollableDebugText::new(text, 230));
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, scrollable_debug_text", $demo);
             }
         }
     };

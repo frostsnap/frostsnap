@@ -141,6 +141,43 @@ impl<'a> EfuseController<'a> {
         Ok(())
     }
 
+    pub fn key_purpose_pub(key_id: esp_hal::hmac::KeyId) -> KeyPurpose {
+        Self::key_purpose(key_id)
+    }
+
+    /// Read the WR_DIS register (write-disable bits for all eFuse blocks)
+    pub fn read_wr_dis(&self) -> u32 {
+        self.efuse.rd_wr_dis().read().bits()
+    }
+
+    /// Read the RD_DIS bits from RD_REPEAT_DATA0 (read-disable for KEY0-KEY5, bits [6:1])
+    pub fn read_rd_dis(&self) -> u8 {
+        // RD_REPEAT_DATA0 bits [6:0] are RD_DIS for blocks 4-10 (KEY0-KEY5 + SYS_DATA_PART2)
+        (self.efuse.rd_repeat_data0().read().bits() & 0x7F) as u8
+    }
+
+    /// Read all three block 0 error registers
+    pub fn read_blk0_errors(&self) -> (u32, u32, u32) {
+        let efuse = &*self.efuse;
+        (
+            efuse.rd_repeat_err0().read().bits(),
+            efuse.rd_repeat_err1().read().bits(),
+            efuse.rd_repeat_err2().read().bits(),
+        )
+    }
+
+    /// Try to write RD_DIS bits for the given key slots. Returns Ok if the hardware
+    /// accepted the write, Err if there was a programming error.
+    ///
+    /// # Safety
+    /// Burns eFuse bits permanently.
+    pub unsafe fn try_write_rd_dis(&self, key_mask: u8) -> Result<(), EfuseError> {
+        // RD_DIS goes in buff[4] (PGM_DATA1 -> RD_REPEAT_DATA0, bits [6:0])
+        let mut buff = [0x00u8; 32];
+        buff[4] = key_mask & 0x7F;
+        self.write_block(&buff, 0)
+    }
+
     fn key_purpose(key_id: esp_hal::hmac::KeyId) -> KeyPurpose {
         use esp_hal::hmac::KeyId;
         let efuse_field = match key_id {

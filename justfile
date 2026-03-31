@@ -317,6 +317,12 @@ backup +ARGS="":
 simulate +ARGS="":
     (cd widget_simulator && cargo run -- {{ARGS}}; )
 
+efuse_check +ARGS="":
+    cd device && cargo build --bin efuse_check --release ${DEVICE_BUILD_ARGS:-} {{ARGS}}
+    just save-image efuse_check
+    just env={{env}} sign-firmware target/riscv32imc-unknown-none-elf/release/efuse_check.bin target/riscv32imc-unknown-none-elf/release/{{env}}-efuse_check.bin
+    just firmware_bin=target/riscv32imc-unknown-none-elf/release/{{env}}-efuse_check.bin flash-firmware
+
 widget_dev DEMO +ARGS="":
     cd device && DEMO={{DEMO}} cargo build --bin widget_dev --release ${DEVICE_BUILD_ARGS:-} {{ARGS}}
     just save-image widget_dev

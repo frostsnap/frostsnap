@@ -54,6 +54,7 @@ pub mod layout;
 pub mod prelude;
 pub mod screen_test;
 pub mod scroll_bar;
+pub mod scrollable_debug_text;
 pub mod share_index;
 pub mod sign_message;
 pub mod sign_prompt;
