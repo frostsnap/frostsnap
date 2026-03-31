@@ -12,7 +12,7 @@ const MIN_SWIPE_DISTANCE: u32 = 0;
 const DEFAULT_SLIDE_DISTANCE: u32 = 40;
 
 // Type aliases to reduce complexity
-type PageStack<T> = Stack<(SlideInTransition<T>, Option<Fader<SwipeUpChevron>>)>;
+type PageStack<T> = Stack<(SlideInTransition<T>, Option<Box<Fader<SwipeUpChevron>>>)>;
 type PageReadyCallback<T> = Box<dyn FnMut(&mut T)>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -57,7 +57,7 @@ where
 
         let stack = Stack::builder()
             .push(transition)
-            .push_aligned(None::<Fader<SwipeUpChevron>>, Alignment::BottomCenter);
+            .push_aligned(None::<Box<Fader<SwipeUpChevron>>>, Alignment::BottomCenter);
 
         Self {
             list,
@@ -88,7 +88,7 @@ where
     pub fn enable_swipe_up_chevron(&mut self) {
         let chevron = SwipeUpChevron::new(PALETTE.on_surface, PALETTE.background);
         let fader = Fader::new_faded_out(chevron);
-        self.stack.children.1 = Some(fader);
+        self.stack.children.1 = Some(Box::new(fader));
     }
 
     pub fn current_index(&self) -> usize {
