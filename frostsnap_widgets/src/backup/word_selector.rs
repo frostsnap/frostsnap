@@ -73,6 +73,7 @@ pub struct WordSelector {
 }
 
 impl WordSelector {
+    #[inline(never)]
     pub fn new(words: &'static [&'static str], prefix: &str) -> Self {
         const MAX_WORDS: usize = 8;
         const WORDS_PER_COLUMN: usize = MAX_WORDS / 2;

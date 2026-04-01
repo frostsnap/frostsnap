@@ -20,6 +20,7 @@ pub struct NumericButton {
 }
 
 impl NumericButton {
+    #[inline(never)]
     fn new(key: char, enabled: bool) -> TouchListener<Self> {
         // Create text for the button
         let text_color = if enabled {
@@ -96,6 +97,7 @@ pub struct CheckmarkButton {
 }
 
 impl CheckmarkButton {
+    #[inline(never)]
     fn new(enabled: bool) -> TouchListener<Self> {
         // Use smaller size24px icon and set color based on enabled state
         let icon_color = if enabled {
@@ -181,6 +183,7 @@ pub struct NumericKeyboard {
 }
 
 impl NumericKeyboard {
+    #[inline(never)]
     pub fn new() -> Self {
         // Create the keyboard layout:
         // 1 2 3
