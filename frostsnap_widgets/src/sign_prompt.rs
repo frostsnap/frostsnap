@@ -53,6 +53,7 @@ pub struct AmountPage {
 }
 
 impl AmountPage {
+    #[inline(never)]
     pub fn new(index: usize, amount_sats: u64) -> Self {
         let title = Text::new(
             format!("Send Amount #{}", index + 1),
@@ -85,6 +86,7 @@ pub struct AddressPage {
 }
 
 impl AddressPage {
+    #[inline(never)]
     pub fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
         let title = Text::new(
             format!("To Address #{}", index + 1),
@@ -119,6 +121,7 @@ pub struct FeePage {
 }
 
 impl FeePage {
+    #[inline(never)]
     fn new(fee_sats: u64, fee_rate_sats_per_vbyte: Option<f64>) -> Self {
         let title = Text::new(
             "Network Fee".to_string(),
@@ -170,6 +173,7 @@ pub struct WarningPage {
 }
 
 impl WarningPage {
+    #[inline(never)]
     fn new(fee_sats: u64, _total_sent: u64) -> Self {
         let warning_bmp =
             Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
@@ -238,6 +242,7 @@ pub struct ConfirmationPage {
 }
 
 impl ConfirmationPage {
+    #[inline(never)]
     fn new() -> Self {
         let sign_text = Text::new(
             "Hold to Sign".to_string(),
