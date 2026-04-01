@@ -10,7 +10,9 @@ members = [
     "frostsnap_factory",
     "frost_backup",
     "frostsnap_fonts",
-    "frostsnap_widgets", "widget_simulator",
+    "frostsnap_widgets",
+    "tools/widget_simulator",
+    "tools/stack_check",
     "cst816s",
     "frostsnapp/desktop_camera",
     "macros",
@@ -30,6 +32,7 @@ default-members = [
     "frostsnap_widgets",
     "frostsnapp/desktop_camera",
     "macros",
+    "tools/stack_check",
 ]
 resolver = "2"
 
