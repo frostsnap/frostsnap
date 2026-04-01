@@ -46,7 +46,7 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos
 
 SPEC CHECKSUMS:
-  dynamic_color: b820c000cc68df65e7ba7ff177cb98404ce56651
+  dynamic_color: cb7c2a300ee67ed3bd96c3e852df3af0300bf610
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   package_info_plus: f0052d280d17aa382b932f399edf32507174e870
