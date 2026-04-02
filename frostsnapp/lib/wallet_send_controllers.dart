@@ -308,11 +308,20 @@ class AmountInput extends StatelessWidget {
         controller: model.textEditingController,
         style: TextStyle(fontFamily: monospaceTextStyle.fontFamily),
         decoration: (decoration ?? InputDecoration()).copyWith(
-          errorText: model.error,
-          suffixText: model.unit.suffixText,
-          suffixIcon: IconButton(
+          error: model.error != null ? Text(model.error!) : null,
+          suffixIcon: TextButton.icon(
             onPressed: onUnitButtonPressed,
-            icon: Icon(Icons.swap_vert),
+            iconAlignment: IconAlignment.end,
+            icon: Icon(
+              Icons.swap_vert,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            label: Text(
+              model.unit.suffixText.trim(),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
           border: defaultTextInputBorder,
         ),

@@ -334,19 +334,40 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final availableAmount = state.availableAmount(recipient: 0);
 
     int? amount;
-    String? amountErr;
+    Widget amountDisplay(int sats) {
+      return switch (amountController.unit) {
+        AmountUnit.satoshi => Text('$sats sat'),
+        AmountUnit.bitcoin => SatoshiText(
+          value: sats,
+          hideLeadingWhitespace: true,
+        ),
+      };
+    }
+
+    Widget? amountErr;
     try {
       amount = state.amount(recipient: 0);
     } on AmountError catch (e) {
       amountErr = switch (e) {
-        AmountError_UnspecifiedFeerate() => 'No feerate set.',
-        AmountError_UnspecifiedAmount() => 'No amount set.',
-        AmountError_NoAmountAvailable() => 'No balance available.',
+        AmountError_UnspecifiedFeerate() => Text('No feerate set.'),
+        AmountError_UnspecifiedAmount() => null,
+        AmountError_NoAmountAvailable() => Text('No balance available.'),
         AmountError_TargetExceedsAvailable(:final target, :final available) =>
-          'Exceeds max by ${target - available}sat.',
-        AmountError_UnspecifiedAddress() => 'No recipient address.',
-        AmountError_AmountBelowDust(:final minNonDust) =>
-          'Minimum amount is $minNonDust.',
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Exceeds max by '),
+              amountDisplay(target - available),
+            ],
+          ),
+        AmountError_UnspecifiedAddress() => Text('No recipient address.'),
+        AmountError_AmountBelowDust(:final minNonDust) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Minimum amount is '),
+            amountDisplay(minNonDust.toInt()),
+          ],
+        ),
       };
     }
 
@@ -368,7 +389,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                   filled: false,
                   errorMaxLines: 2,
                   hintText: 'Amount',
-                  errorText: amountErr,
+                  error: amountErr,
                 ),
               ),
             Row(
