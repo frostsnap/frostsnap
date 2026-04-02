@@ -102,6 +102,8 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     return null;
   }
 
+  void rebuild() => _safeNotify();
+
   bool get hasActionsNeeded =>
       _actionNeeded.isNotEmpty &&
       _actionNeeded.any((id) => _connectedDevices.contains(id));
@@ -167,78 +169,80 @@ Future<T?> showFullscreenActionDialog<T>(
   final body = controller.body;
   final actionButtons = controller.actionButtons;
 
-  final bodyColumn = Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      SvgPicture.string(
-        deviceSvg,
-        width: 162,
-        height: 134,
-        colorFilter: ColorFilter.mode(
-          theme.colorScheme.onSurface,
-          BlendMode.srcATop,
-        ),
-      ),
-      if (title != null) ...[
-        SizedBox(height: 32),
-        Text(
-          title,
-          style: theme.textTheme.headlineSmall,
-          textAlign: TextAlign.center,
-        ),
-      ],
-      if (body != null) ...[
-        SizedBox(height: 24),
-        DefaultTextStyle(
-          style: theme.textTheme.bodyLarge!,
-          child: body(context),
-        ),
-      ],
-    ],
-  );
-
-  final footerRow = Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    mainAxisSize: MainAxisSize.max,
-    spacing: 8,
-    children: actionButtons ?? [],
-  );
-
-  final card = Card(
-    color: Colors.black,
-    margin: EdgeInsets.zero,
-    child: Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          bodyColumn,
-          if (actionButtons != null) ...[SizedBox(height: 32), footerRow],
-        ],
-      ),
-    ),
-  );
-
-  final scaffold = Scaffold(
-    backgroundColor: Colors.black,
-    body: Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: bodyColumn,
-      ),
-    ),
-    persistentFooterButtons: [footerRow],
-  );
-
   final listenableBuilder = ListenableBuilder(
     listenable: controller,
     builder: (context, _) {
       if (!controller.hasActionsNeeded) Navigator.pop(context);
+
+      final bodyColumn = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SvgPicture.string(
+            deviceSvg,
+            width: 162,
+            height: 134,
+            colorFilter: ColorFilter.mode(
+              theme.colorScheme.onSurface,
+              BlendMode.srcATop,
+            ),
+          ),
+          if (title != null) ...[
+            SizedBox(height: 32),
+            Text(
+              title,
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+          ],
+          if (body != null) ...[
+            SizedBox(height: 24),
+            DefaultTextStyle(
+              style: theme.textTheme.bodyLarge!,
+              child: body(context),
+            ),
+          ],
+        ],
+      );
+
+      final footerRow = Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisSize: MainAxisSize.max,
+        spacing: 8,
+        children: actionButtons ?? [],
+      );
+
       final windowSize = WindowSizeContext.of(context);
       final isCompact = windowSize == WindowSizeClass.compact;
-      return isCompact ? scaffold : card;
+
+      if (isCompact) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: bodyColumn,
+            ),
+          ),
+          persistentFooterButtons: [footerRow],
+        );
+      } else {
+        return Card(
+          color: Colors.black,
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                bodyColumn,
+                if (actionButtons != null) ...[SizedBox(height: 32), footerRow],
+              ],
+            ),
+          ),
+        );
+      }
     },
   );
 
