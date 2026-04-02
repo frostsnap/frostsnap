@@ -29,6 +29,19 @@ pub struct ViewState {
     pub main_view: MainViewState, // The actual view to show
 }
 
+impl Default for ViewState {
+    fn default() -> Self {
+        Self {
+            row: 0,
+            cursor_pos: 0,
+            completed_rows: 0,
+            main_view: MainViewState::EnterShareIndex {
+                current: String::new(),
+            },
+        }
+    }
+}
+
 impl ViewState {
     /// Check if we can show the entered words screen
     pub fn can_show_entered_words(&self) -> bool {

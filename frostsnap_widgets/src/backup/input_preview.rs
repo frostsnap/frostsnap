@@ -63,7 +63,7 @@ pub struct InputPreview {
     framebuf: Framebuf,
     init_draw: bool,
     cursor: Cursor,
-    current_view_state: Option<ViewState>,
+    current_view_state: ViewState,
     hint_dismissed: bool,
 }
 
@@ -93,7 +93,7 @@ impl InputPreview {
             framebuf,
             init_draw: false,
             cursor: Cursor::new(Point::zero()),
-            current_view_state: None,
+            current_view_state: ViewState::default(),
             hint_dismissed: false,
         }
     }
@@ -118,18 +118,12 @@ impl InputPreview {
         if self.hint_dismissed {
             return None;
         }
-        match self.current_view_state.as_ref()?.main_view {
+        match self.current_view_state.main_view {
             MainViewState::EnterShareIndex { ref current } if current.is_empty() => {
                 Some("Enter Key Number")
             }
             _ => None,
         }
-    }
-
-    pub fn force_redraw(&mut self) {
-        self.init_draw = false;
-        self.framebuf.redraw = true;
-        self.progress.force_full_redraw();
     }
 
     /// Fast forward any ongoing scrolling animation
@@ -138,9 +132,9 @@ impl InputPreview {
     }
 
     fn should_show_cursor(&self) -> bool {
-        let state_allows = match self.current_view_state.as_ref().map(|s| &s.main_view) {
-            Some(MainViewState::EnterShareIndex { current }) => !current.is_empty(),
-            Some(MainViewState::EnterWord { .. }) => true,
+        let state_allows = match &self.current_view_state.main_view {
+            MainViewState::EnterShareIndex { current } => !current.is_empty(),
+            MainViewState::EnterWord { .. } => true,
             _ => false,
         };
         state_allows && !self.is_scrolling()
@@ -151,10 +145,14 @@ impl InputPreview {
     }
 
     pub fn update_from_view_state(&mut self, view_state: &ViewState) {
-        if self.hint_text().is_some() {
+        // Dismiss hint when user actually interacts (state changes)
+        if (view_state.cursor_pos != self.current_view_state.cursor_pos
+            || view_state.row != self.current_view_state.row)
+            && self.hint_text().is_some()
+        {
             self.hint_dismissed = true;
         }
-        self.current_view_state = Some(view_state.clone());
+        self.current_view_state = view_state.clone();
         // Update cursor position based on view state
         let x = ((INDEX_CHARS + SPACE_BETWEEN) + view_state.cursor_pos) * FONT_SIZE.width as usize;
         // Y position: align cursor bottom with text cell bottom in the viewport.
@@ -207,6 +205,12 @@ impl crate::DynWidget for InputPreview {
         self.area.size.into()
     }
 
+    fn force_full_redraw(&mut self) {
+        self.init_draw = false;
+        self.framebuf.redraw = true;
+        self.progress.force_full_redraw();
+    }
+
     fn handle_touch(
         &mut self,
         point: Point,
@@ -217,12 +221,8 @@ impl crate::DynWidget for InputPreview {
             Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
         } else if self.preview_rect.contains(point) {
             // Only allow showing entered words if the current state permits it
-            if let Some(ref view_state) = self.current_view_state {
-                if view_state.can_show_entered_words() {
-                    Some(KeyTouch::new(Key::ShowEnteredWords, self.preview_rect))
-                } else {
-                    None
-                }
+            if self.current_view_state.can_show_entered_words() {
+                Some(KeyTouch::new(Key::ShowEnteredWords, self.preview_rect))
             } else {
                 None
             }

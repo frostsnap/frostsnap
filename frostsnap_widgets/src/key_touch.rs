@@ -40,7 +40,8 @@ impl KeyTouch {
         let sized_box = SizedBox::new(rect.size);
         let mut container = Container::with_size(sized_box, rect.size)
             .with_border(PALETTE.primary, 2)
-            .with_corner_radius(Size::new(CORNER_RADIUS, CORNER_RADIUS));
+            .with_corner_radius(Size::new(CORNER_RADIUS, CORNER_RADIUS))
+            .with_stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Outside);
         // HACK: the container is a fixed size so this doesn't matter
         container.set_constraints(Size {
             width: u32::MAX,

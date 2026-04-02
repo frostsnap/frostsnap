@@ -59,7 +59,7 @@ where
         const BORDER_WIDTH: u32 = 5;
 
         let button = CircleButton::new();
-        let cached_button = FrameCache::new(button, PALETTE.background);
+        let cached_button = FrameCache::new(button);
         let faded_button = Fader::new(cached_button);
 
         // Create a 10px spacer beneath the button

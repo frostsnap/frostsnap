@@ -19,6 +19,7 @@ where
     fill_color: Option<W::Color>,
     corner_radius: Option<Size>,
     anti_aliasing: bool,
+    stroke_alignment: StrokeAlignment,
     border_needs_redraw: bool,
     computed_sizing: Option<crate::Sizing>,
     child_rect: Option<Rectangle>,
@@ -35,6 +36,7 @@ impl<W: Widget> Container<W> {
             fill_color: None,
             corner_radius: None,
             anti_aliasing: true,
+            stroke_alignment: StrokeAlignment::Inside,
             border_needs_redraw: true,
             computed_sizing: None,
             child_rect: None,
@@ -51,6 +53,7 @@ impl<W: Widget> Container<W> {
             fill_color: None,
             corner_radius: None,
             anti_aliasing: true,
+            stroke_alignment: StrokeAlignment::Inside,
             border_needs_redraw: true,
             computed_sizing: None,
             child_rect: None,
@@ -95,6 +98,11 @@ impl<W: Widget> Container<W> {
 
     pub fn with_anti_aliasing(mut self, anti_aliasing: bool) -> Self {
         self.anti_aliasing = anti_aliasing;
+        self
+    }
+
+    pub fn with_stroke_alignment(mut self, stroke_alignment: StrokeAlignment) -> Self {
+        self.stroke_alignment = stroke_alignment;
         self
     }
 
@@ -245,7 +253,7 @@ impl<W: Widget> Widget for Container<W> {
                     style_builder = style_builder
                         .stroke_color(border_color)
                         .stroke_width(self.border_width)
-                        .stroke_alignment(StrokeAlignment::Inside);
+                        .stroke_alignment(self.stroke_alignment);
                 }
 
                 let style = style_builder.build();

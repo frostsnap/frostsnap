@@ -7,7 +7,6 @@ use embedded_graphics::{
 pub struct FrameCache<W: Widget> {
     child: W,
     framebuffer: VecFramebuffer<W::Color>,
-    background_color: W::Color,
     needs_reblit: bool,
     dirty_rect_offset: Point,
 }
@@ -20,7 +19,6 @@ where
         Self {
             child: self.child.clone(),
             framebuffer: self.framebuffer.clone(),
-            background_color: self.background_color,
             needs_reblit: self.needs_reblit,
             dirty_rect_offset: self.dirty_rect_offset,
         }
@@ -31,11 +29,10 @@ impl<W: Widget> FrameCache<W>
 where
     W::Color: Copy,
 {
-    pub fn new(child: W, background_color: W::Color) -> Self {
+    pub fn new(child: W) -> Self {
         Self {
             child,
             framebuffer: VecFramebuffer::new(0, 0),
-            background_color,
             needs_reblit: true,
             dirty_rect_offset: Point::zero(),
         }
@@ -103,7 +100,7 @@ where
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        let mut fb_target = SuperDrawTarget::new(&mut self.framebuffer, self.background_color)
+        let mut fb_target = SuperDrawTarget::new(&mut self.framebuffer, target.background_color())
             .translate(-self.dirty_rect_offset);
         self.child.draw(&mut fb_target, current_time).unwrap();
         drop(fb_target);
