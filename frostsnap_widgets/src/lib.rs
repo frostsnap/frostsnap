@@ -22,6 +22,7 @@ pub mod bitmap;
 pub mod checkmark;
 pub mod cursor;
 pub mod debug;
+pub mod delay;
 pub mod fader;
 pub mod hold_to_confirm;
 pub mod hold_to_confirm_border;
