@@ -1,18 +1,23 @@
 use crate::super_draw_target::SuperDrawTarget;
-use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*};
+use crate::{checkmark::Checkmark, palette::PALETTE, prelude::*, GrayToAlpha};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    image::Image,
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::{Circle, PrimitiveStyleBuilder},
+    pixelcolor::{Gray8, Rgb565},
 };
-use embedded_iconoir::{icons::size48px::gestures::OpenSelectHandGesture, prelude::IconoirNewIcon};
+use tinybmp::Bmp;
 
-// Circle dimensions
 const CIRCLE_RADIUS: u32 = 50;
 const CIRCLE_DIAMETER: u32 = CIRCLE_RADIUS * 2;
+
+const TOUCH_ICON_DATA: &[u8] = include_bytes!("../assets/touch-icon-100x100.bmp");
+
+type TouchIcon = Center<crate::Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>>;
+
+fn make_icon(color: Rgb565) -> TouchIcon {
+    let bmp = Bmp::<Gray8>::from_slice(TOUCH_ICON_DATA).expect("valid BMP");
+    Center::new(crate::Image::new(GrayToAlpha::new(bmp, color)))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CircleButtonState {
@@ -25,12 +30,11 @@ pub enum CircleButtonState {
 #[derive(Clone)]
 pub struct CircleButton {
     state: CircleButtonState,
-    checkmark: Center<Checkmark<Rgb565>>,
     last_drawn_state: Option<CircleButtonState>,
-    idle_stroke_color: Rgb565,
-    pressed_fill_color: Rgb565,
-    pressed_stroke_color: Rgb565,
-    checkmark_color: Rgb565,
+
+    idle: CircleContainer<TouchIcon>,
+    pressed: CircleContainer<TouchIcon>,
+    checkmark_circle: CircleContainer<Center<Checkmark<Rgb565>>>,
 }
 
 impl Default for CircleButton {
@@ -41,16 +45,33 @@ impl Default for CircleButton {
 
 impl CircleButton {
     pub fn new() -> Self {
-        let checkmark = Center::new(Checkmark::new(50, PALETTE.on_tertiary_container));
+        let idle = CircleContainer::new(
+            make_icon(PALETTE.on_surface_variant),
+            CIRCLE_RADIUS,
+            PALETTE.surface_variant,
+            PALETTE.outline,
+        );
+
+        let pressed = CircleContainer::new(
+            make_icon(PALETTE.on_tertiary_container),
+            CIRCLE_RADIUS,
+            PALETTE.tertiary_container,
+            PALETTE.confirm_progress,
+        );
+
+        let checkmark_circle = CircleContainer::new(
+            Center::new(Checkmark::new(50, PALETTE.on_tertiary_container)),
+            CIRCLE_RADIUS,
+            PALETTE.tertiary_container,
+            PALETTE.tertiary_container,
+        );
 
         Self {
             state: CircleButtonState::Idle,
-            checkmark,
             last_drawn_state: None,
-            idle_stroke_color: PALETTE.outline,
-            pressed_fill_color: PALETTE.tertiary_container,
-            pressed_stroke_color: PALETTE.confirm_progress,
-            checkmark_color: PALETTE.on_tertiary_container,
+            idle,
+            pressed,
+            checkmark_circle,
         }
     }
 
@@ -60,39 +81,34 @@ impl CircleButton {
         pressed_stroke: Rgb565,
         checkmark_color: Rgb565,
     ) {
-        self.pressed_fill_color = pressed_fill;
-        self.pressed_stroke_color = pressed_stroke;
-        self.checkmark_color = checkmark_color;
-        self.checkmark.child.set_color(checkmark_color);
+        self.pressed.set_colors(pressed_fill, pressed_stroke);
+        self.checkmark_circle.set_colors(pressed_fill, pressed_fill);
+        self.checkmark_circle.child.child.set_color(checkmark_color);
         self.force_full_redraw();
     }
 
-    /// Set the button state
     pub fn set_state(&mut self, state: CircleButtonState) {
         self.state = state;
     }
 
-    /// Get the current state
     pub fn state(&self) -> CircleButtonState {
         self.state
     }
 
     pub fn checkmark(&self) -> &Checkmark<Rgb565> {
-        &self.checkmark.child
+        &self.checkmark_circle.child.child
     }
 
     pub fn checkmark_mut(&mut self) -> &mut Checkmark<Rgb565> {
-        &mut self.checkmark.child
+        &mut self.checkmark_circle.child.child
     }
 
-    /// Reset the button to idle state
     pub fn reset(&mut self) {
         self.state = CircleButtonState::Idle;
-        self.checkmark.child.reset();
+        self.checkmark_circle.child.child.reset();
         self.last_drawn_state = None;
     }
 
-    /// Check if a point is within the circle
     pub fn contains_point(&self, point: Point) -> bool {
         let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
         let distance_squared = (point.x - center.x).pow(2) + (point.y - center.y).pow(2);
@@ -101,11 +117,10 @@ impl CircleButton {
 }
 
 impl crate::DynWidget for CircleButton {
-    fn set_constraints(&mut self, _max_size: Size) {
-        // CircleButton has a fixed size, but we need to set constraints on the checkmark
-        // Give the checkmark the full circle area to work with
-        self.checkmark
-            .set_constraints(Size::new(CIRCLE_DIAMETER, CIRCLE_DIAMETER));
+    fn set_constraints(&mut self, max_size: Size) {
+        self.idle.set_constraints(max_size);
+        self.pressed.set_constraints(max_size);
+        self.checkmark_circle.set_constraints(max_size);
     }
 
     fn sizing(&self) -> crate::Sizing {
@@ -119,17 +134,14 @@ impl crate::DynWidget for CircleButton {
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
         if self.state == CircleButtonState::ShowingCheckmark {
-            // Don't handle touches when showing checkmark
             return None;
         }
 
         if is_release {
-            // Release - go back to idle
             if self.state == CircleButtonState::Pressed {
                 self.state = CircleButtonState::Idle;
             }
         } else if self.contains_point(point) {
-            // Press within button - set to pressed
             self.state = CircleButtonState::Pressed;
         }
 
@@ -140,7 +152,9 @@ impl crate::DynWidget for CircleButton {
 
     fn force_full_redraw(&mut self) {
         self.last_drawn_state = None;
-        self.checkmark.force_full_redraw();
+        self.idle.force_full_redraw();
+        self.pressed.force_full_redraw();
+        self.checkmark_circle.force_full_redraw();
     }
 }
 
@@ -155,61 +169,28 @@ impl Widget for CircleButton {
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        let center = Point::new(CIRCLE_RADIUS as i32, CIRCLE_RADIUS as i32);
-
-        // Only redraw the circle if state changed
         let should_redraw = self.last_drawn_state != Some(self.state);
 
         if should_redraw {
             match self.state {
                 CircleButtonState::Idle => {
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(PALETTE.surface_variant)
-                        .stroke_color(self.idle_stroke_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
-
-                    let icon = OpenSelectHandGesture::new(PALETTE.on_surface_variant);
-                    Image::with_center(&icon, center).draw(target)?;
+                    self.idle.force_full_redraw();
+                    self.idle.draw(target, current_time)?;
                 }
                 CircleButtonState::Pressed => {
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(self.pressed_fill_color)
-                        .stroke_color(self.pressed_stroke_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
-
-                    let icon = OpenSelectHandGesture::new(PALETTE.on_tertiary_container);
-                    Image::with_center(&icon, center).draw(target)?;
+                    self.pressed.force_full_redraw();
+                    self.pressed.draw(target, current_time)?;
                 }
                 CircleButtonState::ShowingCheckmark => {
-                    // Draw solid circle using the pressed colors (green for normal, red for danger)
-                    let circle_style = PrimitiveStyleBuilder::new()
-                        .fill_color(self.pressed_fill_color)
-                        .stroke_color(self.pressed_fill_color)
-                        .stroke_width(2)
-                        .build();
-
-                    Circle::with_center(center, CIRCLE_DIAMETER - 4)
-                        .into_styled(circle_style)
-                        .draw(target)?;
+                    self.checkmark_circle.force_full_redraw();
+                    self.checkmark_circle.draw(target, current_time)?;
                 }
             }
-
             self.last_drawn_state = Some(self.state);
         }
 
-        // Draw checkmark animation when in ShowingCheckmark state
         if self.state == CircleButtonState::ShowingCheckmark {
-            self.checkmark.draw(target, current_time)?;
+            self.checkmark_circle.draw(target, current_time)?;
         }
 
         Ok(())

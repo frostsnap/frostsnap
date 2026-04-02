@@ -20,7 +20,7 @@ use embedded_graphics::{
 use frost_backup::NUM_WORDS;
 use frostsnap_fonts::Gray4Font;
 
-// Constants for vertical BIP39 word display
+// Constants for vertical word display
 pub(super) const TOTAL_WORDS: usize = NUM_WORDS;
 pub(super) const FONT_SIZE: Size = Size::new(17, 29);
 pub(super) const TOP_PADDING: u32 = 10;
@@ -51,66 +51,8 @@ pub(super) type Fb = Framebuffer<
     { buffer_size::<Gray4>(FB_WIDTH as usize, FB_HEIGHT as usize) },
 >;
 
-/// Draw a single character from a Gray4Font into a Gray4 DrawTarget.
-/// Positioned at the given point using left alignment and top baseline.
-fn draw_gray4_char<D: DrawTarget<Color = Gray4>>(
-    target: &mut D,
-    font: &'static Gray4Font,
-    ch: char,
-    position: Point,
-    scale: u8,
-) {
-    let glyph = match font.get_glyph(ch) {
-        Some(g) => g,
-        None => return,
-    };
-
-    let draw_x = position.x + glyph.x_offset as i32;
-    let draw_y = position.y + glyph.y_offset as i32;
-
-    for Pixel(point, gray) in font.glyph_pixels(glyph) {
-        let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
-        if scaled > 0 {
-            let _ = Pixel(
-                Point::new(draw_x + point.x, draw_y + point.y),
-                Gray4::new(scaled),
-            )
-            .draw(target);
-        }
-    }
-}
-
-/// Draw a string of characters from a Gray4Font into a Gray4 DrawTarget.
-/// Characters are drawn left-to-right using each glyph's x_advance.
-fn draw_gray4_string<D: DrawTarget<Color = Gray4>>(
-    target: &mut D,
-    font: &'static Gray4Font,
-    text: &str,
-    position: Point,
-    scale: u8,
-) {
-    let mut x = position.x;
-    for ch in text.chars() {
-        if let Some(glyph) = font.get_glyph(ch) {
-            let draw_x = x + glyph.x_offset as i32;
-            let draw_y = position.y + glyph.y_offset as i32;
-
-            for Pixel(point, gray) in font.glyph_pixels(glyph) {
-                let scaled = (gray.luma() as u16 * scale as u16 / 15) as u8;
-                if scaled > 0 {
-                    let _ = Pixel(
-                        Point::new(draw_x + point.x, draw_y + point.y),
-                        Gray4::new(scaled),
-                    )
-                    .draw(target);
-                }
-            }
-            x += glyph.x_advance as i32;
-        } else if ch == ' ' {
-            x += (font.line_height / 4) as i32;
-        }
-    }
-}
+use crate::gray4_style::Gray4DirectStyle;
+use embedded_graphics::text::{Baseline, Text as EgText, TextStyleBuilder};
 
 pub struct InputPreview {
     pub(super) area: Rectangle,
@@ -121,7 +63,8 @@ pub struct InputPreview {
     framebuf: Framebuf,
     init_draw: bool,
     cursor: Cursor,
-    current_view_state: Option<ViewState>,
+    current_view_state: ViewState,
+    hint_dismissed: bool,
 }
 
 impl Default for InputPreview {
@@ -150,7 +93,8 @@ impl InputPreview {
             framebuf,
             init_draw: false,
             cursor: Cursor::new(Point::zero()),
-            current_view_state: None,
+            current_view_state: ViewState::default(),
+            hint_dismissed: false,
         }
     }
 
@@ -170,11 +114,16 @@ impl InputPreview {
         self.framebuf.framebuffer.clone()
     }
 
-    /// Force redraw of the input preview (including progress bar)
-    pub fn force_redraw(&mut self) {
-        self.init_draw = false;
-        self.framebuf.redraw = true;
-        self.progress.force_full_redraw();
+    fn hint_text(&self) -> Option<&'static str> {
+        if self.hint_dismissed {
+            return None;
+        }
+        match self.current_view_state.main_view {
+            MainViewState::EnterShareIndex { ref current } if current.is_empty() => {
+                Some("Enter Key Number")
+            }
+            _ => None,
+        }
     }
 
     /// Fast forward any ongoing scrolling animation
@@ -182,13 +131,28 @@ impl InputPreview {
         self.framebuf.fast_forward_scrolling();
     }
 
+    fn should_show_cursor(&self) -> bool {
+        let state_allows = match &self.current_view_state.main_view {
+            MainViewState::EnterShareIndex { current } => !current.is_empty(),
+            MainViewState::EnterWord { .. } => true,
+            _ => false,
+        };
+        state_allows && !self.is_scrolling()
+    }
+
     pub fn is_scrolling(&self) -> bool {
         self.framebuf.is_scrolling()
     }
 
     pub fn update_from_view_state(&mut self, view_state: &ViewState) {
-        // Store the current view state
-        self.current_view_state = Some(view_state.clone());
+        // Dismiss hint when user actually interacts (state changes)
+        if (view_state.cursor_pos != self.current_view_state.cursor_pos
+            || view_state.row != self.current_view_state.row)
+            && self.hint_text().is_some()
+        {
+            self.hint_dismissed = true;
+        }
+        self.current_view_state = view_state.clone();
         // Update cursor position based on view state
         let x = ((INDEX_CHARS + SPACE_BETWEEN) + view_state.cursor_pos) * FONT_SIZE.width as usize;
         // Y position: align cursor bottom with text cell bottom in the viewport.
@@ -200,28 +164,9 @@ impl InputPreview {
             (self.preview_rect.size.height as i32 + FONT_SIZE.height as i32) / 2 - cursor_height;
         self.cursor.set_position(Point::new(x as i32, y));
 
-        // Enable cursor when there's text but row isn't complete (not in word selection)
-        let cursor_enabled = match &view_state.main_view {
-            MainViewState::EnterShareIndex { current } => !current.is_empty(),
-            MainViewState::EnterWord { .. } => view_state.cursor_pos > 0,
-            MainViewState::WordSelect { .. } => false, // No cursor during word selection
-            MainViewState::AllWordsEntered { .. } => false, // No cursor when all words entered
-        };
-        self.cursor.enabled(cursor_enabled);
-
         // Update scroll position to show the current row
         self.framebuf
             .update_scroll_position_for_row(view_state.row, false);
-    }
-
-    fn draw_cursor<D: DrawTarget<Color = Rgb565>>(
-        &mut self,
-        target: &mut SuperDrawTarget<D, Rgb565>,
-        current_time: crate::Instant,
-    ) -> Result<(), D::Error> {
-        // Let the cursor handle its own drawing and blinking
-        self.cursor.draw(target, current_time)?;
-        Ok(())
     }
 }
 
@@ -260,6 +205,12 @@ impl crate::DynWidget for InputPreview {
         self.area.size.into()
     }
 
+    fn force_full_redraw(&mut self) {
+        self.init_draw = false;
+        self.framebuf.redraw = true;
+        self.progress.force_full_redraw();
+    }
+
     fn handle_touch(
         &mut self,
         point: Point,
@@ -270,12 +221,8 @@ impl crate::DynWidget for InputPreview {
             Some(KeyTouch::new(Key::Keyboard('⌫'), self.backspace_rect))
         } else if self.preview_rect.contains(point) {
             // Only allow showing entered words if the current state permits it
-            if let Some(ref view_state) = self.current_view_state {
-                if view_state.can_show_entered_words() {
-                    Some(KeyTouch::new(Key::ShowEnteredWords, self.preview_rect))
-                } else {
-                    None
-                }
+            if self.current_view_state.can_show_entered_words() {
+                Some(KeyTouch::new(Key::ShowEnteredWords, self.preview_rect))
             } else {
                 None
             }
@@ -316,13 +263,24 @@ impl Widget for InputPreview {
             self.init_draw = true;
         }
 
-        self.framebuf
-            .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
+        if let Some(hint) = self.hint_text() {
+            let style = crate::gray4_style::Gray4TextStyle::new(
+                &frostsnap_fonts::NOTO_SANS_17_REGULAR,
+                PALETTE.outline,
+            );
+            let hint_widget = crate::text::Text::new(alloc::string::String::from(hint), style);
+            let mut centered = crate::Center::new(hint_widget);
+            centered.set_constraints(self.preview_rect.size);
+            centered.draw(&mut target.clone().crop(self.preview_rect), current_time)?;
+        } else {
+            self.framebuf
+                .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
 
-        // Draw cursor when enabled (text entered but row not complete)
-        let _ = self.draw_cursor(&mut target.clone().crop(self.preview_rect), current_time);
+            self.cursor.enabled(self.should_show_cursor());
+            self.cursor
+                .draw(&mut target.clone().crop(self.preview_rect), current_time)?;
+        }
 
-        // Always draw progress bars (they have their own redraw logic)
         self.progress
             .draw(&mut target.clone().crop(self.progress_rect), current_time)?;
 
@@ -351,13 +309,15 @@ impl Framebuf {
 
         // Pre-render share index placeholder with '#' prefix (no dot for share index)
         let share_y = TOP_PADDING as i32 + (VERTICAL_PAD / 2) as i32;
-        draw_gray4_string(
-            &mut *fb.borrow_mut(),
-            FB_FONT,
+        let index_style = Gray4DirectStyle::new(FB_FONT, Gray4::new(INDEX_GRAY));
+        EgText::with_text_style(
             " #",
             Point::new(0, share_y),
-            INDEX_GRAY,
-        );
+            index_style,
+            TextStyleBuilder::new().baseline(Baseline::Top).build(),
+        )
+        .draw(&mut *fb.borrow_mut())
+        .ok();
 
         // Pre-render word indices with dots
         for i in 0..TOTAL_WORDS {
@@ -380,13 +340,14 @@ impl Framebuf {
                 0
             };
 
-            draw_gray4_string(
-                &mut *fb.borrow_mut(),
-                FB_FONT,
+            EgText::with_text_style(
                 &number_with_dot,
                 Point::new(number_x, y),
-                INDEX_GRAY,
-            );
+                index_style,
+                TextStyleBuilder::new().baseline(Baseline::Top).build(),
+            )
+            .draw(&mut *fb.borrow_mut())
+            .ok();
         }
 
         Self {
@@ -419,7 +380,17 @@ impl Framebuf {
                     ));
 
                     let _ = char_frame.clear(Gray4::new(0));
-                    draw_gray4_char(&mut char_frame, FB_FONT, *ch, Point::zero(), TEXT_GRAY);
+                    let text_style = Gray4DirectStyle::new(FB_FONT, Gray4::new(TEXT_GRAY));
+                    let ch_str = &mut [0u8; 4];
+                    let ch_str = ch.encode_utf8(ch_str);
+                    EgText::with_text_style(
+                        ch_str,
+                        Point::zero(),
+                        text_style,
+                        TextStyleBuilder::new().baseline(Baseline::Top).build(),
+                    )
+                    .draw(&mut char_frame)
+                    .ok();
                 }
                 FramebufferMutation::DelCharacter { row, pos } => {
                     let x = ((INDEX_CHARS + SPACE_BETWEEN) + pos) * FONT_SIZE.width as usize;

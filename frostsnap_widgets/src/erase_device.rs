@@ -171,7 +171,7 @@ impl EraseConfirmationPage {
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.hold_confirm.is_completed()
+        self.hold_confirm.is_confirmed()
     }
 
     pub fn fade_in_button(&mut self) {
@@ -188,13 +188,13 @@ pub struct EraseDevice {
 impl EraseDevice {
     pub fn new() -> Self {
         let page_list = (EraseWarningPage::new(), EraseConfirmationPage::new());
-        let page_slider = PageSlider::new(page_list)
-            .with_on_page_ready(|page| {
-                if let Some(confirmation_page) = page.downcast_mut::<EraseConfirmationPage>() {
-                    confirmation_page.fade_in_button();
-                }
-            })
-            .with_swipe_up_chevron();
+        let mut page_slider = PageSlider::new(page_list);
+        page_slider.set_on_page_ready(|page| {
+            if let Some(confirmation_page) = page.downcast_mut::<EraseConfirmationPage>() {
+                confirmation_page.fade_in_button();
+            }
+        });
+        page_slider.enable_swipe_up_chevron();
 
         Self { page_slider }
     }

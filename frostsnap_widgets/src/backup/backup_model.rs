@@ -29,6 +29,19 @@ pub struct ViewState {
     pub main_view: MainViewState, // The actual view to show
 }
 
+impl Default for ViewState {
+    fn default() -> Self {
+        Self {
+            row: 0,
+            cursor_pos: 0,
+            completed_rows: 0,
+            main_view: MainViewState::EnterShareIndex {
+                current: String::new(),
+            },
+        }
+    }
+}
+
 impl ViewState {
     /// Check if we can show the entered words screen
     pub fn can_show_entered_words(&self) -> bool {
@@ -237,7 +250,7 @@ impl BackupModel {
             self.share_index = completion.to_string();
             self.share_index_confirmed = true;
         } else {
-            // Word - store as Borrowed if it's a valid BIP39 word, otherwise Owned
+            // Word - store as Borrowed if it's a valid wordlist word, otherwise Owned
             let word_idx = row - 1;
             if let Ok(idx) = bip39_words::BIP39_WORDS.binary_search(&completion) {
                 self.words[word_idx] = Cow::Borrowed(bip39_words::BIP39_WORDS[idx]);
@@ -367,7 +380,7 @@ impl BackupModel {
     }
 
     fn get_words_as_static(&self) -> Option<Box<[&'static str; NUM_WORDS]>> {
-        // Only return if all words are valid BIP39 words (Borrowed variants)
+        // Only return if all words are valid wordlist words (Borrowed variants)
         if !self.is_complete() {
             return None;
         }
@@ -376,7 +389,7 @@ impl BackupModel {
         for (i, word) in self.words.iter().enumerate() {
             match word {
                 Cow::Borrowed(s) if !s.is_empty() => static_words[i] = s,
-                _ => return None, // Not a valid static BIP39 word
+                _ => return None, // Not a valid static wordlist word
             }
         }
 

@@ -1,6 +1,7 @@
 use crate::DefaultTextStyle;
 use crate::{
-    any_of::AnyOf, device_name::DeviceName, palette::PALETTE, prelude::*, FadeSwitcher, GrayToAlpha,
+    any_of::AnyOf, delay::Delay, device_name::DeviceName, palette::PALETTE, prelude::*,
+    FadeSwitcher, GrayToAlpha,
 };
 use alloc::string::{String, ToString};
 use embedded_graphics::{
@@ -115,7 +116,7 @@ pub struct Standby {
     content: Center<
         Column<(
             Padding<Image>,
-            FadeSwitcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>>,
+            Delay<FadeSwitcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>>>,
         )>,
     >,
 }
@@ -133,11 +134,13 @@ impl Standby {
         let logo = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
         let padded_logo = Padding::only(logo).top(30).bottom(20).build();
 
-        let fade_switcher = FadeSwitcher::new(None, 500);
+        let fade_switcher =
+            FadeSwitcher::new(None).with_fade_config(crate::fade_switcher::FadeConfig::new(500));
+        let delayed_fade = Delay::new(fade_switcher, 500);
 
         let column = Column::builder()
             .push(padded_logo)
-            .push(fade_switcher)
+            .push(delayed_fade)
             .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
         let content = Center::new(column);
@@ -147,7 +150,7 @@ impl Standby {
 
     /// Clear content (back to startup mode - just logo)
     pub fn clear_content(&mut self) {
-        self.content.child.children.1.switch_to(None);
+        self.content.child.children.1.child.switch_to(None);
     }
 
     /// Set to welcome mode (blank with welcome message)
@@ -157,6 +160,7 @@ impl Standby {
             .child
             .children
             .1
+            .child
             .switch_to(Some(AnyOf::new(blank_content)));
     }
 
@@ -167,6 +171,7 @@ impl Standby {
             .child
             .children
             .1
+            .child
             .switch_to(Some(AnyOf::new(has_key_content)));
     }
 }

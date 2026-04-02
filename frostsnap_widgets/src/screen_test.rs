@@ -165,8 +165,8 @@ impl ScreenTest {
         Ok(())
     }
 
-    pub fn is_completed(&self) -> bool {
-        matches!(&self.phase, Phase::Menu { hold_to_confirm, .. } if hold_to_confirm.is_completed())
+    pub fn is_finished(&self) -> bool {
+        matches!(&self.phase, Phase::Menu { hold_to_confirm, .. } if hold_to_confirm.is_finished())
     }
 
     pub fn get_failures(&self) -> i32 {

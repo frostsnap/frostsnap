@@ -1,11 +1,8 @@
-use crate::{
-    palette::PALETTE, DynWidget, Instant, KeyTouch, Sizing, SuperDrawTarget, Widget, WidgetColor,
-};
+use crate::{DynWidget, Instant, KeyTouch, Sizing, SuperDrawTarget, Widget, WidgetColor};
 use core::ops::{Deref, DerefMut};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::Rgb565,
 };
 
 /// A temporary hack widget that clears the screen once before drawing its child
@@ -73,7 +70,6 @@ where
     }
 
     fn force_full_redraw(&mut self) {
-        self.needs_clear = true;
         self.child.force_full_redraw();
     }
 }
@@ -81,7 +77,7 @@ where
 impl<W> Widget for OneTimeClearHack<W>
 where
     W: Widget,
-    W::Color: WidgetColor + From<Rgb565>,
+    W::Color: WidgetColor + Copy,
 {
     type Color = W::Color;
 
@@ -95,7 +91,7 @@ where
     {
         // Clear the screen once if needed
         if self.needs_clear {
-            target.clear(PALETTE.background.into())?;
+            target.clear(target.background_color())?;
             self.needs_clear = false;
         }
 

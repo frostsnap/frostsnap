@@ -25,3 +25,12 @@ impl From<CompressedPoint> for Point {
         cp.to_point()
     }
 }
+
+/// A point with SDF coverage for anti-aliased rendering.
+#[derive(Clone, Copy, PartialEq)]
+pub struct CoveragePoint {
+    pub x: u8,
+    pub y: u16,
+    /// Coverage level 1-15 (0 means invisible, not stored).
+    pub coverage: u8,
+}
