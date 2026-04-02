@@ -1,6 +1,6 @@
 use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
-use tracing::info;
+use tracing::*;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use frostsnap_desktop_camera::Camera;
@@ -79,6 +79,8 @@ impl CameraDevice {
 
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         {
+            error!("Camera support only available on Linux and Windows");
+            let _ = sink; // avoid unused warning
             Err(anyhow!(
                 "Camera support only available on Linux and Windows"
             ))
