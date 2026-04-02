@@ -236,7 +236,9 @@ impl<W: Widget> Widget for Container<W> {
                 };
 
                 let aa_rect = if let Some(border_color) = self.border_color {
-                    aa_rect.with_border(border_color, self.border_width)
+                    aa_rect
+                        .with_border(border_color, self.border_width)
+                        .with_stroke_alignment(self.stroke_alignment)
                 } else {
                     aa_rect
                 };

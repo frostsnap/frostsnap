@@ -1,7 +1,11 @@
 use super::{coverage_from_distance, isqrt_distance, SCALE};
 use crate::widget_color::ColorInterpolate;
 use crate::Frac;
-use embedded_graphics::{draw_target::DrawTarget, prelude::*, primitives::Rectangle};
+use embedded_graphics::{
+    draw_target::DrawTarget,
+    prelude::*,
+    primitives::{Rectangle, StrokeAlignment},
+};
 
 pub struct AARoundedRectangle<C: ColorInterpolate> {
     rect: Rectangle,
@@ -10,6 +14,7 @@ pub struct AARoundedRectangle<C: ColorInterpolate> {
     border_color: Option<C>,
     border_width: u32,
     background_color: C,
+    stroke_alignment: StrokeAlignment,
 }
 
 impl<C: ColorInterpolate> AARoundedRectangle<C> {
@@ -21,6 +26,7 @@ impl<C: ColorInterpolate> AARoundedRectangle<C> {
             border_color: None,
             border_width: 0,
             background_color,
+            stroke_alignment: StrokeAlignment::Inside,
         }
     }
 
@@ -40,6 +46,11 @@ impl<C: ColorInterpolate> AARoundedRectangle<C> {
         self
     }
 
+    pub fn with_stroke_alignment(mut self, alignment: StrokeAlignment) -> Self {
+        self.stroke_alignment = alignment;
+        self
+    }
+
     pub fn pixels(&self) -> impl Iterator<Item = embedded_graphics::Pixel<C>> + '_ {
         let bw = if self.border_color.is_some() {
             self.border_width
@@ -49,19 +60,34 @@ impl<C: ColorInterpolate> AARoundedRectangle<C> {
         let bg = self.background_color;
         let border_color = self.border_color.unwrap_or(bg);
         let inner = self.fill_color.unwrap_or(bg);
-        let offset = self.rect.top_left;
 
-        AARoundedRectIter::new(
-            self.rect.size.width,
-            self.rect.size.height,
-            self.corner_radius,
-            bw,
-            border_color,
-            inner,
-            bg,
-        )
-        .with_fill(self.fill_color)
-        .map(move |embedded_graphics::Pixel(p, c)| embedded_graphics::Pixel(p + offset, c))
+        // Adjust geometry based on stroke alignment
+        let (iter_w, iter_h, iter_cr, pixel_offset) = match self.stroke_alignment {
+            StrokeAlignment::Inside => (
+                self.rect.size.width,
+                self.rect.size.height,
+                self.corner_radius,
+                Point::zero(),
+            ),
+            StrokeAlignment::Outside => (
+                self.rect.size.width + 2 * bw,
+                self.rect.size.height + 2 * bw,
+                self.corner_radius + bw,
+                Point::new(-(bw as i32), -(bw as i32)),
+            ),
+            StrokeAlignment::Center => (
+                self.rect.size.width + bw,
+                self.rect.size.height + bw,
+                self.corner_radius + bw / 2,
+                Point::new(-(bw as i32) / 2, -(bw as i32) / 2),
+            ),
+        };
+
+        let offset = self.rect.top_left + pixel_offset;
+
+        AARoundedRectIter::new(iter_w, iter_h, iter_cr, bw, border_color, inner, bg)
+            .with_fill(self.fill_color)
+            .map(move |embedded_graphics::Pixel(p, c)| embedded_graphics::Pixel(p + offset, c))
     }
 }
 

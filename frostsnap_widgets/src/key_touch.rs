@@ -1,7 +1,11 @@
 use crate::palette::PALETTE;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{Container, DynWidget as _, Fader, SizedBox, Widget};
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::*,
+    primitives::{Rectangle, StrokeAlignment},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -40,8 +44,7 @@ impl KeyTouch {
         let sized_box = SizedBox::new(rect.size);
         let mut container = Container::with_size(sized_box, rect.size)
             .with_border(PALETTE.primary, 2)
-            .with_corner_radius(Size::new(CORNER_RADIUS, CORNER_RADIUS))
-            .with_stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Outside);
+            .with_corner_radius(Size::new(CORNER_RADIUS, CORNER_RADIUS));
         // HACK: the container is a fixed size so this doesn't matter
         container.set_constraints(Size {
             width: u32::MAX,
@@ -58,6 +61,15 @@ impl KeyTouch {
             widget,
         }
     }
+    pub fn with_stroke_alignment(mut self, alignment: StrokeAlignment) -> Self {
+        let container = core::mem::replace(
+            &mut self.widget.child,
+            Container::new(SizedBox::new(Size::zero())),
+        );
+        self.widget.child = container.with_stroke_alignment(alignment);
+        self
+    }
+
     pub fn let_go(&mut self, current_time: crate::Instant) -> Option<Key> {
         if self.cancel || self.let_go.is_some() {
             return None;
