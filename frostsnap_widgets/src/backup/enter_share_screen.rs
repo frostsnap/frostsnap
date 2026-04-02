@@ -58,7 +58,6 @@ pub struct EnterShareScreen {
     input_preview: InputPreview,
     touches: Vec<KeyTouch>,
     keyboard_rect: Rectangle,
-    needs_redraw: bool,
     pending_model_update: bool,
     size: Size,
     auto_fill_enabled: bool,
@@ -86,7 +85,7 @@ impl EnterShareScreen {
             input_preview,
             touches: vec![],
             keyboard_rect: Rectangle::zero(),
-            needs_redraw: true,
+
             pending_model_update: false,
             size: Size::zero(),
             auto_fill_enabled: false,
@@ -230,6 +229,10 @@ impl Widget for EnterShareScreen {
     where
         D: DrawTarget<Color = Self::Color>,
     {
+        let input_display_rect = Rectangle::new(
+            Point::zero(),
+            Size::new(target.bounding_box().size.width, 60),
+        );
         // Advance completion state machine where we have access to current_time
         if let CompletionState::SuccessDelay { ref mut success_at } = self.completion {
             let t = *success_at.get_or_insert(current_time);
@@ -251,37 +254,20 @@ impl Widget for EnterShareScreen {
             self.update_from_model();
         }
 
-        let input_display_rect = Rectangle::new(
-            Point::zero(),
-            Size::new(target.bounding_box().size.width, 60),
-        );
-
         if let Some(ref mut entered_words) = self.entered_words {
-            // Full-screen entered words view
             entered_words.draw(target, current_time);
         } else if let Some(ref mut numeric_keyboard) = self.numeric_keyboard {
             self.input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time)?;
-            // Draw BIP39 input preview
             numeric_keyboard.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else if let Some(ref mut word_selector) = self.word_selector {
-            // Draw input preview at top
             let _ = self
                 .input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time);
-
-            // Draw word selector in keyboard area
             word_selector.draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
         } else {
-            // Normal keyboard and input preview
             self.alphabetic_keyboard
                 .draw(&mut target.clone().crop(self.keyboard_rect), current_time)?;
-
-            // Draw BIP39 input preview
-            let input_display_rect = Rectangle::new(
-                Point::zero(),
-                Size::new(target.bounding_box().size.width, 60),
-            );
             self.input_preview
                 .draw(&mut target.clone().crop(input_display_rect), current_time)?;
         }
@@ -376,29 +362,15 @@ impl crate::DynWidget for EnterShareScreen {
                             }
                         }
                         Key::Keyboard(c) if c.is_alphabetic() || c.is_numeric() => {
-                            // Just pass character to model
                             let mutations = self.model.add_character(c);
                             self.input_preview.apply_mutations(&mutations);
                             self.pending_model_update = true;
-
-                            // Check if we're complete
-                            if self.model.is_complete() {
-                                // TODO: Create EnteredWords view when needed
-                                // For now just mark as complete
-                                self.needs_redraw = true;
-                            }
                         }
                         Key::WordSelector(word) => {
                             // Complete the current row with selected word
                             let mutations = self.model.complete_row(word);
                             self.input_preview.apply_mutations(&mutations);
                             self.pending_model_update = true;
-
-                            // Check if we're complete
-                            if self.model.is_complete() {
-                                // TODO: Show EnteredWords view
-                                self.needs_redraw = true;
-                            }
                         }
                         Key::ShowEnteredWords => {
                             // Only show EnteredWords if we're at the start of a new word
@@ -422,7 +394,7 @@ impl crate::DynWidget for EnterShareScreen {
                             // word_index from EnteredWords is actually the row index (0 = share index, 1+ = words)
                             let mutations = self.model.edit_row(word_index);
                             self.input_preview.apply_mutations(&mutations);
-                            self.input_preview.force_redraw();
+                            self.input_preview.force_full_redraw();
                             self.completion = CompletionState::InProgress;
                             self.update_from_model();
 
@@ -538,8 +510,7 @@ impl crate::DynWidget for EnterShareScreen {
     }
 
     fn force_full_redraw(&mut self) {
-        self.needs_redraw = true;
-        self.input_preview.force_redraw();
+        self.input_preview.force_full_redraw();
         self.alphabetic_keyboard.force_full_redraw();
         self.word_selector.force_full_redraw();
         self.numeric_keyboard.force_full_redraw();

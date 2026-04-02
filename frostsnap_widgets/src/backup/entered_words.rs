@@ -45,6 +45,7 @@ impl EnteredWords {
         TOP_PADDING + (visible_rows as u32 * (FONT_SIZE.height + VERTICAL_PAD))
     }
 
+    #[inline(never)]
     pub fn new(framebuffer: Rc<RefCell<Fb>>, visible_size: Size, view_state: ViewState) -> Self {
         // Get status based on view_state
         use super::backup_model::MainViewState;

@@ -1,14 +1,24 @@
 use crate::{
-    address_display::AddressDisplay, any_of::AnyOf, bitcoin_amount_display::BitcoinAmountDisplay,
-    gray4_style::Gray4TextStyle, page_slider::PageSlider, palette::PALETTE, prelude::*,
-    widget_list::WidgetList, HoldToConfirm,
+    address_display::AddressDisplay,
+    any_of::AnyOf,
+    bitcoin_amount_display::BitcoinAmountDisplay,
+    gray4_style::Gray4TextStyle,
+    page_slider::PageSlider,
+    palette::PALETTE,
+    prelude::*,
+    widget_list::{WidgetList, WidgetListItem},
+    GrayToAlpha, HoldToConfirm, Image,
 };
-use alloc::{format, string::ToString};
-use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
+use alloc::{boxed::Box, format, string::ToString};
+use embedded_graphics::{
+    geometry::Size,
+    pixelcolor::{Gray8, Rgb565},
+};
 use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
 };
+use tinybmp::Bmp;
 
 const FONT_PAGE_HEADER: &Gray4Font = &NOTO_SANS_18_LIGHT;
 const FONT_CONFIRM_TITLE: &Gray4Font = &NOTO_SANS_18_MEDIUM;
@@ -43,6 +53,7 @@ pub struct AmountPage {
 }
 
 impl AmountPage {
+    #[inline(never)]
     pub fn new(index: usize, amount_sats: u64) -> Self {
         let title = Text::new(
             format!("Send Amount #{}", index + 1),
@@ -68,14 +79,15 @@ impl AmountPage {
 }
 
 /// Page widget for displaying recipient address
-#[derive(frostsnap_macros::Widget)]
+#[derive(Clone, frostsnap_macros::Widget)]
 pub struct AddressPage {
     #[widget_delegate]
     center: Center<Padding<Column<(Text<Gray4TextStyle>, AddressDisplay)>>>,
 }
 
 impl AddressPage {
-    fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
+    #[inline(never)]
+    pub fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
         let title = Text::new(
             format!("To Address #{}", index + 1),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
@@ -109,6 +121,7 @@ pub struct FeePage {
 }
 
 impl FeePage {
+    #[inline(never)]
     fn new(fee_sats: u64, fee_rate_sats_per_vbyte: Option<f64>) -> Self {
         let title = Text::new(
             "Network Fee".to_string(),
@@ -140,9 +153,7 @@ impl FeePage {
     }
 }
 
-type WarningIcon = crate::icons::IconWidget<
-    embedded_iconoir::Icon<Rgb565, embedded_iconoir::icons::size24px::actions::WarningTriangle>,
->;
+const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
 /// Page widget for high fee warning
 #[derive(frostsnap_macros::Widget)]
@@ -151,7 +162,8 @@ pub struct WarningPage {
     center: Center<
         Column<(
             Row<(
-                WarningIcon,
+                Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>,
+                SizedBox<Rgb565>,
                 Column<(SizedBox<Rgb565>, Text<Gray4TextStyle>)>,
             )>,
             Text<Gray4TextStyle>,
@@ -161,12 +173,13 @@ pub struct WarningPage {
 }
 
 impl WarningPage {
+    #[inline(never)]
     fn new(fee_sats: u64, _total_sent: u64) -> Self {
-        use embedded_iconoir::prelude::*;
+        let warning_bmp =
+            Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
+        let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
 
-        let warning_icon = crate::icons::IconWidget::new(
-            embedded_iconoir::icons::size24px::actions::WarningTriangle::new(PALETTE.warning),
-        );
+        let icon_spacer = SizedBox::<Rgb565>::new(Size::new(5, 1));
 
         let caution_text = Text::new(
             "Caution".to_string(),
@@ -176,9 +189,8 @@ impl WarningPage {
         let text_with_spacer =
             Column::new((SizedBox::<Rgb565>::new(Size::new(1, 5)), caution_text));
 
-        let mut caution_row = Row::new((warning_icon, text_with_spacer))
+        let caution_row = Row::new((warning_icon, icon_spacer, text_with_spacer))
             .with_main_axis_alignment(MainAxisAlignment::Center);
-        caution_row.set_gap(0, 5);
 
         let title_text = Text::new(
             "High Fee".to_string(),
@@ -230,6 +242,7 @@ pub struct ConfirmationPage {
 }
 
 impl ConfirmationPage {
+    #[inline(never)]
     fn new() -> Self {
         let sign_text = Text::new(
             "Hold to Sign".to_string(),
@@ -259,7 +272,11 @@ impl ConfirmationPage {
     }
 
     pub fn is_confirmed(&self) -> bool {
-        self.hold_confirm.is_completed()
+        self.hold_confirm.is_confirmed()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.hold_confirm.is_finished()
     }
 }
 
@@ -312,7 +329,7 @@ impl WidgetList for SignPromptPageList {
         self.total_pages
     }
 
-    fn get(&self, index: usize) -> Option<SignPromptPage> {
+    fn get(&self, index: usize) -> Option<WidgetListItem<SignPromptPage>> {
         if index >= self.total_pages {
             return None;
         }
@@ -321,20 +338,26 @@ impl WidgetList for SignPromptPageList {
         let recipient_pages = num_recipients * 2;
         let has_warning = Self::has_high_fee(&self.prompt);
 
-        let page = if index < recipient_pages {
+        let (page, use_fb) = if index < recipient_pages {
             let recipient_idx = index / 2;
             let is_amount = index.is_multiple_of(2);
 
             if is_amount {
                 let (_, amount) = &self.prompt.foreign_recipients[recipient_idx];
-                SignPromptPage::new(AmountPage::new(recipient_idx, amount.to_sat()))
+                (
+                    SignPromptPage::new(AmountPage::new(recipient_idx, amount.to_sat())),
+                    false,
+                )
             } else {
                 let (address, _) = &self.prompt.foreign_recipients[recipient_idx];
-                SignPromptPage::new(AddressPage::new_with_seed(
-                    recipient_idx,
-                    address,
-                    self.rand_seed,
-                ))
+                (
+                    SignPromptPage::new(AddressPage::new_with_seed(
+                        recipient_idx,
+                        address,
+                        self.rand_seed,
+                    )),
+                    true,
+                )
             }
         } else if has_warning && index == recipient_pages {
             let total_sent: u64 = self
@@ -343,22 +366,35 @@ impl WidgetList for SignPromptPageList {
                 .iter()
                 .map(|(_, amount)| amount.to_sat())
                 .sum();
-            SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent))
+            (
+                SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent)),
+                false,
+            )
         } else if (has_warning && index == recipient_pages + 1)
             || (!has_warning && index == recipient_pages)
         {
-            SignPromptPage::new(FeePage::new(
-                self.prompt.fee.to_sat(),
-                self.prompt.fee_rate_sats_per_vbyte,
-            ))
+            (
+                SignPromptPage::new(FeePage::new(
+                    self.prompt.fee.to_sat(),
+                    self.prompt.fee_rate_sats_per_vbyte,
+                )),
+                false,
+            )
         } else {
-            SignPromptPage::new(ConfirmationPage::new())
+            (SignPromptPage::new(ConfirmationPage::new()), false)
         };
 
-        Some(page)
+        let mut item = WidgetListItem::new(page);
+        if use_fb {
+            item = item.with_framebuffer_transitions(true);
+        }
+        Some(item)
     }
 
-    fn can_go_prev(&self, from_index: usize, current_widget: &Self::Widget) -> bool {
+    fn can_go_prev(&self, from_index: usize, current_widget: &SignPromptPage) -> bool {
+        if from_index == 0 {
+            return false;
+        }
         if from_index == self.total_pages - 1 {
             if let Some(confirmation_page) = current_widget.downcast_ref::<ConfirmationPage>() {
                 return !confirmation_page.is_confirmed();
@@ -372,7 +408,7 @@ impl WidgetList for SignPromptPageList {
 #[derive(frostsnap_macros::Widget)]
 pub struct SignTxPrompt {
     #[widget_delegate]
-    page_slider: PageSlider<SignPromptPageList>,
+    page_slider: Box<PageSlider<SignPromptPageList>>,
 }
 
 impl SignTxPrompt {
@@ -382,13 +418,13 @@ impl SignTxPrompt {
 
     pub fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
         let page_list = SignPromptPageList::new_with_seed(prompt, rand_seed);
-        let page_slider = PageSlider::new(page_list)
-            .with_on_page_ready(|page| {
-                if let Some(confirmation_page) = page.downcast_mut::<ConfirmationPage>() {
-                    confirmation_page.hold_confirm.fade_in_button();
-                }
-            })
-            .with_swipe_up_chevron();
+        let mut page_slider = Box::new(PageSlider::new(page_list));
+        page_slider.set_on_page_ready(|page| {
+            if let Some(confirmation_page) = page.downcast_mut::<ConfirmationPage>() {
+                confirmation_page.hold_confirm.fade_in_button();
+            }
+        });
+        page_slider.enable_swipe_up_chevron();
 
         Self { page_slider }
     }
@@ -398,6 +434,16 @@ impl SignTxPrompt {
             let current_widget = self.page_slider.current_widget();
             if let Some(confirmation_page) = current_widget.downcast_ref::<ConfirmationPage>() {
                 return confirmation_page.is_confirmed();
+            }
+        }
+        false
+    }
+
+    pub fn is_finished(&mut self) -> bool {
+        if self.page_slider.current_index() == self.page_slider.total_pages() - 1 {
+            let current_widget = self.page_slider.current_widget();
+            if let Some(confirmation_page) = current_widget.downcast_ref::<ConfirmationPage>() {
+                return confirmation_page.is_finished();
             }
         }
         false

@@ -1,4 +1,4 @@
-use crate::{FadeSwitcher, Widget};
+use crate::{fade_switcher::FadeConfig, FadeSwitcher, Widget};
 use embedded_graphics::pixelcolor::Rgb565;
 
 /// A widget that switches between child widgets instantly without fading
@@ -12,7 +12,7 @@ impl<W: Widget<Color = Rgb565>> Switcher<W> {
     /// Create a new Switcher with an initial widget
     pub fn new(initial: W) -> Self {
         Self {
-            fade_switcher: FadeSwitcher::new(initial, 0),
+            fade_switcher: FadeSwitcher::new(initial).with_fade_config(FadeConfig::new(0)),
         }
     }
 

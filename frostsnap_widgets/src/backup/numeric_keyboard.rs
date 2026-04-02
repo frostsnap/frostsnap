@@ -3,7 +3,7 @@ use crate::{
     icons::IconWidget, palette::PALETTE, prelude::*, touch_listener::TouchListener, Key, FONT_MED,
 };
 use alloc::string::String;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::StrokeAlignment};
 use embedded_iconoir::prelude::*;
 use frostsnap_macros::Widget;
 
@@ -20,6 +20,7 @@ pub struct NumericButton {
 }
 
 impl NumericButton {
+    #[inline(never)]
     fn new(key: char, enabled: bool) -> TouchListener<Self> {
         // Create text for the button
         let text_color = if enabled {
@@ -58,6 +59,7 @@ impl NumericButton {
                 Some(Key::Keyboard(child.key))
             }
         })
+        .with_stroke_alignment(StrokeAlignment::Outside)
     }
 
     fn set_enabled(&mut self, enabled: bool) {
@@ -95,6 +97,7 @@ pub struct CheckmarkButton {
 }
 
 impl CheckmarkButton {
+    #[inline(never)]
     fn new(enabled: bool) -> TouchListener<Self> {
         // Use smaller size24px icon and set color based on enabled state
         let icon_color = if enabled {
@@ -135,6 +138,7 @@ impl CheckmarkButton {
                 Some(Key::Keyboard('✓'))
             }
         })
+        .with_stroke_alignment(StrokeAlignment::Outside)
     }
 
     fn set_enabled(&mut self, enabled: bool) {
@@ -179,6 +183,7 @@ pub struct NumericKeyboard {
 }
 
 impl NumericKeyboard {
+    #[inline(never)]
     pub fn new() -> Self {
         // Create the keyboard layout:
         // 1 2 3

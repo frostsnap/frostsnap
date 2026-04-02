@@ -1,7 +1,11 @@
 use crate::palette::PALETTE;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{Container, DynWidget as _, Fader, SizedBox, Widget};
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::Rectangle};
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::*,
+    primitives::{Rectangle, StrokeAlignment},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -57,6 +61,15 @@ impl KeyTouch {
             widget,
         }
     }
+    pub fn with_stroke_alignment(mut self, alignment: StrokeAlignment) -> Self {
+        let container = core::mem::replace(
+            &mut self.widget.child,
+            Container::new(SizedBox::new(Size::zero())),
+        );
+        self.widget.child = container.with_stroke_alignment(alignment);
+        self
+    }
+
     pub fn let_go(&mut self, current_time: crate::Instant) -> Option<Key> {
         if self.cancel || self.let_go.is_some() {
             return None;

@@ -47,6 +47,13 @@ jobs:
           name: frostsnap-${{ matrix.board }}-${{ github.sha }}.bin
           path: target/riscv32imc-unknown-none-elf/release/firmware.bin
 
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - name: Stack check
+        working-directory: .
+        run: just stack-check
+
   test-ordinary-libs:
     name: Test ordinary libraries
     runs-on: ubuntu-latest

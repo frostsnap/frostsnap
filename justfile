@@ -134,7 +134,10 @@ backup +ARGS="":
     cargo run --release --bin frost_backup -- {{ARGS}}
 
 simulate +ARGS="":
-    (cd widget_simulator && cargo run -- {{ARGS}}; )
+    (cd tools/widget_simulator && cargo run -- {{ARGS}}; )
+
+stack-check +ARGS="stacks --max-pct 25":
+    cargo run -p stack_check -- {{ARGS}}
 
 widget_dev demo +args="":
     cd device && DEMO={{demo}} cargo run --bin widget_dev --release {{args}}

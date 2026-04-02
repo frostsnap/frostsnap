@@ -87,7 +87,12 @@ impl ColorInterpolate for Gray4 {
 }
 
 /// Trait alias for colors that can be used with widgets
-pub trait WidgetColor: PixelColor + ColorInterpolate + core::fmt::Debug {}
+pub trait WidgetColor:
+    PixelColor + ColorInterpolate + core::fmt::Debug + crate::vec_framebuffer::FramebufferColor
+{
+}
 
-// Blanket implementation for any type that satisfies both bounds
-impl<C> WidgetColor for C where C: PixelColor + ColorInterpolate + core::fmt::Debug {}
+impl<C> WidgetColor for C where
+    C: PixelColor + ColorInterpolate + core::fmt::Debug + crate::vec_framebuffer::FramebufferColor
+{
+}
