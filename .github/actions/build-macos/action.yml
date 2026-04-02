@@ -3,7 +3,7 @@ description: "Builds macOS app"
 
 inputs:
   firmware_path:
-    description: "Path to firmware.bin file"
+    description: "Path to signed firmware binary"
     required: true
 
 runs:

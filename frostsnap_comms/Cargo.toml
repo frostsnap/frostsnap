@@ -9,6 +9,16 @@ edition = "2021"
 frostsnap_core = { workspace = true  }
 serde = { workspace = true }
 bincode =  { workspace = true }
+rand_core = { workspace = true }
+
+[dependencies.rsa]
+workspace = true
+optional = true
+
+[dependencies.sha2]
+workspace = true
+optional = true
+features = ["oid"]
 
 [dev-dependencies]
 rand_chacha = { workspace = true }
@@ -16,5 +26,5 @@ rsa = { workspace = true }
 
 [features]
 std = []
-coordinator = ["std", "frostsnap_core/coordinator"]
+coordinator = ["std", "frostsnap_core/coordinator", "rsa", "sha2"]
 default = ["coordinator"]

@@ -1,16 +1,81 @@
+use frostsnap_comms::genuine_certificate::CaseColor;
 use frostsnap_comms::Sha256Digest;
-use mysql::prelude::*;
-use mysql::{Pool, PooledConn};
-use std::time::SystemTime;
+use std::cell::Cell;
 
-pub struct Database {
-    pool: Pool,
+pub struct DeviceRecord<'a> {
+    pub serial_number: &'a str,
+    pub color: CaseColor,
+    pub operator: &'a str,
+    pub board_revision: &'a str,
+    pub batch_note: Option<&'a str>,
 }
 
-impl Database {
+pub trait FactoryDatabase {
+    fn get_next_serial(&self) -> Result<u32, Box<dyn std::error::Error>>;
+    fn mark_factory_complete(
+        &self,
+        record: &DeviceRecord,
+    ) -> Result<(), Box<dyn std::error::Error>>;
+    fn mark_genuine_verified(
+        &self,
+        serial_number: &str,
+        firmware_digest: Sha256Digest,
+    ) -> Result<(), Box<dyn std::error::Error>>;
+    fn mark_failed(
+        &self,
+        record: &DeviceRecord,
+        reason: &str,
+    ) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+/// No-op database for single-device dev provisioning
+pub struct DevDatabase {
+    serial: Cell<u32>,
+}
+
+impl DevDatabase {
+    pub fn new(starting_serial: u32) -> Self {
+        Self {
+            serial: Cell::new(starting_serial),
+        }
+    }
+}
+
+impl FactoryDatabase for DevDatabase {
+    fn get_next_serial(&self) -> Result<u32, Box<dyn std::error::Error>> {
+        let s = self.serial.get();
+        self.serial.set(s + 1);
+        Ok(s)
+    }
+
+    fn mark_factory_complete(&self, _: &DeviceRecord) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+
+    fn mark_genuine_verified(
+        &self,
+        _: &str,
+        _: Sha256Digest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+
+    fn mark_failed(&self, _: &DeviceRecord, _: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+}
+
+/// MySQL-backed database for production factory batches
+pub struct MysqlDatabase {
+    pool: mysql::Pool,
+}
+
+impl MysqlDatabase {
     pub fn new(db_connection: String) -> Result<Self, Box<dyn std::error::Error>> {
+        use mysql::prelude::*;
+
         let opts = mysql::Opts::from_url(&db_connection)?;
-        let pool = Pool::new(opts)?;
+        let pool = mysql::Pool::new(opts)?;
         let mut conn = pool.get_conn()?;
 
         conn.query_drop(
@@ -41,97 +106,18 @@ impl Database {
             "INSERT IGNORE INTO serial_counter (id, current_serial) VALUES (1, 00001000)",
         )?;
 
-        Ok(Database { pool })
+        Ok(MysqlDatabase { pool })
     }
 
-    fn get_conn(&self) -> mysql::Result<PooledConn> {
+    fn get_conn(&self) -> mysql::Result<mysql::PooledConn> {
         self.pool.get_conn()
     }
+}
 
-    /// Mark a device as factory complete - should only happen once per serial
-    pub fn mark_factory_complete(
-        &self,
-        serial_number: &str,
-        color: &str,
-        operator: &str,
-        board_revision: &str,
-        batch_note: Option<&str>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let timestamp = SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        let mut conn = self.get_conn()?;
-        conn.exec_drop(
-            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, board_revision, batch_note) 
-             VALUES (?, ?, ?, ?, 'factory_complete', ?, ?)",
-            (serial_number, color, operator, timestamp, board_revision, batch_note),
-        )?;
-        Ok(())
-    }
+impl FactoryDatabase for MysqlDatabase {
+    fn get_next_serial(&self) -> Result<u32, Box<dyn std::error::Error>> {
+        use mysql::prelude::*;
 
-    pub fn mark_genuine_verified(
-        &self,
-        serial_number: &str,
-        firmware_digest: Sha256Digest,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut conn = self.get_conn()?;
-
-        let exists: Option<u8> = conn.exec_first(
-            "SELECT 1 FROM devices WHERE serial_number = ?",
-            (serial_number,),
-        )?;
-
-        if exists.is_none() {
-            return Err(format!("Serial number {} not found in database", serial_number).into());
-        }
-
-        // Allow genuine checks to succeed again
-        conn.exec_drop(
-            "UPDATE devices SET firmware_hash = ?, genuine_verified = TRUE, status = 'genuine_verified' 
-             WHERE serial_number = ?",
-            (firmware_digest.to_string(), serial_number),
-        )?;
-
-        Ok(())
-    }
-
-    /// Mark a device as failed
-    pub fn mark_failed(
-        &self,
-        serial_number: &str,
-        color: &str,
-        operator: &str,
-        board_revision: &str,
-        reason: &str,
-        batch_note: Option<&str>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let timestamp = SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        let mut conn = self.get_conn()?;
-
-        // Try insert first, then update if it fails due to constraint
-        match conn.exec_drop(
-            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, board_revision, failure_reason, batch_note) 
-             VALUES (?, ?, ?, ?, 'failed', ?, ?, ?)",
-            (serial_number, color, operator, timestamp, board_revision, reason, batch_note),
-        ) {
-            Ok(_) => Ok(()),
-            Err(_) => {
-                // Device exists, update it
-                conn.exec_drop(
-                    "UPDATE devices SET status = 'failed', failure_reason = ? WHERE serial_number = ?",
-                    (reason, serial_number),
-                )?;
-                Ok(())
-            }
-        }
-    }
-
-    pub fn get_next_serial(&self) -> Result<u32, Box<dyn std::error::Error>> {
         let mut conn = self.get_conn()?;
         let mut tx = conn.start_transaction(mysql::TxOpts::default())?;
 
@@ -148,5 +134,98 @@ impl Database {
 
         tx.commit()?;
         Ok(next)
+    }
+
+    fn mark_factory_complete(
+        &self,
+        record: &DeviceRecord,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use mysql::prelude::*;
+        use std::time::SystemTime;
+
+        let timestamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let mut conn = self.get_conn()?;
+        conn.exec_drop(
+            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, board_revision, batch_note)
+             VALUES (?, ?, ?, ?, 'factory_complete', ?, ?)",
+            (
+                record.serial_number,
+                record.color.to_string(),
+                record.operator,
+                timestamp,
+                record.board_revision,
+                record.batch_note,
+            ),
+        )?;
+        Ok(())
+    }
+
+    fn mark_genuine_verified(
+        &self,
+        serial_number: &str,
+        firmware_digest: Sha256Digest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use mysql::prelude::*;
+
+        let mut conn = self.get_conn()?;
+
+        let exists: Option<u8> = conn.exec_first(
+            "SELECT 1 FROM devices WHERE serial_number = ?",
+            (serial_number,),
+        )?;
+
+        if exists.is_none() {
+            return Err(format!("Serial number {} not found in database", serial_number).into());
+        }
+
+        conn.exec_drop(
+            "UPDATE devices SET firmware_hash = ?, genuine_verified = TRUE, status = 'genuine_verified'
+             WHERE serial_number = ?",
+            (firmware_digest.to_string(), serial_number),
+        )?;
+
+        Ok(())
+    }
+
+    fn mark_failed(
+        &self,
+        record: &DeviceRecord,
+        reason: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use mysql::prelude::*;
+        use std::time::SystemTime;
+
+        let timestamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let mut conn = self.get_conn()?;
+
+        match conn.exec_drop(
+            "INSERT INTO devices (serial_number, case_color, operator, factory_completed_at, status, board_revision, failure_reason, batch_note)
+             VALUES (?, ?, ?, ?, 'failed', ?, ?, ?)",
+            (
+                record.serial_number,
+                record.color.to_string(),
+                record.operator,
+                timestamp,
+                record.board_revision,
+                reason,
+                record.batch_note,
+            ),
+        ) {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                conn.exec_drop(
+                    "UPDATE devices SET status = 'failed', failure_reason = ? WHERE serial_number = ?",
+                    (reason, record.serial_number),
+                )?;
+                Ok(())
+            }
+        }
     }
 }

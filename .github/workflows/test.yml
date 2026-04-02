@@ -15,7 +15,7 @@ jobs:
       RISCV_VERSION: "2024.09.03-nightly"
     strategy:
       matrix:
-        board: ["dev", "frontier"]
+        board: ["legacy", "frontier"]
     defaults:
       run:
         working-directory: ./device
@@ -40,12 +40,21 @@ jobs:
           path: "target/riscv32imc-unknown-none-elf/release"
 
       - run: just lint-device --release --locked
-      - run: just build-device ${{ matrix.board }} --locked
+      - run: just build-firmware ${{ matrix.board }} --locked
       - run: just save-image ${{ matrix.board }}
+      - name: Sign firmware (frontier only)
+        if: matrix.board == 'frontier'
+        run: just sign-firmware target/riscv32imc-unknown-none-elf/release/frontier.bin target/riscv32imc-unknown-none-elf/release/dev-frontier.bin
       - uses: "./.github/actions/upload-artifact"
+        if: matrix.board == 'frontier'
         with:
-          name: frostsnap-${{ matrix.board }}-${{ github.sha }}.bin
-          path: target/riscv32imc-unknown-none-elf/release/firmware.bin
+          name: frostsnap-frontier-${{ github.sha }}.bin
+          path: target/riscv32imc-unknown-none-elf/release/dev-frontier.bin
+      - uses: "./.github/actions/upload-artifact"
+        if: matrix.board == 'legacy'
+        with:
+          name: frostsnap-legacy-${{ github.sha }}.bin
+          path: target/riscv32imc-unknown-none-elf/release/legacy.bin
 
   test-ordinary-libs:
     name: Test ordinary libraries
@@ -77,11 +86,11 @@ jobs:
       - name: Download firmware
         uses: actions/download-artifact@v4
         with:
-          name: frostsnap-dev-${{ github.sha }}.bin
+          name: frostsnap-frontier-${{ github.sha }}.bin
           path: firmware
       - uses: "./.github/actions/build-android"
         with:
-          firmware_path: firmware/firmware.bin
+          firmware_path: firmware/dev-frontier.bin
       - name: Upload APK (Android)
         uses: "./.github/actions/upload-artifact"
         with:
@@ -106,11 +115,11 @@ jobs:
       - name: Download firmware
         uses: actions/download-artifact@v4
         with:
-          name: frostsnap-dev-${{ github.sha }}.bin
+          name: frostsnap-frontier-${{ github.sha }}.bin
           path: firmware
       - uses: "./.github/actions/build-linux"
         with:
-          firmware_path: firmware/firmware.bin
+          firmware_path: firmware/dev-frontier.bin
       - uses: "./.github/actions/upload-artifact"
         with:
           name: Frostsnap-${{ github.sha }}-linux-x64
@@ -129,7 +138,7 @@ jobs:
           name: Frostsnap-${{ github.sha }}-linux-x64
           path: frostsnapp/build/linux/x64/release/bundle
       - uses: taiki-e/install-action@just
-      - run: just frostsnapp/build-appimage
+      - run: just build-appimage
 
       - name: Upload AppImage
         uses: "./.github/actions/upload-artifact"
@@ -137,7 +146,7 @@ jobs:
           friendly: Frostsnap.AppImage
           description: "AppImage for x86_64 Linux"
           name: Frostsnap-${{ github.sha }}-x64.AppImage
-          path: frostsnapp/Frostsnap-x86_64.AppImage
+          path: Frostsnap-x86_64.AppImage
 
   app-build-windows:
     name: "Build app for Windows"
@@ -150,11 +159,11 @@ jobs:
       - name: Download firmware
         uses: actions/download-artifact@v4
         with:
-          name: frostsnap-dev-${{ github.sha }}.bin
+          name: frostsnap-frontier-${{ github.sha }}.bin
           path: firmware
       - uses: "./.github/actions/build-windows"
         with:
-          firmware_path: firmware/firmware.bin
+          firmware_path: firmware/dev-frontier.bin
       - uses: "./.github/actions/upload-artifact"
         with:
           name: Frostsnap-${{ github.sha }}-windows
@@ -169,11 +178,11 @@ jobs:
       - name: Download firmware
         uses: actions/download-artifact@v4
         with:
-          name: frostsnap-dev-${{ github.sha }}.bin
+          name: frostsnap-frontier-${{ github.sha }}.bin
           path: firmware
       - uses: "./.github/actions/build-macos"
         with:
-          firmware_path: firmware/firmware.bin
+          firmware_path: firmware/dev-frontier.bin
       - uses: "./.github/actions/upload-artifact"
         with:
           friendly: Frostsnap.app
