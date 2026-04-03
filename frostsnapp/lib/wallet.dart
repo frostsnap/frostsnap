@@ -596,7 +596,7 @@ class WalletDrawer extends StatelessWidget {
                   : theme.colorScheme.primary,
             ),
             label: Text(
-              'Create or restore',
+              controller.selected == null ? 'Home' : 'Create or restore',
               style: controller.selected == null
                   ? null
                   : TextStyle(color: theme.colorScheme.primary),
