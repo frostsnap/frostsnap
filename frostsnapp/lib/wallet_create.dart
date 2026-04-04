@@ -10,6 +10,7 @@ import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/threshold_selector.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -574,8 +575,7 @@ class WalletCreateController extends ChangeNotifier {
       'Connect devices to become keys for "${form.name ?? ''}"',
     WalletCreateStep.nonceReplenish => '',
     WalletCreateStep.deviceNames => 'Each device needs a name to identify it',
-    WalletCreateStep.threshold =>
-      'Decide how many devices will be required to sign transactions or to make changes to this wallet',
+    WalletCreateStep.threshold => '',
   };
 
   void setDeviceName(DeviceId id, String name) async {
@@ -928,47 +928,20 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   }
 
   Widget buildThresholdBody(BuildContext context) {
-    final theme = Theme.of(context);
     final form = _controller.form;
     final totalCount = form.selectedDevices.length;
     assert(totalCount > 0);
+    final recommended = max((totalCount * 2 / 3).toInt(), 1);
     if (form.threshold == null) {
-      final threshold = max((totalCount * 2 / 3).toInt(), 1);
-      setState(() => form.threshold = threshold);
+      setState(() => form.threshold = recommended);
     }
     return SliverList.list(
       children: [
-        if (totalCount > 1)
-          Slider(
-            value: (form.threshold!).toDouble(),
-            label: '${form.threshold}',
-            onChanged: (value) =>
-                setState(() => form.threshold = value.toInt()),
-            min: 1,
-            max: totalCount.toDouble(),
-            divisions: max(totalCount - 1, 1),
-          ),
-        Center(
-          child: Card.filled(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '${form.threshold}',
-                      style: TextStyle(
-                        decoration: TextDecoration.underline,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    TextSpan(text: ' of $totalCount'),
-                  ],
-                  style: theme.textTheme.headlineSmall,
-                ),
-              ),
-            ),
-          ),
+        ThresholdSelector(
+          threshold: form.threshold!,
+          totalDevices: totalCount,
+          recommendedThreshold: recommended,
+          onChanged: (value) => setState(() => form.threshold = value),
         ),
         if (!_controller.allWalletDevicesConnected)
           buildDisconnectedWarningCard(context),
@@ -1130,8 +1103,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_controller.step != WalletCreateStep.nonceReplenish)
-                Divider(height: 0),
               if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
                   false)
                 buildAdvancedOptions(context),
