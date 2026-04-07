@@ -37,7 +37,10 @@ pub enum ChannelEvent {
     /// Group membership/profiles changed
     GroupMetadata { members: Vec<GroupMember> },
     /// Frostsnap protocol event (signing, future: keygen, etc.)
-    Frostsnap(FrostsnapEvent),
+    Frostsnap {
+        event: FrostsnapEvent,
+        pending: bool,
+    },
     /// An event we received but couldn't process.
     Error {
         event_id: EventId,
@@ -66,7 +69,7 @@ pub enum SigningEvent {
         event_id: EventId,
         author: PublicKey,
         request_id: EventId,
-        binonces: ParticipantBinonces,
+        binonces: Vec<ParticipantBinonces>,
         /// If this offer completes the signing set (threshold met), the full chain data
         /// needed to promote to an active signing session.
         sealed: Option<SigningChain>,
@@ -97,7 +100,7 @@ pub enum SigningMessage {
         message: String,
     },
     Offer {
-        binonces: ParticipantBinonces,
+        binonces: Vec<ParticipantBinonces>,
     },
     Partial {
         session_id: SignSessionId,

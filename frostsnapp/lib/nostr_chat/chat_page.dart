@@ -1,21 +1,23 @@
 import 'dart:async';
+import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/nostr_chat/group_info_page.dart';
 import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
-import 'package:frostsnap/nostr_chat/signing_card.dart';
-import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/device_selector.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/nostr_chat/nostr_signing_page.dart';
+import 'package:frostsnap/nostr_chat/signing_card.dart';
 import 'package:frostsnap/sign_message.dart';
+import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
-import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
-import 'package:frostsnap/src/rust/api/signing.dart' show NonceReservationId;
+import 'package:frostsnap/src/rust/api/signing.dart' show NonceReservationId, ParticipantBinonces, UnsignedTx, SigningDetails_Message, SigningDetails_Transaction;
+import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/global.dart';
@@ -77,9 +79,11 @@ class TimelineChat extends TimelineItem {
 
 class TimelineSigning extends TimelineItem {
   final FfiSigningEvent event;
+  final int? progressCount;
+  final int? progressTotal;
   @override
   final DateTime timestamp;
-  TimelineSigning(this.event)
+  TimelineSigning(this.event, {this.progressCount, this.progressTotal})
     : timestamp = DateTime.fromMillisecondsSinceEpoch(
         switch (event) {
               FfiSigningEvent_Request(:final timestamp) => timestamp,
@@ -113,14 +117,15 @@ class TimelineSigningComplete extends TimelineItem {
     : timestamp = DateTime.fromMillisecondsSinceEpoch(completedAtSecs * 1000);
 }
 
-enum TxTimelineKind { mempool, confirmed }
+enum TxTimelineKind { needsBroadcast, mempool, confirmed }
 
 class TimelineTransaction extends TimelineItem {
   final Transaction tx;
   final TxTimelineKind kind;
+  final SigningRequestState? signingState;
   @override
   final DateTime timestamp;
-  TimelineTransaction(this.tx, {required this.kind, required int timestampSecs})
+  TimelineTransaction(this.tx, {required this.kind, required int timestampSecs, this.signingState})
     : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
 }
 
@@ -157,12 +162,12 @@ class _ChatPageState extends State<ChatPage> {
   List<PublicKey> _memberPubkeys = [];
   StreamSubscription<FfiChannelEvent>? _subscription;
   StreamSubscription<TxState>? _txSubscription;
-  final Set<String> _mempoolTxids = {};
-  final Set<String> _confirmedTxids = {};
+  final Map<String, TxTimelineKind> _txTimelineState = {};
   NostrClient? _client;
   FfiConnectionState _connectionState = const FfiConnectionState.connecting();
   ReplyTarget? _replyingTo;
-  ({AccessStructureRef asRef, String testMessage})? _pendingSignRequest;
+  ({AccessStructureRef asRef, String testMessage, List<DeviceId> devices})? _pendingSignRequest;
+  ({AccessStructureRef asRef, UnsignedTx unsignedTx, List<DeviceId> devices})? _pendingTxSignRequest;
 
   NostrContext? _nostrContext;
   PublicKey? get _myPubkey => _nostrContext?.myPubkey;
@@ -211,7 +216,11 @@ class _ChatPageState extends State<ChatPage> {
       final lastSeen = tx.lastSeen;
       final confirmTime = tx.confirmationTime;
 
-      if (lastSeen != null && _mempoolTxids.add(txid)) {
+      final currentState = _txTimelineState[txid];
+
+      if (lastSeen != null && currentState != TxTimelineKind.mempool && currentState != TxTimelineKind.confirmed) {
+        _removeTxTimelineItem(txid, TxTimelineKind.needsBroadcast);
+        _txTimelineState[txid] = TxTimelineKind.mempool;
         _insertTimelineItem(
           TimelineTransaction(
             tx,
@@ -223,9 +232,9 @@ class _ChatPageState extends State<ChatPage> {
       }
 
       if (confirmTime != null &&
-          !_confirmedTxids.contains(txid) &&
+          currentState != TxTimelineKind.confirmed &&
           (lastSeen == null || confirmTime.time != lastSeen)) {
-        _confirmedTxids.add(txid);
+        _txTimelineState[txid] = TxTimelineKind.confirmed;
         _insertTimelineItem(
           TimelineTransaction(
             tx,
@@ -275,10 +284,14 @@ class _ChatPageState extends State<ChatPage> {
     if (state == null || _myPubkey == null) return null;
     final myOffer = state.offers[_myPubkey!.toHex()];
     if (myOffer == null) return null;
-    return _deviceForShareIndex(
-      state.request.accessStructureRef,
-      myOffer.shareIndex,
-    );
+    for (final idx in myOffer.shareIndices) {
+      final device = _deviceForShareIndex(
+        state.request.accessStructureRef,
+        idx,
+      );
+      if (device != null) return device;
+    }
+    return null;
   }
 
   DeviceId? _deviceForShareIndex(AccessStructureRef asRef, int shareIndex) {
@@ -301,9 +314,14 @@ class _ChatPageState extends State<ChatPage> {
     _pendingEvents.add(event);
     if (!_batchScheduled) {
       _batchScheduled = true;
+      // 🪬 addPostFrameCallback (not Timer.run) is needed here for the
+      // scroll-to-bottom in _flushPendingEvents to work reliably.
+      // scheduleFrame() ensures the callback fires even when the window is
+      // unfocused on Linux desktop.
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _flushPendingEvents(),
       );
+      WidgetsBinding.instance.scheduleFrame();
     }
   }
 
@@ -394,8 +412,8 @@ class _ChatPageState extends State<ChatPage> {
         _memberPubkeys = members.map((m) => m.pubkey).toList();
         _nostrContext!.updateProfilesFromChannel(members);
 
-      case FfiChannelEvent_SigningEvent(:final field0):
-        final eventId = switch (field0) {
+      case FfiChannelEvent_SigningEvent(:final event, :final pending):
+        final eventId = switch (event) {
           FfiSigningEvent_Request(:final eventId) => eventId,
           FfiSigningEvent_Offer(:final eventId) => eventId,
           FfiSigningEvent_Partial(:final eventId) => eventId,
@@ -404,7 +422,7 @@ class _ChatPageState extends State<ChatPage> {
         final idHex = eventId.toHex();
         if (!_seenSigningEventIds.add(idHex)) break;
 
-        final (author, timestamp, content) = switch (field0) {
+        final (author, timestamp, content) = switch (event) {
           FfiSigningEvent_Request(
             :final author,
             :final timestamp,
@@ -432,68 +450,106 @@ class _ChatPageState extends State<ChatPage> {
             'cancelled the signing request',
           ),
         };
+        final isMe = _myPubkey != null && author.equals(other: _myPubkey!);
         _messageById[eventId] = ChatMessage(
           messageId: eventId,
           author: author,
           content: content,
           timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
-          isMe: _myPubkey != null && author.equals(other: _myPubkey!),
+          isMe: isMe,
           quoteIcon: Icons.draw,
+          status: pending ? MessageStatus.pending : MessageStatus.sent,
         );
 
-        _insertTimelineItem(TimelineSigning(field0));
-
-        switch (field0) {
+        switch (event) {
           case FfiSigningEvent_Request():
-            _signingRequests[field0.eventId] = SigningRequestState(field0);
+            _signingRequests[event.eventId] = SigningRequestState(event);
             for (final item in _timeline) {
               if (item is! TimelineSigning) continue;
               switch (item.event) {
                 case FfiSigningEvent_Offer(:final requestId):
-                  if (requestId == field0.eventId) {
-                    _signingRequests[field0.eventId]!.offers[item.event.author
-                            .toHex()] =
-                        item.event as FfiSigningEvent_Offer;
+                  if (requestId == event.eventId) {
+                    _signingRequests[event.eventId]!.addOffer(
+                      item.event.author.toHex(),
+                      item.event as FfiSigningEvent_Offer,
+                    );
                   }
                 case FfiSigningEvent_Partial(:final requestId):
-                  if (requestId == field0.eventId) {
-                    _signingRequests[field0.eventId]!.partials[item.event.author
-                            .toHex()] =
-                        item.event as FfiSigningEvent_Partial;
+                  if (requestId == event.eventId) {
+                    _signingRequests[event.eventId]!.addPartial(
+                      item.event.author.toHex(),
+                      item.event as FfiSigningEvent_Partial,
+                    );
                   }
                 default:
                   break;
               }
             }
+            _insertTimelineItem(TimelineSigning(event));
           case FfiSigningEvent_Offer():
-            final state = _signingRequests[field0.requestId];
+            final state = _signingRequests[event.requestId];
             if (state != null) {
-              state.offers[field0.author.toHex()] = field0;
+              state.addOffer(event.author.toHex(), event);
             }
+            final threshold = _getThreshold(event.requestId);
+            _insertTimelineItem(TimelineSigning(
+              event,
+              progressCount: state?.offers.length,
+              progressTotal: threshold > 0 ? threshold : null,
+            ));
           case FfiSigningEvent_Partial():
-            final state = _signingRequests[field0.requestId];
+            final state = _signingRequests[event.requestId];
             if (state != null) {
-              state.partials[field0.author.toHex()] = field0;
-              final accessStruct = coord.getAccessStructure(
-                asRef: state.request.accessStructureRef,
-              );
-              final threshold = accessStruct?.threshold() ?? 0;
+              final authorHex = event.author.toHex();
+              final offer = state.offers[authorHex];
+              if (offer != null && (event.timestamp - offer.timestamp) < 300) {
+                _timeline.removeWhere((item) =>
+                    item is TimelineSigning &&
+                    item.event is FfiSigningEvent_Offer &&
+                    (item.event as FfiSigningEvent_Offer).author.toHex() == authorHex &&
+                    (item.event as FfiSigningEvent_Offer).requestId.toHex() == event.requestId.toHex());
+              }
+              state.addPartial(authorHex, event);
+              final threshold = _getThreshold(event.requestId);
+              _insertTimelineItem(TimelineSigning(
+                event,
+                progressCount: state.partials.length,
+                progressTotal: threshold > 0 ? threshold : null,
+              ));
               if (state.partials.length >= threshold) {
-                _insertTimelineItem(
-                  TimelineSigningComplete(
-                    state,
-                    completedAtSecs: field0.timestamp,
-                  ),
-                );
+                final details = state.request.signingDetails;
+                if (details is SigningDetails_Transaction) {
+                  final txid = details.transaction.txid;
+                  final existing = _txTimelineState[txid];
+                  if (existing == null) {
+                    _txTimelineState[txid] = TxTimelineKind.needsBroadcast;
+                    _insertTimelineItem(
+                      TimelineTransaction(
+                        details.transaction,
+                        kind: TxTimelineKind.needsBroadcast,
+                        timestampSecs: event.timestamp,
+                        signingState: state,
+                      ),
+                    );
+                  }
+                } else {
+                  _insertTimelineItem(
+                    TimelineSigningComplete(
+                      state,
+                      completedAtSecs: event.timestamp,
+                    ),
+                  );
+                }
               }
             }
           case FfiSigningEvent_Cancel():
-            final state = _signingRequests[field0.requestId];
+            final state = _signingRequests[event.requestId];
             if (state != null) {
               state.cancelled = true;
             }
+            _insertTimelineItem(TimelineSigning(event));
             coord.cancelNonceReservation(
-              id: NonceReservationId(field0: field0.requestId.field0),
+              id: NonceReservationId(field0: event.requestId.field0),
             );
         }
 
@@ -512,6 +568,22 @@ class _ChatPageState extends State<ChatPage> {
           ),
         );
     }
+  }
+
+  int _getThreshold(NostrEventId requestId) {
+    final state = _signingRequests[requestId];
+    if (state == null) return 0;
+    final accessStruct = coord.getAccessStructure(
+      asRef: state.request.accessStructureRef,
+    );
+    return accessStruct?.threshold() ?? 0;
+  }
+
+  void _removeTxTimelineItem(String txid, TxTimelineKind kind) {
+    _timeline.removeWhere((item) =>
+        item is TimelineTransaction &&
+        item.kind == kind &&
+        item.tx.txid == txid);
   }
 
   void _jumpToBottom() {
@@ -534,37 +606,6 @@ class _ChatPageState extends State<ChatPage> {
       i--;
     }
     _timeline.insert(i, item);
-  }
-
-  Widget _buildTaskCard(SigningRequestState state) {
-    final accessStruct = coord.getAccessStructure(
-      asRef: state.request.accessStructureRef,
-    );
-    final threshold = accessStruct?.threshold() ?? 0;
-    final myPubkey = _myPubkey;
-    final alreadySigned =
-        myPubkey != null && state.partials.containsKey(myPubkey.toHex());
-    final sealed = state.sealedData;
-    final myDevice = _getMyDevice(state);
-    final VoidCallback? onSign;
-    final String? deviceName;
-    if (sealed != null && myDevice != null && !alreadySigned) {
-      deviceName = coord.getDeviceName(id: myDevice);
-      onSign = () => _triggerDeviceSigning(state, sealed, myDevice);
-    } else {
-      deviceName = null;
-      onSign = null;
-    }
-
-    return TransactionTaskCard(
-      state: state,
-      threshold: threshold,
-      getDisplayName: _displayName,
-      getProfile: _getProfile,
-      myPubkey: _myPubkey,
-      deviceName: deviceName,
-      onSign: onSign,
-    );
   }
 
   SigningRequestState? get _activeSigningRequest {
@@ -637,18 +678,30 @@ class _ChatPageState extends State<ChatPage> {
             onRetry: () => _retryMessage(message),
             onCopy: () => _copyMessage(message),
           ),
-          TimelineSigning(:final event) => switch (event) {
+          TimelineSigning(event: final event, :final progressCount, :final progressTotal) => switch (event) {
             FfiSigningEvent_Request() => _buildRequestCard(event),
-            FfiSigningEvent_Offer() => _buildOfferCard(event),
-            FfiSigningEvent_Partial() => _buildPartialCard(event),
+            FfiSigningEvent_Offer() => _buildOfferCard(event, progressCount, progressTotal),
+            FfiSigningEvent_Partial() => _buildPartialCard(event, progressCount, progressTotal),
             FfiSigningEvent_Cancel() => _buildCancelCard(event),
           },
           TimelineSigningComplete(:final requestState) => _SigningCompleteCard(
-            details: signingDetailsText(requestState.request.signingDetails),
+            details: signingDetailsText(
+              requestState.request.signingDetails,
+              walletCtx: WalletContext.of(context),
+            ),
             onShowSignature: () => _completeAndShowSignature(requestState),
           ),
-          TimelineTransaction(:final tx, :final kind, :final timestamp) =>
+          TimelineTransaction(:final tx, :final kind, :final timestamp, :final signingState) =>
             switch (kind) {
+              TxTimelineKind.needsBroadcast => _TransactionCard(
+                key: _timelineKeys.putIfAbsent(tx.txid, () => GlobalKey()),
+                tx: tx,
+                timestamp: timestamp,
+                onTap: () => _showTxDetails(tx),
+                onBroadcast: signingState != null
+                    ? () => _broadcastTransaction(signingState)
+                    : null,
+              ),
               TxTimelineKind.mempool => _TransactionCard(
                 key: _timelineKeys.putIfAbsent(tx.txid, () => GlobalKey()),
                 tx: tx,
@@ -740,11 +793,15 @@ class _ChatPageState extends State<ChatPage> {
       threshold: threshold,
       isMe: reqIsMe,
       isHighlighted: _highlightedId == idHex,
+      sendStatus: _messageById[request.eventId]?.status,
       profile: _getProfile(state.request.author),
       getDisplayName: (pubkey) => getDisplayName(_getProfile(pubkey), pubkey),
       onOfferToSign: iOffered ? null : () => _onOfferToSign(state),
       onCancel: reqIsMe && !isComplete && !state.cancelled
           ? () => _onCancelRequest(state)
+          : null,
+      onTap: state.sealedData != null
+          ? () => _showSigningProgress(state)
           : null,
       onCopy: () => _copySigningText(request),
       onReply: () => _startReply(_signingReplyTarget(request)),
@@ -754,53 +811,101 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  String _signingMessagePreview(NostrEventId requestId) {
-    final state = _signingRequests[requestId];
-    if (state == null) return '?';
-    final text = signingDetailsText(state.request.signingDetails);
-    return text.length > 30 ? '${text.substring(0, 30)}...' : text;
+  void _showSigningProgress(SigningRequestState state) {
+    _openSigningPage(state);
   }
 
-  Widget _buildOfferCard(FfiSigningEvent_Offer offer) {
+  Widget _signingPillWidget(NostrEventId requestId) {
+    final state = _signingRequests[requestId];
+    if (state == null) return const Text('?');
+    final details = state.request.signingDetails;
+    if (details is SigningDetails_Transaction) {
+      final walletCtx = WalletContext.of(context);
+      if (walletCtx != null) {
+        final tx = details.transaction;
+        final chainTipHeight = walletCtx.superWallet.height();
+        final txDetails = TxDetailsModel(
+          tx: tx,
+          chainTipHeight: chainTipHeight,
+          now: DateTime.now(),
+        );
+        final isSend = txDetails.isSend;
+        final accentColor = isSend
+            ? Colors.redAccent.harmonizeWith(Theme.of(context).colorScheme.primary)
+            : Colors.green.harmonizeWith(Theme.of(context).colorScheme.primary);
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSend ? Icons.north_east : Icons.south_east,
+              size: 14,
+              color: accentColor,
+            ),
+            const SizedBox(width: 2),
+            SatoshiText(
+              value: txDetails.netValue,
+              showSign: true,
+              hideLeadingWhitespace: true,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        );
+      }
+    }
+    final text = signingDetailsText(details);
+    final preview = text.length > 30 ? '${text.substring(0, 30)}...' : text;
+    return Text(
+      preview,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+
+  Widget _buildOfferCard(FfiSigningEvent_Offer offer, int? progressCount, int? progressTotal) {
     final isMe = _myPubkey != null && offer.author.equals(other: _myPubkey!);
-    final preview = _signingMessagePreview(offer.requestId);
     return _SigningEventLine(
       profile: _getProfile(offer.author),
       author: offer.author,
       isMe: isMe,
       label: 'offered to sign',
-      messagePill: preview,
-      suffix: 'with key #${offer.shareIndex}',
+      messagePill: _signingPillWidget(offer.requestId),
+      suffix: 'with ${offer.shareIndices.length == 1 ? 'key #${offer.shareIndices.first}' : 'keys ${offer.shareIndices.map((i) => '#$i').join(', ')}'}',
       timestamp: DateTime.fromMillisecondsSinceEpoch(offer.timestamp * 1000),
       onTapPill: () => _scrollToAndHighlight(offer.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(offer.author),
+      progress: progressTotal != null && progressTotal > 0 ? progressCount! / progressTotal : null,
+      progressTooltip: '$progressCount out of $progressTotal needed',
     );
   }
 
-  Widget _buildPartialCard(FfiSigningEvent_Partial partial) {
+  Widget _buildPartialCard(FfiSigningEvent_Partial partial, int? progressCount, int? progressTotal) {
     final isMe = _myPubkey != null && partial.author.equals(other: _myPubkey!);
-    final preview = _signingMessagePreview(partial.requestId);
     return _SigningEventLine(
       profile: _getProfile(partial.author),
       author: partial.author,
       isMe: isMe,
       label: 'signed',
-      messagePill: preview,
+      messagePill: _signingPillWidget(partial.requestId),
       timestamp: DateTime.fromMillisecondsSinceEpoch(partial.timestamp * 1000),
       onTapPill: () => _scrollToAndHighlight(partial.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(partial.author),
+      progress: progressTotal != null && progressTotal > 0 ? progressCount! / progressTotal : null,
+      progressTooltip: '$progressCount of $progressTotal signed',
+      progressColor: Colors.green,
     );
   }
 
   Widget _buildCancelCard(FfiSigningEvent_Cancel cancel) {
     final isMe = _myPubkey != null && cancel.author.equals(other: _myPubkey!);
-    final preview = _signingMessagePreview(cancel.requestId);
     return _SigningEventLine(
       profile: _getProfile(cancel.author),
       author: cancel.author,
       isMe: isMe,
       label: 'cancelled the signing request',
-      messagePill: preview,
+      messagePill: _signingPillWidget(cancel.requestId),
       timestamp: DateTime.fromMillisecondsSinceEpoch(cancel.timestamp * 1000),
       onTapPill: () => _scrollToAndHighlight(cancel.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(cancel.author),
@@ -828,162 +933,72 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _onOfferToSign(SigningRequestState state) async {
     final frostKey = coord.getFrostKey(keyId: widget.keyId);
     if (frostKey == null || _client == null) return;
+    final walletCtx = WalletContext.of(context);
+    final threshold = frostKey.accessStructures()[0].threshold();
 
-    final accessStructure = frostKey.accessStructures()[0];
-    final devices = accessStructure.devices();
-    final offeredIndices = state.offers.values.map((o) => o.shareIndex).toSet();
-
-    final selectedDevice = await showDialog<DeviceId>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Select Device'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: devices.length,
-              itemBuilder: (context, index) {
-                final id = devices[index];
-                final name = coord.getDeviceName(id: id);
-                final enoughNonces = coord.noncesAvailable(id: id) >= 1;
-                final shareIndex = accessStructure.getDeviceShortShareIndex(
-                  deviceId: id,
-                );
-                final alreadyOffered = offeredIndices.contains(shareIndex);
-                final enabled = enoughNonces && !alreadyOffered;
-                final subtitle = alreadyOffered
-                    ? 'already offered'
-                    : !enoughNonces
-                    ? 'no nonces'
-                    : null;
-                return ListTile(
-                  title: Text(name ?? '<unknown>'),
-                  subtitle: subtitle != null ? Text(subtitle) : null,
-                  enabled: enabled,
-                  onTap: enabled ? () => Navigator.pop(context, id) : null,
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
+    await showBottomSheetOrDialog(
+      context,
+      title: Text(state.offers.length + 1 >= threshold ? 'Sign' : 'Offer to Sign'),
+      builder: (context, scrollController) {
+        if (walletCtx != null) {
+          return walletCtx.wrap(
+            Builder(builder: (ctx) => _OfferSignSheet(
+              state: state,
+              keyId: widget.keyId,
+              accessStructureId: widget.accessStructureId,
+              client: _client!,
+              nostrContext: _nostrContext!,
+              threshold: threshold,
+              getProfile: _getProfile,
+              deviceForShareIndex: _deviceForShareIndex,
+              scrollController: scrollController,
+            )),
+          );
+        }
+        return _OfferSignSheet(
+          state: state,
+          keyId: widget.keyId,
+          accessStructureId: widget.accessStructureId,
+          client: _client!,
+          nostrContext: _nostrContext!,
+          threshold: threshold,
+          getProfile: _getProfile,
+          deviceForShareIndex: _deviceForShareIndex,
+          scrollController: scrollController,
         );
       },
     );
-
-    if (selectedDevice == null) return;
-
-    final nsec = _nostrContext!.nostrSettings.getNsec();
-    try {
-      final reservationId = NonceReservationId(
-        field0: state.request.eventId.field0,
-      );
-      final binonces = await coord.reserveNonces(
-        id: reservationId,
-        deviceId: selectedDevice,
-        nSignatures: 1,
-      );
-      await _client!.sendSignOffer(
-        accessStructureId: widget.accessStructureId,
-        nsec: nsec,
-        replyTo: state.chainTip,
-        binonces: binonces,
-      );
-    } catch (e) {
-      if (mounted) {
-        showErrorSnackbar(context, 'Failed to offer to sign: $e');
-      }
-    }
   }
 
-  Future<void> _triggerDeviceSigning(
-    SigningRequestState state,
-    SealedSigningData sealed,
-    DeviceId deviceId,
-  ) async {
-    try {
-      final reservationId = NonceReservationId(
-        field0: state.request.eventId.field0,
-      );
-      final sessionId = await coord.signWithNonceReservation(
-        signTask: sealed.signTask(),
-        accessStructureRef: sealed.accessStructureRef(),
-        allBinonces: sealed.binonces(),
-        id: reservationId,
-      );
-
-      final signingStream = coord
-          .tryRestoreSigningSession(sessionId: sessionId)
-          .toBehaviorSubject();
-
-      final gotShares = signingStream
-          .asyncMap(
-            (s) => deviceIdSet(s.gotShares).contains(deviceId) ? true : null,
-          )
-          .firstWhere((done) => done != null);
-
-      signingStream.forEach((signingState) async {
-        final needRequest = deviceIdSet(signingState.connectedButNeedRequest);
-        if (needRequest.contains(deviceId)) {
-          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-          coord.requestDeviceSign(
-            deviceId: deviceId,
-            sessionId: sessionId,
-            encryptionKey: encryptionKey,
-          );
-        }
-      });
-
-      final result = await showDeviceActionDialog(
-        context: context,
-        complete: gotShares,
-        builder: (context) {
-          return Column(
-            children: [
-              DialogHeader(
-                child: Column(
-                  children: [
-                    const Text('Signing'),
-                    const SizedBox(height: 10),
-                    const Text('Plug in your device'),
-                  ],
-                ),
-              ),
-              DeviceSigningProgress(stream: signingStream),
-            ],
-          );
-        },
-      );
-
-      if (result == null) {
-        coord.cancelProtocol();
-        return;
-      }
-
-      final shares = coord.getDeviceSignatureShares(
-        sessionId: sessionId,
-        deviceId: deviceId,
-      );
-      if (shares == null) throw Exception('No signature shares from device');
-
-      final nsec = _nostrContext!.nostrSettings.getNsec();
-      await _client!.sendSignPartial(
-        accessStructureId: widget.accessStructureId,
-        nsec: nsec,
-        requestId: state.request.eventId,
-        sessionId: sessionId,
-        shares: shares,
-      );
-    } catch (e) {
-      if (mounted) {
-        showErrorSnackbar(context, 'Signing failed: $e');
-      }
-    }
+  void _openSigningPage(SigningRequestState state) {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    final signingDetails = state.request.signingDetails;
+    if (signingDetails is! SigningDetails_Transaction) return;
+    final tx = signingDetails.transaction;
+    final txDetails = TxDetailsModel(
+      tx: tx,
+      chainTipHeight: walletCtx.superWallet.height(),
+      now: DateTime.now(),
+    );
+    final nsec = _nostrContext!.nostrSettings.getNsec();
+    showBottomSheetOrDialog(
+      context,
+      title: const Text('Signing'),
+      builder: (ctx, scrollController) => walletCtx.wrap(
+        NostrSigningPage(
+          scrollController: scrollController,
+          txDetails: txDetails,
+          signingState: state,
+          threshold: _getThreshold(state.request.eventId),
+          getProfile: _getProfile,
+          client: _client!,
+          accessStructureId: widget.accessStructureId,
+          nsec: nsec,
+          myPubkey: _myPubkey,
+        ),
+      ),
+    );
   }
 
   Future<void> _completeAndShowSignature(SigningRequestState state) async {
@@ -1029,6 +1044,38 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Future<void> _broadcastTransaction(SigningRequestState state) async {
+    final sealed = state.sealedData;
+    if (sealed == null) return;
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    final signingDetails = state.request.signingDetails;
+    if (signingDetails is! SigningDetails_Transaction) return;
+
+    try {
+      final signatures = sealed.combineSignatures(
+        allShares: state.partials.values.map((p) => p.shares).toList(),
+      );
+      final signedTx = await signingDetails.transaction.withSignatures(
+        signatures: signatures,
+      );
+      if (!mounted) return;
+      await walletCtx.superWallet.broadcastTx(
+        masterAppkey: walletCtx.masterAppkey,
+        tx: signedTx,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Transaction broadcast!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackbar(context, 'Broadcast failed: $e');
+      }
+    }
+  }
+
   void _showActionMenu() {
     showBottomSheetOrDialog(
       context,
@@ -1050,6 +1097,19 @@ class _ChatPageState extends State<ChatPage> {
               onTap: () {
                 Navigator.pop(context);
                 _proposeTestSign();
+              },
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              tileColor: theme.colorScheme.surfaceContainer,
+              leading: const Icon(Icons.currency_bitcoin),
+              title: const Text('Send Bitcoin'),
+              onTap: () {
+                Navigator.pop(context);
+                _proposeSendBitcoin();
               },
             ),
           ],
@@ -1091,15 +1151,52 @@ class _ChatPageState extends State<ChatPage> {
     final asRef = frostKey.accessStructures()[0].accessStructureRef();
 
     setState(() {
-      _pendingSignRequest = (asRef: asRef, testMessage: testMessage.trim());
+      _pendingSignRequest = (
+        asRef: asRef,
+        testMessage: testMessage.trim(),
+        devices: <DeviceId>[],
+      );
     });
     _inputFocusNode.requestFocus();
   }
 
+  Future<void> _proposeSendBitcoin() async {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    final frostKey = coord.getFrostKey(keyId: widget.keyId);
+    if (frostKey == null) return;
+    final asRef = frostKey.accessStructures()[0].accessStructureRef();
+
+    await showBottomSheetOrDialog(
+      context,
+      title: const Text('Send Bitcoin'),
+      builder: (context, scrollController) => walletCtx.wrap(
+        WalletSendPage(
+          superWallet: walletCtx.superWallet,
+          masterAppkey: walletCtx.masterAppkey,
+          scrollController: scrollController,
+          remoteSigning: true,
+          onTxReady: (unsignedTx, selectedDevices) {
+            setState(() {
+              _pendingTxSignRequest = (
+                asRef: asRef,
+                unsignedTx: unsignedTx,
+                devices: selectedDevices,
+              );
+            });
+            _inputFocusNode.requestFocus();
+          },
+        ),
+      ),
+    );
+  }
+
+
   Future<void> _sendMessage() async {
     final content = _messageController.text.trim();
     final pending = _pendingSignRequest;
-    if (content.isEmpty && pending == null) return;
+    final pendingTx = _pendingTxSignRequest;
+    if (content.isEmpty && pending == null && pendingTx == null) return;
     if (_client == null) return;
 
     final nsec = _nostrContext!.nostrSettings.getNsec();
@@ -1108,16 +1205,30 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _replyingTo = null;
       _pendingSignRequest = null;
+      _pendingTxSignRequest = null;
     });
 
     try {
-      if (pending != null) {
-        await _client!.sendTestSignRequest(
+      if (pendingTx != null) {
+        final requestId = await _client!.sendSignRequest(
+          accessStructureRef: pendingTx.asRef,
+          nsec: nsec,
+          unsignedTx: pendingTx.unsignedTx,
+          message: content,
+        );
+        if (pendingTx.devices.isNotEmpty) {
+          await _sendOfferForRequest(requestId, pendingTx.asRef, pendingTx.devices);
+        }
+      } else if (pending != null) {
+        final requestId = await _client!.sendTestSignRequest(
           accessStructureRef: pending.asRef,
           nsec: nsec,
           testMessage: pending.testMessage,
           message: content,
         );
+        if (pending.devices.isNotEmpty) {
+          await _sendOfferForRequest(requestId, pending.asRef, pending.devices);
+        }
       } else {
         await _client!.sendMessage(
           accessStructureId: widget.accessStructureId,
@@ -1132,6 +1243,30 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
     _inputFocusNode.requestFocus();
+  }
+
+  Future<void> _sendOfferForRequest(
+    NostrEventId requestId,
+    AccessStructureRef asRef,
+    List<DeviceId> devices,
+  ) async {
+    final nsec = _nostrContext!.nostrSettings.getNsec();
+    final reservationId = NonceReservationId(field0: requestId.field0);
+    final allBinonces = <ParticipantBinonces>[];
+    for (final device in devices) {
+      final binonces = await coord.reserveNonces(
+        id: reservationId,
+        deviceId: device,
+        nSignatures: 1,
+      );
+      allBinonces.add(binonces);
+    }
+    await _client!.sendSignOffer(
+      accessStructureId: widget.accessStructureId,
+      nsec: nsec,
+      replyTo: requestId,
+      binonces: allBinonces,
+    );
   }
 
   Future<void> _retryMessage(ChatMessage message) async {
@@ -1166,8 +1301,8 @@ class _ChatPageState extends State<ChatPage> {
     final text = switch (event) {
       FfiSigningEvent_Request(:final signingDetails, :final message) =>
         '${signingDetailsText(signingDetails)}${message.isNotEmpty ? '\n$message' : ''}',
-      FfiSigningEvent_Offer(:final shareIndex, :final author) =>
-        '${_displayName(author)} offered to sign with key #$shareIndex',
+      FfiSigningEvent_Offer(:final shareIndices, :final author) =>
+        '${_displayName(author)} offered to sign with ${shareIndices.map((i) => 'key #$i').join(', ')}',
       FfiSigningEvent_Partial(:final author) =>
         '${_displayName(author)} signed',
       FfiSigningEvent_Cancel(:final author) =>
@@ -1195,8 +1330,8 @@ class _ChatPageState extends State<ChatPage> {
     final preview = switch (event) {
       FfiSigningEvent_Request(:final signingDetails) =>
         'Signing request: ${signingDetailsText(signingDetails)}',
-      FfiSigningEvent_Offer(:final shareIndex) =>
-        'Sign offer — key #$shareIndex',
+      FfiSigningEvent_Offer(:final shareIndices) =>
+        'Sign offer — ${shareIndices.map((i) => 'key #$i').join(', ')}',
       FfiSigningEvent_Partial() => 'Signed',
       FfiSigningEvent_Cancel() => 'Cancelled',
     };
@@ -1251,6 +1386,8 @@ class _ChatPageState extends State<ChatPage> {
         scrolledUnderElevation: 0,
         title: Text(widget.walletName),
         actions: [
+          if (SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false)
+            const UsbToggleButton(),
           _buildConnectionIndicator(),
           const SizedBox(width: 8),
           IconButton(
@@ -1260,21 +1397,12 @@ class _ChatPageState extends State<ChatPage> {
           ),
         ],
       ),
-      body: Builder(
-        builder: (context) {
-          final activeRequest = _activeSigningRequest;
-          final taskCard = activeRequest != null
-              ? _buildTaskCard(activeRequest)
-              : null;
-
-          return Column(
-            children: [
-              Expanded(child: _buildTimeline(theme)),
-              _buildMessageInput(),
-              if (taskCard != null) taskCard,
-            ],
-          );
-        },
+      body: Column(
+        children: [
+          Expanded(child: _buildTimeline(theme)),
+          _buildSigningBanner(theme),
+          _buildMessageInput(),
+        ],
       ),
     );
   }
@@ -1299,11 +1427,61 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Widget _buildSigningBanner(ThemeData theme) {
+    final activeRequest = _activeSigningRequest;
+    if (activeRequest == null) return const SizedBox.shrink();
+
+    final myPubkey = _myPubkey;
+    final isRequester = myPubkey != null &&
+        activeRequest.request.author.equals(other: myPubkey);
+    final alreadySigned = myPubkey != null &&
+        activeRequest.partials.containsKey(myPubkey.toHex());
+    final sealed = activeRequest.sealedData;
+    final myDevice = _getMyDevice(activeRequest);
+    final canSign = sealed != null && myDevice != null && !alreadySigned;
+
+    if (!canSign && !isRequester) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+      ),
+      child: Row(
+        children: [
+          _signingPillWidget(activeRequest.request.eventId),
+          const Spacer(),
+          if (isRequester)
+            OutlinedButton(
+              onPressed: () => _onCancelRequest(activeRequest),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 36),
+              ),
+              child: const Text('Cancel'),
+            ),
+          if (canSign) ...[
+            if (isRequester) const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: () => _openSigningPage(activeRequest),
+              icon: const Icon(Icons.draw, size: 16),
+              label: const Text('Sign'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 36),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessageInput() {
     final theme = Theme.of(context);
     final isConnected = _connectionState is FfiConnectionState_Connected;
 
-    final hasAttachment = _replyingTo != null || _pendingSignRequest != null;
+    final hasAttachment = _replyingTo != null || _pendingSignRequest != null || _pendingTxSignRequest != null;
 
     return Container(
       color: hasAttachment ? theme.colorScheme.surface : Colors.transparent,
@@ -1423,6 +1601,67 @@ class _ChatPageState extends State<ChatPage> {
                       icon: const Icon(Icons.close, size: 18),
                       onPressed: () =>
                           setState(() => _pendingSignRequest = null),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+            if (_pendingTxSignRequest != null)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer.withValues(
+                    alpha: 0.5,
+                  ),
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 32,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Send Transaction',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.secondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            _pendingTxSignRequest!.devices.isNotEmpty
+                                ? 'Signing with ${_pendingTxSignRequest!.devices.map((d) => coord.getDeviceName(id: d) ?? "device").join(", ")}'
+                                : _pendingTxSignRequest!.unsignedTx.txid(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () =>
+                          setState(() => _pendingTxSignRequest = null),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                     ),
@@ -1873,11 +2112,14 @@ class _SigningEventLine extends StatelessWidget {
   final PublicKey author;
   final bool isMe;
   final String label;
-  final String messagePill;
+  final Widget messagePill;
   final String? suffix;
   final DateTime timestamp;
   final VoidCallback? onTapPill;
   final VoidCallback? onTapAvatar;
+  final double? progress;
+  final String? progressTooltip;
+  final Color? progressColor;
 
   const _SigningEventLine({
     required this.profile,
@@ -1889,6 +2131,9 @@ class _SigningEventLine extends StatelessWidget {
     required this.timestamp,
     this.onTapPill,
     this.onTapAvatar,
+    this.progress,
+    this.progressTooltip,
+    this.progressColor,
   });
 
   String _formatTime(DateTime t) =>
@@ -1939,14 +2184,7 @@ class _SigningEventLine extends StatelessWidget {
                               color: theme.colorScheme.surfaceContainerHighest,
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Text(
-                              messagePill,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
+                            child: messagePill,
                           ),
                         ),
                       ),
@@ -1965,6 +2203,22 @@ class _SigningEventLine extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (progress != null) ...[
+              const SizedBox(width: 6),
+              Tooltip(
+                message: progressTooltip ?? '',
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    value: progress!.clamp(0.0, 1.0),
+                    strokeWidth: 2.5,
+                    backgroundColor: theme.colorScheme.outlineVariant,
+                    color: progressColor ?? theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1976,7 +2230,10 @@ class _SigningCompleteCard extends StatelessWidget {
   final String details;
   final VoidCallback? onShowSignature;
 
-  const _SigningCompleteCard({required this.details, this.onShowSignature});
+  const _SigningCompleteCard({
+    required this.details,
+    this.onShowSignature,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2031,11 +2288,12 @@ class _SigningCompleteCard extends StatelessWidget {
   }
 }
 
-class _TransactionCard extends StatelessWidget {
+class _TransactionCard extends StatefulWidget {
   final Transaction tx;
   final DateTime timestamp;
   final bool isHighlighted;
   final VoidCallback onTap;
+  final Future<void> Function()? onBroadcast;
 
   const _TransactionCard({
     super.key,
@@ -2043,7 +2301,15 @@ class _TransactionCard extends StatelessWidget {
     required this.timestamp,
     this.isHighlighted = false,
     required this.onTap,
+    this.onBroadcast,
   });
+
+  @override
+  State<_TransactionCard> createState() => _TransactionCardState();
+}
+
+class _TransactionCardState extends State<_TransactionCard> {
+  bool _broadcasting = false;
 
   static String _formatTime(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
@@ -2054,7 +2320,7 @@ class _TransactionCard extends StatelessWidget {
     final walletCtx = WalletContext.of(context);
     final chainTipHeight = walletCtx?.superWallet.height() ?? 0;
     final txDetails = TxDetailsModel(
-      tx: tx,
+      tx: widget.tx,
       chainTipHeight: chainTipHeight,
       now: DateTime.now(),
     );
@@ -2063,29 +2329,26 @@ class _TransactionCard extends StatelessWidget {
         ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
         : Colors.green.harmonizeWith(theme.colorScheme.primary);
 
-    final statusText = isSend ? 'Sending...' : 'Receiving...';
-
-    final recipients = tx.recipients();
-    final relevantOutput = isSend
-        ? recipients.where((r) => !r.isMine).firstOrNull
-        : recipients.where((r) => r.isMine).firstOrNull;
-    final addressIndex = relevantOutput?.derivationIndex;
+    final statusText = widget.onBroadcast != null
+        ? 'Signed'
+        : isSend ? 'Sending' : 'Receiving';
 
     final baseColor = theme.colorScheme.surfaceContainerHighest;
     return Align(
       alignment: Alignment.center,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 400),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: isHighlighted
+            color: widget.isHighlighted
                 ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
                 : baseColor,
             borderRadius: BorderRadius.circular(12),
-            boxShadow: isHighlighted
+            boxShadow: widget.isHighlighted
                 ? [
                     BoxShadow(
                       color: theme.colorScheme.primary.withValues(alpha: 0.4),
@@ -2109,44 +2372,59 @@ class _TransactionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    Text(
+                      statusText,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          statusText,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        SatoshiText(
+                          value: txDetails.netValue,
+                          showSign: true,
+                          style: theme.textTheme.bodyLarge,
                         ),
-                        if (addressIndex != null) ...[
-                          const SizedBox(width: 4),
+                        const SizedBox(width: 12),
+                        if (widget.onBroadcast != null)
+                          _broadcasting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : FilledButton.tonal(
+                                  onPressed: () async {
+                                    setState(() => _broadcasting = true);
+                                    try {
+                                      await widget.onBroadcast!();
+                                    } finally {
+                                      if (mounted) setState(() => _broadcasting = false);
+                                    }
+                                  },
+                                  style: FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    minimumSize: const Size(0, 28),
+                                  ),
+                                  child: const Text('Broadcast'),
+                                )
+                        else
                           Text(
-                            '#$addressIndex',
-                            style: theme.textTheme.bodySmall?.copyWith(
+                            _formatTime(widget.timestamp),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                        ],
                       ],
-                    ),
-                    SatoshiText(
-                      value: txDetails.netValue,
-                      showSign: true,
-                      style: theme.textTheme.bodyLarge,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                _formatTime(timestamp),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontSize: 10,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
             ],
           ),
+        ),
         ),
       ),
     );
@@ -2298,6 +2576,240 @@ class _DateDivider extends StatelessWidget {
           Expanded(
             child: Divider(
               color: theme.colorScheme.outline.withValues(alpha: 0.3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _OfferSignPhase { offer, waiting, signing }
+
+class _OfferSignSheet extends StatefulWidget {
+  final SigningRequestState state;
+  final KeyId keyId;
+  final AccessStructureId accessStructureId;
+  final NostrClient client;
+  final NostrContext nostrContext;
+  final int threshold;
+  final FfiNostrProfile? Function(PublicKey) getProfile;
+  final DeviceId? Function(AccessStructureRef, int) deviceForShareIndex;
+  final ScrollController? scrollController;
+
+  const _OfferSignSheet({
+    required this.state,
+    required this.keyId,
+    required this.accessStructureId,
+    required this.client,
+    required this.nostrContext,
+    required this.threshold,
+    required this.getProfile,
+    required this.deviceForShareIndex,
+    this.scrollController,
+  });
+
+  @override
+  State<_OfferSignSheet> createState() => _OfferSignSheetState();
+}
+
+class _OfferSignSheetState extends State<_OfferSignSheet> {
+  _OfferSignPhase _phase = _OfferSignPhase.offer;
+  late HashSet<DeviceId> _selectedDevices;
+  String? _error;
+
+  List<DeviceItem> get _deviceItems {
+    final frostKey = coord.getFrostKey(keyId: widget.keyId);
+    if (frostKey == null) return [];
+    final accessStructure = frostKey.accessStructures()[0];
+    final offeredIndices = widget.state.offers.values.expand((o) => o.shareIndices).toSet();
+    return DeviceItem.fromAccessStructure(accessStructure).where((item) {
+      final alreadyOffered = offeredIndices.contains(item.shareIndex);
+      return item.enabled && !alreadyOffered;
+    }).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDevices = deviceIdSet(_deviceItems.map((d) => d.id));
+  }
+
+  Future<void> _doOffer() async {
+    if (_selectedDevices.isEmpty) return;
+
+    final nSelectedByOthers = widget.state.offers.length;
+    final willMeetThreshold = nSelectedByOthers + _selectedDevices.length >= widget.threshold;
+
+    setState(() => _phase = _OfferSignPhase.waiting);
+
+    try {
+      final nsec = widget.nostrContext.nostrSettings.getNsec();
+      final reservationId = NonceReservationId(
+        field0: widget.state.request.eventId.field0,
+      );
+      final allBinonces = <ParticipantBinonces>[];
+      for (final device in _selectedDevices) {
+        final binonces = await coord.reserveNonces(
+          id: reservationId,
+          deviceId: device,
+          nSignatures: 1,
+        );
+        allBinonces.add(binonces);
+      }
+      await widget.client.sendSignOffer(
+        accessStructureId: widget.accessStructureId,
+        nsec: nsec,
+        replyTo: widget.state.chainTip,
+        binonces: allBinonces,
+      );
+
+      if (!willMeetThreshold) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+
+      for (var i = 0; i < 50; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (widget.state.sealedData != null) break;
+      }
+
+      if (widget.state.sealedData == null) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+
+      await _startSigning();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '$e';
+          _phase = _OfferSignPhase.offer;
+        });
+      }
+    }
+  }
+
+  Future<void> _startSigning() async {
+    final walletCtx = WalletContext.of(context);
+    final fsCtx = FrostsnapContext.of(context);
+    if (walletCtx == null || fsCtx == null) return;
+
+    try {
+      final signingDetails = widget.state.request.signingDetails;
+      if (signingDetails is! SigningDetails_Transaction) return;
+      final tx = signingDetails.transaction;
+      final txDetails = TxDetailsModel(
+        tx: tx,
+        chainTipHeight: walletCtx.superWallet.height(),
+        now: DateTime.now(),
+      );
+
+      setState(() => _phase = _OfferSignPhase.signing);
+
+      final nsec = widget.nostrContext.nostrSettings.getNsec();
+      await showBottomSheetOrDialog(
+        context,
+        title: const Text('Signing'),
+        builder: (ctx, scrollController) => walletCtx.wrap(
+          NostrSigningPage(
+            scrollController: scrollController,
+            txDetails: txDetails,
+            signingState: widget.state,
+            threshold: widget.threshold,
+            getProfile: widget.getProfile,
+            client: widget.client,
+            accessStructureId: widget.accessStructureId,
+            nsec: nsec,
+            myPubkey: widget.nostrContext.myPubkey,
+          ),
+        ),
+      );
+
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '$e';
+          _phase = _OfferSignPhase.offer;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (_phase == _OfferSignPhase.waiting || _phase == _OfferSignPhase.signing) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              _phase == _OfferSignPhase.waiting ? 'Broadcasting offer...' : 'Signing...',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      );
+    }
+
+    final details = widget.state.request.signingDetails;
+    final walletCtx = WalletContext.of(context);
+
+    return SingleChildScrollView(
+      controller: widget.scrollController,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (details is SigningDetails_Transaction && walletCtx != null) ...[
+            buildDetailsColumn(
+              context,
+              txDetails: TxDetailsModel(
+                tx: details.transaction,
+                chainTipHeight: walletCtx.superWallet.height(),
+                now: DateTime.now(),
+              ),
+              showConfirmations: false,
+            ),
+            const Divider(),
+          ] else if (details is SigningDetails_Message) ...[
+            ListTile(
+              leading: const Icon(Icons.message),
+              title: Text(details.message),
+            ),
+            const Divider(),
+          ],
+          DeviceSelectorList(
+            title: 'Offer to sign with',
+            devices: _deviceItems,
+            selected: _selectedDevices,
+            onToggle: (id) => setState(() {
+              if (_selectedDevices.contains(id)) {
+                _selectedDevices.remove(id);
+              } else {
+                _selectedDevices.add(id);
+              }
+            }),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                _error!,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: FilledButton(
+              onPressed: _selectedDevices.isNotEmpty ? _doOffer : null,
+              child: Text(widget.state.offers.length + _selectedDevices.length >= widget.threshold ? 'Sign' : 'Offer to Sign'),
             ),
           ),
         ],

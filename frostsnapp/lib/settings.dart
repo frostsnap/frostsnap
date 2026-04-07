@@ -47,6 +47,28 @@ class SettingsContent extends StatelessWidget {
   }
 }
 
+class UsbToggleButton extends StatefulWidget {
+  const UsbToggleButton({super.key});
+
+  @override
+  State<UsbToggleButton> createState() => _UsbToggleButtonState();
+}
+
+class _UsbToggleButtonState extends State<UsbToggleButton> {
+  @override
+  Widget build(BuildContext context) {
+    final enabled = coord.usbEnabled();
+    return IconButton(
+      icon: Icon(Icons.usb, color: enabled ? null : Colors.red),
+      tooltip: enabled ? 'USB enabled' : 'USB disabled',
+      onPressed: () {
+        coord.setUsbEnabled(value: !enabled);
+        setState(() {});
+      },
+    );
+  }
+}
+
 class SettingsContext extends InheritedWidget {
   final Settings settings;
   late final Stream<DeveloperSettings> developerSettings;
@@ -247,6 +269,33 @@ class SettingsPage extends StatelessWidget {
                             },
                             value: snap.data?.developerMode ?? false,
                           ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                SettingsItem(
+                  title: Text("USB"),
+                  icon: Icons.usb,
+                  builder: (context, title, icon) {
+                    final settingsCtx = SettingsContext.of(context)!;
+                    return StreamBuilder(
+                      stream: settingsCtx.developerSettings,
+                      builder: (context, snap) {
+                        if (!(snap.data?.developerMode ?? false)) {
+                          return SizedBox.shrink();
+                        }
+                        return StatefulBuilder(
+                          builder: (context, setState) {
+                            return SwitchListTile(
+                              title: title,
+                              value: coord.usbEnabled(),
+                              onChanged: (value) {
+                                coord.setUsbEnabled(value: value);
+                                setState(() {});
+                              },
+                            );
+                          },
                         );
                       },
                     );

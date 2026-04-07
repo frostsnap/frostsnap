@@ -906,6 +906,14 @@ impl FfiCoordinator {
         self.usb_sender.wipe_all()
     }
 
+    pub fn set_usb_enabled(&self, value: bool) {
+        self.usb_sender.set_enabled(value);
+    }
+
+    pub fn usb_enabled(&self) -> bool {
+        self.usb_sender.is_enabled()
+    }
+
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
         let session = {
             let mut db = self.db.lock().unwrap();
@@ -989,11 +997,12 @@ impl FfiCoordinator {
         access_structure_ref: AccessStructureRef,
         all_binonces: &[ParticipantBinonces],
         id: NonceReservationId,
+        device_id: DeviceId,
     ) -> bool {
         self.coordinator
             .lock()
             .unwrap()
-            .can_sign_with_nonce_reservation(sign_task, access_structure_ref, all_binonces, id)
+            .can_sign_with_nonce_reservation(sign_task, access_structure_ref, all_binonces, id, device_id)
     }
 
     pub fn sign_with_nonce_reservation(
@@ -1002,6 +1011,7 @@ impl FfiCoordinator {
         access_structure_ref: AccessStructureRef,
         all_binonces: &[ParticipantBinonces],
         id: NonceReservationId,
+        device_id: DeviceId,
     ) -> anyhow::Result<SignSessionId> {
         let session_id = {
             let mut db = self.db.lock().unwrap();
@@ -1012,8 +1022,9 @@ impl FfiCoordinator {
                     access_structure_ref,
                     all_binonces,
                     id,
+                    device_id,
                 ) {
-                    return Err(anyhow::anyhow!("device cannot sign with nonce reservation"));
+                    return Err(anyhow::anyhow!("device cannot sign with nonce reservation id={:?} device={:?}", id, device_id));
                 }
                 Ok(coordinator.ensure_tmp_remote_sign_session(
                     sign_task,
@@ -1035,18 +1046,6 @@ impl FfiCoordinator {
             .lock()
             .unwrap()
             .get_device_signature_shares(session_id, device_id)
-    }
-
-    pub fn add_remote_signature_shares(
-        &self,
-        session_id: SignSessionId,
-        shares: ParticipantSignatureShares,
-    ) -> anyhow::Result<()> {
-        let mut db = self.db.lock().unwrap();
-        let mut coord = self.coordinator.lock().unwrap();
-        coord.staged_mutate(&mut *db, |coordinator| {
-            Ok(coordinator.add_remote_signature_shares(session_id, shares)?)
-        })
     }
 
     pub fn ensure_tmp_remote_sign_session(

@@ -256,6 +256,16 @@ impl Coordinator {
         self.0.wipe_all_devices();
     }
 
+    #[frb(sync)]
+    pub fn set_usb_enabled(&self, value: bool) {
+        self.0.set_usb_enabled(value);
+    }
+
+    #[frb(sync)]
+    pub fn usb_enabled(&self) -> bool {
+        self.0.usb_enabled()
+    }
+
     pub fn cancel_protocol(&self) {
         self.0.cancel_protocol()
     }

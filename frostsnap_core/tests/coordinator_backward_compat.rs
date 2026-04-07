@@ -297,8 +297,8 @@ fn test_all_coordinator_mutations() {
         }),
         Mutation::Signing(SigningMutation::NewNonceReservation {
             id: NonceReservationId::from_binonces(&[test_nonce]),
+            device_id: DeviceId([6u8; 33]),
             reservation: NonceReservation {
-                device_id: DeviceId([6u8; 33]),
                 binonces: vec![test_nonce],
                 nonce_state: CoordNonceStreamState {
                     stream_id: NonceStreamId([7u8; 16]),
@@ -309,9 +309,11 @@ fn test_all_coordinator_mutations() {
         }),
         Mutation::Signing(SigningMutation::CancelNonceReservation {
             id: NonceReservationId::from_binonces(&[test_nonce]),
+            device_id: None,
         }),
         Mutation::Signing(SigningMutation::ConsumeNonceReservation {
             id: NonceReservationId::from_binonces(&[test_nonce]),
+            device_id: DeviceId([6u8; 33]),
             n_signatures: 1,
         }),
     ];

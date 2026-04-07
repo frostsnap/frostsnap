@@ -984,7 +984,7 @@ impl FrostCoordinator {
     pub fn clear_tmp_data(&mut self) {
         self.pending_keygens.clear();
         self.restoration.clear_tmp_data();
-        self.signing.tmp_remote_sign_sessions.clear();
+        self.signing.clear_tmp_data();
     }
 
     pub fn knows_about_share(

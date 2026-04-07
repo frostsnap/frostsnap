@@ -466,9 +466,10 @@ impl Coordinator {
         access_structure_ref: AccessStructureRef,
         all_binonces: Vec<ParticipantBinonces>,
         id: NonceReservationId,
+        device_id: DeviceId,
     ) -> bool {
         self.0
-            .can_sign_with_nonce_reservation(&sign_task, access_structure_ref, &all_binonces, id)
+            .can_sign_with_nonce_reservation(&sign_task, access_structure_ref, &all_binonces, id, device_id)
     }
 
     pub fn sign_with_nonce_reservation(
@@ -477,9 +478,10 @@ impl Coordinator {
         access_structure_ref: AccessStructureRef,
         all_binonces: Vec<ParticipantBinonces>,
         id: NonceReservationId,
+        device_id: DeviceId,
     ) -> Result<SignSessionId> {
         self.0
-            .sign_with_nonce_reservation(sign_task, access_structure_ref, &all_binonces, id)
+            .sign_with_nonce_reservation(sign_task, access_structure_ref, &all_binonces, id, device_id)
     }
 
     #[frb(sync)]
@@ -489,15 +491,6 @@ impl Coordinator {
         device_id: DeviceId,
     ) -> Option<ParticipantSignatureShares> {
         self.0.get_device_signature_shares(session_id, device_id)
-    }
-
-    pub fn add_remote_signature_shares(
-        &self,
-        session_id: SignSessionId,
-        shares: &ParticipantSignatureShares,
-    ) -> Result<()> {
-        self.0
-            .add_remote_signature_shares(session_id, shares.clone())
     }
 
     pub fn ensure_tmp_remote_sign_session(

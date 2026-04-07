@@ -367,7 +367,7 @@ impl NostrClient {
         access_structure_id: AccessStructureId,
         nsec: String,
         reply_to: NostrEventId,
-        binonces: ParticipantBinonces,
+        binonces: Vec<ParticipantBinonces>,
     ) -> Result<NostrEventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
@@ -608,7 +608,10 @@ pub enum FfiChannelEvent {
     GroupMetadata {
         members: Vec<FfiGroupMember>,
     },
-    SigningEvent(FfiSigningEvent),
+    SigningEvent {
+        event: FfiSigningEvent,
+        pending: bool,
+    },
     Error {
         event_id: NostrEventId,
         author: PublicKey,
@@ -684,7 +687,7 @@ pub enum FfiSigningEvent {
         event_id: NostrEventId,
         author: PublicKey,
         request_id: NostrEventId,
-        share_index: u32,
+        share_indices: Vec<u32>,
         sealed: Option<crate::frb_generated::RustAutoOpaque<SealedSigningData>>,
         timestamp: u64,
     },
@@ -749,11 +752,11 @@ impl From<ChannelEvent> for FfiChannelEvent {
             ChannelEvent::GroupMetadata { members } => FfiChannelEvent::GroupMetadata {
                 members: members.into_iter().map(|m| m.into()).collect(),
             },
-            ChannelEvent::Frostsnap(frostsnap_event) => {
+            ChannelEvent::Frostsnap { event: frostsnap_event, pending } => {
                 use frostsnap_nostr::events::{FrostsnapEvent, SigningEvent};
                 match frostsnap_event {
                     FrostsnapEvent::Signing(signing) => {
-                        FfiChannelEvent::SigningEvent(match signing {
+                        FfiChannelEvent::SigningEvent { event: match signing {
                             SigningEvent::Request {
                                 event_id,
                                 author,
@@ -785,8 +788,10 @@ impl From<ChannelEvent> for FfiChannelEvent {
                                 event_id: event_id.into(),
                                 author,
                                 request_id: request_id.into(),
-                                share_index: u32::try_from(binonces.share_index)
-                                    .expect("share index should fit in u32"),
+                                share_indices: binonces.iter().map(|b|
+                                    u32::try_from(b.share_index)
+                                        .expect("share index should fit in u32")
+                                ).collect(),
                                 sealed: sealed.map(|chain| {
                                     crate::frb_generated::RustAutoOpaque::new(SealedSigningData(
                                         chain,
@@ -820,7 +825,7 @@ impl From<ChannelEvent> for FfiChannelEvent {
                                 request_id: request_id.into(),
                                 timestamp,
                             },
-                        })
+                        }, pending }
                     }
                 }
             }

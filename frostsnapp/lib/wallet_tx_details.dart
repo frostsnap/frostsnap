@@ -27,6 +27,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 const BROADCAST_TIMEOUT = Duration(seconds: 3);
 
+enum SigningMode {
+  start,
+  restore,
+}
+
 class TxDetailsModel {
   /// The raw transaction.
   Transaction tx;
@@ -200,17 +205,45 @@ class TxSentOrReceivedTile extends StatelessWidget {
   }
 }
 
-class TxDetailsPage extends StatefulWidget {
-  final ScrollController? scrollController;
-  final TxDetailsModel txDetails;
-  final SignSessionId? signingSessionId;
-  final SignSessionId? finishedSigningSessionId;
+class TxSigningParams {
+  final SigningMode mode;
   final AccessStructureRef? accessStructureRef;
   final UnsignedTx? unsignedTx;
   final List<DeviceId>? devices;
+  final SignSessionId? sessionId;
+
+  TxSigningParams.start({
+    required AccessStructureRef this.accessStructureRef,
+    required UnsignedTx this.unsignedTx,
+    required List<DeviceId> this.devices,
+  }) : mode = SigningMode.start, sessionId = null;
+
+  TxSigningParams.restore({
+    required SignSessionId this.sessionId,
+  }) : mode = SigningMode.restore, accessStructureRef = null, unsignedTx = null, devices = null;
+
+  Stream<SigningState> startSigning() {
+    switch (mode) {
+      case SigningMode.start:
+        return coord.startSigningTx(
+          accessStructureRef: accessStructureRef!,
+          unsignedTx: unsignedTx!,
+          devices: devices!,
+        );
+      case SigningMode.restore:
+        return coord.tryRestoreSigningSession(sessionId: sessionId!);
+    }
+  }
+}
+
+class TxDetailsPage extends StatefulWidget {
+  final ScrollController? scrollController;
+  final TxDetailsModel txDetails;
+  final SignSessionId? finishedSigningSessionId;
   final Stream<TxState> txStates;
   final PsbtManager psbtMan;
   final Psbt? psbt;
+  final TxSigningParams? signingParams;
 
   const TxDetailsPage({
     super.key,
@@ -218,12 +251,10 @@ class TxDetailsPage extends StatefulWidget {
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
-  }) : signingSessionId = null,
-       finishedSigningSessionId = null,
-       accessStructureRef = null,
-       unsignedTx = null,
-       devices = null,
-       psbt = null;
+    this.signingParams,
+    this.finishedSigningSessionId,
+    this.psbt,
+  });
 
   const TxDetailsPage.needsBroadcast({
     super.key,
@@ -232,41 +263,10 @@ class TxDetailsPage extends StatefulWidget {
     required this.txDetails,
     required this.psbtMan,
     required SignSessionId this.finishedSigningSessionId,
-  }) : signingSessionId = null,
-       accessStructureRef = null,
-       unsignedTx = null,
-       devices = null,
+  }) : signingParams = null,
        psbt = null;
 
-  const TxDetailsPage.restoreSigning({
-    super.key,
-    this.scrollController,
-    required this.txStates,
-    required this.txDetails,
-    required this.psbtMan,
-    required SignSessionId this.signingSessionId,
-  }) : finishedSigningSessionId = null,
-       accessStructureRef = null,
-       unsignedTx = null,
-       devices = null,
-       psbt = null;
-
-  const TxDetailsPage.startSigning({
-    super.key,
-    this.scrollController,
-    required this.txStates,
-    required this.txDetails,
-    required AccessStructureRef this.accessStructureRef,
-    required UnsignedTx this.unsignedTx,
-    required List<DeviceId> this.devices,
-    required this.psbtMan,
-    this.psbt,
-  }) : signingSessionId = null,
-       finishedSigningSessionId = null;
-
-  bool get isRestoreSigning => signingSessionId != null;
-  bool get isStartSigning => accessStructureRef != null && unsignedTx != null;
-  bool get isSigning => isRestoreSigning || isStartSigning;
+  bool get isSigning => signingParams != null;
 
   @override
   State<TxDetailsPage> createState() => _TxDetailsPageState();
@@ -285,9 +285,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   late final actionDialogController;
 
-  bool? get signingDone => signingState == null
-      ? null
-      : signingState!.gotShares.length >= signingState!.neededFrom.length;
+  List<EncodedSignature>? get finishedSignatures => signingState?.finishedSignatures;
 
   onTxStateData(TxState data) {
     final tx = data.txs.firstWhereOrNull((tx) => tx.txid == txDetails.tx.txid);
@@ -299,7 +297,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   Future<void> onSigningSessionData(SigningState data) async {
     if (!mounted) return;
 
-    if (!widget.isStartSigning) this.isFirstRun = false;
+    if (widget.signingParams?.mode != SigningMode.start) this.isFirstRun = false;
 
     final signatures = data.finishedSignatures;
 
@@ -323,7 +321,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         );
       }
 
-      if ((widget.isStartSigning && isFirstRun) || signatures != null) {
+      if ((widget.signingParams?.mode == SigningMode.start && isFirstRun) || signatures != null) {
         isFirstRun = false;
         widget.psbtMan.insert(ssid: data.sessionId, psbt: psbt);
         if (signatures == null) {
@@ -369,7 +367,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   }
 
   void _onCancelSigning() {
-    if (signingDone ?? false) return;
+    if (finishedSignatures != null) return;
     Navigator.popUntil(context, (r) => r.isFirst);
   }
 
@@ -378,9 +376,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     super.initState();
 
     txDetails = widget.txDetails;
-    ssid = widget.signingSessionId ?? widget.finishedSigningSessionId;
+    ssid = widget.finishedSigningSessionId;
     psbt = widget.psbt;
-    // Attempt to get psbt elsewhere.
     if (psbt == null && ssid != null) {
       psbt = widget.psbtMan.withSsid(ssid: ssid!);
     }
@@ -405,28 +402,15 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     );
 
     try {
-      if (widget.isSigning) {
+      if (widget.signingParams != null) {
         devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
         broadcastDone = false;
-        if (widget.isRestoreSigning) {
-          signingSub = coord
-              .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
-              .listen(onSigningSessionData);
-        } else if (widget.isStartSigning) {
-          late final StreamSubscription<SigningState> sub;
-          sub = coord
-              .startSigningTx(
-                accessStructureRef: widget.accessStructureRef!,
-                unsignedTx: widget.unsignedTx!,
-                devices: widget.devices!,
-              )
-              .listen((state) {
-                // Ensure `onSigningSessionData` is called sequentially.
-                sub.pause();
-                onSigningSessionData(state).whenComplete(sub.resume);
-              });
-          signingSub = sub;
-        }
+        late final StreamSubscription<SigningState> sub;
+        sub = widget.signingParams!.startSigning().listen((state) {
+          sub.pause();
+          onSigningSessionData(state).whenComplete(sub.resume);
+        });
+        signingSub = sub;
       }
     } catch (e) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -505,7 +489,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 firstChild: buildActionsRow(context),
                 secondChild: buildSignAndBroadcastCard(context),
                 crossFadeState:
-                    ((signingDone ?? true) &&
+                    ((finishedSignatures != null || signingState == null) &&
                         (broadcastDone ?? txDetails.tx.timestamp() != null))
                     ? CrossFadeState.showFirst
                     : CrossFadeState.showSecond,
@@ -519,68 +503,73 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     );
   }
 
-  Widget buildSignaturesNeededColumn(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      ListTile(
-        title: Text('Signatures Needed'),
-        subtitle: Text('Connect a device to sign'),
-        trailing: Stack(
-          alignment: AlignmentDirectional.center,
-          children: [
-            CircularProgressIndicator(
-              value:
-                  (signingState?.gotShares.length ?? 0) /
-                  (signingState?.neededFrom.length ?? 1),
-              backgroundColor: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest,
-              strokeCap: StrokeCap.round,
-            ),
-            Text(
-              '${signingState?.gotShares.length}/${signingState?.neededFrom.length}',
-            ),
-          ],
-        ),
-      ),
-      ...((signingState?.neededFrom) ?? []).map((deviceId) {
-        final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
-        final isConnected = connectedDevices.contains(deviceId);
-        final Widget trailing;
-        if (signingState!.gotShares.any(
-          (gotSharesFrom) => deviceIdEquals(deviceId, gotSharesFrom),
-        )) {
-          trailing = AnimatedCheckCircle();
-        } else {
-          trailing = Text(
-            isConnected ? 'Requesting Signature' : '',
-            style: TextStyle(
-              color: isConnected ? Theme.of(context).colorScheme.primary : null,
-            ),
-          );
-        }
-        return ListTile(
-          enabled: isConnected,
-          title: Text(deviceName),
-          trailing: trailing,
-        );
-      }),
-      Divider(height: 0.0),
-      Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 4.0, horizontal: 12.0),
-          child: TextButton(
-            onPressed: () async => showCancelSigningDialog(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: Text('Cancel'),
+  Widget buildSignaturesNeededColumn(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          title: Text('Signatures Needed'),
+          subtitle: Text('Connect a device to sign'),
+          trailing: Stack(
+            alignment: AlignmentDirectional.center,
+            children: [
+              CircularProgressIndicator(
+                value: (signingState?.gotShares.length ?? 0) /
+                    (signingState?.neededFrom.length ?? 1),
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                strokeCap: StrokeCap.round,
+              ),
+              Text(
+                '${signingState?.gotShares.length}/${signingState?.neededFrom.length}',
+              ),
+            ],
           ),
         ),
-      ),
-    ],
-  );
+        ...((signingState?.neededFrom) ?? []).map((deviceId) {
+          final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
+          final isConnected = connectedDevices.contains(deviceId);
+          final accessStruct = widget.signingParams?.accessStructureRef != null
+              ? coord.getAccessStructure(asRef: widget.signingParams!.accessStructureRef!)
+              : null;
+          final shareIndex = accessStruct?.getDeviceShortShareIndex(deviceId: deviceId);
+          final label = shareIndex != null ? '#$shareIndex $deviceName' : deviceName;
+          final Widget trailing;
+          if (signingState!.gotShares.any(
+            (gotSharesFrom) => deviceIdEquals(deviceId, gotSharesFrom),
+          )) {
+            trailing = AnimatedCheckCircle();
+          } else {
+            trailing = Text(
+              isConnected ? 'Requesting Signature' : '',
+              style: TextStyle(
+                color: isConnected ? theme.colorScheme.primary : null,
+              ),
+            );
+          }
+          return ListTile(
+            enabled: isConnected,
+            title: Text(label),
+            trailing: trailing,
+          );
+        }),
+        Divider(height: 0.0),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 4.0, horizontal: 12.0),
+            child: TextButton(
+              onPressed: () async => showCancelSigningDialog(context),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.error,
+              ),
+              child: Text('Cancel'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget buildBroadcastNeededColumn(BuildContext context) {
     final psbt = this.psbt;
@@ -598,7 +587,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           ),
         Flexible(
           child: FilledButton(
-            onPressed: (signingDone ?? true && !isBroadcasting)
+            onPressed: (finishedSignatures != null || signingState == null) && !isBroadcasting
                 ? () => broadcast(context)
                 : null,
             child: Text('Broadcast'),
@@ -633,34 +622,35 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   Widget buildSignAndBroadcastCard(BuildContext context) {
     final theme = Theme.of(context);
+    final signingActive = widget.signingParams != null;
+    final signingColumn = Card.filled(
+      margin: EdgeInsets.all(0.0),
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: buildSignaturesNeededColumn(context),
+    );
     return AnimatedCrossFade(
-      firstChild: AnimatedGradientBorder(
-        stretchAlongAxis: true,
-        borderSize: 1.0,
-        glowSize: 5.0,
-        animationTime: 6,
-        borderRadius: BorderRadius.circular(12.0),
-        gradientColors: [
-          theme.colorScheme.outlineVariant,
-          theme.colorScheme.primary,
-          theme.colorScheme.secondary,
-          theme.colorScheme.tertiary,
-        ],
-        child: (Widget child) {
-          final theme = Theme.of(context);
-          return Card.filled(
-            margin: EdgeInsets.all(0.0),
-            color: theme.colorScheme.surfaceContainerHigh,
-            child: child,
-          );
-        }(buildSignaturesNeededColumn(context)),
-      ),
+      firstChild: signingActive
+          ? AnimatedGradientBorder(
+              stretchAlongAxis: true,
+              borderSize: 1.0,
+              glowSize: 5.0,
+              animationTime: 6,
+              borderRadius: BorderRadius.circular(12.0),
+              gradientColors: [
+                theme.colorScheme.outlineVariant,
+                theme.colorScheme.primary,
+                theme.colorScheme.secondary,
+                theme.colorScheme.tertiary,
+              ],
+              child: signingColumn,
+            )
+          : signingColumn,
       secondChild: Card.filled(
         color: Colors.transparent,
         margin: EdgeInsets.all(0.0),
         child: buildBroadcastNeededColumn(context),
       ),
-      crossFadeState: (signingDone ?? true)
+      crossFadeState: (finishedSignatures != null || signingState == null)
           ? CrossFadeState.showSecond
           : CrossFadeState.showFirst,
       duration: Durations.medium3,
@@ -729,9 +719,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   broadcast(BuildContext context) async {
     if (mounted) setState(() => isBroadcasting = true);
     final walletCtx = WalletContext.of(context)!;
-    final tx = await txDetails.tx.withSignatures(
-      signatures: signingState?.finishedSignatures ?? [],
-    );
+    final sigs = finishedSignatures;
+    if (sigs == null) return;
+    final tx = await txDetails.tx.withSignatures(signatures: sigs);
     var broadcastError = '';
     final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
@@ -789,7 +779,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 label: Text('Show PSBT'),
                 onPressed: () => showExportPsbtDialog(context, psbt),
               ),
-            if (!txDetails.isConfirmed && (signingDone ?? true))
+            if (!txDetails.isConfirmed && (finishedSignatures != null || signingState == null))
               ActionChip(
                 avatar: Icon(Icons.publish),
                 label: Text('Rebroadcast'),
@@ -847,6 +837,36 @@ Widget buildDetailsColumn(
                 title: SatoshiText(value: info.amount, showSign: false),
                 onTap: () =>
                     copyAction(context, 'Recipient amount', '${info.amount}'),
+              ),
+            ],
+          );
+        }),
+      if (!txDetails.isSend)
+        ...txDetails.tx.recipients().where((info) => info.isMine).map((info) {
+          final address = info.address(network: walletCtx.network)?.toString();
+          final idx = info.derivationIndex;
+          return Column(
+            children: [
+              ListTile(
+                dense: dense,
+                contentPadding: contentPadding,
+                leading: Text('Received at${idx != null ? ' #$idx' : ''}'),
+                title: Text(
+                  spacedHex(address ?? '<unknown>'),
+                  style: monospaceTextStyle,
+                  textAlign: TextAlign.end,
+                ),
+                onTap: address == null
+                    ? null
+                    : () => copyAction(context, 'Receiving address', address),
+              ),
+              ListTile(
+                dense: dense,
+                contentPadding: contentPadding,
+                leading: Text('\u2570 Amount'),
+                title: SatoshiText(value: info.amount, showSign: false),
+                onTap: () =>
+                    copyAction(context, 'Received amount', '${info.amount}'),
               ),
             ],
           );

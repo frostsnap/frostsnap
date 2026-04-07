@@ -298,8 +298,13 @@ Future<void> showSignatureDialog(
 
 class DeviceSigningProgress extends StatelessWidget {
   final Stream<SigningState> stream;
+  final Map<DeviceId, Widget>? signerAvatars;
 
-  const DeviceSigningProgress({super.key, required this.stream});
+  const DeviceSigningProgress({
+    super.key,
+    required this.stream,
+    this.signerAvatars,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -345,6 +350,7 @@ class DeviceSigningProgress extends StatelessWidget {
                   );
                 }
                 return ListTile(
+                  leading: signerAvatars?[id],
                   title: Text(name ?? "<unknown>"),
                   trailing: SizedBox(height: iconSize, child: icon),
                 );

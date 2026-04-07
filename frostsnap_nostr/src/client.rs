@@ -47,7 +47,7 @@ enum CachedSigningData {
     },
     Offer {
         parent_id: EventId,
-        binonces: ParticipantBinonces,
+        binonces: Vec<ParticipantBinonces>,
     },
 }
 
@@ -78,7 +78,7 @@ impl SigningEventTree {
         );
     }
 
-    fn add_offer(&mut self, event_id: EventId, parent_id: EventId, binonces: ParticipantBinonces) {
+    fn add_offer(&mut self, event_id: EventId, parent_id: EventId, binonces: Vec<ParticipantBinonces>) {
         self.events.insert(
             event_id,
             CachedSigningData::Offer {
@@ -117,7 +117,7 @@ impl SigningEventTree {
                     parent_id,
                     binonces,
                 }) => {
-                    collected.push(binonces.clone());
+                    collected.extend(binonces.iter().cloned());
                     current = *parent_id;
                 }
                 None => {
@@ -305,18 +305,33 @@ impl ChannelClient {
                                 }
                             }
                             Some(ChannelCommand::SendSigningEvent { inner_event }) => {
-                                let channel_event = process_signing_inner_event(
+                                let message_id = inner_event.id;
+                                let channel_event = match process_signing_inner_event(
                                     &inner_event,
                                     &task_signing_events,
                                     &task_signing_key,
-                                );
+                                ) {
+                                    Ok(event) => ChannelEvent::Frostsnap { event, pending: true },
+                                    Err(err) => err,
+                                };
                                 sink.send(channel_event);
-                                if let Err(e) = send_prepared_message(
+                                match send_prepared_message(
                                     &client_for_task,
                                     &channel_keys_for_task,
                                     inner_event,
                                 ).await {
-                                    tracing::error!(error = %e, "failed to send signing event");
+                                    Ok(()) => {
+                                        sink.send(ChannelEvent::MessageSent {
+                                            message_id,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(error = %e, "failed to send signing event");
+                                        sink.send(ChannelEvent::MessageSendFailed {
+                                            message_id,
+                                            reason: e.to_string(),
+                                        });
+                                    }
                                 }
                             }
                             None => break,
@@ -494,7 +509,7 @@ impl ChannelHandle {
         &self,
         keys: &Keys,
         reply_to: EventId,
-        binonces: ParticipantBinonces,
+        binonces: Vec<ParticipantBinonces>,
     ) -> Result<EventId> {
         let message = SigningMessage::Offer { binonces };
         self.send_signing_event(keys, &message, Some(reply_to))
@@ -590,11 +605,12 @@ fn decode_bincode<T: bincode::Decode<()>>(inner_event: &Event) -> Result<T> {
 }
 
 /// Process a decrypted inner event that contains a signing message.
+/// Returns `Ok(event)` on success, `Err(error_event)` for malformed/unauthorized events.
 fn process_signing_inner_event(
     inner_event: &Event,
     signing_events: &Mutex<SigningEventTree>,
     signing_key: &KeyContext,
-) -> ChannelEvent {
+) -> Result<FrostsnapEvent, ChannelEvent> {
     let event_id = inner_event.id;
     let author = inner_event.pubkey;
     let timestamp = inner_event.created_at.as_secs();
@@ -603,12 +619,12 @@ fn process_signing_inner_event(
         Ok(m) => m,
         Err(e) => {
             tracing::warn!(event_id = %event_id, error = %e, "failed to decode signing message");
-            return ChannelEvent::Error {
+            return Err(ChannelEvent::Error {
                 event_id,
                 author,
                 timestamp,
                 reason: format!("failed to decode signing message: {e}"),
-            };
+            });
         }
     };
 
@@ -625,7 +641,7 @@ fn process_signing_inner_event(
                 access_structure_ref,
             );
 
-            ChannelEvent::Frostsnap(FrostsnapEvent::Signing(SigningEvent::Request {
+            Ok(FrostsnapEvent::Signing(SigningEvent::Request {
                 event_id,
                 author,
                 sign_task,
@@ -638,29 +654,42 @@ fn process_signing_inner_event(
             let parent_id = match extract_e_tag(inner_event) {
                 Some(id) => id,
                 None => {
-                    return ChannelEvent::Error {
+                    return Err(ChannelEvent::Error {
                         event_id,
                         author,
                         timestamp,
                         reason: "signing offer missing e-tag".into(),
-                    };
+                    });
                 }
             };
 
             let (request_id, sealed) = {
                 let mut cache = signing_events.lock().unwrap();
-                // ⛓️ Insert before walking so the offer is in the tree even if the parent hasn't arrived yet
                 cache.add_offer(event_id, parent_id, binonces.clone());
                 match cache.walk_chain(parent_id, signing_key) {
                     Ok(chain) => {
                         let request_id = chain.request_id;
                         let mut all_binonces = chain.binonces;
-                        all_binonces.push(binonces.clone());
+                        all_binonces.extend(binonces.iter().cloned());
 
                         let mut seen_indices = std::collections::BTreeSet::new();
                         all_binonces.retain(|b| seen_indices.insert(b.share_index));
 
-                        let sealed = if seen_indices.len() >= signing_key.threshold() {
+                        let threshold = signing_key.threshold();
+                        if seen_indices.len() > threshold {
+                            return Err(ChannelEvent::Error {
+                                event_id,
+                                author,
+                                timestamp,
+                                reason: format!(
+                                    "offer would exceed threshold ({} indices, threshold {})",
+                                    seen_indices.len(),
+                                    threshold,
+                                ),
+                            });
+                        }
+
+                        let sealed = if seen_indices.len() == threshold {
                             Some(SigningChain {
                                 request_id,
                                 sign_task: chain.sign_task,
@@ -680,7 +709,7 @@ fn process_signing_inner_event(
                 }
             };
 
-            ChannelEvent::Frostsnap(FrostsnapEvent::Signing(SigningEvent::Offer {
+            Ok(FrostsnapEvent::Signing(SigningEvent::Offer {
                 event_id,
                 author,
                 request_id,
@@ -696,16 +725,16 @@ fn process_signing_inner_event(
             let request_id = match extract_e_tag(inner_event) {
                 Some(id) => id,
                 None => {
-                    return ChannelEvent::Error {
+                    return Err(ChannelEvent::Error {
                         event_id,
                         author,
                         timestamp,
                         reason: "signing partial missing e-tag".into(),
-                    };
+                    });
                 }
             };
 
-            ChannelEvent::Frostsnap(FrostsnapEvent::Signing(SigningEvent::Partial {
+            Ok(FrostsnapEvent::Signing(SigningEvent::Partial {
                 event_id,
                 author,
                 request_id,
@@ -718,12 +747,12 @@ fn process_signing_inner_event(
             let request_id = match extract_e_tag(inner_event) {
                 Some(id) => id,
                 None => {
-                    return ChannelEvent::Error {
+                    return Err(ChannelEvent::Error {
                         event_id,
                         author,
                         timestamp,
                         reason: "signing cancel missing e-tag".into(),
-                    };
+                    });
                 }
             };
 
@@ -732,15 +761,15 @@ fn process_signing_inner_event(
                 .is_some_and(|data| matches!(data, CachedSigningData::Request { author: req_author, .. } if *req_author == author));
 
             if !is_authorized {
-                return ChannelEvent::Error {
+                return Err(ChannelEvent::Error {
                     event_id,
                     author,
                     timestamp,
                     reason: "cancel from non-request-author".into(),
-                };
+                });
             }
 
-            ChannelEvent::Frostsnap(FrostsnapEvent::Signing(SigningEvent::Cancel {
+            Ok(FrostsnapEvent::Signing(SigningEvent::Cancel {
                 event_id,
                 author,
                 request_id,
@@ -786,7 +815,10 @@ fn process_event(
             pending: false,
         }
     } else if kind == KIND_FROSTSNAP_SIGNING {
-        process_signing_inner_event(&inner_event, signing_events, signing_key)
+        match process_signing_inner_event(&inner_event, signing_events, signing_key) {
+            Ok(event) => ChannelEvent::Frostsnap { event, pending: false },
+            Err(err) => err,
+        }
     } else {
         tracing::warn!(event_id = %event_id, kind = ?kind, "unknown inner event kind");
         ChannelEvent::Error {

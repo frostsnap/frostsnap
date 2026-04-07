@@ -1,13 +1,35 @@
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/nostr_chat/chat_page.dart' show MessageStatus;
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_tx_details.dart';
 
-class SigningRequestState {
+class SigningRequestState extends ChangeNotifier {
   final FfiSigningEvent_Request request;
   final Map<String, FfiSigningEvent_Offer> offers = {};
   final Map<String, FfiSigningEvent_Partial> partials = {};
-  bool cancelled = false;
+  bool _cancelled = false;
+
+  bool get cancelled => _cancelled;
+  set cancelled(bool value) {
+    _cancelled = value;
+    notifyListeners();
+  }
+
+  void addOffer(String pubkeyHex, FfiSigningEvent_Offer offer) {
+    offers[pubkeyHex] = offer;
+    notifyListeners();
+  }
+
+  void addPartial(String pubkeyHex, FfiSigningEvent_Partial partial) {
+    partials[pubkeyHex] = partial;
+    notifyListeners();
+  }
 
   SigningRequestState(this.request);
 
@@ -29,20 +51,84 @@ class SigningRequestState {
       DateTime.fromMillisecondsSinceEpoch(request.timestamp * 1000);
 }
 
-String signingDetailsText(SigningDetails details) => switch (details) {
+String signingDetailsText(
+  SigningDetails details, {
+  WalletContext? walletCtx,
+}) => switch (details) {
   SigningDetails_Message(:final message) => message,
   SigningDetails_Nostr(:final content) => content,
-  SigningDetails_Transaction() => 'Bitcoin Transaction',
+  SigningDetails_Transaction(:final transaction) => () {
+    if (walletCtx == null) return 'Bitcoin Transaction';
+    final recipients = transaction.recipients().where((r) => !r.isMine).toList();
+    if (recipients.isEmpty) return 'Bitcoin Transaction';
+    final r = recipients.first;
+    final addr = r.address(network: walletCtx.network)?.toString() ?? '?';
+    return 'Send ${r.amount} sats to $addr';
+  }(),
 };
 
-Widget _buildSigningDetails(ThemeData theme, SigningDetails details) {
+Widget _buildSigningDetails(
+  BuildContext context,
+  ThemeData theme,
+  SigningDetails details, {
+  VoidCallback? onTap,
+}) {
+  if (details is SigningDetails_Transaction) {
+    final walletCtx = WalletContext.of(context);
+    final tx = details.transaction;
+    if (walletCtx != null) {
+      final chainTipHeight = walletCtx.superWallet.height();
+      final txDetails = TxDetailsModel(
+        tx: tx,
+        chainTipHeight: chainTipHeight,
+        now: DateTime.now(),
+      );
+      final accentColor = txDetails.isSend
+          ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
+          : Colors.green.harmonizeWith(theme.colorScheme.primary);
+      return Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          leading: Icon(
+            txDetails.isSend ? Icons.north_east : Icons.south_east,
+            color: accentColor,
+          ),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(txDetails.isSend ? 'Send' : 'Receive'),
+              SatoshiText(
+                value: txDetails.netValue.abs(),
+                style: theme.textTheme.bodyLarge,
+              ),
+            ],
+          ),
+          onTap: onTap ?? () {
+            showBottomSheetOrDialog(
+              context,
+              title: const Text('Transaction Details'),
+              builder: (_, scrollController) => walletCtx.wrap(
+                Builder(builder: (ctx) => SingleChildScrollView(
+                  controller: scrollController,
+                  child: buildDetailsColumn(ctx, txDetails: txDetails),
+                )),
+              ),
+            );
+          },
+        ),
+      );
+    }
+  }
+
   final (IconData icon, String text) = switch (details) {
     SigningDetails_Message(:final message) => (Icons.message, message),
     SigningDetails_Nostr(:final content) => (Icons.tag, content),
-    SigningDetails_Transaction() => (
-      Icons.currency_bitcoin,
-      'Bitcoin Transaction',
-    ),
+    SigningDetails_Transaction() => (Icons.currency_bitcoin, 'Bitcoin Transaction'),
   };
 
   return Container(
@@ -310,105 +396,17 @@ class SigningErrorCard extends StatelessWidget {
   }
 }
 
-class TransactionTaskCard extends StatelessWidget {
-  final SigningRequestState state;
-  final int threshold;
-  final String? deviceName;
-  final VoidCallback? onSign;
-  final String Function(PublicKey) getDisplayName;
-  final FfiNostrProfile? Function(PublicKey) getProfile;
-  final PublicKey? myPubkey;
-
-  const TransactionTaskCard({
-    super.key,
-    required this.state,
-    required this.threshold,
-    required this.getDisplayName,
-    required this.getProfile,
-    this.deviceName,
-    this.onSign,
-    this.myPubkey,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final canSign = onSign != null;
-
-    final checklist = state.offers.values.map((offer) {
-      final hasSigned = state.partials.containsKey(offer.author.toHex());
-      final name = getDisplayName(offer.author);
-      final profile = getProfile(offer.author);
-      return ListTile(
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-        title: Text('$name (key #${offer.shareIndex})'),
-        leading: NostrAvatar.small(profile: profile, pubkey: offer.author),
-        trailing: Icon(
-          hasSigned ? Icons.check_circle : Icons.circle_outlined,
-          color: hasSigned
-              ? theme.colorScheme.primary
-              : theme.colorScheme.onSurfaceVariant,
-        ),
-      );
-    }).toList();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        border: Border(
-          top: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: ExpansionTile(
-          initiallyExpanded: true,
-          shape: const Border(),
-          collapsedShape: const Border(),
-          leading: Icon(Icons.draw, color: theme.colorScheme.primary),
-          title: Text(
-            'Ready to sign',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          subtitle: Text(
-            signingDetailsText(state.request.signingDetails),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall,
-          ),
-          children: [
-            ...checklist,
-            if (canSign)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Center(
-                  child: FilledButton.icon(
-                    onPressed: onSign,
-                    icon: const Icon(Icons.draw),
-                    label: const Text('Sign'),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class SigningRequestCard extends StatelessWidget {
   final SigningRequestState state;
   final int threshold;
   final bool isMe;
   final bool isHighlighted;
+  final MessageStatus? sendStatus;
   final VoidCallback? onOfferToSign;
   final VoidCallback? onCancel;
   final String Function(PublicKey) getDisplayName;
   final FfiNostrProfile? profile;
+  final VoidCallback? onTap;
   final VoidCallback? onCopy;
   final VoidCallback? onReply;
   final VoidCallback? onTapAvatar;
@@ -419,10 +417,12 @@ class SigningRequestCard extends StatelessWidget {
     required this.threshold,
     required this.isMe,
     this.isHighlighted = false,
+    this.sendStatus,
     required this.getDisplayName,
     this.profile,
     this.onOfferToSign,
     this.onCancel,
+    this.onTap,
     this.onCopy,
     this.onReply,
     this.onTapAvatar,
@@ -443,10 +443,11 @@ class SigningRequestCard extends StatelessWidget {
         ? theme.colorScheme.primaryContainer
         : theme.colorScheme.surfaceContainerHighest;
 
-    final bubble = Opacity(
+    final bubble = GestureDetector(
+      onTap: onTap,
+      child: Opacity(
       opacity: isCancelled ? 0.5 : 1.0,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
+      child: Container(
         padding: const EdgeInsets.all(12),
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.7,
@@ -487,7 +488,7 @@ class SigningRequestCard extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 8),
-              _buildSigningDetails(theme, request.signingDetails),
+              _buildSigningDetails(context, theme, request.signingDetails, onTap: onTap),
               if (request.message.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(request.message, style: theme.textTheme.bodyMedium),
@@ -496,7 +497,7 @@ class SigningRequestCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 FilledButton(
                   onPressed: onOfferToSign,
-                  child: const Text('Offer to Sign'),
+                  child: Text(state.offers.length + 1 >= threshold ? 'Sign' : 'Offer to Sign'),
                 ),
               ],
               if (!isCancelled && !isComplete && onCancel != null) ...[
@@ -522,13 +523,27 @@ class SigningRequestCard extends StatelessWidget {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  if (isMe && sendStatus != null) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      switch (sendStatus!) {
+                        MessageStatus.pending => Icons.access_time,
+                        MessageStatus.sent => Icons.check,
+                        MessageStatus.failed => Icons.error_outline,
+                      },
+                      size: 12,
+                      color: sendStatus == MessageStatus.failed
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.outline,
+                    ),
+                  ],
                 ],
               ),
             ],
           ),
         ),
       ),
-    );
+    ));
 
     return _CardWrapper(
       bubble: bubble,
