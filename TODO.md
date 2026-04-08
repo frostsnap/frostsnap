@@ -13,16 +13,3 @@ esp-hal v0.22 to v1.0.0. Each entry should be resolved before this branch ships.
   Either port the frostsnap DS driver in-tree or wait for an upstream driver
   before re-enabling this.
 
-## v1 API quirks we should consider wrapping
-
-- **`esp_hal::timer::timg::Timer` doesn't auto-start in v1.** In v0.22
-  `Timer::new` called `set_counter_active(true)`; in v1 you have to call
-  `Timer::start()` from the `esp_hal::timer::Timer` trait yourself or
-  `timer.now()` stays frozen at 0. `DevicePeripherals::init` now does this
-  explicitly, but it's a footgun — consider switching to
-  `esp_hal::time::Instant::now()` (a free function backed by `SYSTIMER` that
-  is initialised by `esp_hal::init` and always runs) and dropping the
-  timg timer handles from `DevicePeripherals` / `Resources` / `FrostyUi` /
-  `SerialInterface` entirely. That would also let us drop the
-  `Box::leak(Box::new(timg0.timer0))` dance and the `T: timer::Timer` generic
-  on `SerialInterface`.

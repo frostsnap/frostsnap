@@ -11,7 +11,6 @@ use crate::{
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
 use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
-use esp_hal::timer::Timer;
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceName, DeviceSendBody,
     ReceiveSerial, Upstream, MAGIC_BYTES_PERIOD,
@@ -37,7 +36,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
         ref mut nvs,
         ota: ref mut ota_partitions,
         ref mut ui,
-        ref mut timer,
         ref mut sha256,
         ref mut upstream_serial,
         ref mut downstream_serial,
@@ -175,9 +173,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 ui.set_downstream_connection_state(downstream_connection_state);
             }
             (true, DownstreamConnectionState::Connected) => {
-                let now = timer.now();
+                let now = Instant::now();
                 if now > next_write_magic_bytes_downstream {
-                    next_write_magic_bytes_downstream = now + Duration::from_millis(MAGIC_BYTES_PERIOD);
+                    next_write_magic_bytes_downstream =
+                        now + Duration::from_millis(MAGIC_BYTES_PERIOD);
                     downstream_serial
                         .write_magic_bytes()
                         .expect("couldn't write magic bytes downstream");
@@ -309,7 +308,6 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                                         },
                                                         ui,
                                                         sha256,
-                                                        *timer,
                                                         rsa,
                                                     );
                                                     reset(upstream_serial);
@@ -471,13 +469,14 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
         {
             let staged_mutations = signer.staged_mutations();
             if !staged_mutations.is_empty() {
-                let now = timer.now();
+                let start = Instant::now();
                 mutation_log
                     .append(staged_mutations.drain(..).map(Mutation::Core))
                     .expect("writing core mutations failed");
-                let after = timer.now() - now;
-                upstream_connection
-                    .send_debug(format!("core mutations took {}ms", after.as_millis()));
+                upstream_connection.send_debug(format!(
+                    "core mutations took {}ms",
+                    start.elapsed().as_millis()
+                ));
             }
         }
 
@@ -670,10 +669,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     }
 }
 
-fn reset<T>(upstream_serial: &mut SerialInterface<T, Upstream>) -> !
-where
-    T: esp_hal::timer::Timer,
-{
+fn reset(upstream_serial: &mut SerialInterface<Upstream>) -> ! {
     let _ = upstream_serial.send_reset_signal();
     esp_hal::system::software_reset()
 }

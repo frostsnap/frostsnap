@@ -3,7 +3,6 @@
 
 extern crate alloc;
 use esp_hal::main;
-use esp_hal::timer::Timer;
 use frostsnap_device::{peripherals::DevicePeripherals, touch_handler, DISPLAY_REFRESH_MS};
 use frostsnap_widgets::debug::{EnabledDebug, OverlayDebug};
 
@@ -33,7 +32,6 @@ fn main() -> ! {
         let DevicePeripherals {
             display,
             mut touch_receiver,
-            timer,
             ..
         } = *device;
 
@@ -60,14 +58,14 @@ fn main() -> ! {
                 let mut current_widget_index = 0usize;
 
                 // Track last redraw time
-                let mut last_redraw_time = timer.now();
+                let mut last_redraw_time = esp_hal::time::Instant::now();
 
                 // Clear the screen with background color
                 let _ = display.clear(PALETTE.background);
 
                 // Main loop
                 loop {
-                    let now = timer.now();
+                    let now = esp_hal::time::Instant::now();
                     let now_ms = frostsnap_widgets::Instant::from_millis(
                         now.duration_since_epoch().as_millis(),
                     );
