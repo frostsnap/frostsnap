@@ -16,7 +16,6 @@ use esp_hal::{
     peripherals::{DS, RSA},
     spi::master::Spi,
     time::Rate,
-    timer::timg::{Timer, TimerGroup},
     uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
@@ -56,8 +55,7 @@ macro_rules! init_display {
         .with_sck($peripherals.GPIO8)
         .with_mosi($peripherals.GPIO7);
 
-        let spi_device =
-            embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs).unwrap();
+        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs).unwrap();
         let buffer: &'static mut [u8] = Box::leak(Box::new([0u8; 512]));
         let di = SpiInterface::new(
             spi_device,
@@ -115,12 +113,6 @@ type Display<'a> = mipidsi::Display<
 
 /// All device peripherals initialized and ready to use
 pub struct DevicePeripherals<'a> {
-    /// Shared timer for timing operations (leaked to 'static for SerialInterface)
-    pub timer: &'static Timer<'static>,
-
-    /// UI timer for display and touch operations
-    pub ui_timer: Timer<'static>,
-
     /// Display
     pub display: Display<'a>,
 
@@ -204,31 +196,12 @@ impl<'a> DevicePeripherals<'a> {
         let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
         // Get initial entropy from hardware RNG mixed with SHA256
-        let trng_source = esp_hal::rng::TrngSource::new(
-            peripherals.RNG.reborrow(),
-            peripherals.ADC1.reborrow(),
-        );
+        let trng_source =
+            esp_hal::rng::TrngSource::new(peripherals.RNG.reborrow(), peripherals.ADC1.reborrow());
         let mut trng = esp_hal::rng::Trng::try_new().expect("TRNG source should be enabled");
         let initial_rng = extract_entropy(&mut trng, &mut sha256, 1024);
         drop(trng);
         drop(trng_source);
-
-        // Initialize timers
-        let timg0 = TimerGroup::new(peripherals.TIMG0);
-        let timg1 = TimerGroup::new(peripherals.TIMG1);
-
-        // In esp-hal v1 `TimerGroup::new` does NOT auto-start the counter —
-        // in v0.22 it did. Without `start()` the timg counter stays at 0,
-        // `timer.now()` is frozen, and every `elapsed_ms >= DISPLAY_REFRESH_MS`
-        // gate in the main loops is permanently false → draws never happen.
-        use esp_hal::timer::Timer as _;
-        timg0.timer0.start();
-        timg1.timer0.start();
-
-        // Extract timer0 from TIMG0 and leak it to get 'static reference for SerialInterface
-        // This is safe because the timer lives for the entire program lifetime
-        let timer: &'static Timer<'static> = Box::leak(Box::new(timg0.timer0));
-        let ui_timer = timg1.timer0;
 
         // Detection pins (using AnyPin to avoid generics)
         let upstream_detect = Input::new(
@@ -309,8 +282,6 @@ impl<'a> DevicePeripherals<'a> {
             .with_tx(peripherals.GPIO20);
 
         Box::new(Self {
-            timer,
-            ui_timer,
             display,
             touch_receiver,
             backlight,

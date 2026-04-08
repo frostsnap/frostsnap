@@ -18,15 +18,9 @@ use crate::{
 };
 
 /// Type alias for serial interfaces
-type Serial<'a, D> = SerialInterface<'a, Timer<'static>, D>;
+type Serial<'a, D> = SerialInterface<'a, D>;
 use esp_hal::{
-    gpio::Input,
-    rsa::Rsa,
-    sha::Sha,
-    timer::timg::Timer,
-    uart::Uart,
-    usb_serial_jtag::UsbSerialJtag,
-    Blocking,
+    gpio::Input, rsa::Rsa, sha::Sha, uart::Uart, usb_serial_jtag::UsbSerialJtag, Blocking,
 };
 
 /// Device resources containing provisioned state and runtime partitions
@@ -56,7 +50,6 @@ pub struct Resources<'a> {
     pub ui: FrostyUi<'a>,
 
     // Runtime peripherals needed by esp32_run
-    pub timer: &'static Timer<'static>,
     pub sha256: Sha<'a>,
     pub upstream_serial: Serial<'a, Upstream>,
     pub downstream_serial: Serial<'a, Downstream>,
@@ -66,7 +59,6 @@ pub struct Resources<'a> {
 impl<'a> Resources<'a> {
     /// Create serial interfaces from UARTs and JTAG
     fn create_serial_interfaces(
-        timer: &'static Timer<'static>,
         uart_upstream: Option<Uart<'static, Blocking>>,
         uart_downstream: Uart<'static, Blocking>,
         jtag: UsbSerialJtag<'a, Blocking>,
@@ -76,17 +68,14 @@ impl<'a> Resources<'a> {
         let upstream_serial = if detect_device_upstream {
             log!("upstream set to uart");
             let uart = uart_upstream.expect("upstream UART should exist when detected");
-            SerialInterface::new_uart(uart, crate::uart_interrupt::UartNum::Uart1, timer)
+            SerialInterface::new_uart(uart, crate::uart_interrupt::UartNum::Uart1)
         } else {
             log!("upstream set to jtag");
-            SerialInterface::new_jtag(jtag, timer)
+            SerialInterface::new_jtag(jtag)
         };
 
-        let downstream_serial = SerialInterface::new_uart(
-            uart_downstream,
-            crate::uart_interrupt::UartNum::Uart0,
-            timer,
-        );
+        let downstream_serial =
+            SerialInterface::new_uart(uart_downstream, crate::uart_interrupt::UartNum::Uart0);
 
         (upstream_serial, downstream_serial)
     }
@@ -108,8 +97,6 @@ impl<'a> Resources<'a> {
 
         // Destructure peripherals to take what we need
         let DevicePeripherals {
-            timer,
-            ui_timer,
             display,
             touch_receiver,
             sha256,
@@ -131,8 +118,7 @@ impl<'a> Resources<'a> {
             .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
-        // Create UI with display and touch receiver (using ui_timer)
-        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
+        let ui = FrostyUi::new(display, touch_receiver);
 
         // Extract factory data
         let factory = factory_data.into_factory_data();
@@ -146,13 +132,8 @@ impl<'a> Resources<'a> {
         let certificate = Some(factory.certificate);
 
         // Create serial interfaces
-        let (upstream_serial, downstream_serial) = Self::create_serial_interfaces(
-            timer,
-            uart_upstream,
-            uart_downstream,
-            jtag,
-            &upstream_detect,
-        );
+        let (upstream_serial, downstream_serial) =
+            Self::create_serial_interfaces(uart_upstream, uart_downstream, jtag, &upstream_detect);
 
         Box::new(Self {
             rng,
@@ -163,7 +144,6 @@ impl<'a> Resources<'a> {
             nvs: partitions.nvs,
             ota: partitions.ota,
             ui,
-            timer,
             sha256,
             upstream_serial,
             downstream_serial,
@@ -186,8 +166,6 @@ impl<'a> Resources<'a> {
 
         // Destructure peripherals to take what we need
         let DevicePeripherals {
-            timer,
-            ui_timer,
             display,
             touch_receiver,
             sha256,
@@ -209,8 +187,7 @@ impl<'a> Resources<'a> {
             .expect("Failed to load HMAC keys from efuses");
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
-        // Create UI with display and touch receiver (using ui_timer)
-        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
+        let ui = FrostyUi::new(display, touch_receiver);
 
         // Create HardwareDs if factory data is present (dev devices might have it)
         let (ds, certificate) = if let Some(factory_data) = factory_data {
@@ -227,13 +204,8 @@ impl<'a> Resources<'a> {
         let rsa = Rsa::new(rsa);
 
         // Create serial interfaces
-        let (upstream_serial, downstream_serial) = Self::create_serial_interfaces(
-            timer,
-            uart_upstream,
-            uart_downstream,
-            jtag,
-            &upstream_detect,
-        );
+        let (upstream_serial, downstream_serial) =
+            Self::create_serial_interfaces(uart_upstream, uart_downstream, jtag, &upstream_detect);
 
         Box::new(Self {
             rng,
@@ -244,7 +216,6 @@ impl<'a> Resources<'a> {
             nvs: partitions.nvs,
             ota: partitions.ota,
             ui,
-            timer,
             sha256,
             upstream_serial,
             downstream_serial,
