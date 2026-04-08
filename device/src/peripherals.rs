@@ -2,11 +2,10 @@
 
 use alloc::{boxed::Box, rc::Rc};
 use core::cell::RefCell;
-use display_interface_spi::SPIInterface;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use esp_hal::{
     delay::Delay,
-    gpio::{AnyPin, Input, Io, Output, Pull},
+    gpio::{Input, InputConfig, Io, Output, Pull},
     hmac::Hmac,
     i2c::master::{Config as I2cConfig, I2c},
     ledc::{
@@ -14,16 +13,16 @@ use esp_hal::{
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
-    peripherals::{Peripherals, DS, RSA, TIMG0, TIMG1},
-    prelude::*,
+    peripherals::{DS, RSA},
     spi::master::Spi,
-    timer::timg::{Timer, Timer0, TimerGroup},
+    time::Rate,
+    timer::timg::{Timer, TimerGroup},
     uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
 use frostsnap_cst816s::CST816S;
-use mipidsi::models::ST7789;
+use mipidsi::{interface::SpiInterface, models::ST7789};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 
@@ -32,36 +31,49 @@ use crate::efuse::EfuseController;
 #[macro_export]
 macro_rules! init_display {
     (peripherals: $peripherals:expr, delay: $delay:expr) => {{
-        use display_interface_spi::SPIInterface;
+        use alloc::boxed::Box;
         use esp_hal::{
-            gpio::{Level, Output},
-            prelude::*,
+            gpio::{Level, Output, OutputConfig},
             spi::{
                 master::{Config as SpiConfig, Spi},
-                SpiMode,
+                Mode,
             },
+            time::Rate,
         };
-        use mipidsi::{models::ST7789, options::ColorInversion};
+        use mipidsi::{interface::SpiInterface, models::ST7789, options::ColorInversion};
 
-        let spi = Spi::new_with_config(
-            &mut $peripherals.SPI2,
-            SpiConfig {
-                frequency: 80.MHz(),
-                mode: SpiMode::Mode2,
-                ..SpiConfig::default()
-            },
+        // NOTE: The old v0.22 code asked for 80 MHz here and it worked. In v1.0
+        // the SPI driver picks a different divider and the resulting clock
+        // exceeds the ST7789's maximum write speed (~62 MHz), so nothing shows
+        // up. 20 MHz is what we settled on after matching the working probe.
+        let spi = Spi::new(
+            $peripherals.SPI2,
+            SpiConfig::default()
+                .with_frequency(Rate::from_mhz(20))
+                .with_mode(Mode::_2),
         )
-        .with_sck(&mut $peripherals.GPIO8)
-        .with_mosi(&mut $peripherals.GPIO7);
+        .unwrap()
+        .with_sck($peripherals.GPIO8)
+        .with_mosi($peripherals.GPIO7);
 
-        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs);
-        let di = SPIInterface::new(spi_device, Output::new(&mut $peripherals.GPIO9, Level::Low));
+        let spi_device =
+            embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs).unwrap();
+        let buffer: &'static mut [u8] = Box::leak(Box::new([0u8; 512]));
+        let di = SpiInterface::new(
+            spi_device,
+            Output::new($peripherals.GPIO9, Level::Low, OutputConfig::default()),
+            buffer,
+        );
 
         let display = mipidsi::Builder::new(ST7789, di)
             .display_size(240, 280)
             .display_offset(0, 20) // 240*280 panel
             .invert_colors(ColorInversion::Inverted)
-            .reset_pin(Output::new(&mut $peripherals.GPIO6, Level::Low))
+            .reset_pin(Output::new(
+                $peripherals.GPIO6,
+                Level::Low,
+                OutputConfig::default(),
+            ))
             .init($delay)
             .unwrap();
 
@@ -88,7 +100,8 @@ impl embedded_hal::digital::ErrorType for NoCs {
 
 /// Type alias for the display to reduce complexity
 type Display<'a> = mipidsi::Display<
-    SPIInterface<
+    SpiInterface<
+        'a,
         embedded_hal_bus::spi::ExclusiveDevice<
             Spi<'a, Blocking>,
             NoCs,
@@ -103,10 +116,10 @@ type Display<'a> = mipidsi::Display<
 /// All device peripherals initialized and ready to use
 pub struct DevicePeripherals<'a> {
     /// Shared timer for timing operations (leaked to 'static for SerialInterface)
-    pub timer: &'static Timer<Timer0<TIMG0>, Blocking>,
+    pub timer: &'static Timer<'static>,
 
     /// UI timer for display and touch operations
-    pub ui_timer: Timer<Timer0<TIMG1>, Blocking>,
+    pub ui_timer: Timer<'static>,
 
     /// Display
     pub display: Display<'a>,
@@ -127,10 +140,10 @@ pub struct DevicePeripherals<'a> {
     pub jtag: UsbSerialJtag<'a, Blocking>,
 
     /// Pin to detect upstream device connection
-    pub upstream_detect: Input<'a, AnyPin>,
+    pub upstream_detect: Input<'a>,
 
     /// Pin to detect downstream device connection
-    pub downstream_detect: Input<'a, AnyPin>,
+    pub downstream_detect: Input<'a>,
 
     /// SHA256 hardware accelerator
     pub sha256: esp_hal::sha::Sha<'a>,
@@ -139,13 +152,13 @@ pub struct DevicePeripherals<'a> {
     pub hmac: Rc<RefCell<Hmac<'a>>>,
 
     /// Digital Signature peripheral
-    pub ds: &'a mut DS,
+    pub ds: DS<'a>,
 
     /// RSA hardware accelerator
-    pub rsa: &'a mut RSA,
+    pub rsa: RSA<'a>,
 
     /// eFuse controller
-    pub efuse: EfuseController<'a>,
+    pub efuse: EfuseController,
 
     /// Initial RNG seeded from hardware
     pub initial_rng: ChaCha20Rng,
@@ -170,10 +183,6 @@ fn extract_entropy(
     ChaCha20Rng::from_seed(result.into())
 }
 
-// Static storage for peripherals to enable 'static references
-// This is safe because peripherals are initialized once at startup and never dropped
-static mut PERIPHERALS_SINGLETON: Option<Peripherals> = None;
-
 impl<'a> DevicePeripherals<'a> {
     /// Check if the device needs factory provisioning
     pub fn needs_factory_provisioning(&self) -> bool {
@@ -181,65 +190,75 @@ impl<'a> DevicePeripherals<'a> {
     }
 
     /// Initialize all device peripherals including initial RNG
-    pub fn init(peripherals: Peripherals) -> Box<Self> {
-        // SAFETY: We can store peripherals in static storage and get a 'static reference
-        // since we're never passing it on to anyone else.
-        let peripherals = unsafe {
-            PERIPHERALS_SINGLETON = Some(peripherals);
-            // Use a raw pointer to avoid the mutable static warning
-            let ptr = &raw mut PERIPHERALS_SINGLETON;
-            (*ptr).as_mut().unwrap()
-        };
+    pub fn init(mut peripherals: esp_hal::peripherals::Peripherals) -> Box<Self> {
         // Initialize Io for interrupt handling.
-        // SAFETY: We bypass the check that esp-hal is trying to get us to do here since this function has the
-        // only copy of Peripherals. Hopefully this doesn't need to happen in esp-hal v1.0+.
-        let mut io = Io::new(unsafe { core::mem::zeroed() });
+        let mut io = Io::new(peripherals.IO_MUX.reborrow());
 
         // Enable stack guard if feature is enabled
         #[cfg(feature = "stack_guard")]
-        crate::stack_guard::enable_stack_guard(&mut peripherals.ASSIST_DEBUG);
+        crate::stack_guard::enable_stack_guard(peripherals.ASSIST_DEBUG.reborrow());
 
         let mut delay = Delay::new();
 
         // Initialize SHA256 early for entropy extraction
-        let mut sha256 = esp_hal::sha::Sha::new(&mut peripherals.SHA);
+        let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
         // Get initial entropy from hardware RNG mixed with SHA256
-        let mut trng = esp_hal::rng::Trng::new(&mut peripherals.RNG, &mut peripherals.ADC1);
+        let trng_source = esp_hal::rng::TrngSource::new(
+            peripherals.RNG.reborrow(),
+            peripherals.ADC1.reborrow(),
+        );
+        let mut trng = esp_hal::rng::Trng::try_new().expect("TRNG source should be enabled");
         let initial_rng = extract_entropy(&mut trng, &mut sha256, 1024);
+        drop(trng);
+        drop(trng_source);
 
         // Initialize timers
-        let timg0 = TimerGroup::new(&mut peripherals.TIMG0);
-        let timg1 = TimerGroup::new(&mut peripherals.TIMG1);
+        let timg0 = TimerGroup::new(peripherals.TIMG0);
+        let timg1 = TimerGroup::new(peripherals.TIMG1);
+
+        // In esp-hal v1 `TimerGroup::new` does NOT auto-start the counter —
+        // in v0.22 it did. Without `start()` the timg counter stays at 0,
+        // `timer.now()` is frozen, and every `elapsed_ms >= DISPLAY_REFRESH_MS`
+        // gate in the main loops is permanently false → draws never happen.
+        use esp_hal::timer::Timer as _;
+        timg0.timer0.start();
+        timg1.timer0.start();
 
         // Extract timer0 from TIMG0 and leak it to get 'static reference for SerialInterface
         // This is safe because the timer lives for the entire program lifetime
-        let timer = Box::leak(Box::new(timg0.timer0));
+        let timer: &'static Timer<'static> = Box::leak(Box::new(timg0.timer0));
         let ui_timer = timg1.timer0;
 
         // Detection pins (using AnyPin to avoid generics)
-        let upstream_detect = Input::new(&mut peripherals.GPIO0, Pull::Up);
-        let downstream_detect = Input::new(&mut peripherals.GPIO10, Pull::Up);
+        let upstream_detect = Input::new(
+            peripherals.GPIO0,
+            InputConfig::default().with_pull(Pull::Up),
+        );
+        let downstream_detect = Input::new(
+            peripherals.GPIO10,
+            InputConfig::default().with_pull(Pull::Up),
+        );
 
         // Initialize backlight control
-        let mut ledc = Ledc::new(&mut peripherals.LEDC);
+        let mut ledc = Ledc::new(peripherals.LEDC);
         ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
         let mut lstimer0 = ledc.timer::<LowSpeed>(timerledc::Number::Timer0);
         lstimer0
             .configure(timerledc::config::Config {
                 duty: timerledc::config::Duty::Duty10Bit,
                 clock_source: LSClockSource::APBClk,
-                frequency: 24u32.kHz(),
+                frequency: Rate::from_khz(24),
             })
             .unwrap();
         // Leak the timer so it lives forever (we never need to drop it)
         let lstimer0 = Box::leak(Box::new(lstimer0));
-        let mut backlight = ledc.channel(channel::Number::Channel0, &mut peripherals.GPIO1);
+        let mut backlight = ledc.channel(channel::Number::Channel0, peripherals.GPIO1);
         backlight
             .configure(channel::config::Config {
                 timer: lstimer0,
                 duty_pct: 0, // Start with backlight off
-                pin_config: channel::config::PinConfig::PushPull,
+                drive_mode: esp_hal::gpio::DriveMode::PushPull,
             })
             .unwrap();
 
@@ -247,16 +266,14 @@ impl<'a> DevicePeripherals<'a> {
 
         // Initialize I2C for touch sensor
         let i2c = I2c::new(
-            &mut peripherals.I2C0,
-            I2cConfig {
-                frequency: 400u32.kHz(),
-                ..I2cConfig::default()
-            },
+            peripherals.I2C0,
+            I2cConfig::default().with_frequency(Rate::from_khz(400)),
         )
-        .with_sda(&mut peripherals.GPIO4)
-        .with_scl(&mut peripherals.GPIO5);
+        .unwrap()
+        .with_sda(peripherals.GPIO4)
+        .with_scl(peripherals.GPIO5);
 
-        let mut capsense = CST816S::new_esp32(i2c, &mut peripherals.GPIO2, &mut peripherals.GPIO3);
+        let mut capsense = CST816S::new_esp32(i2c, peripherals.GPIO2, peripherals.GPIO3);
         capsense.setup(&mut delay).unwrap();
 
         // Register the capsense instance with the interrupt handler
@@ -267,33 +284,29 @@ impl<'a> DevicePeripherals<'a> {
         backlight.start_duty_fade(0, 100, 500).unwrap();
 
         // Initialize other crypto peripherals
-        let efuse = EfuseController::new(&mut peripherals.EFUSE);
-        let hmac = Rc::new(RefCell::new(Hmac::new(&mut peripherals.HMAC)));
+        let efuse = EfuseController::new();
+        let hmac = Rc::new(RefCell::new(Hmac::new(peripherals.HMAC)));
 
         // Initialize JTAG
-        let jtag = UsbSerialJtag::new(&mut peripherals.USB_DEVICE);
+        let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
         // Initialize upstream UART only if upstream device is detected
         let uart_upstream = if upstream_detect.is_low() {
             Some(
-                Uart::new(
-                    &mut peripherals.UART1,
-                    &mut peripherals.GPIO18,
-                    &mut peripherals.GPIO19,
-                )
-                .unwrap(),
+                Uart::new(peripherals.UART1, esp_hal::uart::Config::default())
+                    .unwrap()
+                    .with_rx(peripherals.GPIO18)
+                    .with_tx(peripherals.GPIO19),
             )
         } else {
             None
         };
 
         // Always initialize downstream UART
-        let uart_downstream = Uart::new(
-            &mut peripherals.UART0,
-            &mut peripherals.GPIO21,
-            &mut peripherals.GPIO20,
-        )
-        .unwrap();
+        let uart_downstream = Uart::new(peripherals.UART0, esp_hal::uart::Config::default())
+            .unwrap()
+            .with_rx(peripherals.GPIO21)
+            .with_tx(peripherals.GPIO20);
 
         Box::new(Self {
             timer,
@@ -308,10 +321,10 @@ impl<'a> DevicePeripherals<'a> {
             downstream_detect,
             sha256,
             hmac,
-            ds: &mut peripherals.DS,
+            ds: peripherals.DS,
             efuse,
             initial_rng,
-            rsa: &mut peripherals.RSA,
+            rsa: peripherals.RSA,
         })
     }
 }
