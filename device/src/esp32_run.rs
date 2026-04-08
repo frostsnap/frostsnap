@@ -31,21 +31,11 @@ use crate::efuse::EfuseHmacKeys;
 use crate::frosty_ui::FrostyUi;
 use crate::ota::OtaPartitions;
 use crate::partitions::EspFlashPartition;
-use esp_hal::{
-    gpio::Input,
-    peripherals::TIMG0,
-    rsa::Rsa,
-    sha::Sha,
-    timer::{
-        timg::{Timer as TimgTimer, Timer0},
-        Timer as TimerTrait,
-    },
-    Blocking,
-};
+use esp_hal::{gpio::Input, rsa::Rsa, sha::Sha, Blocking};
 use frostsnap_comms::Downstream;
 use rand_chacha::ChaCha20Rng;
 
-type EspSerial<'a, D> = SerialInterface<'a, TimgTimer<Timer0<TIMG0>, Blocking>, D>;
+type EspSerial<'a, D> = SerialInterface<'a, D>;
 type EspMutationLog<'a> = MutationLog<'a, esp_storage::FlashStorage>;
 type EspSigner<'a> = FrostSigner<NonceAbSlot<'a, esp_storage::FlashStorage>>;
 
@@ -63,7 +53,6 @@ struct DeviceLoop<'a> {
     certificate: &'a Option<frostsnap_comms::genuine_certificate::Certificate>,
     ota_partitions: &'a mut OtaPartitions<'a>,
     ui: &'a mut FrostyUi<'a>,
-    timer: &'a TimgTimer<Timer0<TIMG0>, Blocking>,
     sha256: &'a mut Sha<'a>,
     upstream_serial: &'a mut EspSerial<'a, Upstream>,
     downstream_serial: &'a mut EspSerial<'a, Downstream>,
@@ -105,7 +94,6 @@ impl<'a> DeviceLoop<'a> {
             ref mut nvs,
             ota: ref mut ota_partitions,
             ref mut ui,
-            ref mut timer,
             ref mut sha256,
             ref mut upstream_serial,
             ref mut downstream_serial,
@@ -190,7 +178,6 @@ impl<'a> DeviceLoop<'a> {
             certificate,
             ota_partitions,
             ui,
-            timer,
             sha256,
             upstream_serial,
             downstream_serial,
@@ -208,7 +195,7 @@ impl<'a> DeviceLoop<'a> {
             outbox: VecDeque::new(),
             nonce_task_batch: None,
             inbox: vec![],
-            next_write_magic_bytes_downstream: Instant::from_ticks(0),
+            next_write_magic_bytes_downstream: Instant::EPOCH,
             magic_bytes_timeout_counter: 0,
             upgrade: None,
             erase_state: None,
@@ -249,7 +236,7 @@ impl<'a> DeviceLoop<'a> {
             self.downstream_connection_state = DownstreamConnectionState::Disconnected;
             self.upstream_connection
                 .set_state(UpstreamConnectionState::PowerOn, self.ui);
-            self.next_write_magic_bytes_downstream = Instant::from_ticks(0);
+            self.next_write_magic_bytes_downstream = Instant::EPOCH;
             self.update_default_workflow();
             self.ui.go_to_default();
             self.upgrade = None;
@@ -271,7 +258,7 @@ impl<'a> DeviceLoop<'a> {
                     .set_downstream_connection_state(self.downstream_connection_state);
             }
             (true, DownstreamConnectionState::Connected) => {
-                let now = self.timer.now();
+                let now = Instant::now();
                 if now > self.next_write_magic_bytes_downstream {
                     self.next_write_magic_bytes_downstream =
                         now + Duration::from_millis(MAGIC_BYTES_PERIOD);
@@ -415,7 +402,6 @@ impl<'a> DeviceLoop<'a> {
                                                         },
                                                         self.ui,
                                                         self.sha256,
-                                                        self.timer,
                                                         self.rsa,
                                                     );
                                                     reset(self.upstream_serial);
@@ -579,13 +565,14 @@ impl<'a> DeviceLoop<'a> {
         {
             let staged_mutations = self.signer.staged_mutations();
             if !staged_mutations.is_empty() {
-                let now = self.timer.now();
+                let start = Instant::now();
                 self.mutation_log
                     .append(staged_mutations.drain(..).map(Mutation::Core))
                     .expect("writing core mutations failed");
-                let after = self.timer.now() - now;
-                self.upstream_connection
-                    .send_debug(format!("core mutations took {}ms", after.as_millis()));
+                self.upstream_connection.send_debug(format!(
+                    "core mutations took {}ms",
+                    start.elapsed().as_millis()
+                ));
             }
         }
 
@@ -797,10 +784,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     }
 }
 
-fn reset<T>(upstream_serial: &mut SerialInterface<T, Upstream>) -> !
-where
-    T: esp_hal::timer::Timer,
-{
+fn reset(upstream_serial: &mut SerialInterface<Upstream>) -> ! {
     let _ = upstream_serial.send_reset_signal();
     esp_hal::system::software_reset()
 }

@@ -1,7 +1,6 @@
 use crate::DISPLAY_REFRESH_MS;
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::prelude::*;
-use esp_hal::timer::Timer;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
 use frostsnap_widgets::{
@@ -46,7 +45,6 @@ pub struct FrostyUi<'a> {
     pub last_redraw_time: Instant,
     pub downstream_connection_state: DownstreamConnectionState,
     pub upstream_connection_state: Option<UpstreamConnectionState>,
-    pub timer: esp_hal::timer::timg::Timer<'static>,
     pub busy_task: Option<BusyTask>,
     pub current_widget_index: usize,
     default_workflow: Option<Workflow>,
@@ -54,11 +52,7 @@ pub struct FrostyUi<'a> {
 
 impl<'a> FrostyUi<'a> {
     /// Create a new FrostyUi instance
-    pub fn new(
-        display: DeviceDisplay<'a>,
-        touch_receiver: TouchReceiver,
-        timer: esp_hal::timer::timg::Timer<'static>,
-    ) -> Self {
+    pub fn new(display: DeviceDisplay<'a>, touch_receiver: TouchReceiver) -> Self {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
@@ -80,7 +74,6 @@ impl<'a> FrostyUi<'a> {
             last_touch: None,
             last_redraw_time: Instant::EPOCH,
             current_widget_index: 0,
-            timer,
             busy_task: Default::default(),
             default_workflow: None,
         }
@@ -395,7 +388,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
-        let now = self.timer.now();
+        let now = Instant::now();
         let now_ms =
             frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
 
@@ -523,7 +516,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     }
 
     fn force_redraw(&mut self) {
-        let now = self.timer.now();
+        let now = Instant::now();
         let now_ms =
             frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
         self.last_redraw_time = now;
