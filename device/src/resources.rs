@@ -18,13 +18,12 @@ use crate::{
 };
 
 /// Type alias for serial interfaces
-type Serial<'a, D> = SerialInterface<'a, Timer<Timer0<TIMG0>, Blocking>, D>;
+type Serial<'a, D> = SerialInterface<'a, Timer<'static>, D>;
 use esp_hal::{
-    gpio::{AnyPin, Input},
-    peripherals::TIMG0,
+    gpio::Input,
     rsa::Rsa,
     sha::Sha,
-    timer::timg::{Timer, Timer0},
+    timer::timg::Timer,
     uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
@@ -57,21 +56,21 @@ pub struct Resources<'a> {
     pub ui: FrostyUi<'a>,
 
     // Runtime peripherals needed by esp32_run
-    pub timer: &'a Timer<Timer0<TIMG0>, Blocking>,
+    pub timer: &'static Timer<'static>,
     pub sha256: Sha<'a>,
     pub upstream_serial: Serial<'a, Upstream>,
     pub downstream_serial: Serial<'a, Downstream>,
-    pub downstream_detect: Input<'a, AnyPin>,
+    pub downstream_detect: Input<'a>,
 }
 
 impl<'a> Resources<'a> {
     /// Create serial interfaces from UARTs and JTAG
     fn create_serial_interfaces(
-        timer: &'static Timer<Timer0<TIMG0>, Blocking>,
+        timer: &'static Timer<'static>,
         uart_upstream: Option<Uart<'static, Blocking>>,
         uart_downstream: Uart<'static, Blocking>,
         jtag: UsbSerialJtag<'a, Blocking>,
-        upstream_detect: &Input<'a, AnyPin>,
+        upstream_detect: &Input<'a>,
     ) -> (Serial<'a, Upstream>, Serial<'a, Downstream>) {
         let detect_device_upstream = upstream_detect.is_low();
         let upstream_serial = if detect_device_upstream {
