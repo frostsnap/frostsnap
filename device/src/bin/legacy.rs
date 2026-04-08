@@ -6,21 +6,19 @@
 extern crate alloc;
 
 use core::cell::RefCell;
-use esp_hal::entry;
+use esp_hal::main;
 use esp_storage::FlashStorage;
 use frostsnap_device::{esp32_run, peripherals::DevicePeripherals, resources::Resources};
 
-#[entry]
+#[main]
 fn main() -> ! {
     // Initialize heap
-    esp_alloc::heap_allocator!(256 * 1024);
+    esp_alloc::heap_allocator!(size: 256 * 1024);
 
     // Initialize ESP32 hardware
-    let peripherals = esp_hal::init({
-        let mut config = esp_hal::Config::default();
-        config.cpu_clock = esp_hal::clock::CpuClock::max();
-        config
-    });
+    let peripherals = esp_hal::init(
+        esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()),
+    );
 
     // Initialize flash storage (must stay alive for partition references)
     let flash = RefCell::new(FlashStorage::new());
