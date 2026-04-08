@@ -57,7 +57,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 // interrupted (the header is erased first). Finish the job.
                 let mut erase_op = erase::Erase::new(&full_nvs);
                 while !matches!(erase_op.poll(&full_nvs, ui), erase::ErasePoll::Reset) {}
-                esp_hal::reset::software_reset();
+                esp_hal::system::software_reset();
             }
             // Initialize new header with device keypair
             header_flash.init(rng)
@@ -123,7 +123,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let mut outbox = VecDeque::new();
     let mut nonce_task_batch: Option<NonceJobBatch> = None;
     let mut inbox: Vec<CoordinatorSendBody> = vec![];
-    let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
+    let mut next_write_magic_bytes_downstream: Instant = Instant::EPOCH;
     let mut magic_bytes_timeout_counter = 0;
 
     // Define default workflow macro
@@ -158,7 +158,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             sends_user.clear();
             downstream_connection_state = DownstreamConnectionState::Disconnected;
             upstream_connection.set_state(UpstreamConnectionState::PowerOn, ui);
-            next_write_magic_bytes_downstream = Instant::from_ticks(0);
+            next_write_magic_bytes_downstream = Instant::EPOCH;
             ui.set_workflow(default_workflow!(name, signer));
             upgrade = None;
             pending_device_name = None;
@@ -177,9 +177,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             (true, DownstreamConnectionState::Connected) => {
                 let now = timer.now();
                 if now > next_write_magic_bytes_downstream {
-                    next_write_magic_bytes_downstream = now
-                        .checked_add_duration(Duration::millis(MAGIC_BYTES_PERIOD))
-                        .expect("won't overflow");
+                    next_write_magic_bytes_downstream = now + Duration::from_millis(MAGIC_BYTES_PERIOD);
                     downstream_serial
                         .write_magic_bytes()
                         .expect("couldn't write magic bytes downstream");
@@ -477,9 +475,9 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                 mutation_log
                     .append(staged_mutations.drain(..).map(Mutation::Core))
                     .expect("writing core mutations failed");
-                let after = timer.now().checked_duration_since(now).unwrap();
+                let after = timer.now() - now;
                 upstream_connection
-                    .send_debug(format!("core mutations took {}ms", after.to_millis()));
+                    .send_debug(format!("core mutations took {}ms", after.as_millis()));
             }
         }
 
@@ -672,12 +670,12 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     }
 }
 
-fn reset<T>(upstream_serial: &mut SerialInterface<T, Upstream>)
+fn reset<T>(upstream_serial: &mut SerialInterface<T, Upstream>) -> !
 where
     T: esp_hal::timer::Timer,
 {
     let _ = upstream_serial.send_reset_signal();
-    esp_hal::reset::software_reset();
+    esp_hal::system::software_reset()
 }
 
 /// Save a pending device name to flash and notify the coordinator
