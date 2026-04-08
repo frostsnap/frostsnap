@@ -25,7 +25,7 @@ where
 
     loop {
         let now = timer.now();
-        let now_ms = WidgetInstant::from_millis(now.duration_since_epoch().to_millis());
+        let now_ms = WidgetInstant::from_millis(now.duration_since_epoch().as_millis());
 
         while let Some(touch_event) = touch_receiver.dequeue() {
             let touch_point = adjust_touch_point(Point::new(touch_event.x, touch_event.y));
@@ -33,7 +33,7 @@ where
             screen_test_widget.handle_touch(touch_point, now_ms, is_release);
         }
 
-        let elapsed_ms = (now - last_redraw_time).to_millis();
+        let elapsed_ms = (now - last_redraw_time).as_millis();
         if elapsed_ms >= 5 {
             let _ = screen_test_widget.draw(&mut super_display, now_ms);
             last_redraw_time = now;

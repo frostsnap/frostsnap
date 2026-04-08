@@ -32,7 +32,7 @@ use crate::frosty_ui::FrostyUi;
 use crate::ota::OtaPartitions;
 use crate::partitions::EspFlashPartition;
 use esp_hal::{
-    gpio::{AnyPin, Input},
+    gpio::Input,
     peripherals::TIMG0,
     rsa::Rsa,
     sha::Sha,
@@ -67,7 +67,7 @@ struct DeviceLoop<'a> {
     sha256: &'a mut Sha<'a>,
     upstream_serial: &'a mut EspSerial<'a, Upstream>,
     downstream_serial: &'a mut EspSerial<'a, Downstream>,
-    downstream_detect: &'a mut Input<'a, AnyPin>,
+    downstream_detect: &'a mut Input<'a>,
     rsa: &'a mut Rsa<'a, Blocking>,
 
     // Owned values created during init
@@ -123,7 +123,7 @@ impl<'a> DeviceLoop<'a> {
                 if !nvs.is_empty().expect("checking NVS is empty") {
                     let mut erase_op = erase::Erase::new(&full_nvs);
                     while !matches!(erase_op.poll(&full_nvs, ui), erase::ErasePoll::Reset) {}
-                    esp_hal::reset::software_reset();
+                    esp_hal::system::software_reset();
                 }
                 header_flash.init(rng)
             }
@@ -273,9 +273,8 @@ impl<'a> DeviceLoop<'a> {
             (true, DownstreamConnectionState::Connected) => {
                 let now = self.timer.now();
                 if now > self.next_write_magic_bytes_downstream {
-                    self.next_write_magic_bytes_downstream = now
-                        .checked_add_duration(Duration::millis(MAGIC_BYTES_PERIOD))
-                        .expect("won't overflow");
+                    self.next_write_magic_bytes_downstream =
+                        now + Duration::from_millis(MAGIC_BYTES_PERIOD);
                     self.downstream_serial
                         .write_magic_bytes()
                         .expect("couldn't write magic bytes downstream");
@@ -584,9 +583,9 @@ impl<'a> DeviceLoop<'a> {
                 self.mutation_log
                     .append(staged_mutations.drain(..).map(Mutation::Core))
                     .expect("writing core mutations failed");
-                let after = self.timer.now().checked_duration_since(now).unwrap();
+                let after = self.timer.now() - now;
                 self.upstream_connection
-                    .send_debug(format!("core mutations took {}ms", after.to_millis()));
+                    .send_debug(format!("core mutations took {}ms", after.as_millis()));
             }
         }
 
@@ -798,10 +797,10 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     }
 }
 
-fn reset<T>(upstream_serial: &mut SerialInterface<T, Upstream>)
+fn reset<T>(upstream_serial: &mut SerialInterface<T, Upstream>) -> !
 where
     T: esp_hal::timer::Timer,
 {
     let _ = upstream_serial.send_reset_signal();
-    esp_hal::reset::software_reset();
+    esp_hal::system::software_reset()
 }
