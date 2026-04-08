@@ -70,7 +70,6 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         mut display,
         efuse,
         mut initial_rng,
-        timer,
         ..
     } = *peripherals;
 
@@ -79,8 +78,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         pixelcolor::Rgb565,
         prelude::*,
     };
-    use esp_hal::time::Duration;
-    use esp_hal::timer::Timer;
+    use esp_hal::time::{Duration, Instant};
 
     // Warning countdown before burning efuses
     const COUNTDOWN_SECONDS: u32 = 30;
@@ -92,8 +90,8 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         text_display!(&mut display, &text);
 
         // Wait 1 second
-        let start = timer.now();
-        while (timer.now() - start) < Duration::from_millis(1000) {}
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(1000) {}
     }
 
     // Show provisioning message
@@ -135,15 +133,14 @@ pub fn run_factory_provisioning(
         mut touch_receiver,
         efuse,
         jtag,
-        timer,
         ..
     } = *peripherals;
 
     // Run screen test
-    display = crate::screen_test::run(display, &mut touch_receiver, timer);
+    display = crate::screen_test::run(display, &mut touch_receiver);
 
     // Initialize serial interface for factory communication
-    let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(jtag, timer);
+    let mut upstream = SerialInterface::<FactoryUpstream>::new_jtag(jtag);
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
