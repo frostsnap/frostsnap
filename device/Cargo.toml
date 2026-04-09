@@ -26,6 +26,7 @@ bitcoin.workspace = true
 esp-hal = { workspace = true, features = ["esp32c3", "rt"] }
 rand_core.workspace = true
 esp-alloc = { workspace = true }
+esp-bootloader-esp-idf = { workspace = true, features = ["esp32c3"] }
 nb = "1"
 embedded-hal-nb = "1"
 heapless = "0.8"
