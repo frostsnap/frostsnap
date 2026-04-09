@@ -2,6 +2,13 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
+// The genuine check as currently implemented is vulnerable to a MITM:
+// a malicious device can forward a received challenge to a genuine
+// device and relay the response back, passing the check without
+// actually holding the DS key. The signature needs to be over the
+// device's own DeviceId to bind it. Disabled until that's fixed.
+const DO_GENUINE_CHECK: bool = false;
+
 use crate::firmware::ValidatedFirmwareBin;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
@@ -596,7 +603,7 @@ impl UsbSerialManager {
             ))
             .unwrap();
 
-        if self.genuine_cert_key.is_some() {
+        if DO_GENUINE_CHECK && self.genuine_cert_key.is_some() {
             let challenge = frostsnap_comms::GenuineChallenge::random(&mut rand::thread_rng());
             self.challenges.insert(from, challenge);
             self.outbox_sender
