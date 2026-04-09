@@ -12,8 +12,8 @@
       # Override to ESP-IDF v5.3.1 — v5.4+ added esp_app_desc_t efuse_blk_rev validation
       # that rejects bare-metal esp-hal images missing a proper app descriptor.
       esp-idf-riscv = (nixpkgs-esp-dev.packages.${system}.esp-idf-riscv).override {
-        rev = "v5.3.1";
-        sha256 = "sha256-hcE4Tr5PTRQjfiRYgvLB1+8sR7KQQ1TnQJqViodGdBw=";
+        rev = "v5.5.4";
+        sha256 = "sha256-rItbBrwItkfJf8tKImAQsiXDR95sr0LqaM51gDZG/nI=";
       };
 
       buildBootloader = { variant ? "dev" }: pkgs.stdenv.mkDerivation {
