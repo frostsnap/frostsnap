@@ -189,7 +189,7 @@ legacy-run +ARGS="": maybe-gen
     if [ "$(uname)" != "Darwin" ]; then
         FLAVOR_FLAG="--flavor direct"
     fi
-    cd frostsnapp && BUNDLE_FIRMWARE=../target/riscv32imc-unknown-none-elf/release/legacy.bin \
+    cd frostsnapp && BUNDLE_FIRMWARE=../../target/riscv32imc-unknown-none-elf/release/legacy.bin \
       flutter run $FLAVOR_FLAG --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
 build-appimage +ARGS="":
