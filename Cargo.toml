@@ -56,6 +56,7 @@ frostsnap_cst816s = { path = "cst816s", default-features = false }
 frostsnap_desktop_camera = { path = "frostsnapp/desktop_camera" }
 esp-hal = { version = "1", features = ["unstable"] }
 esp-alloc = "0.9"
+esp-bootloader-esp-idf = "0.4.0"
 esp-storage = "0.6"
 embedded-hal = "1.0"
 tracing = { version = "0.1", default-features = false }
