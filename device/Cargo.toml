@@ -35,7 +35,6 @@ embedded-hal-bus = "0.3"
 embedded-hal.workspace = true
 embedded-storage.workspace = true
 esp-storage = { workspace = true, features = ["esp32c3", "bytewise-read"] }
-esp-partition-table = "0.1"
 bincode = { workspace = true }
 mipidsi = { version = "0.10", features = ["batch"] }
 embedded-graphics = "0.8.1"
