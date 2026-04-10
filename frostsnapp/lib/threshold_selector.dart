@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+const _thumbRadius = 11.0;
+
 class ThresholdSelector extends StatefulWidget {
   final int threshold;
   final int totalDevices;
@@ -42,10 +44,15 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
       duration: const Duration(seconds: 4),
     )..repeat();
 
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 350),
-    );
+    _pulseController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 350),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed) {
+            _pulseController.reverse();
+          }
+        });
 
     _numberController = AnimationController(
       vsync: this,
@@ -72,16 +79,6 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
       _ringPulseTarget = widget.threshold;
       _sparkleController.forward(from: 0);
     }
-  }
-
-  @override
-  void deactivate() {
-    _glowController.stop();
-    _idleController.stop();
-    _pulseController.stop();
-    _numberController.stop();
-    _sparkleController.stop();
-    super.deactivate();
   }
 
   @override
@@ -222,7 +219,9 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
           // Padded so its endpoints align with the painted track nodes.
           Positioned.fill(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: trackPadding - 11.0),
+              padding: EdgeInsets.symmetric(
+                horizontal: trackPadding - _thumbRadius,
+              ),
               child: SliderTheme(
                 data: SliderThemeData(
                   trackHeight: 0,
@@ -230,7 +229,7 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
                   inactiveTrackColor: Colors.transparent,
                   thumbColor: Colors.transparent,
                   overlayColor: Colors.transparent,
-                  thumbShape: const _InvisibleThumbShape(radius: 11.0),
+                  thumbShape: const _InvisibleThumbShape(radius: _thumbRadius),
                   overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
                 ),
                 child: Slider(
@@ -316,38 +315,41 @@ class _HeroDisplay extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        Text(
-          '$threshold',
-          style: theme.textTheme.displayLarge?.copyWith(
-            fontWeight: FontWeight.w300,
-            color: colorScheme.primary,
-            fontSize: 72,
-            height: 1.0,
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            '$threshold',
+            style: theme.textTheme.displayLarge?.copyWith(
+              fontWeight: FontWeight.w300,
+              color: colorScheme.primary,
+              fontSize: 72,
+              height: 1.0,
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          'of',
-          style: theme.textTheme.headlineMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w400,
+          const SizedBox(width: 8),
+          Text(
+            'of',
+            style: theme.textTheme.headlineMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w400,
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '$totalDevices',
-          style: theme.textTheme.displayMedium?.copyWith(
-            fontWeight: FontWeight.w300,
-            color: colorScheme.onSurfaceVariant,
-            height: 1.0,
+          const SizedBox(width: 8),
+          Text(
+            '$totalDevices',
+            style: theme.textTheme.displayMedium?.copyWith(
+              fontWeight: FontWeight.w300,
+              color: colorScheme.onSurfaceVariant,
+              height: 1.0,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -491,7 +493,7 @@ class _TrackPainter extends CustomPainter {
     // Thumb
     {
       final center = Offset(thumbX, trackY);
-      const baseRadius = 11.0;
+      const baseRadius = _thumbRadius;
       final thumbRadius = baseRadius + pulseValue * 2.0;
 
       final idlePulse = sin(idlePhase * 2 * pi) * 0.5 + 0.5;
@@ -510,15 +512,12 @@ class _TrackPainter extends CustomPainter {
       canvas.translate(center.dx, center.dy);
 
       // Outer glow
-      final glowAlpha = (0.12 + pulseValue * 0.08 + idlePulse * 0.04).clamp(
-        0.0,
-        1.0,
-      );
+      final glowAlpha = 0.12 + pulseValue * 0.08 + idlePulse * 0.4;
       final glowPaint = Paint()
         ..color = primaryColor.withValues(alpha: glowAlpha)
         ..maskFilter = MaskFilter.blur(
           BlurStyle.normal,
-          4.0 + pulseValue * 2.0 + idlePulse,
+          4.0 + pulseValue * 2.0 + idlePulse * 8.0,
         );
       canvas.drawCircle(Offset.zero, thumbRadius + 2, glowPaint);
 

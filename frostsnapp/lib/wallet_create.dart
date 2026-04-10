@@ -932,9 +932,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final totalCount = form.selectedDevices.length;
     assert(totalCount > 0);
     final recommended = max((totalCount * 2 / 3).toInt(), 1);
-    if (form.threshold == null) {
-      setState(() => form.threshold = recommended);
-    }
+    form.threshold ??= recommended;
     return SliverList.list(
       children: [
         ThresholdSelector(
@@ -1079,22 +1077,23 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               shrinkWrap: windowSize != WindowSizeClass.compact,
               slivers: [
                 header,
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: topSectionPadding.copyWith(
-                      top: isFullscreen ? null : 8,
-                    ),
-                    child: Text(
-                      _controller.subtitle,
-                      style: theme.textTheme.titleMedium,
+                if (_controller.subtitle.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: topSectionPadding.copyWith(
+                        top: isFullscreen ? null : 8,
+                      ),
+                      child: Text(
+                        _controller.subtitle,
+                        style: theme.textTheme.titleMedium,
+                      ),
                     ),
                   ),
-                ),
                 SliverPadding(
                   padding: sectionPadding,
                   sliver: buildBody(context),
                 ),
-                SliverPadding(padding: EdgeInsets.only(bottom: 32)),
+                SliverPadding(padding: EdgeInsets.only(bottom: 16)),
               ],
             ),
           ),
