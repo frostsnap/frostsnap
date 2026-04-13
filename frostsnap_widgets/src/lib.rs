@@ -10,9 +10,9 @@ pub extern crate alloc;
 
 use embedded_graphics::prelude::*;
 
+pub mod aa;
 pub mod compressed_point;
 pub mod palette;
-pub mod pixel_recorder;
 
 // Widget modules
 pub mod address_display;
@@ -22,6 +22,7 @@ pub mod bitmap;
 pub mod checkmark;
 pub mod cursor;
 pub mod debug;
+pub mod delay;
 pub mod fader;
 pub mod hold_to_confirm;
 pub mod hold_to_confirm_border;
@@ -48,6 +49,7 @@ pub mod erase_progress;
 pub mod fade_switcher;
 pub mod firmware_upgrade;
 pub mod fps;
+pub mod frame_cache;
 pub mod gray4_style;
 pub mod keygen_check;
 pub mod layout;
@@ -105,9 +107,10 @@ pub use circle_button::*;
 pub use device_name::*;
 pub use erase_device::*;
 pub use erase_progress::EraseProgress;
-pub use fade_switcher::FadeSwitcher;
+pub use fade_switcher::{FadeConfig, FadeSwitcher};
 pub use firmware_upgrade::{FirmwareUpgradeConfirm, FirmwareUpgradeProgress};
 pub use fps::Fps;
+pub use frame_cache::FrameCache;
 pub use icons::IconWidget;
 pub use keygen_check::*;
 pub use progress::{ProgressBar, ProgressIndicator};
@@ -134,9 +137,6 @@ pub const FONT_SMALL: &Gray4Font = &NOTO_SANS_17_REGULAR;
 
 // Type alias for default text styling
 pub type DefaultTextStyle = Gray4TextStyle;
-
-// U8g2 fonts for keyboards (monochrome framebuffers)
-use u8g2_fonts::U8g2TextStyle;
 
 pub const HOLD_TO_CONFIRM_TIME_SHORT_MS: u32 = 1000;
 pub const HOLD_TO_CONFIRM_TIME_MS: u32 = 2000;

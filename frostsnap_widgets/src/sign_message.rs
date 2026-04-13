@@ -44,8 +44,11 @@ impl SignMessageConfirm {
         Self { hold_to_confirm }
     }
 
-    /// Check if the confirmation is complete
     pub fn is_confirmed(&self) -> bool {
-        self.hold_to_confirm.is_completed()
+        self.hold_to_confirm.is_confirmed()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.hold_to_confirm.is_finished()
     }
 }

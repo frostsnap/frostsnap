@@ -126,20 +126,22 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
     let mut next_write_magic_bytes_downstream: Instant = Instant::from_ticks(0);
     let mut magic_bytes_timeout_counter = 0;
 
-    // Define default workflow macro
-    macro_rules! default_workflow {
-        ($name:expr, $signer:expr) => {
-            match ($name.as_ref(), $signer.held_shares().next()) {
+    // ⚙️ helper to recompute and store the default workflow
+    macro_rules! update_default_workflow {
+        ($ui:expr, $name:expr, $signer:expr) => {
+            let workflow = match ($name.as_ref(), $signer.held_shares().next()) {
                 (Some(device_name), Some(held_share)) => ui::Workflow::Standby {
                     device_name: device_name.clone(),
                     held_share,
                 },
                 _ => ui::Workflow::None,
-            }
+            };
+            $ui.set_default_workflow(workflow);
         };
     }
 
-    ui.set_workflow(default_workflow!(name, signer));
+    update_default_workflow!(ui, name, signer);
+    ui.go_to_default();
 
     let mut upstream_connection = UpstreamConnection::new(device_id);
     ui.set_upstream_connection_state(upstream_connection.state);
@@ -159,7 +161,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             downstream_connection_state = DownstreamConnectionState::Disconnected;
             upstream_connection.set_state(UpstreamConnectionState::PowerOn, ui);
             next_write_magic_bytes_downstream = Instant::from_ticks(0);
-            ui.set_workflow(default_workflow!(name, signer));
+            update_default_workflow!(ui, name, signer);
+            ui.go_to_default();
             upgrade = None;
             pending_device_name = None;
             outbox.clear();
@@ -381,7 +384,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
             match &message_body {
                 CoordinatorSendBody::Cancel => {
                     signer.clear_tmp_data();
-                    ui.set_workflow(default_workflow!(name, signer));
+                    ui.go_to_default();
                     // This either resets to the previous name, or clears it (if prev name does
                     // not exist).
                     pending_device_name = None;
@@ -519,7 +522,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                 "must have named device before starting keygen"
                             );
                             ui.clear_busy_task();
-                            ui.set_workflow(default_workflow!(name, signer));
+                            update_default_workflow!(ui, name, signer);
+                            ui.go_to_default();
                         }
                         DeviceToUserMessage::CheckKeyGen { phase } => {
                             ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen { phase }));
@@ -576,7 +580,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                         ),
                                         "must have named device before loading backup"
                                     );
-                                    ui.set_workflow(default_workflow!(name, signer));
+                                    update_default_workflow!(ui, name, signer);
+                                    ui.go_to_default();
                                 }
                                 ConsolidateBackup(phase) => {
                                     // XXX: We don't tell the user about this message and just automatically confirm it.
@@ -594,7 +599,8 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                         &mut mutation_log,
                                         &mut upstream_connection,
                                     );
-                                    ui.set_workflow(default_workflow!(name, signer));
+                                    update_default_workflow!(ui, name, signer);
+                                    ui.go_to_default();
                                 }
                             }
                         }
@@ -631,6 +637,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         .push(Mutation::Name(new_name.to_string()))
                         .expect("flash write fail");
                     name = Some(new_name.clone());
+                    update_default_workflow!(ui, name, signer);
                     pending_device_name = Some(new_name.clone());
                     ui.set_workflow(ui::Workflow::NamingDevice {
                         new_name: new_name.clone(),
@@ -657,6 +664,7 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                     outbox.extend(
                         signer.tell_coordinator_about_backup_load_result(phase, share_backup),
                     );
+                    ui.go_to_default();
                 }
                 UiEvent::EraseDataConfirm => {
                     erase_state = Some(erase::Erase::new(&full_nvs));

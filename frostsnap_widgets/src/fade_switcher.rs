@@ -1,3 +1,4 @@
+use crate::animation_speed::AnimationSpeed;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::{DynWidget, Fader, Instant, Widget};
 use embedded_graphics::{
@@ -6,6 +7,37 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
 };
 
+#[derive(Clone, Copy)]
+pub struct FadeConfig {
+    pub duration_ms: u32,
+    pub speed: AnimationSpeed,
+}
+
+impl FadeConfig {
+    pub const DEFAULT: Self = Self {
+        duration_ms: 750,
+        speed: AnimationSpeed::Linear,
+    };
+
+    pub const fn new(duration_ms: u32) -> Self {
+        Self {
+            duration_ms,
+            speed: AnimationSpeed::Linear,
+        }
+    }
+
+    pub fn with_speed(mut self, speed: AnimationSpeed) -> Self {
+        self.speed = speed;
+        self
+    }
+}
+
+impl Default for FadeConfig {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 /// A widget that smoothly fades between widgets of the same type
 pub struct FadeSwitcher<T>
 where
@@ -13,7 +45,8 @@ where
 {
     current: Fader<T>,
     prev: Option<Fader<T>>,
-    fade_duration_ms: u32,
+    fade_in: FadeConfig,
+    fade_out: FadeConfig,
     constraints: Option<Size>,
     pub shrink_to_fit: bool,
 }
@@ -22,14 +55,13 @@ impl<T> FadeSwitcher<T>
 where
     T: Widget<Color = Rgb565>,
 {
-    /// Create a new FadeSwitcher with an initial widget
-    pub fn new(initial: T, fade_duration_ms: u32) -> Self {
-        let mut child = Fader::new_faded_out(initial);
-        child.start_fade_in(fade_duration_ms as _);
+    pub fn new(initial: T) -> Self {
+        let child = Fader::new_faded_out(initial);
         Self {
             current: child,
             prev: None,
-            fade_duration_ms,
+            fade_in: FadeConfig::DEFAULT,
+            fade_out: FadeConfig::DEFAULT,
             constraints: None,
             shrink_to_fit: false,
         }
@@ -38,6 +70,22 @@ where
     /// Configure the FadeSwitcher to shrink to fit the first child
     pub fn with_shrink_to_fit(mut self) -> Self {
         self.shrink_to_fit = true;
+        self
+    }
+
+    pub fn with_fade_config(mut self, config: FadeConfig) -> Self {
+        self.fade_in = config;
+        self.fade_out = config;
+        self
+    }
+
+    pub fn with_fade_in(mut self, config: FadeConfig) -> Self {
+        self.fade_in = config;
+        self
+    }
+
+    pub fn with_fade_out(mut self, config: FadeConfig) -> Self {
+        self.fade_out = config;
         self
     }
 
@@ -51,8 +99,7 @@ where
 
         let mut prev_fader = core::mem::replace(&mut self.current, new_fader);
         if self.prev.is_none() {
-            // we only care about fading out the old widget if it was ever drawn. An existing `self.prev` means it wasn't.
-            prev_fader.start_fade(self.fade_duration_ms as u64);
+            prev_fader.start_fade_with(self.fade_out);
             self.prev = Some(prev_fader);
         }
     }
@@ -66,6 +113,11 @@ where
 
     pub fn instant_fade(&mut self) {
         self.current.instant_fade();
+    }
+
+    /// Check if the fade transition is fully complete (no fade in progress)
+    pub fn is_idle(&self) -> bool {
+        self.prev.is_none() && self.current.is_not_faded()
     }
 
     /// Get a reference to the current widget
@@ -150,14 +202,17 @@ where
             prev.draw(target, current_time)?;
 
             // Remove it once fully faded
-            if prev.is_faded_out() && self.current.is_faded_out() {
-                self.current.start_fade_in(self.fade_duration_ms as u64);
+            if prev.is_faded_out() {
                 self.prev = None;
             }
         }
 
         if self.prev.is_some() {
             return Ok(());
+        }
+
+        if self.current.is_faded_out() {
+            self.current.start_fade_in_with(self.fade_in);
         }
 
         self.current.draw(target, current_time)?;

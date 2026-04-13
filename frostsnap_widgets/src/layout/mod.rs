@@ -1,5 +1,6 @@
 mod alignment;
 mod center;
+mod circle_container;
 mod collections;
 mod column;
 mod container;
@@ -10,6 +11,7 @@ mod stack;
 
 pub use alignment::{Align, Alignment, HorizontalAlignment, VerticalAlignment};
 pub use center::Center;
+pub use circle_container::CircleContainer;
 pub use column::Column;
 pub use container::Container;
 pub use padding::Padding;

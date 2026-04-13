@@ -52,15 +52,15 @@ macro_rules! demo_widget {
                 let widget = Text::new("Hello World!", DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background));
                 $run_macro!(widget);
             }
-            "bip39_entry" => {
+            "backup_entry" => {
                 use $crate::{text::Text, Center, Align, Alignment};
-                struct Bip39Demo {
+                struct BackupEntryDemo {
                     screen: $crate::backup::EnterShareScreen,
                     done: Center<Text<DefaultTextStyle>>,
                     finished: bool,
                 }
 
-                impl $crate::DynWidget for Bip39Demo {
+                impl $crate::DynWidget for BackupEntryDemo {
                     fn set_constraints(&mut self, max_size: Size) {
                         self.screen.set_constraints(max_size);
                         self.done.set_constraints(max_size);
@@ -78,7 +78,7 @@ macro_rules! demo_widget {
                     }
                 }
 
-                impl $crate::Widget for Bip39Demo {
+                impl $crate::Widget for BackupEntryDemo {
                     type Color = Rgb565;
                     fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
                         &mut self,
@@ -106,7 +106,7 @@ macro_rules! demo_widget {
                     "DONE",
                     DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background),
                 ));
-                let widget = Bip39Demo { screen, done, finished: false };
+                let widget = BackupEntryDemo { screen, done, finished: false };
                 $run_macro!(widget);
             }
             "log_touches" => {
@@ -243,14 +243,41 @@ macro_rules! demo_widget {
                 let widget = Column::new((start_container, center_container));
                 $run_macro!(widget);
             }
-            "bip39_backup" => {
+            "record_backup" => {
                 use $crate::backup::BackupDisplay;
                 use embedded_graphics::prelude::*;
 
-                let share_index = 42;
+                struct BackupDemo {
+                    inner: $crate::Fader<BackupDisplay>,
+                }
 
-                // Create the backup display - it now uses PageSlider internally and outputs Rgb565
-                let widget = BackupDisplay::new(TEST_WORD_INDICES, share_index);
+                impl $crate::DynWidget for BackupDemo {
+                    fn set_constraints(&mut self, max_size: Size) { self.inner.set_constraints(max_size) }
+                    fn sizing(&self) -> $crate::Sizing { self.inner.sizing() }
+                    fn handle_touch(&mut self, p: Point, t: Instant, r: bool) -> Option<$crate::KeyTouch> { self.inner.handle_touch(p, t, r) }
+                    fn handle_vertical_drag(&mut self, p: Option<u32>, n: u32, r: bool) { self.inner.handle_vertical_drag(p, n, r) }
+                    fn force_full_redraw(&mut self) { self.inner.force_full_redraw() }
+                }
+
+                impl $crate::Widget for BackupDemo {
+                    type Color = Rgb565;
+                    fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error> {
+                        self.inner.draw(target, current_time)?;
+                        if self.inner.is_not_faded() && self.inner.child.is_finished() {
+                            self.inner.start_fade(500);
+                        }
+                        Ok(())
+                    }
+                }
+
+                let share_index = 42;
+                let widget = BackupDemo {
+                    inner: $crate::Fader::new(BackupDisplay::new(TEST_WORD_INDICES, share_index)),
+                };
 
                 $run_macro!(widget);
             }
@@ -290,7 +317,8 @@ macro_rules! demo_widget {
                             .with_border(PALETTE.primary, 2);
 
                         Self {
-                            fade_switcher: FadeSwitcher::new(Center::new(widget_a), 500),
+                            fade_switcher: FadeSwitcher::new(Center::new(widget_a))
+                                .with_fade_config($crate::fade_switcher::FadeConfig::new(500)),
                             last_switch_time: None,
                             showing_a: true,
                         }
@@ -480,7 +508,7 @@ macro_rules! demo_widget {
                         usize::MAX // Infinite pages!
                     }
 
-                    fn get(&self, index: usize) -> Option<PageWidget> {
+                    fn get(&self, index: usize) -> Option<$crate::widget_list::WidgetListItem<PageWidget>> {
                         let number_words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
                                             "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
                                             "seventeen", "eighteen", "nineteen", "twenty"];
@@ -524,7 +552,7 @@ macro_rules! demo_widget {
                         let column = Column::new((row1, row2, row3));
                         let container = Container::new(column)
                             .with_border(PALETTE.primary, 2);
-                        Some(Center::new(container))
+                        Some($crate::widget_list::WidgetListItem::new(Center::new(container)))
                     }
                 }
 
@@ -754,7 +782,7 @@ macro_rules! demo_widget {
                 use $crate::backup::WordSelector;
                 use frost_backup::bip39_words::words_with_prefix;
 
-                // Get all words starting with "CAR" (BIP39 words are uppercase)
+                // Get all words starting with "CAR" (wordlist words are uppercase)
                 let words = words_with_prefix("CAR");
                 let widget = WordSelector::new(words, "CAR");
 
@@ -1033,7 +1061,8 @@ macro_rules! demo_widget {
                         let centered = Center::new(logo);
 
                         Self {
-                            fade_switcher: FadeSwitcher::new(centered, 500),
+                            fade_switcher: FadeSwitcher::new(centered)
+                                .with_fade_config($crate::fade_switcher::FadeConfig::new(500)),
                             last_switch_time: None,
                             color_index: 0,
                         }
@@ -1197,14 +1226,166 @@ macro_rules! demo_widget {
                 let widget = StandbyTransitionsDemo::new();
                 $run_macro!(widget);
             }
+            "aa_compare" => {
+                use $crate::{Container, text::Text, palette::PALETTE, Center, SizedBox};
+                use embedded_graphics::primitives::{RoundedRectangle, PrimitiveStyleBuilder, StrokeAlignment};
+
+                const RECT_W: u32 = 180;
+                const RECT_H: u32 = 100;
+                const CR: u32 = 40;
+
+                // 🎯 Non-AA: raw embedded-graphics RoundedRectangle (fill only)
+                struct NonAA;
+
+                impl $crate::DynWidget for NonAA {
+                    fn set_constraints(&mut self, _max_size: Size) {}
+                    fn sizing(&self) -> $crate::Sizing {
+                        $crate::Sizing { width: RECT_W, height: RECT_H, dirty_rect: None }
+                    }
+                }
+
+                impl $crate::Widget for NonAA {
+                    type Color = Rgb565;
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        _current_time: $crate::Instant,
+                    ) -> Result<(), D::Error>
+                    where D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>
+                    {
+                        let rect = embedded_graphics::primitives::Rectangle::new(
+                            Point::zero(), Size::new(RECT_W, RECT_H),
+                        );
+                        let style = PrimitiveStyleBuilder::new()
+                            .fill_color(PALETTE.primary)
+                            .build();
+                        RoundedRectangle::with_equal_corners(rect, Size::new(CR, CR))
+                            .into_styled(style)
+                            .draw(target)?;
+                        Ok(())
+                    }
+                }
+
+                // 🎯 AA: uses AARoundedRectangle (fill only)
+                struct AA;
+
+                impl $crate::DynWidget for AA {
+                    fn set_constraints(&mut self, _max_size: Size) {}
+                    fn sizing(&self) -> $crate::Sizing {
+                        $crate::Sizing { width: RECT_W, height: RECT_H, dirty_rect: None }
+                    }
+                }
+
+                impl $crate::Widget for AA {
+                    type Color = Rgb565;
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        _current_time: $crate::Instant,
+                    ) -> Result<(), D::Error>
+                    where D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>
+                    {
+                        let rect = embedded_graphics::primitives::Rectangle::new(
+                            Point::zero(), Size::new(RECT_W, RECT_H),
+                        );
+                        $crate::aa::rounded_rect::AARoundedRectangle::new(rect, target.background_color())
+                            .with_corner_radius(CR)
+                            .with_fill(PALETTE.primary)
+                            .draw(target)?;
+                        Ok(())
+                    }
+                }
+
+                let col = Column::new((NonAA, AA))
+                    .with_main_axis_alignment($crate::MainAxisAlignment::SpaceEvenly)
+                    .with_cross_axis_alignment($crate::CrossAxisAlignment::Center);
+
+                let widget = Center::new(col);
+                $run_macro!(widget);
+            }
+            "border_iter" => {
+                use $crate::aa::rounded_rect::AARoundedRectIter;
+                use embedded_graphics::pixelcolor::RgbColor;
+
+                const BW: u32 = 5;
+                const CR: u32 = 20;
+                const RECT_W: u32 = 100;
+                const RECT_H: u32 = 200;
+
+                struct BorderIterDemo {
+                    size: Size,
+                }
+
+                impl $crate::DynWidget for BorderIterDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.size = max_size;
+                    }
+                    fn sizing(&self) -> $crate::Sizing { self.size.into() }
+                    fn force_full_redraw(&mut self) {}
+                }
+
+                impl $crate::Widget for BorderIterDemo {
+                    type Color = Rgb565;
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        _current_time: $crate::Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>,
+                    {
+                        let bg = target.background_color();
+                        target.clear(bg)?;
+
+                        let ox = (self.size.width - RECT_W) as i32 / 2;
+                        let oy = (self.size.height - RECT_H) as i32 / 2;
+                        let offset = Point::new(ox, oy);
+
+                        let right_color = PALETTE.primary;
+                        let left_color = Rgb565::new(31, 0, 0);
+
+                        let proto = AARoundedRectIter::new(RECT_W, RECT_H, CR, BW, right_color, bg, bg);
+                        let top = proto.top_center();
+                        let bottom = proto.bottom_center();
+                        let iter = proto.with_origin(top);
+
+                        // Right side: top-center → bottom-center (clockwise)
+                        let pixels = iter.clone().with_frac_range(top, bottom)
+                            .map(move |embedded_graphics::Pixel(point, c)| {
+                                embedded_graphics::Pixel(point + offset, c)
+                            });
+                        target.draw_iter(pixels)?;
+
+                        // Left side: bottom-center → top-center (wraps, reversed = counter-clockwise)
+                        let mut left_iter = iter;
+                        left_iter.set_border_color(left_color);
+                        let pixels = left_iter.with_frac_range(bottom, top).rev()
+                            .map(move |embedded_graphics::Pixel(point, c)| {
+                                embedded_graphics::Pixel(point + offset, c)
+                            });
+                        target.draw_iter(pixels)?;
+
+                        Ok(())
+                    }
+                }
+
+                let widget = BorderIterDemo { size: Size::zero() };
+                $run_macro!(widget);
+            }
             "erase_device" => {
                 use $crate::EraseDevice;
 
                 let widget = EraseDevice::new();
                 $run_macro!(widget);
             }
+            "check_backup" => {
+                use $crate::backup::CheckBackupScreen;
+
+                let widget = CheckBackupScreen::new(TEST_WORD_INDICES, 42, 0xDEAD_BEEF);
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
             }
         }
     };

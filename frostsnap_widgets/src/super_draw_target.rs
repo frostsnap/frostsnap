@@ -72,6 +72,12 @@ where
         }
     }
 
+    pub fn into_inner(self) -> Option<D> {
+        Rc::try_unwrap(self.display)
+            .ok()
+            .map(|cell| cell.into_inner())
+    }
+
     pub fn background_color(&self) -> C {
         self.background_color
     }

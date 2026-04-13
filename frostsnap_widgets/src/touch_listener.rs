@@ -2,7 +2,7 @@ use crate::{DynWidget, Instant, Key, KeyTouch, Sizing, SuperDrawTarget, Widget};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    primitives::Rectangle,
+    primitives::{Rectangle, StrokeAlignment},
 };
 
 /// A widget that listens for touch events and converts them to KeyTouch events
@@ -10,6 +10,7 @@ pub struct TouchListener<W> {
     pub child: W,
     on_touch: fn(Point, Instant, bool, &mut W) -> Option<Key>,
     sizing: Option<Sizing>,
+    stroke_alignment: StrokeAlignment,
 }
 
 impl<W> TouchListener<W> {
@@ -19,7 +20,13 @@ impl<W> TouchListener<W> {
             child,
             on_touch,
             sizing: None,
+            stroke_alignment: StrokeAlignment::Inside,
         }
+    }
+
+    pub fn with_stroke_alignment(mut self, alignment: StrokeAlignment) -> Self {
+        self.stroke_alignment = alignment;
+        self
     }
 }
 
@@ -45,9 +52,8 @@ where
     ) -> Option<KeyTouch> {
         // Call our handler with the child
         if let Some(key) = (self.on_touch)(point, current_time, is_release, &mut self.child) {
-            // Create the KeyTouch with our bounds
             let bounds = Rectangle::new(Point::zero(), self.sizing.unwrap().into());
-            Some(KeyTouch::new(key, bounds))
+            Some(KeyTouch::new(key, bounds).with_stroke_alignment(self.stroke_alignment))
         } else {
             // Also pass through to child in case it has its own handling
             self.child.handle_touch(point, current_time, is_release)
