@@ -298,24 +298,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         cli::Commands::VerifyFirmware { input } => {
             let signed = std::fs::read(&input)?;
-            let public_key = secure_boot::verify_firmware(&signed)?;
-            use rsa::traits::PublicKeyParts;
+            secure_boot::verify_firmware(&signed)?;
+
             use sha2::{Digest, Sha256};
-            let modulus_le = public_key.n().to_bytes_le();
-            let exponent_le = public_key.e().to_bytes_le();
-            let mut key_material = Vec::new();
-            key_material.extend_from_slice(&modulus_le);
-            key_material.resize(384, 0);
-            key_material.extend_from_slice(&exponent_le);
-            key_material.resize(384 + 4, 0);
-            let key_digest = Sha256::digest(&key_material);
+            let bytes: &'static [u8] = Box::leak(signed.into_boxed_slice());
+            let firmware = frostsnap_coordinator::FirmwareBin::new(bytes);
+            let (firmware_size, total_size) =
+                frostsnap_comms::firmware_reader::firmware_size(&firmware)
+                    .map_err(|e| format!("Failed to parse firmware: {e}"))?;
+            let firmware_digest = Sha256::digest(&bytes[..firmware_size as usize]);
+
             println!("Verified: {}", input.display());
             println!(
-                "  Size: {} bytes ({} firmware + 4096 signature block)",
-                signed.len(),
-                signed.len() - 4096
+                "  Size: {} bytes ({} firmware + {} signature block)",
+                total_size,
+                firmware_size,
+                total_size - firmware_size
             );
-            println!("  Public key digest: {}", hex::encode(&key_digest));
+            println!("  Firmware digest: {}", hex::encode(&firmware_digest));
         }
         cli::Commands::GenuineCheck => {
             let known_keys = load_known_genuine_keys();
