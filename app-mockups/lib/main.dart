@@ -202,14 +202,28 @@ class _MockupHomeState extends State<MockupHome> {
             ),
           ),
           ListTile(
-            title: const Text('Org Keygen (redesign)'),
+            title: const Text('Org Keygen (host)'),
             subtitle: const Text(
-                'Coordinator/device model, dialog-based device setup, late threshold'),
+                'Organisation wallet redesign — host perspective'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
                   builder: (_) => const OrgKeygenMockupScaffold()),
+            ),
+          ),
+          ListTile(
+            title: const Text('Org Keygen (participant)'),
+            subtitle: const Text(
+                'Organisation wallet redesign — participant joining via link'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const OrgKeygenMockupScaffold(
+                  startAsRole: OrgKeygenRole.participant,
+                ),
+              ),
             ),
           ),
         ],

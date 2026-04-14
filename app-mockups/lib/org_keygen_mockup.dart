@@ -32,12 +32,17 @@ import 'threshold_selector.dart';
 enum OrgKeygenStep {
   createRestore,
   walletType,
-  nameWallet,
+  sessionRole,     // Create a session / Join an existing session
+  joinSession,     // Paste invite link or scan QR (participant only)
+  inviteLanding,   // "Alice invites you to Acme Treasury" (participant only)
+  nameWallet,      // Host only
   lobby,
   review,
   keygen,
   done,
 }
+
+enum OrgKeygenRole { host, participant }
 
 enum ParticipantStatus {
   joining,   // link opened, has not set up yet
@@ -78,13 +83,29 @@ class OrgKeygenController extends ChangeNotifier {
   OrgKeygenStep _step = OrgKeygenStep.createRestore;
   OrgKeygenStep get step => _step;
 
+  /// Whether you're hosting this session or joining someone else's.
+  OrgKeygenRole _role = OrgKeygenRole.host;
+  OrgKeygenRole get role => _role;
+  bool get isHost => _role == OrgKeygenRole.host;
+
   final nameController = TextEditingController();
   String get walletName => nameController.text.trim();
   bool get nameValid => walletName.isNotEmpty && walletName.length <= 15;
 
   bool hasNostrIdentity = false;
 
-  // Participants — always includes "You" at index 0 (the organiser in this mockup).
+  /// For the join-session step: link the user has pasted/scanned.
+  final joinLinkController = TextEditingController();
+  bool get joinLinkValid =>
+      joinLinkController.text.trim().startsWith('frostsnap://join/');
+
+  /// Preset landing data once a valid link is accepted (mock).
+  String joiningWalletName = 'Acme Treasury';
+  String joiningHostName = 'Alice';
+  String joiningHostPubkey = 'npub1alice...abc';
+
+  // Participants — "You" at index 0 (host in the default seed; the role
+  // is flipped in the participant path before the lobby opens).
   final List<Participant> participants = [
     Participant(
       id: 'you',
@@ -145,7 +166,65 @@ class OrgKeygenController extends ChangeNotifier {
   }
 
   void chooseOrganisation() {
+    _step = OrgKeygenStep.sessionRole;
+    notifyListeners();
+  }
+
+  void chooseCreateSession() {
+    _role = OrgKeygenRole.host;
     _step = OrgKeygenStep.nameWallet;
+    notifyListeners();
+  }
+
+  void chooseJoinSession() {
+    _role = OrgKeygenRole.participant;
+    _step = OrgKeygenStep.joinSession;
+    notifyListeners();
+  }
+
+  void submitJoinLink() {
+    if (!joinLinkValid) return;
+    _step = OrgKeygenStep.inviteLanding;
+    notifyListeners();
+  }
+
+  /// Paste a preset mock link into the field (e.g. from the Scan button).
+  void fillMockJoinLink() {
+    joinLinkController.text = 'frostsnap://join/a1b2c3d4e5f6';
+    notifyListeners();
+  }
+
+  /// Accept the invite — wallet seed is synthesized from the landing
+  /// metadata, and the other participants + the host pre-populate the
+  /// roster.
+  void acceptInvite() {
+    // Configure this mock session so it looks like Alice's wallet.
+    nameController.text = joiningWalletName;
+    // Mark yourself as a normal participant, not the organiser.
+    participants[0] = Participant(
+      id: 'you',
+      displayName: 'You',
+      pubkeyShort: 'npub1you...you',
+      isOrganiser: false,
+      isYou: true,
+    );
+    // Inject the host at the front of the list.
+    participants.insert(
+      0,
+      Participant(
+        id: 'host',
+        displayName: joiningHostName,
+        pubkeyShort: joiningHostPubkey,
+        isOrganiser: true,
+        isYou: false,
+        // Pretend the host has already set up their devices.
+        status: ParticipantStatus.ready,
+        includeAppKey: true,
+        coordinatorName: '$joiningHostName\'s phone',
+        deviceNames: ['$joiningHostName\'s vault'],
+      ),
+    );
+    _step = OrgKeygenStep.lobby;
     notifyListeners();
   }
 
@@ -162,11 +241,24 @@ class OrgKeygenController extends ChangeNotifier {
         return;
       case OrgKeygenStep.walletType:
         _step = OrgKeygenStep.createRestore;
-      case OrgKeygenStep.nameWallet:
+      case OrgKeygenStep.sessionRole:
         _step = OrgKeygenStep.walletType;
+      case OrgKeygenStep.joinSession:
+        _step = OrgKeygenStep.sessionRole;
+      case OrgKeygenStep.inviteLanding:
+        _step = OrgKeygenStep.joinSession;
+      case OrgKeygenStep.nameWallet:
+        _step = OrgKeygenStep.sessionRole;
       case OrgKeygenStep.lobby:
-        _step = OrgKeygenStep.nameWallet;
-        participants.removeWhere((p) => !p.isYou);
+        _step = isHost
+            ? OrgKeygenStep.nameWallet
+            : OrgKeygenStep.inviteLanding;
+        // Tear down any roster / setup work so revisiting restarts clean.
+        if (isHost) {
+          participants.removeWhere((p) => !p.isYou);
+        } else {
+          participants.removeWhere((p) => !p.isYou && p.id != 'host');
+        }
         me.status = ParticipantStatus.joining;
         me.deviceNames.clear();
         me.includeAppKey = false;
@@ -228,7 +320,7 @@ class OrgKeygenController extends ChangeNotifier {
 
   int get recommendedThreshold {
     if (totalShares <= 1) return 1;
-    return max((totalShares * 2 / 3).ceil(), 1).clamp(1, totalShares);
+    return max((totalShares * 2 / 3).toInt(), 1).clamp(1, totalShares);
   }
 
   // --- Organiser's own device setup (dialog actions) ---
@@ -327,6 +419,31 @@ class OrgKeygenController extends ChangeNotifier {
     }
   }
 
+  /// The viewer-participant accepts the host's locked threshold.
+  void acceptThresholdAsMe() {
+    if (!thresholdLocked) return;
+    if (me.status == ParticipantStatus.ready) {
+      me.status = ParticipantStatus.accepted;
+      notifyListeners();
+    }
+  }
+
+  /// Sim: the host locks the threshold (participant flow — when the
+  /// viewer isn't the host, this is driven from the sim panel).
+  void simHostLocksThreshold() {
+    if (thresholdLocked) return;
+    threshold ??= _defaultThreshold();
+    thresholdLocked = true;
+    // The host auto-accepts their own threshold.
+    final host =
+        participants.where((p) => p.isOrganiser).cast<Participant?>().firstWhere(
+              (p) => true,
+              orElse: () => null,
+            );
+    host?.status = ParticipantStatus.accepted;
+    notifyListeners();
+  }
+
   void startKeygen(BuildContext context) {
     if (!canStartKeygen) return;
     _step = OrgKeygenStep.keygen;
@@ -408,6 +525,7 @@ class OrgKeygenController extends ChangeNotifier {
   @override
   void dispose() {
     nameController.dispose();
+    joinLinkController.dispose();
     super.dispose();
   }
 }
@@ -478,6 +596,15 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
             key: const ValueKey('cr'), ctrl: _ctrl);
       case OrgKeygenStep.walletType:
         return _WalletTypeView(key: const ValueKey('wt'), ctrl: _ctrl);
+      case OrgKeygenStep.sessionRole:
+        return _SessionRoleView(
+            key: const ValueKey('sr'), ctrl: _ctrl);
+      case OrgKeygenStep.joinSession:
+        return _JoinSessionView(
+            key: const ValueKey('js'), ctrl: _ctrl);
+      case OrgKeygenStep.inviteLanding:
+        return _InviteLandingView(
+            key: const ValueKey('il'), ctrl: _ctrl);
       case OrgKeygenStep.nameWallet:
         return _NameView(key: const ValueKey('nm'), ctrl: _ctrl);
       case OrgKeygenStep.lobby:
@@ -581,6 +708,252 @@ class _WalletTypeView extends StatelessWidget {
                   }
                   ctrl.chooseOrganisation();
                 },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// Step 2b: Create or Join session
+// =============================================================================
+
+class _SessionRoleView extends StatelessWidget {
+  final OrgKeygenController ctrl;
+  const _SessionRoleView({super.key, required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Header(
+            title: 'Start or join a session',
+            onBack: () => ctrl.back(context)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(
+            spacing: 12,
+            children: [
+              _ChoiceCard(
+                icon: Icons.add_circle_outline_rounded,
+                title: 'Start a new session',
+                subtitle:
+                    'Invite others to join a wallet you\'re creating.',
+                emphasized: true,
+                onTap: () => ctrl.chooseCreateSession(),
+              ),
+              _ChoiceCard(
+                icon: Icons.link_rounded,
+                title: 'Join an existing session',
+                subtitle:
+                    'Accept an invite link from someone else.',
+                onTap: () => ctrl.chooseJoinSession(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// Step 2c: Join session (paste link or scan QR)
+// =============================================================================
+
+class _JoinSessionView extends StatefulWidget {
+  final OrgKeygenController ctrl;
+  const _JoinSessionView({super.key, required this.ctrl});
+
+  @override
+  State<_JoinSessionView> createState() => _JoinSessionViewState();
+}
+
+class _JoinSessionViewState extends State<_JoinSessionView> {
+  OrgKeygenController get ctrl => widget.ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    ctrl.addListener(_onUpdate);
+    ctrl.joinLinkController.addListener(_onUpdate);
+  }
+
+  void _onUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    ctrl.removeListener(_onUpdate);
+    ctrl.joinLinkController.removeListener(_onUpdate);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Header(
+            title: 'Join session',
+            onBack: () => ctrl.back(context)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Text(
+            'Paste the invite link you were sent, or scan a QR code.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: TextField(
+            autofocus: true,
+            controller: ctrl.joinLinkController,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              labelText: 'Invite link',
+              hintText: 'frostsnap://join/…',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.content_paste_rounded),
+                tooltip: 'Paste from clipboard',
+                onPressed: () async {
+                  final data = await Clipboard.getData('text/plain');
+                  if (data?.text != null) {
+                    ctrl.joinLinkController.text = data!.text!;
+                  }
+                },
+              ),
+            ),
+            onSubmitted: (_) => ctrl.submitJoinLink(),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.qr_code_scanner_rounded),
+              label: const Text('Scan QR code'),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Camera would open — mocked'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+                ctrl.fillMockJoinLink();
+              },
+            ),
+          ),
+        ),
+        const Divider(height: 0),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              icon: const Icon(Icons.arrow_forward_rounded),
+              iconAlignment: IconAlignment.end,
+              onPressed:
+                  ctrl.joinLinkValid ? ctrl.submitJoinLink : null,
+              label: const Text('Continue'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// Step 2d: Invite landing — "Alice invites you to Acme Treasury"
+// =============================================================================
+
+class _InviteLandingView extends StatelessWidget {
+  final OrgKeygenController ctrl;
+  const _InviteLandingView({super.key, required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Header(
+            title: 'You\'re invited',
+            onBack: () => ctrl.back(context)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(Icons.group_add_rounded,
+                  size: 72, color: theme.colorScheme.primary),
+              const SizedBox(height: 20),
+              Text.rich(
+                TextSpan(
+                  style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.onSurface),
+                  children: [
+                    TextSpan(
+                      text: ctrl.joiningHostName,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const TextSpan(text: ' invited you to join '),
+                    TextSpan(
+                      text: '"${ctrl.joiningWalletName}"',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const TextSpan(text: '.'),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(ctrl.joiningHostPubkey,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                      color: theme.colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+          child: Text(
+            'Joining will make you a participant in this wallet. '
+            'You\'ll need to contribute one or more devices to hold key shares.',
+            style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Divider(height: 0),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                onPressed: () => ctrl.back(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Join'),
+                onPressed: ctrl.acceptInvite,
               ),
             ],
           ),
@@ -728,6 +1101,12 @@ class _LobbyPrimaryButton extends StatelessWidget {
       button = const FilledButton(
         onPressed: null,
         child: Text('Need at least 2 devices total'),
+      );
+    } else if (!ctrl.isHost) {
+      // Participants can't advance the flow.
+      button = const FilledButton(
+        onPressed: null,
+        child: Text('Waiting for host'),
       );
     } else {
       button = FilledButton.icon(
@@ -1012,7 +1391,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           color: theme.colorScheme.onSurfaceVariant,
           onPressed: () => _openSetupDialog(context),
         );
-      } else if (!p.isYou) {
+      } else if (!p.isYou && ctrl.isHost) {
         trailingAction = IconButton(
           icon: const Icon(Icons.remove_circle_outline, size: 18),
           tooltip: 'Remove participant',
@@ -1043,7 +1422,8 @@ class _ParticipantRowState extends State<_ParticipantRow> {
               Text('Ready',
                   style: theme.textTheme.labelMedium
                       ?.copyWith(color: Colors.green)),
-              const Icon(Icons.check_circle, size: 18, color: Colors.green),
+              const Icon(Icons.verified_rounded,
+                  size: 18, color: Colors.green),
             ],
           );
         case ParticipantStatus.accepted:
@@ -1167,16 +1547,19 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           Text('Ready',
               style: theme.textTheme.labelMedium
                   ?.copyWith(color: Colors.green)),
-          const Icon(Icons.check_circle, size: 18, color: Colors.green),
+          const Icon(Icons.verified_rounded,
+              size: 18, color: Colors.green),
         ],
       );
     }
 
+    // Role-based status, independent of whose row this is.
+    // The host picks the threshold; everyone else waits / reviews.
     final String text;
     if (!ctrl.thresholdLocked) {
-      text = p.isYou ? 'Selecting threshold' : 'Waiting';
+      text = p.isOrganiser ? 'Selecting threshold' : 'Waiting';
     } else {
-      text = p.isYou ? 'Waiting' : 'Reviewing threshold';
+      text = p.isOrganiser ? 'Waiting' : 'Reviewing threshold';
     }
     return Text(text,
         style: theme.textTheme.bodySmall
@@ -1289,7 +1672,7 @@ class _ReviewView extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             shrinkWrap: true,
             children: [
-              if (locked)
+              if (locked && ctrl.isHost)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
@@ -1301,11 +1684,11 @@ class _ReviewView extends StatelessWidget {
                     onPressed: ctrl.unlockThreshold,
                   ),
                 ),
-              // Disable pointer events on the selector while locked.
+              // The host picks; everyone else sees a read-only selector.
               IgnorePointer(
-                ignoring: locked,
+                ignoring: locked || !ctrl.isHost,
                 child: Opacity(
-                  opacity: locked ? 0.75 : 1.0,
+                  opacity: (locked || !ctrl.isHost) ? 0.75 : 1.0,
                   child: _ThresholdCard(ctrl: ctrl),
                 ),
               ),
@@ -1314,19 +1697,14 @@ class _ReviewView extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text('Participants',
-                        style: theme.textTheme.labelLarge
-                            ?.copyWith(color: theme.colorScheme.secondary)),
+                        style: theme.textTheme.labelLarge),
                   ),
                   if (locked)
                     Text(
                       ctrl.allAccepted
                           ? 'All accepted'
                           : '$acceptedCount of ${ctrl.participants.length} accepted',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: ctrl.allAccepted
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: theme.textTheme.labelLarge,
                     ),
                 ],
               ),
@@ -1358,6 +1736,28 @@ class _ReviewPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Participant path ---------------------------------------------------
+    if (!ctrl.isHost) {
+      if (!ctrl.thresholdLocked) {
+        return const FilledButton(
+          onPressed: null,
+          child: Text('Waiting for host'),
+        );
+      }
+      if (ctrl.me.status != ParticipantStatus.accepted) {
+        return FilledButton.icon(
+          icon: const Icon(Icons.check_rounded),
+          onPressed: ctrl.acceptThresholdAsMe,
+          label: const Text('Accept threshold'),
+        );
+      }
+      return const FilledButton(
+        onPressed: null,
+        child: Text('Waiting for host'),
+      );
+    }
+
+    // Host path ----------------------------------------------------------
     if (!ctrl.thresholdLocked) {
       return FilledButton.icon(
         icon: const Icon(Icons.arrow_forward_rounded),
@@ -1683,7 +2083,7 @@ class _DoneView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.check_circle, size: 64, color: Colors.green),
+          const Icon(Icons.verified_rounded, size: 64, color: Colors.green),
           const SizedBox(height: 16),
           Text('Wallet "${ctrl.walletName}" created!',
               style: theme.textTheme.headlineSmall,
@@ -1986,7 +2386,11 @@ class _ChoiceCard extends StatelessWidget {
 // =============================================================================
 
 class OrgKeygenMockupScaffold extends StatefulWidget {
-  const OrgKeygenMockupScaffold({super.key});
+  /// When provided, pre-advances the flow past the create/restore and
+  /// wallet-type pickers so the first visible screen matches this role.
+  final OrgKeygenRole? startAsRole;
+
+  const OrgKeygenMockupScaffold({super.key, this.startAsRole});
 
   @override
   State<OrgKeygenMockupScaffold> createState() =>
@@ -2003,6 +2407,13 @@ class _OrgKeygenMockupScaffoldState
   void initState() {
     super.initState();
     _ctrl.addListener(() => mounted ? setState(() {}) : null);
+    // Jump straight into the selected role so the mockup selector
+    // can offer "host" and "participant" as separate entries.
+    final start = widget.startAsRole;
+    if (start == OrgKeygenRole.participant) {
+      // Skip create/restore + wallet-type cards; land on join session.
+      _ctrl.chooseJoinSession();
+    }
   }
 
   @override
@@ -2192,6 +2603,23 @@ class _OrgKeygenMockupScaffoldState
         ),
       ));
     }
+
+    // Participant-only: sim the host advancing everyone to review.
+    if (!_ctrl.isHost) {
+      rows.add(const Divider(height: 8));
+      rows.add(ListTile(
+        dense: true,
+        leading: const Icon(Icons.star_rounded,
+            size: 20, color: Color(0xFFFFC107)),
+        title: const Text('Host advances'),
+        subtitle: const Text('Go to threshold review'),
+        trailing: FilledButton.tonal(
+          onPressed: _ctrl.canProceedToReview ? _ctrl.goToReview : null,
+          child: const Text('Continue'),
+        ),
+      ));
+    }
+
     return rows;
   }
 
@@ -2205,16 +2633,35 @@ class _OrgKeygenMockupScaffoldState
   List<Widget> _simReviewRows(BuildContext context) {
     final rows = <Widget>[];
     if (!_ctrl.thresholdLocked) {
-      rows.add(const ListTile(
-        dense: true,
-        title: Text('Threshold not locked yet'),
-        subtitle: Text(
-            'Press "Select threshold" on the page to lock it in.'),
-      ));
+      // Participant flow: host hasn't picked yet — expose a sim action
+      // for them to lock. Host flow: they drive it from the page.
+      if (!_ctrl.isHost) {
+        rows.add(ListTile(
+          dense: true,
+          leading: const Icon(Icons.star_rounded,
+              size: 20, color: Color(0xFFFFC107)),
+          title: const Text('Host picks threshold'),
+          subtitle: const Text('Locks it in for everyone to review'),
+          trailing: FilledButton.tonal(
+            onPressed: _ctrl.simHostLocksThreshold,
+            child: const Text('Lock'),
+          ),
+        ));
+      } else {
+        rows.add(const ListTile(
+          dense: true,
+          title: Text('Threshold not locked yet'),
+          subtitle: Text(
+              'Press "Select threshold" on the page to lock it in.'),
+        ));
+      }
       return rows;
     }
     for (final p in _ctrl.participants) {
       if (p.isYou) continue;
+      // Don't offer to "accept" for the host — they auto-accept when
+      // they lock the threshold.
+      if (p.isOrganiser) continue;
       final isAccepted = p.status == ParticipantStatus.accepted;
       rows.add(ListTile(
         dense: true,
@@ -2236,6 +2683,23 @@ class _OrgKeygenMockupScaffoldState
         title: Text('No remote participants'),
       ));
     }
+    // Participant-only: sim the host starting keygen once all accepted.
+    if (!_ctrl.isHost) {
+      rows.add(const Divider(height: 8));
+      rows.add(ListTile(
+        dense: true,
+        leading: const Icon(Icons.star_rounded,
+            size: 20, color: Color(0xFFFFC107)),
+        title: const Text('Host generates keys'),
+        subtitle: const Text('Starts the keygen ceremony'),
+        trailing: FilledButton.tonal(
+          onPressed: _ctrl.canStartKeygen
+              ? () => _ctrl.startKeygen(context)
+              : null,
+          child: const Text('Generate'),
+        ),
+      ));
+    }
     return rows;
   }
 
@@ -2248,7 +2712,7 @@ class _OrgKeygenMockupScaffoldState
         leading: const Icon(FrostsnapIcons.device, size: 20),
         title: Text(name),
         trailing: acked
-            ? const Icon(Icons.check_circle,
+            ? const Icon(Icons.verified_rounded,
                 color: Colors.green, size: 20)
             : FilledButton.tonal(
                 onPressed: () => _ctrl.ackDevice(i),
