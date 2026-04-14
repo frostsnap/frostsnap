@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:glowy_borders/glowy_borders.dart';
+import 'device_identity.dart';
 import 'main.dart' show deviceSvg, MockTopBar, SatoshiText, AnimatedCheckCircle;
 import 'keygen_appkey_mockup.dart' show appKeyIcon, appKeyLabel;
 
@@ -517,7 +518,7 @@ class _AppKeySigningDialogContent extends StatelessWidget {
               onChanged: remaining > 0 || isSelected
                   ? (_) => controller.toggleSelected(device.id)
                   : null,
-              secondary: const Icon(Icons.key),
+              secondary: const Icon(FrostsnapIcons.device),
               title: Text(device.name),
             );
           }),

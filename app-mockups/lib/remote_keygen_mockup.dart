@@ -742,7 +742,7 @@ class _LobbyViewState extends State<_LobbyView> {
                   margin: const EdgeInsets.symmetric(vertical: 3),
                   color: theme.colorScheme.surfaceContainerHigh,
                   child: ListTile(
-                    leading: const Icon(Icons.key),
+                    leading: const Icon(FrostsnapIcons.device),
                     title: device.isNamed
                         ? Text(device.name!)
                         : SizedBox(
@@ -977,7 +977,7 @@ class _ReviewView extends StatelessWidget {
                           dense: true,
                           contentPadding:
                               const EdgeInsets.only(left: 56, right: 16),
-                          leading: const Icon(Icons.key, size: 18),
+                          leading: const Icon(FrostsnapIcons.device, size: 18),
                           title: Text(d.name!),
                           trailing: Text('Share $idx',
                               style: theme.textTheme.bodySmall?.copyWith(

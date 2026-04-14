@@ -412,7 +412,7 @@ class _AppKeyKeygenPageState extends State<AppKeyKeygenPage> {
             margin: const EdgeInsets.symmetric(vertical: 4),
             color: theme.colorScheme.surfaceContainerHigh,
             child: ListTile(
-              leading: const Icon(Icons.key),
+              leading: const Icon(FrostsnapIcons.device),
               title: Text('Device ${i + 1}'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -482,7 +482,7 @@ class _AppKeyKeygenPageState extends State<AppKeyKeygenPage> {
             margin: const EdgeInsets.symmetric(vertical: 4),
             color: theme.colorScheme.surface,
             child: ListTile(
-              leading: const Icon(Icons.key),
+              leading: const Icon(FrostsnapIcons.device),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               title: TextField(
                 decoration: InputDecoration(

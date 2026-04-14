@@ -2,6 +2,11 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+class FrostsnapIcons {
+  FrostsnapIcons._();
+  static const IconData device = IconData(0xe801, fontFamily: 'DeviceIcon');
+}
+
 class DeviceIdentity {
   static String? _cachedName;
   static bool _initialized = false;

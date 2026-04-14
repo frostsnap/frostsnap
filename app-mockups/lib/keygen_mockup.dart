@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:glowy_borders/glowy_borders.dart';
+import 'device_identity.dart';
 
 const seedColor = Color(0xFF1595B2);
 
@@ -497,7 +498,7 @@ class _KeygenMockupPageState extends State<KeygenMockupPage> {
             margin: const EdgeInsets.symmetric(vertical: 4),
             color: theme.colorScheme.surfaceContainerHigh,
             child: ListTile(
-              leading: const Icon(Icons.key),
+              leading: const Icon(FrostsnapIcons.device),
               title: Text('Device ${i + 1}'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -542,7 +543,7 @@ class _KeygenMockupPageState extends State<KeygenMockupPage> {
           margin: const EdgeInsets.symmetric(vertical: 4),
           color: theme.colorScheme.surface,
           child: ListTile(
-            leading: const Icon(Icons.key),
+            leading: const Icon(FrostsnapIcons.device),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12),
             title: TextField(
               decoration: InputDecoration(

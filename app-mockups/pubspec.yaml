@@ -33,6 +33,7 @@ dependencies:
   glowy_borders: ^1.0.2
   flutter_svg: ^2.0.10
   device_info_plus: ^11.0.0
+  pretty_qr_code: ^3.3.0
 
 dev_dependencies:
   flutter_test:
@@ -55,6 +56,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  fonts:
+    - family: DeviceIcon
+      fonts:
+        - asset: assets/fonts/DeviceIcon.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

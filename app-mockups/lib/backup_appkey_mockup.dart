@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:glowy_borders/glowy_borders.dart';
+import 'device_identity.dart';
 import 'main.dart' show deviceSvg;
 import 'keygen_appkey_mockup.dart' show appKeyIcon, appKeyLabel;
 
@@ -524,7 +525,7 @@ class _BackupAppKeyPageState extends State<BackupAppKeyPage> {
       leadColor = theme.colorScheme.primary;
       displayName = appKeyLabel(context);
     } else {
-      leadIcon = Icons.key;
+      leadIcon = FrostsnapIcons.device;
       leadColor = theme.colorScheme.onSurfaceVariant;
       displayName = device.name;
     }

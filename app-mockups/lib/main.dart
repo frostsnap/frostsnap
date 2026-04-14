@@ -9,6 +9,7 @@ import 'keygen_appkey_mockup.dart';
 import 'signing_appkey_mockup.dart';
 import 'backup_appkey_mockup.dart';
 import 'remote_keygen_mockup.dart';
+import 'org_keygen_mockup.dart';
 
 const String deviceSvg = '''
 <svg width="34.986689421321785mm" height="42.99022935571762mm" viewBox="0 0 34.986689421321785 42.99022935571762" xmlns="http://www.w3.org/2000/svg" version="1.1">
@@ -198,6 +199,17 @@ class _MockupHomeState extends State<MockupHome> {
               context,
               MaterialPageRoute(
                   builder: (_) => const RemoteKeygenMockupScaffold()),
+            ),
+          ),
+          ListTile(
+            title: const Text('Org Keygen (redesign)'),
+            subtitle: const Text(
+                'Coordinator/device model, dialog-based device setup, late threshold'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const OrgKeygenMockupScaffold()),
             ),
           ),
         ],
@@ -419,7 +431,7 @@ class _AppKeyKeygenScaffoldState extends State<AppKeyKeygenScaffold> {
                   : 'Device ${i + 1}';
               return ListTile(
                 dense: true,
-                leading: Icon(Icons.key, size: 20),
+                leading: Icon(FrostsnapIcons.device, size: 20),
                 title: Text(name),
                 trailing: acked
                     ? Icon(Icons.check_circle, color: Colors.green, size: 20)
@@ -647,7 +659,7 @@ class _KeygenMockupScaffoldState extends State<KeygenMockupScaffold> {
               final name = _ctrl.deviceNames[i] ?? 'Device ${i + 1}';
               return ListTile(
                 dense: true,
-                leading: Icon(Icons.key, size: 20),
+                leading: Icon(FrostsnapIcons.device, size: 20),
                 title: Text(name),
                 trailing: acked
                     ? Icon(Icons.check_circle, color: Colors.green, size: 20)
@@ -915,7 +927,7 @@ class _RemoteKeygenMockupScaffoldState
                     .name!;
                 return ListTile(
                   dense: true,
-                  leading: const Icon(Icons.key, size: 20),
+                  leading: const Icon(FrostsnapIcons.device, size: 20),
                   title: Text(name),
                   trailing: acked
                       ? const Icon(Icons.check_circle,
@@ -1362,7 +1374,7 @@ class SigningDialogContent extends StatelessWidget {
               onChanged: remaining > 0 || isSelected
                   ? (_) => controller.toggleSelected(device.id)
                   : null,
-              secondary: const Icon(Icons.key),
+              secondary: const Icon(FrostsnapIcons.device),
               title: Text(device.name),
             );
           }),
