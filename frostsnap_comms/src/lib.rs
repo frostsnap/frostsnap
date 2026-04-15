@@ -467,6 +467,11 @@ pub enum CommsMisc {
     BackupRecorded,
     /// Tells the coordinator that the device erase has been confirmed and first sector erased.
     EraseConfirmed,
+    /// Tells the coordinator that the user completed the backup check workflow.
+    BackupChecked {
+        access_structure_ref: frostsnap_core::AccessStructureRef,
+        share_index: frostsnap_core::schnorr_fun::frost::ShareIndex,
+    },
 }
 
 impl Gist for CommsMisc {

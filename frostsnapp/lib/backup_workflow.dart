@@ -351,9 +351,9 @@ class _BackupChecklistState extends State<BackupChecklist> {
 
   void showCheckDialog(BuildContext context, DeviceId deviceId) async {
     final result = await _checkDialogController.show(context, deviceId);
-    if (result == true) {
+    if (result?.backupManuallyEnteredValid == true) {
       await showBackupOkayDialog(context);
-    } else if (result == false) {
+    } else if (result?.backupManuallyEnteredValid == false) {
       final tryAgain = await showBackupInvalidDialog(context);
       if (tryAgain) {
         showCheckDialog(context, deviceId);

@@ -203,7 +203,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             &CoordinatorRestoration::DisplayBackup {
                 access_structure_ref,
                 coord_share_decryption_contrib,
-                party_index,
+                share_index,
                 ref root_shared_key,
             } => {
                 // Verify that the root_shared_key corresponds to the access_structure_ref
@@ -243,7 +243,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
 
                 let encrypted_secret_share = access_structure_data
                     .shares
-                    .get(&party_index)
+                    .get(&share_index)
                     .ok_or_else(|| {
                         Error::signer_invalid_message(
                             &message,
@@ -253,7 +253,7 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                     .ciphertext;
                 let phase = BackupDisplayPhase {
                     access_structure_ref,
-                    party_index,
+                    share_index,
                     encrypted_secret_share,
                     coord_share_decryption_contrib,
                     key_name: key_data.key_name.clone(),
@@ -261,6 +261,73 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 };
                 Ok(vec![DeviceSend::ToUser(Box::new(
                     DeviceToUserMessage::Restoration(Box::new(DisplayBackup {
+                        key_name: phase.key_name.clone(),
+                        access_structure_ref: phase.access_structure_ref,
+                        phase,
+                    })),
+                ))])
+            }
+
+            &CoordinatorRestoration::CheckBackup {
+                access_structure_ref,
+                coord_share_decryption_contrib,
+                share_index,
+                ref root_shared_key,
+            } => {
+                let expected_ref = AccessStructureRef::from_root_shared_key(root_shared_key);
+                if expected_ref != access_structure_ref {
+                    return Err(Error::signer_invalid_message(
+                        &message,
+                        "root_shared_key doesn't match access_structure_ref",
+                    ));
+                }
+
+                let AccessStructureRef {
+                    key_id,
+                    access_structure_id,
+                } = access_structure_ref;
+                let key_data = self.keys.get(&key_id).ok_or(Error::signer_invalid_message(
+                    &message,
+                    format!(
+                        "signer doesn't have a share for this key: {}",
+                        self.keys
+                            .keys()
+                            .map(|key| key.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ),
+                ))?;
+
+                let access_structure_data = key_data
+                    .access_structures
+                    .get(&access_structure_id)
+                    .ok_or_else(|| {
+                        Error::signer_invalid_message(
+                            &message,
+                            "no such access structure on this device",
+                        )
+                    })?;
+
+                let encrypted_secret_share = access_structure_data
+                    .shares
+                    .get(&share_index)
+                    .ok_or_else(|| {
+                        Error::signer_invalid_message(
+                            &message,
+                            "access structure exists but this device doesn't have that share",
+                        )
+                    })?
+                    .ciphertext;
+                let phase = BackupDisplayPhase {
+                    access_structure_ref,
+                    share_index,
+                    encrypted_secret_share,
+                    coord_share_decryption_contrib,
+                    key_name: key_data.key_name.clone(),
+                    root_shared_key: root_shared_key.clone(),
+                };
+                Ok(vec![DeviceSend::ToUser(Box::new(
+                    DeviceToUserMessage::Restoration(Box::new(CheckBackup {
                         key_name: phase.key_name.clone(),
                         access_structure_ref: phase.access_structure_ref,
                         phase,
@@ -415,6 +482,11 @@ pub enum ToUserRestoration {
         access_structure_ref: AccessStructureRef,
         phase: BackupDisplayPhase,
     },
+    CheckBackup {
+        key_name: String,
+        access_structure_ref: AccessStructureRef,
+        phase: BackupDisplayPhase,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -426,7 +498,7 @@ pub struct ConsolidatePhase {
 #[derive(Clone, Debug)]
 pub struct BackupDisplayPhase {
     pub access_structure_ref: AccessStructureRef,
-    pub party_index: ShareIndex,
+    pub share_index: ShareIndex,
     pub encrypted_secret_share: Ciphertext<32, Scalar<Secret, Zero>>,
     pub coord_share_decryption_contrib: CoordShareDecryptionContrib,
     pub key_name: String,
@@ -440,14 +512,14 @@ impl BackupDisplayPhase {
     ) -> Result<ShareBackup, ActionError> {
         let encryption_key = symm_keygen.get_share_encryption_key(
             self.access_structure_ref,
-            self.party_index,
+            self.share_index,
             self.coord_share_decryption_contrib,
         );
         let secret_share = self.encrypted_secret_share.decrypt(encryption_key).ok_or(
             ActionError::StateInconsistent("could not decrypt secret share".into()),
         )?;
         let secret = SecretShare {
-            index: self.party_index,
+            index: self.share_index,
             share: secret_share,
         };
         Ok(ShareBackup::from_secret_share_and_shared_key(

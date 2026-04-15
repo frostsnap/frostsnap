@@ -43,3 +43,4 @@ bridge_sink!(crate::api::backup_run::DisplayBackupState);
 bridge_sink!(crate::api::recovery::EnterPhysicalBackupState);
 bridge_sink!(crate::api::recovery::WaitForSingleDeviceState);
 bridge_sink!(EraseDeviceState);
+bridge_sink!(crate::api::recovery::CheckBackupState);
