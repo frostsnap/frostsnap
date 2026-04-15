@@ -3,6 +3,7 @@ use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
+pub use frostsnap_coordinator::check_backup::CheckBackupState;
 pub use frostsnap_coordinator::enter_physical_backup::EnterPhysicalBackupState;
 pub use frostsnap_coordinator::wait_for_single_device::WaitForSingleDeviceState;
 pub use frostsnap_core::coordinator::restoration::{
@@ -171,6 +172,23 @@ impl super::coordinator::Coordinator {
         Ok(())
     }
 
+    pub fn tell_device_to_check_backup(
+        &self,
+        device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
+        share_index: ShareIndex,
+        encryption_key: SymmetricKey,
+        sink: StreamSink<CheckBackupState>,
+    ) -> Result<()> {
+        self.0.tell_device_to_check_backup(
+            device_id,
+            access_structure_ref,
+            share_index,
+            encryption_key,
+            SinkWrap(sink),
+        )
+    }
+
     pub fn check_physical_backup_for_restoration(
         &self,
         restoration_id: RestorationId,
@@ -230,6 +248,12 @@ impl PhysicalBackupPhase {
 
     #[frb(sync)]
     pub fn share_image(&self) -> ShareImage {}
+}
+
+#[derive(Debug, Clone)]
+#[frb(mirror(CheckBackupState))]
+pub struct _CheckBackupState {
+    pub backup_manually_entered_valid: Option<bool>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,10 +1,11 @@
 use alloc::boxed::Box;
 use frostsnap_core::{
     device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
+    schnorr_fun::frost::ShareIndex,
     AccessStructureRef,
 };
 use frostsnap_widgets::{
-    backup::{BackupDisplay, EnterShareScreen},
+    backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     keygen_check::KeygenCheck,
     layout::*,
     sign_prompt::SignTxPrompt,
@@ -71,7 +72,7 @@ pub enum WidgetTree {
     /// Display backup screen
     DisplayBackup {
         widget: Box<BackupDisplay>,
-        access_structure_ref: Option<AccessStructureRef>,
+        fired: bool,
     },
 
     /// Display Bitcoin address screen with derivation path
@@ -85,6 +86,14 @@ pub enum WidgetTree {
 
     /// Erase progress screen
     EraseProgress { widget: Box<EraseProgress> },
+
+    /// Check backup quiz screen
+    CheckBackup {
+        widget: Box<CheckBackupScreen>,
+        access_structure_ref: AccessStructureRef,
+        share_index: ShareIndex,
+        fired: bool,
+    },
 }
 
 impl Default for WidgetTree {

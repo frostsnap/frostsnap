@@ -1546,6 +1546,16 @@ impl FrostCoordinator {
             .root_shared_key(access_structure_ref.access_structure_id, encryption_key)?;
         Some(root_shared_key)
     }
+
+    pub fn expected_share_image(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        share_index: ShareIndex,
+        encryption_key: SymmetricKey,
+    ) -> Option<ShareImage> {
+        let root_shared_key = self.root_shared_key(access_structure_ref, encryption_key)?;
+        Some(root_shared_key.share_image(share_index))
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

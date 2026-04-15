@@ -7,6 +7,7 @@ use crate::device_list::DeviceList;
 use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
 use frostsnap_coordinator::backup_run::BackupState;
+use frostsnap_coordinator::check_backup::{CheckBackupProtocol, CheckBackupState};
 use frostsnap_coordinator::enter_physical_backup::{EnterPhysicalBackup, EnterPhysicalBackupState};
 use frostsnap_coordinator::erase_device::{EraseDevice, EraseDeviceState};
 use frostsnap_coordinator::firmware_upgrade::{
@@ -36,8 +37,8 @@ use frostsnap_core::coordinator::{
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
-    message, AccessStructureRef, DeviceId, KeyId, KeygenId, RestorationId, SignSessionId,
-    SymmetricKey, WireSignTask,
+    message, schnorr_fun::frost::ShareIndex, AccessStructureRef, DeviceId, KeyId, KeygenId,
+    RestorationId, SignSessionId, SymmetricKey, WireSignTask,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ops::DerefMut;
@@ -1042,6 +1043,37 @@ impl FfiCoordinator {
             }
         });
         let proto = EnterPhysicalBackup::new(sink, device_id);
+        self.start_protocol(proto);
+        Ok(())
+    }
+
+    pub fn tell_device_to_check_backup(
+        &self,
+        device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
+        share_index: ShareIndex,
+        encryption_key: SymmetricKey,
+        sink: impl Sink<CheckBackupState>,
+    ) -> Result<()> {
+        let firmware = self
+            .device_list
+            .lock()
+            .unwrap()
+            .devices()
+            .into_iter()
+            .find(|d| d.id == device_id)
+            .map(|d| d.firmware)
+            .ok_or_else(|| anyhow!("device not connected"))?;
+
+        let proto = CheckBackupProtocol::new(
+            self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
+            device_id,
+            access_structure_ref,
+            share_index,
+            encryption_key,
+            firmware,
+            sink,
+        )?;
         self.start_protocol(proto);
         Ok(())
     }
