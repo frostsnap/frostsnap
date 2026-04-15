@@ -380,8 +380,6 @@ fn truncate_name(name: &str, max_len: usize) -> String {
         return name.to_string();
     }
 
-    let max_len = name.floor_char_boundary(max_len);
-
     // Find the last `::` or `>` to identify the function/method name at the end
     let suffix_start = name
         .rfind("::")
