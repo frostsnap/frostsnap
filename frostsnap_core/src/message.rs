@@ -59,11 +59,17 @@ pub enum CoordinatorRestoration {
     DisplayBackup {
         access_structure_ref: AccessStructureRef,
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
-        party_index: ShareIndex,
+        share_index: ShareIndex,
         root_shared_key: SharedKey,
     },
     RequestHeldShares,
     SavePhysicalBackup2(Box<HeldShare2>),
+    CheckBackup {
+        access_structure_ref: AccessStructureRef,
+        coord_share_decryption_contrib: CoordShareDecryptionContrib,
+        share_index: ShareIndex,
+        root_shared_key: SharedKey,
+    },
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
@@ -206,8 +212,8 @@ pub enum TaskKind {
     KeyGen,
     Sign,
     DisplayBackup,
-    CheckBackup,
     VerifyAddress,
+    CheckBackup,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]

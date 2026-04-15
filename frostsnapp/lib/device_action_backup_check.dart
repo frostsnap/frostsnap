@@ -7,6 +7,7 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
 
 class DeviceActionBackupCheckController with ChangeNotifier {
@@ -44,7 +45,7 @@ class DeviceActionBackupCheckController with ChangeNotifier {
       },
       actionButtons: [
         OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
-        DeviceActionHint(label: 'Enter backup on device'),
+        DeviceActionHint(label: 'Complete quiz on device'),
       ],
       onDismissed: _onCancel,
     );
@@ -62,41 +63,40 @@ class DeviceActionBackupCheckController with ChangeNotifier {
     _cancelButtonController.add(null);
   }
 
-  Future<bool?> show(BuildContext context, DeviceId id) async {
+  Future<CheckBackupState?> show(BuildContext context, DeviceId id) async {
     final exists = accessStructure.devices().any((v) => deviceIdEquals(v, id));
-    if (!exists) return false;
+    if (!exists) return null;
     final connected =
         (await GlobalStreams.deviceListSubject.first).state.getDevice(id: id) !=
         null;
-    if (!connected) return false;
+    if (!connected) return null;
 
     final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final shareIndex = accessStructure.getDeviceShareIndex(deviceId: id);
+    if (shareIndex == null) return null;
     final _ = _dialogController.addActionNeeded(context, id)!;
 
-    final (phase, isCancelled) = await select([
+    final (state, isCancelled) = await select([
       coord
-          .tellDeviceToEnterPhysicalBackup(deviceId: id)
+          .tellDeviceToCheckBackup(
+            deviceId: id,
+            accessStructureRef: accessStructure.accessStructureRef(),
+            shareIndex: shareIndex,
+            encryptionKey: encryptionKey,
+          )
           .last
-          .then((s) => (s.entered, true)),
+          .then((s) => (s, true)),
       _cancelButtonController.stream.first.then((_) => (null, false)),
     ], catchError: (_) => (null, true));
 
-    print('phase=$phase, isConnected=$isCancelled');
-
-    if (phase == null) {
+    if (state == null) {
       await coord.cancelProtocol();
       await _dialogController.removeActionNeeded(id);
       if (!isCancelled) return null;
-      return false;
+      return null;
     }
 
-    final checkOk = coord.checkPhysicalBackup(
-      accessStructureRef: accessStructure.accessStructureRef(),
-      phase: phase,
-      encryptionKey: encryptionKey,
-    );
-
     await _dialogController.removeActionNeeded(id);
-    return checkOk;
+    return state;
   }
 }

@@ -1024,7 +1024,7 @@ impl FrostCoordinator {
             .ok_or(ActionError::StateInconsistent(
                 "no such access structure".into(),
             ))?;
-        let party_index = *access_structure
+        let share_index = *access_structure
             .device_to_share_index
             .get(&device_id)
             .ok_or(ActionError::StateInconsistent(
@@ -1045,10 +1045,59 @@ impl FrostCoordinator {
                 CoordinatorRestoration::DisplayBackup {
                     access_structure_ref,
                     coord_share_decryption_contrib,
-                    party_index,
+                    share_index,
                     root_shared_key,
                 },
             ),
+            destinations: BTreeSet::from_iter([device_id]),
+        }])
+    }
+
+    pub fn request_device_check_backup(
+        &mut self,
+        device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) -> Result<Vec<CoordinatorSend>, ActionError> {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+        let complete_key = &self
+            .keys
+            .get(&key_id)
+            .ok_or(ActionError::StateInconsistent("no such key".into()))?
+            .complete_key;
+
+        let access_structure = complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or(ActionError::StateInconsistent(
+                "no such access structure".into(),
+            ))?;
+        let share_index = *access_structure
+            .device_to_share_index
+            .get(&device_id)
+            .ok_or(ActionError::StateInconsistent(
+                "device does not have share in key".into(),
+            ))?;
+        let root_shared_key = complete_key
+            .root_shared_key(access_structure_id, encryption_key)
+            .ok_or(ActionError::StateInconsistent(
+                "couldn't decrypt root key".into(),
+            ))?;
+        let (_, coord_share_decryption_contrib) = complete_key
+            .coord_share_decryption_contrib(access_structure_id, device_id, encryption_key)
+            .ok_or(ActionError::StateInconsistent(
+                "couldn't decrypt root key".into(),
+            ))?;
+        Ok(vec![CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::CheckBackup {
+                access_structure_ref,
+                coord_share_decryption_contrib,
+                share_index,
+                root_shared_key,
+            }),
             destinations: BTreeSet::from_iter([device_id]),
         }])
     }

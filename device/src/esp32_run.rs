@@ -583,6 +583,22 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                                     update_default_workflow!(ui, name, signer);
                                     ui.go_to_default();
                                 }
+                                CheckBackup {
+                                    key_name,
+                                    access_structure_ref,
+                                    phase,
+                                } => {
+                                    let backup = phase
+                                        .decrypt_to_backup(&mut hmac_keys.share_encryption)
+                                        .expect("state changed while checking backup");
+                                    let rand_seed = rng.next_u32();
+                                    ui.set_workflow(ui::Workflow::CheckBackup {
+                                        key_name: key_name.to_string(),
+                                        backup,
+                                        access_structure_ref,
+                                        rand_seed,
+                                    });
+                                }
                                 ConsolidateBackup(phase) => {
                                     // XXX: We don't tell the user about this message and just automatically confirm it.
                                     // There isn't really anything they could do to actually verify to confirm it but since
@@ -646,11 +662,20 @@ pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
                         name: new_name.clone(),
                     }]);
                 }
-                UiEvent::BackupRecorded {
-                    access_structure_ref: _,
-                } => {
+                UiEvent::BackupRecorded => {
                     upstream_connection
                         .send_to_coordinator([DeviceSendBody::Misc(CommsMisc::BackupRecorded)]);
+                }
+                UiEvent::BackupChecked {
+                    access_structure_ref,
+                    share_index,
+                } => {
+                    upstream_connection.send_to_coordinator([DeviceSendBody::Misc(
+                        CommsMisc::BackupChecked {
+                            access_structure_ref,
+                            share_index,
+                        },
+                    )]);
                 }
                 UiEvent::UpgradeConfirm => {
                     if let Some(upgrade) = upgrade.as_mut() {

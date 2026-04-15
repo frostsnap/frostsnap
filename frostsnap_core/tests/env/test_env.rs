@@ -256,6 +256,7 @@ impl Env for TestEnv {
                         run.extend_from_device(from, ack);
                     }
                     BackupSaved { .. } => { /* informational */ }
+                    CheckBackup { .. } => { /* not tested here */ }
                 }
             }
             DeviceToUserMessage::VerifyAddress {
