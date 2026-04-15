@@ -365,6 +365,20 @@ impl<'a> EfuseKeyWriter<'a> {
             self.efuse.write_key_purposes(&configs)?;
         }
 
+        // When RD_DIS is set for a key block, hardware masks RD_KEYn to zero.
+        // If a key still reads back non-zero the read-protect didn't latch —
+        // a critical provisioning failure we must catch before the device
+        // ships. We've seen devices in the field where RD_DIS ended up as 0
+        // despite a successful write_key_purposes call.
+        if self.read_protect {
+            for &(key_id, _, _) in &self.keys {
+                let readback = self.efuse.read_efuse(key_id)?;
+                if readback != [0u8; 32] {
+                    return Err(EfuseError::ReadProtectNotLatched(key_id));
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -440,7 +454,7 @@ pub enum EfuseError {
     EfuseWriteError(u8),
     EfuseAlreadyBurned,
     EfuseError,
-    ValidationFailed,
+    ReadProtectNotLatched(esp_hal::hmac::KeyId),
 }
 
 pub struct EfuseHmacKey<'a> {

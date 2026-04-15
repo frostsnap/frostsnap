@@ -1,4 +1,4 @@
-//! Development device binary
+//! Legacy device binary (no secure boot)
 
 #![no_std]
 #![no_main]

@@ -3,8 +3,11 @@ description: "Sets up common stuff for building the flutter app"
 
 inputs:
   firmware_path:
-    description: "Path to firmware.bin file"
+    description: "Path to signed firmware binary"
     required: true
+  env:
+    description: "Environment (dev or prod) — determines firmware path convention"
+    default: "dev"
 
 runs:
   using: "composite"
@@ -19,8 +22,8 @@ runs:
     - uses: "./.github/actions/fetch-dart-deps"
     - uses: "./.github/actions/generate-frb"
     - uses: "./.github/actions/install-cargo-bins"
-    - name: Copy firmware to expected location
+    - name: Place firmware at conventional path
       shell: bash
       run: |
         mkdir -p target/riscv32imc-unknown-none-elf/release/
-        cp "${{ inputs.firmware_path }}" target/riscv32imc-unknown-none-elf/release/firmware.bin
+        cp "${{ inputs.firmware_path }}" "target/riscv32imc-unknown-none-elf/release/${{ inputs.env }}-frontier.bin"

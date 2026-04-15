@@ -75,6 +75,7 @@ embedded-graphics = "0.8"
 image = { version = "0.25", default-features = false }
 tracing-subscriber = { version = "0.3" }
 rsa = { version = "0.9" }
+crc = "3"
 
 [profile.dev]
 # Rust debug is too slow.

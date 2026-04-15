@@ -44,15 +44,15 @@ rand_chacha = { workspace = true }
 frostsnap_cst816s = { workspace = true }
 embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }
 fugit = "0.3.7"
-crc = "3"
+crc.workspace = true
 micromath = "*"
 reed-solomon = "0.2.1"
 frostsnap_widgets = { workspace = true }
 frostsnap_macros = { path = "../macros" }
 
 [[bin]]
-name = "dev"
-path = "src/bin/dev.rs"
+name = "legacy"
+path = "src/bin/legacy.rs"
 
 [[bin]]
 name = "frontier"

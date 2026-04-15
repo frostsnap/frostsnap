@@ -34,5 +34,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"
 tokio-util = { version = "0.7", features = ["compat"] }
 webpki-roots = "0.26"
 
+[features]
+genuine-check = []
+
 [dev-dependencies]
 tempfile = "3.8"

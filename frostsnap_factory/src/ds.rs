@@ -2,7 +2,7 @@ use aes::cipher::BlockEncryptMut;
 use aes::cipher::{block_padding::NoPadding, KeyIvInit};
 use aes::Aes256;
 use cbc::Encryptor;
-use frostsnap_comms::factory::{pad_message_for_rsa, Esp32DsKey, DS_KEY_SIZE_BITS};
+use frostsnap_comms::factory::{Esp32DsKey, DS_KEY_SIZE_BITS};
 use frostsnap_core::sha2::{Digest, Sha256};
 use hmac::{Hmac, Mac};
 use rand::{CryptoRng, RngCore};
@@ -14,22 +14,6 @@ use std::error::Error;
 use std::fmt;
 
 const DS_NUM_WORDS: usize = DS_KEY_SIZE_BITS / 32;
-
-pub fn standard_rsa_sign(priv_key: &RsaPrivateKey, message: &[u8]) -> Vec<u8> {
-    let message_digest: [u8; 32] = Sha256::digest(message).into();
-    let padded_message = pad_message_for_rsa(&message_digest);
-
-    raw_exponent_rsa_sign(padded_message.into(), priv_key)
-}
-
-fn raw_exponent_rsa_sign(padded_int: Vec<u8>, private_key: &RsaPrivateKey) -> Vec<u8> {
-    let d = BigUint::from_bytes_be(&private_key.d().to_bytes_be());
-    let n = BigUint::from_bytes_be(&private_key.n().to_bytes_be());
-    let challenge_uint = BigUint::from_bytes_be(&padded_int);
-    let signature_int = challenge_uint.modpow(&d, &n);
-
-    signature_int.to_bytes_be()
-}
 
 pub fn esp32_ds_key_from_keys(priv_key: &RsaPrivateKey, hmac_key: [u8; 32]) -> Esp32DsKey {
     type HmacSha256 = Hmac<Sha256>;

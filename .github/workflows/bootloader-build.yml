@@ -1,0 +1,35 @@
+name: Bootloader Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'frostsnap_factory/bootloader/**'
+
+jobs:
+  build-bootloader:
+    name: Build Bootloader (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: ["dev", "prod"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-nix
+      - uses: taiki-e/install-action@just
+
+      - name: Build unsigned bootloader
+        run: just env=${{ matrix.env }} build-bootloader
+
+      - name: Verify bootloader was produced
+        run: test -f frostsnap_factory/bootloader/${{ matrix.env }}/bootloader.bin
+
+      - name: Display build info
+        run: |
+          echo "Size: $(stat -c%s frostsnap_factory/bootloader/${{ matrix.env }}/bootloader.bin) bytes"
+          echo "SHA256: $(sha256sum frostsnap_factory/bootloader/${{ matrix.env }}/bootloader.bin)"
+
+      - uses: "./.github/actions/upload-artifact"
+        with:
+          name: bootloader-${{ matrix.env }}-${{ github.sha }}.bin
+          path: frostsnap_factory/bootloader/${{ matrix.env }}/bootloader.bin

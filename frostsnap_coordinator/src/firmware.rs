@@ -226,11 +226,10 @@ impl ValidatedFirmwareBin {
 
         let is_signed = firmware_size < total_size;
 
-        if is_signed {
-            // Signed firmware MUST be in KNOWN_FIRMWARE_VERSIONS
+        if is_signed && option_env!("FROSTSNAP_ENV") == Some("prod") {
             VersionNumber::from_digest(&firmware_only_digest).ok_or(
                 FirmwareValidationError::UnknownSignedFirmware {
-                    digest: digest_with_signature,
+                    digest: firmware_only_digest,
                 },
             )?;
         }
