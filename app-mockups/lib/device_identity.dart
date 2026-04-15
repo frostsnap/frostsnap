@@ -55,6 +55,21 @@ class DeviceIdentity {
     }
   }
 
+  /// Lowercase noun for the kind of device the user is on —
+  /// "phone" or "computer". For use mid-sentence ("Use this phone...").
+  static String get kind {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+      case TargetPlatform.android:
+        return 'phone';
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+      case TargetPlatform.fuchsia:
+        return 'computer';
+    }
+  }
+
   static IconData get icon {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:

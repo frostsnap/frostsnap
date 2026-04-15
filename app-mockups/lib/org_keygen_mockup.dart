@@ -34,7 +34,6 @@ enum OrgKeygenStep {
   walletType,
   sessionRole,     // Create a session / Join an existing session
   joinSession,     // Paste invite link or scan QR (participant only)
-  inviteLanding,   // "Alice invites you to Acme Treasury" (participant only)
   nameWallet,      // Host only
   lobby,
   review,
@@ -61,6 +60,9 @@ class Participant {
   bool includeAppKey;
   /// User-editable label for the coordinator device (laptop/phone).
   String coordinatorName;
+  /// Icon to show for this participant's coordinator. Defaults to
+  /// the current platform's icon (viewer's own phone/laptop).
+  IconData coordinatorIcon;
   final List<String> deviceNames;
 
   Participant({
@@ -72,8 +74,10 @@ class Participant {
     this.status = ParticipantStatus.joining,
     this.includeAppKey = false,
     String? coordinatorName,
+    IconData? coordinatorIcon,
     List<String>? deviceNames,
   })  : coordinatorName = coordinatorName ?? DeviceIdentity.name,
+        coordinatorIcon = coordinatorIcon ?? DeviceIdentity.icon,
         deviceNames = deviceNames ?? [];
 
   int get shareCount => deviceNames.length + (includeAppKey ? 1 : 0);
@@ -184,20 +188,6 @@ class OrgKeygenController extends ChangeNotifier {
 
   void submitJoinLink() {
     if (!joinLinkValid) return;
-    _step = OrgKeygenStep.inviteLanding;
-    notifyListeners();
-  }
-
-  /// Paste a preset mock link into the field (e.g. from the Scan button).
-  void fillMockJoinLink() {
-    joinLinkController.text = 'frostsnap://join/a1b2c3d4e5f6';
-    notifyListeners();
-  }
-
-  /// Accept the invite — wallet seed is synthesized from the landing
-  /// metadata, and the other participants + the host pre-populate the
-  /// roster.
-  void acceptInvite() {
     // Configure this mock session so it looks like Alice's wallet.
     nameController.text = joiningWalletName;
     // Mark yourself as a normal participant, not the organiser.
@@ -228,6 +218,15 @@ class OrgKeygenController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Paste a preset mock link into the field (e.g. from the Scan button).
+  void fillMockJoinLink() {
+    joinLinkController.text = 'frostsnap://join/a1b2c3d4e5f6';
+    notifyListeners();
+  }
+
+  /// Accept the invite — wallet seed is synthesized from the landing
+  /// metadata, and the other participants + the host pre-populate the
+  /// roster.
   void submitName() {
     if (!nameValid) return;
     _step = OrgKeygenStep.lobby;
@@ -245,14 +244,12 @@ class OrgKeygenController extends ChangeNotifier {
         _step = OrgKeygenStep.walletType;
       case OrgKeygenStep.joinSession:
         _step = OrgKeygenStep.sessionRole;
-      case OrgKeygenStep.inviteLanding:
-        _step = OrgKeygenStep.joinSession;
       case OrgKeygenStep.nameWallet:
         _step = OrgKeygenStep.sessionRole;
       case OrgKeygenStep.lobby:
         _step = isHost
             ? OrgKeygenStep.nameWallet
-            : OrgKeygenStep.inviteLanding;
+            : OrgKeygenStep.joinSession;
         // Tear down any roster / setup work so revisiting restarts clean.
         if (isHost) {
           participants.removeWhere((p) => !p.isYou);
@@ -282,12 +279,24 @@ class OrgKeygenController extends ChangeNotifier {
   // --- Simulation helpers (driven by the simulate panel) ---
 
   int _simCounter = 0;
+  /// Preset coordinator profiles used by the sim panel when a fake
+  /// participant joins. Keeps the simulated lobby looking realistic
+  /// (each person brings a different-looking device).
+  static final Map<String, ({String coordinatorName, IconData icon})>
+      _simProfiles = {
+    'Alice': (coordinatorName: 'Pixel 8', icon: Icons.smartphone),
+    'Bob': (coordinatorName: 'Bob\'s laptop', icon: Icons.laptop),
+  };
+
   void simJoin(String displayName) {
     _simCounter += 1;
+    final profile = _simProfiles[displayName];
     participants.add(Participant(
       id: 'p$_simCounter',
       displayName: displayName,
       pubkeyShort: 'npub1${displayName.toLowerCase()}...${_simCounter}xy',
+      coordinatorName: profile?.coordinatorName,
+      coordinatorIcon: profile?.icon,
     ));
     threshold = _defaultThreshold();
     notifyListeners();
@@ -368,8 +377,20 @@ class OrgKeygenController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void reopenMySetup() {
+  /// Drop your own status back to settingUp — used when opening the
+  /// setup dialog from a ready/accepted state, because any edit there
+  /// can invalidate the roster.
+  void dropToSettingUp() {
     me.status = ParticipantStatus.settingUp;
+    // A ready-state change invalidates threshold acceptance.
+    if (thresholdLocked) {
+      thresholdLocked = false;
+      for (final p in participants) {
+        if (p.status == ParticipantStatus.accepted) {
+          p.status = ParticipantStatus.ready;
+        }
+      }
+    }
     notifyListeners();
   }
 
@@ -602,9 +623,6 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
       case OrgKeygenStep.joinSession:
         return _JoinSessionView(
             key: const ValueKey('js'), ctrl: _ctrl);
-      case OrgKeygenStep.inviteLanding:
-        return _InviteLandingView(
-            key: const ValueKey('il'), ctrl: _ctrl);
       case OrgKeygenStep.nameWallet:
         return _NameView(key: const ValueKey('nm'), ctrl: _ctrl);
       case OrgKeygenStep.lobby:
@@ -687,7 +705,8 @@ class _WalletTypeView extends StatelessWidget {
               _ChoiceCard(
                 icon: Icons.person_rounded,
                 title: 'Just me',
-                subtitle: 'A personal wallet. All your devices stay with you.',
+                subtitle:
+                    'A personal wallet. You visit your devices in person to sign.',
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Personal flow lives elsewhere')),
@@ -698,7 +717,7 @@ class _WalletTypeView extends StatelessWidget {
                 icon: Icons.groups_rounded,
                 title: 'A group of us',
                 subtitle:
-                    'Share control with other participants. You can each be in a different place.',
+                    'A shared wallet with other participants. You can each be in a different place.',
                 emphasized: true,
                 onTap: () async {
                   if (!ctrl.hasNostrIdentity) {
@@ -776,28 +795,85 @@ class _JoinSessionView extends StatefulWidget {
 
 class _JoinSessionViewState extends State<_JoinSessionView> {
   OrgKeygenController get ctrl => widget.ctrl;
+  bool _attempted = false;
+  bool _prefilled = false;
+  static const _prefix = 'frostsnap://join/';
+  final _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     ctrl.addListener(_onUpdate);
     ctrl.joinLinkController.addListener(_onUpdate);
+    _focusNode.addListener(_onFocus);
+  }
+
+  void _onFocus() {
+    if (!_focusNode.hasFocus) return;
+    // First time the field gains focus, drop in the URL scheme so the
+    // user only needs to type the code.
+    if (!_prefilled && ctrl.joinLinkController.text.isEmpty) {
+      _prefilled = true;
+      ctrl.joinLinkController.text = _prefix;
+      ctrl.joinLinkController.selection = TextSelection.collapsed(
+        offset: _prefix.length,
+      );
+    }
   }
 
   void _onUpdate() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Clear the "attempted" flag as soon as the user edits the field
+    // again, so errors go away while they're retrying.
+    if (_attempted) _attempted = false;
+    setState(() {});
+  }
+
+  void _trySubmit() {
+    if (ctrl.joinLinkValid) {
+      ctrl.submitJoinLink();
+    } else {
+      setState(() => _attempted = true);
+    }
   }
 
   @override
   void dispose() {
     ctrl.removeListener(_onUpdate);
     ctrl.joinLinkController.removeListener(_onUpdate);
+    _focusNode.removeListener(_onFocus);
+    _focusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Only surface an error after the user has attempted to submit
+    // an invalid link — while typing we stay quiet.
+    final errorText = (_attempted && !ctrl.joinLinkValid)
+        ? 'Not a valid invite link'
+        : null;
+    final cardColor = theme.colorScheme.surfaceContainerHigh;
+
+    Future<void> paste() async {
+      final data = await Clipboard.getData('text/plain');
+      if (data?.text != null) {
+        // Replace — don't append onto any prefill scheme.
+        ctrl.joinLinkController.text = data!.text!;
+      }
+    }
+
+    void scan() {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Camera would open — mocked'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      ctrl.fillMockJoinLink(); // this already sets the full link
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -806,52 +882,48 @@ class _JoinSessionViewState extends State<_JoinSessionView> {
             title: 'Join session',
             onBack: () => ctrl.back(context)),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Text(
-            'Paste the invite link you were sent, or scan a QR code.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: TextField(
-            autofocus: true,
-            controller: ctrl.joinLinkController,
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              labelText: 'Invite link',
-              hintText: 'frostsnap://join/…',
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.content_paste_rounded),
-                tooltip: 'Paste from clipboard',
-                onPressed: () async {
-                  final data = await Clipboard.getData('text/plain');
-                  if (data?.text != null) {
-                    ctrl.joinLinkController.text = data!.text!;
-                  }
-                },
-              ),
-            ),
-            onSubmitted: (_) => ctrl.submitJoinLink(),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.qr_code_scanner_rounded),
-              label: const Text('Scan QR code'),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Camera would open — mocked'),
-                    duration: Duration(seconds: 1),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Card.outlined(
+            color: cardColor,
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    autofocus: true,
+                    focusNode: _focusNode,
+                    controller: ctrl.joinLinkController,
+                    decoration: InputDecoration(
+                      filled: false,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      hintText: 'frostsnap://join/',
+                      errorText: errorText,
+                      errorMaxLines: 2,
+                    ),
+                    onSubmitted: (_) => _trySubmit(),
                   ),
-                );
-                ctrl.fillMockJoinLink();
-              },
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: paste,
+                        icon: const Icon(Icons.paste),
+                        label: const Text('Paste'),
+                      ),
+                      TextButton.icon(
+                        onPressed: scan,
+                        icon: const Icon(Icons.qr_code_scanner_rounded),
+                        label: const Text('Scan'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -863,99 +935,11 @@ class _JoinSessionViewState extends State<_JoinSessionView> {
             child: FilledButton.icon(
               icon: const Icon(Icons.arrow_forward_rounded),
               iconAlignment: IconAlignment.end,
-              onPressed:
-                  ctrl.joinLinkValid ? ctrl.submitJoinLink : null,
-              label: const Text('Continue'),
+              onPressed: ctrl.joinLinkController.text.trim().isEmpty
+                  ? null
+                  : _trySubmit,
+              label: const Text('Join'),
             ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// =============================================================================
-// Step 2d: Invite landing — "Alice invites you to Acme Treasury"
-// =============================================================================
-
-class _InviteLandingView extends StatelessWidget {
-  final OrgKeygenController ctrl;
-  const _InviteLandingView({super.key, required this.ctrl});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(
-            title: 'You\'re invited',
-            onBack: () => ctrl.back(context)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(Icons.group_add_rounded,
-                  size: 72, color: theme.colorScheme.primary),
-              const SizedBox(height: 20),
-              Text.rich(
-                TextSpan(
-                  style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.onSurface),
-                  children: [
-                    TextSpan(
-                      text: ctrl.joiningHostName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600),
-                    ),
-                    const TextSpan(text: ' invited you to join '),
-                    TextSpan(
-                      text: '"${ctrl.joiningWalletName}"',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600),
-                    ),
-                    const TextSpan(text: '.'),
-                  ],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(ctrl.joiningHostPubkey,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
-                      color: theme.colorScheme.onSurfaceVariant)),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-          child: Text(
-            'Joining will make you a participant in this wallet. '
-            'You\'ll need to contribute one or more devices to hold key shares.',
-            style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton(
-                onPressed: () => ctrl.back(context),
-                child: const Text('Cancel'),
-              ),
-              FilledButton.icon(
-                icon: const Icon(Icons.check_rounded),
-                label: const Text('Join'),
-                onPressed: ctrl.acceptInvite,
-              ),
-            ],
           ),
         ),
       ],
@@ -982,7 +966,7 @@ class _NameView extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Text(
-            'This is shown to everyone you invite.',
+            'All wallet participants will see this name.',
             style: theme.textTheme.bodyMedium
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
@@ -1041,7 +1025,7 @@ class _LobbyView extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Text(
-            'Invite additional participants and select which devices you wish to use.',
+            'Add your devices while you wait for others to join.',
             style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant),
           ),
@@ -1092,7 +1076,21 @@ class _LobbyPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget button;
-    if (!ctrl.allReady) {
+    // When you haven't set up yet, your action is the primary next step.
+    if (ctrl.me.status != ParticipantStatus.ready &&
+        ctrl.me.status != ParticipantStatus.accepted) {
+      button = FilledButton.icon(
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Add your devices'),
+        onPressed: () async {
+          await showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => _DeviceSetupDialog(ctrl: ctrl),
+          );
+        },
+      );
+    } else if (!ctrl.allReady) {
       button = const FilledButton(
         onPressed: null,
         child: Text('Waiting for participants'),
@@ -1201,17 +1199,9 @@ class _InviteDialog extends StatelessWidget {
                 ],
               ),
             ),
+            // QR code (hero)
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-              child: Text(
-                'Anyone with this link can join before keygen starts.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ),
-            // QR code
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
               child: Center(
                 child: Container(
                   width: 220,
@@ -1230,28 +1220,38 @@ class _InviteDialog extends StatelessWidget {
                 ),
               ),
             ),
-            // Link pill with inline copy
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: _LinkPill(link: ctrl.inviteLink),
-            ),
-            // Share button
+            // Invite link, selectable so it can be manually copied.
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.share_rounded, size: 18),
-                  label: const Text('Share invite'),
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Share sheet would open'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                  },
-                ),
+              child: SelectableText(
+                ctrl.inviteLink,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+            // Two peer actions: Copy | Share invite
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Row(
+                spacing: 12,
+                children: [
+                  Expanded(child: _CopyButton(text: ctrl.inviteLink)),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      icon: const Icon(Icons.share_rounded, size: 18),
+                      label: const Text('Share invite'),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Share sheet would open'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1261,70 +1261,33 @@ class _InviteDialog extends StatelessWidget {
   }
 }
 
-class _LinkPill extends StatelessWidget {
-  final String link;
-  const _LinkPill({required this.link});
+class _CopyButton extends StatefulWidget {
+  final String text;
+  const _CopyButton({required this.text});
+
+  @override
+  State<_CopyButton> createState() => _CopyButtonState();
+}
+
+class _CopyButtonState extends State<_CopyButton> {
+  bool _copied = false;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(28),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: () {
-          Clipboard.setData(ClipboardData(text: link));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Link copied'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  link,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.copy_rounded,
-                        size: 16,
-                        color: theme.colorScheme.onPrimaryContainer),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Copy',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                          color:
-                              theme.colorScheme.onPrimaryContainer),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+    return FilledButton.tonalIcon(
+      icon: Icon(
+        _copied ? Icons.check_rounded : Icons.copy_rounded,
+        size: 18,
       ),
+      label: Text(_copied ? 'Copied' : 'Copy'),
+      onPressed: () async {
+        await Clipboard.setData(ClipboardData(text: widget.text));
+        if (!mounted) return;
+        setState(() => _copied = true);
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _copied = false);
+        });
+      },
     );
   }
 }
@@ -1358,12 +1321,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
     // button is the screen's primary action, replacing the usual
     // status + icon trailing. Hidden in read-only mode (review page).
     final Widget trailing;
-    if (p.isYou && !isReady && !widget.readOnly) {
-      trailing = FilledButton(
-        onPressed: () => _openSetupDialog(context),
-        child: const Text('Add devices'),
-      );
-    } else if (widget.readOnly) {
+    if (widget.readOnly) {
       // Review page: phase-aware status label + chevron (expand/collapse).
       final reviewLabel = _reviewStatusLabel(context, p);
       trailing = Row(
@@ -1398,7 +1356,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           visualDensity: VisualDensity.compact,
           padding: EdgeInsets.zero,
           color: Colors.red,
-          onPressed: () => ctrl.removeParticipant(p.id),
+          onPressed: () => _confirmRemoveParticipant(context, ctrl, p),
         );
       } else {
         trailingAction = const SizedBox.shrink();
@@ -1407,11 +1365,11 @@ class _ParticipantRowState extends State<_ParticipantRow> {
       Widget statusLabel;
       switch (p.status) {
         case ParticipantStatus.joining:
-          statusLabel = Text('Joined',
+          statusLabel = Text(p.isYou ? 'Waiting for you' : 'Joined',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant));
         case ParticipantStatus.settingUp:
-          statusLabel = Text('Selecting keys',
+          statusLabel = Text('Selecting devices',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant));
         case ParticipantStatus.ready:
@@ -1523,12 +1481,47 @@ class _ParticipantRowState extends State<_ParticipantRow> {
     );
   }
 
+  Future<void> _confirmRemoveParticipant(
+      BuildContext context, OrgKeygenController ctrl, Participant p) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove participant?'),
+        content: Text(
+            '${p.displayName} will be removed from this session and won\'t hold a key in the wallet.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      ctrl.removeParticipant(p.id);
+    }
+  }
+
   void _openSetupDialog(BuildContext context) async {
-    widget.ctrl.reopenMySetup();
+    // Editing after being ready drops you back to settingUp; if you
+    // cancel without marking Ready again you stay in that state.
+    final ctrl = widget.ctrl;
+    if (ctrl.me.status == ParticipantStatus.ready ||
+        ctrl.me.status == ParticipantStatus.accepted) {
+      ctrl.dropToSettingUp();
+    }
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _DeviceSetupDialog(ctrl: widget.ctrl),
+      builder: (_) => _DeviceSetupDialog(ctrl: ctrl),
     );
   }
 
@@ -1589,7 +1582,7 @@ class _DeviceList extends StatelessWidget {
       rows.add(_deviceTile(
         context,
         keyNumber: keyNumber++,
-        icon: DeviceIdentity.icon,
+        icon: participant.coordinatorIcon,
         label: participant.coordinatorName.trim().isNotEmpty
             ? participant.coordinatorName
             : (participant.isYou
@@ -1872,18 +1865,19 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Header — matches _InviteDialog: title on left, close X on right.
+            // Header: back arrow on the left, title beside it.
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+              padding: const EdgeInsets.fromLTRB(4, 8, 20, 0),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Text('Add devices',
-                        style: theme.textTheme.titleLarge),
-                  ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(Icons.arrow_back_rounded),
                     onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text('Add your devices',
+                        style: theme.textTheme.titleLarge),
                   ),
                 ],
               ),
@@ -1891,7 +1885,7 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
               child: Text(
-                'Plug in all devices you want to hold a key.',
+                'Each device you add will hold one key in the wallet.',
                 style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant),
               ),
@@ -1917,8 +1911,7 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
                           color: me.includeAppKey
                               ? theme.colorScheme.primary
                               : null),
-                      title: Text(
-                          'Use this ${DeviceIdentity.name} as a key'),
+                      title: Text('Use this ${DeviceIdentity.kind} to hold a key'),
                       value: me.includeAppKey,
                       onChanged: (v) => ctrl.setMyAppKey(v),
                     ),
@@ -1941,12 +1934,12 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
                           valueListenable: _coordinatorController,
                           builder: (context, value, _) => TextField(
                             controller: _coordinatorController,
-                            maxLength: 14,
+                            maxLength: 30,
                             decoration: InputDecoration(
                               hintText: 'Name this device',
                               isDense: true,
                               counterText: '',
-                              suffixText: '${value.text.length}/14',
+                              suffixText: '${value.text.length}/30',
                               suffixStyle: theme.textTheme.bodySmall
                                   ?.copyWith(
                                       color: theme
@@ -2006,7 +1999,7 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
                     child: ListTile(
                       dense: true,
                       title: const Text(
-                          'Plug in devices to include them in this wallet.'),
+                          'Plug in all devices you want to hold a key.'),
                       contentPadding:
                           const EdgeInsets.symmetric(horizontal: 16),
                       leading: const Icon(Icons.info_rounded),
@@ -2021,26 +2014,16 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 4),
-                      // Mockup-only: simulate a device being plugged in
-                      // while the dialog is open.
-                      Tooltip(
-                        message: 'Simulate plug-in (mockup only)',
-                        child: IconButton(
-                          icon: const Icon(Icons.science_outlined),
-                          color: theme.colorScheme.tertiary,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: ctrl.simPlugInMyDevice,
-                        ),
-                      ),
-                    ],
+                  // Mockup-only: simulate a device being plugged in
+                  // while the dialog is open.
+                  Tooltip(
+                    message: 'Simulate plug-in (mockup only)',
+                    child: IconButton(
+                      icon: const Icon(Icons.science_outlined),
+                      color: theme.colorScheme.tertiary,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: ctrl.simPlugInMyDevice,
+                    ),
                   ),
                   FilledButton.icon(
                     onPressed: canReady
@@ -2386,11 +2369,7 @@ class _ChoiceCard extends StatelessWidget {
 // =============================================================================
 
 class OrgKeygenMockupScaffold extends StatefulWidget {
-  /// When provided, pre-advances the flow past the create/restore and
-  /// wallet-type pickers so the first visible screen matches this role.
-  final OrgKeygenRole? startAsRole;
-
-  const OrgKeygenMockupScaffold({super.key, this.startAsRole});
+  const OrgKeygenMockupScaffold({super.key});
 
   @override
   State<OrgKeygenMockupScaffold> createState() =>
@@ -2407,13 +2386,6 @@ class _OrgKeygenMockupScaffoldState
   void initState() {
     super.initState();
     _ctrl.addListener(() => mounted ? setState(() {}) : null);
-    // Jump straight into the selected role so the mockup selector
-    // can offer "host" and "participant" as separate entries.
-    final start = widget.startAsRole;
-    if (start == OrgKeygenRole.participant) {
-      // Skip create/restore + wallet-type cards; land on join session.
-      _ctrl.chooseJoinSession();
-    }
   }
 
   @override
@@ -2625,7 +2597,7 @@ class _OrgKeygenMockupScaffoldState
 
   String _statusText(ParticipantStatus s) => switch (s) {
         ParticipantStatus.joining => 'Joined',
-        ParticipantStatus.settingUp => 'Selecting keys',
+        ParticipantStatus.settingUp => 'Selecting devices',
         ParticipantStatus.ready => 'Ready',
         ParticipantStatus.accepted => 'Accepted threshold',
       };
