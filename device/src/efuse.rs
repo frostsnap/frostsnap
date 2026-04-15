@@ -16,17 +16,13 @@ const WR_DIS_KP_OFFSET: u8 = 8;
 const READ_COMMAND: u16 = 0x5AA5;
 const WRITE_COMMAND: u16 = 0x5A5A;
 
-use esp_hal::peripheral::{Peripheral, PeripheralRef};
-
-pub struct EfuseController<'a> {
-    pub efuse: PeripheralRef<'a, EFUSE>,
+pub struct EfuseController {
+    _private: (),
 }
 
-impl<'a> EfuseController<'a> {
-    pub fn new(efuse: impl Peripheral<P = EFUSE> + 'a) -> Self {
-        Self {
-            efuse: efuse.into_ref(),
-        }
+impl EfuseController {
+    pub fn new() -> Self {
+        Self { _private: () }
     }
 
     /// Check if HMAC keys have been initialized
@@ -162,12 +158,12 @@ impl<'a> EfuseController<'a> {
     pub fn read_efuse(&self, key_id: esp_hal::hmac::KeyId) -> Result<[u8; 32], EfuseError> {
         use esp_hal::hmac::KeyId;
         let field = match key_id {
-            KeyId::Key0 => hal_efuse::KEY0,
-            KeyId::Key1 => hal_efuse::KEY1,
-            KeyId::Key2 => hal_efuse::KEY2,
-            KeyId::Key3 => hal_efuse::KEY3,
-            KeyId::Key4 => hal_efuse::KEY4,
-            KeyId::Key5 => hal_efuse::KEY5,
+            KeyId::Key0 => hal_efuse::BLOCK_KEY0,
+            KeyId::Key1 => hal_efuse::BLOCK_KEY1,
+            KeyId::Key2 => hal_efuse::BLOCK_KEY2,
+            KeyId::Key3 => hal_efuse::BLOCK_KEY3,
+            KeyId::Key4 => hal_efuse::BLOCK_KEY4,
+            KeyId::Key5 => hal_efuse::BLOCK_KEY5,
         };
         let bytes: [u8; 32] = Efuse::read_field_le::<[u8; 32]>(field);
 
@@ -176,7 +172,7 @@ impl<'a> EfuseController<'a> {
 
     /// # Safety
     unsafe fn write_block(&self, data: &[u8; 32], block_number: u8) -> Result<(), EfuseError> {
-        let efuse = &*self.efuse;
+        let efuse = EFUSE::regs();
         let mut to_burn: [u32; 11] = [0; 11];
 
         if block_number == 0 {
@@ -221,7 +217,7 @@ impl<'a> EfuseController<'a> {
     }
 
     unsafe fn send_write_command(&self, block_number: u8) {
-        let efuse = &self.efuse;
+        let efuse = EFUSE::regs();
 
         // Send opcode, blknum and write command
         efuse.conf().write(|w| w.op_code().bits(WRITE_COMMAND));
@@ -248,7 +244,7 @@ impl<'a> EfuseController<'a> {
     }
 
     fn get_programming_error_record(&self, block_number: u8) -> bool {
-        let efuse = &self.efuse;
+        let efuse = EFUSE::regs();
         match block_number {
             0 => {
                 (efuse.rd_repeat_err1().read().bits() > 0)
@@ -265,7 +261,7 @@ impl<'a> EfuseController<'a> {
     }
 
     unsafe fn update_read_registers(&self) {
-        let efuse = &self.efuse;
+        let efuse = EFUSE::regs();
 
         // Send opcode and read command
         efuse.conf().write(|w| w.op_code().bits(READ_COMMAND));
@@ -286,14 +282,14 @@ pub struct DiscoveredEfuses {
 
 /// Builder for writing multiple efuse keys with their purposes in a single operation
 pub struct EfuseKeyWriter<'a> {
-    efuse: &'a EfuseController<'a>,
+    efuse: &'a EfuseController,
     keys: Vec<(esp_hal::hmac::KeyId, [u8; 32], KeyPurpose)>, // (key_id, value, purpose)
     read_protect: bool,
 }
 
 impl<'a> EfuseKeyWriter<'a> {
     /// Create a new builder for writing efuse keys
-    pub fn new(efuse: &'a EfuseController<'a>) -> Self {
+    pub fn new(efuse: &'a EfuseController) -> Self {
         Self {
             efuse,
             keys: Vec::new(),

@@ -54,7 +54,10 @@ frostsnap_macros = { path = "macros", default-features = false }
 frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
 frostsnap_cst816s = { path = "cst816s", default-features = false }
 frostsnap_desktop_camera = { path = "frostsnapp/desktop_camera" }
-esp-hal = { git = "https://github.com/frostsnap/esp-hal", rev = "6ecaa2eb75d4d97de877c18d13bfd07d251da971" }
+esp-hal = { version = "1", features = ["unstable"] }
+esp-alloc = "0.9"
+esp-bootloader-esp-idf = "0.4.0"
+esp-storage = "0.6"
 embedded-hal = "1.0"
 tracing = { version = "0.1", default-features = false }
 rusqlite = { version = "0.31.0", features = ["bundled"] }
