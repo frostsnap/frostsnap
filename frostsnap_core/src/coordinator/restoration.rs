@@ -197,9 +197,9 @@ pub struct RecoverShare {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
-    pub(super) restorations: BTreeMap<RestorationId, restoration::RestorationState>,
+    restorations: BTreeMap<RestorationId, restoration::RestorationState>,
     /// This is where we remember consolidations we need to do from restorations we've finished.
-    pub(super) pending_physical_consolidations: BTreeSet<PendingConsolidation>,
+    pending_physical_consolidations: BTreeSet<PendingConsolidation>,
     /// For when we ask a device to enter a backup and we plan to immediately consolidate it because
     /// we already know the access structure.
     tmp_waiting_consolidate: BTreeSet<PendingConsolidation>,
@@ -353,6 +353,10 @@ impl State {
         Some(mutation.clone())
     }
 
+    pub fn iter_restorations(&self) -> impl Iterator<Item = &restoration::RestorationState> + '_ {
+        self.restorations.values()
+    }
+
     pub fn clear_up_key_deletion(&mut self, key_id: KeyId) {
         self.pending_physical_consolidations
             .retain(|consolidation| consolidation.access_structure_ref.key_id != key_id);
@@ -422,8 +426,7 @@ impl FrostCoordinator {
 
         let share_index = phase.backup.share_image.index;
         let CoordFrostKey { complete_key, .. } = self
-            .keys
-            .get(&key_id)
+            .get_frost_key(key_id)
             .ok_or(CheckBackupError::NoSuchAccessStructure)?;
 
         let root_shared_key = complete_key
@@ -732,8 +735,7 @@ impl FrostCoordinator {
             self.get_frost_key(access_structure_ref.key_id)
                 .ok_or(RecoverShareError {
                     key_purpose: self
-                        .keys
-                        .get(&access_structure_ref.key_id)
+                        .get_frost_key(access_structure_ref.key_id)
                         .map(|k| k.purpose)
                         .unwrap_or(KeyPurpose::Test),
                     kind: RecoverShareErrorKind::NoSuchAccessStructure,
@@ -1013,8 +1015,7 @@ impl FrostCoordinator {
             access_structure_id,
         } = access_structure_ref;
         let complete_key = &self
-            .keys
-            .get(&key_id)
+            .get_frost_key(key_id)
             .ok_or(ActionError::StateInconsistent("no such key".into()))?
             .complete_key;
 
