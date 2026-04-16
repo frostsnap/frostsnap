@@ -52,6 +52,10 @@ macro_rules! demo_widget {
                 let widget = Text::new("Hello World!", DefaultTextStyle::new(FONT_LARGE, PALETTE.on_background));
                 $run_macro!(widget);
             }
+            "draw_test" => {
+                let widget = $crate::DrawTest::new();
+                $run_macro!(widget);
+            }
             "bip39_entry" => {
                 use $crate::{text::Text, Center, Align, Alignment};
                 struct Bip39Demo {

@@ -2043,6 +2043,7 @@ dependencies = [
  "embedded-graphics",
  "embedded-iconoir",
  "esp-alloc",
+ "esp-hal",
  "frost_backup",
  "frostsnap_core",
  "frostsnap_fonts",

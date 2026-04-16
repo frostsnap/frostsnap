@@ -48,7 +48,7 @@ macro_rules! init_display {
         let spi = Spi::new(
             $peripherals.SPI2,
             SpiConfig::default()
-                .with_frequency(Rate::from_mhz(20))
+                .with_frequency(Rate::from_mhz(80))
                 .with_mode(Mode::_2),
         )
         .unwrap()

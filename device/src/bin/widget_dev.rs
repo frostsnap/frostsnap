@@ -6,6 +6,8 @@ use esp_hal::main;
 use frostsnap_device::{peripherals::DevicePeripherals, touch_handler, DISPLAY_REFRESH_MS};
 use frostsnap_widgets::debug::{EnabledDebug, OverlayDebug};
 
+esp_bootloader_esp_idf::esp_app_desc!();
+
 const DEMO: &str = match option_env!("DEMO") {
     Some(d) => d,
     None => "hello_world",
