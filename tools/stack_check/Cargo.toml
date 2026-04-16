@@ -1,0 +1,11 @@
+[package]
+name = "stack_check"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+stack-sizes = "0.5"
+object = { version = "0.36", default-features = false, features = ["read", "elf"] }
+rustc-demangle = "0.1"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
