@@ -35,6 +35,14 @@ class WalletRecoveryPage extends StatelessWidget {
         ? shareCount.needed! - shareCount.got!
         : null;
     final isReady = isRecovered && !hasIncompatibleShares;
+    final isBlockedByIncompatibleShares = isRecovered && hasIncompatibleShares;
+
+    void openAddKeyDialog() {
+      continueWalletRecoveryFlowDialog(
+        context,
+        restorationId: restorationState.restorationId,
+      );
+    }
 
     final IconData cardIcon;
     final String cardTitle;
@@ -185,15 +193,16 @@ class WalletRecoveryPage extends StatelessWidget {
                               }
                             },
                           )
+                        : isBlockedByIncompatibleShares
+                        ? FilledButton.icon(
+                            icon: const Icon(Icons.check_rounded),
+                            label: const Text('Restore'),
+                            onPressed: null,
+                          )
                         : FilledButton.icon(
                             icon: const Icon(Icons.add),
                             label: const Text('Add another key'),
-                            onPressed: () {
-                              continueWalletRecoveryFlowDialog(
-                                context,
-                                restorationId: restorationState.restorationId,
-                              );
-                            },
+                            onPressed: openAddKeyDialog,
                           ),
                   ),
                 ],
@@ -409,20 +418,17 @@ class WalletRecoveryPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       devicesColumn,
-                      if (isReady)
+                      if (isReady) ...[
+                        const SizedBox(height: 8),
                         Align(
                           alignment: AlignmentDirectional.centerEnd,
                           child: TextButton.icon(
                             icon: const Icon(Icons.add),
                             label: const Text('Add another key'),
-                            onPressed: () {
-                              continueWalletRecoveryFlowDialog(
-                                context,
-                                restorationId: restorationState.restorationId,
-                              );
-                            },
+                            onPressed: openAddKeyDialog,
                           ),
                         ),
+                      ],
                       SizedBox(height: 16),
                       progressActionCard,
                     ],
