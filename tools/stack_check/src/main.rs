@@ -120,8 +120,8 @@ fn cmd_stacks(
 
     let mut entries: Vec<(String, u64)> = functions
         .defined
-        .iter()
-        .filter_map(|(_, func)| {
+        .values()
+        .filter_map(|func| {
             let stack = func.stack()?;
             let name = func.names().first().copied().unwrap_or("<unknown>");
             let demangled = format!("{:#}", demangle(name));

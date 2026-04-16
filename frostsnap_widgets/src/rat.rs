@@ -485,11 +485,7 @@ impl Div<u64> for FatRat {
     type Output = FatRat;
 
     fn div(self, rhs: u64) -> Self::Output {
-        if rhs == 0 {
-            FatRat(u64::MAX)
-        } else {
-            FatRat(self.0 / rhs)
-        }
+        FatRat(self.0.checked_div(rhs).unwrap_or(u64::MAX))
     }
 }
 

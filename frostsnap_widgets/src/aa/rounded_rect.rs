@@ -423,11 +423,7 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
             if target < cumulative + seg_perim {
                 let within = target - cumulative;
                 let seg_raw = self.seg_sizes[i as usize] as u64;
-                let raw_within = if seg_perim > 0 {
-                    (within * seg_raw) / seg_perim
-                } else {
-                    0
-                };
+                let raw_within = (within * seg_raw).checked_div(seg_perim).unwrap_or(0);
                 return self.segment_start(i) + raw_within as u32;
             }
             cumulative += seg_perim;
