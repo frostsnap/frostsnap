@@ -444,7 +444,13 @@ impl<'a> DeviceLoop<'a> {
                 if last_message_was_magic_bytes {
                     if is_upstream_established {
                         self.soft_reset = true;
-                    } else if self.magic_bytes_timeout_counter > 1 {
+                    } else if self.magic_bytes_timeout_counter > 2 {
+                        // Coord is still in `awaiting_magic` long after we
+                        // replied — it didn't see our Announce. Reset so we
+                        // re-handshake on the next magic bytes. Threshold has
+                        // a small margin because the coord may have queued a
+                        // few magic-bytes frames during its initial retry loop
+                        // before reading our reply (in-flight noise).
                         self.upstream_connection
                             .set_state(UpstreamConnectionState::PowerOn, self.ui);
                         self.magic_bytes_timeout_counter = 0;
