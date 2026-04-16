@@ -8,28 +8,18 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
 class DeviceActionNameDialogController with ChangeNotifier {
-  late final FullscreenActionDialogController<void> _dialogController;
+  FullscreenActionDialogController<void>? _dialogController;
   final StreamController<void> _cancelButtonController =
       StreamController.broadcast();
 
-  // Currently active device.
-  DeviceId? get activeDeviceId => _dialogController.actionsNeeded.firstOrNull;
+  DeviceId? get activeDeviceId => _dialogController?.actionsNeeded.firstOrNull;
 
-  DeviceActionNameDialogController() {
-    _dialogController = FullscreenActionDialogController(
-      title: 'Confirm device name',
-      actionButtons: [
-        OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
-        DeviceActionHint(),
-      ],
-      onDismissed: _onCancel,
-    );
-  }
+  DeviceActionNameDialogController();
 
   @override
   void dispose() async {
     await _cancelButtonController.close();
-    _dialogController.dispose();
+    _dialogController?.dispose();
     super.dispose();
   }
 
@@ -44,39 +34,52 @@ class DeviceActionNameDialogController with ChangeNotifier {
     required String name,
     Function(String)? onNamed,
   }) async {
-    _dialogController.addActionNeeded(context, id);
+    final controller = FullscreenActionDialogController<void>(
+      context: context,
+      devices: [id],
+      title: 'Confirm device name',
+      actionButtons: [
+        OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
+        DeviceActionHint(),
+      ],
+      onDismissed: _onCancel,
+    );
+    _dialogController = controller;
 
-    // Check if device already has this name
-    final currentName = coord.getDeviceName(id: id);
-    if (currentName == name) {
-      // Device already has this name, no need to rename
-      await _dialogController.removeActionNeeded(id);
-      onNamed?.call(name);
-      return name;
+    try {
+      final currentName = coord.getDeviceName(id: id);
+      if (currentName == name) {
+        await controller.removeActionNeeded(id);
+        onNamed?.call(name);
+        return name;
+      }
+
+      await coord.finishNaming(id: id, name: name.trim());
+
+      final confirmedName = await Stream<String?>.fromFutures([
+        GlobalStreams.deviceListChangeStream
+            .firstWhere((change) {
+              final isRemoved = change.kind == DeviceListChangeKind.removed;
+              final isNamed = change.kind == DeviceListChangeKind.named;
+              return (isRemoved || isNamed) &&
+                  deviceIdEquals(id, change.device.id);
+            })
+            .then((change) => change.device.name),
+        _cancelButtonController.stream.first.then((_) => null),
+      ]).first.catchError((_) => null);
+
+      await controller.removeActionNeeded(id);
+
+      if (confirmedName != null) {
+        onNamed?.call(confirmedName);
+      } else {
+        await coord.sendCancel(id: id);
+      }
+
+      return confirmedName;
+    } finally {
+      if (_dialogController == controller) _dialogController = null;
+      controller.dispose();
     }
-
-    await coord.finishNaming(id: id, name: name.trim());
-
-    final confirmedName = await Stream<String?>.fromFutures([
-      GlobalStreams.deviceListChangeStream
-          .firstWhere((change) {
-            final isRemoved = change.kind == DeviceListChangeKind.removed;
-            final isNamed = change.kind == DeviceListChangeKind.named;
-            return (isRemoved || isNamed) &&
-                deviceIdEquals(id, change.device.id);
-          })
-          .then((change) => change.device.name),
-      _cancelButtonController.stream.first.then((_) => null),
-    ]).first.catchError((_) => null);
-
-    await _dialogController.removeActionNeeded(id);
-
-    if (confirmedName != null) {
-      onNamed?.call(confirmedName);
-    } else {
-      await coord.sendCancel(id: id);
-    }
-
-    return confirmedName;
   }
 }

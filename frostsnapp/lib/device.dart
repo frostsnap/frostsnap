@@ -35,7 +35,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
   bool _gotFirstData = false;
   ConnectedDevice? _device;
 
-  late final FullscreenActionDialogController<void> _eraseController;
+  FullscreenActionDialogController<void>? _eraseController;
   final _eraseConfirmed = ValueNotifier<bool>(false);
 
   @override
@@ -58,92 +58,12 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         _device = device;
       });
     });
-    _eraseController = FullscreenActionDialogController(
-      title: 'Erase Device',
-      body: (context) {
-        final theme = Theme.of(context);
-        return ValueListenableBuilder<bool>(
-          valueListenable: _eraseConfirmed,
-          builder: (context, confirmed, _) {
-            if (confirmed) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 24),
-                  Text(
-                    'Waiting for device reset',
-                    style: theme.textTheme.titleMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Do not disconnect device',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.error,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              );
-            }
-            return Card.filled(
-              margin: EdgeInsets.zero,
-              color: theme.colorScheme.errorContainer,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.warning_rounded),
-                    title: Text(
-                      'This will wipe the key from the device.',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: Text(
-                        'The device will be rendered blank.\nThis action can not be reverted, and the only way to restore this key is by loading its backup.',
-                      ),
-                    ),
-                    isThreeLine: true,
-                    textColor: theme.colorScheme.onErrorContainer,
-                    iconColor: theme.colorScheme.onErrorContainer,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-      actionButtons: [
-        ValueListenableBuilder<bool>(
-          valueListenable: _eraseConfirmed,
-          builder: (context, confirmed, _) => confirmed
-              ? SizedBox.shrink()
-              : OutlinedButton(child: Text('Cancel'), onPressed: _onCancel),
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: _eraseConfirmed,
-          builder: (context, confirmed, _) => confirmed
-              ? DeviceActionHint(label: 'Confirmed', icon: Icons.check_rounded)
-              : DeviceActionHint(),
-        ),
-      ],
-      onDismissed: _onCancel,
-    );
-  }
-
-  void _onCancel() async {
-    final id = _device?.id;
-    if (id != null) await coord.sendCancel(id: id);
-    await _eraseController.clearAllActionsNeeded();
   }
 
   @override
   void dispose() {
     _sub.cancel();
-    _eraseController.dispose();
+    _eraseController?.dispose();
     _eraseConfirmed.dispose();
     super.dispose();
   }
@@ -411,31 +331,122 @@ class _DeviceDetailsState extends State<DeviceDetails> {
     }
 
     _eraseConfirmed.value = false;
-    final dialogFuture = _eraseController.addActionNeeded(context, id);
-    final stream = coord.eraseDevice(deviceId: id);
-    String? removedFromWallet;
 
-    await for (final state in stream) {
-      if (state == EraseDeviceState.confirmed) {
-        // Device confirmed erase - delete shares from access structures
-        final accessStructureRefs = coord.accessStructuresInvolvingDevice(
-          deviceId: id,
+    late final FullscreenActionDialogController<void> controller;
+    controller = FullscreenActionDialogController<void>(
+      context: context,
+      devices: [id],
+      title: 'Erase Device',
+      body: (context) {
+        final theme = Theme.of(context);
+        return ValueListenableBuilder<bool>(
+          valueListenable: _eraseConfirmed,
+          builder: (context, confirmed, _) {
+            if (confirmed) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 24),
+                  Text(
+                    'Waiting for device reset',
+                    style: theme.textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Do not disconnect device',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              );
+            }
+            return Card.filled(
+              margin: EdgeInsets.zero,
+              color: theme.colorScheme.errorContainer,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.warning_rounded),
+                    title: Text(
+                      'This will wipe the key from the device.',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text(
+                        'The device will be rendered blank.\nThis action can not be reverted, and the only way to restore this key is by loading its backup.',
+                      ),
+                    ),
+                    isThreeLine: true,
+                    textColor: theme.colorScheme.onErrorContainer,
+                    iconColor: theme.colorScheme.onErrorContainer,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                  ),
+                ],
+              ),
+            );
+          },
         );
-        for (final ref in accessStructureRefs) {
-          removedFromWallet = coord.getFrostKey(keyId: ref.keyId)?.keyName();
-          await coord.deleteShare(accessStructureRef: ref, deviceId: id);
+      },
+      actionButtons: [
+        ValueListenableBuilder<bool>(
+          valueListenable: _eraseConfirmed,
+          builder: (context, confirmed, _) => confirmed
+              ? SizedBox.shrink()
+              : OutlinedButton(
+                  child: Text('Cancel'),
+                  onPressed: () async {
+                    await coord.sendCancel(id: id);
+                    await controller.clearAllActionsNeeded();
+                  },
+                ),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: _eraseConfirmed,
+          builder: (context, confirmed, _) => confirmed
+              ? DeviceActionHint(label: 'Confirmed', icon: Icons.check_rounded)
+              : DeviceActionHint(),
+        ),
+      ],
+      onDismissed: () {},
+    );
+    _eraseController = controller;
+
+    try {
+      final stream = coord.eraseDevice(deviceId: id);
+      String? removedFromWallet;
+
+      await for (final state in stream) {
+        if (state == EraseDeviceState.confirmed) {
+          final accessStructureRefs = coord.accessStructuresInvolvingDevice(
+            deviceId: id,
+          );
+          for (final ref in accessStructureRefs) {
+            removedFromWallet = coord.getFrostKey(keyId: ref.keyId)?.keyName();
+            await coord.deleteShare(accessStructureRef: ref, deviceId: id);
+          }
+          _eraseConfirmed.value = true;
+          break;
         }
-        _eraseConfirmed.value = true;
-        break;
       }
-    }
 
-    // Wait for dialog to close (when device disconnects)
-    await dialogFuture;
+      // `Confirmed` means the device has *started* erasing, not finished.
+      // Don't remove from action-needed here — instead wait for the device
+      // to actually disconnect (erase complete → device blank → USB drop),
+      // which drops `shouldShow` to false and auto-dismisses the dialog.
+      await controller.awaitDismissed();
 
-    // Show success dialog
-    if (context.mounted) {
-      _showEraseSuccessDialog(context, removedFromWallet);
+      if (context.mounted) {
+        _showEraseSuccessDialog(context, removedFromWallet);
+      }
+    } finally {
+      if (_eraseController == controller) _eraseController = null;
+      controller.dispose();
     }
   }
 

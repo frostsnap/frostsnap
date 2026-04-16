@@ -45,7 +45,7 @@ class FirmwareUpgradeState {
 
 class DeviceActionUpgradeController with ChangeNotifier {
   late final StreamSubscription<DeviceListUpdate> _sub;
-  late final FullscreenActionDialogController<void> _dialogController;
+  FullscreenActionDialogController<void>? _dialogController;
   int _needsUpgradeCount = 0;
   final _progressController = StreamController<FirmwareUpgradeState>();
 
@@ -59,10 +59,38 @@ class DeviceActionUpgradeController with ChangeNotifier {
         notifyListeners();
       }
     });
-    // Ensure that we do not skip device events.
+  }
+
+  @override
+  dispose() {
+    _sub.cancel();
+    _dialogController?.dispose();
+    _progressController.close();
+    super.dispose();
+  }
+
+  void _onCancel() async {
+    await coord.cancelProtocol();
+  }
+
+  int get count => _needsUpgradeCount;
+
+  Stream<FirmwareUpgradeState> get progressStream => _progressController.stream;
+
+  Future<bool> run(BuildContext context) async {
+    final deviceList = await GlobalStreams.deviceListSubject.first;
+    final upgradeTargets = deviceList.state.devices
+        .where((dev) => dev.needsFirmwareUpgrade())
+        .map((dev) => dev.id)
+        .toList();
+    if (upgradeTargets.isEmpty) return false;
+
+    _progressController.add(FirmwareUpgradeState.empty());
     final replayStream = _progressController.stream.toReplaySubject();
 
-    _dialogController = FullscreenActionDialogController(
+    final controller = FullscreenActionDialogController<void>(
+      context: context,
+      devices: upgradeTargets,
       title: 'Upgrade Firmware',
       body: (context) {
         final versionName = coord.upgradeFirmwareVersionName() ?? '';
@@ -151,84 +179,62 @@ class DeviceActionUpgradeController with ChangeNotifier {
       // upgrade other than unplugging the device.
       // onDismissed: _onCancel,
     );
-  }
+    _dialogController = controller;
 
-  @override
-  dispose() {
-    _sub.cancel();
-    _dialogController.dispose();
-    _progressController.close();
-    super.dispose();
-  }
-
-  void _onCancel() async {
-    await coord.cancelProtocol();
-  }
-
-  /// Number of devices that needs upgrade.
-  int get count => _needsUpgradeCount;
-
-  /// Upgrade progress stream.
-  Stream<FirmwareUpgradeState> get progressStream => _progressController.stream;
-
-  /// Starts the upgrade device firmware flow.
-  Future<bool> run(BuildContext context) async {
-    _progressController.add(FirmwareUpgradeState.empty());
-
-    await for (final state in coord.startFirmwareUpgrade()) {
-      if (!context.mounted) {
-        await coord.cancelProtocol();
-        await _dialogController.clearAllActionsNeeded();
-        return false;
-      }
-      _progressController.add(
-        FirmwareUpgradeState.acks(
-          neededAcks: state.needUpgrade.length,
-          acks: state.confirmations.length,
-        ),
-      );
-      for (final id in state.needUpgrade) {
-        _dialogController.addActionNeeded(context, id);
-      }
-      if (state.abort != null) {
-        await _dialogController.clearAllActionsNeeded();
-        if (context.mounted && state.abort != "canceled") {
-          await showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('Upgrade Aborted'),
-                content: Text(state.abort!),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('OK'),
-                  ),
-                ],
-              );
-            },
-          );
+    try {
+      await for (final state in coord.startFirmwareUpgrade()) {
+        if (!context.mounted) {
+          await coord.cancelProtocol();
+          await controller.clearAllActionsNeeded();
+          return false;
         }
-        return false;
+        _progressController.add(
+          FirmwareUpgradeState.acks(
+            neededAcks: state.needUpgrade.length,
+            acks: state.confirmations.length,
+          ),
+        );
+        if (state.abort != null) {
+          await controller.clearAllActionsNeeded();
+          if (context.mounted && state.abort != "canceled") {
+            await showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  title: Text('Upgrade Aborted'),
+                  content: Text(state.abort!),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('OK'),
+                    ),
+                  ],
+                );
+              },
+            );
+          }
+          return false;
+        }
+        if (state.upgradeReadyToStart) break;
       }
-      if (state.upgradeReadyToStart) {
-        break;
+
+      var progress = 0.0;
+      await for (progress in coord.enterFirmwareUpgradeMode()) {
+        _progressController.add(
+          FirmwareUpgradeState.progress(progress: progress),
+        );
       }
+      final success = progress == 1.0;
+      await controller.clearAllActionsNeeded();
+
+      if (!context.mounted) return false;
+
+      await showUpgradeDoneDialog(context, success);
+      return success;
+    } finally {
+      if (_dialogController == controller) _dialogController = null;
+      controller.dispose();
     }
-
-    var progress = 0.0;
-    await for (progress in coord.enterFirmwareUpgradeMode()) {
-      _progressController.add(
-        FirmwareUpgradeState.progress(progress: progress),
-      );
-    }
-    final success = progress == 1.0;
-    await _dialogController.clearAllActionsNeeded();
-
-    if (!context.mounted) return false;
-
-    await showUpgradeDoneDialog(context, success);
-    return success;
   }
 
   Future<void> showUpgradeDoneDialog(BuildContext context, bool success) async {

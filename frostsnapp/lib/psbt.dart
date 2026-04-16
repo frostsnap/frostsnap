@@ -92,17 +92,19 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
         context,
         title: Text('Transaction Details'),
         builder: (context, scrollController) => walletCtx.wrap(
-          TxDetailsPage.startSigning(
+          TxDetailsPage(
             txStates: walletCtx.txStream,
             txDetails: txDetails,
-            accessStructureRef: wallet
-                .frostKey()!
-                .accessStructures()[0]
-                .accessStructureRef(),
-            unsignedTx: unsignedTx,
-            devices: selectedDevices.toList(),
             psbtMan: psbtMan,
             psbt: psbt,
+            signingParams: TxSigningParams.start(
+              accessStructureRef: wallet
+                  .frostKey()!
+                  .accessStructures()[0]
+                  .accessStructureRef(),
+              unsignedTx: unsignedTx,
+              devices: selectedDevices.toList(),
+            ),
           ),
         ),
       );
