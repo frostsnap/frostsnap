@@ -361,13 +361,13 @@ class _ReceiverPageState extends State<ReceivePage> {
     final header = ListTile(
       shape: tileShape,
       contentPadding: tilePadding.copyWith(right: 8),
-      title: Text('Share'),
+      title: Text('Share Address'),
       trailing: TextButton.icon(
         onPressed: _address == null
             ? null
             : () => openAddressPicker(context, _address!),
         label: Text(
-          '#${_address?.index}',
+          'Address #${_address?.index}',
           style: monospaceTextStyle.copyWith(
             decoration: isUsed ? TextDecoration.lineThrough : null,
             decorationThickness: isUsed ? 3.0 : null,
@@ -478,7 +478,7 @@ class _ReceiverPageState extends State<ReceivePage> {
                 children: [
                   ListTile(
                     shape: tileShape,
-                    title: Text('Verify'),
+                    title: Text('Verify Address'),
                     contentPadding: tilePadding,
                     minVerticalPadding: 16,
                   ),
@@ -509,7 +509,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       color: theme.colorScheme.surfaceContainerLow,
       child: ListTile(
         shape: tileShape,
-        title: Text('Verify'),
+        title: Text('Verify Address'),
         contentPadding: tilePadding,
         onTap: () => focus = ReceivePageFocus.verify,
       ),

@@ -463,7 +463,78 @@ class _BackupChecklistState extends State<BackupChecklist> {
                 ),
                 const SizedBox(height: 24),
 
-                // Combined gradient border with device status and progress
+                // Device checklist
+                ...() {
+                  // Group devices by share index
+                  final devicesByShareIndex = <int, List<BackupDevice>>{};
+                  for (final device in deviceInfoList) {
+                    devicesByShareIndex
+                        .putIfAbsent(device.shareIndex, () => [])
+                        .add(device);
+                  }
+
+                  return devicesByShareIndex.entries.map((entry) {
+                    final shareIndex = entry.key;
+                    final devices = entry.value;
+                    final complete = devices.first.complete;
+
+                    return ListTile(
+                      dense: true,
+                      leading: complete == true
+                          ? Icon(
+                              Icons.check_circle,
+                              color: theme.colorScheme.primary,
+                            )
+                          : SizedBox(width: 24),
+                      title: Row(
+                        spacing: 4,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "Key #$shareIndex",
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(
+                              devices
+                                  .map(
+                                    (d) =>
+                                        coord.getDeviceName(id: d.deviceId) ??
+                                        '',
+                                  )
+                                  .join(', '),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                              softWrap: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing: complete == true
+                          ? Text(
+                              'Backed up',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            )
+                          : Text(
+                              'Needs backup',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                    );
+                  }).toList();
+                }(),
+
+                const SizedBox(height: 16),
+
+                // Device connection call-to-action
                 StreamBuilder<DeviceListUpdate>(
                   stream: GlobalStreams.deviceListSubject,
                   builder: (context, deviceListSnapshot) {
@@ -471,29 +542,25 @@ class _BackupChecklistState extends State<BackupChecklist> {
                         deviceListSnapshot.data?.state.devices ?? [];
                     final deviceCount = connectedDevices.length;
 
-                    Widget deviceStatusContent;
+                    Widget statusContent;
                     IconData statusIcon;
                     Color? statusIconColor;
 
                     if (deviceCount > 1) {
-                      // Multiple devices warning
                       statusIcon = Icons.warning_sharp;
                       statusIconColor = theme.colorScheme.primary;
-                      deviceStatusContent = Text(
+                      statusContent = Text(
                         'Multiple devices connected. Connect only one device at a time.',
                       );
                     } else if (deviceCount == 1) {
-                      // Single device - show buttons
                       final connectedDevice = connectedDevices.first;
                       final connectedDeviceId = connectedDevice.id;
 
-                      // Find the share index for the connected device
                       final shareIndex = accessStructure
                           .getDeviceShortShareIndex(
                             deviceId: connectedDeviceId,
                           );
 
-                      // Find backup info for this share index
                       final deviceInfo = shareIndex != null
                           ? deviceInfoList.firstWhereOrNull(
                               (d) => d.shareIndex == shareIndex,
@@ -503,13 +570,13 @@ class _BackupChecklistState extends State<BackupChecklist> {
                       if (deviceInfo == null) {
                         statusIcon = Icons.info_rounded;
                         statusIconColor = null;
-                        deviceStatusContent = Text(
+                        statusContent = Text(
                           'Unknown device connected. Please check your device.',
                         );
                       } else {
                         statusIcon = Icons.usb_rounded;
                         statusIconColor = theme.colorScheme.primary;
-                        deviceStatusContent = Wrap(
+                        statusContent = Wrap(
                           spacing: 16,
                           runSpacing: 8,
                           crossAxisAlignment: WrapCrossAlignment.center,
@@ -567,12 +634,9 @@ class _BackupChecklistState extends State<BackupChecklist> {
                         );
                       }
                     } else {
-                      // No device
                       statusIcon = Icons.usb_rounded;
                       statusIconColor = null;
-                      deviceStatusContent = Text(
-                        'Plug in device to back it up',
-                      );
+                      statusContent = Text('Plug in device to back it up');
                     }
 
                     return AnimatedGradientBorder(
@@ -587,154 +651,24 @@ class _BackupChecklistState extends State<BackupChecklist> {
                         theme.colorScheme.secondary,
                         theme.colorScheme.tertiary,
                       ],
-                      child:
-                          (Widget child) {
-                            return Card.filled(
-                              margin: EdgeInsets.all(0.0),
-                              color: theme.colorScheme.surfaceContainerHigh,
-                              child: child,
-                            );
-                          }(
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                      child: Card.filled(
+                        margin: EdgeInsets.all(0.0),
+                        color: theme.colorScheme.surfaceContainerHigh,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: 48),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                // Device status section
-                                Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(minHeight: 48),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          statusIcon,
-                                          color: statusIconColor,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(child: deviceStatusContent),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                Divider(height: 1),
-                                // Device checklist with progress counter
-                                Stack(
-                                  children: [
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: () {
-                                        // Group devices by share index
-                                        final devicesByShareIndex =
-                                            <int, List<BackupDevice>>{};
-                                        for (final device in deviceInfoList) {
-                                          devicesByShareIndex
-                                              .putIfAbsent(
-                                                device.shareIndex,
-                                                () => [],
-                                              )
-                                              .add(device);
-                                        }
-
-                                        // Create list tiles for each share index
-                                        return devicesByShareIndex.entries.map((
-                                          entry,
-                                        ) {
-                                          final shareIndex = entry.key;
-                                          final devices = entry.value;
-
-                                          // All devices with the same share index have the same completion status
-                                          final complete =
-                                              devices.first.complete;
-
-                                          IconData icon;
-                                          Color color;
-
-                                          if (complete == true) {
-                                            icon = Icons.check_circle;
-                                            color = theme.colorScheme.primary;
-                                          } else {
-                                            icon = Icons.circle_outlined;
-                                            color = theme
-                                                .colorScheme
-                                                .onSurfaceVariant;
-                                          }
-
-                                          return ListTile(
-                                            dense: true,
-                                            leading: Icon(icon, color: color),
-                                            title: Row(
-                                              spacing: 4,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.center,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  "#$shareIndex",
-                                                  style: theme
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                        color: theme
-                                                            .colorScheme
-                                                            .onSurfaceVariant,
-                                                        fontWeight:
-                                                            FontWeight.w500,
-                                                      ),
-                                                ),
-                                                Flexible(
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          right: 80,
-                                                        ),
-                                                    child: Text(
-                                                      devices
-                                                          .map(
-                                                            (d) =>
-                                                                coord.getDeviceName(
-                                                                  id: d
-                                                                      .deviceId,
-                                                                ) ??
-                                                                '',
-                                                          )
-                                                          .join(', '),
-                                                      style: theme
-                                                          .textTheme
-                                                          .bodyMedium
-                                                          ?.copyWith(
-                                                            fontWeight:
-                                                                FontWeight.w500,
-                                                          ),
-                                                      softWrap: true,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        }).toList();
-                                      }(),
-                                    ),
-                                    Positioned(
-                                      top: 12,
-                                      right: 16,
-                                      child: Text(
-                                        '${completedDevices.length}/${deviceInfoList.length} complete',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                Icon(statusIcon, color: statusIconColor),
+                                const SizedBox(width: 12),
+                                Expanded(child: statusContent),
                               ],
                             ),
                           ),
+                        ),
+                      ),
                     );
                   },
                 ),
