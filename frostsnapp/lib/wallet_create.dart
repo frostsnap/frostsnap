@@ -113,7 +113,7 @@ class WalletCreateController extends ChangeNotifier {
             spacing: 12,
             children: [
               const Text(
-                'Confirm that this code is shown on all devices',
+                'Check that this code is identical and matches on every device',
                 textAlign: TextAlign.center,
               ),
               Card.filled(
@@ -156,6 +156,13 @@ class WalletCreateController extends ChangeNotifier {
                         : CrossFadeState.showSecond,
                     duration: Durations.medium1,
                   ),
+                ),
+              ),
+              Text(
+                'The security check code confirms that all devices have behaved honestly during key generation.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -449,6 +456,32 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   void next(BuildContext context) async {
+    if (_step == WalletCreateStep.deviceCount &&
+        connectedDeviceCount == 1 &&
+        canGoNext) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Only one device'),
+          content: const Text(
+            'Make sure you\'ve connected all the devices you want to include '
+            'in this wallet.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Go back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continue anyway'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+    }
+
     if (!await _handleNext(context)) {
       return;
     }
@@ -563,7 +596,7 @@ class WalletCreateController extends ChangeNotifier {
 
   String get title => switch (_step) {
     WalletCreateStep.name => 'Name wallet',
-    WalletCreateStep.deviceCount => 'Pick devices',
+    WalletCreateStep.deviceCount => 'Add devices',
     WalletCreateStep.nonceReplenish => "Preparing devices",
     WalletCreateStep.deviceNames => 'Name devices',
     WalletCreateStep.threshold => 'Choose threshold',
@@ -572,9 +605,10 @@ class WalletCreateController extends ChangeNotifier {
   String get subtitle => switch (_step) {
     WalletCreateStep.name => 'Choose a name for this wallet',
     WalletCreateStep.deviceCount =>
-      'Connect devices to become keys for "${form.name ?? ''}"',
+      'Connect all devices you want to hold a key in "${form.name ?? ''}"',
     WalletCreateStep.nonceReplenish => '',
-    WalletCreateStep.deviceNames => 'Each device needs a name to identify it',
+    WalletCreateStep.deviceNames =>
+      'Give each device a name you will recognise later.\nTry using the device colour or where it will be stored.',
     WalletCreateStep.threshold => '',
   };
 
@@ -751,7 +785,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           child: AnimatedGradientCard(
             child: ListTile(
               dense: true,
-              title: Text('Plug in devices to include them in this wallet.'),
+              title: Text(
+                'Plug in all devices to include them in this wallet.',
+              ),
               contentPadding: EdgeInsets.symmetric(horizontal: 16),
               leading: Icon(Icons.info_rounded),
             ),
