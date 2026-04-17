@@ -47,16 +47,19 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       final device = update.state.devices.firstWhereOrNull(
         (device) => deviceIdEquals(device.id, widget.deviceId),
       );
-      final _deviceWasSome = _device != null;
-      final updateIsNone = device == null;
-      if (_deviceWasSome && updateIsNone) {
-        Navigator.pop(context);
-        return;
-      }
+      final wasConnected = _device != null;
+      final nowDisconnected = device == null;
       setState(() {
         _gotFirstData = true;
         _device = device;
       });
+      // Only auto-close ourselves if this route is actually on top — otherwise
+      // an upgrade / erase / name dialog is stacked in front and Navigator.pop
+      // would whack *that* route instead of ours.
+      if (wasConnected && nowDisconnected) {
+        final route = ModalRoute.of(context);
+        if (route?.isCurrent == true) Navigator.pop(context);
+      }
     });
   }
 
@@ -88,9 +91,22 @@ class _DeviceDetailsState extends State<DeviceDetails> {
   }
 
   Widget _buildDisconnectedWidget(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 40),
-      child: Center(heightFactor: 2.1, child: CircularProgressIndicator()),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text(
+            'Waiting for device to connect',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

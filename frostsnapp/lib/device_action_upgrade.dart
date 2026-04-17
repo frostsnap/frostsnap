@@ -47,7 +47,6 @@ class DeviceActionUpgradeController with ChangeNotifier {
   late final StreamSubscription<DeviceListUpdate> _sub;
   FullscreenActionDialogController<void>? _dialogController;
   int _needsUpgradeCount = 0;
-  final _progressController = StreamController<FirmwareUpgradeState>();
 
   DeviceActionUpgradeController() {
     _sub = GlobalStreams.deviceListSubject.listen((update) {
@@ -65,7 +64,6 @@ class DeviceActionUpgradeController with ChangeNotifier {
   dispose() {
     _sub.cancel();
     _dialogController?.dispose();
-    _progressController.close();
     super.dispose();
   }
 
@@ -75,8 +73,6 @@ class DeviceActionUpgradeController with ChangeNotifier {
 
   int get count => _needsUpgradeCount;
 
-  Stream<FirmwareUpgradeState> get progressStream => _progressController.stream;
-
   Future<bool> run(BuildContext context) async {
     final deviceList = await GlobalStreams.deviceListSubject.first;
     final upgradeTargets = deviceList.state.devices
@@ -85,8 +81,9 @@ class DeviceActionUpgradeController with ChangeNotifier {
         .toList();
     if (upgradeTargets.isEmpty) return false;
 
-    _progressController.add(FirmwareUpgradeState.empty());
-    final replayStream = _progressController.stream.toReplaySubject();
+    final progressController = StreamController<FirmwareUpgradeState>();
+    progressController.add(FirmwareUpgradeState.empty());
+    final replayStream = progressController.stream.toReplaySubject();
 
     final controller = FullscreenActionDialogController<void>(
       context: context,
@@ -188,7 +185,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
           await controller.clearAllActionsNeeded();
           return false;
         }
-        _progressController.add(
+        progressController.add(
           FirmwareUpgradeState.acks(
             neededAcks: state.needUpgrade.length,
             acks: state.confirmations.length,
@@ -220,7 +217,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
 
       var progress = 0.0;
       await for (progress in coord.enterFirmwareUpgradeMode()) {
-        _progressController.add(
+        progressController.add(
           FirmwareUpgradeState.progress(progress: progress),
         );
       }
@@ -234,6 +231,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
     } finally {
       if (_dialogController == controller) _dialogController = null;
       controller.dispose();
+      await progressController.close();
     }
   }
 
