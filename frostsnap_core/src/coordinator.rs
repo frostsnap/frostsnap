@@ -435,8 +435,8 @@ impl FrostCoordinator {
 
     pub fn iter_access_structures(&self) -> impl Iterator<Item = CoordAccessStructure> + '_ {
         self.keys
-            .iter()
-            .flat_map(|(_, key_data)| key_data.access_structures())
+            .values()
+            .flat_map(|key_data| key_data.access_structures())
     }
 
     pub fn iter_shares(

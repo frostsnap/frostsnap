@@ -411,13 +411,10 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             WidgetTree::KeygenCheck {
                 widget: keygen_check,
                 phase,
-            } => {
-                // Check if confirmed and we still have the phase
-                if keygen_check.is_confirmed() {
-                    // Take the phase (move it out of the Option)
-                    if let Some(phase_data) = phase.take() {
-                        return Some(UiEvent::KeyGenConfirm { phase: phase_data });
-                    }
+            } if keygen_check.is_confirmed() => {
+                // Take the phase (move it out of the Option)
+                if let Some(phase_data) = phase.take() {
+                    return Some(UiEvent::KeyGenConfirm { phase: phase_data });
                 }
             }
             WidgetTree::SignTxPrompt {
@@ -445,52 +442,45 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             }
             WidgetTree::FirmwareUpgradeConfirm {
                 widget, confirmed, ..
-            } => {
-                // Check if the firmware upgrade was confirmed and we haven't sent the event yet
-                if widget.is_confirmed() && !*confirmed {
-                    *confirmed = true; // Mark as confirmed to prevent duplicate events
-                    return Some(UiEvent::UpgradeConfirm);
-                }
+            } if widget.is_confirmed() && !*confirmed => {
+                *confirmed = true;
+                return Some(UiEvent::UpgradeConfirm);
             }
             WidgetTree::DisplayBackup {
                 widget,
                 access_structure_ref,
             } => {
-                if widget.is_finished() {
-                    if let Some(access_structure_ref_data) = access_structure_ref.take() {
-                        return Some(UiEvent::BackupRecorded {
-                            access_structure_ref: access_structure_ref_data,
-                        });
-                    }
+                if !widget.is_finished() {
+                    return None;
+                }
+                if let Some(access_structure_ref_data) = access_structure_ref.take() {
+                    return Some(UiEvent::BackupRecorded {
+                        access_structure_ref: access_structure_ref_data,
+                    });
                 }
             }
             WidgetTree::EnterBackup { widget, phase } => {
-                // Check if backup entry is complete
-                if widget.is_finished() {
-                    if let Some(share_backup) = widget.get_backup() {
-                        if let Some(phase) = phase.take() {
-                            return Some(UiEvent::EnteredShareBackup {
-                                phase,
-                                share_backup,
-                            });
-                        };
-                    }
+                if !widget.is_finished() {
+                    return None;
                 }
+                let share_backup = widget.get_backup()?;
+                let phase = phase.take()?;
+                return Some(UiEvent::EnteredShareBackup {
+                    phase,
+                    share_backup,
+                });
             }
-            WidgetTree::NewNamePrompt { widget, new_name } => {
-                // Check if the name prompt was confirmed and we haven't already sent the event
-                if widget.is_confirmed() {
-                    if let Some(name) = new_name.take() {
-                        return Some(UiEvent::NameConfirm(name));
-                    }
+            WidgetTree::NewNamePrompt { widget, new_name } if widget.is_confirmed() => {
+                if let Some(name) = new_name.take() {
+                    return Some(UiEvent::NameConfirm(name));
                 }
             }
             WidgetTree::EraseDevicePrompt { widget, confirmed } => {
-                // Check if the erase device prompt was confirmed and we haven't already sent the event
-                if widget.is_confirmed() && !*confirmed {
-                    *confirmed = true;
-                    return Some(UiEvent::EraseDataConfirm);
+                if !widget.is_confirmed() || *confirmed {
+                    return None;
                 }
+                *confirmed = true;
+                return Some(UiEvent::EraseDataConfirm);
             }
             _ => {}
         }

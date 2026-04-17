@@ -93,9 +93,7 @@ impl Widget for Fps {
         if should_calculate {
             if let Some(last_time) = self.last_fps_time {
                 let elapsed_ms = current_time.saturating_duration_since(last_time);
-                if elapsed_ms > 0 {
-                    // Calculate FPS: frames * 1000 / elapsed_ms
-                    let fps = (self.frame_count as u64 * 1000) / elapsed_ms;
+                if let Some(fps) = (self.frame_count as u64 * 1000).checked_div(elapsed_ms) {
                     self.current_fps = fps as u32;
                 }
             }
