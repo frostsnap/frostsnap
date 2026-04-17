@@ -5,11 +5,13 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/theme.dart';
 
-void showWalletCreatedDialog(
+/// Returns `true` if the user dismissed the dialog (pressed "Later"),
+/// `false` if they chose to secure the wallet.
+Future<bool> showWalletCreatedDialog(
   BuildContext context,
   AccessStructure accessStructure,
 ) async {
-  await showDialog(
+  final dismissed = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {
@@ -80,7 +82,7 @@ void showWalletCreatedDialog(
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.of(context).pop();
+                Navigator.of(context).pop(true);
               },
               child: const Text('Later'),
             ),
@@ -104,4 +106,5 @@ void showWalletCreatedDialog(
       );
     },
   );
+  return dismissed == true;
 }
