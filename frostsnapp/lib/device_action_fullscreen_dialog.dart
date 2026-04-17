@@ -236,8 +236,8 @@ Future<T?> showFullscreenActionDialog<T>(
     listenable: controller,
     builder: (context, _) {
       if (!controller.hasActionsNeeded) Navigator.pop(context);
-      final windowSize = WindowSizeContext.of(context);
-      final isCompact = windowSize == WindowSizeClass.compact;
+      final isCompact =
+          WindowSizeContext.of(context) == WindowSizeClass.compact;
       return isCompact ? scaffold : card;
     },
   );
