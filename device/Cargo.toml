@@ -5,7 +5,29 @@ authors = ["nickfarrow <nick@nickfarrow.com>"]
 edition = "2021"
 
 [features]
-default = ["stack_guard"]
+default = ["chip-esp32c3", "stack_guard", "firmware"]
+chip-esp32c3 = [
+    "esp-hal/esp32c3",
+    "esp-bootloader-esp-idf/esp32c3",
+    "esp-storage/esp32c3",
+    "frostsnap_cst816s/chip-esp32c3",
+    "frostsnap_widgets/chip-esp32c3",
+    "firmware",
+]
+chip-esp32s3 = [
+    "esp-hal/esp32s3",
+    "esp-bootloader-esp-idf/esp32s3",
+    "esp-storage/esp32s3",
+    "frostsnap_cst816s/chip-esp32s3",
+    "frostsnap_widgets/chip-esp32s3",
+]
+firmware = [
+    "dep:frostsnap_core",
+    "dep:frostsnap_comms",
+    "dep:frostsnap_embedded",
+    "dep:frost_backup",
+    "dep:bitcoin",
+]
 mem_debug = []
 debug_fps = []
 debug_mem = []
@@ -18,15 +40,15 @@ stack_guard = []
 genuine_device = []
 
 [dependencies]
-frostsnap_core = { workspace = true }
-frostsnap_comms = { workspace = true }
-frostsnap_embedded = { workspace = true }
-frost_backup = { workspace = true, features = ["bincode"] }
-bitcoin.workspace = true
-esp-hal = { workspace = true, features = ["esp32c3", "rt"] }
+frostsnap_core = { workspace = true, optional = true }
+frostsnap_comms = { workspace = true, optional = true }
+frostsnap_embedded = { workspace = true, optional = true }
+frost_backup = { workspace = true, features = ["bincode"], optional = true }
+bitcoin = { workspace = true, optional = true }
+esp-hal = { workspace = true, features = ["rt"] }
 rand_core.workspace = true
 esp-alloc = { workspace = true }
-esp-bootloader-esp-idf = { workspace = true, features = ["esp32c3"] }
+esp-bootloader-esp-idf.workspace = true
 nb = "1"
 embedded-hal-nb = "1"
 heapless = "0.8"
@@ -34,7 +56,7 @@ critical-section = "1.2"
 embedded-hal-bus = "0.3"
 embedded-hal.workspace = true
 embedded-storage.workspace = true
-esp-storage = { workspace = true, features = ["esp32c3", "bytewise-read"] }
+esp-storage = { workspace = true, features = ["bytewise-read"] }
 bincode = { workspace = true }
 mipidsi = { version = "0.10", features = ["batch"] }
 embedded-graphics = "0.8.1"

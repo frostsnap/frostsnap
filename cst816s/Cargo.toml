@@ -18,8 +18,12 @@ keywords = [
 ]
 readme = "README.md"
 
+[features]
+default = ["chip-esp32c3"]
+chip-esp32c3 = ["esp-hal/esp32c3"]
+chip-esp32s3 = ["esp-hal/esp32s3"]
+
 [dependencies]
 embedded-hal.workspace = true
-esp-hal = { workspace = true, features = ["esp32c3"] }
+esp-hal.workspace = true
 heapless = { version = "0.8", features = ["portable-atomic"] }
-
