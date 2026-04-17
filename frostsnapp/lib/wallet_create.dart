@@ -58,7 +58,7 @@ class WalletCreateController extends ChangeNotifier {
   Stream<NonceReplenishState>? _nonceStream;
 
   KeyGenState? _keygenState;
-  late final FullscreenActionDialogController _keygenController;
+  FullscreenActionDialogController? _keygenController;
   AccessStructureRef? _asRef;
 
   WalletCreateController() {
@@ -98,7 +98,15 @@ class WalletCreateController extends ChangeNotifier {
         notifyListeners();
       });
     }
-    _keygenController = FullscreenActionDialogController(
+  }
+
+  FullscreenActionDialogController _buildKeygenController(
+    BuildContext context,
+    List<DeviceId> devices,
+  ) {
+    return FullscreenActionDialogController(
+      context: context,
+      devices: devices,
       title: 'Security Check',
       body: (context) => ListenableBuilder(
         listenable: this,
@@ -207,7 +215,7 @@ class WalletCreateController extends ChangeNotifier {
     for (final device in _deviceList.devices) {
       coord.sendCancel(id: device.id);
     }
-    _keygenController.dispose();
+    _keygenController?.dispose();
     super.dispose();
   }
 
@@ -231,7 +239,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   Future<void> resetKeygenState(Iterable<ConnectedDevice> devices) async {
-    await _keygenController.clearAllActionsNeeded();
+    await _keygenController?.clearAllActionsNeeded();
     _keygenState = null;
     await resetDeviceNames(_deviceList.devices);
     notifyListeners();
@@ -360,15 +368,18 @@ class WalletCreateController extends ChangeNotifier {
               network: form.network,
             )
             .toBehaviorSubject();
-        for (final id in selectedDevices) {
-          _keygenController.addActionNeeded(context, id);
-        }
+        _keygenController?.dispose();
+        final keygenController = _buildKeygenController(
+          context,
+          selectedDevices,
+        );
+        _keygenController = keygenController;
         await for (final state in stream) {
           _keygenState = state;
           notifyListeners();
 
           for (final id in state.sessionAcks) {
-            await _keygenController.removeActionNeeded(id);
+            await keygenController.removeActionNeeded(id);
           }
 
           if (state.aborted != null) {
@@ -517,6 +528,8 @@ class WalletCreateController extends ChangeNotifier {
 
       if (connectedDevices.isNotEmpty) {
         final controller = FullscreenActionDialogController<void>(
+          context: context,
+          devices: connectedDevices.map((d) => d.id).toList(),
           title: 'Wallet created!',
           body: (context) =>
               Text('Unplug devices to continue', textAlign: TextAlign.center),
@@ -526,10 +539,7 @@ class WalletCreateController extends ChangeNotifier {
           onDismissed: () {},
         );
 
-        await controller.batchAddActionNeeded(
-          context,
-          connectedDevices.map((d) => d.id).toList(),
-        );
+        await controller.awaitDismissed();
         controller.dispose();
       }
 

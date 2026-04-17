@@ -6,6 +6,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
@@ -205,7 +206,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   List<Transaction> allTxs = [];
 
   StreamSubscription<VerifyAddressProtocolState>? _verifyStreamSub;
-  late final FullscreenActionDialogController fullscreenDialogController;
+  FullscreenActionDialogController? _fullscreenDialogController;
   bool verificationSuccess = false;
 
   ReceivePageFocus _focus = ReceivePageFocus.share;
@@ -214,30 +215,67 @@ class _ReceiverPageState extends State<ReceivePage> {
     if (v == _focus || _address == null) return;
     if (v == ReceivePageFocus.verify) {
       _verifyStreamSub?.cancel();
+      final targetDevices = widget.wallet
+          .frostKey()!
+          .accessStructures()
+          .expand((as) => as.devices())
+          .toSet();
+      _fullscreenDialogController = _buildVerifyDialogController(targetDevices);
       _verifyStreamSub = coord
           .verifyAddress(
             keyId: widget.wallet.keyId(),
             addressIndex: _address!.index,
           )
-          .listen((state) {
-            fullscreenDialogController.batchAddActionNeeded(
-              context,
-              state.connectedDevices,
-            );
-            fullscreenDialogController.clearAllExcept(state.connectedDevices);
-          });
+          .listen((_) {});
 
       setState(() {
         _focus = v;
       });
       return;
     }
+    _fullscreenDialogController?.dispose();
+    _fullscreenDialogController = null;
     if (_verifyStreamSub != null) coord.cancelProtocol();
     _verifyStreamSub?.cancel();
     _verifyStreamSub = null;
     setState(() {
       _focus = v;
     });
+  }
+
+  FullscreenActionDialogController _buildVerifyDialogController(
+    Iterable<DeviceId> devices,
+  ) {
+    return FullscreenActionDialogController(
+      context: context,
+      devices: devices,
+      title: 'Verify address on device',
+      body: _dialogBodyBuilder,
+      actionButtons: [
+        OutlinedButton(
+          child: Text('Cancel'),
+          onPressed: () {
+            verificationSuccess = false;
+            _fullscreenDialogController?.enabled = false;
+          },
+        ),
+        OutlinedButton(
+          onPressed: () {
+            verificationSuccess = true;
+            _fullscreenDialogController?.enabled = false;
+          },
+          child: Text('Sender has correct address'),
+        ),
+      ],
+      onDismissed: () {
+        if (verificationSuccess) {
+          focus = ReceivePageFocus.awaitTx;
+        } else {
+          focus = ReceivePageFocus.share;
+        }
+        verificationSuccess = false;
+      },
+    );
   }
 
   bool get isRevealed => _address?.revealed ?? false;
@@ -270,35 +308,6 @@ class _ReceiverPageState extends State<ReceivePage> {
   void initState() {
     super.initState();
 
-    fullscreenDialogController = FullscreenActionDialogController(
-      title: 'Verify address on device',
-      body: _dialogBodyBuilder,
-      actionButtons: [
-        OutlinedButton(
-          child: Text('Cancel'),
-          onPressed: () {
-            verificationSuccess = false;
-            Navigator.pop(context);
-          },
-        ),
-        OutlinedButton(
-          onPressed: () {
-            verificationSuccess = true;
-            Navigator.pop(context);
-          },
-          child: Text('Sender has correct address'),
-        ),
-      ],
-      onDismissed: () {
-        if (verificationSuccess) {
-          focus = ReceivePageFocus.awaitTx;
-        } else {
-          focus = ReceivePageFocus.share;
-        }
-        verificationSuccess = false;
-      },
-    );
-
     final startIndex = widget.derivationIndex ?? wallet.nextAddress().index;
     updateToIndex(startIndex);
 
@@ -324,7 +333,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     }
     _verifyStreamSub?.cancel();
     txStreamSub.cancel();
-    fullscreenDialogController.dispose();
+    _fullscreenDialogController?.dispose();
     super.dispose();
   }
 

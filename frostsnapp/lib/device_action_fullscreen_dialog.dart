@@ -24,118 +24,145 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
   String? title;
   Function(BuildContext)? body;
   List<Widget>? actionButtons;
-  final Set<DeviceId> _actionNeeded = deviceIdSet([]);
-  Set<DeviceId> _connectedDevices = deviceIdSet([]);
   Function()? onDismissed;
-  Future<T?> _fut = Future.value(null);
+
+  /// The set of devices this controller is tracking. Invariant: seeded at
+  /// construction and only ever shrinks. Use `remove*` methods to mark a
+  /// device as "done"; the dialog auto-dismisses when the set is empty or
+  /// when none of its devices remain connected.
+  final Set<DeviceId> _actionNeeded;
+  Set<DeviceId> _connectedDevices;
+  NavigatorState? _navigator;
+  bool _isShowing = false;
+  bool _enabled = true;
+  Future<T?>? _currentDialogFuture;
   StreamSubscription? _deviceListSubscription;
 
+  /// Construct the controller with the full set of devices it should track.
+  ///
+  /// - [context] is used once to resolve the root navigator (the dialog is
+  ///   always pushed onto it).
+  /// - [devices] is the invariant action-needed set: it's seeded here and
+  ///   only ever shrinks via the `remove*` methods. We also seed
+  ///   `_connectedDevices` with the same set so `shouldShow` is `true`
+  ///   immediately — callers pass in devices they've just observed to be
+  ///   connected, so this is always correct at the moment of construction.
+  ///   The real device list then takes over via the stream subscription.
   FullscreenActionDialogController({
+    required BuildContext context,
+    required Iterable<DeviceId> devices,
     this.title,
     this.body,
     this.actionButtons,
     this.onDismissed,
-  }) {
+  }) : _actionNeeded = deviceIdSet(devices),
+       _connectedDevices = deviceIdSet(devices) {
+    _navigator = Navigator.of(context, rootNavigator: true);
     _deviceListSubscription = GlobalStreams.deviceListSubject.listen((update) {
       _connectedDevices = deviceIdSet(
         update.state.devices.map((dev) => dev.id).toList(),
       );
-      _safeNotify();
+      _reconcile();
     });
-  }
-
-  Future<T?>? addActionNeeded(BuildContext context, DeviceId deviceId) {
-    final hadActionsNeeded = _actionNeeded.isNotEmpty;
-    _actionNeeded.add(deviceId);
-    if (hadActionsNeeded) return null;
-    return _safeShow(context);
+    // The action-needed set is non-empty and all devices are (believed to
+    // be) connected, so this kicks off the first `_show()` synchronously.
+    _reconcile();
   }
 
   Future<T?> removeActionNeeded(DeviceId deviceId) async {
-    final wasActive = _actionNeeded.isNotEmpty;
-    if (wasActive) {
-      if (_actionNeeded.remove(deviceId)) _safeNotify();
-      if (_actionNeeded.isEmpty) return await _fut;
-    }
-    return null;
-  }
-
-  Future<T?>? batchAddActionNeeded(
-    BuildContext context,
-    Iterable<DeviceId> deviceIds,
-  ) {
-    final wasActive = _actionNeeded.isNotEmpty;
-    bool didAdd = false;
-    for (final id in deviceIds) didAdd |= _actionNeeded.add(id);
-    if (wasActive || !didAdd) return null;
-    return _safeShow(context);
+    if (_actionNeeded.remove(deviceId)) _reconcile();
+    return _actionNeeded.isEmpty ? await _awaitDismiss() : null;
   }
 
   Future<T?> batchRemoveActionNeeded(Iterable<DeviceId> deviceIds) async {
     bool didRemove = false;
     for (final id in deviceIds) didRemove |= _actionNeeded.remove(id);
-    if (didRemove && _actionNeeded.isEmpty) {
-      _safeNotify();
-      return await _fut;
-    }
-    return null;
+    if (didRemove) _reconcile();
+    return _actionNeeded.isEmpty ? await _awaitDismiss() : null;
   }
 
   Future<T?> clearAllActionsNeeded() async {
-    final wasActive = _actionNeeded.isNotEmpty;
-    if (wasActive) {
-      _actionNeeded.clear();
-      _safeNotify();
-      return await _fut;
-    }
-    return null;
+    if (_actionNeeded.isEmpty) return null;
+    _actionNeeded.clear();
+    _reconcile();
+    return await _awaitDismiss();
   }
 
   Future<T?> clearAllExcept(Iterable<DeviceId> deviceIds) async {
-    final wasActive = _actionNeeded.isNotEmpty;
-    final exceptMap = deviceIdSet(deviceIds);
-    _actionNeeded.retainWhere((id) => exceptMap.contains(id));
-    if (wasActive && _actionNeeded.isEmpty) {
-      _safeNotify();
-      return await _fut;
-    }
-    return null;
+    final keep = deviceIdSet(deviceIds);
+    final before = _actionNeeded.length;
+    _actionNeeded.retainWhere(keep.contains);
+    if (_actionNeeded.length != before) _reconcile();
+    return _actionNeeded.isEmpty ? await _awaitDismiss() : null;
   }
 
-  bool get hasActionsNeeded =>
-      _actionNeeded.isNotEmpty &&
-      _actionNeeded.any((id) => _connectedDevices.contains(id));
   Iterable<DeviceId> get actionsNeeded => _actionNeeded;
+
+  /// Master switch. When false, the dialog is hidden regardless of
+  /// `_actionNeeded` and will not show on future reconciles. Flip it back to
+  /// true to let the controller drive visibility from device state again.
+  bool get enabled => _enabled;
+  set enabled(bool value) {
+    if (_enabled == value) return;
+    _enabled = value;
+    _reconcile();
+  }
+
+  /// True iff the controller is enabled and at least one action-needed device
+  /// is currently connected. This is the sole visibility condition.
+  bool get shouldShow =>
+      _enabled && _actionNeeded.any(_connectedDevices.contains);
+
+  void _reconcile() {
+    if (shouldShow && !_isShowing) _show();
+    // Hide is handled by the dialog's ListenableBuilder, which pops itself
+    // when `shouldShow` flips to false — the pop must happen inside the
+    // dialog's own Navigator scope.
+    if (hasListeners) notifyListeners();
+  }
+
+  void _show() {
+    // Use the overlay's context (a descendant of the Navigator) rather than
+    // the NavigatorState's own element — showGeneralDialog walks up from the
+    // given context to find a Navigator ancestor, and the navigator's own
+    // element isn't an ancestor of itself.
+    final overlayContext = _navigator?.overlay?.context;
+    if (overlayContext == null) {
+      // Navigator's overlay isn't mounted yet — retry after the current
+      // frame so we don't drop the "show" on the floor.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reconcile());
+      return;
+    }
+    _isShowing = true;
+    final future = showFullscreenActionDialog<T>(
+      overlayContext,
+      controller: this,
+    );
+    _currentDialogFuture = future;
+    future.then((_) {
+      _isShowing = false;
+      _currentDialogFuture = null;
+      // Re-check in case a reconnect happened while the pop was animating.
+      _reconcile();
+    });
+  }
+
+  Future<T?> _awaitDismiss() async =>
+      await (_currentDialogFuture ?? Future<T?>.value(null));
+
+  /// Awaits the dialog's natural dismissal — whether that came from the
+  /// action-needed set emptying, all action-needed devices disconnecting
+  /// (triggering `shouldShow`→false), or a programmatic dispose. Use this
+  /// when the caller just wants to block on "user-facing dialog is gone"
+  /// rather than triggering a specific state transition.
+  Future<T?> awaitDismissed() => _awaitDismiss();
 
   @override
   void dispose() {
     _deviceListSubscription?.cancel();
     _actionNeeded.clear();
-    _safeNotify();
+    if (hasListeners) notifyListeners();
     super.dispose();
-  }
-
-  /// This is so that we can avoid triggering a rebuild of
-  void _safeNotify() {
-    void notify() => hasListeners ? notifyListeners() : null;
-    final instance = WidgetsBinding.instance;
-    instance.hasScheduledFrame
-        ? instance.addPostFrameCallback((_) => notify())
-        : notify();
-  }
-
-  Future<T?>? _safeShow(BuildContext context) {
-    final completer = Completer<T?>();
-    _fut = completer.future;
-    void complete() => completer.complete(
-      showFullscreenActionDialog(context, controller: this),
-    );
-    final instance = WidgetsBinding.instance;
-    instance.hasScheduledFrame
-        ? instance.addPostFrameCallback((_) => complete())
-        : complete();
-
-    return _fut;
   }
 }
 
@@ -232,10 +259,20 @@ Future<T?> showFullscreenActionDialog<T>(
     persistentFooterButtons: [footerRow],
   );
 
+  // Latched so we pop exactly once. Subsequent notifies while the pop
+  // transition is animating (device list churn, verify-stream updates, the
+  // controller's own post-dismiss reconcile) must not trigger another pop —
+  // otherwise we'd chew up whatever route is underneath.
+  var popScheduled = false;
   final listenableBuilder = ListenableBuilder(
     listenable: controller,
     builder: (context, _) {
-      if (!controller.hasActionsNeeded) Navigator.pop(context);
+      if (!controller.shouldShow && !popScheduled) {
+        popScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+        });
+      }
       final isCompact =
           WindowSizeContext.of(context) == WindowSizeClass.compact;
       return isCompact ? scaffold : card;

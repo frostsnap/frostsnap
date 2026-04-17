@@ -587,13 +587,15 @@ class _WalletSendPageState extends State<WalletSendPage> {
       context,
       title: Text('Transaction Details'),
       builder: (context, scrollController) => walletCtx.wrap(
-        TxDetailsPage.startSigning(
+        TxDetailsPage(
           txStates: walletCtx.txStream,
           txDetails: txDetails,
-          accessStructureRef: access.accessStructureRef(),
-          unsignedTx: unsignedTx!,
-          devices: state.selectedSigners().toList(),
           psbtMan: fsCtx.psbtManager,
+          signingParams: TxSigningParams.start(
+            accessStructureRef: access.accessStructureRef(),
+            unsignedTx: unsignedTx!,
+            devices: state.selectedSigners().toList(),
+          ),
         ),
       ),
     );
