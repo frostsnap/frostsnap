@@ -56,16 +56,10 @@ impl<'a> Partitions<'a> {
                         .set_offset_and_size(row.offset(), row.len());
                 }
                 "ota_0" => {
-                    self_
-                        .ota
-                        .ota_0
-                        .set_offset_and_size(row.offset(), row.len());
+                    self_.ota.ota_0.set_offset_and_size(row.offset(), row.len());
                 }
                 "ota_1" => {
-                    self_
-                        .ota
-                        .ota_1
-                        .set_offset_and_size(row.offset(), row.len());
+                    self_.ota.ota_1.set_offset_and_size(row.offset(), row.len());
                 }
                 "nvs" => {
                     self_.nvs.set_offset_and_size(row.offset(), row.len());

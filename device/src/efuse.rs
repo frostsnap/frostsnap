@@ -272,6 +272,12 @@ impl EfuseController {
     }
 }
 
+impl Default for EfuseController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Result of discovering which key slots contain which keys
 #[derive(Debug, Clone, PartialEq)]
 pub struct DiscoveredEfuses {
