@@ -16,9 +16,8 @@ fn main() -> ! {
     esp_alloc::heap_allocator!(size: 256 * 1024);
 
     // Initialize ESP32 hardware
-    let peripherals = esp_hal::init(
-        esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()),
-    );
+    let peripherals =
+        esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
 
     // Initialize flash storage (must stay alive for partition references)
     let flash = RefCell::new(FlashStorage::new());
