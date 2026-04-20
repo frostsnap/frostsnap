@@ -41,14 +41,10 @@ macro_rules! init_display {
         };
         use mipidsi::{interface::SpiInterface, models::ST7789, options::ColorInversion};
 
-        // NOTE: The old v0.22 code asked for 80 MHz here and it worked. In v1.0
-        // the SPI driver picks a different divider and the resulting clock
-        // exceeds the ST7789's maximum write speed (~62 MHz), so nothing shows
-        // up. 20 MHz is what we settled on after matching the working probe.
         let spi = Spi::new(
             $peripherals.SPI2,
             SpiConfig::default()
-                .with_frequency(Rate::from_mhz(20))
+                .with_frequency(Rate::from_mhz(80))
                 .with_mode(Mode::_2),
         )
         .unwrap()
