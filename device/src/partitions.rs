@@ -1,6 +1,7 @@
 use crate::ota::OtaPartitions;
 use core::cell::RefCell;
 use embedded_storage::nor_flash::NorFlash;
+use esp_bootloader_esp_idf::partitions;
 use esp_hal::sha::Sha;
 use esp_storage::FlashStorage;
 use frostsnap_comms::firmware_reader::FirmwareSizeError;
@@ -30,41 +31,38 @@ impl<'a> Partitions<'a> {
     }
 
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
-        let table = esp_partition_table::PartitionTable::new(0xd000, 10 * 32);
-
         let mut self_ = Self::new(flash);
-        for row in table.iter_storage(&mut *flash.borrow_mut(), false) {
-            let row = match row {
-                Ok(row) => row,
-                Err(_) => panic!("unable to read row of partition table"),
-            };
-            assert_eq!(row.offset % FlashStorage::ERASE_SIZE as u32, 0);
-            match row.name() {
+        let mut pt_mem = [0u8; partitions::PARTITION_TABLE_MAX_LEN];
+        // Partition table offset in .cargo/config.toml env
+        // ESP_BOOTLOADER_ESP_IDF_CONFIG_PARTITION_TABLE_OFFSET = "0xD000"
+        let pt = partitions::read_partition_table(&mut *flash.borrow_mut(), &mut pt_mem)
+            .expect("unable to read partition table");
+
+        for i in 0..pt.len() {
+            let row = pt
+                .get_partition(i)
+                .expect("partition table index should be valid");
+            assert_eq!(row.offset() % FlashStorage::ERASE_SIZE as u32, 0);
+            match row.label_as_str() {
                 "factory_cert" => {
                     self_
                         .factory_cert
-                        .set_offset_and_size(row.offset, row.size as u32);
+                        .set_offset_and_size(row.offset(), row.len());
                 }
                 "otadata" => {
                     self_
                         .ota
                         .otadata
-                        .set_offset_and_size(row.offset, row.size as u32);
+                        .set_offset_and_size(row.offset(), row.len());
                 }
                 "ota_0" => {
-                    self_
-                        .ota
-                        .ota_0
-                        .set_offset_and_size(row.offset, row.size as u32);
+                    self_.ota.ota_0.set_offset_and_size(row.offset(), row.len());
                 }
                 "ota_1" => {
-                    self_
-                        .ota
-                        .ota_1
-                        .set_offset_and_size(row.offset, row.size as u32);
+                    self_.ota.ota_1.set_offset_and_size(row.offset(), row.len());
                 }
                 "nvs" => {
-                    self_.nvs.set_offset_and_size(row.offset, row.size as u32);
+                    self_.nvs.set_offset_and_size(row.offset(), row.len());
                 }
                 _ => { /*ignore*/ }
             }

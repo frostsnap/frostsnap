@@ -8,8 +8,7 @@ use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
 use esp_hal::rsa::Rsa;
 use esp_hal::sha::Sha;
-use esp_hal::time::Duration;
-use esp_hal::timer;
+use esp_hal::time::{Duration, Instant};
 use esp_hal::Blocking;
 use frostsnap_comms::{
     CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
@@ -290,13 +289,12 @@ impl FirmwareUpgradeMode<'_> {
         }
     }
 
-    pub fn enter_upgrade_mode<T: timer::Timer>(
+    pub fn enter_upgrade_mode(
         &mut self,
         upstream_io: &mut SerialIo<'_>,
         mut downstream_io: Option<&mut SerialIo<'_>>,
         ui: &mut impl UserInteraction,
         sha: &mut Sha<'_>,
-        timer: &T,
         rsa: &mut Rsa<Blocking>,
     ) {
         match self {
@@ -318,8 +316,8 @@ impl FirmwareUpgradeMode<'_> {
             downstream_io.change_baud(OTA_UPDATE_BAUD);
         }
 
-        let start = timer.now();
-        while timer.now().checked_duration_since(start).unwrap() < Duration::millis(100) {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(100) {
             // wait for everyone to finish changing BAUD rates to prevent race condition
         }
 

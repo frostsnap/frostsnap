@@ -14,7 +14,7 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
     use embedded_graphics::pixelcolor::Rgb565;
     use esp_hal::{
         delay::Delay,
-        gpio::{Level, Output},
+        gpio::{Level, Output, OutputConfig},
         peripherals::Peripherals,
     };
     unsafe {
@@ -23,9 +23,13 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
         critical_section::acquire();
     }
 
-    let mut peripherals = unsafe { Peripherals::steal() };
+    let peripherals = unsafe { Peripherals::steal() };
 
-    let mut bl = Output::new(&mut peripherals.GPIO1, Level::Low);
+    let mut bl = Output::new(
+        unsafe { esp_hal::peripherals::GPIO1::steal() },
+        Level::Low,
+        OutputConfig::default(),
+    );
 
     let mut delay = Delay::new();
 
