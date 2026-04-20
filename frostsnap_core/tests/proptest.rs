@@ -446,20 +446,18 @@ impl ReferenceStateMachine for RefState {
                 devices,
                 n_inputs,
             } => match state.finished_keygens.get(*key_index) {
-                Some(keygen) => {
+                Some(keygen)
                     if !keygen.deleted
                         && keygen.do_keygen.devices().is_superset(devices)
-                        && state.available_signing_devices().is_superset(devices)
-                    {
-                        // Check that all devices have enough nonces available for n_inputs
-                        devices.iter().all(|device_id| {
-                            state.max_available_nonces_for_device(*device_id) >= *n_inputs
-                        })
-                    } else {
-                        false
-                    }
+                        && state.available_signing_devices().is_superset(devices) =>
+                {
+                    // Check that all devices have enough nonces available for n_inputs
+                    devices.iter().all(|device_id| {
+                        state.max_available_nonces_for_device(*device_id) >= *n_inputs
+                    })
                 }
                 None => false,
+                Some(_) => false,
             },
             Transition::CSendSignRequest {
                 session_index,

@@ -28,19 +28,13 @@ pub fn process_all_touch_events<W>(
         // Handle horizontal swipes to switch between widgets
         if is_horizontal_swipe && lift_up {
             match gesture {
-                TouchGesture::SlideLeft => {
-                    // Swipe left: show debug log
-                    if *current_widget_index == 0 {
-                        *current_widget_index = 1;
-                        widget.show_logs();
-                    }
+                TouchGesture::SlideLeft if *current_widget_index == 0 => {
+                    *current_widget_index = 1;
+                    widget.show_logs();
                 }
-                TouchGesture::SlideRight => {
-                    // Swipe right: show main widget
-                    if *current_widget_index == 1 {
-                        *current_widget_index = 0;
-                        widget.show_main();
-                    }
+                TouchGesture::SlideRight if *current_widget_index == 1 => {
+                    *current_widget_index = 0;
+                    widget.show_main();
                 }
                 _ => {}
             }
