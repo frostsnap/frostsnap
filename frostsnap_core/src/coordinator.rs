@@ -641,13 +641,17 @@ impl FrostCoordinator {
                             ),
                         )?;
 
+                        // Input-generator indices: [0..n_coordinators) are coordinators;
+                        // [n_coordinators..n_coordinators + n_devices) are devices in
+                        // share-index order. Share indices are 1-based, hence the `- 1`.
+                        let n_coordinators = state.coordinator_public_keys.len() as u32;
+                        let input_gen_index = u32::from(*share_index) - 1 + n_coordinators;
+
                         state
                             .input_aggregator
                             .add_input(
                                 &schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
-                                // we use the share index as the input generator index. The input
-                                // generator at index 0 is the coordinator itself.
-                                (*share_index).into(),
+                                input_gen_index,
                                 *response.input,
                             )
                             .map_err(|e| Error::coordinator_invalid_message(message_kind, e))?;
@@ -672,7 +676,7 @@ impl FrostCoordinator {
                             let mut certifier = certpedpop::Certifier::new(
                                 cert_scheme,
                                 agg_input.clone(),
-                                &[state.my_keypair.public_key()],
+                                &state.coordinator_public_keys,
                             );
 
                             certifier
@@ -977,9 +981,12 @@ impl FrostCoordinator {
             .map(|(device, share_index)| (ShareIndex::from(*share_index), device.pubkey()))
             .collect::<BTreeMap<_, _>>();
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
+
+        let coordinator_public_keys = vec![coordinator_keypair.public_key()];
+
         let mut input_aggregator = certpedpop::Coordinator::new(
             threshold.into(),
-            (n_devices + 1) as u32,
+            1 + n_devices as u32,
             &share_receivers_enckeys,
         );
         let (contributer, input) = certpedpop::Contributor::gen_keygen_input(
@@ -1003,6 +1010,7 @@ impl FrostCoordinator {
                 purpose,
                 contributer: Box::new(contributer),
                 my_keypair: coordinator_keypair,
+                coordinator_public_keys: coordinator_public_keys.clone(),
             }),
         );
 
@@ -1013,7 +1021,7 @@ impl FrostCoordinator {
             key_name,
             purpose,
             keygen_id,
-            coordinator_public_key: coordinator_keypair.public_key(),
+            coordinator_public_keys,
         };
 
         Ok(SendBeginKeygen(begin_message))
@@ -1668,6 +1676,7 @@ pub struct KeyGenWaitingForResponses {
     pub purpose: KeyPurpose,
     pub contributer: Box<certpedpop::Contributor>,
     pub my_keypair: KeyPair,
+    pub coordinator_public_keys: Vec<Point>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
