@@ -14,7 +14,6 @@ use frostsnap_core::message::EncodedSignature;
 use tracing::{event, Level};
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ops::Deref;
 use std::{
     path::{Path, PathBuf},
@@ -185,7 +184,7 @@ pub struct Transaction {
     pub confirmation_time: Option<ConfirmationTime>,
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
-    pub is_mine: HashSet<bitcoin::ScriptBuf>,
+    pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
 }
 
 impl Transaction {
@@ -194,13 +193,13 @@ impl Transaction {
         let txid = tx_temp.txid();
         let is_mine = tx_temp
             .iter_locally_owned_inputs()
-            .map(|(_, _, spk)| spk.spk())
+            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index))
             .chain(
                 tx_temp
                     .iter_locally_owned_outputs()
-                    .map(|(_, _, spk)| spk.spk()),
+                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index)),
             )
-            .collect::<HashSet<_>>();
+            .collect::<HashMap<_, _>>();
         let prevouts = tx_temp
             .inputs()
             .iter()
@@ -243,7 +242,7 @@ impl Transaction {
                     Some(txout) => txout,
                     None => return false,
                 };
-                self.is_mine.contains(&prev_txout.script_pubkey)
+                self.is_mine.contains_key(&prev_txout.script_pubkey)
             })
             .map(|(vin, _)| vin)
     }
@@ -281,7 +280,7 @@ impl Transaction {
 
     /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
     /// `filter`, if provided. The result is `None` if any input is missing a previous output.
-    fn _sum_inputs(&self, filter: Option<&HashSet<bitcoin::ScriptBuf>>) -> Option<u64> {
+    fn _sum_inputs(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, u32>>) -> Option<u64> {
         let prevouts = self
             .inner
             .input
@@ -293,7 +292,7 @@ impl Transaction {
                 .into_iter()
                 .filter(|prevout| {
                     match &filter {
-                        Some(filter) => filter.contains(prevout.script_pubkey.as_script()),
+                        Some(filter) => filter.contains_key(prevout.script_pubkey.as_script()),
                         // No filter.
                         None => true,
                     }
@@ -305,13 +304,13 @@ impl Transaction {
 
     /// Computes the sum of all outputs, or only those whose script pubkey is in `filter`, if
     /// provided.
-    fn _sum_outputs(&self, filter: Option<&HashSet<bitcoin::ScriptBuf>>) -> u64 {
+    fn _sum_outputs(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, u32>>) -> u64 {
         self.inner
             .output
             .iter()
             .filter(|txout| {
                 match &filter {
-                    Some(filter) => filter.contains(txout.script_pubkey.as_script()),
+                    Some(filter) => filter.contains_key(txout.script_pubkey.as_script()),
                     // No filter.
                     None => true,
                 }
@@ -351,13 +350,15 @@ impl Transaction {
     /// Returns `None` if any input is missing a previous output.
     #[frb(sync, type_64bit_int)]
     pub fn sum_inputs_spending_spk(&self, spk: &bitcoin::ScriptBuf) -> Option<u64> {
-        self._sum_inputs(Some(&[spk.as_script().to_owned()].into()))
+        let filter = HashMap::from([(spk.as_script().to_owned(), 0)]);
+        self._sum_inputs(Some(&filter))
     }
 
     /// Computes the total value of outputs that send to the given script pubkey.
     #[frb(sync, type_64bit_int)]
     pub fn sum_outputs_to_spk(&self, spk: &bitcoin::ScriptBuf) -> u64 {
-        self._sum_outputs(Some(&[spk.as_script().to_owned()].into()))
+        let filter = HashMap::from([(spk.as_script().to_owned(), 0)]);
+        self._sum_outputs(Some(&filter))
     }
 
     /// Computes the net change in our owned balance: owned outputs minus owned inputs.
@@ -405,11 +406,15 @@ impl Transaction {
             .output
             .iter()
             .zip(0_u32..)
-            .map(|(txout, vout)| TxOutInfo {
-                vout,
-                amount: txout.value.to_sat(),
-                script_pubkey: txout.script_pubkey.clone(),
-                is_mine: self.is_mine.contains(&txout.script_pubkey),
+            .map(|(txout, vout)| {
+                let derivation_index = self.is_mine.get(&txout.script_pubkey).copied();
+                TxOutInfo {
+                    vout,
+                    amount: txout.value.to_sat(),
+                    script_pubkey: txout.script_pubkey.clone(),
+                    is_mine: derivation_index.is_some(),
+                    derivation_index,
+                }
             })
             .collect()
     }
@@ -437,6 +442,7 @@ pub struct TxOutInfo {
     pub amount: u64,
     pub script_pubkey: bitcoin::ScriptBuf,
     pub is_mine: bool,
+    pub derivation_index: Option<u32>,
 }
 
 impl TxOutInfo {
