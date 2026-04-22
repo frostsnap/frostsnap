@@ -325,15 +325,11 @@ impl CoordSuperWallet {
         let mut txs = self
             .tx_graph
             .graph()
-            .list_canonical_txs(
+            .list_ordered_canonical_txs(
                 self.chain.as_ref(),
                 self.chain.tip().block_id(),
                 CanonicalizationParams::default(),
             )
-            .collect::<Vec<_>>();
-
-        txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
-        txs.into_iter()
             .filter_map(|canonical_tx| {
                 let inner = canonical_tx.tx_node.tx.clone();
                 let txid = canonical_tx.tx_node.txid;
@@ -367,7 +363,9 @@ impl CoordSuperWallet {
                     })
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+        txs.reverse();
+        txs
     }
 
     pub fn apply_update(
