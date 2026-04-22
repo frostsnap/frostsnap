@@ -13,6 +13,11 @@ pub struct FirmwareUpgradeProtocol {
     sent_first_message: bool,
     firmware_bin: ValidatedFirmwareBin,
     devices: HashMap<DeviceId, FirmwareVersion>,
+    /// Devices that are already on the target firmware auto-ack without a
+    /// user prompt. We still need to wait for these acks before starting the
+    /// flash (they signal the device is ready to forward bytes), but they
+    /// don't belong in the user-facing confirmation count.
+    passive_acks: BTreeSet<DeviceId>,
     sink: Box<dyn Sink<FirmwareUpgradeConfirmState>>,
 }
 
@@ -44,6 +49,7 @@ impl FirmwareUpgradeProtocol {
             sent_first_message: false,
             firmware_bin,
             devices,
+            passive_acks: BTreeSet::new(),
             sink: Box::new(sink),
         }
     }
@@ -60,14 +66,26 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     }
 
     fn is_complete(&self) -> Option<Completion> {
-        if BTreeSet::from_iter(self.state.confirmations.iter())
-            == BTreeSet::from_iter(self.state.devices.iter())
-        {
-            Some(Completion::Success)
-        } else if self.state.abort.is_some() {
-            Some(Completion::Abort {
+        // Abort wins — a passive device could auto-ack and then disconnect on
+        // the same tick, leaving `passive_acks` populated while `aborted` is
+        // also set. Succeeding there would skip the cancel-to-all cleanup.
+        if self.state.abort.is_some() {
+            return Some(Completion::Abort {
                 send_cancel_to_all_devices: true,
-            })
+            });
+        }
+        // All upgrade targets must have user-confirmed, AND every passive
+        // (already-up-to-date) device must have auto-ack'd so we know it's
+        // ready to forward bytes during the flash phase.
+        let targets_confirmed = BTreeSet::from_iter(self.state.confirmations.iter())
+            == BTreeSet::from_iter(self.state.need_upgrade.iter());
+        let passive_ready = self
+            .devices
+            .keys()
+            .filter(|id| !self.state.need_upgrade.contains(id))
+            .all(|id| self.passive_acks.contains(id));
+        if targets_confirmed && passive_ready {
+            Some(Completion::Success)
         } else {
             None
         }
@@ -85,9 +103,15 @@ impl UiProtocol for FirmwareUpgradeProtocol {
             return false;
         }
         if let CommsMisc::AckUpgradeMode = message {
-            if !self.state.confirmations.contains(&from) {
-                self.state.confirmations.push(from);
-                self.emit_state()
+            if self.state.need_upgrade.contains(&from) {
+                if !self.state.confirmations.contains(&from) {
+                    self.state.confirmations.push(from);
+                    self.emit_state();
+                }
+            } else {
+                // Passive ack: tracked internally so `is_complete` can gate
+                // on it, but kept out of the user-facing confirmation count.
+                self.passive_acks.insert(from);
             }
             true
         } else {

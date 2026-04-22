@@ -59,7 +59,6 @@ class _EnterDeviceNameViewState extends State<EnterDeviceNameView> {
           const SizedBox(height: 16),
           DeviceNameField(
             id: widget.targetDevice.id,
-            mode: DeviceNameMode.preview,
             onCanSubmitChanged: (canSubmit) {
               setState(() {
                 _canSubmit = canSubmit;

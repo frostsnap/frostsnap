@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/threshold_selector.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -24,6 +24,10 @@ import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
 import 'maybe_fullscreen_dialog.dart';
 import 'wallet_device_list.dart';
+
+/// Smallest strict majority of `totalDevices` — the recommended / default
+/// signing threshold for a new wallet.
+int recommendedThresholdFor(int totalDevices) => (totalDevices ~/ 2) + 1;
 
 class WalletCreateException implements Exception {
   final String message;
@@ -58,7 +62,7 @@ class WalletCreateController extends ChangeNotifier {
   Stream<NonceReplenishState>? _nonceStream;
 
   KeyGenState? _keygenState;
-  late final FullscreenActionDialogController _keygenController;
+  FullscreenActionDialogController? _keygenController;
   AccessStructureRef? _asRef;
 
   WalletCreateController() {
@@ -98,7 +102,15 @@ class WalletCreateController extends ChangeNotifier {
         notifyListeners();
       });
     }
-    _keygenController = FullscreenActionDialogController(
+  }
+
+  FullscreenActionDialogController _buildKeygenController(
+    BuildContext context,
+    List<DeviceId> devices,
+  ) {
+    return FullscreenActionDialogController(
+      context: context,
+      devices: devices,
       title: 'Security Check',
       body: (context) => ListenableBuilder(
         listenable: this,
@@ -207,7 +219,11 @@ class WalletCreateController extends ChangeNotifier {
     for (final device in _deviceList.devices) {
       coord.sendCancel(id: device.id);
     }
-    _keygenController.dispose();
+    // Null the field first so the page's `_beginThresholdKeygen` finally (if
+    // it's racing) doesn't double-dispose via its `identical` check.
+    final keygenController = _keygenController;
+    _keygenController = null;
+    keygenController?.dispose();
     super.dispose();
   }
 
@@ -231,9 +247,9 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   Future<void> resetKeygenState(Iterable<ConnectedDevice> devices) async {
-    await _keygenController.clearAllActionsNeeded();
+    await _keygenController?.clearAllActionsNeeded();
     _keygenState = null;
-    await resetDeviceNames(_deviceList.devices);
+    await resetDeviceNames(devices);
     notifyListeners();
   }
 
@@ -351,107 +367,11 @@ class WalletCreateController extends ChangeNotifier {
       case WalletCreateStep.deviceNames:
         return true;
       case WalletCreateStep.threshold:
-        final selectedDevices = form.selectedDevices.toList();
-        final stream = coord
-            .generateNewKey(
-              threshold: form.threshold!,
-              devices: selectedDevices,
-              keyName: form.name!,
-              network: form.network,
-            )
-            .toBehaviorSubject();
-        for (final id in selectedDevices) {
-          _keygenController.addActionNeeded(context, id);
-        }
-        await for (final state in stream) {
-          _keygenState = state;
-          notifyListeners();
-
-          for (final id in state.sessionAcks) {
-            await _keygenController.removeActionNeeded(id);
-          }
-
-          if (state.aborted != null) {
-            await resetKeygenState(_deviceList.devices);
-            return false;
-          }
-
-          if (state.allAcks) {
-            final keygenCodeMatches =
-                await showDialog<bool>(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) {
-                    final theme = Theme.of(context);
-                    return BackdropFilter(
-                      filter: blurFilter,
-                      child: AlertDialog(
-                        title: Text('Final check'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: 16,
-                          children: [
-                            Text('Do all devices show this code?'),
-                            Card.filled(
-                              child: Center(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: 12,
-                                    horizontal: 16,
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        '${form.threshold}-of-${form.selectedDevices.length}',
-                                        style: theme.textTheme.labelLarge,
-                                      ),
-                                      Text(
-                                        keygenChecksum,
-                                        style: theme.textTheme.headlineLarge
-                                            ?.copyWith(
-                                              fontFamily:
-                                                  monospaceTextStyle.fontFamily,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        actionsAlignment: MainAxisAlignment.spaceBetween,
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: Text('No'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: Text('Yes'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ) ??
-                false;
-            if (!keygenCodeMatches) return false;
-            try {
-              final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-              _asRef = await coord.finalizeKeygen(
-                keygenId: state.keygenId,
-                encryptionKey: encryptionKey,
-              );
-            } catch (Exception) {
-              return false;
-            }
-            return true;
-          }
-        }
-        throw StateError('Unreachable: keygen completions handled');
+        // Keygen is driven by `_WalletCreatePageState._beginThresholdKeygen`
+        // directly from the Next button, not through `next()`. Assert so
+        // we trip in debug if someone wires it back up, then no-op.
+        assert(false, 'threshold keygen is driven by the page, not next()');
+        return false;
     }
   }
 
@@ -509,33 +429,16 @@ class WalletCreateController extends ChangeNotifier {
     }
 
     if (nextStep != null) {
+      if (nextStep == WalletCreateStep.threshold) {
+        // Seed the default threshold eagerly on transition so `canGoNext` is
+        // true as soon as the threshold step first renders.
+        final totalCount = _form.selectedDevices.length;
+        if (totalCount > 0) {
+          _form.threshold ??= recommendedThresholdFor(totalCount);
+        }
+      }
       _step = nextStep;
       notifyListeners();
-    } else {
-      final deviceListUpdate = await GlobalStreams.deviceListSubject.first;
-      final connectedDevices = deviceListUpdate.state.devices;
-
-      if (connectedDevices.isNotEmpty) {
-        final controller = FullscreenActionDialogController<void>(
-          title: 'Wallet created!',
-          body: (context) =>
-              Text('Unplug devices to continue', textAlign: TextAlign.center),
-          actionButtons: [
-            DeviceActionHint(label: 'Unplug devices', icon: Icons.usb_off),
-          ],
-          onDismissed: () {},
-        );
-
-        await controller.batchAddActionNeeded(
-          context,
-          connectedDevices.map((d) => d.id).toList(),
-        );
-        controller.dispose();
-      }
-
-      if (context.mounted) {
-        Navigator.pop(context, _asRef);
-      }
     }
   }
 
@@ -634,6 +537,32 @@ enum WalletCreateStep {
   threshold,
 }
 
+/// Shows a fullscreen dialog instructing the user to unplug all currently
+/// connected devices. Returns when every device that was connected at call
+/// time has been disconnected. No-op if nothing is connected.
+Future<void> showUnplugDevicesDialog(BuildContext context) async {
+  final deviceListUpdate = await GlobalStreams.deviceListSubject.first;
+  final connectedDevices = deviceListUpdate.state.devices;
+  if (connectedDevices.isEmpty) return;
+
+  final controller = FullscreenActionDialogController<void>(
+    context: context,
+    devices: connectedDevices.map((d) => d.id).toList(),
+    title: 'Wallet created!',
+    body: (context) =>
+        Text('Unplug devices to continue', textAlign: TextAlign.center),
+    actionButtons: [
+      DeviceActionHint(label: 'Unplug devices', icon: Icons.usb_off),
+    ],
+    onDismissed: () {},
+  );
+  try {
+    await controller.awaitDismissed();
+  } finally {
+    controller.dispose();
+  }
+}
+
 class WalletCreatePage extends StatefulWidget {
   const WalletCreatePage({super.key});
 
@@ -646,6 +575,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   static const sectionPadding = EdgeInsets.fromLTRB(16, 16, 16, 24);
   late WalletCreateController _controller;
   final _upgradeController = DeviceActionUpgradeController();
+  bool _keygenInFlight = false;
 
   @override
   void initState() {
@@ -967,20 +897,178 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final form = _controller.form;
     final totalCount = form.selectedDevices.length;
     assert(totalCount > 0);
-    final recommended = max((totalCount * 2 / 3).toInt(), 1);
-    form.threshold ??= recommended;
+    // `form.threshold` is seeded by `WalletCreateController.next()` when it
+    // transitions into the threshold step; just read it here.
     return SliverList.list(
       children: [
         ThresholdSelector(
           threshold: form.threshold!,
           totalDevices: totalCount,
-          recommendedThreshold: recommended,
+          recommendedThreshold: recommendedThresholdFor(totalCount),
           onChanged: (value) => setState(() => form.threshold = value),
         ),
         if (!_controller.allWalletDevicesConnected)
           buildDisconnectedWarningCard(context),
       ],
     );
+  }
+
+  /// Runs the full keygen flow: starts the Rust keygen stream, pumps each
+  /// state into the controller (for reactive rebuilds of the dialog body
+  /// and footer), shows the Final-check alert when all devices have ack'd,
+  /// and on a matching code finalizes the keygen and pops the page with
+  /// the resulting AccessStructureRef.
+  ///
+  /// This lives on the page (not `WalletCreateController.next()`) because
+  /// the keygen step is driven directly by the "Generate keys" button —
+  /// advancing past the threshold step IS running keygen. `next()` has no
+  /// threshold case; the button skips `next()` and calls this instead.
+  Future<void> _beginThresholdKeygen(BuildContext context) async {
+    if (_keygenInFlight) return;
+    setState(() => _keygenInFlight = true);
+    try {
+      final form = _controller.form;
+      final selectedDevices = form.selectedDevices.toList();
+      final stream = coord
+          .generateNewKey(
+            threshold: form.threshold!,
+            devices: selectedDevices,
+            keyName: form.name!,
+            network: form.network,
+          )
+          .toBehaviorSubject();
+
+      // Dismiss any leftover keygen dialog from a previous attempt before
+      // spinning up a new one. Awaits the dismissal animation so the new
+      // dialog doesn't stack on top of the old one.
+      final previous = _controller._keygenController;
+      _controller._keygenController = null;
+      await previous?.clearAllActionsNeeded();
+      previous?.dispose();
+
+      final keygenController = _controller._buildKeygenController(
+        context,
+        selectedDevices,
+      );
+      _controller._keygenController = keygenController;
+
+      try {
+        await for (final state in stream) {
+          _controller._keygenState = state;
+          _controller.notifyListeners();
+
+          for (final id in state.sessionAcks) {
+            await keygenController.removeActionNeeded(id);
+          }
+
+          if (state.aborted != null) {
+            await _controller.resetKeygenState(coord.deviceListState().devices);
+            return;
+          }
+
+          if (!state.allAcks) continue;
+
+          final keygenCodeMatches =
+              await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) {
+                  final theme = Theme.of(context);
+                  return BackdropFilter(
+                    filter: blurFilter,
+                    child: AlertDialog(
+                      title: Text('Final check'),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 16,
+                        children: [
+                          Text('Do all devices show this code?'),
+                          Card.filled(
+                            child: Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 16,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '${form.threshold}-of-${form.selectedDevices.length}',
+                                      style: theme.textTheme.labelLarge,
+                                    ),
+                                    Text(
+                                      _controller.keygenChecksum,
+                                      style: theme.textTheme.headlineLarge
+                                          ?.copyWith(
+                                            fontFamily:
+                                                monospaceTextStyle.fontFamily,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      actionsAlignment: MainAxisAlignment.spaceBetween,
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: Text('No'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: Text('Yes'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ) ??
+              false;
+          if (!keygenCodeMatches) {
+            _controller._keygenState = null;
+            _controller.notifyListeners();
+            return;
+          }
+
+          try {
+            final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+            final asRef = await coord.finalizeKeygen(
+              keygenId: state.keygenId,
+              encryptionKey: encryptionKey,
+            );
+            _controller._asRef = asRef;
+            if (context.mounted) Navigator.pop(context, asRef);
+          } catch (e) {
+            _controller._keygenState = null;
+            _controller.notifyListeners();
+            if (context.mounted) {
+              showErrorSnackbar(context, 'Failed to finalize keygen: $e');
+            }
+          }
+          return;
+        }
+      } finally {
+        // Only dispose if we're still the active keygen controller. The
+        // field could have been nulled out from under us by
+        // `WalletCreateController.dispose()` or by a follow-up call to
+        // `_beginThresholdKeygen` that swapped in a fresh controller.
+        if (identical(_controller._keygenController, keygenController)) {
+          _controller._keygenController = null;
+          keygenController.dispose();
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _keygenInFlight = false);
+      } else {
+        _keygenInFlight = false;
+      }
+    }
   }
 
   Widget buildDisconnectedWarningCard(BuildContext context) => Card.outlined(
@@ -1150,9 +1238,19 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: FilledButton(
-                      onPressed: _controller.canGoNext
-                          ? () => _controller.next(context)
-                          : null,
+                      onPressed:
+                          !_controller.canGoNext ||
+                              (_controller.step == WalletCreateStep.threshold &&
+                                  _keygenInFlight)
+                          ? null
+                          : () {
+                              if (_controller.step ==
+                                  WalletCreateStep.threshold) {
+                                _beginThresholdKeygen(context);
+                              } else {
+                                _controller.next(context);
+                              }
+                            },
                       child: Text(
                         _controller.nextText ?? 'Next',
                         softWrap: false,

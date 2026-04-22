@@ -67,6 +67,16 @@ impl DeviceList {
         update
     }
 
+    /// Read-only snapshot of the current state. Unlike `take_update`, this
+    /// does not drain the outbox — use it when you only need the current
+    /// device set and don't want to steal pending changes from subscribers.
+    pub fn state(&self) -> api::DeviceListState {
+        api::DeviceListState {
+            devices: self.devices(),
+            state_id: self.state_counter,
+        }
+    }
+
     pub fn consume_manager_event(&mut self, change: DeviceChange) {
         match change {
             DeviceChange::Connected {

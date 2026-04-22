@@ -12,17 +12,39 @@ import 'package:frostsnap/src/rust/api/coordinator.dart';
 class DeviceActionBackupController with ChangeNotifier {
   final AccessStructure accessStructure;
 
-  late final FullscreenActionDialogController<bool> _dialogController;
+  FullscreenActionDialogController<bool>? _dialogController;
 
-  // Currently active device.
-  DeviceId? get activeDeviceId => _dialogController.actionsNeeded.firstOrNull;
+  DeviceId? get activeDeviceId => _dialogController?.actionsNeeded.firstOrNull;
 
   String? get walletName => coord
       .getFrostKey(keyId: accessStructure.accessStructureRef().keyId)
       ?.keyName();
 
-  DeviceActionBackupController({required this.accessStructure}) {
-    _dialogController = FullscreenActionDialogController(
+  DeviceActionBackupController({required this.accessStructure});
+
+  @override
+  void dispose() {
+    _dialogController?.dispose();
+    super.dispose();
+  }
+
+  void _onCancel() {
+    coord.cancelProtocol();
+  }
+
+  Future<bool> show(BuildContext context, DeviceId id) async {
+    final exists = accessStructure.devices().any((v) => deviceIdEquals(v, id));
+    if (!exists) return false;
+    final connected =
+        (await GlobalStreams.deviceListSubject.first).state.getDevice(id: id) !=
+        null;
+    if (!connected) return false;
+
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+
+    final controller = FullscreenActionDialogController<bool>(
+      context: context,
+      devices: [id],
       title: 'Record key backup',
       body: (context) {
         final theme = Theme.of(context);
@@ -103,54 +125,35 @@ class DeviceActionBackupController with ChangeNotifier {
       ],
       onDismissed: _onCancel,
     );
-  }
+    _dialogController = controller;
 
-  @override
-  void dispose() async {
-    _dialogController.dispose();
-    super.dispose();
-  }
+    try {
+      bool isComplete = false;
+      await for (final state in coord.displayBackup(
+        id: id,
+        accessStructureRef: accessStructure.accessStructureRef(),
+        encryptionKey: encryptionKey,
+      )) {
+        if (state.confirmed) {
+          isComplete = true;
+          final accessStructureRef = accessStructure.accessStructureRef();
+          final shareIndex = accessStructure.getDeviceShortShareIndex(
+            deviceId: id,
+          )!;
+          await coord.markBackupComplete(
+            accessStructureRef: accessStructureRef,
+            shareIndex: shareIndex,
+          );
+        }
 
-  void _onCancel() {
-    coord.cancelProtocol();
-  }
-
-  Future<bool> show(BuildContext context, DeviceId id) async {
-    final exists = accessStructure.devices().any((v) => deviceIdEquals(v, id));
-    if (!exists) return false;
-    final connected =
-        (await GlobalStreams.deviceListSubject.first).state.getDevice(id: id) !=
-        null;
-    if (!connected) return false;
-
-    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    await _dialogController.clearAllActionsNeeded();
-    final _ = _dialogController.addActionNeeded(context, id)!;
-
-    bool isComplete = false;
-    await for (final state in coord.displayBackup(
-      id: id,
-      accessStructureRef: accessStructure.accessStructureRef(),
-      encryptionKey: encryptionKey,
-    )) {
-      if (state.confirmed) {
-        isComplete = true;
-        final accessStructureRef = accessStructure.accessStructureRef();
-        final shareIndex = accessStructure.getDeviceShortShareIndex(
-          deviceId: id,
-        )!;
-        await coord.markBackupComplete(
-          accessStructureRef: accessStructureRef,
-          shareIndex: shareIndex,
-        );
+        if (state.closeDialog) break;
       }
 
-      if (state.closeDialog) {
-        break;
-      }
+      await controller.removeActionNeeded(id);
+      return isComplete;
+    } finally {
+      if (_dialogController == controller) _dialogController = null;
+      controller.dispose();
     }
-
-    await _dialogController.removeActionNeeded(id);
-    return isComplete;
   }
 }

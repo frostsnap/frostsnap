@@ -33,13 +33,14 @@ class EnterBackupView extends StatefulWidget with TitledWidget {
 class _EnterBackupViewState extends State<EnterBackupView> {
   late final FullscreenActionDialogController<void> _backupController;
   StreamSubscription? _subscription;
-  bool _dialogShown = false;
 
   @override
   void initState() {
     super.initState();
 
-    _backupController = FullscreenActionDialogController(
+    _backupController = FullscreenActionDialogController<void>(
+      context: context,
+      devices: [widget.targetDevice.id],
       title: 'Enter Physical Backup',
       body: (context) {
         final theme = Theme.of(context);
@@ -115,13 +116,6 @@ class _EnterBackupViewState extends State<EnterBackupView> {
       if (state.abort != null) {
         await _backupController.clearAllActionsNeeded();
         widget.onError?.call(state.abort!);
-      }
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_dialogShown && mounted) {
-        _dialogShown = true;
-        _backupController.addActionNeeded(context, widget.targetDevice.id);
       }
     });
   }

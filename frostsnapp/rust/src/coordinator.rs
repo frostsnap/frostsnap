@@ -919,7 +919,7 @@ impl FfiCoordinator {
     }
 
     pub fn device_list_state(&self) -> api::device_list::DeviceListState {
-        self.device_list.lock().unwrap().take_update().state
+        self.device_list.lock().unwrap().state()
     }
 
     pub fn get_connected_device(&self, id: DeviceId) -> Option<api::device_list::ConnectedDevice> {

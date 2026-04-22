@@ -77,6 +77,8 @@ pub trait ActiveSignSessionExt {
     fn state(&self) -> SigningState;
     #[frb(sync)]
     fn details(&self) -> SigningDetails;
+    #[frb(sync)]
+    fn access_structure_ref(&self) -> AccessStructureRef;
 }
 
 impl ActiveSignSessionExt for ActiveSignSession {
@@ -138,6 +140,11 @@ impl ActiveSignSessionExt for ActiveSignSession {
             }
         };
         res
+    }
+
+    #[frb(sync)]
+    fn access_structure_ref(&self) -> AccessStructureRef {
+        ActiveSignSession::access_structure_ref(self)
     }
 }
 
