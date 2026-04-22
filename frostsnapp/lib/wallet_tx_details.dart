@@ -541,68 +541,79 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     );
   }
 
-  Widget buildSignaturesNeededColumn(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      ListTile(
-        title: Text('Signatures Needed'),
-        subtitle: Text('Connect a device to sign'),
-        trailing: Stack(
-          alignment: AlignmentDirectional.center,
-          children: [
-            CircularProgressIndicator(
-              value:
-                  (signingState?.gotShares.length ?? 0) /
-                  (signingState?.neededFrom.length ?? 1),
-              backgroundColor: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest,
-              strokeCap: StrokeCap.round,
-            ),
-            Text(
-              '${signingState?.gotShares.length}/${signingState?.neededFrom.length}',
-            ),
-          ],
-        ),
-      ),
-      ...((signingState?.neededFrom) ?? []).map((deviceId) {
-        final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
-        final isConnected = connectedDevices.contains(deviceId);
-        final Widget trailing;
-        if (signingState!.gotShares.any(
-          (gotSharesFrom) => deviceIdEquals(deviceId, gotSharesFrom),
-        )) {
-          trailing = AnimatedCheckCircle();
-        } else {
-          trailing = Text(
-            isConnected ? 'Requesting Signature' : '',
-            style: TextStyle(
-              color: isConnected ? Theme.of(context).colorScheme.primary : null,
-            ),
-          );
-        }
-        return ListTile(
-          enabled: isConnected,
-          title: Text(deviceName),
-          trailing: trailing,
-        );
-      }),
-      Divider(height: 0.0),
-      Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 4.0, horizontal: 12.0),
-          child: TextButton(
-            onPressed: () async => showCancelSigningDialog(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: Text('Cancel'),
+  Widget buildSignaturesNeededColumn(BuildContext context) {
+    final theme = Theme.of(context);
+    final asRef = widget.signingParams?.accessStructureRef;
+    final accessStruct = asRef != null
+        ? coord.getAccessStructure(asRef: asRef)
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          title: Text('Signatures Needed'),
+          subtitle: Text('Connect a device to sign'),
+          trailing: Stack(
+            alignment: AlignmentDirectional.center,
+            children: [
+              CircularProgressIndicator(
+                value:
+                    (signingState?.gotShares.length ?? 0) /
+                    (signingState?.neededFrom.length ?? 1),
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                strokeCap: StrokeCap.round,
+              ),
+              Text(
+                '${signingState?.gotShares.length}/${signingState?.neededFrom.length}',
+              ),
+            ],
           ),
         ),
-      ),
-    ],
-  );
+        ...((signingState?.neededFrom) ?? []).map((deviceId) {
+          final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
+          final isConnected = connectedDevices.contains(deviceId);
+          final shareIndex = accessStruct?.getDeviceShortShareIndex(
+            deviceId: deviceId,
+          );
+          final label = shareIndex != null
+              ? '#$shareIndex $deviceName'
+              : deviceName;
+          final Widget trailing;
+          if (signingState!.gotShares.any(
+            (gotSharesFrom) => deviceIdEquals(deviceId, gotSharesFrom),
+          )) {
+            trailing = AnimatedCheckCircle();
+          } else {
+            trailing = Text(
+              isConnected ? 'Requesting Signature' : '',
+              style: TextStyle(
+                color: isConnected ? theme.colorScheme.primary : null,
+              ),
+            );
+          }
+          return ListTile(
+            enabled: isConnected,
+            title: Text(label),
+            trailing: trailing,
+          );
+        }),
+        Divider(height: 0.0),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 4.0, horizontal: 12.0),
+            child: TextButton(
+              onPressed: () async => showCancelSigningDialog(context),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.error,
+              ),
+              child: Text('Cancel'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget buildBroadcastNeededColumn(BuildContext context) {
     final psbt = this.psbt;
@@ -655,28 +666,29 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   Widget buildSignAndBroadcastCard(BuildContext context) {
     final theme = Theme.of(context);
+    final signingActive = widget.signingParams != null;
+    final signingColumn = Card.filled(
+      margin: EdgeInsets.all(0.0),
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: buildSignaturesNeededColumn(context),
+    );
     return AnimatedCrossFade(
-      firstChild: AnimatedGradientBorder(
-        stretchAlongAxis: true,
-        borderSize: 1.0,
-        glowSize: 5.0,
-        animationTime: 6,
-        borderRadius: BorderRadius.circular(12.0),
-        gradientColors: [
-          theme.colorScheme.outlineVariant,
-          theme.colorScheme.primary,
-          theme.colorScheme.secondary,
-          theme.colorScheme.tertiary,
-        ],
-        child: (Widget child) {
-          final theme = Theme.of(context);
-          return Card.filled(
-            margin: EdgeInsets.all(0.0),
-            color: theme.colorScheme.surfaceContainerHigh,
-            child: child,
-          );
-        }(buildSignaturesNeededColumn(context)),
-      ),
+      firstChild: signingActive
+          ? AnimatedGradientBorder(
+              stretchAlongAxis: true,
+              borderSize: 1.0,
+              glowSize: 5.0,
+              animationTime: 6,
+              borderRadius: BorderRadius.circular(12.0),
+              gradientColors: [
+                theme.colorScheme.outlineVariant,
+                theme.colorScheme.primary,
+                theme.colorScheme.secondary,
+                theme.colorScheme.tertiary,
+              ],
+              child: signingColumn,
+            )
+          : signingColumn,
       secondChild: Card.filled(
         color: Colors.transparent,
         margin: EdgeInsets.all(0.0),
@@ -869,6 +881,36 @@ Widget buildDetailsColumn(
                 title: SatoshiText(value: info.amount, showSign: false),
                 onTap: () =>
                     copyAction(context, 'Recipient amount', '${info.amount}'),
+              ),
+            ],
+          );
+        }),
+      if (!txDetails.isSend)
+        ...txDetails.tx.recipients().where((info) => info.isMine).map((info) {
+          final address = info.address(network: walletCtx.network)?.toString();
+          final idx = info.derivationIndex;
+          return Column(
+            children: [
+              ListTile(
+                dense: dense,
+                contentPadding: contentPadding,
+                leading: Text('Received at${idx != null ? ' #$idx' : ''}'),
+                title: Text(
+                  spacedHex(address ?? '<unknown>'),
+                  style: monospaceTextStyle,
+                  textAlign: TextAlign.end,
+                ),
+                onTap: address == null
+                    ? null
+                    : () => copyAction(context, 'Receiving address', address),
+              ),
+              ListTile(
+                dense: dense,
+                contentPadding: contentPadding,
+                leading: Text('\u2570 Amount'),
+                title: SatoshiText(value: info.amount, showSign: false),
+                onTap: () =>
+                    copyAction(context, 'Received amount', '${info.amount}'),
               ),
             ],
           );

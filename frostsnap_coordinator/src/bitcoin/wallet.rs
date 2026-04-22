@@ -19,7 +19,7 @@ use frostsnap_core::{
     tweak::BitcoinAccount,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::RangeBounds,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -123,10 +123,14 @@ impl CoordSuperWallet {
     }
 
     pub fn is_spk_mine(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> bool {
+        self.spk_index(master_appkey, spk).is_some()
+    }
+
+    pub fn spk_index(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> Option<u32> {
         self.tx_graph
             .index
             .index_of_spk(spk)
-            .is_some_and(|((key, _), _)| *key == master_appkey)
+            .and_then(|((key, _), index)| (*key == master_appkey).then_some(*index))
     }
 
     fn descriptors_for_key(
@@ -325,15 +329,11 @@ impl CoordSuperWallet {
         let mut txs = self
             .tx_graph
             .graph()
-            .list_canonical_txs(
+            .list_ordered_canonical_txs(
                 self.chain.as_ref(),
                 self.chain.tip().block_id(),
                 CanonicalizationParams::default(),
             )
-            .collect::<Vec<_>>();
-
-        txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
-        txs.into_iter()
             .filter_map(|canonical_tx| {
                 let inner = canonical_tx.tx_node.tx.clone();
                 let txid = canonical_tx.tx_node.txid;
@@ -351,9 +351,15 @@ impl CoordSuperWallet {
                     .output
                     .iter()
                     .chain(prevouts.values())
-                    .map(|txout| txout.script_pubkey.clone())
-                    .filter(|spk| self.is_spk_mine(master_appkey, spk.clone()))
-                    .collect::<HashSet<ScriptBuf>>();
+                    .filter_map(|txout| {
+                        let spk = txout.script_pubkey.clone();
+                        self.tx_graph
+                            .index
+                            .index_of_spk(spk.clone())
+                            .filter(|((key, _), _)| *key == master_appkey)
+                            .map(|((_, _), index)| (spk, *index))
+                    })
+                    .collect::<HashMap<ScriptBuf, u32>>();
                 if is_mine.is_empty() {
                     None
                 } else {
@@ -367,7 +373,9 @@ impl CoordSuperWallet {
                     })
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+        txs.reverse();
+        txs
     }
 
     pub fn apply_update(
@@ -901,7 +909,8 @@ pub struct Transaction {
     pub last_seen: Option<u64>,
 
     pub prevouts: HashMap<OutPoint, TxOut>,
-    pub is_mine: HashSet<ScriptBuf>,
+    /// Maps owned script pubkeys to their derivation index.
+    pub is_mine: HashMap<ScriptBuf, u32>,
 }
 
 #[derive(Clone, Debug)]

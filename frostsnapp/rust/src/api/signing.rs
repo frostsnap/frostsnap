@@ -6,7 +6,6 @@ use super::{
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 use anyhow::{anyhow, Result};
 use bitcoin::hex::DisplayHex;
-use bitcoin::ScriptBuf;
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
 pub use frostsnap_core::bitcoin_transaction::TransactionTemplate;
@@ -115,13 +114,13 @@ impl ActiveSignSessionExt for ActiveSignSession {
                 let txid = raw_tx.compute_txid();
                 let is_mine = tx_temp
                     .iter_locally_owned_inputs()
-                    .map(|(_, _, spk)| spk.spk())
+                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index))
                     .chain(
                         tx_temp
                             .iter_locally_owned_outputs()
-                            .map(|(_, _, spk)| spk.spk()),
+                            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index)),
                     )
-                    .collect::<HashSet<_>>();
+                    .collect::<HashMap<_, _>>();
                 let prevouts = tx_temp
                     .inputs()
                     .iter()
@@ -188,9 +187,13 @@ impl UnsignedTx {
                         .get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output))
                         .values(),
                 )
-                .map(|txout| txout.script_pubkey.clone())
-                .filter(|spk| super_wallet.is_spk_mine(master_appkey, spk.clone()))
-                .collect::<HashSet<ScriptBuf>>(),
+                .filter_map(|txout| {
+                    let spk = txout.script_pubkey.clone();
+                    super_wallet
+                        .spk_index(master_appkey, spk.clone())
+                        .map(|index| (spk, index))
+                })
+                .collect::<HashMap<_, _>>(),
             inner: raw_tx,
         }
     }
