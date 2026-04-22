@@ -312,14 +312,13 @@ class WalletCreateController extends ChangeNotifier {
   bool get canGoNext => switch (_step) {
     WalletCreateStep.name =>
       _nameError == null && _nameController.value.text.isNotEmpty,
-    WalletCreateStep.deviceCount =>
+    WalletCreateStep.devices =>
       _deviceList.devices.isNotEmpty &&
           !devicesNeedUpgrade &&
           !devicesUsed &&
-          !devicesIncompatible,
+          !devicesIncompatible &&
+          _deviceList.devices.every((d) => _form.deviceNames.containsKey(d.id)),
     WalletCreateStep.nonceReplenish => false, // Auto-advances, no manual next
-    WalletCreateStep.deviceNames =>
-      allWalletDevicesConnected && _form.allDevicesNamed,
     WalletCreateStep.threshold =>
       allWalletDevicesConnected &&
           _form.threshold != null &&
@@ -347,24 +346,20 @@ class WalletCreateController extends ChangeNotifier {
       case WalletCreateStep.name:
         _form.name = _nameController.text.trim();
         return true;
-      case WalletCreateStep.deviceCount:
+      case WalletCreateStep.devices:
         _form.selectedDevices.clear();
         _form.selectedDevices.addAll(_deviceList.devices.map((dev) => dev.id));
-        // Check if nonces are needed after selecting devices
         final needsNonces = await _shouldShowNonceStep();
         if (needsNonces) {
-          // Prepare the nonce stream for the next step
           final devices = _form.selectedDevices.toList();
           final nonceRequest = await coord.createNonceRequest(devices: devices);
           _nonceStream = coord
               .replenishNonces(nonceRequest: nonceRequest, devices: devices)
               .toBehaviorSubject();
-          _hasAutoAdvanced = false; // Reset for this run
+          _hasAutoAdvanced = false;
         }
         return true;
       case WalletCreateStep.nonceReplenish:
-        return true;
-      case WalletCreateStep.deviceNames:
         return true;
       case WalletCreateStep.threshold:
         // Keygen is driven by `_WalletCreatePageState._beginThresholdKeygen`
@@ -376,7 +371,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 
   void next(BuildContext context) async {
-    if (_step == WalletCreateStep.deviceCount &&
+    if (_step == WalletCreateStep.devices &&
         connectedDeviceCount == 1 &&
         canGoNext) {
       final confirmed = await showDialog<bool>(
@@ -409,22 +404,16 @@ class WalletCreateController extends ChangeNotifier {
       return;
     }
 
-    // Determine next step, potentially skipping nonce replenishment
     WalletCreateStep? nextStep;
-    if (_step == WalletCreateStep.deviceCount) {
-      // Check if we should skip nonce replenishment
+    if (_step == WalletCreateStep.devices) {
       if (_nonceStream == null) {
-        // No nonces needed, skip to device names
-        nextStep = WalletCreateStep.deviceNames;
+        nextStep = WalletCreateStep.threshold;
       } else {
-        // Nonces needed, go to nonce replenishment
         nextStep = WalletCreateStep.nonceReplenish;
       }
     } else if (_step == WalletCreateStep.nonceReplenish) {
-      // After nonce replenishment, go to device names
-      nextStep = WalletCreateStep.deviceNames;
+      nextStep = WalletCreateStep.threshold;
     } else {
-      // Normal progression
       nextStep = WalletCreateStep.values.elementAtOrNull(_step.index + 1);
     }
 
@@ -453,23 +442,15 @@ class WalletCreateController extends ChangeNotifier {
   void back(context) {
     if (!_handleBack(context)) return;
 
-    // Handle back navigation, skipping nonce step
     WalletCreateStep? prevStep;
-    if (_step == WalletCreateStep.deviceNames) {
-      // Always go back to deviceCount from deviceNames, skipping nonce step
-      // since nonce generation is automatic and shouldn't be re-shown
-      prevStep = WalletCreateStep.deviceCount;
-      // Clear nonce stream to allow re-generation if needed
-      _nonceStream = null;
-      _hasAutoAdvanced = false;
-    } else if (_step == WalletCreateStep.nonceReplenish) {
-      // If somehow on nonce step, go back to deviceCount
-      prevStep = WalletCreateStep.deviceCount;
-      // Clear nonce stream
+    if (_step == WalletCreateStep.threshold ||
+        _step == WalletCreateStep.nonceReplenish) {
+      // Skip nonce step on the way back since nonce generation is automatic
+      // and shouldn't be re-shown. Clear the stream so it can be re-generated.
+      prevStep = WalletCreateStep.devices;
       _nonceStream = null;
       _hasAutoAdvanced = false;
     } else {
-      // Normal back navigation
       final prevIndex = _step.index - 1;
       prevStep = WalletCreateStep.values.elementAtOrNull(prevIndex);
     }
@@ -487,31 +468,26 @@ class WalletCreateController extends ChangeNotifier {
 
   String? get nextText => switch (_step) {
     WalletCreateStep.name => null,
-    WalletCreateStep.deviceCount => switch (_deviceList.devices.length) {
+    WalletCreateStep.devices => switch (_deviceList.devices.length) {
       1 => 'Continue with 1 device',
       _ => 'Continue with ${_deviceList.devices.length} devices',
     },
     WalletCreateStep.nonceReplenish => null,
-    WalletCreateStep.deviceNames =>
-      _form.allDevicesNamed ? null : 'Name all devices to continue',
     WalletCreateStep.threshold => 'Generate keys',
   };
 
   String get title => switch (_step) {
     WalletCreateStep.name => 'Name wallet',
-    WalletCreateStep.deviceCount => 'Add devices',
+    WalletCreateStep.devices => 'Add devices',
     WalletCreateStep.nonceReplenish => "Preparing devices",
-    WalletCreateStep.deviceNames => 'Name devices',
     WalletCreateStep.threshold => 'Choose threshold',
   };
 
   String get subtitle => switch (_step) {
     WalletCreateStep.name => 'Choose a name for this wallet',
-    WalletCreateStep.deviceCount =>
-      'Connect all devices you want to hold a key in "${form.name ?? ''}"',
+    WalletCreateStep.devices =>
+      'Connect all devices you want to hold a key in "${form.name ?? ''}".\nGive each a name you will recognise later.',
     WalletCreateStep.nonceReplenish => '',
-    WalletCreateStep.deviceNames =>
-      'Give each device a name you will recognise later.\nTry using the device colour or where it will be stored.',
     WalletCreateStep.threshold => '',
   };
 
@@ -529,13 +505,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 }
 
-enum WalletCreateStep {
-  name,
-  deviceCount,
-  nonceReplenish,
-  deviceNames,
-  threshold,
-}
+enum WalletCreateStep { name, devices, nonceReplenish, threshold }
 
 /// Shows a fullscreen dialog instructing the user to unplug all currently
 /// connected devices. Returns when every device that was connected at call
@@ -621,45 +591,61 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       children: [
         SliverDeviceList(
           deviceBuilder: (context, device) {
-            final eligibility = device.firmwareUpgradeEligibility();
-            return buildDevice(
-              context,
-              device,
-              trailing: device.name != null
-                  ? buildDeviceTrailingInfo(
-                      context,
-                      text: 'Already holds a key',
-                      subText: 'Unplug to continue',
-                      icon: Icons.warning_rounded,
-                      color: Theme.of(context).colorScheme.error,
-                    )
-                  : eligibility.when(
-                      canUpgrade: () => buildDeviceTrailingInfo(
-                        context,
-                        text: 'Old firmware',
-                        subText: "Upgrade to continue",
-                        icon: Icons.system_update_alt_rounded,
-                        color: Colors.orange,
-                      ),
-                      upToDate: () => buildDeviceTrailingInfo(
-                        context,
-                        text: 'Ready',
-                        icon: Icons.check_circle_rounded,
-                        color: Colors.green,
-                      ),
-                      cannotUpgrade: (reason) => buildDeviceTrailingInfo(
-                        context,
-                        text: 'Incompatible firmware',
-                        subText: reason,
-                        icon: Icons.warning_rounded,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-              onPressed: eligibility.when(
-                upToDate: () => null,
-                canUpgrade: () =>
-                    () async => await _upgradeController.run(parentCtx),
-                cannotUpgrade: (_) => null,
+            final cs = Theme.of(context).colorScheme;
+
+            if (device.name != null) {
+              return _deviceRow(
+                context: context,
+                title: Text(
+                  device.name!,
+                  style: monospaceTextStyle.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+                trailing: buildDeviceTrailingInfo(
+                  context,
+                  text: 'Already holds a key',
+                  subText: 'Unplug to continue',
+                  icon: Icons.warning_rounded,
+                  color: cs.error,
+                ),
+                enabled: false,
+              );
+            }
+
+            return device.firmwareUpgradeEligibility().when(
+              upToDate: () => _deviceRow(
+                context: context,
+                title: _inlineNameField(context, device),
+                trailing: Icon(
+                  Icons.edit_rounded,
+                  color: cs.onSurfaceVariant,
+                  size: 20,
+                ),
+              ),
+              canUpgrade: () => _deviceRow(
+                context: context,
+                title: const SizedBox.shrink(),
+                trailing: buildDeviceTrailingInfo(
+                  context,
+                  text: 'Old firmware',
+                  subText: 'Tap to upgrade',
+                  icon: Icons.system_update_alt_rounded,
+                  color: Colors.orange,
+                ),
+                onTap: () async => await _upgradeController.run(parentCtx),
+              ),
+              cannotUpgrade: (reason) => _deviceRow(
+                context: context,
+                title: const SizedBox.shrink(),
+                trailing: buildDeviceTrailingInfo(
+                  context,
+                  text: 'Incompatible firmware',
+                  subText: reason,
+                  icon: Icons.warning_rounded,
+                  color: cs.error,
+                ),
+                enabled: false,
               ),
             );
           },
@@ -727,31 +713,30 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
-  Widget buildDevice(
-    BuildContext context,
-    ConnectedDevice device, {
-    Widget? trailing,
-    double? rightPadding,
-    void Function()? onPressed,
+  Widget _deviceRow({
+    required BuildContext context,
+    required Widget title,
+    required Widget trailing,
+    VoidCallback? onTap,
     bool enabled = true,
   }) {
-    final theme = Theme.of(context);
+    final cs = Theme.of(context).colorScheme;
     return Card.filled(
-      margin: EdgeInsets.symmetric(vertical: 4),
-      color: theme.colorScheme.surfaceContainerHigh,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      color: cs.surfaceContainerHigh,
       clipBehavior: Clip.hardEdge,
       child: ListTile(
-        title: Text(
-          device.name ?? _controller.form.deviceNames[device.id] ?? '',
-          style: monospaceTextStyle,
-        ),
-        leading: Icon(Icons.key),
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: 16,
-        ).copyWith(right: rightPadding),
-        trailing: trailing,
-        onTap: onPressed,
+        onTap: onTap,
         enabled: enabled,
+        leading: Icon(
+          Icons.key,
+          color: enabled
+              ? cs.onSurfaceVariant
+              : cs.onSurfaceVariant.withValues(alpha: 0.5),
+        ),
+        title: title,
+        trailing: trailing,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       ),
     );
   }
@@ -835,61 +820,30 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
-  Widget _buildDeviceForNaming(BuildContext context, ConnectedDevice device) {
-    final form = _controller.form;
-    final isPart = form.selectedDevices.contains(device.id);
-    final currentName = form.deviceNames[device.id] ?? '';
-
-    // obtain or create controller for this device
+  Widget _inlineNameField(BuildContext context, ConnectedDevice device) {
+    final cs = Theme.of(context).colorScheme;
+    final currentName = _controller.form.deviceNames[device.id] ?? '';
     final textController = _nameControllers.putIfAbsent(
       device.id,
       () => TextEditingController(text: currentName),
     );
-
-    // keep text in sync when form updates
     if (textController.text != currentName) {
       textController.text = currentName;
     }
-
-    return Card.filled(
-      margin: EdgeInsets.symmetric(vertical: 4),
-      color: Theme.of(context).colorScheme.surface,
-      clipBehavior: Clip.hardEdge,
-      child: ListTile(
-        leading: Icon(Icons.key),
-        contentPadding: EdgeInsets.symmetric(horizontal: 12),
-        title: TextField(
-          decoration: InputDecoration(
-            hintText: 'Enter device name',
-            border: OutlineInputBorder(
-              borderSide: BorderSide.none,
-              borderRadius: BorderRadius.all(Radius.circular(8)),
-            ),
-            suffixIcon: Icon(Icons.edit_rounded),
-            filled: true,
-          ),
-          maxLength: DeviceName.maxLength(),
-          inputFormatters: [nameInputFormatter],
-          style: monospaceTextStyle,
-          controller: textController,
-          onChanged: isPart
-              ? (name) => _controller.setDeviceName(device.id, name)
-              : null,
-          enabled: isPart,
-        ),
+    return TextField(
+      controller: textController,
+      style: monospaceTextStyle,
+      maxLength: DeviceName.maxLength(),
+      inputFormatters: [nameInputFormatter],
+      decoration: InputDecoration(
+        hintText: 'Enter device name',
+        hintStyle: monospaceTextStyle.copyWith(color: cs.onSurfaceVariant),
+        border: InputBorder.none,
+        isDense: true,
+        contentPadding: EdgeInsets.zero,
+        counterText: '',
       ),
-    );
-  }
-
-  Widget buildNameDevicesBody(BuildContext context) {
-    return MultiSliver(
-      children: [
-        SliverDeviceList(
-          deviceBuilder: (ctx, device) => _buildDeviceForNaming(ctx, device),
-        ),
-        if (!_controller.allWalletDevicesConnected)
-          SliverToBoxAdapter(child: buildDisconnectedWarningCard(context)),
-      ],
+      onChanged: (name) => _controller.setDeviceName(device.id, name),
     );
   }
 
@@ -1128,7 +1082,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           if (mounted) {
             coord.cancelProtocol();
             _controller._nonceStream = null;
-            _controller._step = WalletCreateStep.deviceCount;
+            _controller._step = WalletCreateStep.devices;
             _controller.notifyListeners();
           }
         },
@@ -1140,12 +1094,10 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     switch (_controller.step) {
       case WalletCreateStep.name:
         return buildWalletNameBody(context);
-      case WalletCreateStep.deviceCount:
+      case WalletCreateStep.devices:
         return buildDevicesBody(context);
       case WalletCreateStep.nonceReplenish:
         return buildNonceReplenish(context);
-      case WalletCreateStep.deviceNames:
-        return buildNameDevicesBody(context);
       case WalletCreateStep.threshold:
         return buildThresholdBody(context);
     }
