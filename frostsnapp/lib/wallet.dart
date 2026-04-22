@@ -396,12 +396,14 @@ class _TxListState extends State<TxList> {
                         context,
                         title: Text('Transaction Details'),
                         builder: (context, scrollController) => walletCtx.wrap(
-                          TxDetailsPage.restoreSigning(
+                          TxDetailsPage(
                             scrollController: scrollController,
                             txStates: walletCtx.txStream,
                             txDetails: txDetails,
-                            signingSessionId: signingState.sessionId,
                             psbtMan: fsCtx.psbtManager,
+                            signingParams: TxSigningParams.restore(
+                              sessionId: signingState.sessionId,
+                            ),
                           ),
                         ),
                       ),
@@ -820,12 +822,14 @@ class WalletBottomBar extends StatelessWidget {
         context,
         title: Text('Transaction Details'),
         builder: (context, scrollController) => walletCtx.wrap(
-          TxDetailsPage.restoreSigning(
+          TxDetailsPage(
             scrollController: scrollController,
             txStates: walletCtx.txStream,
             txDetails: txDetails,
-            signingSessionId: session.state().sessionId,
             psbtMan: fsCtx.psbtManager,
+            signingParams: TxSigningParams.restore(
+              sessionId: session.state().sessionId,
+            ),
           ),
         ),
       );

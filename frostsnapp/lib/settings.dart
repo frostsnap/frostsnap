@@ -16,7 +16,6 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
-import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:rxdart/rxdart.dart';
@@ -1210,6 +1209,8 @@ Future<void> _showEraseAllDialog(BuildContext context) async {
   late final FullscreenActionDialogController controller;
 
   controller = FullscreenActionDialogController(
+    context: context,
+    devices: devicesToErase,
     title: 'Erase Multiple Devices',
     body: (context) {
       final theme = Theme.of(context);
@@ -1250,27 +1251,14 @@ Future<void> _showEraseAllDialog(BuildContext context) async {
       ),
       DeviceActionHint(),
     ],
-    onDismissed: () async {
-      await coord.sendCancelAll();
-    },
   );
 
-  // Listen for devices being wiped/disconnected and remove them from action list
-  final subscription = GlobalStreams.deviceListChangeStream.listen((change) {
-    if (change.kind == DeviceListChangeKind.removed) {
-      controller.removeActionNeeded(change.device.id);
-    }
-  });
-
-  // Show dialog and perform erase
-  final dialogFuture = controller.batchAddActionNeeded(context, devicesToErase);
+  // The controller already seeded its action-needed set from `devices:`
+  // above and has pushed the dialog. Fire the erase command, then wait for
+  // the dialog to dismiss — the controller's device-list watcher hides the
+  // dialog as each device confirms the erase, resets, and disconnects.
   await coord.eraseAllDevices();
-
-  // Wait for dialog to dismiss
-  await dialogFuture;
-
-  // Clean up
-  await subscription.cancel();
+  await controller.awaitDismissed();
   controller.dispose();
 }
 

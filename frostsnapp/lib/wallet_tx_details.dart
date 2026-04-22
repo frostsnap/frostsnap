@@ -27,6 +27,63 @@ import 'package:url_launcher/url_launcher.dart';
 
 const BROADCAST_TIMEOUT = Duration(seconds: 3);
 
+enum SigningMode { start, restore }
+
+class TxSigningParams {
+  final SigningMode mode;
+  final AccessStructureRef accessStructureRef;
+  final List<DeviceId> devices;
+  final UnsignedTx? unsignedTx;
+  final SignSessionId? sessionId;
+
+  TxSigningParams._({
+    required this.mode,
+    required this.accessStructureRef,
+    required this.devices,
+    this.unsignedTx,
+    this.sessionId,
+  });
+
+  factory TxSigningParams.start({
+    required AccessStructureRef accessStructureRef,
+    required UnsignedTx unsignedTx,
+    required List<DeviceId> devices,
+  }) => TxSigningParams._(
+    mode: SigningMode.start,
+    accessStructureRef: accessStructureRef,
+    devices: devices,
+    unsignedTx: unsignedTx,
+  );
+
+  /// Hydrates devices + access structure from the active session synchronously
+  /// so callers don't have to wait on a stream to know who the signers are.
+  /// Returns `null` if the session has ended between the caller's null-check
+  /// and this call (e.g. device event on the tap-to-build gap).
+  static TxSigningParams? restore({required SignSessionId sessionId}) {
+    final session = coord.activeSigningSession(sessionId: sessionId);
+    if (session == null) return null;
+    return TxSigningParams._(
+      mode: SigningMode.restore,
+      accessStructureRef: session.accessStructureRef(),
+      devices: session.state().neededFrom,
+      sessionId: sessionId,
+    );
+  }
+
+  Stream<SigningState> startSigning() {
+    switch (mode) {
+      case SigningMode.start:
+        return coord.startSigningTx(
+          accessStructureRef: accessStructureRef,
+          unsignedTx: unsignedTx!,
+          devices: devices,
+        );
+      case SigningMode.restore:
+        return coord.tryRestoreSigningSession(sessionId: sessionId!);
+    }
+  }
+}
+
 class TxDetailsModel {
   /// The raw transaction.
   Transaction tx;
@@ -201,14 +258,11 @@ class TxSentOrReceivedTile extends StatelessWidget {
 class TxDetailsPage extends StatefulWidget {
   final ScrollController? scrollController;
   final TxDetailsModel txDetails;
-  final SignSessionId? signingSessionId;
   final SignSessionId? finishedSigningSessionId;
-  final AccessStructureRef? accessStructureRef;
-  final UnsignedTx? unsignedTx;
-  final List<DeviceId>? devices;
   final Stream<TxState> txStates;
   final PsbtManager psbtMan;
   final Psbt? psbt;
+  final TxSigningParams? signingParams;
 
   const TxDetailsPage({
     super.key,
@@ -216,12 +270,10 @@ class TxDetailsPage extends StatefulWidget {
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
-  }) : signingSessionId = null,
-       finishedSigningSessionId = null,
-       accessStructureRef = null,
-       unsignedTx = null,
-       devices = null,
-       psbt = null;
+    this.signingParams,
+    this.finishedSigningSessionId,
+    this.psbt,
+  });
 
   const TxDetailsPage.needsBroadcast({
     super.key,
@@ -230,41 +282,10 @@ class TxDetailsPage extends StatefulWidget {
     required this.txDetails,
     required this.psbtMan,
     required SignSessionId this.finishedSigningSessionId,
-  }) : signingSessionId = null,
-       accessStructureRef = null,
-       unsignedTx = null,
-       devices = null,
+  }) : signingParams = null,
        psbt = null;
 
-  const TxDetailsPage.restoreSigning({
-    super.key,
-    this.scrollController,
-    required this.txStates,
-    required this.txDetails,
-    required this.psbtMan,
-    required SignSessionId this.signingSessionId,
-  }) : finishedSigningSessionId = null,
-       accessStructureRef = null,
-       unsignedTx = null,
-       devices = null,
-       psbt = null;
-
-  const TxDetailsPage.startSigning({
-    super.key,
-    this.scrollController,
-    required this.txStates,
-    required this.txDetails,
-    required AccessStructureRef this.accessStructureRef,
-    required UnsignedTx this.unsignedTx,
-    required List<DeviceId> this.devices,
-    required this.psbtMan,
-    this.psbt,
-  }) : signingSessionId = null,
-       finishedSigningSessionId = null;
-
-  bool get isRestoreSigning => signingSessionId != null;
-  bool get isStartSigning => accessStructureRef != null && unsignedTx != null;
-  bool get isSigning => isRestoreSigning || isStartSigning;
+  bool get isSigning => signingParams != null;
 
   @override
   State<TxDetailsPage> createState() => _TxDetailsPageState();
@@ -281,11 +302,29 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   Set<DeviceId> connectedDevices = deviceIdSet([]);
   Psbt? psbt;
 
-  late final actionDialogController;
+  FullscreenActionDialogController<void>? actionDialogController;
 
-  bool? get signingDone => signingState == null
-      ? null
-      : signingState!.gotShares.length >= signingState!.neededFrom.length;
+  FullscreenActionDialogController<void> _buildActionDialogController(
+    List<DeviceId> devices,
+  ) {
+    return FullscreenActionDialogController<void>(
+      context: context,
+      devices: devices,
+      title: 'Sign transaction with connected device',
+      actionButtons: [
+        Builder(
+          builder: (context) => OutlinedButton(
+            child: Text('Cancel'),
+            onPressed: _onCancelSigning,
+          ),
+        ),
+        DeviceActionHint(),
+      ],
+      onDismissed: () {},
+    );
+  }
+
+  bool get signingDone => signingState == null || isSigningDone(signingState!);
 
   onTxStateData(TxState data) {
     final tx = data.txs.firstWhereOrNull((tx) => tx.txid == txDetails.tx.txid);
@@ -297,7 +336,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   Future<void> onSigningSessionData(SigningState data) async {
     if (!mounted) return;
 
-    if (!widget.isStartSigning) this.isFirstRun = false;
+    if (widget.signingParams?.mode != SigningMode.start)
+      this.isFirstRun = false;
 
     final signatures = data.finishedSignatures;
 
@@ -321,7 +361,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         );
       }
 
-      if ((widget.isStartSigning && isFirstRun) || signatures != null) {
+      if ((widget.signingParams?.mode == SigningMode.start && isFirstRun) ||
+          signatures != null) {
         isFirstRun = false;
         widget.psbtMan.insert(ssid: data.sessionId, psbt: psbt);
         if (signatures == null) {
@@ -339,10 +380,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       if (psbt != null) this.psbt = psbt;
     });
 
-    actionDialogController.batchAddActionNeeded(
-      context,
-      data.connectedButNeedRequest,
-    );
     final encryptionKey = await SecureKeyProvider.getEncryptionKey();
     data.connectedButNeedRequest.forEach(
       (id) => coord.requestDeviceSign(
@@ -351,7 +388,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         encryptionKey: encryptionKey,
       ),
     );
-    await actionDialogController.batchRemoveActionNeeded(data.gotShares);
+    await actionDialogController?.batchRemoveActionNeeded(data.gotShares);
 
     return null;
   }
@@ -366,9 +403,14 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     }
   }
 
-  void _onCancelSigning() {
-    if (signingDone ?? false) return;
-    Navigator.popUntil(context, (r) => r.isFirst);
+  void _onCancelSigning() async {
+    if (signingDone) return;
+    // Dismiss the fullscreen sign dialog first — otherwise the controller
+    // would reshow it as soon as it notices a target device still connected.
+    // Then pop this page; `dispose()` handles the Rust-side protocol cancel.
+    await actionDialogController?.clearAllActionsNeeded();
+    if (!mounted) return;
+    Navigator.pop(context);
   }
 
   @override
@@ -376,7 +418,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     super.initState();
 
     txDetails = widget.txDetails;
-    ssid = widget.signingSessionId ?? widget.finishedSigningSessionId;
+    ssid = widget.finishedSigningSessionId;
     psbt = widget.psbt;
     // Attempt to get psbt elsewhere.
     if (psbt == null && ssid != null) {
@@ -388,43 +430,25 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     txStateSub = widget.txStates.listen(onTxStateData);
 
-    actionDialogController = FullscreenActionDialogController(
-      title: 'Sign transaction with connected device',
-      actionButtons: [
-        Builder(
-          builder: (context) => OutlinedButton(
-            child: Text('Cancel'),
-            onPressed: _onCancelSigning,
-          ),
-        ),
-        DeviceActionHint(),
-      ],
-      onDismissed: () {},
-    );
-
     try {
-      if (widget.isSigning) {
+      final signingParams = widget.signingParams;
+      if (signingParams != null) {
+        // `devices` is invariant for both start and restore — for restore we
+        // hydrated it synchronously from the active session. Seed the dialog
+        // controller up front so we never go through the lazy / nullable
+        // pattern mid-stream.
+        actionDialogController = _buildActionDialogController(
+          signingParams.devices,
+        );
         devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
         broadcastDone = false;
-        if (widget.isRestoreSigning) {
-          signingSub = coord
-              .tryRestoreSigningSession(sessionId: widget.signingSessionId!)
-              .listen(onSigningSessionData);
-        } else if (widget.isStartSigning) {
-          late final StreamSubscription<SigningState> sub;
-          sub = coord
-              .startSigningTx(
-                accessStructureRef: widget.accessStructureRef!,
-                unsignedTx: widget.unsignedTx!,
-                devices: widget.devices!,
-              )
-              .listen((state) {
-                // Ensure `onSigningSessionData` is called sequentially.
-                sub.pause();
-                onSigningSessionData(state).whenComplete(sub.resume);
-              });
-          signingSub = sub;
-        }
+        late final StreamSubscription<SigningState> sub;
+        sub = signingParams.startSigning().listen((state) {
+          // Ensure `onSigningSessionData` is called sequentially.
+          sub.pause();
+          onSigningSessionData(state).whenComplete(sub.resume);
+        });
+        signingSub = sub;
       }
     } catch (e) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -443,7 +467,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       signingSub = null;
     }
     txStateSub.cancel();
-    actionDialogController.dispose();
+    actionDialogController?.dispose();
     super.dispose();
   }
 
@@ -503,7 +527,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 firstChild: buildActionsRow(context),
                 secondChild: buildSignAndBroadcastCard(context),
                 crossFadeState:
-                    ((signingDone ?? true) &&
+                    (signingDone &&
                         (broadcastDone ?? txDetails.tx.timestamp() != null))
                     ? CrossFadeState.showFirst
                     : CrossFadeState.showSecond,
@@ -596,7 +620,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           ),
         Flexible(
           child: FilledButton(
-            onPressed: (signingDone ?? true && !isBroadcasting)
+            onPressed: (signingDone && !isBroadcasting)
                 ? () => broadcast(context)
                 : null,
             child: Text('Broadcast'),
@@ -658,7 +682,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         margin: EdgeInsets.all(0.0),
         child: buildBroadcastNeededColumn(context),
       ),
-      crossFadeState: (signingDone ?? true)
+      crossFadeState: signingDone
           ? CrossFadeState.showSecond
           : CrossFadeState.showFirst,
       duration: Durations.medium3,
@@ -787,7 +811,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                 label: Text('Show PSBT'),
                 onPressed: () => showExportPsbtDialog(context, psbt),
               ),
-            if (!txDetails.isConfirmed && (signingDone ?? true))
+            if (!txDetails.isConfirmed && signingDone)
               ActionChip(
                 avatar: Icon(Icons.publish),
                 label: Text('Rebroadcast'),

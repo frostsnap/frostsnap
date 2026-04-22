@@ -1,21 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:frostsnap/device_action_name.dart';
 
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
 
-enum DeviceNameMode {
-  /// The name field renames the device and prompts the user for confirmation.
-  rename,
-
-  /// The name field stages the device name and persists it after keygen finalizes.
-  preview,
-}
-
 class DeviceNameField extends StatefulWidget {
   final DeviceId id;
-  final DeviceNameMode mode;
   final String? initialValue;
   final Function(String)? onNamed;
   final Function(bool)? onCanSubmitChanged;
@@ -24,7 +14,6 @@ class DeviceNameField extends StatefulWidget {
   const DeviceNameField({
     super.key,
     required this.id,
-    required this.mode,
     this.initialValue,
     this.onNamed,
     this.onCanSubmitChanged,
@@ -37,7 +26,6 @@ class DeviceNameField extends StatefulWidget {
 
 class DeviceNameFieldState extends State<DeviceNameField> {
   final TextEditingController _controller = TextEditingController();
-  final _renameController = DeviceActionNameDialogController();
 
   @override
   void initState() {
@@ -62,7 +50,6 @@ class DeviceNameFieldState extends State<DeviceNameField> {
   @override
   void dispose() {
     _controller.dispose();
-    _renameController.dispose();
     super.dispose();
   }
 
@@ -71,18 +58,7 @@ class DeviceNameFieldState extends State<DeviceNameField> {
   void _handleSubmitted(BuildContext context) {
     final name = _controller.text.trim();
     if (name.isEmpty) return;
-
-    switch (widget.mode) {
-      case DeviceNameMode.rename:
-        _renameController.show(
-          context: context,
-          id: widget.id,
-          name: name,
-          onNamed: widget.onNamed,
-        );
-      case DeviceNameMode.preview:
-        widget.onNamed?.call(name);
-    }
+    widget.onNamed?.call(name);
   }
 
   @override
