@@ -5,7 +5,7 @@ use esp_hal::prelude::*;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
 use frostsnap_widgets::{
-    backup::{BackupDisplay, EnterShareScreen},
+    backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     debug::OverlayDebug,
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
@@ -319,7 +319,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             Workflow::DisplayBackup {
                 key_name: _,
                 backup,
-                access_structure_ref,
+                access_structure_ref: _,
             } => {
                 let word_indices = backup.to_word_indices();
                 let share_index: u16 = backup
@@ -329,7 +329,28 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 let backup_display = BackupDisplay::new(word_indices, share_index);
                 WidgetTree::DisplayBackup {
                     widget: Box::new(backup_display),
-                    access_structure_ref: Some(access_structure_ref),
+                    fired: false,
+                }
+            }
+
+            Workflow::CheckBackup {
+                key_name: _,
+                backup,
+                access_structure_ref,
+                rand_seed,
+            } => {
+                let word_indices = backup.to_word_indices();
+                let share_index = backup.index();
+                let display_share_index: u16 = share_index
+                    .try_into()
+                    .expect("Share index should fit in u16");
+                let check_backup =
+                    CheckBackupScreen::new(word_indices, display_share_index, rand_seed);
+                WidgetTree::CheckBackup {
+                    widget: Box::new(check_backup),
+                    access_structure_ref,
+                    share_index,
+                    fired: false,
                 }
             }
 
@@ -446,17 +467,28 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 *confirmed = true;
                 return Some(UiEvent::UpgradeConfirm);
             }
-            WidgetTree::DisplayBackup {
-                widget,
-                access_structure_ref,
-            } => {
-                if !widget.is_finished() {
+            WidgetTree::DisplayBackup { widget, fired } => {
+                if !widget.is_finished() || *fired {
                     return None;
                 }
-                if let Some(access_structure_ref_data) = access_structure_ref.take() {
-                    return Some(UiEvent::BackupRecorded {
-                        access_structure_ref: access_structure_ref_data,
+                *fired = true;
+                return Some(UiEvent::BackupRecorded);
+            }
+            WidgetTree::CheckBackup {
+                widget,
+                access_structure_ref,
+                share_index,
+                fired,
+            } => {
+                if widget.is_verified() && !*fired {
+                    *fired = true;
+                    return Some(UiEvent::BackupChecked {
+                        access_structure_ref: *access_structure_ref,
+                        share_index: *share_index,
                     });
+                }
+                if *fired && widget.is_finished() {
+                    self.go_to_default();
                 }
             }
             WidgetTree::EnterBackup { widget, phase } => {

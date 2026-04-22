@@ -366,6 +366,7 @@ type ScreenContent = crate::any_of::AnyOf<(QuizPage, SuccessContent)>;
 
 const TITLE_TOP_PAD: u32 = 8;
 const TITLE_GAP: u32 = 6;
+const SUCCESS_DWELL_MS: u64 = 1800;
 
 pub struct CheckBackupScreen {
     word_indices: [u16; 25],
@@ -419,6 +420,14 @@ impl CheckBackupScreen {
         if let (Some(completed_since), Some(now)) = (self.completed_since, self.current_time) {
             let elapsed = now.saturating_duration_since(completed_since);
             return elapsed >= 1000;
+        }
+        false
+    }
+
+    pub fn is_finished(&self) -> bool {
+        if let (Some(completed_since), Some(now)) = (self.completed_since, self.current_time) {
+            let elapsed = now.saturating_duration_since(completed_since);
+            return elapsed >= SUCCESS_DWELL_MS;
         }
         false
     }

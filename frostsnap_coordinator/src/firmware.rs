@@ -5,12 +5,15 @@ use frostsnap_comms::{Sha256Digest, FIRMWARE_UPGRADE_CHUNK_LEN};
 pub struct FirmwareFeatures {
     /// Device supports firmware digest verification without signature block
     pub upgrade_digest_no_sig: bool,
+    /// Device supports the check backup quiz workflow
+    pub check_backup: bool,
 }
 
 impl FirmwareFeatures {
     pub const fn all() -> Self {
         Self {
             upgrade_digest_no_sig: true,
+            check_backup: true,
         }
     }
 }
@@ -317,9 +320,11 @@ impl VersionNumber {
 
     pub fn features(&self) -> FirmwareFeatures {
         const V0_0_1: VersionNumber = VersionNumber::new(0, 0, 1);
+        const V0_3_0: VersionNumber = VersionNumber::new(0, 3, 0);
 
         FirmwareFeatures {
             upgrade_digest_no_sig: *self > V0_0_1,
+            check_backup: *self >= V0_3_0,
         }
     }
 }

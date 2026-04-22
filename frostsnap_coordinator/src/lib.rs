@@ -1,4 +1,5 @@
 pub mod backup_run;
+pub mod check_backup;
 pub mod display_backup;
 pub mod enter_physical_backup;
 pub mod erase_device;

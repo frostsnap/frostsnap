@@ -119,6 +119,9 @@ pub trait AccessStructureExt {
     fn short_id(&self) -> String;
 
     #[frb(sync)]
+    fn get_device_share_index(&self, device_id: DeviceId) -> Option<ShareIndex>;
+
+    #[frb(sync)]
     fn get_device_short_share_index(&self, device_id: DeviceId) -> Option<u32>;
 }
 
@@ -126,6 +129,11 @@ impl AccessStructureExt for AccessStructure {
     #[frb(sync)]
     fn short_id(&self) -> String {
         self.access_structure_id().to_string().split_off(8)
+    }
+
+    #[frb(sync)]
+    fn get_device_share_index(&self, device_id: DeviceId) -> Option<ShareIndex> {
+        self.device_to_share_indicies().get(&device_id).copied()
     }
 
     #[frb(sync)]

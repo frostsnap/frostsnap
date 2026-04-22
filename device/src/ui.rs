@@ -5,6 +5,7 @@ use frostsnap_comms::{DeviceName, Sha256Digest};
 use frostsnap_core::{
     device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
     message::HeldShare2,
+    schnorr_fun::frost::ShareIndex,
     tweak::BitcoinBip32Path,
     AccessStructureRef,
 };
@@ -89,6 +90,12 @@ pub enum Workflow {
     EraseProgress {
         progress: Frac,
     },
+    CheckBackup {
+        key_name: String,
+        backup: ShareBackup,
+        access_structure_ref: AccessStructureRef,
+        rand_seed: u32,
+    },
 }
 
 impl Workflow {
@@ -147,9 +154,11 @@ pub enum UiEvent {
         phase: EnterBackupPhase,
         share_backup: ShareBackup,
     },
-    BackupRecorded {
-        access_structure_ref: AccessStructureRef,
-    },
+    BackupRecorded,
     UpgradeConfirm,
     EraseDataConfirm,
+    BackupChecked {
+        access_structure_ref: AccessStructureRef,
+        share_index: ShareIndex,
+    },
 }

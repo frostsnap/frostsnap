@@ -7,12 +7,13 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
 
 class DeviceActionBackupCheckController with ChangeNotifier {
   final AccessStructure accessStructure;
 
-  FullscreenActionDialogController<bool>? _dialogController;
+  FullscreenActionDialogController<CheckBackupState>? _dialogController;
 
   DeviceId? get activeDeviceId => _dialogController?.actionsNeeded.firstOrNull;
 
@@ -28,18 +29,20 @@ class DeviceActionBackupCheckController with ChangeNotifier {
     super.dispose();
   }
 
-  Future<bool?> show(BuildContext context, DeviceId id) async {
+  Future<CheckBackupState?> show(BuildContext context, DeviceId id) async {
     final exists = accessStructure.devices().any((v) => deviceIdEquals(v, id));
-    if (!exists) return false;
+    if (!exists) return null;
     final connected =
         (await GlobalStreams.deviceListSubject.first).state.getDevice(id: id) !=
         null;
-    if (!connected) return false;
+    if (!connected) return null;
 
     final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final shareIndex = accessStructure.getDeviceShareIndex(deviceId: id);
+    if (shareIndex == null) return null;
 
-    late final FullscreenActionDialogController<bool> controller;
-    controller = FullscreenActionDialogController<bool>(
+    late final FullscreenActionDialogController<CheckBackupState> controller;
+    controller = FullscreenActionDialogController<CheckBackupState>(
       context: context,
       devices: [id],
       title: 'Check Backup on Device',
@@ -63,37 +66,34 @@ class DeviceActionBackupCheckController with ChangeNotifier {
           child: Text('Cancel'),
           onPressed: () => controller.clearAllActionsNeeded(),
         ),
-        DeviceActionHint(label: 'Enter backup on device'),
+        DeviceActionHint(label: 'Complete quiz on device'),
       ],
     );
     _dialogController = controller;
 
     try {
-      final (phase, isCancelled) = await select([
+      final (state, isCancelled) = await select([
         coord
-            .tellDeviceToEnterPhysicalBackup(deviceId: id)
+            .tellDeviceToCheckBackup(
+              deviceId: id,
+              accessStructureRef: accessStructure.accessStructureRef(),
+              shareIndex: shareIndex,
+              encryptionKey: encryptionKey,
+            )
             .last
-            .then((s) => (s.entered, true)),
+            .then((s) => (s, true)),
         controller.awaitDismissed().then((_) => (null, false)),
       ], catchError: (_) => (null, true));
 
-      print('phase=$phase, isConnected=$isCancelled');
-
-      if (phase == null) {
+      if (state == null) {
         await coord.cancelProtocol();
         await controller.removeActionNeeded(id);
         if (!isCancelled) return null;
-        return false;
+        return null;
       }
 
-      final checkOk = coord.checkPhysicalBackup(
-        accessStructureRef: accessStructure.accessStructureRef(),
-        phase: phase,
-        encryptionKey: encryptionKey,
-      );
-
       await controller.removeActionNeeded(id);
-      return checkOk;
+      return state;
     } finally {
       if (_dialogController == controller) _dialogController = null;
       controller.dispose();
