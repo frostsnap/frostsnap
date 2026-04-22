@@ -34,7 +34,7 @@ pub struct Begin {
     pub threshold: u16,
     pub key_name: String,
     pub purpose: KeyPurpose,
-    pub coordinator_public_key: Point,
+    pub coordinator_public_keys: Vec<Point>,
 }
 
 impl From<Begin> for Keygen {

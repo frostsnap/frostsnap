@@ -147,7 +147,7 @@ pub struct KeyGenPhase1 {
     pub threshold: u16,
     pub key_name: String,
     pub key_purpose: KeyPurpose,
-    pub coordinator_public_key: Point,
+    coordinator_public_keys: Vec<Point>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -158,7 +158,7 @@ pub struct KeyGenPhase2 {
     agg_input: certpedpop::AggKeygenInput,
     key_name: String,
     key_purpose: KeyPurpose,
-    pub coordinator_public_key: Point,
+    coordinator_public_keys: Vec<Point>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -407,11 +407,14 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                                 )
                             })?;
 
+                    let n_coordinators = begin.coordinator_public_keys.len() as u32;
+                    let input_gen_index = u32::from(*my_index) - 1 + n_coordinators;
+
                     let (input_state, keygen_input) = certpedpop::Contributor::gen_keygen_input(
                         &schnorr,
                         begin.threshold as u32,
                         &share_receivers_enckeys,
-                        (*my_index).into(),
+                        input_gen_index,
                         rng,
                     );
                     self.tmp_keygen_phase1.insert(
@@ -422,7 +425,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             threshold: begin.threshold,
                             key_name: begin.key_name.clone(),
                             key_purpose: begin.purpose,
-                            coordinator_public_key: begin.coordinator_public_key,
+                            coordinator_public_keys: begin.coordinator_public_keys,
                         },
                     );
                     Ok(vec![DeviceSend::ToCoordinator(Box::new(
@@ -497,7 +500,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                             agg_input,
                             key_name: phase1.key_name.clone(),
                             key_purpose: phase1.key_purpose,
-                            coordinator_public_key: phase1.coordinator_public_key,
+                            coordinator_public_keys: phase1.coordinator_public_keys,
                         },
                     );
                     Ok(vec![DeviceSend::ToCoordinator(Box::new(
@@ -526,7 +529,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     let mut certifier = certpedpop::Certifier::new(
                         cert_scheme,
                         phase2.agg_input.clone(),
-                        &[phase2.coordinator_public_key],
+                        &phase2.coordinator_public_keys,
                     );
 
                     // Add all certificates to the certifier
