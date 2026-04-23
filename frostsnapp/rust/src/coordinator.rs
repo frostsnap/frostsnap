@@ -605,7 +605,24 @@ impl FfiCoordinator {
     }
 
     pub fn cancel_protocol(&self) {
-        if self.ui_stack.lock().unwrap().cancel_all() {
+        // HACK: cancel_protocol only tears down the UI-side protocol wrapper.
+        // For keygen we also need to clear FrostCoordinator::pending_keygens,
+        // otherwise an in-flight device response (Certify/Ack) arriving after
+        // cancel will cause the core to emit a follow-up keygen message that
+        // races the wire Cancel and panics the device. The proper fix is to
+        // replace cancel_protocol with per-protocol handles that own their
+        // own cancel logic; until then we introspect the stack here.
+        let mut coordinator = self.coordinator.lock().unwrap();
+        let mut ui_stack = self.ui_stack.lock().unwrap();
+        let keygen_id = ui_stack
+            .get_mut::<frostsnap_coordinator::keygen::KeyGen>()
+            .map(|k| k.keygen_id());
+        if ui_stack.cancel_all() {
+            if let Some(keygen_id) = keygen_id {
+                coordinator.MUTATE_NO_PERSIST().cancel_keygen(keygen_id);
+            }
+            drop(ui_stack);
+            drop(coordinator);
             self.usb_sender.send_cancel_all();
         }
     }

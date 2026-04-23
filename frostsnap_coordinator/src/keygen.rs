@@ -71,6 +71,10 @@ impl KeyGen {
         self.state.finished = Some(as_ref);
         self.emit_state()
     }
+
+    pub fn keygen_id(&self) -> KeygenId {
+        self.state.keygen_id
+    }
 }
 
 impl UiProtocol for KeyGen {
