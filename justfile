@@ -177,6 +177,40 @@ run +ARGS="": maybe-gen
     cd frostsnapp && FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 \
       flutter run $FLAVOR_FLAG --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
+# Run two app instances with separate data directories for multi-coordinator testing.
+# Pass 'a' or 'b' to start only that instance, or omit for both (a in foreground, b in background).
+run-dual INSTANCE="": maybe-gen
+    #!/bin/sh
+    set -e
+    just env={{env}} build-firmware-signed
+    BUILD_COMMIT=$(just get-build-commit)
+    BUILD_VERSION=$(just get-build-version)
+    DART_DEFINES="--dart-define=BUILD_COMMIT=$BUILD_COMMIT --dart-define=BUILD_VERSION=$BUILD_VERSION"
+    case "$(uname -s)" in
+        Darwin)
+            FLUTTER_TARGET=macos
+            BG_BINARY=frostsnapp/build/macos/Build/Products/Debug/Frostsnap.app/Contents/MacOS/Frostsnap
+            ;;
+        Linux)
+            FLUTTER_TARGET=linux
+            BG_BINARY=frostsnapp/build/linux/x64/debug/bundle/Frostsnap
+            ;;
+        *)
+            echo "run-dual: unsupported platform $(uname -s)" >&2
+            exit 1
+            ;;
+    esac
+    # Build once so the background instance can use the binary directly
+    (cd frostsnapp && FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 flutter build "$FLUTTER_TARGET" --debug $DART_DEFINES)
+    case "{{INSTANCE}}" in
+        a) cd frostsnapp && exec env FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 flutter run -d "$FLUTTER_TARGET" $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-a" ;;
+        b) cd frostsnapp && exec env FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 flutter run -d "$FLUTTER_TARGET" $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-b" ;;
+        *)
+            "$BG_BINARY" --data-dir="$HOME/tmp/frostsnap-b" &
+            cd frostsnapp && exec env FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 flutter run -d "$FLUTTER_TARGET" $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-a"
+            ;;
+    esac
+
 # Run the app with unsigned legacy firmware (for legacy devices)
 legacy-run +ARGS="": maybe-gen
     #!/bin/sh

@@ -1,15 +1,10 @@
-use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::device::KeyPurpose;
+use frostsnap_core::test::{RunSingleCoordinator as Run, TestEnv, TEST_ENCRYPTION_KEY};
 use frostsnap_core::{EnterPhysicalId, WireSignTask};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::Schnorr;
 use std::collections::BTreeSet;
-
-mod common;
-mod env;
-use crate::common::Run;
-use crate::env::TestEnv;
 
 #[test]
 fn restore_2_of_3_with_physical_backups_propagates_threshold() {
@@ -536,9 +531,10 @@ fn delete_share_and_recover_then_sign() {
         .unwrap();
 
     for &device_id in &signing_set2 {
-        let sign_req =
-            run.coordinator
-                .request_device_sign(session_id2, device_id, TEST_ENCRYPTION_KEY);
+        let sign_req = run
+            .coordinator
+            .request_device_sign(session_id2, device_id, TEST_ENCRYPTION_KEY)
+            .unwrap();
         run.extend(sign_req);
     }
     run.run_until_finished(&mut env, &mut test_rng).unwrap();

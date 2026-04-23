@@ -432,6 +432,7 @@ impl<B: Gist> Gist for DeviceSendMessage<B> {
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum DeviceSendBody {
     Core(frostsnap_core::message::DeviceToCoordinatorMessage),
     Debug {

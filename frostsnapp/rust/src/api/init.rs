@@ -1,5 +1,6 @@
 use super::{
-    coordinator::Coordinator, log::LogLevel, psbt_manager::PsbtManager, settings::Settings,
+    coordinator::Coordinator, log::LogLevel, nostr::NostrSettings, psbt_manager::PsbtManager,
+    settings::Settings,
 };
 use crate::{
     coordinator::FfiCoordinator,
@@ -131,8 +132,10 @@ fn load_internal(
 
     let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
     let coordinator = Coordinator(coordinator);
+
     let app_state = AppCtx {
-        settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir)?),
+        settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir.clone())?),
+        nostr_settings: RustAutoOpaque::new(NostrSettings::new(db.clone(), app_dir)?),
         psbt_manager: RustAutoOpaque::new(PsbtManager::new(db.clone())),
     };
     println!("loaded db");
@@ -142,6 +145,7 @@ fn load_internal(
 
 pub struct AppCtx {
     pub settings: RustAutoOpaque<Settings>,
+    pub nostr_settings: RustAutoOpaque<NostrSettings>,
     pub psbt_manager: RustAutoOpaque<PsbtManager>,
 }
 

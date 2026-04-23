@@ -10,6 +10,7 @@ crate-type = ["cdylib", "staticlib"]
 anyhow = "1"
 frostsnap_coordinator = { workspace = true }
 frostsnap_core = { workspace = true }
+frostsnap_nostr = { workspace = true }
 lazy_static = "1.4"
 tracing-subscriber = { version = "0.3" }
 tracing = { workspace = true, features = ["std"] }

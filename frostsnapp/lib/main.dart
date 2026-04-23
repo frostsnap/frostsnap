@@ -14,6 +14,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
 import 'package:frostsnap/settings.dart';
@@ -26,8 +27,10 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/init.dart';
 import 'package:frostsnap/src/rust/api/log.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
+import 'package:frostsnap/wallet_add.dart';
+import 'package:app_links/app_links.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   // enable this if you're trying to figure out why things are displaying in
   // certain positions/sizes
   debugPaintSizeEnabled = false;
@@ -57,8 +60,17 @@ Future<void> main() async {
   AppCtx? appCtx;
 
   try {
-    final appDir = await getApplicationSupportDirectory();
-    final appDirPath = appDir.path;
+    final String appDirPath;
+    final dataDirArg = args
+        .where((a) => a.startsWith('--data-dir='))
+        .firstOrNull;
+    if (dataDirArg != null) {
+      appDirPath = dataDirArg.substring('--data-dir='.length);
+      await Directory(appDirPath).create(recursive: true);
+    } else {
+      final appDir = await getApplicationSupportDirectory();
+      appDirPath = appDir.path;
+    }
     if (Platform.isAndroid) {
       final (coord_, appCtx_, ffiserial) = await api.loadHostHandlesSerial(
         appDir: appDirPath,
@@ -132,7 +144,10 @@ Widget buildMainWidget(AppCtx appCtx, Stream<String> logStream) {
     logStream: logStream,
     child: SettingsContext(
       settings: appCtx.settings,
-      child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
+      child: NostrContext(
+        nostrSettings: appCtx.nostrSettings,
+        child: SuperWalletContext(appCtx: appCtx, child: MyApp()),
+      ),
     ),
   );
 }
@@ -213,6 +228,8 @@ class _MyHomePageState extends State<MyHomePage> {
   late final GlobalKey<ScaffoldState> scaffoldKey;
   late final WalletListController walletListController;
   late final ConfettiController confettiController;
+  late final AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSub;
 
   @override
   void initState() {
@@ -222,10 +239,35 @@ class _MyHomePageState extends State<MyHomePage> {
       keyStream: GlobalStreams.keyStateSubject,
     );
     confettiController = ConfettiController(duration: Duration(seconds: 4));
+    _appLinks = AppLinks();
+    _initDeepLinks();
+  }
+
+  void _initDeepLinks() {
+    _linkSub = _appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    });
+    _appLinks.getInitialLink().then((uri) {
+      if (uri != null) _handleDeepLink(uri);
+    });
+  }
+
+  void _handleDeepLink(Uri uri) {
+    if (uri.scheme != 'frostsnap' || uri.host != 'channel') return;
+    final path = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '';
+    if (path.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      WalletAddColumn.showJoinFromLinkDialog(
+        context,
+        initialLink: 'frostsnap://channel/$path',
+      );
+    });
   }
 
   @override
   void dispose() {
+    _linkSub?.cancel();
     confettiController.dispose();
     walletListController.dispose();
     super.dispose();

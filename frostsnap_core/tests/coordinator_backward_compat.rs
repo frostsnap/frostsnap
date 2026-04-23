@@ -3,8 +3,11 @@ mod common;
 
 use frostsnap_core::coordinator::{
     keys::KeyMutation,
+    remote_signing::{
+        RemoteSignSession, RemoteSignSessionId, RemoteSignStatus, RemoteSigningMutation,
+    },
     restoration::{PendingConsolidation, RestorationMutation},
-    signing::SigningMutation,
+    signing::{ParticipantSignatureShares, SigningMutation},
     ActiveSignSession, CompleteKey, CoordAccessStructure, Mutation, SignSessionProgress, StartSign,
 };
 use frostsnap_core::device::KeyPurpose;
@@ -137,7 +140,7 @@ fn test_all_coordinator_mutations() {
     let active_sign_session = ActiveSignSession {
         progress: vec![sign_session_progress],
         init: StartSign {
-            nonces: {
+            local_nonces: {
                 let mut nonces = BTreeMap::new();
                 // Add some device nonce states
                 nonces.insert(
@@ -197,6 +200,8 @@ fn test_all_coordinator_mutations() {
 
     // Create EncodedSignature
     let encoded_sig = EncodedSignature([14u8; 64]);
+
+    let test_nonce = binonce::Nonce([g!(30 * G).normalize(), g!(31 * G).normalize()]);
 
     // Create all mutation variants we want to test
     let mutations = vec![
@@ -283,7 +288,9 @@ fn test_all_coordinator_mutations() {
             device_id: DeviceId([6u8; 33]),
             nonce_segment,
         }),
-        Mutation::Signing(SigningMutation::NewSigningSession(active_sign_session)),
+        Mutation::Signing(SigningMutation::NewSigningSession(
+            active_sign_session.clone(),
+        )),
         Mutation::Signing(SigningMutation::SentSignReq {
             session_id: SignSessionId([12u8; 32]),
             device_id: DeviceId([6u8; 33]),
@@ -299,6 +306,43 @@ fn test_all_coordinator_mutations() {
         }),
         Mutation::Signing(SigningMutation::ForgetFinishedSignSession {
             session_id: SignSessionId([12u8; 32]),
+        }),
+        Mutation::RemoteSigning(RemoteSigningMutation::NewRemoteSignSession {
+            id: RemoteSignSessionId::from_binonces(&[test_nonce]),
+            device_id: DeviceId([6u8; 33]),
+            session: RemoteSignSession {
+                access_structure_ref: AccessStructureRef {
+                    key_id: KeyId([3u8; 32]),
+                    access_structure_id: AccessStructureId([4u8; 32]),
+                },
+                sign_task: WireSignTask::Test {
+                    message: "test message for signing".to_string(),
+                },
+                binonces: vec![test_nonce],
+                nonce_state: CoordNonceStreamState {
+                    stream_id: NonceStreamId([7u8; 16]),
+                    index: 3,
+                    remaining: 10,
+                },
+                status: RemoteSignStatus::Open,
+            },
+        }),
+        Mutation::RemoteSigning(RemoteSigningMutation::UseRemoteSignSession {
+            id: RemoteSignSessionId::from_binonces(&[test_nonce]),
+            device_id: DeviceId([6u8; 33]),
+            sign_session_id: SignSessionId([12u8; 32]),
+            active: active_sign_session.clone(),
+        }),
+        Mutation::RemoteSigning(RemoteSigningMutation::CompleteSigning {
+            id: RemoteSignSessionId::from_binonces(&[test_nonce]),
+            device_id: DeviceId([6u8; 33]),
+            shares: ParticipantSignatureShares {
+                share_index: s!(1).public(),
+                signature_shares: vec![s!(15).public().mark_zero()],
+            },
+        }),
+        Mutation::RemoteSigning(RemoteSigningMutation::CancelRemoteSignSession {
+            id: RemoteSignSessionId::from_binonces(&[test_nonce]),
         }),
     ];
 
@@ -427,6 +471,30 @@ fn test_all_coordinator_mutations() {
                     mutation,
                     "0207010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202020103030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000102fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af01020108746573745f6b657901010001"
                 );
+            }
+            Mutation::RemoteSigning(RemoteSigningMutation::NewRemoteSignSession { .. }) => {
+                let encoded =
+                    bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
+                let hex = frostsnap_core::hex::encode(&encoded);
+                assert_bincode_hex_eq!(mutation, &hex);
+            }
+            Mutation::RemoteSigning(RemoteSigningMutation::UseRemoteSignSession { .. }) => {
+                let encoded =
+                    bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
+                let hex = frostsnap_core::hex::encode(&encoded);
+                assert_bincode_hex_eq!(mutation, &hex);
+            }
+            Mutation::RemoteSigning(RemoteSigningMutation::CompleteSigning { .. }) => {
+                let encoded =
+                    bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
+                let hex = frostsnap_core::hex::encode(&encoded);
+                assert_bincode_hex_eq!(mutation, &hex);
+            }
+            Mutation::RemoteSigning(RemoteSigningMutation::CancelRemoteSignSession { .. }) => {
+                let encoded =
+                    bincode::encode_to_vec(&mutation, bincode::config::standard()).unwrap();
+                let hex = frostsnap_core::hex::encode(&encoded);
+                assert_bincode_hex_eq!(mutation, &hex);
             }
         }
     }

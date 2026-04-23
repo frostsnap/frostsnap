@@ -10,10 +10,12 @@ pub mod keygen;
 pub mod log;
 pub mod name;
 pub mod nonce_replenish;
+pub mod nostr;
 pub mod port;
 pub mod psbt_manager;
 pub mod qr;
 pub mod recovery;
+pub mod remote_keygen;
 pub mod settings;
 pub mod signing;
 pub mod super_wallet;
@@ -29,7 +31,7 @@ pub use frostsnap_core::{
 };
 
 #[frb(mirror(KeygenId))]
-pub struct _KeygenId(pub [u8; 16]);
+pub struct _KeygenId(pub [u8; 32]);
 
 #[frb(mirror(AccessStructureId))]
 pub struct _AccessStructureId(pub [u8; 32]);
@@ -79,4 +81,12 @@ use bitcoin::BitcoinNetwork;
 impl KeyPurpose {
     #[frb(sync)]
     pub fn bitcoin_network(&self) -> Option<BitcoinNetwork> {}
+}
+
+/// Build a `KeyPurpose::Test` from Dart (the variant is opaque in FRB,
+/// so Dart can't construct it directly). Used by the remote-keygen
+/// lobby while the production purpose story settles.
+#[frb(sync)]
+pub fn key_purpose_test() -> KeyPurpose {
+    KeyPurpose::Test
 }

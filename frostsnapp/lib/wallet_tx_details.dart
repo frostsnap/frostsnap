@@ -70,7 +70,7 @@ class TxSigningParams {
     );
   }
 
-  Stream<SigningState> startSigning() {
+  Future<SigningSessionHandle> startSigning() {
     switch (mode) {
       case SigningMode.start:
         return coord.startSigningTx(
@@ -297,6 +297,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   late final StreamSubscription<TxState> txStateSub;
   StreamSubscription<DeviceListUpdate>? devicesSub;
   StreamSubscription<SigningState>? signingSub;
+  SigningSessionHandle? signingHandle;
   SigningState? signingState;
   bool? broadcastDone;
   Set<DeviceId> connectedDevices = deviceIdSet([]);
@@ -381,13 +382,12 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     });
 
     final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    data.connectedButNeedRequest.forEach(
-      (id) => coord.requestDeviceSign(
-        deviceId: id,
-        sessionId: data.sessionId,
-        encryptionKey: encryptionKey,
-      ),
-    );
+    final handle = signingHandle;
+    if (handle != null) {
+      for (final id in data.connectedButNeedRequest) {
+        handle.requestDeviceSign(deviceId: id, encryptionKey: encryptionKey);
+      }
+    }
     await actionDialogController?.batchRemoveActionNeeded(data.gotShares);
 
     return null;
@@ -430,28 +430,40 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     txStateSub = widget.txStates.listen(onTxStateData);
 
+    final signingParams = widget.signingParams;
+    if (signingParams != null) {
+      // `devices` is invariant for both start and restore — for restore we
+      // hydrated it synchronously from the active session. Seed the dialog
+      // controller up front so we never go through the lazy / nullable
+      // pattern mid-stream.
+      actionDialogController = _buildActionDialogController(
+        signingParams.devices,
+      );
+      devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
+      broadcastDone = false;
+      _startSigningSession(signingParams);
+    }
+  }
+
+  Future<void> _startSigningSession(TxSigningParams signingParams) async {
     try {
-      final signingParams = widget.signingParams;
-      if (signingParams != null) {
-        // `devices` is invariant for both start and restore — for restore we
-        // hydrated it synchronously from the active session. Seed the dialog
-        // controller up front so we never go through the lazy / nullable
-        // pattern mid-stream.
-        actionDialogController = _buildActionDialogController(
-          signingParams.devices,
-        );
-        devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
-        broadcastDone = false;
-        late final StreamSubscription<SigningState> sub;
-        sub = signingParams.startSigning().listen((state) {
-          // Ensure `onSigningSessionData` is called sequentially.
-          sub.pause();
-          onSigningSessionData(state).whenComplete(sub.resume);
-        });
-        signingSub = sub;
+      final handle = await signingParams.startSigning();
+      if (!mounted) {
+        handle.cancel();
+        return;
       }
+      signingHandle = handle;
+      late final StreamSubscription<SigningState> sub;
+      sub = handle.subState().start().listen((state) {
+        // Ensure `onSigningSessionData` is called sequentially.
+        sub.pause();
+        onSigningSessionData(state).whenComplete(sub.resume);
+      });
+      signingSub = sub;
     } catch (e) {
+      if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         showErrorSnackbar(context, e.toString());
         Navigator.popUntil(context, (r) => r.isFirst);
       });
