@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
 
 void showMessageSnackbar(
@@ -44,11 +44,10 @@ void showErrorSnackbar(BuildContext context, String errorMessage) {
     context,
     errorMessage,
     action: () {
-      Clipboard.setData(ClipboardData(text: errorMessage));
       rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar(
         reason: SnackBarClosedReason.action,
       );
-      showMessageSnackbar(context, 'Copied to clipboard');
+      copyToClipboardQuietly(errorMessage);
     },
     actionText: 'Copy',
   );

@@ -1,10 +1,9 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/snackbar.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 
@@ -229,15 +228,13 @@ Future<void> showExceptionDialog(
           ),
         ),
         actions: [
-          TextButton.icon(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: errorMessage));
-              if (context.mounted) {
-                showMessageSnackbar(context, 'Error message copied');
-              }
-            },
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy'),
+          CopyTapTarget(
+            data: errorMessage,
+            builder: (ctx, onCopy, checked) => TextButton.icon(
+              onPressed: onCopy,
+              icon: CopyIcon(checked: checked),
+              label: const Text('Copy'),
+            ),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),

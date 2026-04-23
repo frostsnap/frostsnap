@@ -3,12 +3,12 @@ import 'dart:io' show Platform;
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/access_structures.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/bullet_list.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
@@ -559,19 +559,13 @@ class _ExportDescriptorPageState extends State<ExportDescriptorPage>
                     ),
                   ),
                   SizedBox(height: 16.0),
-                  ElevatedButton.icon(
-                    icon: Icon(Icons.copy),
-                    label: Text('Copy to Clipboard'),
-                    onPressed: () {
-                      Clipboard.setData(
-                        ClipboardData(text: widget.walletDescriptor),
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Descriptor copied to clipboard'),
-                        ),
-                      );
-                    },
+                  CopyTapTarget(
+                    data: widget.walletDescriptor,
+                    builder: (ctx, onCopy, checked) => ElevatedButton.icon(
+                      icon: CopyIcon(checked: checked),
+                      label: Text('Copy to Clipboard'),
+                      onPressed: onCopy,
+                    ),
                   ),
                 ],
               ),
@@ -1313,23 +1307,12 @@ class AboutPage extends StatelessWidget {
                 defaultValue: 'unknown',
               );
 
-              return ListTile(
+              return CopyListTile(
+                data: buildVersion == 'unknown' ? null : buildVersion,
                 leading: Icon(Icons.info_outline),
                 title: Text('App version'),
                 subtitle: Text(buildVersion, style: monospaceTextStyle),
-                trailing: buildVersion != 'unknown'
-                    ? Icon(Icons.copy, size: 20)
-                    : null,
-                onTap: buildVersion != 'unknown'
-                    ? () {
-                        Clipboard.setData(ClipboardData(text: buildVersion));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Copied version to clipboard'),
-                          ),
-                        );
-                      }
-                    : null,
+                showCopyIcon: true,
               );
             },
           ),
@@ -1338,9 +1321,9 @@ class AboutPage extends StatelessWidget {
               final firmwareVersion =
                   coord.upgradeFirmwareVersionName() ?? "No firmware bundled";
               final firmwareHash = coord.upgradeFirmwareDigest();
-              final canCopy = firmwareHash != null;
 
-              return ListTile(
+              return CopyListTile(
+                data: firmwareHash,
                 leading: Icon(Icons.memory),
                 title: Text('Bundled firmware version'),
                 subtitle: Column(
@@ -1357,17 +1340,7 @@ class AboutPage extends StatelessWidget {
                     ],
                   ],
                 ),
-                trailing: canCopy ? Icon(Icons.copy, size: 20) : null,
-                onTap: canCopy
-                    ? () {
-                        Clipboard.setData(ClipboardData(text: firmwareHash));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Copied firmware hash to clipboard'),
-                          ),
-                        );
-                      }
-                    : null,
+                showCopyIcon: true,
               );
             },
           ),
@@ -1396,22 +1369,18 @@ class AboutPage extends StatelessWidget {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                ListTile(
-                                  leading: Icon(Icons.copy),
-                                  title: Text('Copy commit hash'),
-                                  onTap: () {
-                                    Clipboard.setData(
-                                      ClipboardData(text: buildCommit),
-                                    );
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Copied commit hash to clipboard',
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                CopyTapTarget(
+                                  data: buildCommit,
+                                  builder: (ctx, onCopy, checked) => ListTile(
+                                    leading: CopyIcon(checked: checked),
+                                    title: Text('Copy commit hash'),
+                                    onTap: onCopy == null
+                                        ? null
+                                        : () {
+                                            onCopy();
+                                            Navigator.pop(context);
+                                          },
+                                  ),
                                 ),
                                 ListTile(
                                   leading: Icon(Icons.open_in_new),

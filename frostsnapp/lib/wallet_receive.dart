@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
@@ -210,6 +211,8 @@ class _ReceiverPageState extends State<ReceivePage> {
   bool verificationSuccess = false;
 
   ReceivePageFocus _focus = ReceivePageFocus.share;
+  bool _copyJustHit = false;
+  Timer? _copyRevertTimer;
   ReceivePageFocus get focus => _focus;
   set focus(ReceivePageFocus v) {
     if (v == _focus || _address == null) return;
@@ -340,6 +343,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     _verifyStreamSub?.cancel();
     txStreamSub.cancel();
     _fullscreenDialogController?.dispose();
+    _copyRevertTimer?.cancel();
     super.dispose();
   }
 
@@ -421,9 +425,33 @@ class _ReceiverPageState extends State<ReceivePage> {
                 child: FilledButton.tonalIcon(
                   onPressed: _address == null
                       ? null
-                      : () => copyAddress(context, _address!),
-                  label: Text('Copy'),
-                  icon: Icon(Icons.copy_rounded),
+                      : () async {
+                          const beforeVerify = Duration(milliseconds: 300);
+                          // Outlasts beforeVerify + cross-fade to avoid mid-transition flip.
+                          const copyRevert = Duration(milliseconds: 800);
+                          setState(() => _copyJustHit = true);
+                          _copyRevertTimer?.cancel();
+                          _copyRevertTimer = Timer(copyRevert, () {
+                            if (mounted) {
+                              setState(() => _copyJustHit = false);
+                            }
+                          });
+                          await copyToClipboardQuietly(
+                            _address!.address.toString(),
+                          );
+                          if (!mounted) return;
+                          markAddressShared(context, _address!);
+                          await Future.delayed(beforeVerify);
+                          if (!mounted) return;
+                          focus = ReceivePageFocus.verify;
+                        },
+                  label: Text(_copyJustHit ? 'Copied' : 'Copy'),
+                  icon: Icon(
+                    _copyJustHit ? Icons.check_rounded : Icons.copy_rounded,
+                    color: _copyJustHit
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
                 ),
               ),
               Expanded(
@@ -642,12 +670,6 @@ class _ReceiverPageState extends State<ReceivePage> {
     final walletCtx = WalletContext.of(context)!;
     await walletCtx.wallet.markAddressShared(address.index);
     updateToIndex(address.index);
-  }
-
-  void copyAddress(BuildContext context, AddressInfo address) {
-    copyAction(context, 'AddressInfo', address.address.toString());
-    markAddressShared(context, address);
-    focus = ReceivePageFocus.verify;
   }
 
   void showAddressQr(BuildContext context, AddressInfo address) async {

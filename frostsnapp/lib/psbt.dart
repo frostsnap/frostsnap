@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/sign_message.dart';
@@ -294,26 +295,12 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
                 SizedBox(height: 20),
                 showQr,
                 SizedBox(height: 20),
-                IconButton(
-                  icon: Icon(Icons.content_copy),
-                  onPressed: () {
-                    Clipboard.setData(
-                      ClipboardData(
-                        text: psbt
-                            .serialize()
-                            .map(
-                              (byte) => byte.toRadixString(16).padLeft(2, '0'),
-                            )
-                            .join(),
-                      ),
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error message copied to clipboard!'),
-                      ),
-                    );
-                  },
-                  tooltip: 'Copy to Clipboard',
+                CopyIconButton(
+                  data: psbt
+                      .serialize()
+                      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+                      .join(),
+                  icon: Icons.content_copy,
                 ),
               ],
             ),
