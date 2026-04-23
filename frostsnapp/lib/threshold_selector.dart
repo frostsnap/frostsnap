@@ -31,6 +31,7 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
   late final AnimationController _numberController;
   late final AnimationController _idleController;
   late final AnimationController _sparkleController;
+  late final AnimationController _dragController;
 
   // Ring pulse: which threshold value to animate the ring at
   int _ringPulseTarget = 0;
@@ -68,6 +69,12 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
+
+    _dragController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+      reverseDuration: const Duration(milliseconds: 260),
+    );
   }
 
   @override
@@ -88,6 +95,7 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
     _numberController.dispose();
     _idleController.dispose();
     _sparkleController.dispose();
+    _dragController.dispose();
     super.dispose();
   }
 
@@ -192,6 +200,7 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
                 _pulseController,
                 _idleController,
                 _sparkleController,
+                _dragController,
               ]),
               builder: (context, _) {
                 return CustomPaint(
@@ -204,10 +213,12 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
                     idlePhase: _idleController.value,
                     ringPulseProgress: _sparkleController.value,
                     ringPulseTarget: _ringPulseTarget,
+                    dragOpacity: Curves.easeOut.transform(
+                      _dragController.value,
+                    ),
                     primaryColor: colorScheme.primary,
                     secondaryColor: colorScheme.secondary,
                     tertiaryColor: colorScheme.tertiary,
-                    surfaceColor: colorScheme.surfaceContainerHighest,
                     outlineColor: colorScheme.outlineVariant,
                     brightness: theme.brightness,
                   ),
@@ -237,6 +248,8 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
                   min: 1,
                   max: n.toDouble(),
                   divisions: max(n - 1, 1),
+                  onChangeStart: (_) => _dragController.forward(),
+                  onChangeEnd: (_) => _dragController.reverse(),
                   onChanged: (value) {
                     final intValue = value.toInt();
                     if (intValue != widget.threshold) {
@@ -363,10 +376,10 @@ class _TrackPainter extends CustomPainter {
   final double idlePhase;
   final double ringPulseProgress;
   final int ringPulseTarget;
+  final double dragOpacity;
   final Color primaryColor;
   final Color secondaryColor;
   final Color tertiaryColor;
-  final Color surfaceColor;
   final Color outlineColor;
   final Brightness brightness;
 
@@ -379,10 +392,10 @@ class _TrackPainter extends CustomPainter {
     required this.idlePhase,
     required this.ringPulseProgress,
     required this.ringPulseTarget,
+    required this.dragOpacity,
     required this.primaryColor,
     required this.secondaryColor,
     required this.tertiaryColor,
-    required this.surfaceColor,
     required this.outlineColor,
     required this.brightness,
   });
@@ -458,35 +471,15 @@ class _TrackPainter extends CustomPainter {
       );
     }
 
-    // Notches
-    for (int i = 1; i <= n; i++) {
-      final x = notchX(i);
-      final isActive = i <= threshold;
-
-      const dotRadius = 6.0;
-      final center = Offset(x, trackY);
-
-      if (isActive) {
-        final glowPaint = Paint()
-          ..color = primaryColor.withValues(alpha: 0.25)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 4.0);
-        canvas.drawCircle(center, dotRadius + 2, glowPaint);
-
-        final dotPaint = Paint()
-          ..color = primaryColor.withValues(alpha: 0.85)
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(center, dotRadius, dotPaint);
-      } else {
-        final ringPaint = Paint()
-          ..color = outlineColor.withValues(alpha: 0.5)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0;
-        canvas.drawCircle(center, dotRadius, ringPaint);
-
-        final fillPaint = Paint()
-          ..color = surfaceColor.withValues(alpha: 0.4)
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(center, dotRadius, fillPaint);
+    // Drag-time marker dots on all notches except the current (thumb covers it).
+    if (dragOpacity > 0) {
+      const markerRadius = 2.0;
+      final markerPaint = Paint()
+        ..color = outlineColor.withValues(alpha: 0.7 * dragOpacity)
+        ..style = PaintingStyle.fill;
+      for (int i = 1; i <= n; i++) {
+        if (i == threshold) continue;
+        canvas.drawCircle(Offset(notchX(i), trackY), markerRadius, markerPaint);
       }
     }
 
