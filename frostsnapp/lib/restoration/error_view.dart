@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
 import 'package:frostsnap/dialog_content_with_actions.dart';
 
@@ -91,12 +91,13 @@ class _ErrorViewState extends State<ErrorView> {
       ),
       actions: [
         if (!widget.isWarning)
-          OutlinedButton.icon(
-            icon: Icon(Icons.copy),
-            label: Text('Copy Error'),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: widget.message));
-            },
+          CopyTapTarget(
+            data: widget.message,
+            builder: (ctx, onCopy, checked) => OutlinedButton.icon(
+              icon: CopyIcon(checked: checked),
+              label: Text('Copy Error'),
+              onPressed: onCopy,
+            ),
           ),
         if (widget.onRetry != null)
           FilledButton.icon(

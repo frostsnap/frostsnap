@@ -5,9 +5,9 @@ import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -861,7 +861,8 @@ Widget buildDetailsColumn(
           final address = info.address(network: walletCtx.network)?.toString();
           return Column(
             children: [
-              ListTile(
+              CopyListTile(
+                data: address,
                 dense: dense,
                 contentPadding: contentPadding,
                 leading: Text('Recipient #${info.vout}'),
@@ -870,17 +871,13 @@ Widget buildDetailsColumn(
                   style: monospaceTextStyle,
                   textAlign: TextAlign.end,
                 ),
-                onTap: address == null
-                    ? null
-                    : () => copyAction(context, 'Recipient address', address),
               ),
-              ListTile(
+              CopyListTile(
+                data: '${info.amount}',
                 dense: dense,
                 contentPadding: contentPadding,
                 leading: Text('\u2570 Amount'),
                 title: SatoshiText(value: info.amount, showSign: false),
-                onTap: () =>
-                    copyAction(context, 'Recipient amount', '${info.amount}'),
               ),
             ],
           );
@@ -891,7 +888,8 @@ Widget buildDetailsColumn(
           final idx = info.derivationIndex;
           return Column(
             children: [
-              ListTile(
+              CopyListTile(
+                data: address,
                 dense: dense,
                 contentPadding: contentPadding,
                 leading: Text('Received at${idx != null ? ' #$idx' : ''}'),
@@ -900,23 +898,20 @@ Widget buildDetailsColumn(
                   style: monospaceTextStyle,
                   textAlign: TextAlign.end,
                 ),
-                onTap: address == null
-                    ? null
-                    : () => copyAction(context, 'Receiving address', address),
               ),
-              ListTile(
+              CopyListTile(
+                data: '${info.amount}',
                 dense: dense,
                 contentPadding: contentPadding,
                 leading: Text('\u2570 Amount'),
                 title: SatoshiText(value: info.amount, showSign: false),
-                onTap: () =>
-                    copyAction(context, 'Received amount', '${info.amount}'),
               ),
             ],
           );
         }),
       if (txDetails.isSend)
-        ListTile(
+        CopyListTile(
+          data: '$fee',
           dense: dense,
           contentPadding: contentPadding,
           leading: Row(
@@ -939,10 +934,10 @@ Widget buildDetailsColumn(
             ],
           ),
           title: fee == null ? Text('Unknown') : SatoshiText(value: fee),
-          onTap: () => copyAction(context, 'Fee amount', '$fee'),
         ),
       if (showConfirmations)
-        ListTile(
+        CopyListTile(
+          data: '${txDetails.confirmations}',
           dense: dense,
           contentPadding: contentPadding,
           leading: Text('Confirmations'),
@@ -952,13 +947,9 @@ Widget buildDetailsColumn(
                 : 'None',
             textAlign: TextAlign.end,
           ),
-          onTap: () => copyAction(
-            context,
-            'Confirmation count',
-            '${txDetails.confirmations}',
-          ),
         ),
-      ListTile(
+      CopyListTile(
+        data: txDetails.tx.txid,
         dense: dense,
         contentPadding: contentPadding,
         leading: Text('Txid'),
@@ -967,16 +958,9 @@ Widget buildDetailsColumn(
           style: monospaceTextStyle,
           textAlign: TextAlign.end,
         ),
-        onTap: () => copyAction(context, 'Txid', txDetails.tx.txid),
       ),
     ],
   );
-}
-
-void copyAction(BuildContext context, String what, String data) async {
-  await Clipboard.setData(ClipboardData(text: data));
-  if (context.mounted)
-    showMessageSnackbar(context, '$what copied to clipboard');
 }
 
 Future<void> rebroadcastAction(

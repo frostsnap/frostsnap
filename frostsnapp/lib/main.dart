@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
@@ -340,21 +341,9 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                   child: SelectableText(_combinedErrorWithLogs),
                 ),
                 SizedBox(height: 20),
-                IconButton(
-                  icon: Icon(Icons.content_copy),
-                  onPressed: () {
-                    Clipboard.setData(
-                      ClipboardData(text: _combinedErrorWithLogs),
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          "Copied! Only send this to the Frostsnap team.",
-                        ),
-                      ),
-                    );
-                  },
-                  tooltip: 'Copy to Clipboard',
+                CopyIconButton(
+                  data: _combinedErrorWithLogs,
+                  icon: Icons.content_copy,
                 ),
               ],
             ),

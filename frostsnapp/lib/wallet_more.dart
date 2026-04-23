@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
-import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -259,20 +258,20 @@ void showExportWalletDialog(BuildContext context, String descriptor) async {
   qrCode.addData(descriptor);
   final qr = PrettyQrView(qrImage: QrImage(qrCode));
 
-  final descriptorButton = TextButton.icon(
-    onPressed: () async {
-      await Clipboard.setData(ClipboardData(text: descriptor));
-      showMessageSnackbar(context, "Descriptor copied");
-    },
-    icon: Icon(Icons.copy),
-    label: Text(
-      descriptor,
-      style: TextStyle(
-        fontFamily: monospaceTextStyle.fontFamily,
-        color: theme.colorScheme.onSurface,
+  final descriptorButton = CopyTapTarget(
+    data: descriptor,
+    builder: (ctx, onCopy, checked) => TextButton.icon(
+      onPressed: onCopy,
+      icon: CopyIcon(checked: checked),
+      label: Text(
+        descriptor,
+        style: TextStyle(
+          fontFamily: monospaceTextStyle.fontFamily,
+          color: theme.colorScheme.onSurface,
+        ),
       ),
+      style: TextButton.styleFrom(alignment: Alignment.centerLeft),
     ),
-    style: TextButton.styleFrom(alignment: Alignment.centerLeft),
   );
 
   final doneButton = FilledButton(

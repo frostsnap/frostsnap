@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -133,7 +133,8 @@ class _DeviceDetailsState extends State<DeviceDetails> {
     ];
 
     final nonEmptyRows = [
-      ListTile(
+      CopyListTile(
+        data: deviceName,
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Device Name'),
         subtitle: Text(
@@ -143,9 +144,6 @@ class _DeviceDetailsState extends State<DeviceDetails> {
           ),
         ),
         leading: Icon(Icons.label_rounded),
-        onTap: deviceName == null
-            ? null
-            : () => copyAction(context, 'Device name', deviceName),
       ),
       ListTile(
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
@@ -168,7 +166,8 @@ class _DeviceDetailsState extends State<DeviceDetails> {
     ];
 
     final advancedHidden = [
-      ListTile(
+      CopyListTile(
+        data: device.id.toHex(),
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Device ID'),
         subtitle: Text(
@@ -177,16 +176,14 @@ class _DeviceDetailsState extends State<DeviceDetails> {
           style: monospaceTextStyle,
         ),
         leading: Icon(Icons.fingerprint_rounded),
-        onTap: () => copyAction(context, 'Device ID', device.id.toHex()),
       ),
       if (!isEmpty)
-        ListTile(
+        CopyListTile(
+          data: '$noncesAvailable',
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
           title: Text('Nonces'),
           subtitle: Text('$noncesAvailable'),
           leading: Icon(Icons.numbers_rounded),
-          onTap: () =>
-              copyAction(context, 'Remaining nonces', '$noncesAvailable'),
         ),
       if (!isEmpty)
         ListTile(
@@ -231,7 +228,8 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       mainAxisSize: MainAxisSize.min,
       children: [
         ...(isEmpty ? emptyRows : nonEmptyRows),
-        ListTile(
+        CopyListTile(
+          data: device.firmware.digest.toString(),
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
           leading: Icon(Icons.system_update_rounded),
           title: Row(
@@ -296,22 +294,10 @@ class _DeviceDetailsState extends State<DeviceDetails> {
               ),
             ),
           ),
-          onTap: () => copyAction(
-            context,
-            "Device firmware",
-            device.firmware.digest.toString(),
-          ),
         ),
         ...advancedRows,
       ],
     );
-  }
-
-  copyAction(BuildContext context, String what, String data) {
-    Clipboard.setData(ClipboardData(text: data));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$what copied to clipboard')));
   }
 
   void showEraseDialog(BuildContext context, DeviceId id) async {

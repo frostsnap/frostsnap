@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/theme.dart';
 
 class LogPane extends StatefulWidget {
@@ -95,20 +95,7 @@ class _LogPane extends State<LogPane> {
             ),
           ),
           SizedBox(height: 16),
-          IconButton(
-            icon: const Icon(Icons.content_copy),
-            onPressed: () {
-              final String combinedLogs = _logs.map((log) => log).join('\n');
-              Clipboard.setData(ClipboardData(text: combinedLogs));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Logs copied to clipboard!'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-            tooltip: 'Copy All Logs',
-          ),
+          CopyIconButton(data: _logs.join('\n'), icon: Icons.content_copy),
         ],
       ),
     );

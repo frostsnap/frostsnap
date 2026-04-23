@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/theme.dart';
 
@@ -268,12 +268,7 @@ class _UdevSetupPageState extends State<UdevSetupPage>
                 _buildCodeBlock(
                   theme,
                   _manualCommandsDisplay,
-                  onCopy: () {
-                    Clipboard.setData(ClipboardData(text: _manualCommandsCopy));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Copied to clipboard')),
-                    );
-                  },
+                  copyData: _manualCommandsCopy,
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -288,7 +283,7 @@ class _UdevSetupPageState extends State<UdevSetupPage>
     );
   }
 
-  Widget _buildCodeBlock(ThemeData theme, String code, {VoidCallback? onCopy}) {
+  Widget _buildCodeBlock(ThemeData theme, String code, {String? copyData}) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -301,15 +296,11 @@ class _UdevSetupPageState extends State<UdevSetupPage>
             padding: const EdgeInsets.all(16),
             child: SelectableText(code, style: monospaceTextStyle),
           ),
-          if (onCopy != null)
+          if (copyData != null)
             Positioned(
               top: 4,
               right: 4,
-              child: IconButton(
-                icon: const Icon(Icons.copy, size: 18),
-                onPressed: onCopy,
-                tooltip: 'Copy',
-              ),
+              child: CopyIconButton(data: copyData, size: 18),
             ),
         ],
       ),
