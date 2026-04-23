@@ -17,10 +17,6 @@ class DeviceActionBackupCheckController with ChangeNotifier {
 
   DeviceId? get activeDeviceId => _dialogController?.actionsNeeded.firstOrNull;
 
-  String? get walletName => coord
-      .getFrostKey(keyId: accessStructure.accessStructureRef().keyId)
-      ?.keyName();
-
   DeviceActionBackupCheckController({required this.accessStructure});
 
   @override
@@ -47,17 +43,11 @@ class DeviceActionBackupCheckController with ChangeNotifier {
       devices: [id],
       title: 'Check Backup on Device',
       body: (context) {
-        final deviceIndex = accessStructure.getDeviceShortShareIndex(
-          deviceId: id,
-        )!;
-        return Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: InfoRow.toColumn(context, [
-              InfoRow('For key', '#$deviceIndex'),
-              InfoRow('Of wallet', walletName ?? ''),
-            ]),
+        final theme = Theme.of(context);
+        return Text(
+          'Check your physical backup by entering it on the device screen.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         );
       },

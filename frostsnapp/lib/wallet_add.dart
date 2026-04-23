@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/keygen.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -185,12 +184,9 @@ class WalletAddColumn extends StatelessWidget {
 
     if (!context.mounted || asRef == null) return;
     // Wallet-create page has popped. Wait for the user to unplug the
-    // devices (no-op if nothing is connected) before showing the
-    // "Now let's secure it" dialog and opening the new wallet.
+    // devices (no-op if nothing is connected) before opening the new wallet.
     await showUnplugDevicesDialog(context);
     if (!context.mounted) return;
-    final accessStructure = coord.getAccessStructure(asRef: asRef)!;
-    showWalletCreatedDialog(context, accessStructure);
     homeCtx.openNewlyCreatedWallet(asRef.keyId);
   }
 

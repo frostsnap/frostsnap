@@ -11,6 +11,18 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 
+extension BackupDeviceX on BackupDevice {
+  /// A share counts as backed up when it has been explicitly marked
+  /// complete, OR when there is no tracking record at all (legacy wallets
+  /// created before backup-run tracking existed). Only `complete == false`
+  /// means a backup run is in progress and this share still needs recording.
+  bool get isBackedUp => complete != false;
+}
+
+extension BackupRunX on BackupRun {
+  bool get isComplete => devices.every((d) => d.isBackedUp);
+}
+
 class BackupConfirmationDialogContent extends StatelessWidget {
   final int threshold;
   final int totalDevices;
@@ -398,11 +410,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
             // Devices are already sorted by share index and contain all metadata
             final deviceInfoList = backupRun.devices;
 
-            final completedDevices = deviceInfoList
-                .where((d) => d.complete == true)
-                .toList();
-            final allComplete =
-                completedDevices.length == deviceInfoList.length;
+            final allComplete = backupRun.isComplete;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -476,16 +484,10 @@ class _BackupChecklistState extends State<BackupChecklist> {
                   return devicesByShareIndex.entries.map((entry) {
                     final shareIndex = entry.key;
                     final devices = entry.value;
-                    final complete = devices.first.complete;
+                    final isComplete = devices.first.isBackedUp;
 
                     return ListTile(
                       dense: true,
-                      leading: complete == true
-                          ? Icon(
-                              Icons.check_circle,
-                              color: theme.colorScheme.primary,
-                            )
-                          : SizedBox(width: 24),
                       title: Row(
                         spacing: 4,
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -515,19 +517,11 @@ class _BackupChecklistState extends State<BackupChecklist> {
                           ),
                         ],
                       ),
-                      trailing: complete == true
-                          ? Text(
-                              'Backed up',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.primary,
-                              ),
-                            )
-                          : Text(
-                              'Needs backup',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
+                      trailing: _BackupStatusTrailing(
+                        isComplete: isComplete,
+                        shareIndex: shareIndex,
+                        accessStructure: accessStructure,
+                      ),
                     );
                   }).toList();
                 }(),
@@ -601,7 +595,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                 ),
                               ],
                             ),
-                            if (deviceInfo.complete != false)
+                            if (deviceInfo.isBackedUp)
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 spacing: 8,
@@ -636,7 +630,9 @@ class _BackupChecklistState extends State<BackupChecklist> {
                     } else {
                       statusIcon = Icons.usb_rounded;
                       statusIconColor = null;
-                      statusContent = Text('Plug in device to back it up');
+                      statusContent = Text(
+                        'Plug in a device to record or check a backup',
+                      );
                     }
 
                     return AnimatedGradientBorder(
@@ -703,4 +699,85 @@ class _BackupChecklistState extends State<BackupChecklist> {
       ],
     );
   }
+}
+
+class _BackupStatusTrailing extends StatelessWidget {
+  final bool isComplete;
+  final int shareIndex;
+  final AccessStructure accessStructure;
+
+  const _BackupStatusTrailing({
+    required this.isComplete,
+    required this.shareIndex,
+    required this.accessStructure,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          isComplete ? 'Backed up' : 'Not backed up',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        isComplete
+            ? Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  Icons.check_circle,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+              )
+            : IconButton(
+                tooltip: 'Mark as backed up',
+                icon: const Icon(Icons.radio_button_unchecked, size: 18),
+                color: theme.colorScheme.primary,
+                visualDensity: VisualDensity.compact,
+                onPressed: () async {
+                  final confirmed = await _confirmMarkBackupComplete(
+                    context,
+                    shareIndex,
+                  );
+                  if (!confirmed) return;
+                  if (!context.mounted) return;
+                  await coord.markBackupComplete(
+                    accessStructureRef: accessStructure.accessStructureRef(),
+                    shareIndex: shareIndex,
+                  );
+                },
+              ),
+      ],
+    );
+  }
+}
+
+Future<bool> _confirmMarkBackupComplete(
+  BuildContext context,
+  int shareIndex,
+) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Mark as backed up?'),
+      content: Text(
+        'Only do this if you have already recorded the backup for Key #$shareIndex somewhere safe.\n\nIf you mark a key as backed up without actually having the backup, you risk permanently losing access to this wallet.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('I have the backup'),
+        ),
+      ],
+    ),
+  );
+  return result == true;
 }

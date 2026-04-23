@@ -5,14 +5,29 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/theme.dart';
 
-void showWalletCreatedDialog(
+enum SecureWalletChoice {
+  /// User chose "Later" — caller should proceed with whatever it was going
+  /// to do (e.g. opening the receive sheet).
+  later,
+
+  /// User chose "Secure Wallet" — the backup checklist has been opened and
+  /// the caller should not proceed.
+  secure,
+
+  /// User backed out (system back button). Caller should do nothing.
+  cancelled,
+}
+
+/// Shows a reminder that backups are incomplete and offers to open the
+/// backup checklist.
+Future<SecureWalletChoice> showSecureWalletDialog(
   BuildContext context,
   AccessStructure accessStructure,
 ) async {
-  await showDialog(
+  final choice = await showDialog<SecureWalletChoice>(
     context: context,
     barrierDismissible: false,
-    builder: (BuildContext context) {
+    builder: (BuildContext dialogContext) {
       return BackdropFilter(
         filter: blurFilter,
         child: AlertDialog(
@@ -20,7 +35,7 @@ void showWalletCreatedDialog(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
               Text(
-                'Wallet created!\nNow let\'s secure it.',
+                'Secure your wallet',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               Icon(Icons.checklist, size: 40),
@@ -31,11 +46,11 @@ void showWalletCreatedDialog(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Before receiving any Bitcoin, you should backup and distribute your Frostsnaps.',
+                'Before receiving any Bitcoin, you should backup and distribute your Frostsnap devices.',
               ),
               SizedBox(height: 16),
               Text(
-                'With each of your Frostsnaps you will:',
+                'With each device you should:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 8),
@@ -46,7 +61,7 @@ void showWalletCreatedDialog(
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Travel to a location where you will store it.',
+                      'Travel to the secure location where you will store it.',
                     ),
                   ),
                 ],
@@ -59,7 +74,7 @@ void showWalletCreatedDialog(
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Record the backup on the provided backup sheet (~5 mins).',
+                      'Record the backup on the provided backup card (~5 mins).',
                     ),
                   ),
                 ],
@@ -71,7 +86,9 @@ void showWalletCreatedDialog(
                   Icon(Icons.lock),
                   SizedBox(width: 8),
                   Expanded(
-                    child: Text('Securely store the Frostsnap and its backup.'),
+                    child: Text(
+                      'Safely store your Frostsnap device and its backup.',
+                    ),
                   ),
                 ],
               ),
@@ -79,24 +96,13 @@ void showWalletCreatedDialog(
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(SecureWalletChoice.later),
               child: const Text('Later'),
             ),
             FilledButton(
-              onPressed: () async {
-                Navigator.popUntil(context, (r) => r.isFirst);
-                final superCtx = SuperWalletContext.of(context)!;
-
-                await MaybeFullscreenDialog.show(
-                  context: context,
-                  child: superCtx.tryWrapInWalletContext(
-                    keyId: accessStructure.masterAppkey().keyId(),
-                    child: BackupChecklist(accessStructure: accessStructure),
-                  ),
-                );
-              },
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(SecureWalletChoice.secure),
               child: const Text('Secure Wallet'),
             ),
           ],
@@ -104,4 +110,19 @@ void showWalletCreatedDialog(
       );
     },
   );
+
+  if (choice != SecureWalletChoice.secure) {
+    return choice ?? SecureWalletChoice.cancelled;
+  }
+
+  if (!context.mounted) return SecureWalletChoice.cancelled;
+  final superCtx = SuperWalletContext.of(context)!;
+  await MaybeFullscreenDialog.show(
+    context: context,
+    child: superCtx.tryWrapInWalletContext(
+      keyId: accessStructure.masterAppkey().keyId(),
+      child: BackupChecklist(accessStructure: accessStructure),
+    ),
+  );
+  return SecureWalletChoice.secure;
 }
