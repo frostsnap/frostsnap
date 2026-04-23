@@ -20,6 +20,7 @@ import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
 import 'maybe_fullscreen_dialog.dart';
@@ -59,7 +60,7 @@ class WalletCreateController extends ChangeNotifier {
   late DeviceListState _deviceList;
 
   bool _hasAutoAdvanced = false;
-  Stream<NonceReplenishState>? _nonceStream;
+  ValueStream<NonceReplenishState>? _nonceStream;
 
   KeyGenState? _keygenState;
   FullscreenActionDialogController? _keygenController;
@@ -1037,6 +1038,13 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     ),
   );
 
+  void _resetNonceReplenishStep() {
+    coord.cancelProtocol();
+    _controller._nonceStream = null;
+    _controller._step = WalletCreateStep.devices;
+    _controller.notifyListeners();
+  }
+
   Widget buildNonceReplenish(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -1066,26 +1074,26 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       );
     }
 
-    // Use the minimal widget from nonce_replenish.dart
     return SliverToBoxAdapter(
-      child: MinimalNonceReplenishWidget(
-        stream: stream,
-        autoAdvance: true,
-        onComplete: () {
-          if (mounted && !_controller._hasAutoAdvanced) {
-            _controller._hasAutoAdvanced = true;
-            _controller.next(context);
-          }
-        },
-        onAbort: () {
-          // Device disconnected - go back to device selection
-          if (mounted) {
-            coord.cancelProtocol();
-            _controller._nonceStream = null;
-            _controller._step = WalletCreateStep.devices;
-            _controller.notifyListeners();
-          }
-        },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: NonceReplenishIndicator(
+          stream: stream,
+          onTerminal: (terminal) {
+            switch (terminal) {
+              case NonceReplenishCompleted():
+                if (mounted && !_controller._hasAutoAdvanced) {
+                  _controller._hasAutoAdvanced = true;
+                  _controller.next(context);
+                }
+                break;
+              case NonceReplenishAborted():
+              case NonceReplenishFailed():
+                if (mounted) _resetNonceReplenishStep();
+                break;
+            }
+          },
+        ),
       ),
     );
   }
