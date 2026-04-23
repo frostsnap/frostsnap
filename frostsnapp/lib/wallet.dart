@@ -718,10 +718,7 @@ class WalletBottomBar extends StatelessWidget {
     final receiveButton = TextButton.icon(
       onPressed: () async {
         final backupRun = coord.getBackupRun(keyId: walletCtx.wallet.keyId());
-        final backupsIncomplete = backupRun.devices.any(
-          (device) => device.complete == false,
-        );
-        if (backupsIncomplete) {
+        if (!backupRun.isComplete) {
           final frostKey = walletCtx.wallet.frostKey();
           if (frostKey != null) {
             final accessStructure = frostKey.accessStructures()[0];
@@ -1236,7 +1233,7 @@ class BackupWarningBanner extends StatelessWidget {
       stream: backupStream,
       builder: (context, backupSnapshot) {
         final backupRun = backupSnapshot.data;
-        final hideBanner = backupRun == null || isBackupDone(backupRun);
+        final hideBanner = backupRun == null || backupRun.isComplete;
         if (hideBanner) return SizedBox.shrink();
 
         return StreamBuilder<TxState>(
@@ -1289,7 +1286,4 @@ class BackupWarningBanner extends StatelessWidget {
       ),
     );
   }
-
-  bool isBackupDone(BackupRun backupRun) =>
-      backupRun.devices.every((device) => device.complete != false);
 }

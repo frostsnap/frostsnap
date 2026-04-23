@@ -11,6 +11,18 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 
+extension BackupDeviceX on BackupDevice {
+  /// A share counts as backed up when it has been explicitly marked
+  /// complete, OR when there is no tracking record at all (legacy wallets
+  /// created before backup-run tracking existed). Only `complete == false`
+  /// means a backup run is in progress and this share still needs recording.
+  bool get isBackedUp => complete != false;
+}
+
+extension BackupRunX on BackupRun {
+  bool get isComplete => devices.every((d) => d.isBackedUp);
+}
+
 class BackupConfirmationDialogContent extends StatelessWidget {
   final int threshold;
   final int totalDevices;
@@ -398,9 +410,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
             // Devices are already sorted by share index and contain all metadata
             final deviceInfoList = backupRun.devices;
 
-            final allComplete = deviceInfoList.every(
-              (d) => d.complete != false,
-            );
+            final allComplete = backupRun.isComplete;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -474,12 +484,10 @@ class _BackupChecklistState extends State<BackupChecklist> {
                   return devicesByShareIndex.entries.map((entry) {
                     final shareIndex = entry.key;
                     final devices = entry.value;
-                    final complete = devices.first.complete;
-                    final isComplete = complete != false;
+                    final isComplete = devices.first.isBackedUp;
 
                     return ListTile(
                       dense: true,
-                      leading: SizedBox(width: 24),
                       title: Row(
                         spacing: 4,
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -587,7 +595,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                 ),
                               ],
                             ),
-                            if (deviceInfo.complete != false)
+                            if (deviceInfo.isBackedUp)
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 spacing: 8,
