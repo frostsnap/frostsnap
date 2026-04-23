@@ -1,19 +1,14 @@
 //! Tests for a malicious actions. A malicious coordinator, a malicious device or both.
-use common::TEST_ENCRYPTION_KEY;
-use env::TestEnv;
 use frostsnap_core::coordinator::{BeginKeygen, CoordinatorSend};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::{
     keygen::DeviceKeygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
     Keygen,
 };
+use frostsnap_core::test::{RunSingleCoordinator as Run, Send, TestEnv, TEST_ENCRYPTION_KEY};
 use frostsnap_core::WireSignTask;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-
-use crate::common::{Run, Send};
-mod common;
-mod env;
 
 /// Models a coordinator maliciously replacing a public polynomial contribution and providing a
 /// correct share under that malicious polynomial. The device that has had their share replaced
@@ -59,7 +54,7 @@ fn keygen_maliciously_replace_public_poly() {
     run.extend(keygen_init.clone());
 
     let result = run.run_until(&mut TestEnv::default(), &mut test_rng, move |run| {
-        for send in run.message_queue.iter_mut() {
+        for send in run.message_queue_mut().iter_mut() {
             if let Send::DeviceToCoordinator {
                 from: _,
                 message: DeviceToCoordinatorMessage::KeyGen(DeviceKeygen::Response(input)),
@@ -86,7 +81,7 @@ fn keygen_maliciously_replace_public_poly() {
                 *input = malicious_keygen_response;
             }
         }
-        run.message_queue.is_empty()
+        run.message_queue().is_empty()
     });
 
     assert!(result.is_err());
@@ -123,12 +118,12 @@ fn send_sign_req_with_same_nonces_but_different_message() {
 
     let mut sign_req = None;
     for device_id in &device_set {
-        sign_req = Some(run.coordinator.request_device_sign(
-            session_id,
-            *device_id,
-            TEST_ENCRYPTION_KEY,
-        ));
-        run.extend(sign_req.clone().unwrap());
+        let req = run
+            .coordinator
+            .request_device_sign(session_id, *device_id, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        sign_req = Some(req.clone());
+        run.extend(req);
     }
     run.run_until_finished(&mut TestEnv::default(), &mut test_rng)
         .unwrap();

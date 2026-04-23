@@ -3,20 +3,34 @@ use super::{
     bitcoin::{BitcoinNetwork, RTransaction, Transaction},
     coordinator::Coordinator,
 };
-use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
+use crate::api::broadcast::{BehaviorBroadcast, BehaviorBroadcastSubscription, StartError};
+use crate::frb_generated::StreamSink;
+use crate::sink_wrap::SinkWrap;
 use anyhow::{anyhow, Result};
 use bitcoin::hex::DisplayHex;
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::persist::Persisted;
 pub use frostsnap_coordinator::signing::SigningState;
+use frostsnap_coordinator::signing::{DispatcherCommand, SigningDispatcher};
 pub use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+pub use frostsnap_core::coordinator::signing::RemoteSignSessionId;
 pub use frostsnap_core::coordinator::ActiveSignSession;
-pub use frostsnap_core::coordinator::{SignSessionProgress, StartSign};
+use frostsnap_core::coordinator::FrostCoordinator;
+pub use frostsnap_core::coordinator::{
+    ParticipantBinonces, ParticipantSignatureShares, SignSessionProgress, StartSign,
+};
 use frostsnap_core::MasterAppkey;
+pub use frostsnap_core::WireSignTask;
 use frostsnap_core::{
     message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
-    WireSignTask,
 };
+use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
+use std::sync::{mpsc::Sender, Arc, Mutex};
+use tracing::{event, Level};
+
+#[frb(mirror(RemoteSignSessionId), non_opaque)]
+pub struct _RemoteSignSessionId(pub [u8; 32]);
 
 /// An outgoing Bitcoin transaction that has not been successfully broadcast.
 ///
@@ -89,7 +103,7 @@ impl ActiveSignSessionExt for ActiveSignSession {
         let state = SigningState {
             session_id,
             got_shares: got_shares.into_iter().collect(),
-            needed_from: session_init.nonces.keys().copied().collect(),
+            needed_from: session_init.local_nonces.keys().copied().collect(),
             finished_signatures: None,
             aborted: None,
             connected_but_need_request: Default::default(),
@@ -100,13 +114,44 @@ impl ActiveSignSessionExt for ActiveSignSession {
 
     #[frb(sync)]
     fn details(&self) -> SigningDetails {
-        let session_init = &self.init;
+        self.init.group_request.sign_task.signing_details()
+    }
 
-        let res = match session_init.group_request.sign_task.clone() {
-            WireSignTask::Test { message } => SigningDetails::Message { message },
+    #[frb(sync)]
+    fn access_structure_ref(&self) -> AccessStructureRef {
+        ActiveSignSession::access_structure_ref(self)
+    }
+}
+
+pub trait WireSignTaskExt {
+    #[frb(sync)]
+    fn signing_details(&self) -> SigningDetails;
+}
+
+/// Build a `WireSignTask` for signing a bitcoin transaction. Needed on the
+/// Dart side because `WireSignTask` is opaque — Dart can't construct the
+/// inner variants directly.
+#[frb(sync)]
+pub fn wire_sign_task_bitcoin_transaction(unsigned_tx: &UnsignedTx) -> WireSignTask {
+    WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone())
+}
+
+/// Build a `WireSignTask` for signing a plain test message.
+#[frb(sync)]
+pub fn wire_sign_task_test(message: String) -> WireSignTask {
+    WireSignTask::Test { message }
+}
+
+impl WireSignTaskExt for WireSignTask {
+    #[frb(sync)]
+    fn signing_details(&self) -> SigningDetails {
+        match self {
+            WireSignTask::Test { message } => SigningDetails::Message {
+                message: message.clone(),
+            },
             WireSignTask::Nostr { event } => SigningDetails::Nostr {
-                id: event.id,
-                content: event.content,
+                id: event.id.clone(),
+                content: event.content.clone(),
                 hash_bytes: event.hash_bytes.to_lower_hex_string(),
             },
             WireSignTask::BitcoinTransaction(tx_temp) => {
@@ -137,13 +182,7 @@ impl ActiveSignSessionExt for ActiveSignSession {
                     },
                 }
             }
-        };
-        res
-    }
-
-    #[frb(sync)]
-    fn access_structure_ref(&self) -> AccessStructureRef {
-        ActiveSignSession::access_structure_ref(self)
+        }
     }
 }
 
@@ -285,57 +324,341 @@ impl SignedTx {
     }
 }
 
+/// Opaque handle to an in-flight signing session. Returned by the entry
+/// points that install a `SigningDispatcher` on the coordinator's ui_stack.
+///
+/// All operations that affect a specific signing session (subscribing to
+/// state, pushing a device sign request, cancelling) go through the handle.
+/// That makes "which dispatcher should receive this?" a compile-time
+/// guarantee instead of a `ui_stack.get_mut::<T>()` runtime lookup.
+#[frb(opaque)]
+pub struct SigningSessionHandle {
+    coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
+    db: Arc<Mutex<Connection>>,
+    dispatcher_tx: Sender<DispatcherCommand>,
+    signing_session_signals: crate::coordinator::SignalMap,
+    key_id: KeyId,
+    session_id: SignSessionId,
+    /// The sink the dispatcher writes `SigningState` updates into; also
+    /// the subscribable stream source exposed via `sub_state`. Using a
+    /// `BehaviorBroadcast` means (a) multiple Dart subscribers fan out,
+    /// and (b) a fresh subscriber receives the current snapshot
+    /// immediately on `start()` instead of waiting for the next emission.
+    state_broadcast: BehaviorBroadcast<SigningState>,
+    /// `None` for local signing. `Some` for remote — carries the
+    /// round-scoped context (the id of the remote reservation + the full
+    /// participant binonce set). Per-device `access_structure_ref` and
+    /// `sign_task` were committed at `offer_to_sign` time and live on the
+    /// `RemoteSignSession` in core; we don't duplicate them on the handle.
+    /// Held here so the per-device action
+    /// method can take just `(device_id, encryption_key)` and the caller
+    /// can't supply values that disagree with `session_id` / `key_id`.
+    remote: Option<RemoteSigningContext>,
+}
+
+struct RemoteSigningContext {
+    remote_sign_session_id: RemoteSignSessionId,
+    all_binonces: Vec<ParticipantBinonces>,
+}
+
+/// FFI-exposed concrete wrapper over `BehaviorBroadcastSubscription<SigningState>`.
+/// Generics don't cross the FRB boundary, so we wrap the concrete type.
+pub struct SigningStateBroadcastSubscription(
+    pub(crate) BehaviorBroadcastSubscription<SigningState>,
+);
+
+impl SigningStateBroadcastSubscription {
+    #[frb(sync)]
+    pub fn id(&self) -> u32 {
+        self.0._id()
+    }
+
+    #[frb(sync)]
+    pub fn is_running(&self) -> bool {
+        self.0._is_running()
+    }
+
+    #[frb(sync)]
+    pub fn start(&self, sink: StreamSink<SigningState>) -> std::result::Result<(), StartError> {
+        self.0._start(sink)
+    }
+
+    #[frb(sync)]
+    pub fn stop(&self) -> bool {
+        self.0._stop()
+    }
+}
+
+impl SigningSessionHandle {
+    #[frb(sync)]
+    pub fn session_id(&self) -> SignSessionId {
+        self.session_id
+    }
+
+    #[frb(sync)]
+    pub fn key_id(&self) -> KeyId {
+        self.key_id
+    }
+
+    /// Subscribe to `SigningState` updates. Returns a subscription handle;
+    /// call `.start(sink)` on it to begin receiving updates. Multiple
+    /// concurrent subscriptions are supported (fan-out). Each fresh
+    /// `.start()` immediately emits the cached current state before
+    /// streaming further updates.
+    #[frb(sync)]
+    pub fn sub_state(&self) -> SigningStateBroadcastSubscription {
+        SigningStateBroadcastSubscription(self.state_broadcast.subscribe())
+    }
+
+    /// Build a `RequestDeviceSign` via core and hand it to this session's
+    /// dispatcher. Works for both local and remote sessions — the handle
+    /// carries whatever context the core mutation needs.
+    pub fn request_device_sign(
+        &self,
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+    ) -> Result<()> {
+        let sign_req = {
+            let mut db = self.db.lock().unwrap();
+            let mut coord = self.coordinator.lock().unwrap();
+            coord.staged_mutate(&mut *db, |coordinator| match &self.remote {
+                None => Ok(coordinator.request_device_sign(
+                    self.session_id,
+                    device_id,
+                    encryption_key,
+                )?),
+                Some(ctx) => Ok(coordinator.sign_with_nonce_reservation(
+                    ctx.remote_sign_session_id,
+                    device_id,
+                    &ctx.all_binonces,
+                    encryption_key,
+                )?),
+            })?
+        };
+        self.dispatcher_tx
+            .send(DispatcherCommand::SendSignRequest(Box::new(sign_req)))
+            .map_err(|_| anyhow!("signing session has been shut down"))?;
+
+        // For remote signing, poke the per-key "is signing happening?"
+        // signal so any Dart subscribers watching that flag update.
+        if self.remote.is_some() {
+            if let Some(stream) = self
+                .signing_session_signals
+                .lock()
+                .unwrap()
+                .get(&self.key_id)
+            {
+                stream.send(());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Cancel this specific signing session. Tears down the UI dispatcher
+    /// only — does not affect the core-side session state (use
+    /// `Coordinator::cancel_sign_session` for that, they are orthogonal
+    /// concerns).
+    pub fn cancel(&self) {
+        let _ = self.dispatcher_tx.send(DispatcherCommand::Cancel);
+    }
+}
+
 impl Coordinator {
+    /// Start signing a test message (not a bitcoin tx).
     pub fn start_signing(
         &self,
         access_structure_ref: AccessStructureRef,
         devices: Vec<DeviceId>,
         message: String,
-        sink: StreamSink<SigningState>,
-    ) -> Result<()> {
-        self.0.start_signing(
+    ) -> Result<SigningSessionHandle> {
+        self.start_signing_inner(
             access_structure_ref,
             devices.into_iter().collect(),
             WireSignTask::Test { message },
-            SinkWrap(sink),
-        )?;
-        Ok(())
+        )
     }
 
+    /// Start signing a bitcoin transaction.
     pub fn start_signing_tx(
         &self,
         access_structure_ref: AccessStructureRef,
         unsigned_tx: UnsignedTx,
         devices: Vec<DeviceId>,
-        sink: StreamSink<SigningState>,
-    ) -> Result<()> {
-        self.0.start_signing(
+    ) -> Result<SigningSessionHandle> {
+        self.start_signing_inner(
             access_structure_ref,
             devices.into_iter().collect(),
             WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone()),
-            SinkWrap(sink),
-        )?;
-        Ok(())
+        )
     }
 
-    #[frb(sync)]
-    pub fn nonces_available(&self, id: DeviceId) -> u32 {
-        self.0.nonces_available(id)
+    fn start_signing_inner(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        devices: std::collections::BTreeSet<DeviceId>,
+        task: WireSignTask,
+    ) -> Result<SigningSessionHandle> {
+        let session_id = {
+            let mut db = self.0.db.lock().unwrap();
+            let mut coordinator = self.0.coordinator.lock().unwrap();
+            coordinator.staged_mutate(&mut *db, |coordinator| {
+                Ok(coordinator.start_sign(
+                    access_structure_ref,
+                    task,
+                    &devices,
+                    &mut rand::thread_rng(),
+                )?)
+            })?
+        };
+
+        let state_broadcast = BehaviorBroadcast::<SigningState>::default();
+        let (dispatcher, dispatcher_tx) = SigningDispatcher::new(
+            devices,
+            access_structure_ref.key_id,
+            session_id,
+            Box::new(state_broadcast.clone()),
+        );
+        self.0.start_protocol(dispatcher);
+
+        Ok(self.build_handle(
+            access_structure_ref.key_id,
+            session_id,
+            dispatcher_tx,
+            state_broadcast,
+            None,
+        ))
     }
 
+    fn build_handle(
+        &self,
+        key_id: KeyId,
+        session_id: SignSessionId,
+        dispatcher_tx: Sender<DispatcherCommand>,
+        state_broadcast: BehaviorBroadcast<SigningState>,
+        remote: Option<RemoteSigningContext>,
+    ) -> SigningSessionHandle {
+        SigningSessionHandle {
+            coordinator: self.0.coordinator.clone(),
+            db: self.0.db.clone(),
+            dispatcher_tx,
+            signing_session_signals: self.0.signing_session_signals.clone(),
+            key_id,
+            session_id,
+            state_broadcast,
+            remote,
+        }
+    }
+
+    /// Reattach to an in-flight local signing session (e.g. after app
+    /// restart). Returns `Err` if the session is no longer in the
+    /// coordinator's active store.
     pub fn try_restore_signing_session(
         &self,
         session_id: SignSessionId,
-        sink: StreamSink<SigningState>,
-    ) -> Result<()> {
+    ) -> Result<SigningSessionHandle> {
+        let coordinator = self.0.coordinator.lock().unwrap();
+        let active_sign_session = coordinator
+            .get_active_sign_session(session_id)
+            .ok_or_else(|| anyhow!("this signing session no longer exists"))?;
+        let key_id = active_sign_session.key_id;
+
+        let state_broadcast = BehaviorBroadcast::<SigningState>::default();
+        let (dispatcher, dispatcher_tx) = SigningDispatcher::restore_signing_session(
+            active_sign_session,
+            Box::new(state_broadcast.clone()),
+        );
+        drop(coordinator);
+        self.0.start_protocol(dispatcher);
+
+        Ok(self.build_handle(key_id, session_id, dispatcher_tx, state_broadcast, None))
+    }
+
+    /// Install a `SigningDispatcher` for a remote signing session and
+    /// return a handle bound to it.
+    ///
+    /// `remote_sign_session_id` identifies the prior `offer_to_sign` that
+    /// committed the `access_structure_ref` and `sign_task`; core reads
+    /// those from the stored reservation rather than taking them as args.
+    /// `all_binonces` is the session-wide participant binonce set (known
+    /// after RoundConfirmed); `session_id` is derived from it internally so
+    /// it can't disagree with anything else on the handle. `targets` and
+    /// `got_signatures` come from the caller's nostr-derived view of who
+    /// must sign and who has already signed; the dispatcher folds in
+    /// `GotShare` events as our local devices return their shares and
+    /// completes once `got_signatures ⊇ targets`.
+    pub fn sub_remote_sign_session(
+        &self,
+        remote_sign_session_id: RemoteSignSessionId,
+        all_binonces: Vec<ParticipantBinonces>,
+        targets: Vec<DeviceId>,
+        got_signatures: Vec<DeviceId>,
+    ) -> Result<SigningSessionHandle> {
+        anyhow::ensure!(!targets.is_empty(), "targets cannot be empty");
+
+        // Pull the committed context from core (any existing reservation
+        // under this id suffices — they all share the same ar + sign_task).
+        let (access_structure_ref, sign_task) = {
+            let coord = self.0.coordinator.lock().unwrap();
+            let mut iter = coord.remote_sign_sessions_by_id(remote_sign_session_id);
+            let (_, session) = iter
+                .next()
+                .ok_or_else(|| anyhow!("no reservation exists for this id"))?;
+            (session.access_structure_ref, session.sign_task.clone())
+        };
+
+        let session_id = frostsnap_core::message::GroupSignReq::from_binonces(
+            sign_task,
+            access_structure_ref.access_structure_id,
+            &all_binonces,
+        )
+        .session_id();
+
+        let state_broadcast = BehaviorBroadcast::<SigningState>::default();
+        let (dispatcher, dispatcher_tx) = SigningDispatcher::new_remote(
+            targets.into_iter().collect(),
+            access_structure_ref.key_id,
+            session_id,
+            got_signatures.into_iter().collect(),
+            Box::new(state_broadcast.clone()),
+        );
+        self.0.start_protocol(dispatcher);
+
+        Ok(self.build_handle(
+            access_structure_ref.key_id,
+            session_id,
+            dispatcher_tx,
+            state_broadcast,
+            Some(RemoteSigningContext {
+                remote_sign_session_id,
+                all_binonces,
+            }),
+        ))
+    }
+
+    // ====================================================================
+    // Non-handle queries and mutations
+    // ====================================================================
+
+    #[frb(sync)]
+    pub fn nonces_available(&self, id: DeviceId) -> u32 {
         self.0
-            .try_restore_signing_session(session_id, SinkWrap(sink))
+            .coordinator
+            .lock()
+            .unwrap()
+            .nonces_available(id)
+            .values()
+            .copied()
+            .max()
+            .unwrap_or(0)
     }
 
     #[frb(sync)]
     pub fn active_signing_session(&self, session_id: SignSessionId) -> Option<ActiveSignSession> {
         self.0
-            .inner()
+            .coordinator
+            .lock()
+            .unwrap()
             .active_signing_sessions_by_ssid()
             .get(&session_id)
             .cloned()
@@ -344,7 +667,9 @@ impl Coordinator {
     #[frb(sync)]
     pub fn active_signing_sessions(&self, key_id: KeyId) -> Vec<ActiveSignSession> {
         self.0
-            .inner()
+            .coordinator
+            .lock()
+            .unwrap()
             .active_signing_sessions()
             .filter(|session| session.key_id == key_id)
             .collect()
@@ -357,7 +682,7 @@ impl Coordinator {
         master_appkey: MasterAppkey,
     ) -> Vec<UnbroadcastedTx> {
         let key_id = master_appkey.key_id();
-        let coord = self.0.inner();
+        let coord = self.0.coordinator.lock().unwrap();
 
         let s_wallet = &mut *s_wallet.inner.lock().unwrap();
         let canonical_txids = s_wallet
@@ -413,27 +738,125 @@ impl Coordinator {
             .collect()
     }
 
-    #[frb(sync)]
-    pub fn request_device_sign(
-        &self,
-        device_id: DeviceId,
-        session_id: SignSessionId,
-        encryption_key: SymmetricKey,
-    ) -> Result<()> {
-        self.0
-            .request_device_sign(device_id, session_id, encryption_key)
-    }
-
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> Result<()> {
-        self.0.cancel_sign_session(ssid)
+        let session = {
+            let mut db = self.0.db.lock().unwrap();
+            event!(
+                Level::INFO,
+                ssid = ssid.to_string(),
+                "canceling sign session"
+            );
+            let mut coord = self.0.coordinator.lock().unwrap();
+            let session = coord.active_signing_sessions_by_ssid().get(&ssid).cloned();
+            coord.staged_mutate(&mut *db, |coordinator| {
+                coordinator.cancel_sign_session(ssid);
+                Ok(())
+            })?;
+            session
+        };
+        if let Some(session) = session {
+            self.0.emit_signing_signal(session.key_id);
+        }
+        Ok(())
     }
 
     pub fn forget_finished_sign_session(&self, ssid: SignSessionId) -> Result<()> {
-        self.0.forget_finished_sign_session(ssid)
+        let deleted_session = {
+            let mut db = self.0.db.lock().unwrap();
+            event!(
+                Level::INFO,
+                ssid = ssid.to_string(),
+                "forgetting finished sign session"
+            );
+            let mut coord = self.0.coordinator.lock().unwrap();
+            coord.staged_mutate(&mut *db, |coordinator| {
+                Ok(coordinator.forget_finished_sign_session(ssid))
+            })?
+        };
+        if let Some(session) = deleted_session {
+            self.0.emit_signing_signal(session.key_id);
+        }
+        Ok(())
     }
 
     pub fn sub_signing_session_signals(&self, key_id: KeyId, sink: StreamSink<()>) {
-        self.0.sub_signing_session_signals(key_id, SinkWrap(sink))
+        // Emit an initial signal immediately so that subscribers (especially
+        // BehaviorSubjects on the Dart side) get an initial value.
+        let wrapped = SinkWrap(sink);
+        frostsnap_coordinator::Sink::send(&wrapped, ());
+        self.0
+            .signing_session_signals
+            .lock()
+            .unwrap()
+            .insert(key_id, Box::new(wrapped));
+    }
+
+    pub fn reserve_nonces(
+        &self,
+        id: RemoteSignSessionId,
+        access_structure_ref: AccessStructureRef,
+        sign_task: WireSignTask,
+        device_id: DeviceId,
+    ) -> Result<ParticipantBinonces> {
+        let mut db = self.0.db.lock().unwrap();
+        let mut coord = self.0.coordinator.lock().unwrap();
+        coord.staged_mutate(&mut *db, |coordinator| {
+            let offer =
+                coordinator.offer_to_sign(id, access_structure_ref, sign_task, device_id)?;
+            Ok(offer.participant_binonces)
+        })
+    }
+
+    pub fn cancel_remote_sign_session(&self, id: RemoteSignSessionId) -> Result<()> {
+        let mut db = self.0.db.lock().unwrap();
+        let mut coord = self.0.coordinator.lock().unwrap();
+        coord.staged_mutate(&mut *db, |coordinator| {
+            coordinator.cancel_remote_sign_session(id);
+            Ok(())
+        })
+    }
+
+    /// Returns every completed signature share cached under this
+    /// `RemoteSignSessionId`, paired with the device that produced it.
+    #[frb(sync)]
+    pub fn get_completed_signature_shares(
+        &self,
+        id: RemoteSignSessionId,
+    ) -> Vec<(DeviceId, ParticipantSignatureShares)> {
+        self.0
+            .coordinator
+            .lock()
+            .unwrap()
+            .get_completed_signature_shares(id)
+            .into_iter()
+            .collect()
+    }
+
+    #[frb(sync)]
+    pub fn can_sign_with_nonce_reservation(
+        &self,
+        all_binonces: Vec<ParticipantBinonces>,
+        id: RemoteSignSessionId,
+        device_id: DeviceId,
+    ) -> bool {
+        self.0
+            .coordinator
+            .lock()
+            .unwrap()
+            .can_sign_with_nonce_reservation(&all_binonces, id, device_id)
+    }
+
+    #[frb(sync)]
+    pub fn get_device_signature_shares(
+        &self,
+        session_id: SignSessionId,
+        device_id: DeviceId,
+    ) -> Option<ParticipantSignatureShares> {
+        self.0
+            .coordinator
+            .lock()
+            .unwrap()
+            .get_device_signature_shares(session_id, device_id)
     }
 }
 

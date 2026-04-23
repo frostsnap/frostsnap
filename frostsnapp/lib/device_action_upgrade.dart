@@ -85,6 +85,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
     progressController.add(FirmwareUpgradeState.empty());
     final replayStream = progressController.stream.toReplaySubject();
 
+
     final controller = FullscreenActionDialogController<void>(
       context: context,
       devices: upgradeTargets,

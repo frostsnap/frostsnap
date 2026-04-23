@@ -1,5 +1,4 @@
-mod common;
-use common::*;
+use frostsnap_core::test::*;
 use proptest::{
     array,
     prelude::*,
@@ -25,7 +24,7 @@ use proptest_state_machine::{
 
 #[derive(Clone, Debug)]
 struct RefState {
-    run_start: Run,
+    run_start: RunSingleCoordinator,
     pending_keygens: BTreeMap<KeygenId, RefKeygen>,
     finished_keygens: Vec<RefFinishedKey>,
     sign_sessions: Vec<RefSignSession>,
@@ -193,7 +192,7 @@ impl ReferenceStateMachine for RefState {
                 move |(n_devices, n_nonce_slots, n_desired_nonce_streams_coord)| {
                     let mut rng = TestRng::deterministic_rng(RngAlgorithm::ChaCha);
                     let nonce_batch_size = 4u32; // Small batch size for testing
-                    let run = Run::generate_with_nonce_slots_and_batch_size(
+                    let run = RunSingleCoordinator::generate_with_nonce_slots_and_batch_size(
                         n_devices.into(),
                         &mut rng,
                         n_nonce_slots,
@@ -226,7 +225,7 @@ impl ReferenceStateMachine for RefState {
             let name = proptest::string::string_regex("[A-Z][a-z][a-z]")
                 .unwrap()
                 .no_shrink();
-            let keygen_id = array::uniform::<_, 16>(0..=u8::MAX)/* testing colliding keygen ids is not of interest */ .no_shrink();
+            let keygen_id = array::uniform::<_, 32>(0..=u8::MAX)/* testing colliding keygen ids is not of interest */ .no_shrink();
 
             let keygen_trans = (keygen_id, devices_and_threshold, name)
                 .prop_map(move |(keygen_id, (devices, threshold), key_name)| {
@@ -618,7 +617,7 @@ impl ReferenceStateMachine for RefState {
 /// This tests that all valid transitions can occur without panicking. This has marginal benefit for
 /// security but tests any state transition the user should be able to make happen while using the system.
 struct HappyPathTest {
-    run: Run,
+    run: RunSingleCoordinator,
     rng: TestRng,
     env: ProptestEnv,
     finished_keygens: Vec<AccessStructureRef>,
@@ -637,6 +636,7 @@ impl Env for ProptestEnv {
     fn user_react_to_coordinator(
         &mut self,
         _run: &mut Run,
+        _ci: usize,
         message: CoordinatorToUserMessage,
         _rng: &mut impl RngCore,
     ) {
@@ -831,9 +831,10 @@ impl StateMachineTest for HappyPathTest {
             } => {
                 let session_id = sign_sessions[session_index];
 
-                let req =
-                    run.coordinator
-                        .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+                let req = run
+                    .coordinator
+                    .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY)
+                    .unwrap();
                 run.extend(req);
             }
             Transition::CCancelSignSession { session_index } => {

@@ -15,6 +15,7 @@ use frostsnap_coordinator::{
 
 // we need to wrap it so we can impl it on foreign FRB type. You can't do a single generic impl. Try
 // it if you don't believe me.
+#[derive(Clone)]
 pub struct SinkWrap<T>(pub StreamSink<T>);
 
 macro_rules! bridge_sink {

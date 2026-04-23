@@ -64,7 +64,6 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
       _connectedDevices = deviceIdSet(
         update.state.devices.map((dev) => dev.id).toList(),
       );
-      _reconcile();
     });
     // Defer the initial reconcile: the constructor is typically called from
     // `initState`, where pushing a route synchronously would throw because
@@ -175,6 +174,7 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     final future = _currentDialogFuture;
     if (future != null) await future;
   }
+
 
   @override
   void dispose() {

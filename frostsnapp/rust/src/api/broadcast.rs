@@ -12,13 +12,31 @@ use tracing::Level;
 use crate::frb_generated::{SseEncode, StreamSink};
 
 /// A broadcast stream that can be managed from rust.
-#[derive(Default, Clone)]
 pub struct Broadcast<T> {
     next_id: Arc<AtomicU32>,
     inner: Arc<RwLock<BroadcastInner<T>>>,
 }
 
-#[derive(Default)]
+impl<T> Default for Broadcast<T> {
+    fn default() -> Self {
+        Self {
+            next_id: Arc::new(AtomicU32::new(0)),
+            inner: Arc::new(RwLock::new(BroadcastInner {
+                subscriptions: BTreeMap::new(),
+            })),
+        }
+    }
+}
+
+impl<T> Clone for Broadcast<T> {
+    fn clone(&self) -> Self {
+        Self {
+            next_id: Arc::clone(&self.next_id),
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
 struct BroadcastInner<T> {
     subscriptions: BTreeMap<u32, StreamSink<T>>,
 }
@@ -61,16 +79,16 @@ pub enum StartError {
 }
 
 impl<T> BroadcastSubscription<T> {
-    fn _id(&self) -> u32 {
+    pub(crate) fn _id(&self) -> u32 {
         self.id
     }
 
-    fn _is_running(&self) -> bool {
+    pub(crate) fn _is_running(&self) -> bool {
         self.is_running.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Errors when the subscription is already started.
-    fn _start(&self, sink: StreamSink<T>) -> Result<(), StartError> {
+    pub(crate) fn _start(&self, sink: StreamSink<T>) -> Result<(), StartError> {
         use std::sync::atomic::Ordering;
 
         if self
@@ -85,7 +103,7 @@ impl<T> BroadcastSubscription<T> {
         Ok(())
     }
 
-    fn _stop(&self) -> bool {
+    pub(crate) fn _stop(&self) -> bool {
         use std::sync::atomic::Ordering;
 
         if self
@@ -105,6 +123,114 @@ impl<T> BroadcastSubscription<T> {
 impl<T> Drop for BroadcastSubscription<T> {
     fn drop(&mut self) {
         self._stop();
+    }
+}
+
+/// Thin wrapper around [`Broadcast`] that also caches the most recent
+/// value. Newly-arriving subscribers see the current state immediately
+/// (via `_start`) instead of waiting for the next `add`. Modelled after
+/// RxJS `BehaviorSubject`.
+pub struct BehaviorBroadcast<T> {
+    inner: Broadcast<T>,
+    latest: Arc<RwLock<Option<T>>>,
+}
+
+impl<T> Default for BehaviorBroadcast<T> {
+    fn default() -> Self {
+        Self {
+            inner: Broadcast::default(),
+            latest: Arc::new(RwLock::new(None)),
+        }
+    }
+}
+
+impl<T> Clone for BehaviorBroadcast<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            latest: Arc::clone(&self.latest),
+        }
+    }
+}
+
+impl<T: SseEncode + Clone> BehaviorBroadcast<T> {
+    #[frb(sync)]
+    pub fn subscribe(&self) -> BehaviorBroadcastSubscription<T> {
+        BehaviorBroadcastSubscription {
+            inner: self.inner.subscribe(),
+            latest: Arc::clone(&self.latest),
+        }
+    }
+
+    #[frb(sync)]
+    pub fn add(&self, data: &T) {
+        // Cache first, then fanout. A concurrent `subscribe → _start` that
+        // lands between these steps will see the new cached value AND still
+        // receive the fanout — at worst a duplicate emission, never a miss.
+        *self.latest.write().unwrap() = Some(data.clone());
+        self.inner.add(data);
+    }
+
+    /// Current cached value, if any.
+    #[frb(sync)]
+    pub fn latest(&self) -> Option<T> {
+        self.latest.read().unwrap().clone()
+    }
+}
+
+#[derive(Clone)]
+pub struct BehaviorBroadcastSubscription<T> {
+    inner: BroadcastSubscription<T>,
+    latest: Arc<RwLock<Option<T>>>,
+}
+
+impl<T: SseEncode + Clone> BehaviorBroadcastSubscription<T> {
+    pub(crate) fn _id(&self) -> u32 {
+        self.inner._id()
+    }
+
+    pub(crate) fn _is_running(&self) -> bool {
+        self.inner._is_running()
+    }
+
+    /// Starts the subscription and, if a cached value exists, immediately
+    /// emits it to the freshly-installed sink. Errors when the subscription
+    /// is already started.
+    pub(crate) fn _start(&self, sink: StreamSink<T>) -> Result<(), StartError> {
+        // Refuse before emitting cached so an `AlreadyRunning` caller
+        // doesn't end up with a sink that received one value and was then
+        // discarded.
+        if self.inner._is_running() {
+            return Err(StartError::AlreadyRunning);
+        }
+        if let Some(latest) = self.latest.read().unwrap().clone() {
+            if sink.add(latest).is_err() {
+                tracing::event!(
+                    Level::ERROR,
+                    id = self.inner._id(),
+                    "Failed to emit cached value to fresh sink"
+                );
+            }
+        }
+        self.inner._start(sink)
+    }
+
+    pub(crate) fn _stop(&self) -> bool {
+        self.inner._stop()
+    }
+}
+
+impl<T: SseEncode + Clone + Send + Sync + 'static> frostsnap_coordinator::Sink<T> for Broadcast<T> {
+    fn send(&self, data: T) {
+        self.add(&data);
+    }
+}
+
+impl<T: SseEncode + Clone + Send + Sync + 'static> frostsnap_coordinator::Sink<T>
+    for BehaviorBroadcast<T>
+{
+    fn send(&self, data: T) {
+        self.add(&data);
     }
 }
 

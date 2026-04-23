@@ -30,4 +30,8 @@ proptest = "=1.6.0"
 [features]
 std = ["tracing?/std", "schnorr_fun/std"]
 coordinator = ["std", "tracing", "rusqlite"]
-default = ["coordinator", "serde_json"]
+# Exposes a `test` module with the `Run` multi-coordinator harness, `Env`, `TestEnv`,
+# and related helpers for writing integration tests against frostsnap_core from
+# downstream crates (e.g. frostsnap_nostr).
+test-util = ["std", "coordinator"]
+default = ["coordinator", "serde_json", "test-util"]

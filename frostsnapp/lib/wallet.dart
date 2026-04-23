@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/nostr_chat/chat_page.dart';
+import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
@@ -773,6 +776,13 @@ class WalletBottomBar extends StatelessWidget {
       },
     );
 
+    final chatButton = IconButton(
+      onPressed: () => _openChat(context, walletCtx),
+      icon: Icon(Icons.chat_bubble_outline),
+      style: iconButtonStyle,
+      tooltip: 'Chat',
+    );
+
     final moreButton = IconButton(
       onPressed: () => showBottomSheetOrDialog(
         context,
@@ -808,12 +818,41 @@ class WalletBottomBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(child: receiveButton),
+                    Flexible(child: chatButton),
                     Flexible(child: sendButton),
                     Flexible(child: moreButton),
                   ],
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openChat(BuildContext context, WalletContext walletCtx) async {
+    if (!await ensureNostrIdentity(context)) return;
+    if (!context.mounted) return;
+
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+    final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
+    final asRef = frostKey!.accessStructures()[0].accessStructureRef();
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final channelParams = coord.channelConnectionParams(
+      accessStructureRef: asRef,
+      encryptionKey: encryptionKey,
+    );
+
+    if (!context.mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => walletCtx.wrap(
+          ChatPage(
+            accessStructureRef: asRef,
+            walletName: walletName,
+            channelParams: channelParams,
           ),
         ),
       ),

@@ -40,6 +40,9 @@ use tweak::Xpub;
 #[cfg(feature = "rusqlite")]
 mod sqlite;
 
+#[cfg(feature = "test-util")]
+pub mod test;
+
 #[macro_use]
 extern crate alloc;
 
@@ -193,6 +196,11 @@ impl AccessStructureId {
                 .into(),
         )
     }
+
+    pub fn from_root_shared_key(root_shared_key: &SharedKey<Normal>) -> Self {
+        let app_shared_key = Xpub::from_rootkey(root_shared_key.clone()).rootkey_to_master_appkey();
+        Self::from_app_poly(app_shared_key.into_key().point_polynomial())
+    }
 }
 
 impl_display_debug_serialize! {
@@ -325,14 +333,9 @@ pub struct AccessStructureRef {
 
 impl AccessStructureRef {
     pub fn from_root_shared_key(root_shared_key: &SharedKey<Normal>) -> Self {
-        let app_shared_key = Xpub::from_rootkey(root_shared_key.clone()).rootkey_to_master_appkey();
-        let master_appkey = MasterAppkey::from_xpub_unchecked(&app_shared_key);
-        let access_structure_id =
-            AccessStructureId::from_app_poly(app_shared_key.into_key().point_polynomial());
-
         AccessStructureRef {
-            key_id: master_appkey.key_id(),
-            access_structure_id,
+            key_id: KeyId::from_rootkey(root_shared_key.public_key()),
+            access_structure_id: AccessStructureId::from_root_shared_key(root_shared_key),
         }
     }
     pub fn range_for_key(key_id: KeyId) -> impl RangeBounds<AccessStructureRef> {
@@ -379,20 +382,23 @@ impl<T: Clone> Versioned<&T> {
     }
 }
 
-/// short randomly sampled id for a coordinator to refer to a key generation session before the key
-/// generation is complete.
+/// Identifier for a remote keygen session. Used to route
+/// `CoordinatorSend::Broadcast` payloads and the receiving
+/// `recv_remote_keygen_msg` call to the right in-flight keygen. If a
+/// future broadcast type emerges for something other than keygen, this
+/// can be generalized to a broader `ChannelId`.
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]
-pub struct KeygenId(pub [u8; 16]);
+pub struct KeygenId(pub [u8; 32]);
 
 impl_display_debug_serialize! {
-    fn to_bytes(keygen_id: &KeygenId) -> [u8;16] {
+    fn to_bytes(keygen_id: &KeygenId) -> [u8;32] {
         keygen_id.0
     }
 }
 
 impl_fromstr_deserialize! {
-    name => "key generation id",
-    fn from_bytes(bytes: [u8;16]) -> KeygenId {
+    name => "keygen id",
+    fn from_bytes(bytes: [u8;32]) -> KeygenId {
         KeygenId(bytes)
     }
 }

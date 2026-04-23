@@ -76,15 +76,18 @@ class _SignMessageFormState extends State<SignMessageForm> {
     if (buttonReady) {
       submitButtonOnPressed = () async {
         final message = _messageController.text;
-        final signingStream = coord
-            .startSigning(
-              accessStructureRef: accessStructure.accessStructureRef(),
-              devices: selected.toList(),
-              message: message,
-            )
-            .toBehaviorSubject();
+        final handle = await coord.startSigning(
+          accessStructureRef: accessStructure.accessStructureRef(),
+          devices: selected.toList(),
+          message: message,
+        );
 
-        await signMessageWorkflowDialog(context, signingStream, message);
+        if (!context.mounted) {
+          await handle.cancel();
+          return;
+        }
+
+        await signMessageWorkflowDialog(context, handle, message);
         if (context.mounted) {
           Navigator.pop(context);
         }
@@ -197,27 +200,26 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
 
 Future<bool> signMessageWorkflowDialog(
   BuildContext context,
-  Stream<SigningState> signingStream,
+  SigningSessionHandle handle,
   String message,
 ) async {
   final signatures = await showSigningProgressDialog(
     context,
-    signingStream,
+    handle,
     Text("signing ‘$message’"),
   );
   if (signatures != null && context.mounted) {
-    await _showSignatureDialog(context, signatures[0]);
+    await showSignatureDialog(context, signatures[0]);
   }
   return signatures == null;
 }
 
 Future<List<EncodedSignature>?> showSigningProgressDialog(
   BuildContext context,
-  Stream<SigningState> signingStream,
+  SigningSessionHandle handle,
   Widget description,
 ) async {
-  final stream = signingStream.toBehaviorSubject();
-  SignSessionId? sessionId;
+  final stream = handle.subState().start().toBehaviorSubject();
 
   final finishedSigning = stream
       .asyncMap((event) {
@@ -226,12 +228,10 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
       .firstWhere((signatures) => signatures != null);
 
   stream.forEach((signingState) async {
-    sessionId = signingState.sessionId;
     final encryptionKey = await SecureKeyProvider.getEncryptionKey();
     for (final deviceId in signingState.connectedButNeedRequest) {
-      coord.requestDeviceSign(
+      await handle.requestDeviceSign(
         deviceId: deviceId,
-        sessionId: sessionId!,
         encryptionKey: encryptionKey,
       );
     }
@@ -259,15 +259,13 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
   );
 
   if (result == null) {
-    if (sessionId != null) {
-      coord.cancelSignSession(ssid: sessionId!);
-    }
-    coord.cancelProtocol();
+    coord.cancelSignSession(ssid: handle.sessionId());
+    await handle.cancel();
   }
   return result;
 }
 
-Future<void> _showSignatureDialog(
+Future<void> showSignatureDialog(
   BuildContext context,
   EncodedSignature signature,
 ) {
@@ -298,8 +296,13 @@ Future<void> _showSignatureDialog(
 
 class DeviceSigningProgress extends StatelessWidget {
   final Stream<SigningState> stream;
+  final Map<DeviceId, Widget>? signerAvatars;
 
-  const DeviceSigningProgress({super.key, required this.stream});
+  const DeviceSigningProgress({
+    super.key,
+    required this.stream,
+    this.signerAvatars,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -345,6 +348,7 @@ class DeviceSigningProgress extends StatelessWidget {
                   );
                 }
                 return ListTile(
+                  leading: signerAvatars?[id],
                   title: Text(name ?? "<unknown>"),
                   trailing: SizedBox(height: iconSize, child: icon),
                 );

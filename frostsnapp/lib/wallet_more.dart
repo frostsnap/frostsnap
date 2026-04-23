@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/nostr_chat/chat_page.dart';
+import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
@@ -189,6 +192,15 @@ class _WalletMoreState extends State<WalletMore> {
           ListTile(
             contentPadding: contentPadding,
             tileColor: tileColor,
+            shape: tileShape,
+            title: Text('Chat'),
+            subtitle: Text('Coordinate signing with remote co-signers'),
+            leading: Icon(Icons.chat_bubble_outline),
+            onTap: () => _openChat(context, walletCtx),
+          ),
+          ListTile(
+            contentPadding: contentPadding,
+            tileColor: tileColor,
             shape: tileShapeEnd,
             title: Text('Delete wallet'),
             subtitle: Text('Delete this wallet from the app'),
@@ -222,6 +234,35 @@ class _WalletMoreState extends State<WalletMore> {
       curve: Curves.easeInOutCubicEmphasized,
       alignment: AlignmentGeometry.topCenter,
       child: column,
+    );
+  }
+
+  Future<void> _openChat(BuildContext context, WalletContext walletCtx) async {
+    if (!await ensureNostrIdentity(context)) return;
+    if (!context.mounted) return;
+
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+    final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
+    final asRef = frostKey!.accessStructures()[0].accessStructureRef();
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final channelParams = coord.channelConnectionParams(
+      accessStructureRef: asRef,
+      encryptionKey: encryptionKey,
+    );
+
+    if (!context.mounted) return;
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => walletCtx.wrap(
+          ChatPage(
+            accessStructureRef: asRef,
+            walletName: walletName,
+            channelParams: channelParams,
+          ),
+        ),
+      ),
     );
   }
 

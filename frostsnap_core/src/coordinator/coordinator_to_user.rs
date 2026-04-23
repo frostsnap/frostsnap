@@ -25,6 +25,7 @@ pub enum CoordinatorToUserSigningMessage {
     GotShare {
         session_id: SignSessionId,
         from: DeviceId,
+        shares: signing::ParticipantSignatureShares,
     },
     Signed {
         session_id: SignSessionId,

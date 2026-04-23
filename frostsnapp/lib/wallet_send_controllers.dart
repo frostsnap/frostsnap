@@ -399,7 +399,7 @@ class SelectedDevicesController with ChangeNotifier {
   void select(DeviceId id) => _selected.add(id) ? notifyListeners() : null;
   void deselect(DeviceId id) => _selected.remove(id) ? notifyListeners() : null;
 
-  Stream<SigningState>? signingSessionStream(UnsignedTx unsignedTx) {
+  Future<SigningSessionHandle>? signingSessionHandle(UnsignedTx unsignedTx) {
     if (_walletContext == null || _frostKey == null) return null;
     final accessStructure = _frostKey!.accessStructures()[accessStructureIndex];
     return coord.startSigningTx(
@@ -428,6 +428,7 @@ class DeviceSignatureModel {
 class SigningSessionController with ChangeNotifier {
   late final StreamSubscription<DeviceListUpdate> _deviceStateSub;
   StreamSubscription<SigningState>? _signingStateSub;
+  SigningSessionHandle? _handle;
   final HashSet<DeviceId> _connectedDevices = deviceIdSet([]);
   UnsignedTx? _unsignedTx;
   SignedTx? _signedTx;
@@ -449,10 +450,11 @@ class SigningSessionController with ChangeNotifier {
     super.dispose();
   }
 
-  Future<bool> init(UnsignedTx unsignedTx, Stream<SigningState> stream) async {
+  Future<bool> init(UnsignedTx unsignedTx, SigningSessionHandle handle) async {
     if (_unsignedTx != null || _signingStateSub != null) return false;
     _unsignedTx = unsignedTx;
-    _signingStateSub = stream.listen((state) async {
+    _handle = handle;
+    _signingStateSub = handle.subState().start().listen((state) async {
       final signatures = state.finishedSignatures;
       if (signatures != null && _unsignedTx != null) {
         _signedTx = _unsignedTx!.complete(signatures: signatures);
@@ -466,9 +468,13 @@ class SigningSessionController with ChangeNotifier {
 
   void cancel() async {
     if (_signingStateSub != null || _unsignedTx != null) {
-      await coord.cancelProtocol();
-      if (_state != null) {
-        await coord.cancelSignSession(ssid: _state!.sessionId);
+      final handle = _handle;
+      _handle = null;
+      if (handle != null) {
+        await handle.cancel();
+        if (_state != null) {
+          await coord.cancelSignSession(ssid: _state!.sessionId);
+        }
       }
       _signingStateSub?.cancel();
       _signingStateSub = null;
@@ -493,13 +499,13 @@ class SigningSessionController with ChangeNotifier {
   }
 
   void maybeRequestDeviceSign() async {
-    if (_state != null) {
+    final handle = _handle;
+    if (handle != null && _state != null) {
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
       for (final neededFrom in _state!.connectedButNeedRequest) {
         if (_connectedDevices.contains(neededFrom)) {
-          coord.requestDeviceSign(
+          await handle.requestDeviceSign(
             deviceId: neededFrom,
-            sessionId: _state!.sessionId,
             encryptionKey: encryptionKey,
           );
         }
