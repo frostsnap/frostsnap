@@ -201,20 +201,14 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 }
             }
             &CoordinatorRestoration::DisplayBackup {
-                access_structure_ref,
+                // Redundant with root_shared_key — ignored, derived below.
+                access_structure_ref: _,
                 coord_share_decryption_contrib,
                 share_index,
                 ref root_shared_key,
             } => {
-                // Verify that the root_shared_key corresponds to the access_structure_ref
-                let expected_ref = AccessStructureRef::from_root_shared_key(root_shared_key);
-                if expected_ref != access_structure_ref {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        "root_shared_key doesn't match access_structure_ref",
-                    ));
-                }
-
+                let access_structure_ref =
+                    AccessStructureRef::from_root_shared_key(root_shared_key);
                 let AccessStructureRef {
                     key_id,
                     access_structure_id,
@@ -269,19 +263,12 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             }
 
             &CoordinatorRestoration::CheckBackup {
-                access_structure_ref,
                 coord_share_decryption_contrib,
                 share_index,
                 ref root_shared_key,
             } => {
-                let expected_ref = AccessStructureRef::from_root_shared_key(root_shared_key);
-                if expected_ref != access_structure_ref {
-                    return Err(Error::signer_invalid_message(
-                        &message,
-                        "root_shared_key doesn't match access_structure_ref",
-                    ));
-                }
-
+                let access_structure_ref =
+                    AccessStructureRef::from_root_shared_key(root_shared_key);
                 let AccessStructureRef {
                     key_id,
                     access_structure_id,
