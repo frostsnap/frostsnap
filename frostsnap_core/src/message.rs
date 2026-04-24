@@ -57,6 +57,10 @@ pub enum CoordinatorRestoration {
     /// Consolidate the saved secret share backup into a properly encrypted backup.
     Consolidate(Box<ConsolidateBackup>),
     DisplayBackup {
+        /// Redundant: derivable from `root_shared_key` via
+        /// `AccessStructureRef::from_root_shared_key`. Coordinators must still
+        /// set it correctly — devices ignore it but the field is wire-visible
+        /// and kept for backwards compatibility.
         access_structure_ref: AccessStructureRef,
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
         share_index: ShareIndex,
@@ -65,7 +69,6 @@ pub enum CoordinatorRestoration {
     RequestHeldShares,
     SavePhysicalBackup2(Box<HeldShare2>),
     CheckBackup {
-        access_structure_ref: AccessStructureRef,
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
         share_index: ShareIndex,
         root_shared_key: SharedKey,

@@ -1093,7 +1093,6 @@ impl FrostCoordinator {
             ))?;
         Ok(vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::CheckBackup {
-                access_structure_ref,
                 coord_share_decryption_contrib,
                 share_index,
                 root_shared_key,
