@@ -246,8 +246,8 @@ impl ReferenceStateMachine for RefState {
         for (&keygen_id, keygen) in &state.pending_keygens {
             let candidates = keygen
                 .do_keygen
-                .device_to_share_index
-                .keys()
+                .devices_in_order
+                .iter()
                 .filter(|device_id| !keygen.devices_confirmed.contains(device_id))
                 .cloned()
                 .collect::<Vec<_>>();
@@ -421,10 +421,7 @@ impl ReferenceStateMachine for RefState {
                 keygen_id,
             } => match state.pending_keygens.get(keygen_id) {
                 Some(keygen_state) => {
-                    keygen_state
-                        .do_keygen
-                        .device_to_share_index
-                        .contains_key(device_id)
+                    keygen_state.do_keygen.devices_in_order.contains(device_id)
                         && !keygen_state.devices_confirmed.contains(device_id)
                 }
                 None => false,
@@ -433,7 +430,7 @@ impl ReferenceStateMachine for RefState {
                 match state.pending_keygens.get(keygen_id) {
                     Some(keygen_state) => {
                         keygen_state.devices_confirmed.len()
-                            == keygen_state.do_keygen.device_to_share_index.len()
+                            == keygen_state.do_keygen.devices_in_order.len()
                     }
                     None => false,
                 }

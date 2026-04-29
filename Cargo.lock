@@ -3985,9 +3985,9 @@ checksum = "ece8e78b2f38ec51c51f5d475df0a7187ba5111b2a28bdc761ee05b075d40a71"
 
 [[package]]
 name = "schnorr_fun"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c711acb599464e57111c072bf6a9a64b51313f4baa776f4a500926dd4339bd32"
+checksum = "b92126e202853794199f04edf02851e17963c95e1d2308dccecf92a6857359d5"
 dependencies = [
  "bech32",
  "bincode",
@@ -4094,9 +4094,9 @@ dependencies = [
 
 [[package]]
 name = "secp256kfun"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17d209307a50f8baee901c4e65ccef0da4185ef2d54834d73d6847369b8fa049"
+checksum = "ca6e7ba8c21335d29d0c9b8f46c3fbd1127b03b0e0b7dc5ebbe3ef28ef820ec6"
 dependencies = [
  "bincode",
  "digest 0.10.7",
