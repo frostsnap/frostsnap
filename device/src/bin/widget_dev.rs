@@ -2,16 +2,16 @@
 #![no_main]
 
 extern crate alloc;
+use embedded_graphics::prelude::*;
 use esp_hal::main;
 use frostsnap_device::{peripherals::DevicePeripherals, touch_handler, DISPLAY_REFRESH_MS};
-use frostsnap_widgets::debug::{EnabledDebug, OverlayDebug};
+use frostsnap_widgets::{
+    debug::{EnabledDebug, OverlayDebug},
+    palette::PALETTE,
+    DynWidget, ScreenTest, Widget,
+};
 
 esp_bootloader_esp_idf::esp_app_desc!();
-
-const DEMO: &str = match option_env!("DEMO") {
-    Some(d) => d,
-    None => "hello_world",
-};
 
 #[main]
 fn main() -> ! {
@@ -24,78 +24,72 @@ fn main() -> ! {
     // Initialize all device peripherals
     let device = DevicePeripherals::init(peripherals);
 
-    // Check if the device needs provisioning
-    if device.needs_factory_provisioning() {
-        // Run dev provisioning - this will reset the device
-        frostsnap_device::factory::run_dev_provisioning(device);
-    } else {
-        // Device is already provisioned - proceed with widget testing
-        // Extract the components we need from DevicePeripherals
-        let DevicePeripherals {
-            display,
-            mut touch_receiver,
-            ..
-        } = *device;
+    // Widget bring-up path should never burn efuses.
+    let DevicePeripherals {
+        display,
+        mut touch_receiver,
+        ..
+    } = *device;
 
-        let mut display = frostsnap_widgets::SuperDrawTarget::new(
-            display,
-            frostsnap_widgets::palette::PALETTE.background,
-        );
+    let mut display = frostsnap_widgets::SuperDrawTarget::new(
+        display,
+        frostsnap_widgets::palette::PALETTE.background,
+    );
 
-        // Macro to run a widget with all the hardware peripherals
-        macro_rules! run_widget {
-            ($widget:expr) => {{
-                // Create the widget with debug overlay
-                let debug_config = EnabledDebug {
-                    logs: cfg!(feature = "debug_log"),
-                    memory: cfg!(feature = "debug_mem"),
-                    fps: cfg!(feature = "debug_fps"),
-                };
-                let mut widget_with_debug = OverlayDebug::new($widget, debug_config);
+    // Macro to run a widget with all the hardware peripherals
+    macro_rules! run_widget {
+        ($widget:expr) => {{
+            // Create the widget with debug overlay
+            let debug_config = EnabledDebug {
+                logs: cfg!(feature = "debug_log"),
+                memory: cfg!(feature = "debug_mem"),
+                fps: cfg!(feature = "debug_fps"),
+            };
+            let mut widget_with_debug = OverlayDebug::new($widget, debug_config);
 
-                // Set constraints
-                widget_with_debug.set_constraints(display.bounding_box().size);
+            // Set constraints
+            widget_with_debug.set_constraints(display.bounding_box().size);
 
-                let mut last_touch: Option<Point> = None;
-                let mut current_widget_index = 0usize;
+            let mut last_touch: Option<Point> = None;
+            let mut current_widget_index = 0usize;
 
-                // Track last redraw time
-                let mut last_redraw_time = esp_hal::time::Instant::now();
+            // Track last redraw time
+            let mut last_redraw_time = esp_hal::time::Instant::now();
 
-                // Clear the screen with background color
-                let _ = display.clear(PALETTE.background);
+            // Clear the screen with background color
+            let _ = display.clear(PALETTE.background);
 
-                // Main loop
-                loop {
-                    let now = esp_hal::time::Instant::now();
-                    let now_ms = frostsnap_widgets::Instant::from_millis(
-                        now.duration_since_epoch().as_millis(),
-                    );
+            // Main loop
+            loop {
+                let now = esp_hal::time::Instant::now();
+                let now_ms = frostsnap_widgets::Instant::from_millis(
+                    now.duration_since_epoch().as_millis(),
+                );
 
-                    // Process all pending touch events
-                    touch_handler::process_all_touch_events(
-                        &mut touch_receiver,
-                        &mut widget_with_debug,
-                        &mut last_touch,
-                        &mut current_widget_index,
-                        now_ms,
-                    );
+                // Process all pending touch events
+                touch_handler::process_all_touch_events(
+                    &mut touch_receiver,
+                    &mut widget_with_debug,
+                    &mut last_touch,
+                    &mut current_widget_index,
+                    now_ms,
+                );
 
-                    // Only redraw if enough time has passed since last redraw
-                    let elapsed_ms = (now - last_redraw_time).as_millis();
-                    if elapsed_ms >= DISPLAY_REFRESH_MS {
-                        // Update last redraw time
-                        last_redraw_time = now;
-                        // Draw the UI stack (includes debug stats overlay)
-                        let _ = widget_with_debug.draw(&mut display, now_ms);
-                    }
+                // Only redraw if enough time has passed since last redraw
+                let elapsed_ms = (now - last_redraw_time).as_millis();
+                if elapsed_ms >= DISPLAY_REFRESH_MS {
+                    // Update last redraw time
+                    last_redraw_time = now;
+                    // Draw the UI stack (includes debug stats overlay)
+                    let _ = widget_with_debug.draw(&mut display, now_ms);
                 }
-            }};
-        }
-
-        // Use the demo_widget! macro from frostsnap_widgets
-        frostsnap_widgets::demo_widget!(DEMO, run_widget);
+            }
+        }};
     }
+
+    let mut screen_test = ScreenTest::new();
+    screen_test.set_constraints(display.bounding_box().size);
+    run_widget!(screen_test);
 }
 
 #[panic_handler]

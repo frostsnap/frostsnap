@@ -1,8 +1,17 @@
 #![no_std]
 
+#[cfg(all(feature = "chip-esp32c3", feature = "chip-esp32s3"))]
+compile_error!("Enable exactly one chip feature: chip-esp32c3 or chip-esp32s3");
+#[cfg(not(any(feature = "chip-esp32c3", feature = "chip-esp32s3")))]
+compile_error!("A chip feature must be enabled: chip-esp32c3 or chip-esp32s3");
+
+#[cfg(feature = "chip-esp32c3")]
 use alloc::{collections::VecDeque, string::ToString};
+#[cfg(feature = "chip-esp32c3")]
 use frostsnap_comms::{DeviceSendBody, DeviceSendMessage, WireDeviceSendBody};
+#[cfg(feature = "chip-esp32c3")]
 use frostsnap_core::DeviceId;
+#[cfg(feature = "chip-esp32c3")]
 use ui::UserInteraction;
 
 #[macro_use]
@@ -30,31 +39,56 @@ macro_rules! log_and_redraw {
     }};
 }
 
+#[cfg(feature = "chip-esp32c3")]
 pub mod device_config;
+#[cfg(feature = "chip-esp32c3")]
 pub mod ds;
+#[cfg(feature = "chip-esp32c3")]
 pub mod efuse;
+#[cfg(feature = "chip-esp32c3")]
 pub mod erase;
+#[cfg(feature = "chip-esp32c3")]
 pub mod esp32_run;
+#[cfg(feature = "chip-esp32c3")]
 pub mod factory;
+#[cfg(feature = "chip-esp32c3")]
 pub mod firmware_size;
+#[cfg(feature = "chip-esp32c3")]
 pub mod flash;
+#[cfg(feature = "chip-esp32c3")]
 pub mod frosty_ui;
+#[cfg(feature = "chip-esp32c3")]
 pub mod io;
+#[cfg(feature = "chip-esp32c3")]
 pub mod ota;
 pub mod panic;
+#[cfg(feature = "chip-esp32c3")]
 pub mod partitions;
+#[cfg(feature = "chip-esp32c3")]
 pub mod peripherals;
+#[cfg(feature = "chip-esp32s3")]
+#[path = "peripherals_s3.rs"]
+pub mod peripherals;
+#[cfg(feature = "chip-esp32c3")]
 pub mod resources;
+#[cfg(feature = "chip-esp32c3")]
 pub mod root_widget;
+#[cfg(feature = "chip-esp32c3")]
 pub mod screen_test;
+#[cfg(feature = "chip-esp32c3")]
 pub mod secure_boot;
+#[cfg(all(feature = "stack_guard", feature = "chip-esp32c3"))]
 pub mod stack_guard;
 pub mod touch_calibration;
 pub mod touch_handler;
+#[cfg(feature = "chip-esp32c3")]
 pub mod uart_interrupt;
+#[cfg(feature = "chip-esp32c3")]
 pub mod ui;
+#[cfg(feature = "chip-esp32c3")]
 pub mod widget_tree;
 
+#[cfg(feature = "chip-esp32c3")]
 #[derive(Debug, Clone)]
 pub struct UpstreamConnection {
     state: UpstreamConnectionState,
@@ -63,6 +97,7 @@ pub struct UpstreamConnection {
     my_device_id: DeviceId,
 }
 
+#[cfg(feature = "chip-esp32c3")]
 impl UpstreamConnection {
     pub fn new(my_device_id: DeviceId) -> Self {
         Self {
@@ -144,6 +179,7 @@ impl UpstreamConnection {
     }
 }
 
+#[cfg(feature = "chip-esp32c3")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub enum UpstreamConnectionState {
     /// We have power from the upstream port
@@ -154,6 +190,7 @@ pub enum UpstreamConnectionState {
     EstablishedAndCoordAck,
 }
 
+#[cfg(feature = "chip-esp32c3")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub enum DownstreamConnectionState {
     Disconnected,

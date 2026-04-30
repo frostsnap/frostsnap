@@ -1,0 +1,7 @@
+# ESP-IDF Partition Table (ESP32-S3, default partition table offset 0x8000)
+# Name, Type, SubType, Offset, Size, Flags
+factory_cert,data,nvs,0x9000,16K,
+otadata,data,ota,0xD000,8K,
+ota_0,app,ota_0,0x10000,1724K,
+ota_1,app,ota_1,0x1C0000,1724K,
+nvs,data,nvs,0x37F000,512K,

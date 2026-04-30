@@ -4,22 +4,34 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["std"]
+default = ["std", "chip-esp32c3"]
 prefill-words = []
 std = []
+chip-esp32c3 = ["esp-hal/esp32c3"]
+chip-esp32s3 = ["esp-hal/esp32s3"]
 
 [dependencies]
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }
-embedded-iconoir = { version = "0.2.3", features = ["16px", "24px", "32px", "48px", "96px"] }
+embedded-iconoir = { version = "0.2.3", features = [
+    "16px",
+    "24px",
+    "32px",
+    "48px",
+    "96px",
+] }
 micromath = "0.2"
-frost_backup = { workspace = true, features = [ "bincode" ] }
+frost_backup = { workspace = true, features = ["bincode"] }
 frostsnap_core = { workspace = true }
 frostsnap_fonts = { workspace = true }
 frostsnap_macros = { path = "../macros" }
 bincode = { workspace = true }
 bitcoin = { workspace = true }
-u8g2-fonts = { version = "0.4", default-features = false, features = ["embedded_graphics_textstyle"] }
+u8g2-fonts = { version = "0.4", default-features = false, features = [
+    "embedded_graphics_textstyle",
+] }
 tinybmp = "0.6"
+esp-hal = { workspace = true }
+
 
 # Only needed for memory debug on ESP32
 [target.'cfg(target_arch = "riscv32")'.dependencies]

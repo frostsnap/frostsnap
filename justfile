@@ -11,6 +11,7 @@ secure_boot_key := bootloader_dir / env / "secure-boot-key.pem"
 bootloader_bin := bootloader_dir / env / "signed-bootloader.bin"
 firmware_bin := "target/riscv32imc-unknown-none-elf/release/" + env + "-frontier.bin"
 partitions_csv := "device/partitions.csv"
+partitions_csv_esp32s3 := "device/partitions-esp32s3.csv"
 app_api_dir := "frostsnap/rust/src/api"
 app_canary := "frostsnapp/binding-rerun.sha256"
 
@@ -44,30 +45,40 @@ flash-firmware +ARGS="":
     flash $ADDR_APP        "{{firmware_bin}}"         {{ARGS}}
 
 # Flash bootloader + partitions + firmware (for initial secure boot setup)
-flash-bootloader +ARGS="":
+flash-bootloader CHIP="esp32c3" +ARGS="":
     #!/bin/sh
     set -e
-    ADDR_PARTITIONS=$(awk -F= '$1 == "CONFIG_PARTITION_TABLE_OFFSET" { gsub(/"/, "", $2); print $2 }' frostsnap_factory/bootloader/sdkconfig.defaults)
-    [ -n "$ADDR_PARTITIONS" ] || { echo "Failed to find CONFIG_PARTITION_TABLE_OFFSET in sdkconfig.defaults" >&2; exit 1; }
-    for f in "{{bootloader_bin}}" device/partitions.bin; do
+    BOOT_DIR="{{bootloader_dir}}/{{env}}-{{CHIP}}"
+    UNSIGNED_BOOTLOADER="$BOOT_DIR/bootloader.bin"
+    SIGNED_BOOTLOADER="$BOOT_DIR/signed-bootloader.bin"
+    SDKCONFIG="$BOOT_DIR/sdkconfig"
+    [ -f "$SDKCONFIG" ] || { echo "Missing: $SDKCONFIG. Run 'just env={{env}} build-bootloader {{CHIP}}' first." >&2; exit 1; }
+    ADDR_PARTITIONS=$(awk -F= '$1 == "CONFIG_PARTITION_TABLE_OFFSET" { gsub(/"/, "", $2); print $2 }' "$SDKCONFIG")
+    [ -n "$ADDR_PARTITIONS" ] || { echo "Failed to find CONFIG_PARTITION_TABLE_OFFSET in $SDKCONFIG" >&2; exit 1; }
+    if [ "{{env}}" = "prod" ]; then
+        BOOTLOADER_IMAGE="$SIGNED_BOOTLOADER"
+    else
+        BOOTLOADER_IMAGE="$UNSIGNED_BOOTLOADER"
+    fi
+    for f in "$BOOTLOADER_IMAGE" device/partitions.bin; do
         [ -f "$f" ] || { echo "Missing: $f" >&2; exit 1; }
     done
-    flash() { espflash write-bin --chip esp32c3 --baud 921600 --no-stub "$@"; }
+    flash() { espflash write-bin --chip {{CHIP}} --baud 921600 --no-stub "$@"; }
     if [ "{{ARGS}}" = "--table" ]; then
         printf "%-12s  %s\n" "Address" "Component"
-        printf "%-12s  %s\n" "0x0" "{{bootloader_bin}}"
+        printf "%-12s  %s\n" "0x0" "$BOOTLOADER_IMAGE"
         printf "%-12s  %s\n" "$ADDR_PARTITIONS" "device/partitions.bin"
         exit 0
     fi
-    flash 0x0              "{{bootloader_bin}}"       {{ARGS}}
+    flash 0x0              "$BOOTLOADER_IMAGE"        {{ARGS}}
     flash $ADDR_PARTITIONS device/partitions.bin      {{ARGS}}
 
 # Full provision: build + flash bootloader + firmware, then provision device
-full-provision COLOR BOARD=default_board +ARGS="":
-    just env={{env}} build-bootloader
-    just env={{env}} sign-bootloader
+full-provision COLOR BOARD=default_board CHIP="esp32c3" +ARGS="":
+    just env={{env}} build-bootloader {{CHIP}}
+    just env={{env}} sign-bootloader {{CHIP}}
     just env={{env}} build-firmware-signed {{BOARD}}
-    just env={{env}} flash-bootloader {{ARGS}}
+    just env={{env}} flash-bootloader {{CHIP}} {{ARGS}}
     just env={{env}} flash-firmware {{ARGS}}
     just env={{env}} provision {{COLOR}}
 
@@ -78,8 +89,15 @@ legacy-flash BOARD="legacy" +ARGS="":
 monitor +ARGS="":
     espflash monitor --no-stub
 
-erase-device +ARGS="nvs":
-    cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
+erase-device CHIP="esp32c3" +ARGS="nvs":
+    #!/bin/sh
+    set -e
+    case "{{CHIP}}" in
+      esp32c3) PARTITIONS="{{partitions_csv}}" ;;
+      esp32s3) PARTITIONS="{{partitions_csv_esp32s3}}" ;;
+      *) echo "Unknown CHIP='{{CHIP}}'. Expected esp32c3 or esp32s3." >&2; exit 1 ;;
+    esac
+    cd device && espflash erase-parts --partition-table "$PARTITIONS" {{ARGS}}
 
 build-firmware BOARD=default_board +ARGS="":
     cd device && cargo build --release --bin {{BOARD}} ${DEVICE_BUILD_ARGS:-} {{ARGS}}
@@ -90,14 +108,24 @@ build-firmware-signed BOARD=default_board OUTPUT=firmware_bin +ARGS="":
     just env={{env}} sign-firmware target/riscv32imc-unknown-none-elf/release/{{BOARD}}.bin {{OUTPUT}}
 
 # Build unsigned bootloader via Nix (no signing key needed)
-build-bootloader:
-    cd {{bootloader_dir}} && nix build .#{{env}}
-    mkdir -p {{bootloader_dir}}/{{env}}
-    cp -f {{bootloader_dir}}/result/bootloader.bin {{bootloader_dir}}/{{env}}/bootloader.bin
+build-bootloader CHIP="esp32c3":
+    cd {{bootloader_dir}} && nix build .#{{env}}-{{CHIP}}
+    mkdir -p {{bootloader_dir}}/{{env}}-{{CHIP}}
+    cp -f {{bootloader_dir}}/result/bootloader.bin {{bootloader_dir}}/{{env}}-{{CHIP}}/bootloader.bin
+    cp -f {{bootloader_dir}}/result/sdkconfig {{bootloader_dir}}/{{env}}-{{CHIP}}/sdkconfig
 
 # Sign the unsigned bootloader with the secure boot key
-sign-bootloader:
-    just env={{env}} sign-firmware {{bootloader_dir}}/{{env}}/bootloader.bin {{bootloader_bin}}
+sign-bootloader CHIP="esp32c3":
+    #!/bin/sh
+    set -e
+    INPUT="{{bootloader_dir}}/{{env}}-{{CHIP}}/bootloader.bin"
+    OUTPUT="{{bootloader_dir}}/{{env}}-{{CHIP}}/signed-bootloader.bin"
+    [ -f "$INPUT" ] || { echo "Missing: $INPUT. Run 'just env={{env}} build-bootloader {{CHIP}}' first." >&2; exit 1; }
+    if [ "{{env}}" = "dev" ]; then
+        echo "Skipping bootloader signing for dev environment by design."
+        exit 0
+    fi
+    just env={{env}} sign-firmware "$INPUT" "$OUTPUT"
 
 # Generate all keys for an environment
 gen-keys:
@@ -325,11 +353,36 @@ backup +ARGS="":
 simulate +ARGS="":
     (cd widget_simulator && cargo run -- {{ARGS}}; )
 
-widget_dev DEMO +ARGS="":
-    cd device && DEMO={{DEMO}} cargo build --bin widget_dev --release ${DEVICE_BUILD_ARGS:-} {{ARGS}}
-    just save-image widget_dev
-    just env={{env}} sign-firmware target/riscv32imc-unknown-none-elf/release/widget_dev.bin target/riscv32imc-unknown-none-elf/release/{{env}}-widget_dev.bin
-    just firmware_bin=target/riscv32imc-unknown-none-elf/release/{{env}}-widget_dev.bin flash-firmware
+widget_dev DEMO="screen_test" CHIP="esp32c3" +ARGS="":
+    #!/bin/sh
+    set -e
+    case "{{CHIP}}" in
+      esp32c3)
+        TARGET="riscv32imc-unknown-none-elf"
+        CHIP_FEATURES="--features chip-esp32c3"
+        PARTITIONS_CSV="device/partitions.csv"
+        PT_OFFSET="0xD000"
+        TOOLCHAIN=""
+        ;;
+      esp32s3)
+        TARGET="xtensa-esp32s3-none-elf"
+        CHIP_FEATURES="--no-default-features --features chip-esp32s3"
+        PARTITIONS_CSV="device/partitions-esp32s3.csv"
+        PT_OFFSET="0x8000"
+        TOOLCHAIN="+esp"
+        ;;
+      *)
+        echo "Unknown CHIP='{{CHIP}}'. Expected esp32c3 or esp32s3." >&2
+        exit 1
+        ;;
+    esac
+    (cd device && ESP_BOOTLOADER_ESP_IDF_CONFIG_PARTITION_TABLE_OFFSET="$PT_OFFSET" DEMO={{DEMO}} cargo ${TOOLCHAIN} build --bin widget_dev --release --target "$TARGET" $CHIP_FEATURES ${DEVICE_BUILD_ARGS:-} {{ARGS}})
+    espflash save-image --chip={{CHIP}} target/"$TARGET"/release/widget_dev target/"$TARGET"/release/widget_dev.bin
+    just env={{env}} sign-firmware target/"$TARGET"/release/widget_dev.bin target/"$TARGET"/release/{{env}}-widget_dev.bin
+    ADDR_OTADATA=$(awk -F, '$1 == "otadata" { gsub(/ /, "", $4); print $4 }' "$PARTITIONS_CSV")
+    ADDR_APP=$(awk -F, '$1 == "ota_0" { gsub(/ /, "", $4); print $4 }' "$PARTITIONS_CSV")
+    espflash write-bin --chip {{CHIP}} --baud 921600 --no-stub $ADDR_OTADATA device/blank-otadata.bin {{ARGS}}
+    espflash write-bin --chip {{CHIP}} --baud 921600 --no-stub $ADDR_APP target/"$TARGET"/release/{{env}}-widget_dev.bin {{ARGS}}
 
 clean:
     cd frostsnapp && flutter clean

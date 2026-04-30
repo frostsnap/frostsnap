@@ -15,12 +15,18 @@
         rev = "v5.5.4";
         sha256 = "sha256-rItbBrwItkfJf8tKImAQsiXDR95sr0LqaM51gDZG/nI=";
       };
+      esp-idf-xtensa = (nixpkgs-esp-dev.packages.${system}.esp-idf-xtensa).override {
+        rev = "v5.5.4";
+        sha256 = "sha256-rItbBrwItkfJf8tKImAQsiXDR95sr0LqaM51gDZG/nI=";
+      };
 
-      buildBootloader = { variant ? "dev" }: pkgs.stdenv.mkDerivation {
-        name = "frostsnap-bootloader-${variant}";
+      buildBootloader = { variant ? "dev", chip ? "esp32c3" }: pkgs.stdenv.mkDerivation {
+        name = "frostsnap-bootloader-${variant}-${chip}";
         src = ./.;
 
-        buildInputs = [ esp-idf-riscv ];
+        buildInputs = [
+          (if chip == "esp32s3" then esp-idf-xtensa else esp-idf-riscv)
+        ];
 
         phases = [ "buildPhase" "installPhase" ];
 
@@ -32,9 +38,9 @@
           export IDF_COMPONENT_MANAGER=0
 
           DEFAULTS="sdkconfig.defaults"
-          ${if variant == "dev" then ''DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.dev"'' else ""}
+          ${if variant == "dev" then ''DEFAULTS="$DEFAULTS;sdkconfig.defaults.dev"'' else ""}
 
-          idf.py -DSDKCONFIG_DEFAULTS="$DEFAULTS" set-target esp32c3
+          idf.py -DSDKCONFIG_DEFAULTS="$DEFAULTS" set-target ${chip}
 
           idf.py bootloader
         '';
@@ -47,13 +53,19 @@
       };
     in {
       packages = {
-        dev = buildBootloader { variant = "dev"; };
-        prod = buildBootloader { variant = "prod"; };
+        dev-esp32c3 = buildBootloader { variant = "dev"; chip = "esp32c3"; };
+        prod-esp32c3 = buildBootloader { variant = "prod"; chip = "esp32c3"; };
+        dev-esp32s3 = buildBootloader { variant = "dev"; chip = "esp32s3"; };
+        prod-esp32s3 = buildBootloader { variant = "prod"; chip = "esp32s3"; };
+
+        # Backward compatible aliases (C3)
+        dev = self.packages.${system}.dev-esp32c3;
+        prod = self.packages.${system}.prod-esp32c3;
         default = self.packages.${system}.dev;
       };
 
       devShells.default = pkgs.mkShell {
-        buildInputs = [ esp-idf-riscv ];
+        buildInputs = [ esp-idf-riscv esp-idf-xtensa ];
       };
     });
 }
