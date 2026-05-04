@@ -20,7 +20,7 @@ class NostrSigningPage extends StatefulWidget {
   final TxDetailsModel txDetails;
   final SigningRequestState signingState;
   final int threshold;
-  final FfiNostrProfile? Function(PublicKey) getProfile;
+  final NostrProfile? Function(PublicKey) getProfile;
   final PublicKey? myPubkey;
   final NostrClient client;
   final AccessStructureRef accessStructureRef;
@@ -595,7 +595,7 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
 }
 
 class _SignerChip extends StatelessWidget {
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
   final PublicKey pubkey;
   final String name;
   final String keyLabel;

@@ -4,6 +4,7 @@ use crate::{
         decode_bincode, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
         ChannelRunnerHandle, SendOutcome,
     },
+    EventId,
 };
 use anyhow::Result;
 use frostsnap_coordinator::Sink;
@@ -11,7 +12,7 @@ use frostsnap_core::{
     coordinator::remote_keygen::{RemoteKeygenMessage, RemoteKeygenPayload},
     DeviceId,
 };
-use nostr_sdk::{Client, EventId, Keys, Kind, PublicKey};
+use nostr_sdk::{Client, Keys, Kind, PublicKey};
 use std::collections::BTreeMap;
 
 pub const KIND_FROSTSNAP_KEYGEN_PROTOCOL: Kind = Kind::Custom(9002);

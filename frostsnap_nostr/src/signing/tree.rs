@@ -24,13 +24,14 @@
 
 use super::events::{ConfirmedSubsetEntry, SigningEvent};
 use crate::channel_runner::EventMeta;
+use crate::EventId;
 use frostsnap_core::{
     coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
     message::GroupSignReq,
     schnorr_fun::frost::ShareIndex,
     WireSignTask,
 };
-use nostr_sdk::{EventId, PublicKey};
+use nostr_sdk::PublicKey;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
 pub(crate) struct SigningEventTree {
@@ -483,7 +484,7 @@ mod tests {
     fn eid(n: u8) -> EventId {
         let mut bytes = [0u8; 32];
         bytes[0] = n;
-        EventId::from_byte_array(bytes)
+        EventId(bytes)
     }
 
     fn pk() -> PublicKey {

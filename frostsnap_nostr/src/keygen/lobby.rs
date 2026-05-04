@@ -3,11 +3,12 @@ use crate::channel_runner::{
     decode_bincode, extract_e_tags, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
     ChannelRunnerHandle, SendOutcome, BINCODE_CONFIG,
 };
+use crate::EventId;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use anyhow::Result;
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{coordinator::BeginKeygen, device::KeyPurpose, DeviceId, KeygenId};
-use nostr_sdk::{nips::nip44, Client, Event, EventBuilder, EventId, Keys, Kind, PublicKey};
+use nostr_sdk::{nips::nip44, Client, Event, EventBuilder, Keys, Kind, PublicKey};
 use rand_core::OsRng;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
@@ -130,15 +131,12 @@ pub enum ParticipantStatus {
 }
 
 #[derive(Clone, Debug)]
-pub struct DeviceCommitment {
-    pub devices: Vec<DeviceRegistration>,
-}
-
-#[derive(Clone, Debug)]
 pub struct ParticipantInfo {
     pub pubkey: PublicKey,
     pub status: ParticipantStatus,
-    pub commitment: Option<DeviceCommitment>,
+    /// Empty until the participant publishes `Register`. Once set,
+    /// stays sticky to the most recent `Register` payload.
+    pub devices: Vec<DeviceRegistration>,
     /// `None` until the participant publishes `Register`.
     /// Consumed by `StartKeygen`'s e-tags for ordering + impersonation
     /// checks, so it stays sticky to the most recent `Register`.
@@ -150,14 +148,22 @@ pub struct LobbyState {
     pub initiator: Option<PublicKey>,
     pub key_name: Option<String>,
     pub purpose: Option<KeyPurpose>,
-    pub participants: BTreeMap<PublicKey, ParticipantInfo>,
+    pub participants: HashMap<PublicKey, ParticipantInfo>,
     /// Set when StartKeygen is received and resolved locally (selected coordinators only).
     pub keygen: Option<ResolvedKeygen>,
-    /// Pubkeys that have acknowledged the keygen — published `AckKeygen`
-    /// referencing `keygen.keygen_event_id`, or are the initiator (who
-    /// is seeded here at `StartKeygen`-process time). Empty until
-    /// `keygen` is set.
-    pub acked: std::collections::BTreeSet<PublicKey>,
+    /// `true` once a `Cancelled` event has been received locally
+    /// (initiator's `CancelLobby`, or a selected joiner's `Leave`
+    /// post-StartKeygen). Latched — receivers tear down on this flip.
+    pub cancelled: bool,
+}
+
+/// One selected participant in a `ResolvedKeygen` — the coordinator's
+/// nostr pubkey + their committed devices, in the order the StartKeygen
+/// e-tag sequence specified.
+#[derive(Clone, Debug)]
+pub struct SelectedParticipant {
+    pub pubkey: PublicKey,
+    pub devices: Vec<DeviceRegistration>,
 }
 
 /// Resolved keygen parameters from a StartKeygen event. Contains everything
@@ -167,15 +173,20 @@ pub struct ResolvedKeygen {
     /// The `EventId` of the `StartKeygen` nostr event. Converts to a
     /// `KeygenId` via `to_keygen_id()` / inside `to_begin_keygen()`.
     pub keygen_event_id: EventId,
-    /// Ordered list of (coordinator nostr pubkey, their devices). The order
-    /// comes from the `StartKeygen` event's e-tag sequence and flows through
-    /// `devices_in_order()` into the FROST device list — every coordinator
-    /// must agree on this ordering or the DKG will not converge, so a `Vec`
-    /// is used rather than a keyed map.
-    pub participants: Vec<(PublicKey, Vec<DeviceRegistration>)>,
+    /// Ordered list of selected participants. The order comes from the
+    /// `StartKeygen` event's e-tag sequence and flows through
+    /// `devices_in_order()` into the FROST device list — every
+    /// coordinator must agree on this ordering or the DKG will not
+    /// converge, so a `Vec` is used rather than a keyed map.
+    pub participants: Vec<SelectedParticipant>,
     pub threshold: u16,
     pub key_name: String,
     pub purpose: KeyPurpose,
+    /// Pubkeys that have acknowledged this keygen — published
+    /// `AckKeygen` referencing `keygen_event_id`, or are the initiator
+    /// (seeded at `StartKeygen`-process time). Subset of
+    /// `participants[..].pubkey`.
+    pub acked: Vec<PublicKey>,
 }
 
 impl ResolvedKeygen {
@@ -186,14 +197,14 @@ impl ResolvedKeygen {
     pub fn coordinator_ids(&self) -> Vec<DeviceId> {
         self.participants
             .iter()
-            .map(|(pk, _)| nostr_pubkey_to_device_id(pk))
+            .map(|p| nostr_pubkey_to_device_id(&p.pubkey))
             .collect()
     }
 
     pub fn devices_in_order(&self) -> Vec<DeviceId> {
         self.participants
             .iter()
-            .flat_map(|(_, devs)| devs.iter().map(|d| d.device_id))
+            .flat_map(|p| p.devices.iter().map(|d| d.device_id))
             .collect()
     }
 
@@ -214,13 +225,25 @@ impl ResolvedKeygen {
     pub fn allowed_senders(&self) -> BTreeMap<PublicKey, Vec<DeviceId>> {
         self.participants
             .iter()
-            .map(|(pk, devs)| {
-                let mut allowed = Vec::with_capacity(devs.len() + 1);
-                allowed.push(nostr_pubkey_to_device_id(pk));
-                allowed.extend(devs.iter().map(|d| d.device_id));
-                (*pk, allowed)
+            .map(|p| {
+                let mut allowed = Vec::with_capacity(p.devices.len() + 1);
+                allowed.push(nostr_pubkey_to_device_id(&p.pubkey));
+                allowed.extend(p.devices.iter().map(|d| d.device_id));
+                (p.pubkey, allowed)
             })
             .collect()
+    }
+
+    /// True if `pubkey` is one of the selected participants for this keygen.
+    pub fn includes(&self, pubkey: &PublicKey) -> bool {
+        self.participants.iter().any(|p| p.pubkey == *pubkey)
+    }
+
+    /// True once every selected participant is in `acked`.
+    pub fn all_acked(&self) -> bool {
+        self.participants
+            .iter()
+            .all(|p| self.acked.contains(&p.pubkey))
     }
 }
 
@@ -231,7 +254,7 @@ impl LobbyState {
             .or_insert_with(|| ParticipantInfo {
                 pubkey: author,
                 status: ParticipantStatus::Joining,
-                commitment: None,
+                devices: Vec::new(),
                 register_event_id: None,
             });
     }
@@ -248,19 +271,16 @@ impl LobbyState {
             .or_insert_with(|| ParticipantInfo {
                 pubkey: author,
                 status: ParticipantStatus::Joining,
-                commitment: None,
+                devices: Vec::new(),
                 register_event_id: None,
             });
-        entry.commitment = Some(DeviceCommitment { devices });
+        entry.devices = devices;
         entry.register_event_id = Some(event_id);
         entry.status = ParticipantStatus::Ready;
     }
 
     pub fn total_device_count(&self) -> usize {
-        self.participants
-            .values()
-            .map(|p| p.commitment.as_ref().map(|c| c.devices.len()).unwrap_or(0))
-            .sum()
+        self.participants.values().map(|p| p.devices.len()).sum()
     }
 
     /// True when every participant has published `Register` at least
@@ -271,15 +291,6 @@ impl LobbyState {
                 .participants
                 .values()
                 .all(|p| p.status == ParticipantStatus::Ready)
-    }
-
-    /// True once every selected participant in `keygen.participants` is
-    /// in `acked`. False if `keygen` is `None`.
-    pub fn all_acked(&self) -> bool {
-        let Some(resolved) = self.keygen.as_ref() else {
-            return false;
-        };
-        resolved.participants.iter().all(|(pk, _)| self.acked.contains(pk))
     }
 }
 
@@ -399,9 +410,10 @@ async fn fetch_inner_event(
     };
 
     let mut found = None;
+    let inner_event_id_sdk: nostr_sdk::EventId = inner_event_id.into();
     for event in events.into_iter() {
         if let Ok(inner) = decrypt_inner_event(&event, &conversation_key) {
-            if inner.id == inner_event_id {
+            if inner.id == inner_event_id_sdk {
                 found = Some(inner);
                 break;
             }
@@ -644,7 +656,7 @@ async fn process_event(
     channel_keys: &ChannelKeys,
     local_nostr_keys: &Keys,
 ) {
-    let event_id = inner_event.id;
+    let event_id: EventId = inner_event.id.into();
     let author = inner_event.pubkey;
 
     events_by_id.insert(event_id, inner_event.clone());
@@ -699,7 +711,7 @@ async fn process_event(
             for &ref_id in register_event_ids {
                 if !events_by_id.contains_key(&ref_id) {
                     if let Some(inner) = fetch_inner_event(client, channel_keys, ref_id).await {
-                        events_by_id.insert(inner.id, inner);
+                        events_by_id.insert(inner.id.into(), inner);
                     }
                 }
             }
@@ -718,10 +730,13 @@ async fn process_event(
                             // filter_map would silently drop them.
                             lobby.process_register(
                                 reg_event.pubkey,
-                                reg_event.id,
+                                reg_event.id.into(),
                                 devices.clone(),
                             );
-                            participants.push((reg_event.pubkey, devices));
+                            participants.push(SelectedParticipant {
+                                pubkey: reg_event.pubkey,
+                                devices,
+                            });
                         }
                         Ok(other) => {
                             tracing::warn!(%reg_id, msg_type = ?std::mem::discriminant(&other), "e-tag references non-Register event");
@@ -751,13 +766,11 @@ async fn process_event(
                 threshold,
                 key_name,
                 purpose,
+                // Seed with the initiator — `StartKeygen` publication
+                // counts as the host's implicit ack.
+                acked: vec![author],
             };
             lobby.keygen = Some(resolved.clone());
-            // The initiator is implicitly acked by virtue of having
-            // published `StartKeygen` — seed `acked` so the rest of the
-            // logic (including `all_acked()`) treats them uniformly.
-            // Everyone observes this; the `acked` set is public state.
-            lobby.acked.insert(author);
             sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
 
             // Selected receivers also get `KeygenResolved` (carrying
@@ -770,7 +783,11 @@ async fn process_event(
                         resolved,
                         channel_keys,
                     });
-                    if lobby.all_acked() {
+                    if lobby
+                        .keygen
+                        .as_ref()
+                        .is_some_and(|r| r.all_acked())
+                    {
                         sink.send(LobbyEvent::AllAcked);
                     }
                 }
@@ -783,7 +800,7 @@ async fn process_event(
             }
         }
         KeygenLobbyMessage::AckKeygen => {
-            let Some(resolved) = lobby.keygen.as_ref() else {
+            let Some(resolved) = lobby.keygen.as_mut() else {
                 tracing::warn!(event_id = %event_id, "AckKeygen before StartKeygen, ignoring");
                 return;
             };
@@ -792,18 +809,18 @@ async fn process_event(
                 tracing::warn!(event_id = %event_id, "AckKeygen e-tag does not match current StartKeygen, ignoring");
                 return;
             }
-            let in_selected = resolved.participants.iter().any(|(pk, _)| *pk == author);
-            if !in_selected {
+            if !resolved.includes(&author) {
                 tracing::warn!(event_id = %event_id, %author, "AckKeygen from non-selected participant, ignoring");
                 return;
             }
-            let inserted = lobby.acked.insert(author);
-            if inserted {
-                let now_all_acked = lobby.all_acked();
-                sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
-                if now_all_acked {
-                    sink.send(LobbyEvent::AllAcked);
-                }
+            if resolved.acked.contains(&author) {
+                return;
+            }
+            resolved.acked.push(author);
+            let now_all_acked = resolved.all_acked();
+            sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+            if now_all_acked {
+                sink.send(LobbyEvent::AllAcked);
             }
         }
         KeygenLobbyMessage::Leave => {
@@ -811,19 +828,16 @@ async fn process_event(
             // the round is dead — fire `Cancelled` and skip the
             // intermediate `LobbyChanged`. The post-removal snapshot
             // would be torn-down (leaver gone from `participants` but
-            // still in `keygen.participants` and possibly `acked`),
-            // and consumers are supposed to drop the handle on
-            // `Cancelled` anyway. One terminal event, no race.
+            // still in `keygen.participants`), and consumers are
+            // supposed to drop the handle on `Cancelled` anyway.
+            // One terminal event, no race.
             let was_selected = lobby
                 .keygen
                 .as_ref()
-                .is_some_and(|r| r.participants.iter().any(|(pk, _)| *pk == author));
+                .is_some_and(|r| r.includes(&author));
             let removed = lobby.participants.remove(&author).is_some();
-            // Keep `acked` in sync as a hygiene measure even though
-            // nothing reads it after `Cancelled` — defends against
-            // a future refactor that does.
-            lobby.acked.remove(&author);
             if was_selected {
+                lobby.cancelled = true;
                 sink.send(LobbyEvent::Cancelled);
             } else if removed {
                 sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
@@ -834,6 +848,7 @@ async fn process_event(
                 tracing::warn!(event_id = %event_id, author = %author, "CancelLobby from non-initiator, ignoring");
                 return;
             }
+            lobby.cancelled = true;
             sink.send(LobbyEvent::Cancelled);
         }
     }
@@ -848,7 +863,7 @@ mod tests {
         let sender = Keys::generate();
         let recipient = Keys::generate();
         let selected = vec![SelectedCoordinator {
-            register_event_id: EventId::all_zeros(),
+            register_event_id: EventId::ZERO,
             pubkey: recipient.public_key(),
         }];
 
@@ -867,7 +882,7 @@ mod tests {
         let recipient = Keys::generate();
         let other = Keys::generate();
         let selected = vec![SelectedCoordinator {
-            register_event_id: EventId::all_zeros(),
+            register_event_id: EventId::ZERO,
             pubkey: recipient.public_key(),
         }];
 

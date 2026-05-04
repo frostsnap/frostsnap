@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 class MemberDetailSheet extends StatelessWidget {
   final PublicKey pubkey;
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
 
   const MemberDetailSheet({
     super.key,

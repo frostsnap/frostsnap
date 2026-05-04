@@ -5,7 +5,7 @@ import 'package:frostsnap/src/rust/api/nostr.dart';
 /// Avatar widget for displaying Nostr profile pictures.
 /// Falls back to first letter of name, then to generic person icon.
 class NostrAvatar extends StatelessWidget {
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
   final PublicKey? pubkey;
   final double size;
   final VoidCallback? onTap;
@@ -101,7 +101,7 @@ class NostrAvatar extends StatelessWidget {
 }
 
 /// Helper to get a display name from a profile or pubkey.
-String getDisplayName(FfiNostrProfile? profile, PublicKey? pubkey) {
+String getDisplayName(NostrProfile? profile, PublicKey? pubkey) {
   if (profile?.displayName != null && profile!.displayName!.isNotEmpty) {
     return profile.displayName!;
   }

@@ -17,9 +17,10 @@ use frostsnap_nostr::{
         DeviceKind, DeviceRegistration, LobbyChannelMetadata, LobbyClient, LobbyEvent, LobbyHandle,
         LobbyState, ParticipantStatus, ProtocolClient, ProtocolHandle, SelectedCoordinator,
     },
+    EventId,
 };
 use nostr_relay_builder::prelude::*;
-use nostr_sdk::{Client, EventId, Keys};
+use nostr_sdk::{Client, Keys};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use std::collections::BTreeSet;
 use tokio::sync::mpsc;
@@ -658,16 +659,20 @@ async fn ack_round_completes() {
     );
     for (i, s) in latest_states.iter().enumerate() {
         let Some(s) = s.as_ref() else { continue };
+        let resolved = s
+            .keygen
+            .as_ref()
+            .expect("keygen should be resolved by now");
         assert!(
-            s.all_acked(),
-            "participant {i}'s state.all_acked() should be true",
+            resolved.all_acked(),
+            "participant {i}'s resolved.all_acked() should be true",
         );
         assert!(
-            s.acked.contains(&nostr_keys[0].public_key()),
+            resolved.acked.contains(&nostr_keys[0].public_key()),
             "participant {i} should see the host (initiator) as acked",
         );
         assert!(
-            s.acked.contains(&nostr_keys[1].public_key()),
+            resolved.acked.contains(&nostr_keys[1].public_key()),
             "participant {i} should see the joiner as acked",
         );
     }
@@ -711,7 +716,7 @@ async fn ack_with_wrong_etag_ignored() {
     // Joiner sends an AckKeygen referencing a bogus event id (not the
     // StartKeygen we just published). It must be silently dropped —
     // `acked` doesn't grow, no `AllAcked` fires.
-    let bogus = EventId::all_zeros();
+    let bogus = EventId::ZERO;
     lobby_handles[1]
         .ack_keygen(&nostr_keys[1], bogus)
         .await
@@ -737,13 +742,17 @@ async fn ack_with_wrong_etag_ignored() {
 
     for (i, s) in latest_states.iter().enumerate() {
         let Some(s) = s.as_ref() else { continue };
+        let resolved = s
+            .keygen
+            .as_ref()
+            .expect("keygen should be resolved by now");
         assert_eq!(
-            s.acked.len(),
+            resolved.acked.len(),
             1,
             "participant {i}'s acked set should only contain the host after a bogus ack",
         );
         assert!(
-            s.acked.contains(&nostr_keys[0].public_key()),
+            resolved.acked.contains(&nostr_keys[0].public_key()),
             "participant {i}'s acked set should contain the host",
         );
     }

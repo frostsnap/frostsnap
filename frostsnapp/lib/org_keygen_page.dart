@@ -15,7 +15,7 @@ import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
-import 'package:frostsnap/src/rust/api/remote_keygen.dart';
+import 'package:frostsnap/src/rust/api/nostr/remote_keygen.dart';
 import 'package:frostsnap/threshold_selector.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:sliver_tools/sliver_tools.dart';
@@ -77,7 +77,7 @@ class OrgKeygenController extends ChangeNotifier {
   RemoteLobbyHandle? _handle;
   RemoteLobbyHandle? get handle => _handle;
 
-  StreamSubscription<FfiLobbyState>? _stateSub;
+  StreamSubscription<LobbyState>? _stateSub;
   // Keep the broadcast-subscription reference alive for as long as we
   // want to receive updates. If we only held the `StreamSubscription`
   // returned by `.start().listen(...)` the Dart-side GC would collect
@@ -87,8 +87,8 @@ class OrgKeygenController extends ChangeNotifier {
   // nowhere; only the initial cached emit (which fires synchronously
   // inside `_start`, before the drop) reaches Dart.
   LobbyStateBroadcastSubscription? _stateBroadcastSub;
-  FfiLobbyState? _state;
-  FfiLobbyState? get lobbyState => _state;
+  LobbyState? _state;
+  LobbyState? get lobbyState => _state;
 
   PublicKey? _myPubkey;
   PublicKey? get myPubkey => _myPubkey;
@@ -133,7 +133,7 @@ class OrgKeygenController extends ChangeNotifier {
   int get totalDevices {
     final s = _state;
     if (s == null) return 0;
-    return s.participants.fold(0, (sum, p) {
+    return s.participants.values.fold(0, (sum, p) {
       if (_excludedHex.contains(p.pubkey.toHex())) return sum;
       return sum + p.devices.length;
     });
@@ -152,8 +152,8 @@ class OrgKeygenController extends ChangeNotifier {
     final me = _myPubkey;
     final s = _state;
     if (me == null || s == null) return false;
-    return s.participants.any(
-      (p) => p.pubkey.equals(other: me) && p.status == FfiParticipantStatus.ready,
+    return s.participants.values.any(
+      (p) => p.pubkey.equals(other: me) && p.status == ParticipantStatus.ready,
     );
   }
 
@@ -271,14 +271,14 @@ class OrgKeygenController extends ChangeNotifier {
   /// published until the host actually taps "Generate keys".
   Future<void> goToReview() async {
     final s = _state;
-    if (s == null || !s.allReady) return;
+    if (s == null || !s.allReady()) return;
     _pendingThreshold ??= recommendedThreshold;
     _step = OrgKeygenStep.review;
     notifyListeners();
   }
 
   /// Joiner-side. Triggered by the page's pending-keygen watcher when
-  /// `state.pendingKeygen` first arrives. Slides the lobby out and the
+  /// `state.keygen` first arrives. Slides the lobby out and the
   /// accept screen in.
   void goToAcceptKeygen() {
     if (_step == OrgKeygenStep.acceptKeygen) return;
@@ -295,14 +295,14 @@ class OrgKeygenController extends ChangeNotifier {
     if (h == null) throw StateError('lobby handle is gone');
     if (s == null) throw StateError('no lobby state yet');
     final threshold = _pendingThreshold ?? recommendedThreshold;
-    final selected = <FfiSelectedParticipant>[];
-    for (final p in s.participants) {
-      if (p.status != FfiParticipantStatus.ready) continue;
+    final selected = <SelectedCoordinator>[];
+    for (final p in s.participants.values) {
+      if (p.status != ParticipantStatus.ready) continue;
       if (_excludedHex.contains(p.pubkey.toHex())) continue;
       final regId = p.registerEventId;
       if (regId == null) continue;
       selected.add(
-        FfiSelectedParticipant(pubkey: p.pubkey, registerEventId: regId),
+        SelectedCoordinator(pubkey: p.pubkey, registerEventId: regId),
       );
     }
     if (selected.isEmpty) {
@@ -312,17 +312,17 @@ class OrgKeygenController extends ChangeNotifier {
   }
 
   /// Selected joiners only. Publish `AckKeygen` referencing the current
-  /// `pendingKeygen.startKeygenEventId`. The host is implicitly acked
+  /// `pendingKeygen.keygenEventId`. The host is implicitly acked
   /// by virtue of having published `StartKeygen`, so they don't call
   /// this.
   Future<void> ackKeygen() async {
     final h = _handle;
     final s = _state;
     if (h == null) throw StateError('lobby handle is gone');
-    if (s == null || s.pendingKeygen == null) {
+    if (s == null || s.keygen == null) {
       throw StateError('no pending keygen to ack');
     }
-    await h.ackKeygen(startKeygenEventId: s.pendingKeygen!.startKeygenEventId);
+    await h.ackKeygen(startKeygenEventId: s.keygen!.keygenEventId);
   }
 
   /// Host-only. Publishes `CancelLobby` and blocks until relay OK +
@@ -537,7 +537,7 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   void _watchForPendingKeygen() {
     if (_reactedToPendingKeygen) return;
     final state = _ctrl.lobbyState;
-    final pending = state?.pendingKeygen;
+    final pending = state?.keygen;
     final me = _ctrl.myPubkey;
     if (pending == null || me == null) return;
     // `pendingKeygen` is now `Some` for *every* receiver of a
@@ -1028,9 +1028,9 @@ class _LobbyView extends StatelessWidget {
               // `pending_keygen.includes(myPubkey)` rather than a
               // separate latched flag on `LobbyState`.
               if (state != null &&
-                  state.pendingKeygen != null &&
+                  state.keygen != null &&
                   ctrl.myPubkey != null &&
-                  !state.pendingKeygen!.includes(pubkey: ctrl.myPubkey!))
+                  !state.keygen!.includes(pubkey: ctrl.myPubkey!))
                 Card.filled(
                   color: theme.colorScheme.surfaceContainerHighest,
                   child: ListTile(
@@ -1077,9 +1077,9 @@ class _LobbyView extends StatelessWidget {
                         child: Text('Participants',
                             style: theme.textTheme.labelLarge)),
                     Text(
-                      state.allReady
+                      state.allReady()
                           ? 'All ready'
-                          : '${state.participants.where((p) => p.status != FfiParticipantStatus.joining).length} of ${state.participants.length} ready',
+                          : '${state.participants.values.where((p) => p.status != ParticipantStatus.joining).length} of ${state.participants.length} ready',
                       style: theme.textTheme.labelLarge,
                     ),
                   ],
@@ -1140,7 +1140,7 @@ class _LobbyPrimaryButton extends StatelessWidget {
         onPressed: () => _showDeviceSetupDialog(context, ctrl),
       );
     }
-    if (!state.allReady) {
+    if (!state.allReady()) {
       return const FilledButton(onPressed: null, child: Text('Waiting for participants'));
     }
     if (ctrl.totalDevices < 2) {
@@ -1163,13 +1163,18 @@ class _ParticipantRow extends StatefulWidget {
     required this.ctrl,
     required this.participant,
     required this.isMe,
+    required this.isInitiator,
     required this.keyOffset,
     this.readOnly = false,
   });
 
   final OrgKeygenController ctrl;
-  final FfiLobbyParticipant participant;
+  final ParticipantInfo participant;
   final bool isMe;
+  /// Whether this participant is the host who created the lobby.
+  /// Computed by the parent (`_participantRows`) by comparing
+  /// `participant.pubkey` against `state.initiator`.
+  final bool isInitiator;
   /// The key-number of this participant's first device in the global
   /// (per-lobby) numbering — computed by the parent so device rows can
   /// show "Key #N" consistently.
@@ -1189,7 +1194,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = widget.participant;
-    final isReady = p.status == FfiParticipantStatus.ready;
+    final isReady = p.status == ParticipantStatus.ready;
     final excluded = widget.ctrl.isExcluded(p.pubkey);
     // Host-only exclusion toggle: only meaningful for Ready participants
     // who aren't the host themselves. Lives at the start of the trailing
@@ -1238,12 +1243,12 @@ class _ParticipantRowState extends State<_ParticipantRow> {
       }
 
       final statusLabel = switch (p.status) {
-        FfiParticipantStatus.joining => Text(
+        ParticipantStatus.joining => Text(
             widget.isMe ? 'Waiting for you' : 'Joined',
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
-        FfiParticipantStatus.ready => Row(
+        ParticipantStatus.ready => Row(
             mainAxisSize: MainAxisSize.min,
             spacing: 4,
             children: [
@@ -1295,7 +1300,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
                     size: 20,
                   ),
                 ),
-                if (p.isInitiator)
+                if (widget.isInitiator)
                   Positioned(
                     right: -2,
                     bottom: -2,
@@ -1351,9 +1356,9 @@ class _ParticipantRowState extends State<_ParticipantRow> {
   /// Status label for the (host-only) review step. Since threshold
   /// no longer has its own negotiation round-trip, any Ready
   /// participant is green "Ready"; anyone still Joining is muted.
-  Widget _reviewStatusLabel(BuildContext context, FfiLobbyParticipant p) {
+  Widget _reviewStatusLabel(BuildContext context, ParticipantInfo p) {
     final theme = Theme.of(context);
-    if (p.status == FfiParticipantStatus.ready) {
+    if (p.status == ParticipantStatus.ready) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 4,
@@ -1374,7 +1379,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
 
 class _DeviceList extends StatelessWidget {
   const _DeviceList({required this.devices, required this.keyOffset});
-  final List<FfiLobbyDevice> devices;
+  final List<DeviceRegistration> devices;
   final int keyOffset;
 
   @override
@@ -1423,19 +1428,22 @@ String _shortPubkey(PublicKey pk) {
 /// global numbering (Key #1 is the first device across all participants).
 List<Widget> _participantRows({
   required OrgKeygenController ctrl,
-  required FfiLobbyState state,
+  required LobbyState state,
   required bool readOnly,
 }) {
   final rows = <Widget>[];
   int keyNumber = 1;
-  for (final p in state.participants) {
+  for (final p in state.participants.values) {
     final offset = keyNumber;
     keyNumber += p.devices.length;
+    final isInitiator =
+        state.initiator != null && state.initiator!.equals(other: p.pubkey);
     rows.add(
       _ParticipantRow(
         ctrl: ctrl,
         participant: p,
         isMe: ctrl.myPubkey != null && p.pubkey.equals(other: ctrl.myPubkey!),
+        isInitiator: isInitiator,
         keyOffset: offset,
         readOnly: readOnly,
       ),
@@ -1802,13 +1810,13 @@ class _ReviewPrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     // Host-only screen now: the review step is never reached by
     // joiners (they see the accept-modal triggered by
-    // `state.pendingKeygen`). The only action here is terminal —
+    // `state.keygen`). The only action here is terminal —
     // publishing `StartKeygen`.
     final state = ctrl.lobbyState;
     if (state == null) {
       return const FilledButton(onPressed: null, child: Text('Connecting…'));
     }
-    if (!state.allReady) {
+    if (!state.allReady()) {
       return const FilledButton(
         onPressed: null,
         child: Text('Waiting for participants'),
@@ -1845,7 +1853,7 @@ class _AcceptKeygenView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = ctrl.lobbyState;
-    final pending = state?.pendingKeygen;
+    final pending = state?.keygen;
     final me = ctrl.myPubkey;
 
     if (pending == null) {
@@ -1879,7 +1887,7 @@ class _AcceptKeygenDecisionView extends StatelessWidget {
     required this.onDeclineImmediate,
   });
   final OrgKeygenController ctrl;
-  final FfiPendingKeygen pending;
+  final ResolvedKeygen pending;
   final Future<void> Function() onDeclineImmediate;
 
   @override
@@ -1992,13 +2000,14 @@ class _AcceptKeygenWaitingView extends StatelessWidget {
     required this.onCancelWithConfirm,
   });
   final OrgKeygenController ctrl;
-  final FfiPendingKeygen pending;
+  final ResolvedKeygen pending;
   final Future<void> Function() onCancelWithConfirm;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final me = ctrl.myPubkey;
+    final initiator = ctrl.lobbyState?.initiator;
     final ackedHex = pending.acked.map((pk) => pk.toHex()).toSet();
     final participants = pending.participants;
     // `acked` is guaranteed to be a subset of `participants` Rust-side,
@@ -2039,7 +2048,8 @@ class _AcceptKeygenWaitingView extends StatelessWidget {
                   participant: p,
                   isMe: me != null && p.pubkey.equals(other: me),
                   isAcked: ackedHex.contains(p.pubkey.toHex()),
-                  isInitiator: pending.initiator.equals(other: p.pubkey),
+                  isInitiator:
+                      initiator != null && initiator.equals(other: p.pubkey),
                 ),
             ],
           ),
@@ -2091,7 +2101,7 @@ class _AckStatusRow extends StatelessWidget {
     required this.isAcked,
     required this.isInitiator,
   });
-  final FfiLobbyParticipant participant;
+  final SelectedParticipant participant;
   final bool isMe;
   final bool isAcked;
   final bool isInitiator;

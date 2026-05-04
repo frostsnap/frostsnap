@@ -21,13 +21,13 @@ class SigningRequestState extends ChangeNotifier {
 
   /// Offer event ids that made the cut, in the canonical order chosen by
   /// the Rust tree. Used when constructing `sendSignPartial`.
-  List<NostrEventId>? _sealedOfferSubset;
+  List<EventId>? _sealedOfferSubset;
 
   /// The most recent "round still collecting" snapshot from the Rust tree.
   /// Set by `RoundPending` events fired when the settling timer expires
   /// below threshold. UI can use this to show "your offer is likely
   /// accepted" to authors whose offer is in `pendingObserved`.
-  ({List<NostrEventId> observed, int threshold})? _pending;
+  ({List<EventId> observed, int threshold})? _pending;
 
   bool get cancelled => _cancelled;
   set cancelled(bool value) {
@@ -36,8 +36,8 @@ class SigningRequestState extends ChangeNotifier {
   }
 
   SealedSigningData? get sealedData => _sealedData;
-  List<NostrEventId>? get sealedOfferSubset => _sealedOfferSubset;
-  ({List<NostrEventId> observed, int threshold})? get pending => _pending;
+  List<EventId>? get sealedOfferSubset => _sealedOfferSubset;
+  ({List<EventId> observed, int threshold})? get pending => _pending;
 
   void addOffer(String pubkeyHex, FfiSigningEvent_Offer offer) {
     offers[pubkeyHex] = offer;
@@ -51,14 +51,14 @@ class SigningRequestState extends ChangeNotifier {
 
   void setRoundConfirmed(
     SealedSigningData sealed,
-    List<NostrEventId> subsetEventIds,
+    List<EventId> subsetEventIds,
   ) {
     _sealedData = sealed;
     _sealedOfferSubset = subsetEventIds;
     notifyListeners();
   }
 
-  void setRoundPending(List<NostrEventId> observed, int threshold) {
+  void setRoundPending(List<EventId> observed, int threshold) {
     _pending = (observed: observed, threshold: threshold);
     notifyListeners();
   }
@@ -193,7 +193,7 @@ class _CardWrapper extends StatefulWidget {
   final Widget bubble;
   final bool isMe;
   final PublicKey? author;
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
   final VoidCallback? onCopy;
   final VoidCallback? onReply;
   final VoidCallback? onTapAvatar;
@@ -351,7 +351,7 @@ class SigningErrorCard extends StatelessWidget {
   final String text;
   final bool isMe;
   final PublicKey? author;
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
   final VoidCallback? onCopy;
   final VoidCallback? onReply;
   final VoidCallback? onTapAvatar;
@@ -424,7 +424,7 @@ class SigningRequestCard extends StatelessWidget {
   final VoidCallback? onOfferToSign;
   final VoidCallback? onCancel;
   final String Function(PublicKey) getDisplayName;
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
   final VoidCallback? onTap;
   final VoidCallback? onCopy;
   final VoidCallback? onReply;

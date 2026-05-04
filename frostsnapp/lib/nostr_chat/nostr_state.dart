@@ -10,7 +10,7 @@ class NostrContext extends InheritedWidget {
   late final BehaviorSubject<FfiNostrIdentity> identityStream;
 
   // Profile cache for other users
-  final Map<String, BehaviorSubject<FfiNostrProfile?>> _profileCache = {};
+  final Map<String, BehaviorSubject<NostrProfile?>> _profileCache = {};
   final Set<String> _fetchingProfiles = {};
   NostrClient? _client;
 
@@ -33,14 +33,14 @@ class NostrContext extends InheritedWidget {
   PublicKey? get myPubkey => identity.pubkey;
 
   /// Get a stream of profile updates for a pubkey.
-  Stream<FfiNostrProfile?> profileStream(PublicKey pubkey) {
+  Stream<NostrProfile?> profileStream(PublicKey pubkey) {
     final hex = pubkey.toHex();
     _ensureProfileSubject(hex, pubkey);
     return _profileCache[hex]!.stream;
   }
 
   /// Get cached profile for a pubkey (may be null if not yet fetched).
-  FfiNostrProfile? getProfile(PublicKey pubkey) {
+  NostrProfile? getProfile(PublicKey pubkey) {
     final hex = pubkey.toHex();
     _ensureProfileSubject(hex, pubkey);
     return _profileCache[hex]!.value;
@@ -71,7 +71,7 @@ class NostrContext extends InheritedWidget {
   }
 
   /// Update the profile cache from channel events.
-  void updateProfilesFromChannel(List<FfiGroupMember> members) {
+  void updateProfilesFromChannel(List<GroupMember> members) {
     for (final member in members) {
       final hex = member.pubkey.toHex();
       if (!_profileCache.containsKey(hex)) {
@@ -108,7 +108,7 @@ class MyProfileBuilder extends StatelessWidget {
   final Widget Function(
     BuildContext context,
     PublicKey? pubkey,
-    FfiNostrProfile? profile,
+    NostrProfile? profile,
   )
   builder;
 
@@ -125,7 +125,7 @@ class MyProfileBuilder extends StatelessWidget {
         if (pubkey == null) {
           return builder(context, null, null);
         }
-        return StreamBuilder<FfiNostrProfile?>(
+        return StreamBuilder<NostrProfile?>(
           stream: nostr.profileStream(pubkey),
           initialData: nostr.getProfile(pubkey),
           builder: (context, profileSnap) {
@@ -140,7 +140,7 @@ class MyProfileBuilder extends StatelessWidget {
 /// StreamBuilder wrapper for any user's profile.
 class ProfileBuilder extends StatelessWidget {
   final PublicKey pubkey;
-  final Widget Function(BuildContext context, FfiNostrProfile? profile) builder;
+  final Widget Function(BuildContext context, NostrProfile? profile) builder;
 
   const ProfileBuilder({
     super.key,
@@ -151,7 +151,7 @@ class ProfileBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nostr = NostrContext.of(context);
-    return StreamBuilder<FfiNostrProfile?>(
+    return StreamBuilder<NostrProfile?>(
       stream: nostr.profileStream(pubkey),
       initialData: nostr.getProfile(pubkey),
       builder: (context, snapshot) {

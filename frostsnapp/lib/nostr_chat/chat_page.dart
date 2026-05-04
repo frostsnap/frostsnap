@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:frostsnap/nostr_chat/group_info_page.dart';
 import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
@@ -29,12 +29,12 @@ import 'package:dynamic_color/dynamic_color.dart';
 enum MessageStatus { pending, sent, failed }
 
 class ChatMessage {
-  final NostrEventId messageId;
+  final EventId messageId;
   final PublicKey author;
   final String content;
   DateTime timestamp;
   final bool isMe;
-  final NostrEventId? replyTo;
+  final EventId? replyTo;
   final IconData? quoteIcon;
   MessageStatus status;
   String? failureReason;
@@ -53,7 +53,7 @@ class ChatMessage {
 }
 
 class ReplyTarget {
-  final NostrEventId eventId;
+  final EventId eventId;
   final PublicKey author;
   final String preview;
   final bool isMe;
@@ -99,7 +99,7 @@ class TimelineSigning extends TimelineItem {
 }
 
 class TimelineError extends TimelineItem {
-  final NostrEventId eventId;
+  final EventId eventId;
   final PublicKey author;
   final String reason;
   @override
@@ -157,17 +157,17 @@ class _ChatPageState extends State<ChatPage> {
   final ScrollController _scrollController = ScrollController();
   late final FocusNode _inputFocusNode;
   final List<TimelineItem> _timeline = [];
-  final Map<NostrEventId, ChatMessage> _messageById = {};
+  final Map<EventId, ChatMessage> _messageById = {};
   final Map<String, GlobalKey> _timelineKeys = {};
   String? _highlightedId;
-  final Map<NostrEventId, SigningRequestState> _signingRequests = {};
+  final Map<EventId, SigningRequestState> _signingRequests = {};
   final Set<String> _seenSigningEventIds = {};
   List<PublicKey> _memberPubkeys = [];
   StreamSubscription<FfiChannelEvent>? _subscription;
   StreamSubscription<TxState>? _txSubscription;
   final Map<String, TxTimelineKind> _txTimelineState = {};
   NostrClient? _client;
-  FfiConnectionState _connectionState = const FfiConnectionState.connecting();
+  ConnectionState _connectionState = const ConnectionState.connecting();
   ReplyTarget? _replyingTo;
   ({AccessStructureRef asRef, String testMessage, List<DeviceId> devices})? _pendingSignRequest;
   ({AccessStructureRef asRef, UnsignedTx unsignedTx, List<DeviceId> devices})? _pendingTxSignRequest;
@@ -205,7 +205,7 @@ class _ChatPageState extends State<ChatPage> {
 
   void _handleTxState(TxState state) {
     if (!mounted) return;
-    if (_connectionState is! FfiConnectionState_Connected) {
+    if (_connectionState is! ConnectionState_Connected) {
       _pendingTxState = state;
       return;
     }
@@ -267,7 +267,7 @@ class _ChatPageState extends State<ChatPage> {
     _subscription = stream.listen(_handleEvent);
   }
 
-  FfiNostrProfile? _getProfile(PublicKey pubkey) {
+  NostrProfile? _getProfile(PublicKey pubkey) {
     return _nostrContext!.getProfile(pubkey);
   }
 
@@ -403,7 +403,7 @@ class _ChatPageState extends State<ChatPage> {
 
       case FfiChannelEvent_ConnectionState(:final field0):
         _connectionState = field0;
-        if (field0 is FfiConnectionState_Connected && _pendingTxState != null) {
+        if (field0 is ConnectionState_Connected && _pendingTxState != null) {
           _applyTxState(_pendingTxState!);
           _pendingTxState = null;
         }
@@ -613,7 +613,7 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  int _getThreshold(NostrEventId requestId) {
+  int _getThreshold(EventId requestId) {
     final state = _signingRequests[requestId];
     if (state == null) return 0;
     final accessStruct = coord.getAccessStructure(
@@ -669,7 +669,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildTimeline(ThemeData theme, {bool hasTaskCard = false}) {
     if (_timeline.isEmpty) {
       return Center(
-        child: _connectionState is FfiConnectionState_Connected
+        child: _connectionState is ConnectionState_Connected
             ? Text(
                 'No messages yet.\nSend a message to start the conversation.',
                 textAlign: TextAlign.center,
@@ -797,7 +797,7 @@ class _ChatPageState extends State<ChatPage> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  void _scrollToAndHighlight(NostrEventId eventId) {
+  void _scrollToAndHighlight(EventId eventId) {
     _scrollToByStringId(eventId.toHex());
   }
 
@@ -862,7 +862,7 @@ class _ChatPageState extends State<ChatPage> {
     _openSigningPage(state);
   }
 
-  Widget _signingPillWidget(NostrEventId requestId) {
+  Widget _signingPillWidget(EventId requestId) {
     final state = _signingRequests[requestId];
     if (state == null) return const Text('?');
     final details = state.request.signingDetails;
@@ -1299,7 +1299,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _sendOfferForRequest(
-    NostrEventId requestId,
+    EventId requestId,
     AccessStructureRef asRef,
     List<DeviceId> devices,
     WireSignTask signTask,
@@ -1474,9 +1474,9 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildConnectionIndicator() {
     final (color, tooltip) = switch (_connectionState) {
-      FfiConnectionState_Connecting() => (Colors.orange, 'Connecting...'),
-      FfiConnectionState_Connected() => (Colors.green, 'Connected'),
-      FfiConnectionState_Disconnected(:final reason) => (
+      ConnectionState_Connecting() => (Colors.orange, 'Connecting...'),
+      ConnectionState_Connected() => (Colors.green, 'Connected'),
+      ConnectionState_Disconnected(:final reason) => (
         Colors.red,
         'Disconnected${reason != null ? ': $reason' : ''}',
       ),
@@ -1544,7 +1544,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildMessageInput() {
     final theme = Theme.of(context);
-    final isConnected = _connectionState is FfiConnectionState_Connected;
+    final isConnected = _connectionState is ConnectionState_Connected;
 
     final hasAttachment = _replyingTo != null || _pendingSignRequest != null || _pendingTxSignRequest != null;
 
@@ -1779,7 +1779,7 @@ class _ChatPageState extends State<ChatPage> {
 
 class _MessageBubble extends StatefulWidget {
   final ChatMessage message;
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
   final bool isHighlighted;
   final ChatMessage? replyToMessage;
   final VoidCallback? onTapQuote;
@@ -2173,7 +2173,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
 }
 
 class _SigningEventLine extends StatelessWidget {
-  final FfiNostrProfile? profile;
+  final NostrProfile? profile;
   final PublicKey author;
   final bool isMe;
   final String label;
@@ -2670,7 +2670,7 @@ class _OfferSignSheet extends StatefulWidget {
   final NostrClient client;
   final NostrContext nostrContext;
   final int threshold;
-  final FfiNostrProfile? Function(PublicKey) getProfile;
+  final NostrProfile? Function(PublicKey) getProfile;
   final DeviceId? Function(AccessStructureRef, int) deviceForShareIndex;
   final ScrollController? scrollController;
 

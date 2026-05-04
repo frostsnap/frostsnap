@@ -12,13 +12,14 @@ use crate::{
         ChannelRunnerHandle, EventMeta,
     },
 };
+use crate::EventId;
 use anyhow::{anyhow, Result};
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{
     coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
     WireSignTask,
 };
-use nostr_sdk::{Client, Event, EventId, Keys, Kind};
+use nostr_sdk::{Client, Event, Keys, Kind};
 use std::collections::HashMap;
 use std::future::{self, Future};
 use std::pin::Pin;
@@ -103,7 +104,7 @@ impl ChannelClient {
                     cmd = cmd_rx.recv() => {
                         match cmd {
                             Some(ChannelCommand::SendPreparedMessage(prepared)) => {
-                                let message_id = prepared.id;
+                                let message_id: EventId = prepared.id.into();
                                 sink.send(ChannelEvent::from_inner_chat_message(
                                     &prepared, true,
                                 ));
@@ -238,7 +239,7 @@ impl ChannelHandle {
     ) -> Result<EventId> {
         let draft = ChannelMessageDraft::text(content, reply_to.into_iter().collect());
         let prepared = draft.prepare(keys).await?;
-        let message_id = prepared.id;
+        let message_id: EventId = prepared.id.into();
 
         self.cmd_tx
             .send(ChannelCommand::SendPreparedMessage(prepared))

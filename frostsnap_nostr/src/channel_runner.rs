@@ -1,10 +1,11 @@
 use crate::channel::ChannelKeys;
+use crate::EventId;
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use nostr_sdk::{
     nips::nip44::v2::{self, ConversationKey},
     pool::Output,
-    Alphabet, Client, Event, EventBuilder, EventId, Filter, Keys, Kind, Metadata, PublicKey,
+    Alphabet, Client, Event, EventBuilder, Filter, Keys, Kind, Metadata, PublicKey,
     RelayPoolNotification, RelayUrl, SingleLetterTag, SubscriptionId, SyncOptions, Tag, TagKind,
     Timestamp,
 };
@@ -37,7 +38,7 @@ pub struct EventMeta {
 impl EventMeta {
     pub fn from_event(event: &Event) -> Self {
         Self {
-            event_id: event.id,
+            event_id: event.id.into(),
             author: event.pubkey,
             timestamp: event.created_at.as_secs(),
         }
@@ -270,8 +271,8 @@ impl ChannelRunner {
 
         // Step 1: Replay cached events from local database immediately.
         // This ensures the UI shows historical events even without internet.
-        let mut seen_ids = HashSet::<EventId>::new();
-        let mut seen_inner_ids = HashSet::<EventId>::new();
+        let mut seen_ids = HashSet::<nostr_sdk::EventId>::new();
+        let mut seen_inner_ids = HashSet::<nostr_sdk::EventId>::new();
         if let Some(inner_event) = startup_init_event {
             process_inner_event_once(
                 &inner_event,
@@ -346,7 +347,7 @@ impl ChannelRunner {
                     cmd = cmd_rx.recv() => {
                         match cmd {
                             Some(RunnerCmd::Publish { inner_event, done }) => {
-                                let inner_event_id = inner_event.id;
+                                let inner_event_id: EventId = inner_event.id.into();
                                 let send_result = send_prepared_message(
                                     &client,
                                     &channel_keys,
@@ -383,7 +384,7 @@ impl ChannelRunner {
                                 // outer id — to callers that build protocol
                                 // references (e.g. keygen's StartKeygen
                                 // e-tags point at Register events' inner ids).
-                                let inner_event_id = inner_event.id;
+                                let inner_event_id: EventId = inner_event.id.into();
                                 let send_result = send_prepared_message(
                                     &client,
                                     &channel_keys,
@@ -569,7 +570,7 @@ impl ChannelMessageDraft {
     pub async fn prepare(self, user_keys: &Keys) -> Result<Event> {
         let mut builder = EventBuilder::new(self.kind, self.content);
         for event_id in self.reply_to {
-            builder = builder.tag(Tag::event(event_id));
+            builder = builder.tag(Tag::event(nostr_sdk::EventId::from(event_id)));
         }
 
         let inner_event = builder
@@ -662,7 +663,7 @@ impl ChannelRunnerHandle {
 
 async fn process_inner_event_once(
     inner: &Event,
-    seen_inner_ids: &mut HashSet<EventId>,
+    seen_inner_ids: &mut HashSet<nostr_sdk::EventId>,
     state: &Arc<Mutex<ChannelState>>,
     client: &Client,
     profile_tx: &mpsc::Sender<(PublicKey, NostrProfile)>,
@@ -724,7 +725,7 @@ async fn process_inner_event(
         let reply_to = extract_e_tag(inner);
         let _ = event_tx
             .send(ChannelRunnerEvent::ChatMessage {
-                message_id: inner.id,
+                message_id: inner.id.into(),
                 author: inner.pubkey,
                 content: inner.content.clone(),
                 timestamp: inner.created_at.as_secs(),
@@ -783,7 +784,7 @@ pub(crate) async fn send_prepared_message(
     channel_keys: &ChannelKeys,
     inner_event: Event,
     expiration: Option<Timestamp>,
-) -> Result<Output<EventId>> {
+) -> Result<Output<nostr_sdk::EventId>> {
     let encrypted = encrypt_inner_event(&inner_event, channel_keys)?;
     let ephemeral_keys = Keys::generate();
 
@@ -813,7 +814,9 @@ fn expiration_from(duration: Option<Duration>) -> Option<Timestamp> {
 pub(crate) fn extract_e_tag(event: &Event) -> Option<EventId> {
     event.tags.iter().find_map(|tag| {
         if tag.kind() == TagKind::e() {
-            tag.content().and_then(|s| EventId::from_hex(s).ok())
+            tag.content()
+                .and_then(|s| nostr_sdk::EventId::from_hex(s).ok())
+                .map(EventId::from)
         } else {
             None
         }
@@ -826,7 +829,9 @@ pub(crate) fn extract_e_tags(event: &Event) -> Vec<EventId> {
         .iter()
         .filter_map(|tag| {
             if tag.kind() == TagKind::e() {
-                tag.content().and_then(|s| EventId::from_hex(s).ok())
+                tag.content()
+                    .and_then(|s| nostr_sdk::EventId::from_hex(s).ok())
+                    .map(EventId::from)
             } else {
                 None
             }

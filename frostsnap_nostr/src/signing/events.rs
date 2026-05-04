@@ -10,11 +10,12 @@
 //!   `ChannelEvent::Signing { event, pending }`.
 
 use crate::channel_runner::NostrProfile;
+use crate::EventId;
 use frostsnap_core::{
     coordinator::{ParticipantBinonces, ParticipantSignatureShares},
     SignSessionId, WireSignTask,
 };
-use nostr_sdk::{Event, EventId, PublicKey, TagKind};
+use nostr_sdk::{Event, PublicKey, TagKind};
 
 // ============================================================================
 // Channel events (top-level sink stream)
@@ -66,13 +67,15 @@ pub enum ChannelEvent {
 impl ChannelEvent {
     pub fn from_inner_chat_message(inner_event: &Event, pending: bool) -> Self {
         Self::ChatMessage {
-            message_id: inner_event.id,
+            message_id: inner_event.id.into(),
             author: inner_event.pubkey,
             content: inner_event.content.clone(),
             timestamp: inner_event.created_at.as_secs(),
             reply_to: inner_event.tags.iter().find_map(|tag| {
                 if tag.kind() == TagKind::e() {
-                    tag.content().and_then(|s| EventId::from_hex(s).ok())
+                    tag.content()
+                        .and_then(|s| nostr_sdk::EventId::from_hex(s).ok())
+                        .map(EventId::from)
                 } else {
                     None
                 }
@@ -188,13 +191,13 @@ frostsnap_core::impl_fromstr_deserialize!(
 
 impl From<EventId> for WireEventId {
     fn from(id: EventId) -> Self {
-        WireEventId(id.to_bytes())
+        WireEventId(id.0)
     }
 }
 
 impl From<WireEventId> for EventId {
     fn from(w: WireEventId) -> Self {
-        EventId::from_byte_array(w.0)
+        EventId(w.0)
     }
 }
 

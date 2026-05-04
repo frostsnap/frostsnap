@@ -1,3 +1,5 @@
+pub mod remote_keygen;
+
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
@@ -7,11 +9,12 @@ use frostsnap_core::{
     AccessStructureId, AccessStructureRef, SignSessionId, SymmetricKey, WireSignTask,
 };
 use frostsnap_core::device::KeyPurpose;
+pub use frostsnap_nostr::NostrProfile;
 use frostsnap_nostr::{
     channel::{parse_frostsnap_link, parse_keygen_link},
     keygen::{LobbyChannelMetadata, LobbyClient},
     ChannelClient, ChannelHandle, ChannelInitData, ChannelKeys, ChannelRunner, Client, Keys,
-    NostrDatabaseExt, NostrLMDB, NostrProfile, ToBech32,
+    NostrDatabaseExt, NostrLMDB, ToBech32,
 };
 use rusqlite::Connection;
 use std::{
@@ -236,10 +239,10 @@ impl NostrClient {
     /// Fetch profile metadata for a public key.
     /// Checks the local cache first, then fetches from relays if not found.
     /// Returns None if the user has no profile.
-    pub async fn fetch_profile(&self, pubkey: &PublicKey) -> Result<Option<FfiNostrProfile>> {
+    pub async fn fetch_profile(&self, pubkey: &PublicKey) -> Result<Option<NostrProfile>> {
         // 📦 Check cache first
         if let Ok(Some(metadata)) = self.client.database().metadata(*pubkey).await {
-            return Ok(Some(FfiNostrProfile::from_metadata(*pubkey, metadata)));
+            return Ok(Some(NostrProfile::from_metadata(*pubkey, metadata)));
         }
 
         // 🌐 Fetch from relays
@@ -248,7 +251,7 @@ impl NostrClient {
             .fetch_metadata(*pubkey, Duration::from_secs(5))
             .await
         {
-            Ok(Some(metadata)) => Ok(Some(FfiNostrProfile::from_metadata(*pubkey, metadata))),
+            Ok(Some(metadata)) => Ok(Some(NostrProfile::from_metadata(*pubkey, metadata))),
             Ok(None) => Ok(None),
             Err(e) => {
                 tracing::debug!(pubkey = %pubkey, error = %e, "failed to fetch profile");
@@ -335,8 +338,8 @@ impl NostrClient {
         access_structure_id: AccessStructureId,
         nsec: String,
         content: String,
-        reply_to: Option<NostrEventId>,
-    ) -> Result<NostrEventId> {
+        reply_to: Option<EventId>,
+    ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
         let event_id = handle
@@ -352,7 +355,7 @@ impl NostrClient {
         nsec: String,
         unsigned_tx: super::signing::UnsignedTx,
         message: String,
-    ) -> Result<NostrEventId> {
+    ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let sign_task = WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone());
         let handle = self.get_handle(access_structure_ref.access_structure_id)?;
@@ -367,7 +370,7 @@ impl NostrClient {
         nsec: String,
         test_message: String,
         message: String,
-    ) -> Result<NostrEventId> {
+    ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let sign_task = WireSignTask::Test {
             message: test_message,
@@ -382,9 +385,9 @@ impl NostrClient {
         &self,
         access_structure_id: AccessStructureId,
         nsec: String,
-        request_id: NostrEventId,
+        request_id: EventId,
         binonces: Vec<ParticipantBinonces>,
-    ) -> Result<NostrEventId> {
+    ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
         let event_id = handle
@@ -401,10 +404,10 @@ impl NostrClient {
         &self,
         access_structure_id: AccessStructureId,
         nsec: String,
-        request_id: NostrEventId,
-        offer_subset: Vec<NostrEventId>,
+        request_id: EventId,
+        offer_subset: Vec<EventId>,
         shares: frostsnap_core::coordinator::ParticipantSignatureShares,
-    ) -> Result<NostrEventId> {
+    ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
         let offer_subset: Vec<frostsnap_nostr::EventId> =
@@ -420,8 +423,8 @@ impl NostrClient {
         &self,
         access_structure_id: AccessStructureId,
         nsec: String,
-        request_id: NostrEventId,
-    ) -> Result<NostrEventId> {
+        request_id: EventId,
+    ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
         let event_id = handle.send_sign_cancel(&keys, request_id.into()).await?;
@@ -443,7 +446,7 @@ impl NostrClient {
         nsec: String,
         key_name: String,
         purpose: KeyPurpose,
-    ) -> Result<super::remote_keygen::RemoteLobbyHandle> {
+    ) -> Result<self::remote_keygen::RemoteLobbyHandle> {
         let keys = Keys::parse(&nsec)?;
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let invite_link = channel_secret.keygen_invite_link();
@@ -451,11 +454,11 @@ impl NostrClient {
         let init_event = lobby_client
             .build_creation_event(&keys, &metadata)
             .await?;
-        let (broadcast, sink) = super::remote_keygen::RemoteLobbyHandle::build_bridge();
+        let (broadcast, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
         let handle = lobby_client
             .run(self.client.clone(), keys.clone(), Some(init_event), sink)
             .await?;
-        Ok(super::remote_keygen::RemoteLobbyHandle::new(
+        Ok(self::remote_keygen::RemoteLobbyHandle::new(
             handle,
             keys,
             invite_link,
@@ -470,15 +473,15 @@ impl NostrClient {
         &self,
         channel_secret: ChannelSecret,
         nsec: String,
-    ) -> Result<super::remote_keygen::RemoteLobbyHandle> {
+    ) -> Result<self::remote_keygen::RemoteLobbyHandle> {
         let keys = Keys::parse(&nsec)?;
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let invite_link = channel_secret.keygen_invite_link();
-        let (broadcast, sink) = super::remote_keygen::RemoteLobbyHandle::build_bridge();
+        let (broadcast, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
         let handle = lobby_client
             .run(self.client.clone(), keys.clone(), None, sink)
             .await?;
-        Ok(super::remote_keygen::RemoteLobbyHandle::new(
+        Ok(self::remote_keygen::RemoteLobbyHandle::new(
             handle,
             keys,
             invite_link,
@@ -631,12 +634,15 @@ impl PublicKeyExt for PublicKey {
 }
 
 // ============================================================================
-// NostrEventId - Non-opaque wrapper for EventId with proper Dart equality
+// EventId mirror — value-typed, 32 bytes. Mirrors `frostsnap_nostr::EventId`.
 // ============================================================================
 
-/// A Nostr event ID (32 bytes). This is a non-opaque wrapper that provides
-/// proper equality semantics in Dart for use as Map keys.
+/// Mirrors `frostsnap_nostr::EventId`. Custom dart_code overrides
+/// `==` and `hashCode` to compare by content (so `EventId` works as a
+/// `Map` key in Dart), since the auto-generated tuple-struct equality
+/// would compare by reference.
 #[frb(
+    mirror(EventId),
     non_opaque,
     non_hash,
     non_eq,
@@ -647,7 +653,7 @@ impl PublicKeyExt for PublicKey {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is NostrEventId && _listEquals(field0, other.field0));
+      (other is EventId && _listEquals(field0, other.field0));
 
   static bool _listEquals(List<int> a, List<int> b) {
     if (a.length != b.length) return false;
@@ -658,73 +664,50 @@ impl PublicKeyExt for PublicKey {
   }
 "
 )]
-#[derive(Debug, Clone)]
-pub struct NostrEventId(pub [u8; 32]);
+pub struct _EventId(pub [u8; 32]);
 
-impl NostrEventId {
+#[frb(external)]
+impl EventId {
     #[frb(sync)]
-    pub fn to_hex(&self) -> String {
-        EventId::from(self.clone()).to_hex()
-    }
+    pub fn to_hex(&self) -> String {}
 }
 
-impl From<EventId> for NostrEventId {
-    fn from(id: EventId) -> Self {
-        NostrEventId(*id.as_bytes())
-    }
-}
-
-impl From<NostrEventId> for EventId {
-    fn from(id: NostrEventId) -> Self {
-        EventId::from_byte_array(id.0)
-    }
-}
-
-/// A member of the channel group with their profile.
-#[frb(non_opaque)]
-#[derive(Debug, Clone)]
-pub struct FfiGroupMember {
+/// A member of the channel group with their profile. Mirrors
+/// `frostsnap_nostr::GroupMember`.
+#[frb(mirror(GroupMember), non_opaque)]
+pub struct _GroupMember {
     pub pubkey: PublicKey,
-    pub profile: Option<FfiNostrProfile>,
-}
-
-impl From<GroupMember> for FfiGroupMember {
-    fn from(m: GroupMember) -> Self {
-        FfiGroupMember {
-            pubkey: m.pubkey,
-            profile: m.profile.map(|p| p.into()),
-        }
-    }
+    pub profile: Option<NostrProfile>,
 }
 
 #[frb(non_opaque)]
 #[derive(Debug, Clone)]
 pub enum FfiChannelEvent {
     ChatMessage {
-        message_id: NostrEventId,
+        message_id: EventId,
         author: PublicKey,
         content: String,
         timestamp: u64,
-        reply_to: Option<NostrEventId>,
+        reply_to: Option<EventId>,
         pending: bool,
     },
     MessageSent {
-        message_id: NostrEventId,
+        message_id: EventId,
     },
     MessageSendFailed {
-        message_id: NostrEventId,
+        message_id: EventId,
         reason: String,
     },
-    ConnectionState(FfiConnectionState),
+    ConnectionState(ConnectionState),
     GroupMetadata {
-        members: Vec<FfiGroupMember>,
+        members: Vec<GroupMember>,
     },
     SigningEvent {
         event: FfiSigningEvent,
         pending: bool,
     },
     Error {
-        event_id: NostrEventId,
+        event_id: EventId,
         author: PublicKey,
         timestamp: u64,
         reason: String,
@@ -795,7 +778,7 @@ impl SealedSigningData {
 #[derive(Debug, Clone)]
 pub enum FfiSigningEvent {
     Request {
-        event_id: NostrEventId,
+        event_id: EventId,
         author: PublicKey,
         sign_task: crate::frb_generated::RustAutoOpaque<WireSignTask>,
         signing_details: super::signing::SigningDetails,
@@ -803,9 +786,9 @@ pub enum FfiSigningEvent {
         timestamp: u64,
     },
     Offer {
-        event_id: NostrEventId,
+        event_id: EventId,
         author: PublicKey,
-        request_id: NostrEventId,
+        request_id: EventId,
         share_indices: Vec<u32>,
         timestamp: u64,
     },
@@ -814,9 +797,9 @@ pub enum FfiSigningEvent {
     /// signing UI and combine shares; `subset_event_ids` / `subset_authors`
     /// let the UI render which offers made the cut.
     RoundConfirmed {
-        request_id: NostrEventId,
+        request_id: EventId,
         session_id: SignSessionId,
-        subset_event_ids: Vec<NostrEventId>,
+        subset_event_ids: Vec<EventId>,
         subset_authors: Vec<PublicKey>,
         sealed: crate::frb_generated::RustAutoOpaque<SealedSigningData>,
         timestamp: u64,
@@ -826,18 +809,18 @@ pub enum FfiSigningEvent {
     /// snapshot. May fire multiple times as new offers arrive and later
     /// quiet periods pass.
     RoundPending {
-        request_id: NostrEventId,
-        observed: Vec<NostrEventId>,
+        request_id: EventId,
+        observed: Vec<EventId>,
         threshold: u32,
         timestamp: u64,
     },
     Partial {
-        event_id: NostrEventId,
+        event_id: EventId,
         author: PublicKey,
-        request_id: NostrEventId,
+        request_id: EventId,
         /// Offer event ids whose binonces were combined to sign this
         /// partial. Mirrors the wire field; Dart renders these for audit.
-        offer_subset: Vec<NostrEventId>,
+        offer_subset: Vec<EventId>,
         /// Computed by the Rust tree from `offer_subset`'s binonces; denorm
         /// for UI convenience.
         session_id: SignSessionId,
@@ -845,22 +828,22 @@ pub enum FfiSigningEvent {
         timestamp: u64,
     },
     Cancel {
-        event_id: NostrEventId,
+        event_id: EventId,
         author: PublicKey,
-        request_id: NostrEventId,
+        request_id: EventId,
         timestamp: u64,
     },
     Rejected {
-        event_id: NostrEventId,
+        event_id: EventId,
         author: PublicKey,
         timestamp: u64,
         reason: String,
     },
 }
 
-#[frb(non_opaque)]
-#[derive(Debug, Clone)]
-pub enum FfiConnectionState {
+/// Mirrors `frostsnap_nostr::ConnectionState`.
+#[frb(mirror(ConnectionState), non_opaque)]
+pub enum _ConnectionState {
     Connecting,
     Connected,
     Disconnected { reason: Option<String> },
@@ -895,14 +878,8 @@ fn channel_event_to_ffi(event: ChannelEvent, key_context: &KeyContext) -> FfiCha
                 reason,
             }
         }
-        ChannelEvent::ConnectionState(state) => FfiChannelEvent::ConnectionState(match state {
-            ConnectionState::Connecting => FfiConnectionState::Connecting,
-            ConnectionState::Connected => FfiConnectionState::Connected,
-            ConnectionState::Disconnected { reason } => FfiConnectionState::Disconnected { reason },
-        }),
-        ChannelEvent::GroupMetadata { members } => FfiChannelEvent::GroupMetadata {
-            members: members.into_iter().map(|m| m.into()).collect(),
-        },
+        ChannelEvent::ConnectionState(state) => FfiChannelEvent::ConnectionState(state),
+        ChannelEvent::GroupMetadata { members } => FfiChannelEvent::GroupMetadata { members },
         ChannelEvent::Signing {
             event: signing,
             pending,
@@ -1055,10 +1032,9 @@ impl frostsnap_coordinator::Sink<ChannelEvent> for ChannelEventSink {
     }
 }
 
-/// Nostr profile metadata (NIP-01 kind 0).
-#[frb(non_opaque)]
-#[derive(Debug, Clone, Default)]
-pub struct FfiNostrProfile {
+/// Nostr profile metadata (NIP-01 kind 0). Mirrors `frostsnap_nostr::NostrProfile`.
+#[frb(mirror(NostrProfile), non_opaque)]
+pub struct _NostrProfile {
     pub pubkey: Option<PublicKey>,
     pub name: Option<String>,
     pub display_name: Option<String>,
@@ -1067,36 +1043,6 @@ pub struct FfiNostrProfile {
     pub banner: Option<String>,
     pub nip05: Option<String>,
     pub website: Option<String>,
-}
-
-impl FfiNostrProfile {
-    pub(crate) fn from_metadata(pubkey: PublicKey, metadata: frostsnap_nostr::Metadata) -> Self {
-        FfiNostrProfile {
-            pubkey: Some(pubkey),
-            name: metadata.name,
-            display_name: metadata.display_name,
-            about: metadata.about,
-            picture: metadata.picture,
-            banner: metadata.banner,
-            nip05: metadata.nip05,
-            website: metadata.website,
-        }
-    }
-}
-
-impl From<NostrProfile> for FfiNostrProfile {
-    fn from(p: NostrProfile) -> Self {
-        FfiNostrProfile {
-            pubkey: p.pubkey,
-            name: p.name,
-            display_name: p.display_name,
-            about: p.about,
-            picture: p.picture,
-            banner: p.banner,
-            nip05: p.nip05,
-            website: p.website,
-        }
-    }
 }
 
 /// Get default relay URLs (public relays for profile/event discovery).
