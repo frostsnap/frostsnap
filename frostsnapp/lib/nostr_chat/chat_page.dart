@@ -15,8 +15,8 @@ import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
-import 'package:frostsnap/src/rust/api/signing.dart' show RemoteSignSessionId, ParticipantBinonces, UnsignedTx, SigningDetails_Message, SigningDetails_Transaction, wireSignTaskBitcoinTransaction, wireSignTaskTest;
-import 'package:frostsnap/src/rust/lib.dart' show WireSignTask;
+import 'package:frostsnap/src/rust/api/signing.dart' show RemoteSignSessionId, UnsignedTx, SigningDetails_Message, SigningDetails_Transaction, wireSignTaskBitcoinTransaction, wireSignTaskTest;
+import 'package:frostsnap/src/rust/lib.dart' show WireSignTask, ParticipantBinonces;
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -78,7 +78,7 @@ class TimelineChat extends TimelineItem {
 }
 
 class TimelineSigning extends TimelineItem {
-  final FfiSigningEvent event;
+  final SigningEvent event;
   final int? progressCount;
   final int? progressTotal;
   @override
@@ -86,13 +86,13 @@ class TimelineSigning extends TimelineItem {
   TimelineSigning(this.event, {this.progressCount, this.progressTotal})
     : timestamp = DateTime.fromMillisecondsSinceEpoch(
         switch (event) {
-              FfiSigningEvent_Request(:final timestamp) => timestamp,
-              FfiSigningEvent_Offer(:final timestamp) => timestamp,
-              FfiSigningEvent_Partial(:final timestamp) => timestamp,
-              FfiSigningEvent_Cancel(:final timestamp) => timestamp,
-              FfiSigningEvent_RoundConfirmed(:final timestamp) => timestamp,
-              FfiSigningEvent_RoundPending(:final timestamp) => timestamp,
-              FfiSigningEvent_Rejected(:final timestamp) => timestamp,
+              SigningEvent_Request(:final timestamp) => timestamp,
+              SigningEvent_Offer(:final timestamp) => timestamp,
+              SigningEvent_Partial(:final timestamp) => timestamp,
+              SigningEvent_Cancel(:final timestamp) => timestamp,
+              SigningEvent_RoundConfirmed(:final timestamp) => timestamp,
+              SigningEvent_RoundPending(:final timestamp) => timestamp,
+              SigningEvent_Rejected(:final timestamp) => timestamp,
             } *
             1000,
       );
@@ -163,7 +163,7 @@ class _ChatPageState extends State<ChatPage> {
   final Map<EventId, SigningRequestState> _signingRequests = {};
   final Set<String> _seenSigningEventIds = {};
   List<PublicKey> _memberPubkeys = [];
-  StreamSubscription<FfiChannelEvent>? _subscription;
+  StreamSubscription<ChannelEvent>? _subscription;
   StreamSubscription<TxState>? _txSubscription;
   final Map<String, TxTimelineKind> _txTimelineState = {};
   NostrClient? _client;
@@ -287,7 +287,7 @@ class _ChatPageState extends State<ChatPage> {
     if (state == null || _myPubkey == null) return null;
     final myOffer = state.offers[_myPubkey!.toHex()];
     if (myOffer == null) return null;
-    for (final idx in myOffer.shareIndices) {
+    for (final idx in offerShareIndices(binonces: myOffer.binonces)) {
       final device = _deviceForShareIndex(widget.accessStructureRef, idx);
       if (device != null) return device;
     }
@@ -306,10 +306,10 @@ class _ChatPageState extends State<ChatPage> {
     return null;
   }
 
-  final List<FfiChannelEvent> _pendingEvents = [];
+  final List<ChannelEvent> _pendingEvents = [];
   bool _batchScheduled = false;
 
-  void _handleEvent(FfiChannelEvent event) {
+  void _handleEvent(ChannelEvent event) {
     if (!mounted) return;
     _pendingEvents.add(event);
     if (!_batchScheduled) {
@@ -361,9 +361,9 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _processEvent(FfiChannelEvent event) {
+  void _processEvent(ChannelEvent event) {
     switch (event) {
-      case FfiChannelEvent_ChatMessage(
+      case ChannelEvent_ChatMessage(
         :final messageId,
         :final author,
         :final content,
@@ -388,43 +388,54 @@ class _ChatPageState extends State<ChatPage> {
         _messageById[messageId] = message;
         _insertTimelineItem(TimelineChat(message));
 
-      case FfiChannelEvent_MessageSent(:final messageId):
+      case ChannelEvent_MessageSent(:final messageId):
         final msg = _messageById[messageId];
         if (msg != null) {
           msg.status = MessageStatus.sent;
         }
 
-      case FfiChannelEvent_MessageSendFailed(:final messageId, :final reason):
+      case ChannelEvent_MessageSendFailed(:final messageId, :final reason):
         final msg = _messageById[messageId];
         if (msg != null) {
           msg.status = MessageStatus.failed;
           msg.failureReason = reason;
         }
 
-      case FfiChannelEvent_ConnectionState(:final field0):
+      case ChannelEvent_ConnectionState(:final field0):
         _connectionState = field0;
         if (field0 is ConnectionState_Connected && _pendingTxState != null) {
           _applyTxState(_pendingTxState!);
           _pendingTxState = null;
         }
 
-      case FfiChannelEvent_GroupMetadata(:final members):
+      case ChannelEvent_GroupMetadata(:final members):
         _memberPubkeys = members.map((m) => m.pubkey).toList();
         _nostrContext!.updateProfilesFromChannel(members);
 
-      case FfiChannelEvent_SigningEvent(:final event, :final pending):
+      case ChannelEvent_Signing(:final event, :final pending):
         // Round decisions (RoundConfirmed, RoundAborted) are local
         // decisions derived from the settling timer; they don't carry a
         // nostr event_id and shouldn't produce chat messages. Route them
         // directly to the SigningRequestState.
-        if (event is FfiSigningEvent_RoundConfirmed) {
+        if (event is SigningEvent_RoundConfirmed) {
           final state = _signingRequests[event.requestId];
-          if (state != null) {
-            state.setRoundConfirmed(event.sealed, event.subsetEventIds);
+          if (state != null && _client != null) {
+            final binonces = event.subset
+                .expand((e) => e.binonces)
+                .toList();
+            final sealed = _client!.sealRoundConfirmed(
+              accessStructureId: widget.accessStructureId,
+              requestId: event.requestId,
+              signTask: event.signTask,
+              binonces: binonces,
+            );
+            final subsetEventIds =
+                event.subset.map((e) => e.eventId).toList();
+            state.setRoundConfirmed(sealed, subsetEventIds);
           }
           break;
         }
-        if (event is FfiSigningEvent_RoundPending) {
+        if (event is SigningEvent_RoundPending) {
           // Provisional snapshot: the settling timer fired but threshold
           // hasn't been met yet. Round is still collecting. UI can render
           // "your offer is likely accepted" to authors in `observed`.
@@ -436,55 +447,57 @@ class _ChatPageState extends State<ChatPage> {
           }
           break;
         }
-        if (event is FfiSigningEvent_Rejected) {
+        if (event is SigningEvent_Rejected) {
           // Validation errors (duplicate share_index, late offer, etc).
           // Log-only for now — surface later if UX requires.
           break;
         }
 
         final eventId = switch (event) {
-          FfiSigningEvent_Request(:final eventId) => eventId,
-          FfiSigningEvent_Offer(:final eventId) => eventId,
-          FfiSigningEvent_Partial(:final eventId) => eventId,
-          FfiSigningEvent_Cancel(:final eventId) => eventId,
-          FfiSigningEvent_RoundConfirmed() ||
-          FfiSigningEvent_RoundPending() ||
-          FfiSigningEvent_Rejected() =>
+          SigningEvent_Request(:final eventId) => eventId,
+          SigningEvent_Offer(:final eventId) => eventId,
+          SigningEvent_Partial(:final eventId) => eventId,
+          SigningEvent_Cancel(:final eventId) => eventId,
+          SigningEvent_RoundConfirmed() ||
+          SigningEvent_RoundPending() ||
+          SigningEvent_Rejected() =>
             throw StateError('handled above'),
         };
         final idHex = eventId.toHex();
         if (!_seenSigningEventIds.add(idHex)) break;
 
         final (author, timestamp, content) = switch (event) {
-          FfiSigningEvent_Request(
+          SigningEvent_Request(
             :final author,
             :final timestamp,
-            :final signingDetails,
+            :final signTask,
             :final message,
           ) =>
             (
               author,
               timestamp,
-              message.isNotEmpty ? message : signingDetailsText(signingDetails),
+              message.isNotEmpty
+                  ? message
+                  : signingDetailsText(signingDetails(signTask: signTask)),
             ),
-          FfiSigningEvent_Offer(:final author, :final timestamp) => (
+          SigningEvent_Offer(:final author, :final timestamp) => (
             author,
             timestamp,
             'offered to sign',
           ),
-          FfiSigningEvent_Partial(:final author, :final timestamp) => (
+          SigningEvent_Partial(:final author, :final timestamp) => (
             author,
             timestamp,
             'signed',
           ),
-          FfiSigningEvent_Cancel(:final author, :final timestamp) => (
+          SigningEvent_Cancel(:final author, :final timestamp) => (
             author,
             timestamp,
             'cancelled the signing request',
           ),
-          FfiSigningEvent_RoundConfirmed() ||
-          FfiSigningEvent_RoundPending() ||
-          FfiSigningEvent_Rejected() =>
+          SigningEvent_RoundConfirmed() ||
+          SigningEvent_RoundPending() ||
+          SigningEvent_Rejected() =>
             throw StateError('handled above'),
         };
         final isMe = _myPubkey != null && author.equals(other: _myPubkey!);
@@ -499,20 +512,20 @@ class _ChatPageState extends State<ChatPage> {
         );
 
         switch (event) {
-          case FfiSigningEvent_Request():
+          case SigningEvent_Request():
             _signingRequests[event.eventId] = SigningRequestState(event);
             for (final item in _timeline) {
               if (item is! TimelineSigning) continue;
               final itemEvent = item.event;
               switch (itemEvent) {
-                case FfiSigningEvent_Offer(:final requestId, :final author):
+                case SigningEvent_Offer(:final requestId, :final author):
                   if (requestId == event.eventId) {
                     _signingRequests[event.eventId]!.addOffer(
                       author.toHex(),
                       itemEvent,
                     );
                   }
-                case FfiSigningEvent_Partial(:final requestId, :final author):
+                case SigningEvent_Partial(:final requestId, :final author):
                   if (requestId == event.eventId) {
                     _signingRequests[event.eventId]!.addPartial(
                       author.toHex(),
@@ -524,7 +537,7 @@ class _ChatPageState extends State<ChatPage> {
               }
             }
             _insertTimelineItem(TimelineSigning(event));
-          case FfiSigningEvent_Offer():
+          case SigningEvent_Offer():
             final state = _signingRequests[event.requestId];
             if (state != null) {
               state.addOffer(event.author.toHex(), event);
@@ -535,7 +548,7 @@ class _ChatPageState extends State<ChatPage> {
               progressCount: state?.offers.length,
               progressTotal: threshold > 0 ? threshold : null,
             ));
-          case FfiSigningEvent_Partial():
+          case SigningEvent_Partial():
             final state = _signingRequests[event.requestId];
             if (state != null) {
               final authorHex = event.author.toHex();
@@ -543,9 +556,9 @@ class _ChatPageState extends State<ChatPage> {
               if (offer != null && (event.timestamp - offer.timestamp) < 300) {
                 _timeline.removeWhere((item) =>
                     item is TimelineSigning &&
-                    item.event is FfiSigningEvent_Offer &&
-                    (item.event as FfiSigningEvent_Offer).author.toHex() == authorHex &&
-                    (item.event as FfiSigningEvent_Offer).requestId.toHex() == event.requestId.toHex());
+                    item.event is SigningEvent_Offer &&
+                    (item.event as SigningEvent_Offer).author.toHex() == authorHex &&
+                    (item.event as SigningEvent_Offer).requestId.toHex() == event.requestId.toHex());
               }
               state.addPartial(authorHex, event);
               final threshold = _getThreshold(event.requestId);
@@ -555,7 +568,7 @@ class _ChatPageState extends State<ChatPage> {
                 progressTotal: threshold > 0 ? threshold : null,
               ));
               if (state.partials.length >= threshold) {
-                final details = state.request.signingDetails;
+                final details = signingDetails(signTask: state.request.signTask);
                 if (details is SigningDetails_Transaction) {
                   final txid = details.transaction.txid;
                   final existing = _txTimelineState[txid];
@@ -580,7 +593,7 @@ class _ChatPageState extends State<ChatPage> {
                 }
               }
             }
-          case FfiSigningEvent_Cancel():
+          case SigningEvent_Cancel():
             final state = _signingRequests[event.requestId];
             if (state != null) {
               state.cancelled = true;
@@ -589,14 +602,14 @@ class _ChatPageState extends State<ChatPage> {
             coord.cancelRemoteSignSession(
               id: RemoteSignSessionId(field0: event.requestId.field0),
             );
-          case FfiSigningEvent_RoundConfirmed() ||
-              FfiSigningEvent_RoundPending() ||
-              FfiSigningEvent_Rejected():
+          case SigningEvent_RoundConfirmed() ||
+              SigningEvent_RoundPending() ||
+              SigningEvent_Rejected():
             // handled above
             break;
         }
 
-      case FfiChannelEvent_Error(
+      case ChannelEvent_Error(
         :final eventId,
         :final author,
         :final timestamp,
@@ -722,17 +735,17 @@ class _ChatPageState extends State<ChatPage> {
             onCopy: () => _copyMessage(message),
           ),
           TimelineSigning(event: final event, :final progressCount, :final progressTotal) => switch (event) {
-            FfiSigningEvent_Request() => _buildRequestCard(event),
-            FfiSigningEvent_Offer() => _buildOfferCard(event, progressCount, progressTotal),
-            FfiSigningEvent_Partial() => _buildPartialCard(event, progressCount, progressTotal),
-            FfiSigningEvent_Cancel() => _buildCancelCard(event),
-            FfiSigningEvent_RoundConfirmed() ||
-            FfiSigningEvent_RoundPending() ||
-            FfiSigningEvent_Rejected() => const SizedBox.shrink(),
+            SigningEvent_Request() => _buildRequestCard(event),
+            SigningEvent_Offer() => _buildOfferCard(event, progressCount, progressTotal),
+            SigningEvent_Partial() => _buildPartialCard(event, progressCount, progressTotal),
+            SigningEvent_Cancel() => _buildCancelCard(event),
+            SigningEvent_RoundConfirmed() ||
+            SigningEvent_RoundPending() ||
+            SigningEvent_Rejected() => const SizedBox.shrink(),
           },
           TimelineSigningComplete(:final requestState) => _SigningCompleteCard(
             details: signingDetailsText(
-              requestState.request.signingDetails,
+              signingDetails(signTask: requestState.request.signTask),
               walletCtx: WalletContext.of(context),
             ),
             onShowSignature: () => _completeAndShowSignature(requestState),
@@ -816,7 +829,7 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Widget _buildRequestCard(FfiSigningEvent_Request request) {
+  Widget _buildRequestCard(SigningEvent_Request request) {
     final state = _signingRequests[request.eventId];
     if (state == null) {
       return SigningErrorCard(text: 'Unknown signing request');
@@ -865,7 +878,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget _signingPillWidget(EventId requestId) {
     final state = _signingRequests[requestId];
     if (state == null) return const Text('?');
-    final details = state.request.signingDetails;
+    final details = signingDetails(signTask: state.request.signTask);
     if (details is SigningDetails_Transaction) {
       final walletCtx = WalletContext.of(context);
       if (walletCtx != null) {
@@ -911,7 +924,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildOfferCard(FfiSigningEvent_Offer offer, int? progressCount, int? progressTotal) {
+  Widget _buildOfferCard(SigningEvent_Offer offer, int? progressCount, int? progressTotal) {
     final isMe = _myPubkey != null && offer.author.equals(other: _myPubkey!);
     return _SigningEventLine(
       profile: _getProfile(offer.author),
@@ -919,7 +932,10 @@ class _ChatPageState extends State<ChatPage> {
       isMe: isMe,
       label: 'offered to sign',
       messagePill: _signingPillWidget(offer.requestId),
-      suffix: 'with ${offer.shareIndices.length == 1 ? 'key #${offer.shareIndices.first}' : 'keys ${offer.shareIndices.map((i) => '#$i').join(', ')}'}',
+      suffix: () {
+        final indices = offerShareIndices(binonces: offer.binonces);
+        return 'with ${indices.length == 1 ? 'key #${indices.first}' : 'keys ${indices.map((i) => '#$i').join(', ')}'}';
+      }(),
       timestamp: DateTime.fromMillisecondsSinceEpoch(offer.timestamp * 1000),
       onTapPill: () => _scrollToAndHighlight(offer.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(offer.author),
@@ -928,7 +944,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildPartialCard(FfiSigningEvent_Partial partial, int? progressCount, int? progressTotal) {
+  Widget _buildPartialCard(SigningEvent_Partial partial, int? progressCount, int? progressTotal) {
     final isMe = _myPubkey != null && partial.author.equals(other: _myPubkey!);
     return _SigningEventLine(
       profile: _getProfile(partial.author),
@@ -945,7 +961,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildCancelCard(FfiSigningEvent_Cancel cancel) {
+  Widget _buildCancelCard(SigningEvent_Cancel cancel) {
     final isMe = _myPubkey != null && cancel.author.equals(other: _myPubkey!);
     return _SigningEventLine(
       profile: _getProfile(cancel.author),
@@ -1018,9 +1034,9 @@ class _ChatPageState extends State<ChatPage> {
   void _openSigningPage(SigningRequestState state) {
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null) return;
-    final signingDetails = state.request.signingDetails;
-    if (signingDetails is! SigningDetails_Transaction) return;
-    final tx = signingDetails.transaction;
+    final details = signingDetails(signTask: state.request.signTask);
+    if (details is! SigningDetails_Transaction) return;
+    final tx = details.transaction;
     final txDetails = TxDetailsModel(
       tx: tx,
       chainTipHeight: walletCtx.superWallet.height(),
@@ -1052,7 +1068,7 @@ class _ChatPageState extends State<ChatPage> {
 
     try {
       final signatures = sealed.combineSignatures(
-        allShares: state.partials.values.map((p) => p.shares).toList(),
+        allShares: state.partials.values.map((p) => p.signatureShares).toList(),
       );
       if (signatures.isNotEmpty && mounted) {
         await showSignatureDialog(context, signatures[0]);
@@ -1094,14 +1110,14 @@ class _ChatPageState extends State<ChatPage> {
     if (sealed == null) return;
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null) return;
-    final signingDetails = state.request.signingDetails;
-    if (signingDetails is! SigningDetails_Transaction) return;
+    final details = signingDetails(signTask: state.request.signTask);
+    if (details is! SigningDetails_Transaction) return;
 
     try {
       final signatures = sealed.combineSignatures(
-        allShares: state.partials.values.map((p) => p.shares).toList(),
+        allShares: state.partials.values.map((p) => p.signatureShares).toList(),
       );
-      final signedTx = await signingDetails.transaction.withSignatures(
+      final signedTx = await details.transaction.withSignatures(
         signatures: signatures,
       );
       if (!mounted) return;
@@ -1352,54 +1368,54 @@ class _ChatPageState extends State<ChatPage> {
     return getDisplayName(_getProfile(author), author);
   }
 
-  void _copySigningText(FfiSigningEvent event) {
+  void _copySigningText(SigningEvent event) {
     final text = switch (event) {
-      FfiSigningEvent_Request(:final signingDetails, :final message) =>
-        '${signingDetailsText(signingDetails)}${message.isNotEmpty ? '\n$message' : ''}',
-      FfiSigningEvent_Offer(:final shareIndices, :final author) =>
-        '${_displayName(author)} offered to sign with ${shareIndices.map((i) => 'key #$i').join(', ')}',
-      FfiSigningEvent_Partial(:final author) =>
+      SigningEvent_Request(:final signTask, :final message) =>
+        '${signingDetailsText(signingDetails(signTask: signTask))}${message.isNotEmpty ? '\n$message' : ''}',
+      SigningEvent_Offer(:final binonces, :final author) =>
+        '${_displayName(author)} offered to sign with ${offerShareIndices(binonces: binonces).map((i) => 'key #$i').join(', ')}',
+      SigningEvent_Partial(:final author) =>
         '${_displayName(author)} signed',
-      FfiSigningEvent_Cancel(:final author) =>
+      SigningEvent_Cancel(:final author) =>
         '${_displayName(author)} cancelled the signing request',
-      FfiSigningEvent_RoundConfirmed() ||
-      FfiSigningEvent_RoundPending() ||
-      FfiSigningEvent_Rejected() =>
+      SigningEvent_RoundConfirmed() ||
+      SigningEvent_RoundPending() ||
+      SigningEvent_Rejected() =>
         throw StateError('round decisions have no chat copy text'),
     };
     Clipboard.setData(ClipboardData(text: text));
   }
 
-  ReplyTarget _signingReplyTarget(FfiSigningEvent event) {
+  ReplyTarget _signingReplyTarget(SigningEvent event) {
     final (eventId, author) = switch (event) {
-      FfiSigningEvent_Request(:final eventId, :final author) => (
+      SigningEvent_Request(:final eventId, :final author) => (
         eventId,
         author,
       ),
-      FfiSigningEvent_Offer(:final eventId, :final author) => (eventId, author),
-      FfiSigningEvent_Partial(:final eventId, :final author) => (
+      SigningEvent_Offer(:final eventId, :final author) => (eventId, author),
+      SigningEvent_Partial(:final eventId, :final author) => (
         eventId,
         author,
       ),
-      FfiSigningEvent_Cancel(:final eventId, :final author) => (
+      SigningEvent_Cancel(:final eventId, :final author) => (
         eventId,
         author,
       ),
-      FfiSigningEvent_RoundConfirmed() ||
-      FfiSigningEvent_RoundPending() ||
-      FfiSigningEvent_Rejected() =>
+      SigningEvent_RoundConfirmed() ||
+      SigningEvent_RoundPending() ||
+      SigningEvent_Rejected() =>
         throw StateError('round decisions cannot be replied to'),
     };
     final preview = switch (event) {
-      FfiSigningEvent_Request(:final signingDetails) =>
-        'Signing request: ${signingDetailsText(signingDetails)}',
-      FfiSigningEvent_Offer(:final shareIndices) =>
-        'Sign offer — ${shareIndices.map((i) => 'key #$i').join(', ')}',
-      FfiSigningEvent_Partial() => 'Signed',
-      FfiSigningEvent_Cancel() => 'Cancelled',
-      FfiSigningEvent_RoundConfirmed() ||
-      FfiSigningEvent_RoundPending() ||
-      FfiSigningEvent_Rejected() =>
+      SigningEvent_Request(:final signTask) =>
+        'Signing request: ${signingDetailsText(signingDetails(signTask: signTask))}',
+      SigningEvent_Offer(:final binonces) =>
+        'Sign offer — ${offerShareIndices(binonces: binonces).map((i) => 'key #$i').join(', ')}',
+      SigningEvent_Partial() => 'Signed',
+      SigningEvent_Cancel() => 'Cancelled',
+      SigningEvent_RoundConfirmed() ||
+      SigningEvent_RoundPending() ||
+      SigningEvent_Rejected() =>
         throw StateError('round decisions cannot be replied to'),
     };
     return ReplyTarget(
@@ -2705,8 +2721,9 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     return DeviceItem.fromAccessStructure(accessStructure);
   }
 
-  Set<int> get _offeredShareIndices =>
-      widget.state.offers.values.expand((o) => o.shareIndices).toSet();
+  Set<int> get _offeredShareIndices => widget.state.offers.values
+      .expand((o) => offerShareIndices(binonces: o.binonces))
+      .toSet();
 
   /// Devices the user can still offer with: enabled (has nonces) AND the
   /// share index isn't already in the offer chain.
@@ -2800,9 +2817,9 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     if (walletCtx == null || fsCtx == null) return;
 
     try {
-      final signingDetails = widget.state.request.signingDetails;
-      if (signingDetails is! SigningDetails_Transaction) return;
-      final tx = signingDetails.transaction;
+      final details = signingDetails(signTask: widget.state.request.signTask);
+      if (details is! SigningDetails_Transaction) return;
+      final tx = details.transaction;
       final txDetails = TxDetailsModel(
         tx: tx,
         chainTipHeight: walletCtx.superWallet.height(),
@@ -2862,7 +2879,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
       );
     }
 
-    final details = widget.state.request.signingDetails;
+    final details = signingDetails(signTask: widget.state.request.signTask);
     final walletCtx = WalletContext.of(context);
 
     return SingleChildScrollView(

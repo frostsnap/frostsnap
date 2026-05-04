@@ -86,7 +86,7 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
       asRef: widget.accessStructureRef,
     );
     if (accessStruct == null) return [];
-    return myOffer.shareIndices.map((idx) {
+    return offerShareIndices(binonces: myOffer.binonces).map((idx) {
       for (final deviceId in accessStruct.devices()) {
         if (accessStruct.getDeviceShortShareIndex(deviceId: deviceId) == idx) {
           return deviceId;
@@ -376,7 +376,9 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
                   profile: widget.getProfile(myOffer.author),
                   pubkey: myOffer.author,
                   name: 'You',
-                  keyLabel: myOffer.shareIndices.map((i) => '#$i').join(', '),
+                  keyLabel: offerShareIndices(binonces: myOffer.binonces)
+                      .map((i) => '#$i')
+                      .join(', '),
                   signed: state.partials.containsKey(myHex),
                 ),
               ...otherOffers.map((entry) {
@@ -387,7 +389,9 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
                   profile: profile,
                   pubkey: offer.author,
                   name: getDisplayName(profile, offer.author),
-                  keyLabel: offer.shareIndices.map((i) => '#$i').join(', '),
+                  keyLabel: offerShareIndices(binonces: offer.binonces)
+                      .map((i) => '#$i')
+                      .join(', '),
                   signed: hasSigned,
                 );
               }),

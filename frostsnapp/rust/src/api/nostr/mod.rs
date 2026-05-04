@@ -25,7 +25,8 @@ use std::{
 };
 
 pub use frostsnap_nostr::{
-    ChannelEvent, ChannelSecret, ConnectionState, EventId, GroupMember, PublicKey,
+    ChannelEvent, ChannelSecret, ConfirmedSubsetEntry, ConnectionState, EventId, GroupMember,
+    PublicKey, SigningEvent,
 };
 
 #[frb(opaque)]
@@ -69,15 +70,9 @@ pub struct NostrSettings {
 
 struct NostrSettingsInner {
     pubkey: Option<PublicKey>,
-    identity_sink: Option<StreamSink<FfiNostrIdentity>>,
-}
-
-/// Current Nostr identity state.
-#[derive(Clone, Default)]
-#[frb(non_opaque)]
-pub struct FfiNostrIdentity {
-    pub pubkey: Option<PublicKey>,
-    pub npub: Option<String>,
+    /// Sink for identity updates. Stream value is the local pubkey;
+    /// Dart computes npub on demand via `PublicKeyExt::toNpub()`.
+    identity_sink: Option<StreamSink<Option<PublicKey>>>,
 }
 
 impl NostrSettings {
@@ -125,7 +120,9 @@ impl NostrSettings {
     }
 
     /// Subscribe to identity changes. Emits current value immediately.
-    pub fn sub_identity(&self, sink: StreamSink<FfiNostrIdentity>) -> Result<()> {
+    /// Stream values are the local nostr pubkey; Dart computes the
+    /// bech32 `npub` on demand via `PublicKey.toNpub()`.
+    pub fn sub_identity(&self, sink: StreamSink<Option<PublicKey>>) -> Result<()> {
         {
             let mut inner = self.inner.write().unwrap();
             inner.identity_sink.replace(sink);
@@ -137,22 +134,14 @@ impl NostrSettings {
     fn emit_identity(&self) {
         let inner = self.inner.read().unwrap();
         if let Some(sink) = &inner.identity_sink {
-            let identity = FfiNostrIdentity {
-                pubkey: inner.pubkey,
-                npub: inner.pubkey.as_ref().and_then(|p| p.to_bech32().ok()),
-            };
-            let _ = sink.add(identity);
+            let _ = sink.add(inner.pubkey);
         }
     }
 
     /// Get current identity synchronously.
     #[frb(sync)]
-    pub fn current(&self) -> FfiNostrIdentity {
-        let inner = self.inner.read().unwrap();
-        FfiNostrIdentity {
-            pubkey: inner.pubkey.clone(),
-            npub: inner.pubkey.as_ref().and_then(|p| p.to_bech32().ok()),
-        }
+    pub fn current(&self) -> Option<PublicKey> {
+        self.inner.read().unwrap().pubkey
     }
 
     /// Set/import nsec. Persists to DB and notifies subscribers.
@@ -214,6 +203,10 @@ impl NostrSettings {
 pub struct NostrClient {
     client: Client,
     channels: Mutex<HashMap<AccessStructureId, ChannelHandle>>,
+    /// Per-channel `KeyContext`, kept after `connect_to_channel`
+    /// consumes the params so we can build `SealedSigningData` on
+    /// demand when a `RoundConfirmed` event lands.
+    key_contexts: Mutex<HashMap<AccessStructureId, KeyContext>>,
 }
 
 impl NostrClient {
@@ -233,6 +226,7 @@ impl NostrClient {
         Ok(Self {
             client,
             channels: Mutex::new(HashMap::new()),
+            key_contexts: Mutex::new(HashMap::new()),
         })
     }
 
@@ -265,15 +259,11 @@ impl NostrClient {
     pub async fn connect_to_channel(
         &self,
         params: ChannelConnectionParams,
-        sink: StreamSink<FfiChannelEvent>,
+        sink: StreamSink<ChannelEvent>,
     ) {
         let access_structure_id = params.key_context.access_structure_id();
-        // Custom sink that smuggles the channel's KeyContext into the
-        // FfiChannelEvent conversion so SealedSigningData can carry it.
-        let channel_sink = ChannelEventSink {
-            sink,
-            key_context: params.key_context.clone(),
-        };
+        let key_context = params.key_context.clone();
+        let channel_sink = ChannelEventSink { sink };
         let channel_client = ChannelClient::new(params.key_context, params.init_data);
         let handle = match channel_client.run(self.client.clone(), channel_sink).await {
             Ok(h) => h,
@@ -287,6 +277,39 @@ impl NostrClient {
             .lock()
             .unwrap()
             .insert(access_structure_id, handle);
+        self.key_contexts
+            .lock()
+            .unwrap()
+            .insert(access_structure_id, key_context);
+    }
+
+    /// Build a `SealedSigningData` bundle on demand when Dart receives
+    /// a `SigningEvent::RoundConfirmed`. The channel's `key_context`
+    /// (cached at `connect_to_channel` time) supplies the access
+    /// structure scope; the rest of the fields come from the event.
+    /// `binonces` is typically the `subset.iter().flat_map(|e|
+    /// e.binonces.iter().cloned())` from the source event.
+    #[frb(sync)]
+    pub fn seal_round_confirmed(
+        &self,
+        access_structure_id: AccessStructureId,
+        request_id: EventId,
+        sign_task: WireSignTask,
+        binonces: Vec<ParticipantBinonces>,
+    ) -> Result<SealedSigningData> {
+        let key_context = self
+            .key_contexts
+            .lock()
+            .unwrap()
+            .get(&access_structure_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("no channel for access structure {access_structure_id}"))?;
+        Ok(SealedSigningData {
+            request_id: request_id.into(),
+            sign_task,
+            binonces,
+            key_context,
+        })
     }
 
     /// Join a wallet from a nostr invite link. Fetches channel data from relays,
@@ -680,9 +703,86 @@ pub struct _GroupMember {
     pub profile: Option<NostrProfile>,
 }
 
-#[frb(non_opaque)]
-#[derive(Debug, Clone)]
-pub enum FfiChannelEvent {
+/// Mirrors `frostsnap_nostr::ConnectionState`.
+#[frb(mirror(ConnectionState), non_opaque)]
+pub enum _ConnectionState {
+    Connecting,
+    Connected,
+    Disconnected { reason: Option<String> },
+}
+
+/// Mirrors `frostsnap_nostr::signing::ConfirmedSubsetEntry` — one entry
+/// in `SigningEvent::RoundConfirmed.subset`.
+#[frb(mirror(ConfirmedSubsetEntry), non_opaque)]
+pub struct _ConfirmedSubsetEntry {
+    pub event_id: EventId,
+    pub author: PublicKey,
+    pub timestamp: u64,
+    pub binonces: Vec<ParticipantBinonces>,
+}
+
+/// Mirrors `frostsnap_nostr::SigningEvent`. Variants stay 1:1 with the
+/// source; the previously-embedded `signing_details` (Request) and
+/// `share_indices` (Offer) projections are now Dart-callable helpers
+/// (see `signing_details`, `offer_share_indices` below). The
+/// `RoundConfirmed.sealed` opaque bundle is built on demand via
+/// `ChannelHandle::seal_round_confirmed(...)`.
+#[frb(mirror(SigningEvent), non_opaque)]
+pub enum _SigningEvent {
+    Request {
+        event_id: EventId,
+        author: PublicKey,
+        sign_task: WireSignTask,
+        message: String,
+        timestamp: u64,
+    },
+    Offer {
+        event_id: EventId,
+        author: PublicKey,
+        request_id: EventId,
+        binonces: Vec<ParticipantBinonces>,
+        timestamp: u64,
+    },
+    RoundConfirmed {
+        request_id: EventId,
+        subset: Vec<ConfirmedSubsetEntry>,
+        session_id: SignSessionId,
+        sign_task: WireSignTask,
+        timestamp: u64,
+    },
+    RoundPending {
+        request_id: EventId,
+        observed: Vec<EventId>,
+        threshold: usize,
+        timestamp: u64,
+    },
+    Partial {
+        event_id: EventId,
+        author: PublicKey,
+        request_id: EventId,
+        offer_subset: Vec<EventId>,
+        session_id: SignSessionId,
+        signature_shares: ParticipantSignatureShares,
+        timestamp: u64,
+    },
+    Cancel {
+        event_id: EventId,
+        author: PublicKey,
+        request_id: EventId,
+        timestamp: u64,
+    },
+    Rejected {
+        event_id: EventId,
+        author: PublicKey,
+        timestamp: u64,
+        reason: String,
+    },
+}
+
+/// Mirrors `frostsnap_nostr::ChannelEvent`. The previous bespoke
+/// `FfiChannelEvent` is gone — variants flow through unchanged.
+#[frb(mirror(ChannelEvent), non_opaque)]
+pub enum _ChannelEvent {
     ChatMessage {
         message_id: EventId,
         author: PublicKey,
@@ -702,8 +802,8 @@ pub enum FfiChannelEvent {
     GroupMetadata {
         members: Vec<GroupMember>,
     },
-    SigningEvent {
-        event: FfiSigningEvent,
+    Signing {
+        event: SigningEvent,
         pending: bool,
     },
     Error {
@@ -714,11 +814,30 @@ pub enum FfiChannelEvent {
     },
 }
 
+/// Compute the UI-shape `SigningDetails` for a sign task. Dart calls
+/// this on demand; the field used to ride embedded on
+/// `SigningEvent::Request` but it's just a derivation of the task.
+#[frb(sync)]
+pub fn signing_details(sign_task: &WireSignTask) -> super::signing::SigningDetails {
+    use super::signing::WireSignTaskExt;
+    sign_task.signing_details()
+}
+
+/// Compute the per-binonce share indices, the UI-friendly projection
+/// of `SigningEvent::Offer.binonces`. Dart calls this on demand; the
+/// field used to ride embedded on the variant.
+#[frb(sync)]
+pub fn offer_share_indices(binonces: &[ParticipantBinonces]) -> Vec<u32> {
+    binonces
+        .iter()
+        .map(|b| u32::try_from(b.share_index).expect("share index fits in u32"))
+        .collect()
+}
+
 /// Opaque bundle of round data needed to combine signatures standalone.
-/// Built by `channel_event_to_ffi` when a `SigningEvent::RoundConfirmed`
-/// lands. Holds the channel's `key_context` so all the channel-scope context
-/// (`access_structure_ref`, threshold, etc.) is recoverable from a single
-/// place.
+/// Built on demand by `ChannelHandle::seal_round_confirmed(...)` when a
+/// `SigningEvent::RoundConfirmed` lands, since it carries the channel's
+/// `key_context` (which isn't on the source `SigningEvent` itself).
 #[frb(opaque)]
 #[derive(Debug, Clone)]
 pub struct SealedSigningData {
@@ -774,261 +893,20 @@ impl SealedSigningData {
     }
 }
 
-#[frb(non_opaque)]
-#[derive(Debug, Clone)]
-pub enum FfiSigningEvent {
-    Request {
-        event_id: EventId,
-        author: PublicKey,
-        sign_task: crate::frb_generated::RustAutoOpaque<WireSignTask>,
-        signing_details: super::signing::SigningDetails,
-        message: String,
-        timestamp: u64,
-    },
-    Offer {
-        event_id: EventId,
-        author: PublicKey,
-        request_id: EventId,
-        share_indices: Vec<u32>,
-        timestamp: u64,
-    },
-    /// Emitted exactly once per round when the settling timer expires with
-    /// at least `threshold` offers observed. Dart uses `sealed` to drive the
-    /// signing UI and combine shares; `subset_event_ids` / `subset_authors`
-    /// let the UI render which offers made the cut.
-    RoundConfirmed {
-        request_id: EventId,
-        session_id: SignSessionId,
-        subset_event_ids: Vec<EventId>,
-        subset_authors: Vec<PublicKey>,
-        sealed: crate::frb_generated::RustAutoOpaque<SealedSigningData>,
-        timestamp: u64,
-    },
-    /// Emitted when the settling timer expires with fewer than `threshold`
-    /// offers. The round is still collecting; this is a provisional
-    /// snapshot. May fire multiple times as new offers arrive and later
-    /// quiet periods pass.
-    RoundPending {
-        request_id: EventId,
-        observed: Vec<EventId>,
-        threshold: u32,
-        timestamp: u64,
-    },
-    Partial {
-        event_id: EventId,
-        author: PublicKey,
-        request_id: EventId,
-        /// Offer event ids whose binonces were combined to sign this
-        /// partial. Mirrors the wire field; Dart renders these for audit.
-        offer_subset: Vec<EventId>,
-        /// Computed by the Rust tree from `offer_subset`'s binonces; denorm
-        /// for UI convenience.
-        session_id: SignSessionId,
-        shares: frostsnap_core::coordinator::ParticipantSignatureShares,
-        timestamp: u64,
-    },
-    Cancel {
-        event_id: EventId,
-        author: PublicKey,
-        request_id: EventId,
-        timestamp: u64,
-    },
-    Rejected {
-        event_id: EventId,
-        author: PublicKey,
-        timestamp: u64,
-        reason: String,
-    },
-}
-
-/// Mirrors `frostsnap_nostr::ConnectionState`.
-#[frb(mirror(ConnectionState), non_opaque)]
-pub enum _ConnectionState {
-    Connecting,
-    Connected,
-    Disconnected { reason: Option<String> },
-}
-
-/// Convert a `ChannelEvent` from the channel client into the FFI variant.
-/// Takes the channel's `key_context` so `SealedSigningData` can be built with
-/// the channel-scope context that no longer travels on `SigningChain`.
-fn channel_event_to_ffi(event: ChannelEvent, key_context: &KeyContext) -> FfiChannelEvent {
-    match event {
-        ChannelEvent::ChatMessage {
-            message_id,
-            author,
-            content,
-            timestamp,
-            reply_to,
-            pending,
-        } => FfiChannelEvent::ChatMessage {
-            message_id: message_id.into(),
-            author,
-            content,
-            timestamp,
-            reply_to: reply_to.map(|id| id.into()),
-            pending,
-        },
-        ChannelEvent::MessageSent { message_id } => FfiChannelEvent::MessageSent {
-            message_id: message_id.into(),
-        },
-        ChannelEvent::MessageSendFailed { message_id, reason } => {
-            FfiChannelEvent::MessageSendFailed {
-                message_id: message_id.into(),
-                reason,
-            }
-        }
-        ChannelEvent::ConnectionState(state) => FfiChannelEvent::ConnectionState(state),
-        ChannelEvent::GroupMetadata { members } => FfiChannelEvent::GroupMetadata { members },
-        ChannelEvent::Signing {
-            event: signing,
-            pending,
-        } => {
-            use frostsnap_nostr::signing::SigningEvent;
-            FfiChannelEvent::SigningEvent {
-                event: match signing {
-                    SigningEvent::Request {
-                        event_id,
-                        author,
-                        sign_task,
-                        message,
-                        timestamp,
-                    } => {
-                        use super::signing::WireSignTaskExt;
-                        let signing_details = sign_task.signing_details();
-                        FfiSigningEvent::Request {
-                            event_id: event_id.into(),
-                            author,
-                            sign_task: crate::frb_generated::RustAutoOpaque::new(sign_task),
-                            signing_details,
-                            message,
-                            timestamp,
-                        }
-                    }
-                    SigningEvent::Offer {
-                        event_id,
-                        author,
-                        request_id,
-                        binonces,
-                        timestamp,
-                    } => FfiSigningEvent::Offer {
-                        event_id: event_id.into(),
-                        author,
-                        request_id: request_id.into(),
-                        share_indices: binonces
-                            .iter()
-                            .map(|b| {
-                                u32::try_from(b.share_index).expect("share index should fit in u32")
-                            })
-                            .collect(),
-                        timestamp,
-                    },
-                    SigningEvent::RoundConfirmed {
-                        request_id,
-                        subset,
-                        session_id,
-                        sign_task,
-                        timestamp,
-                    } => {
-                        let binonces: Vec<ParticipantBinonces> = subset
-                            .iter()
-                            .flat_map(|e| e.binonces.iter().cloned())
-                            .collect();
-                        let sealed = crate::frb_generated::RustAutoOpaque::new(SealedSigningData {
-                            request_id,
-                            sign_task,
-                            binonces,
-                            key_context: key_context.clone(),
-                        });
-                        FfiSigningEvent::RoundConfirmed {
-                            request_id: request_id.into(),
-                            session_id,
-                            subset_event_ids: subset.iter().map(|e| e.event_id.into()).collect(),
-                            subset_authors: subset.iter().map(|e| e.author).collect(),
-                            sealed,
-                            timestamp,
-                        }
-                    }
-                    SigningEvent::RoundPending {
-                        request_id,
-                        observed,
-                        threshold,
-                        timestamp,
-                    } => FfiSigningEvent::RoundPending {
-                        request_id: request_id.into(),
-                        observed: observed.into_iter().map(|eid| eid.into()).collect(),
-                        threshold: threshold as u32,
-                        timestamp,
-                    },
-                    SigningEvent::Partial {
-                        event_id,
-                        author,
-                        request_id,
-                        offer_subset,
-                        session_id,
-                        signature_shares,
-                        timestamp,
-                    } => FfiSigningEvent::Partial {
-                        event_id: event_id.into(),
-                        author,
-                        request_id: request_id.into(),
-                        offer_subset: offer_subset.into_iter().map(|e| e.into()).collect(),
-                        session_id,
-                        shares: signature_shares,
-                        timestamp,
-                    },
-                    SigningEvent::Cancel {
-                        event_id,
-                        author,
-                        request_id,
-                        timestamp,
-                    } => FfiSigningEvent::Cancel {
-                        event_id: event_id.into(),
-                        author,
-                        request_id: request_id.into(),
-                        timestamp,
-                    },
-                    SigningEvent::Rejected {
-                        event_id,
-                        author,
-                        timestamp,
-                        reason,
-                    } => FfiSigningEvent::Rejected {
-                        event_id: event_id.into(),
-                        author,
-                        timestamp,
-                        reason,
-                    },
-                },
-                pending,
-            }
-        }
-        ChannelEvent::Error {
-            event_id,
-            author,
-            timestamp,
-            reason,
-        } => FfiChannelEvent::Error {
-            event_id: event_id.into(),
-            author,
-            timestamp,
-            reason,
-        },
-    }
-}
-
-/// `Sink<ChannelEvent>` impl that smuggles the channel's `KeyContext` into
-/// the FfiChannelEvent conversion path so `SealedSigningData` can carry it.
+/// `Sink<ChannelEvent>` that forwards the source enum directly to a
+/// `StreamSink<ChannelEvent>` — no per-event conversion. The
+/// `SealedSigningData` bundle that used to ride embedded on
+/// `RoundConfirmed` is now built on demand via
+/// `ChannelHandle::seal_round_confirmed(...)`, which already has the
+/// channel's `key_context`.
 #[derive(Clone)]
 struct ChannelEventSink {
-    sink: StreamSink<FfiChannelEvent>,
-    key_context: KeyContext,
+    sink: StreamSink<ChannelEvent>,
 }
 
 impl frostsnap_coordinator::Sink<ChannelEvent> for ChannelEventSink {
     fn send(&self, event: ChannelEvent) {
-        let ffi_event = channel_event_to_ffi(event, &self.key_context);
-        let _ = self.sink.add(ffi_event);
+        let _ = self.sink.add(event);
     }
 }
 

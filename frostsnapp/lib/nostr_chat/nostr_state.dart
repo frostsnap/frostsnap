@@ -7,7 +7,7 @@ import 'package:rxdart/rxdart.dart';
 // ignore: must_be_immutable
 class NostrContext extends InheritedWidget {
   final NostrSettings nostrSettings;
-  late final BehaviorSubject<FfiNostrIdentity> identityStream;
+  late final BehaviorSubject<PublicKey?> identityStream;
 
   // Profile cache for other users
   final Map<String, BehaviorSubject<NostrProfile?>> _profileCache = {};
@@ -28,9 +28,10 @@ class NostrContext extends InheritedWidget {
     return context.dependOnInheritedWidgetOfExactType<NostrContext>();
   }
 
-  // Convenience accessors
-  FfiNostrIdentity get identity => identityStream.value;
-  PublicKey? get myPubkey => identity.pubkey;
+  // Convenience accessor — current local nostr pubkey, or null if no
+  // identity is configured. Dart computes the bech32 `npub` form on
+  // demand via `myPubkey?.toNpub()`.
+  PublicKey? get myPubkey => identityStream.value;
 
   /// Get a stream of profile updates for a pubkey.
   Stream<NostrProfile?> profileStream(PublicKey pubkey) {
@@ -88,17 +89,17 @@ class NostrContext extends InheritedWidget {
 
 /// Builder widget for reactive identity updates.
 class NostrIdentityBuilder extends StatelessWidget {
-  final Widget Function(BuildContext, FfiNostrIdentity) builder;
+  final Widget Function(BuildContext, PublicKey?) builder;
 
   const NostrIdentityBuilder({super.key, required this.builder});
 
   @override
   Widget build(BuildContext context) {
     final nostr = NostrContext.of(context);
-    return StreamBuilder<FfiNostrIdentity>(
+    return StreamBuilder<PublicKey?>(
       stream: nostr.identityStream,
-      initialData: nostr.identity,
-      builder: (context, snap) => builder(context, snap.data!),
+      initialData: nostr.myPubkey,
+      builder: (context, snap) => builder(context, snap.data),
     );
   }
 }
@@ -117,11 +118,11 @@ class MyProfileBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nostr = NostrContext.of(context);
-    return StreamBuilder<FfiNostrIdentity>(
+    return StreamBuilder<PublicKey?>(
       stream: nostr.identityStream,
-      initialData: nostr.identity,
+      initialData: nostr.myPubkey,
       builder: (context, identitySnap) {
-        final pubkey = identitySnap.data?.pubkey;
+        final pubkey = identitySnap.data;
         if (pubkey == null) {
           return builder(context, null, null);
         }

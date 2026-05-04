@@ -10,9 +10,9 @@ import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 
 class SigningRequestState extends ChangeNotifier {
-  final FfiSigningEvent_Request request;
-  final Map<String, FfiSigningEvent_Offer> offers = {};
-  final Map<String, FfiSigningEvent_Partial> partials = {};
+  final SigningEvent_Request request;
+  final Map<String, SigningEvent_Offer> offers = {};
+  final Map<String, SigningEvent_Partial> partials = {};
   bool _cancelled = false;
 
   /// Set once when the settling timer expires with >= threshold offers.
@@ -39,12 +39,12 @@ class SigningRequestState extends ChangeNotifier {
   List<EventId>? get sealedOfferSubset => _sealedOfferSubset;
   ({List<EventId> observed, int threshold})? get pending => _pending;
 
-  void addOffer(String pubkeyHex, FfiSigningEvent_Offer offer) {
+  void addOffer(String pubkeyHex, SigningEvent_Offer offer) {
     offers[pubkeyHex] = offer;
     notifyListeners();
   }
 
-  void addPartial(String pubkeyHex, FfiSigningEvent_Partial partial) {
+  void addPartial(String pubkeyHex, SigningEvent_Partial partial) {
     partials[pubkeyHex] = partial;
     notifyListeners();
   }
@@ -515,7 +515,7 @@ class SigningRequestCard extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 8),
-              _buildSigningDetails(context, theme, request.signingDetails, onTap: onTap),
+              _buildSigningDetails(context, theme, signingDetails(signTask: request.signTask), onTap: onTap),
               if (request.message.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(request.message, style: theme.textTheme.bodyMedium),
