@@ -444,7 +444,7 @@ impl<'a> DeviceLoop<'a> {
                 if last_message_was_magic_bytes {
                     if is_upstream_established {
                         self.soft_reset = true;
-                    } else if self.magic_bytes_timeout_counter > 2 {
+                    } else if self.magic_bytes_timeout_counter > 3 {
                         // Coord is still in `awaiting_magic` long after we
                         // replied — it didn't see our Announce. Reset so we
                         // re-handshake on the next magic bytes. Threshold has

@@ -635,7 +635,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
   recipientScan(BuildContext context) async {
     final addressResult = await MaybeFullscreenDialog.show<String>(
       context: context,
-      child: AddressScanner(),
+      child: const QrStringScanner(title: 'Scan address'),
     );
     if (!context.mounted || addressResult == null) return;
     addrController.controller.text = addressResult;

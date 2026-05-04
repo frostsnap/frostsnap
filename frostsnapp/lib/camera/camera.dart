@@ -86,24 +86,30 @@ class _PsbtCameraReaderState extends State<PsbtCameraReader> {
   }
 }
 
-class AddressScanner extends StatefulWidget {
-  const AddressScanner({super.key});
+/// Generic QR-string scanner: reads any QR code it sees and returns
+/// the raw string value. Callers parse/validate as needed (bitcoin
+/// address, frostsnap invite URL, …). [title] is the scanner chrome
+/// title — pass what the user is scanning so the header matches.
+class QrStringScanner extends StatefulWidget {
+  const QrStringScanner({super.key, required this.title});
+
+  final String title;
 
   @override
-  State<AddressScanner> createState() => _AddressScannerState();
+  State<QrStringScanner> createState() => _QrStringScannerState();
 }
 
-class _AddressScannerState extends State<AddressScanner> {
+class _QrStringScannerState extends State<QrStringScanner> {
   bool _processing = false;
 
-  Future<String?> _handleAddressDetection(capture) async {
+  Future<String?> _onDetect(capture) async {
     if (capture.barcodes.isNotEmpty) {
       return capture.barcodes.first.rawValue;
     }
     return null;
   }
 
-  Future<FrameScanResult<String>> _scanAddressFrame(camera.Frame frame) async {
+  Future<FrameScanResult<String>> _scanFrame(camera.Frame frame) async {
     if (_processing) return FrameScanResult();
 
     _processing = true;
@@ -124,13 +130,13 @@ class _AddressScannerState extends State<AddressScanner> {
   Widget build(BuildContext context) {
     if (Platform.isLinux || Platform.isWindows) {
       return NativeCameraWidget<String>(
-        title: "Scan Address",
-        scanFrame: _scanAddressFrame,
+        title: widget.title,
+        scanFrame: _scanFrame,
       );
     }
     return MobileQrScanner<String>(
-      title: 'Scan Address',
-      onDetect: _handleAddressDetection,
+      title: widget.title,
+      onDetect: _onDetect,
     );
   }
 }

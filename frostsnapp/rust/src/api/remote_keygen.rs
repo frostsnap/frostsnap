@@ -1,8 +1,10 @@
 //! FFI surface for the remote (org) keygen lobby. Thin wrapper around
 //! `frostsnap_nostr::keygen::LobbyClient` that exposes a Dart-subscribable
 //! state stream and async methods for the full lobby lifecycle:
-//! presence → register (mark ready) → set/accept threshold → start keygen
-//! (still a TODO stub — the handoff into core keygen is a later slice).
+//! presence → register (mark ready) → start keygen. Threshold no longer
+//! has its own negotiation round-trip: it rides inline on `StartKeygen`
+//! and joiners signal acceptance implicitly by broadcasting their first
+//! DKG round-1 output on the resulting subchannel.
 
 use crate::api::broadcast::{BehaviorBroadcast, BehaviorBroadcastSubscription, StartError};
 use crate::frb_generated::StreamSink;
@@ -14,8 +16,9 @@ use frostsnap_core::DeviceId;
 pub use frostsnap_nostr::keygen::{DeviceKind, DeviceRegistration};
 use frostsnap_nostr::keygen::{
     LobbyEvent, LobbyHandle, LobbyState, ParticipantStatus as CoreParticipantStatus,
+    ResolvedKeygen, SelectedCoordinator,
 };
-use frostsnap_nostr::{Keys, PublicKey};
+use frostsnap_nostr::{EventId, Keys, PublicKey};
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -43,7 +46,6 @@ pub struct _DeviceRegistration {
 pub enum FfiParticipantStatus {
     Joining,
     Ready,
-    Accepted,
 }
 
 impl From<CoreParticipantStatus> for FfiParticipantStatus {
@@ -51,7 +53,6 @@ impl From<CoreParticipantStatus> for FfiParticipantStatus {
         match s {
             CoreParticipantStatus::Joining => Self::Joining,
             CoreParticipantStatus::Ready => Self::Ready,
-            CoreParticipantStatus::Accepted => Self::Accepted,
         }
     }
 }
@@ -69,6 +70,38 @@ pub struct FfiLobbyParticipant {
     /// Empty while `status == Joining`. Populated once `Register` lands.
     pub devices: Vec<FfiLobbyDevice>,
     pub is_initiator: bool,
+    /// `None` until the participant publishes `Register`. Dart uses
+    /// this as the handle it passes back through `start_keygen` — the
+    /// host picks a subset of participants and their register ids land
+    /// as e-tags on the StartKeygen event.
+    pub register_event_id: Option<EventId>,
+}
+
+/// Surfaced to the joiner once `StartKeygen` arrives and its invite
+/// has been decrypted — i.e. this participant is in the host's
+/// selected set. Dart reads this to render a host-proposes-N-of-M
+/// accept/decline modal. `None` on parties not in the selected set.
+///
+/// `acked.length == participants.length` is the canonical "all
+/// participants have acked" check — Dart computes that as a getter
+/// rather than carrying a redundant bool that could drift out of sync
+/// with the two lists.
+#[derive(Clone, Debug)]
+pub struct FfiPendingKeygen {
+    pub threshold: u16,
+    pub initiator: PublicKey,
+    /// Participants in the order given by the StartKeygen event's
+    /// e-tags (same ordering the DKG will use).
+    pub participants: Vec<FfiLobbyParticipant>,
+    /// E-tag target for `ack_keygen` and (post-StartKeygen) `leave`.
+    /// Comes from `ResolvedKeygen.keygen_event_id`.
+    pub start_keygen_event_id: EventId,
+    /// Pubkeys that have published `AckKeygen` (or are the initiator,
+    /// who is implicitly acked by publishing `StartKeygen`). Subset of
+    /// `participants` — non-selected acks are filtered out at the
+    /// receiver, and `LobbyState.acked` is only populated for selected
+    /// pubkeys.
+    pub acked: Vec<PublicKey>,
 }
 
 #[derive(Clone, Debug)]
@@ -77,12 +110,11 @@ pub struct FfiLobbyState {
     pub key_name: Option<String>,
     pub purpose: Option<KeyPurpose>,
     pub participants: Vec<FfiLobbyParticipant>,
-    /// Currently-proposed threshold (cleared on re-propose).
-    pub threshold: Option<u16>,
-    /// True when every participant has at least `Ready` status.
+    /// True when every participant has published `Register`.
     pub all_ready: bool,
-    /// True when every participant has `Accepted` the current threshold.
-    pub all_accepted: bool,
+    /// `Some` on this party's side once the host has published
+    /// `StartKeygen` and this party is in the selected set.
+    pub pending_keygen: Option<FfiPendingKeygen>,
     /// `true` once the initiator has published `CancelLobby`. Latched —
     /// remains true for the life of the handle.
     pub cancelled: bool,
@@ -90,7 +122,7 @@ pub struct FfiLobbyState {
 
 impl FfiLobbyState {
     fn from_lobby(state: &LobbyState) -> Self {
-        let participants = state
+        let participants: Vec<FfiLobbyParticipant> = state
             .participants
             .values()
             .map(|p| FfiLobbyParticipant {
@@ -110,17 +142,21 @@ impl FfiLobbyState {
                     })
                     .unwrap_or_default(),
                 is_initiator: state.initiator.as_ref() == Some(&p.pubkey),
+                register_event_id: p.register_event_id,
             })
             .collect();
+
+        let pending_keygen = state.keygen.as_ref().map(|resolved| {
+            FfiPendingKeygen::from_resolved(resolved, &participants, state.initiator, &state.acked)
+        });
 
         Self {
             initiator: state.initiator,
             key_name: state.key_name.clone(),
             purpose: state.purpose,
             participants,
-            threshold: state.threshold,
             all_ready: state.all_ready(),
-            all_accepted: state.all_accepted(),
+            pending_keygen,
             cancelled: false,
         }
     }
@@ -131,10 +167,70 @@ impl FfiLobbyState {
             key_name: None,
             purpose: None,
             participants: vec![],
-            threshold: None,
             all_ready: false,
-            all_accepted: false,
+            pending_keygen: None,
             cancelled: false,
+        }
+    }
+}
+
+impl FfiPendingKeygen {
+    /// True if the given pubkey is in the selected participant set —
+    /// i.e. they've been invited to this keygen. Dart calls this with
+    /// the local pubkey to render the right UI when `pending_keygen`
+    /// is `Some`: included → accept screen; not included → "round
+    /// started without you" banner on the lobby.
+    #[frb(sync)]
+    pub fn includes(&self, pubkey: &PublicKey) -> bool {
+        self.participants.iter().any(|p| p.pubkey == *pubkey)
+    }
+
+    fn from_resolved(
+        resolved: &ResolvedKeygen,
+        all_participants: &[FfiLobbyParticipant],
+        initiator: Option<PublicKey>,
+        acked_set: &std::collections::BTreeSet<PublicKey>,
+    ) -> Self {
+        // `lobby.process_register` is now invoked for every e-tagged
+        // Register event during StartKeygen processing, so every
+        // selected pubkey is guaranteed to be in `all_participants`.
+        // If the lookup fails here, something has gone wrong with
+        // state-keeping rather than just timing — surface it loudly
+        // instead of silently dropping the row.
+        let ordered: Vec<FfiLobbyParticipant> = resolved
+            .participants
+            .iter()
+            .map(|(pk, _)| {
+                all_participants
+                    .iter()
+                    .find(|p| p.pubkey == *pk)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "selected participant {pk} missing from lobby state — \
+                             process_register must run for every e-tagged Register before \
+                             FfiPendingKeygen is built",
+                        )
+                    })
+            })
+            .collect();
+        let acked: Vec<PublicKey> = resolved
+            .participants
+            .iter()
+            .map(|(pk, _)| *pk)
+            .filter(|pk| acked_set.contains(pk))
+            .collect();
+        Self {
+            threshold: resolved.threshold,
+            // Invariant: by the time `lobby.keygen` is `Some`, the
+            // StartKeygen arm has run and `lobby.initiator` was set
+            // by `CreationEventReceived` strictly earlier (we reject
+            // StartKeygen from a non-initiator).
+            initiator: initiator
+                .expect("lobby.initiator must be set whenever lobby.keygen is set"),
+            participants: ordered,
+            start_keygen_event_id: resolved.keygen_event_id,
+            acked,
         }
     }
 }
@@ -165,6 +261,12 @@ impl Sink<LobbyEvent> for LobbyBridgeSink {
             LobbyEvent::KeygenResolved { .. } => {
                 // The DKG subchannel is out of scope for this slice.
             }
+            LobbyEvent::AllAcked => {
+                // The latest `LobbyChanged` already carried
+                // `pending_keygen.all_acked = true`; consumers read it
+                // off the snapshot. Wiring the actual DKG-start pivot
+                // is the follow-up slice.
+            }
             LobbyEvent::Cancelled => {
                 *self.cancelled.lock().unwrap() = true;
                 let mut snapshot = self.broadcast.latest().unwrap_or_else(FfiLobbyState::empty);
@@ -181,7 +283,7 @@ impl Sink<LobbyEvent> for LobbyBridgeSink {
 
 /// Opaque handle returned by `NostrClient::{create,join}_remote_lobby`.
 /// Drives the lobby round: state subscription plus the async methods
-/// for presence → ready → threshold → accept → start_keygen (stub).
+/// for presence → mark ready → start keygen.
 #[frb(opaque)]
 pub struct RemoteLobbyHandle {
     handle: LobbyHandle,
@@ -248,31 +350,20 @@ impl RemoteLobbyHandle {
     /// Commit a device set ("Continue with N devices" in the mockup).
     /// Re-callable — each call supersedes the prior commitment and
     /// invalidates the sender's acceptance of the current threshold.
+    ///
+    /// This is the one lobby action that hard-requires a successful
+    /// relay publish: a Register with no peers would leave the local
+    /// UI showing Ready while others still see Joining. Returns after
+    /// (a) ≥1 relay has OK'd the event and (b) the lobby state has
+    /// locally reflected the change (Sink fired).
     pub async fn mark_ready(&self, devices: Vec<DeviceRegistration>) -> Result<()> {
-        self.handle.register_devices(&self.keys, devices).await?;
-        Ok(())
-    }
-
-    /// Host-only. Publish the wallet name + purpose once, immediately
-    /// after creating the lobby. Re-sending is a receiver-side no-op.
-    pub async fn set_key_name(&self, key_name: String, purpose: KeyPurpose) -> Result<()> {
-        self.handle
-            .set_key_name(&self.keys, key_name, purpose)
-            .await?;
-        Ok(())
-    }
-
-    /// Host-only. Propose a threshold. Re-sending clears all prior
-    /// acceptances — participants have to re-accept.
-    pub async fn set_threshold(&self, threshold: u16) -> Result<()> {
-        self.handle.set_threshold(&self.keys, threshold).await?;
-        Ok(())
-    }
-
-    /// Participant accepts the currently-proposed threshold. Callable
-    /// only when `FfiLobbyState.threshold` matches.
-    pub async fn accept_threshold(&self, threshold: u16) -> Result<()> {
-        self.handle.accept_threshold(&self.keys, threshold).await?;
+        let outcome = self.handle.register_devices(&self.keys, devices).await?;
+        if !outcome.any_relay_success() {
+            return Err(anyhow!(
+                "no relay accepted the registration: {:?}",
+                outcome.relay_failed
+            ));
+        }
         Ok(())
     }
 
@@ -288,13 +379,62 @@ impl RemoteLobbyHandle {
         Ok(())
     }
 
-    /// TODO: bridge into the core `RemoteKeygen` state machine. Out of
-    /// scope for this slice — the lobby is up, the keygen isn't.
-    pub async fn start_keygen(&self) -> Result<()> {
-        Err(anyhow!(
-            "remote keygen is not yet implemented — lobby ends here"
-        ))
+    /// Selected participants only. Publishes `AckKeygen` referencing
+    /// the given `StartKeygen` event id. Dart owns the event id —
+    /// it's surfaced via `FfiPendingKeygen.start_keygen_event_id`.
+    pub async fn ack_keygen(&self, start_keygen_event_id: EventId) -> Result<()> {
+        let outcome = self
+            .handle
+            .ack_keygen(&self.keys, start_keygen_event_id)
+            .await?;
+        if !outcome.any_relay_success() {
+            return Err(anyhow!(
+                "no relay accepted AckKeygen: {:?}",
+                outcome.relay_failed
+            ));
+        }
+        Ok(())
     }
+
+    /// Host-only. Publishes `StartKeygen` with the given threshold +
+    /// selected participants. Dart is authoritative on participant
+    /// selection and passes the set in here. Key name + purpose are
+    /// already known to every party via the channel-creation event,
+    /// so they don't need to cross the wire (or the FFI) again.
+    pub async fn start_keygen(
+        &self,
+        threshold: u16,
+        selected: Vec<FfiSelectedParticipant>,
+    ) -> Result<()> {
+        let coordinators: Vec<SelectedCoordinator> = selected
+            .into_iter()
+            .map(|s| SelectedCoordinator {
+                register_event_id: s.register_event_id,
+                pubkey: s.pubkey,
+            })
+            .collect();
+        let outcome = self
+            .handle
+            .start_keygen(&self.keys, &coordinators, threshold)
+            .await?;
+        if !outcome.any_relay_success() {
+            return Err(anyhow!(
+                "no relay accepted StartKeygen: {:?}",
+                outcome.relay_failed
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// One (pubkey, register_event_id) pair per selected participant.
+/// Dart snapshots its own `FfiLobbyState.participants` to build this
+/// list (filter to Ready, and in the future honour an exclusion UI).
+#[frb(non_opaque)]
+#[derive(Clone, Debug)]
+pub struct FfiSelectedParticipant {
+    pub pubkey: PublicKey,
+    pub register_event_id: EventId,
 }
 
 // ============================================================================

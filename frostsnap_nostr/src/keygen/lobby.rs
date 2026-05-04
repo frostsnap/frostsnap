@@ -1,14 +1,15 @@
 use crate::channel::{ChannelKeys, ChannelSecret};
 use crate::channel_runner::{
     decode_bincode, extract_e_tags, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
-    ChannelRunnerHandle,
+    ChannelRunnerHandle, SendOutcome, BINCODE_CONFIG,
 };
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use anyhow::Result;
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{coordinator::BeginKeygen, device::KeyPurpose, DeviceId, KeygenId};
 use nostr_sdk::{nips::nip44, Client, Event, EventBuilder, EventId, Keys, Kind, PublicKey};
 use rand_core::OsRng;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 pub const KIND_FROSTSNAP_KEYGEN_LOBBY: Kind = Kind::Custom(9002);
@@ -32,40 +33,20 @@ pub enum KeygenLobbyMessage {
     Presence,
 
     /// "I have committed these devices." Supersedes any prior
-    /// `Register` from the same pubkey. Moves sender to `Ready` and
-    /// clears their acceptance of the current proposed threshold
-    /// (re-committing changes the device set — the host's threshold
-    /// proposal may no longer make sense and needs to be re-accepted).
+    /// `Register` from the same pubkey. Moves sender to `Ready`.
     Register { devices: Vec<DeviceRegistration> },
 
-    /// Host-only. Wallet name + purpose set once right after the host
-    /// opens the lobby. Immutable for the session — re-sending is a
-    /// no-op on receivers.
-    SetKeyName {
-        key_name: String,
-        purpose: KeyPurpose,
-    },
-
-    /// Host-only. Broadcasts the proposed threshold. Re-sending
-    /// supersedes any prior value AND resets all `AcceptThreshold`
-    /// votes (equivalent to the mockup's "unlockThreshold" — any
-    /// re-proposal requires everyone to re-accept).
-    SetThreshold { threshold: u16 },
-
-    /// Participant consent to the current proposed threshold. Ignored
-    /// receiver-side if no threshold is set or the value doesn't match
-    /// `state.threshold` (host may have re-proposed meanwhile).
-    AcceptThreshold { threshold: u16 },
-
-    /// Initiator broadcasts the final participant set + per-recipient
-    /// encrypted subchannel keys. Threshold/key_name/purpose are
-    /// embedded so the subchannel coordinator doesn't need to
-    /// re-derive them via e-tag lookups.
+    /// Initiator broadcasts the final participant set, threshold, and
+    /// per-recipient encrypted subchannel keys. Key name + purpose
+    /// are NOT on the wire here — they live on the `ChannelCreation`
+    /// event's metadata (see `LobbyChannelMetadata`) and are
+    /// retrieved from local `LobbyState` when this event lands.
+    /// Accepting (i.e. continuing into keygen) is signalled implicitly
+    /// by publishing the first round-1 DKG output on the subchannel —
+    /// there is no separate accept message on the lobby channel.
     StartKeygen {
         invites: Vec<SubchannelInvite>,
         threshold: u16,
-        key_name: String,
-        purpose: KeyPurpose,
     },
 
     /// Explicit, idempotent departure. Removes the sender from
@@ -76,6 +57,38 @@ pub enum KeygenLobbyMessage {
     /// `StartKeygen` — consumers receive `LobbyEvent::Cancelled` and
     /// tear down.
     CancelLobby,
+
+    /// "I confirm — proceed with the keygen referenced by my e-tag."
+    /// Empty payload; the carrier is a single NIP-10 `e`-tag pointing
+    /// at the `StartKeygen` event id. Receivers ignore acks whose
+    /// e-tag doesn't match the current `lobby.keygen.keygen_event_id`,
+    /// or whose author isn't in the selected set. The host is treated
+    /// as implicitly acked the moment they publish `StartKeygen`, so
+    /// they don't need to also publish this.
+    AckKeygen,
+}
+
+/// Host-authored channel metadata carried inline in the NIP-28
+/// `ChannelCreation` event's `content` field. Joiners can paint the
+/// wallet name as soon as the creation event lands — no separate
+/// `SetKeyName` round-trip. Immutable for the life of the channel.
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct LobbyChannelMetadata {
+    pub key_name: String,
+    pub purpose: KeyPurpose,
+}
+
+impl LobbyChannelMetadata {
+    pub fn encode_content(&self) -> Result<String> {
+        let bytes = bincode::encode_to_vec(self, BINCODE_CONFIG)?;
+        Ok(BASE64.encode(bytes))
+    }
+
+    pub fn decode_content(content: &str) -> Result<Self> {
+        let bytes = BASE64.decode(content)?;
+        let (val, _) = bincode::decode_from_slice(&bytes, BINCODE_CONFIG)?;
+        Ok(val)
+    }
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -114,8 +127,6 @@ pub enum ParticipantStatus {
     Joining,
     /// Published a `Register` with their device set.
     Ready,
-    /// In `Ready` + accepted the current proposed threshold.
-    Accepted,
 }
 
 #[derive(Clone, Debug)]
@@ -140,15 +151,13 @@ pub struct LobbyState {
     pub key_name: Option<String>,
     pub purpose: Option<KeyPurpose>,
     pub participants: BTreeMap<PublicKey, ParticipantInfo>,
-    /// Current proposed threshold (set by the host via `SetThreshold`).
-    /// Cleared / replaced on re-proposal; all `threshold_accepted_by`
-    /// entries are cleared too.
-    pub threshold: Option<u16>,
-    /// Set of pubkeys who have accepted the current `threshold`. When
-    /// `threshold` is re-proposed, this clears.
-    pub threshold_accepted_by: BTreeSet<PublicKey>,
     /// Set when StartKeygen is received and resolved locally (selected coordinators only).
     pub keygen: Option<ResolvedKeygen>,
+    /// Pubkeys that have acknowledged the keygen — published `AckKeygen`
+    /// referencing `keygen.keygen_event_id`, or are the initiator (who
+    /// is seeded here at `StartKeygen`-process time). Empty until
+    /// `keygen` is set.
+    pub acked: std::collections::BTreeSet<PublicKey>,
 }
 
 /// Resolved keygen parameters from a StartKeygen event. Contains everything
@@ -245,34 +254,6 @@ impl LobbyState {
         entry.commitment = Some(DeviceCommitment { devices });
         entry.register_event_id = Some(event_id);
         entry.status = ParticipantStatus::Ready;
-        // Any device-set change invalidates acceptance of the current
-        // threshold — the participant has to re-accept.
-        self.threshold_accepted_by.remove(&author);
-    }
-
-    fn set_threshold(&mut self, threshold: u16) {
-        self.threshold = Some(threshold);
-        self.threshold_accepted_by.clear();
-        // Demote anyone previously Accepted back to Ready.
-        for p in self.participants.values_mut() {
-            if p.status == ParticipantStatus::Accepted {
-                p.status = ParticipantStatus::Ready;
-            }
-        }
-    }
-
-    fn accept_threshold(&mut self, author: PublicKey, threshold: u16) -> bool {
-        if self.threshold != Some(threshold) {
-            return false;
-        }
-        let Some(entry) = self.participants.get_mut(&author) else {
-            return false;
-        };
-        if entry.status == ParticipantStatus::Joining {
-            return false;
-        }
-        entry.status = ParticipantStatus::Accepted;
-        self.threshold_accepted_by.insert(author)
     }
 
     pub fn total_device_count(&self) -> usize {
@@ -283,24 +264,22 @@ impl LobbyState {
     }
 
     /// True when every participant has published `Register` at least
-    /// once (status ≥ Ready). Empty lobby is `false`.
+    /// once (status is `Ready`). Empty lobby is `false`.
     pub fn all_ready(&self) -> bool {
         !self.participants.is_empty()
             && self
                 .participants
                 .values()
-                .all(|p| p.status != ParticipantStatus::Joining)
+                .all(|p| p.status == ParticipantStatus::Ready)
     }
 
-    /// True when every participant has accepted the current proposed
-    /// threshold. Requires `all_ready()` and a threshold to be set.
-    pub fn all_accepted(&self) -> bool {
-        self.threshold.is_some()
-            && !self.participants.is_empty()
-            && self
-                .participants
-                .values()
-                .all(|p| p.status == ParticipantStatus::Accepted)
+    /// True once every selected participant in `keygen.participants` is
+    /// in `acked`. False if `keygen` is `None`.
+    pub fn all_acked(&self) -> bool {
+        let Some(resolved) = self.keygen.as_ref() else {
+            return false;
+        };
+        resolved.participants.iter().all(|(pk, _)| self.acked.contains(pk))
     }
 }
 
@@ -325,6 +304,10 @@ pub enum LobbyEvent {
     /// The initiator aborted the lobby with `CancelLobby`. Receivers should
     /// drop their handles.
     Cancelled,
+    /// Every selected participant has published `AckKeygen` (or is the
+    /// initiator, whose `StartKeygen` publication counts as the implicit
+    /// ack). Consumers can now begin the DKG protocol on the subchannel.
+    AllAcked,
 }
 
 // =============================================================================
@@ -454,8 +437,13 @@ impl LobbyClient {
         self.channel_secret.invite_link()
     }
 
-    pub async fn build_creation_event(&self, keys: &Keys) -> Result<Event> {
-        let inner_event = EventBuilder::new(Kind::ChannelCreation, "")
+    pub async fn build_creation_event(
+        &self,
+        keys: &Keys,
+        metadata: &LobbyChannelMetadata,
+    ) -> Result<Event> {
+        let content = metadata.encode_content()?;
+        let inner_event = EventBuilder::new(Kind::ChannelCreation, content)
             .build(keys.public_key())
             .sign(keys)
             .await?;
@@ -490,17 +478,30 @@ impl LobbyClient {
                     ChannelRunnerEvent::CreationEventReceived => {
                         if let Some(creation) = runner_handle_for_task.creation_event() {
                             // The NIP-28 ChannelCreation event is the
-                            // host's implicit "I'm in the lobby" signal.
-                            // Insert them as `Joining` here so the
-                            // invariant "initiator is set ⇒ initiator is
-                            // in participants" holds — no separate
-                            // Presence required from the host.
+                            // host's implicit "I'm in the lobby" signal
+                            // AND carries the wallet name + purpose
+                            // inline. Insert the initiator as `Joining`
+                            // here so the invariant "initiator is set ⇒
+                            // initiator is in participants" holds.
                             lobby.initiator = Some(creation.pubkey);
                             lobby.upsert_joining(creation.pubkey);
+                            match LobbyChannelMetadata::decode_content(&creation.content) {
+                                Ok(meta) => {
+                                    lobby.key_name = Some(meta.key_name);
+                                    lobby.purpose = Some(meta.purpose);
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        event_id = %creation.id,
+                                        error = %e,
+                                        "failed to decode lobby channel metadata",
+                                    );
+                                }
+                            }
                             sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
                         }
                     }
-                    ChannelRunnerEvent::AppEvent { inner_event } => {
+                    ChannelRunnerEvent::AppEvent { inner_event, ack } => {
                         if inner_event.kind == KIND_FROSTSNAP_KEYGEN_LOBBY {
                             process_event(
                                 &inner_event,
@@ -512,6 +513,14 @@ impl LobbyClient {
                                 &event_loop_keys,
                             )
                             .await;
+                        }
+                        // Signal the dispatch ack AFTER `process_event`
+                        // so a local `dispatch` caller only resolves
+                        // once the sink has fired with the state
+                        // transition. `ack` is `None` for events
+                        // arriving via the relay subscription.
+                        if let Some(ack) = ack {
+                            let _ = ack.send(());
                         }
                     }
                     ChannelRunnerEvent::MembersChanged => {}
@@ -548,7 +557,7 @@ impl LobbyHandle {
     /// Announce "I am in the lobby" so others see us in `Joining`
     /// state before we've committed devices. Called by `LobbyClient`
     /// automatically on `run()` start; exposed for manual re-emission.
-    pub async fn announce_presence(&self, keys: &Keys) -> Result<EventId> {
+    pub async fn announce_presence(&self, keys: &Keys) -> Result<SendOutcome> {
         self.send(keys, &KeygenLobbyMessage::Presence, &[]).await
     }
 
@@ -560,40 +569,9 @@ impl LobbyHandle {
         &self,
         keys: &Keys,
         devices: Vec<DeviceRegistration>,
-    ) -> Result<EventId> {
+    ) -> Result<SendOutcome> {
         let msg = KeygenLobbyMessage::Register { devices };
         self.send(keys, &msg, &[]).await
-    }
-
-    /// Host-only. Publish the wallet name + purpose once, immediately
-    /// after opening the lobby. Re-sending is a receiver-side no-op.
-    pub async fn set_key_name(
-        &self,
-        keys: &Keys,
-        key_name: String,
-        purpose: KeyPurpose,
-    ) -> Result<EventId> {
-        let msg = KeygenLobbyMessage::SetKeyName { key_name, purpose };
-        self.send(keys, &msg, &[]).await
-    }
-
-    /// Host-only. Propose a threshold. Re-sending supersedes and
-    /// clears any prior acceptances.
-    pub async fn set_threshold(&self, keys: &Keys, threshold: u16) -> Result<EventId> {
-        self.send(keys, &KeygenLobbyMessage::SetThreshold { threshold }, &[])
-            .await
-    }
-
-    /// Accept the currently-proposed threshold. `threshold` must match
-    /// the most recent `SetThreshold`; otherwise the event is ignored
-    /// receiver-side.
-    pub async fn accept_threshold(&self, keys: &Keys, threshold: u16) -> Result<EventId> {
-        self.send(
-            keys,
-            &KeygenLobbyMessage::AcceptThreshold { threshold },
-            &[],
-        )
-        .await
     }
 
     /// Publish `StartKeygen` selecting the given coordinators. The resulting
@@ -605,35 +583,40 @@ impl LobbyHandle {
         keys: &Keys,
         selected_coordinators: &[SelectedCoordinator],
         threshold: u16,
-        key_name: String,
-        purpose: KeyPurpose,
-    ) -> Result<()> {
+    ) -> Result<SendOutcome> {
         let invites = build_subchannel_invites(keys, selected_coordinators)?;
-        let msg = KeygenLobbyMessage::StartKeygen {
-            invites,
-            threshold,
-            key_name,
-            purpose,
-        };
+        let msg = KeygenLobbyMessage::StartKeygen { invites, threshold };
         let e_tags: Vec<EventId> = selected_coordinators
             .iter()
             .map(|selected| selected.register_event_id)
             .collect();
-        self.send(keys, &msg, &e_tags).await?;
-        Ok(())
+        self.send(keys, &msg, &e_tags).await
     }
 
     /// Publish `Leave` so other participants remove us from their lobby
     /// view. Idempotent.
-    pub async fn leave(&self, keys: &Keys) -> Result<EventId> {
+    pub async fn leave(&self, keys: &Keys) -> Result<SendOutcome> {
         self.send(keys, &KeygenLobbyMessage::Leave, &[]).await
     }
 
     /// Publish `CancelLobby` (initiator only — non-initiators will be
     /// ignored receiver-side). Signals all participants that the round
     /// is aborted before `StartKeygen`.
-    pub async fn cancel_lobby(&self, keys: &Keys) -> Result<EventId> {
+    pub async fn cancel_lobby(&self, keys: &Keys) -> Result<SendOutcome> {
         self.send(keys, &KeygenLobbyMessage::CancelLobby, &[]).await
+    }
+
+    /// Publish `AckKeygen` referencing the given `StartKeygen` event id
+    /// via a NIP-10 `e`-tag. Caller (Dart, in the live app) is
+    /// authoritative on which event id this references — the handle
+    /// holds no `LobbyState`. See `FfiPendingKeygen.start_keygen_event_id`.
+    pub async fn ack_keygen(
+        &self,
+        keys: &Keys,
+        start_keygen_event_id: EventId,
+    ) -> Result<SendOutcome> {
+        self.send(keys, &KeygenLobbyMessage::AckKeygen, &[start_keygen_event_id])
+            .await
     }
 
     async fn send(
@@ -641,10 +624,9 @@ impl LobbyHandle {
         keys: &Keys,
         msg: &KeygenLobbyMessage,
         e_tags: &[EventId],
-    ) -> Result<EventId> {
+    ) -> Result<SendOutcome> {
         let draft = ChannelMessageDraft::app(KIND_FROSTSNAP_KEYGEN_LOBBY, msg, e_tags.to_vec())?;
-        let prepared = self.runner_handle.send(keys, draft).await?;
-        Ok(prepared.id)
+        self.runner_handle.dispatch(keys, draft).await
     }
 }
 
@@ -686,43 +668,24 @@ async fn process_event(
             lobby.process_register(author, event_id, devices);
             sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
         }
-        KeygenLobbyMessage::SetKeyName { key_name, purpose } => {
-            if !is_initiator {
-                tracing::warn!(event_id = %event_id, author = %author, "SetKeyName from non-initiator, ignoring");
-                return;
-            }
-            // Immutable once set — ignore repeats.
-            if lobby.key_name.is_none() {
-                lobby.key_name = Some(key_name);
-                lobby.purpose = Some(purpose);
-                sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
-            }
-        }
-        KeygenLobbyMessage::SetThreshold { threshold } => {
-            if !is_initiator {
-                tracing::warn!(event_id = %event_id, author = %author, "SetThreshold from non-initiator, ignoring");
-                return;
-            }
-            lobby.set_threshold(threshold);
-            sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
-        }
-        KeygenLobbyMessage::AcceptThreshold { threshold } => {
-            if lobby.accept_threshold(author, threshold) {
-                sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
-            } else {
-                tracing::debug!(event_id = %event_id, author = %author, "AcceptThreshold ignored (no matching threshold or sender not Ready)");
-            }
-        }
-        KeygenLobbyMessage::StartKeygen {
-            invites,
-            threshold,
-            key_name,
-            purpose,
-        } => {
+        KeygenLobbyMessage::StartKeygen { invites, threshold } => {
             if !is_initiator {
                 tracing::warn!(event_id = %event_id, author = %author, "StartKeygen from non-initiator, ignoring");
                 return;
             }
+            // `key_name` and `purpose` ride on the `ChannelCreation`
+            // event's metadata (see `LobbyChannelMetadata`). Pull them
+            // from our already-populated `LobbyState`. If they're
+            // missing, something's wrong with the creation-event
+            // decode and we shouldn't proceed.
+            let Some(key_name) = lobby.key_name.clone() else {
+                tracing::warn!(event_id = %event_id, "StartKeygen before channel metadata arrived; ignoring");
+                return;
+            };
+            let Some(purpose) = lobby.purpose else {
+                tracing::warn!(event_id = %event_id, "StartKeygen before channel metadata arrived; ignoring");
+                return;
+            };
 
             let e_tags = extract_e_tags(inner_event);
             if e_tags.is_empty() {
@@ -746,6 +709,18 @@ async fn process_event(
                 match events_by_id.get(&reg_id) {
                     Some(reg_event) => match decode_bincode::<KeygenLobbyMessage>(reg_event) {
                         Ok(KeygenLobbyMessage::Register { devices }) => {
+                            // Make sure the lobby's `participants` map
+                            // covers everyone in the selected set, even
+                            // when their `Register` was fetched
+                            // on-demand via the relay (e.g. we joined
+                            // late and never saw it land live). Without
+                            // this, the FFI's `pending.participants`
+                            // filter_map would silently drop them.
+                            lobby.process_register(
+                                reg_event.pubkey,
+                                reg_event.id,
+                                devices.clone(),
+                            );
                             participants.push((reg_event.pubkey, devices));
                         }
                         Ok(other) => {
@@ -761,22 +736,15 @@ async fn process_event(
                 }
             }
 
-            let protocol_channel_keys = match decrypt_subchannel_secret(
-                local_nostr_keys,
-                author,
-                &invites,
-            ) {
-                Ok(Some(keys)) => keys,
-                Ok(None) => {
-                    tracing::info!(event_id = %event_id, local_pubkey = %local_nostr_keys.public_key(), "local coordinator not included in private keygen");
-                    return;
-                }
-                Err(e) => {
-                    tracing::warn!(event_id = %event_id, error = %e, "failed to decrypt keygen subchannel secret");
-                    return;
-                }
-            };
-
+            // Resolve the keygen for *every* receiver, selected or
+            // not. The participants list, threshold, and event id are
+            // public on the StartKeygen event itself — only the
+            // subchannel secret is gated by the per-recipient invite
+            // ciphertext. Excluded receivers still want this state so
+            // they can see the round is happening and render an
+            // appropriate "started without me" banner; FFI consumers
+            // detect their own inclusion via
+            // `FfiPendingKeygen::includes(my_pubkey)`.
             let resolved = ResolvedKeygen {
                 keygen_event_id: event_id,
                 participants,
@@ -785,14 +753,79 @@ async fn process_event(
                 purpose,
             };
             lobby.keygen = Some(resolved.clone());
+            // The initiator is implicitly acked by virtue of having
+            // published `StartKeygen` — seed `acked` so the rest of the
+            // logic (including `all_acked()`) treats them uniformly.
+            // Everyone observes this; the `acked` set is public state.
+            lobby.acked.insert(author);
             sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
-            sink.send(LobbyEvent::KeygenResolved {
-                resolved,
-                channel_keys: protocol_channel_keys,
-            });
+
+            // Selected receivers also get `KeygenResolved` (carrying
+            // the decrypted subchannel keys) so they can spin up the
+            // DKG protocol client. Excluded / decrypt-error receivers
+            // see only the public state above.
+            match decrypt_subchannel_secret(local_nostr_keys, author, &invites) {
+                Ok(Some(channel_keys)) => {
+                    sink.send(LobbyEvent::KeygenResolved {
+                        resolved,
+                        channel_keys,
+                    });
+                    if lobby.all_acked() {
+                        sink.send(LobbyEvent::AllAcked);
+                    }
+                }
+                Ok(None) => {
+                    tracing::info!(event_id = %event_id, local_pubkey = %local_nostr_keys.public_key(), "local coordinator not included in private keygen");
+                }
+                Err(e) => {
+                    tracing::warn!(event_id = %event_id, error = %e, "failed to decrypt keygen subchannel secret");
+                }
+            }
+        }
+        KeygenLobbyMessage::AckKeygen => {
+            let Some(resolved) = lobby.keygen.as_ref() else {
+                tracing::warn!(event_id = %event_id, "AckKeygen before StartKeygen, ignoring");
+                return;
+            };
+            let e_tags = extract_e_tags(inner_event);
+            if e_tags.first() != Some(&resolved.keygen_event_id) {
+                tracing::warn!(event_id = %event_id, "AckKeygen e-tag does not match current StartKeygen, ignoring");
+                return;
+            }
+            let in_selected = resolved.participants.iter().any(|(pk, _)| *pk == author);
+            if !in_selected {
+                tracing::warn!(event_id = %event_id, %author, "AckKeygen from non-selected participant, ignoring");
+                return;
+            }
+            let inserted = lobby.acked.insert(author);
+            if inserted {
+                let now_all_acked = lobby.all_acked();
+                sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+                if now_all_acked {
+                    sink.send(LobbyEvent::AllAcked);
+                }
+            }
         }
         KeygenLobbyMessage::Leave => {
-            if lobby.participants.remove(&author).is_some() {
+            // If a *selected* participant leaves after `StartKeygen`,
+            // the round is dead — fire `Cancelled` and skip the
+            // intermediate `LobbyChanged`. The post-removal snapshot
+            // would be torn-down (leaver gone from `participants` but
+            // still in `keygen.participants` and possibly `acked`),
+            // and consumers are supposed to drop the handle on
+            // `Cancelled` anyway. One terminal event, no race.
+            let was_selected = lobby
+                .keygen
+                .as_ref()
+                .is_some_and(|r| r.participants.iter().any(|(pk, _)| *pk == author));
+            let removed = lobby.participants.remove(&author).is_some();
+            // Keep `acked` in sync as a hygiene measure even though
+            // nothing reads it after `Cancelled` — defends against
+            // a future refactor that does.
+            lobby.acked.remove(&author);
+            if was_selected {
+                sink.send(LobbyEvent::Cancelled);
+            } else if removed {
                 sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
             }
         }

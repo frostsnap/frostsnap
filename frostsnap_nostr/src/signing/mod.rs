@@ -9,7 +9,7 @@ use crate::{
     channel::ChannelKeys,
     channel_runner::{
         decode_bincode, extract_e_tag, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
-        EventMeta,
+        ChannelRunnerHandle, EventMeta,
     },
 };
 use anyhow::{anyhow, Result};
@@ -81,6 +81,12 @@ impl ChannelClient {
 
         let (runner_handle, mut events) = runner.run(client).await?;
 
+        // Chat keeps the existing cmd_tx flow (optimistic ChatMessage
+        // emit + `publish_prepared` + `MessageSent`/`MessageSendFailed`
+        // on the sink). Signing events bypass the cmd loop entirely
+        // and call `runner_handle.dispatch` directly — the AppEvent
+        // branch below then handles the resulting echo identically
+        // to a peer event (Sink fires with `pending: false`).
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<ChannelCommand>(32);
 
         sink.send(ChannelEvent::ConnectionState(ConnectionState::Connected));
@@ -91,9 +97,6 @@ impl ChannelClient {
         tokio::spawn(async move {
             let mut tree = SigningEventTree::new(key_context, settling_window);
             let mut timers: HashMap<EventId, Instant> = HashMap::new();
-            // Signing events that couldn't reach any relay on the first try.
-            // Retried in-process with exponential backoff until success.
-            let mut pending_retries: Vec<PendingSigningSend> = Vec::new();
 
             loop {
                 tokio::select! {
@@ -101,88 +104,32 @@ impl ChannelClient {
                         match cmd {
                             Some(ChannelCommand::SendPreparedMessage(prepared)) => {
                                 let message_id = prepared.id;
-
                                 sink.send(ChannelEvent::from_inner_chat_message(
-                                    &prepared,
-                                    true,
+                                    &prepared, true,
                                 ));
-
-                                match runner_handle_for_task.send_prepared(prepared).await {
-                                    Ok(()) => {
+                                match runner_handle_for_task.publish_prepared(prepared).await {
+                                    Ok(outcome) if outcome.any_relay_success() => {
                                         sink.send(ChannelEvent::MessageSent { message_id });
                                     }
-                                    Err(e) => {
-                                        tracing::error!(error = %e, "failed to send message");
+                                    Ok(outcome) => {
+                                        let reason = format!(
+                                            "no relay accepted: {:?}",
+                                            outcome.relay_failed
+                                        );
+                                        tracing::error!(%reason, "no relay accepted chat message");
                                         sink.send(ChannelEvent::MessageSendFailed {
-                                            message_id,
-                                            reason: e.to_string(),
+                                            message_id, reason,
                                         });
                                     }
-                                }
-                            }
-                            Some(ChannelCommand::SendSigningEvent(prepared)) => {
-                                let message_id = prepared.id;
-                                match process_signing_inner_event(
-                                    &prepared,
-                                    &mut tree,
-                                ) {
-                                    Ok((signing_evts, timer_acts)) => {
-                                        dispatch_signing_output(
-                                            signing_evts,
-                                            timer_acts,
-                                            true,
-                                            &sink,
-                                            &mut timers,
-                                        );
-                                    }
-                                    Err(err_event) => sink.send(err_event),
-                                }
-                                match runner_handle_for_task.send_prepared(prepared.clone()).await {
-                                    Ok(()) => {
-                                        sink.send(ChannelEvent::MessageSent { message_id });
-                                    }
                                     Err(e) => {
-                                        tracing::warn!(
-                                            error = %e,
-                                            "signing event send failed; will retry",
-                                        );
-                                        pending_retries.push(PendingSigningSend {
-                                            event: prepared,
-                                            next_retry_at: Instant::now()
-                                                + retry_backoff(1),
-                                            attempts: 1,
+                                        tracing::error!(error = %e, "failed to send chat message");
+                                        sink.send(ChannelEvent::MessageSendFailed {
+                                            message_id, reason: e.to_string(),
                                         });
                                     }
                                 }
                             }
                             None => break,
-                        }
-                    }
-                    Some(index) = next_retry_due(&pending_retries) => {
-                        let item = pending_retries.swap_remove(index);
-                        let message_id = item.event.id;
-                        match runner_handle_for_task.send_prepared(item.event.clone()).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    attempts = item.attempts,
-                                    "signing event retry succeeded",
-                                );
-                                sink.send(ChannelEvent::MessageSent { message_id });
-                            }
-                            Err(e) => {
-                                let attempts = item.attempts + 1;
-                                tracing::warn!(
-                                    error = %e,
-                                    attempts,
-                                    "signing event retry failed; will try again",
-                                );
-                                pending_retries.push(PendingSigningSend {
-                                    event: item.event,
-                                    next_retry_at: Instant::now()
-                                        + retry_backoff(attempts),
-                                    attempts,
-                                });
-                            }
                         }
                     }
                     event = events.recv() => {
@@ -197,7 +144,7 @@ impl ChannelClient {
                                     pending: false,
                                 });
                             }
-                            Some(ChannelRunnerEvent::AppEvent { inner_event }) => {
+                            Some(ChannelRunnerEvent::AppEvent { inner_event, ack }) => {
                                 if inner_event.kind == KIND_FROSTSNAP_SIGNING {
                                     match process_signing_inner_event(
                                         &inner_event,
@@ -214,6 +161,16 @@ impl ChannelClient {
                                         }
                                         Err(err_event) => sink.send(err_event),
                                     }
+                                }
+                                // Signal the dispatch ack AFTER
+                                // `process_signing_inner_event` +
+                                // `dispatch_signing_output` — so a
+                                // local `dispatch` caller only
+                                // resolves once the sink has fired
+                                // with the tree update. `None` for
+                                // events arriving via subscription.
+                                if let Some(ack) = ack {
+                                    let _ = ack.send(());
                                 }
                             }
                             Some(ChannelRunnerEvent::MembersChanged) => {
@@ -246,19 +203,30 @@ impl ChannelClient {
             }
         });
 
-        Ok(ChannelHandle { cmd_tx })
+        Ok(ChannelHandle {
+            cmd_tx,
+            runner_handle,
+        })
     }
 }
 
 enum ChannelCommand {
+    /// Chat message to be published optimistically (with a `pending`
+    /// `ChatMessage` already on the sink) and then reported via
+    /// `MessageSent` / `MessageSendFailed`.
     SendPreparedMessage(Event),
-    SendSigningEvent(Event),
 }
 
-/// Handle for sending messages to an active channel.
+/// Handle for sending messages to an active channel. Chat goes via
+/// `cmd_tx` so the task can drive its "optimistic emit → publish →
+/// final status" sink flow. Signing protocol events go direct to
+/// `runner_handle.dispatch` — the runner gates local apply on relay
+/// OK and the task's AppEvent branch handles the echo identically
+/// to a peer event.
 #[derive(Clone)]
 pub struct ChannelHandle {
     cmd_tx: mpsc::Sender<ChannelCommand>,
+    runner_handle: ChannelRunnerHandle,
 }
 
 impl ChannelHandle {
@@ -339,13 +307,19 @@ impl ChannelHandle {
             message,
             reply_to.into_iter().collect(),
         )?;
-        let prepared = draft.prepare(keys).await?;
-        let event_id = prepared.id;
-        self.cmd_tx
-            .send(ChannelCommand::SendSigningEvent(prepared))
-            .await
-            .map_err(|_| anyhow!("channel closed"))?;
-        Ok(event_id)
+        // Dispatch: publishes to relays, gates on ≥1 relay OK, and
+        // — on success — feeds the event through the runner's AppEvent
+        // path so the signing tree + sink update identically to a
+        // peer-received event. `.await` resolves only after the Sink
+        // has fired. No optimistic local apply; no retry queue.
+        let outcome = self.runner_handle.dispatch(keys, draft).await?;
+        if !outcome.any_relay_success() {
+            return Err(anyhow!(
+                "no relay accepted the signing event: {:?}",
+                outcome.relay_failed
+            ));
+        }
+        Ok(outcome.inner_event_id)
     }
 }
 
@@ -380,41 +354,6 @@ fn next_timer(
     } else {
         Box::pin(future::pending())
     }
-}
-
-/// One entry in the in-process retry queue for signing events whose initial
-/// relay publish failed.
-struct PendingSigningSend {
-    event: Event,
-    next_retry_at: Instant,
-    attempts: u32,
-}
-
-/// Sleeps until the earliest pending retry is due, then returns its index
-/// into `pending`. Returns `Pending` forever when the queue is empty so the
-/// `tokio::select!` arm stays quiet until something is enqueued.
-fn next_retry_due(
-    pending: &[PendingSigningSend],
-) -> Pin<Box<dyn Future<Output = Option<usize>> + Send + '_>> {
-    if let Some((index, _)) = pending
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, p)| p.next_retry_at)
-    {
-        let deadline = pending[index].next_retry_at;
-        Box::pin(async move {
-            sleep_until(deadline).await;
-            Some(index)
-        })
-    } else {
-        Box::pin(future::pending())
-    }
-}
-
-/// Exponential backoff capped at 30s: 2s, 4s, 8s, 16s, 30s, 30s, …
-fn retry_backoff(attempts: u32) -> Duration {
-    let secs = (1u64 << attempts.min(5)).min(30);
-    Duration::from_secs(secs)
 }
 
 // ============================================================================

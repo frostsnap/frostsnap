@@ -1,7 +1,8 @@
 use crate::{
     channel::ChannelKeys,
     channel_runner::{
-        decode_bincode, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent, ChannelRunnerHandle,
+        decode_bincode, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
+        ChannelRunnerHandle, SendOutcome,
     },
 };
 use anyhow::Result;
@@ -43,44 +44,48 @@ impl ProtocolClient {
             .await?;
         tokio::spawn(async move {
             while let Some(event) = events.recv().await {
-                let ChannelRunnerEvent::AppEvent { inner_event } = event else {
+                let ChannelRunnerEvent::AppEvent { inner_event, ack } = event else {
                     continue;
                 };
-                if inner_event.kind != KIND_FROSTSNAP_KEYGEN_PROTOCOL {
-                    continue;
-                }
-                let msg: KeygenProtocolMessage = match decode_bincode(&inner_event) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        tracing::warn!(
+                if inner_event.kind == KIND_FROSTSNAP_KEYGEN_PROTOCOL {
+                    match decode_bincode::<KeygenProtocolMessage>(&inner_event) {
+                        Ok(msg) => {
+                            if let Some(allowed) = allowed_senders.get(&inner_event.pubkey) {
+                                if allowed.contains(&msg.from) {
+                                    sink.send(RemoteKeygenMessage {
+                                        from: msg.from,
+                                        payload: msg.payload,
+                                    });
+                                } else {
+                                    tracing::warn!(
+                                        event_id = %inner_event.id,
+                                        signer = %inner_event.pubkey,
+                                        claimed_from = %msg.from,
+                                        "keygen protocol message 'from' not owned by signer, dropping"
+                                    );
+                                }
+                            } else {
+                                tracing::warn!(
+                                    event_id = %inner_event.id,
+                                    signer = %inner_event.pubkey,
+                                    "keygen protocol message signed by non-participant, dropping"
+                                );
+                            }
+                        }
+                        Err(e) => tracing::warn!(
                             event_id = %inner_event.id,
                             error = %e,
                             "failed to decode keygen protocol message"
-                        );
-                        continue;
+                        ),
                     }
-                };
-                let Some(allowed) = allowed_senders.get(&inner_event.pubkey) else {
-                    tracing::warn!(
-                        event_id = %inner_event.id,
-                        signer = %inner_event.pubkey,
-                        "keygen protocol message signed by non-participant, dropping"
-                    );
-                    continue;
-                };
-                if !allowed.contains(&msg.from) {
-                    tracing::warn!(
-                        event_id = %inner_event.id,
-                        signer = %inner_event.pubkey,
-                        claimed_from = %msg.from,
-                        "keygen protocol message 'from' not owned by signer, dropping"
-                    );
-                    continue;
                 }
-                sink.send(RemoteKeygenMessage {
-                    from: msg.from,
-                    payload: msg.payload,
-                });
+                // Signal the dispatch ack after all handling — a local
+                // `dispatch` caller only resolves once we're done with
+                // this inner event. `None` for events arriving via the
+                // relay subscription.
+                if let Some(ack) = ack {
+                    let _ = ack.send(());
+                }
             }
         });
         Ok(ProtocolHandle {
@@ -102,14 +107,13 @@ impl ProtocolHandle {
         keys: &Keys,
         from: DeviceId,
         payload: RemoteKeygenPayload,
-    ) -> Result<EventId> {
+    ) -> Result<SendOutcome> {
         let msg = KeygenProtocolMessage { from, payload };
         let draft = ChannelMessageDraft::app(
             KIND_FROSTSNAP_KEYGEN_PROTOCOL,
             &msg,
             vec![self.keygen_event_id],
         )?;
-        let prepared = self.runner_handle.send(keys, draft).await?;
-        Ok(prepared.id)
+        self.runner_handle.dispatch(keys, draft).await
     }
 }

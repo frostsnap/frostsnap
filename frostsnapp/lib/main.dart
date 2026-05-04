@@ -26,6 +26,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/init.dart';
 import 'package:frostsnap/src/rust/api/log.dart';
+import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
 import 'package:frostsnap/wallet_add.dart';
 import 'package:app_links/app_links.dart';
@@ -207,6 +208,12 @@ class _MyAppState extends State<MyApp> {
             colorScheme: colorScheme,
             textTheme: textTheme,
           ),
+          // Floating dev-only USB toggle on top of every route. Only
+          // visible when `developerMode` is on. Placed here (rather
+          // than per-page) so it survives dialog overlays + nested
+          // navigators.
+          builder: (context, child) =>
+              _DevUsbOverlay(child: child ?? const SizedBox.shrink()),
           home: widget.startupError == null
               ? const MyHomePage()
               : StartupErrorWidget(error: widget.startupError!),
@@ -389,6 +396,77 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// App-wide overlay for the developer-only USB enable/disable toggle.
+/// Rides on top of every route (including fullscreen dialogs) via
+/// `MaterialApp.builder` so it's reachable while testing a single-
+/// computer two-participant keygen where the USB serial manager
+/// would otherwise grab the host's own devices from both sides.
+class _DevUsbOverlay extends StatelessWidget {
+  const _DevUsbOverlay({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final settingsCtx = SettingsContext.of(context);
+    if (settingsCtx == null) return child;
+    return StreamBuilder<DeveloperSettings>(
+      stream: settingsCtx.developerSettings,
+      initialData: DeveloperSettings(
+        developerMode: settingsCtx.settings.isInDeveloperMode(),
+      ),
+      builder: (context, snap) {
+        final devMode = snap.data?.developerMode ?? false;
+        if (!devMode) return child;
+        return Stack(
+          children: [
+            child,
+            Positioned(
+              right: 8,
+              bottom: 8,
+              // SafeArea + a tooltip-less button: we sit ABOVE the
+              // Navigator here, so there's no Overlay ancestor that a
+              // Tooltip widget could use. The regular `UsbToggleButton`
+              // uses IconButton's tooltip and crashes in this position.
+              child: SafeArea(child: _DevUsbButton()),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DevUsbButton extends StatefulWidget {
+  @override
+  State<_DevUsbButton> createState() => _DevUsbButtonState();
+}
+
+class _DevUsbButtonState extends State<_DevUsbButton> {
+  @override
+  Widget build(BuildContext context) {
+    final enabled = coord.usbEnabled();
+    return Material(
+      color: enabled ? Colors.green.shade700 : Colors.red.shade900,
+      shape: const CircleBorder(),
+      elevation: 6,
+      clipBehavior: Clip.hardEdge,
+      child: InkWell(
+        onTap: () {
+          coord.setUsbEnabled(value: !enabled);
+          setState(() {});
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Icon(
+            enabled ? Icons.usb : Icons.usb_off,
+            color: Colors.white,
           ),
         ),
       ),

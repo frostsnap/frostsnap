@@ -11,7 +11,6 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/nostr_chat/nostr_signing_page.dart';
 import 'package:frostsnap/nostr_chat/signing_card.dart';
 import 'package:frostsnap/sign_message.dart';
-import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -1454,8 +1453,6 @@ class _ChatPageState extends State<ChatPage> {
         scrolledUnderElevation: 0,
         title: Text(widget.walletName),
         actions: [
-          if (SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false)
-            const UsbToggleButton(),
           _buildConnectionIndicator(),
           const SizedBox(width: 8),
           IconButton(

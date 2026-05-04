@@ -14,8 +14,8 @@ use frostsnap_core::KeygenId;
 use frostsnap_nostr::{
     channel::ChannelSecret,
     keygen::{
-        DeviceKind, DeviceRegistration, LobbyClient, LobbyEvent, LobbyHandle, LobbyState,
-        ParticipantStatus, ProtocolClient, ProtocolHandle, SelectedCoordinator,
+        DeviceKind, DeviceRegistration, LobbyChannelMetadata, LobbyClient, LobbyEvent, LobbyHandle,
+        LobbyState, ParticipantStatus, ProtocolClient, ProtocolHandle, SelectedCoordinator,
     },
 };
 use nostr_relay_builder::prelude::*;
@@ -115,7 +115,16 @@ async fn run_keygen_test(
 
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let init_event = if i == 0 {
-            Some(lobby_client.build_creation_event(nostr_keys).await.unwrap())
+            let meta = LobbyChannelMetadata {
+                key_name: "test-key".into(),
+                purpose: KeyPurpose::Test,
+            };
+            Some(
+                lobby_client
+                    .build_creation_event(nostr_keys, &meta)
+                    .await
+                    .unwrap(),
+            )
         } else {
             None
         };
@@ -152,30 +161,18 @@ async fn run_keygen_test(
                 kind: DeviceKind::Frostsnap,
             })
             .collect();
-        let eid = side
+        let outcome = side
             .lobby_handle
             .register_devices(&side.nostr_keys, regs)
             .await
             .unwrap();
-        register_event_ids.push(eid);
+        register_event_ids.push(outcome.inner_event_id);
     }
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Set wallet name + propose threshold + start keygen (initiator = participant 0).
-    nostr_sides[0]
-        .lobby_handle
-        .set_key_name(
-            &nostr_sides[0].nostr_keys,
-            "test-key".into(),
-            KeyPurpose::Test,
-        )
-        .await
-        .unwrap();
-    nostr_sides[0]
-        .lobby_handle
-        .set_threshold(&nostr_sides[0].nostr_keys, threshold)
-        .await
-        .unwrap();
+    // Start keygen (initiator = participant 0). Wallet name + purpose
+    // were baked into the creation event; threshold lives only in
+    // StartKeygen now.
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     let selected_coordinators: Vec<SelectedCoordinator> = selected_participants
         .iter()
@@ -190,8 +187,6 @@ async fn run_keygen_test(
             &nostr_sides[0].nostr_keys,
             &selected_coordinators,
             threshold,
-            "test-key".into(),
-            KeyPurpose::Test,
         )
         .await
         .unwrap();
@@ -243,6 +238,7 @@ async fn run_keygen_test(
             }
             Ok(Some((_, TestEvent::Lobby(LobbyEvent::LobbyChanged(_))))) => continue,
             Ok(Some((_, TestEvent::Lobby(LobbyEvent::Cancelled)))) => continue,
+            Ok(Some((_, TestEvent::Lobby(LobbyEvent::AllAcked)))) => continue,
             Ok(Some((i, TestEvent::Keygen(message)))) => {
                 keygen_messages_seen[i] += 1;
                 let eid = keygen_event_id.expect("keygen started before KeygenMessage arrived");
@@ -312,8 +308,12 @@ async fn host_sees_self_on_open() {
     client.connect().await;
 
     let lobby_client = LobbyClient::new(channel_secret);
+    let meta = LobbyChannelMetadata {
+        key_name: "test-key".into(),
+        purpose: KeyPurpose::Test,
+    };
     let init_event = lobby_client
-        .build_creation_event(&nostr_keys)
+        .build_creation_event(&nostr_keys, &meta)
         .await
         .unwrap();
     let sink = TaggedLobbySink {
@@ -383,7 +383,16 @@ async fn lobby_full_lifecycle() {
 
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let init_event = if i == 0 {
-            Some(lobby_client.build_creation_event(keys).await.unwrap())
+            let meta = LobbyChannelMetadata {
+                key_name: "test-key".into(),
+                purpose: frostsnap_core::device::KeyPurpose::Test,
+            };
+            Some(
+                lobby_client
+                    .build_creation_event(keys, &meta)
+                    .await
+                    .unwrap(),
+            )
         } else {
             None
         };
@@ -416,21 +425,6 @@ async fn lobby_full_lifecycle() {
         }
     }
 
-    // Host publishes the key name + threshold before anyone is Ready — this
-    // is the natural ordering in the UI.
-    lobby_handles[0]
-        .set_key_name(
-            &nostr_keys[0],
-            "test-key".into(),
-            frostsnap_core::device::KeyPurpose::Test,
-        )
-        .await
-        .unwrap();
-    lobby_handles[0]
-        .set_threshold(&nostr_keys[0], 2)
-        .await
-        .unwrap();
-
     // Both participants mark themselves Ready.
     for (i, handle) in lobby_handles.iter().enumerate() {
         let regs = vec![DeviceRegistration {
@@ -448,24 +442,7 @@ async fn lobby_full_lifecycle() {
     for s in &states {
         let s = s.as_ref().unwrap();
         assert!(s.all_ready(), "everyone should be Ready");
-        assert_eq!(s.threshold, Some(2));
         assert_eq!(s.key_name.as_deref(), Some("test-key"));
-    }
-
-    // Every participant accepts the host's threshold.
-    for (i, handle) in lobby_handles.iter().enumerate() {
-        handle.accept_threshold(&nostr_keys[i], 2).await.unwrap();
-    }
-    let states = collect_lobby_states(&mut event_rx, n, std::time::Duration::from_secs(3), |ss| {
-        ss.iter()
-            .all(|s| s.as_ref().is_some_and(|s| s.all_accepted()))
-    })
-    .await;
-    for s in &states {
-        assert!(
-            s.as_ref().unwrap().all_accepted(),
-            "everyone should have Accepted the threshold",
-        );
     }
 
     // Participant 1 leaves — initiator should see them removed.
@@ -499,6 +476,277 @@ async fn lobby_full_lifecycle() {
         saw_cancelled.iter().all(|seen| *seen),
         "all participants should see Cancelled: {saw_cancelled:?}",
     );
+}
+
+/// Spin up an n-participant lobby on a fresh MockRelay, register everyone's
+/// devices, and have the host (index 0) publish StartKeygen with all
+/// participants selected. Returns the relay handle (held to keep it alive),
+/// per-participant clients, lobby handles + nostr keys, the event receiver,
+/// and the StartKeygen event id (resolved from the host's `KeygenResolved`).
+async fn setup_post_start_keygen(
+    n: usize,
+    seed: u64,
+) -> (
+    MockRelay,
+    Vec<Client>,
+    Vec<LobbyHandle>,
+    Vec<Keys>,
+    mpsc::Receiver<(usize, TestEvent)>,
+    EventId,
+) {
+    let _ = tracing_subscriber::fmt::try_init();
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    let relay = MockRelay::run().await.expect("failed to start relay");
+    let relay_url = relay.url().await;
+    let channel_secret = ChannelSecret::random(&mut rng);
+
+    let nostr_keys: Vec<Keys> = (0..n).map(|_| Keys::generate()).collect();
+    let (event_tx, mut event_rx) = mpsc::channel::<(usize, TestEvent)>(256);
+
+    let mut clients: Vec<Client> = Vec::with_capacity(n);
+    let mut lobby_handles: Vec<LobbyHandle> = Vec::with_capacity(n);
+    for (i, keys) in nostr_keys.iter().enumerate() {
+        let client = Client::builder().build();
+        client.add_relay(&relay_url).await.unwrap();
+        client.connect().await;
+
+        let lobby_client = LobbyClient::new(channel_secret.clone());
+        let init_event = if i == 0 {
+            let meta = LobbyChannelMetadata {
+                key_name: "test-key".into(),
+                purpose: KeyPurpose::Test,
+            };
+            Some(
+                lobby_client
+                    .build_creation_event(keys, &meta)
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let sink = TaggedLobbySink {
+            index: i,
+            tx: event_tx.clone(),
+        };
+        let handle = lobby_client
+            .run(client.clone(), keys.clone(), init_event, sink)
+            .await
+            .unwrap();
+        clients.push(client);
+        lobby_handles.push(handle);
+    }
+
+    // Wait for everyone to see everyone in Joining state.
+    collect_lobby_states(&mut event_rx, n, std::time::Duration::from_secs(3), |ss| {
+        ss.iter()
+            .all(|s| s.as_ref().is_some_and(|s| s.participants.len() == n))
+    })
+    .await;
+
+    // Register everyone.
+    let mut register_event_ids = Vec::with_capacity(n);
+    for (i, handle) in lobby_handles.iter().enumerate() {
+        let regs = vec![DeviceRegistration {
+            device_id: frostsnap_core::DeviceId([i as u8; 33]),
+            name: format!("device-{i}"),
+            kind: DeviceKind::Frostsnap,
+        }];
+        let outcome = handle
+            .register_devices(&nostr_keys[i], regs)
+            .await
+            .unwrap();
+        register_event_ids.push(outcome.inner_event_id);
+    }
+    collect_lobby_states(&mut event_rx, n, std::time::Duration::from_secs(3), |ss| {
+        ss.iter().all(|s| s.as_ref().is_some_and(|s| s.all_ready()))
+    })
+    .await;
+
+    // Host publishes StartKeygen including everyone.
+    let selected: Vec<SelectedCoordinator> = (0..n)
+        .map(|i| SelectedCoordinator {
+            register_event_id: register_event_ids[i],
+            pubkey: nostr_keys[i].public_key(),
+        })
+        .collect();
+    lobby_handles[0]
+        .start_keygen(&nostr_keys[0], &selected, n.min(2) as u16)
+        .await
+        .unwrap();
+
+    // Wait for *every* selected participant's `KeygenResolved` before
+    // returning. If we returned as soon as the host saw it, the joiner
+    // might still be processing the StartKeygen event when the test
+    // calls `ack_keygen` next, and their own ack would echo back into a
+    // `lobby.keygen == None` state and get rejected as "AckKeygen
+    // before StartKeygen".
+    let start_event_id = wait_for_keygen_resolved_all(&mut event_rx, n).await;
+
+    (
+        relay,
+        clients,
+        lobby_handles,
+        nostr_keys,
+        event_rx,
+        start_event_id,
+    )
+}
+
+/// Drain `event_rx` until a `KeygenResolved` has arrived for every
+/// participant index in `0..n`. Returns the resolved `keygen_event_id`
+/// (which every participant must agree on). Panics on timeout.
+async fn wait_for_keygen_resolved_all(
+    event_rx: &mut mpsc::Receiver<(usize, TestEvent)>,
+    n: usize,
+) -> EventId {
+    let mut seen: Vec<bool> = vec![false; n];
+    let mut event_id: Option<EventId> = None;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !seen.iter().all(|s| *s) {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(!remaining.is_zero(), "timeout waiting for KeygenResolved");
+        match tokio::time::timeout(remaining, event_rx.recv()).await {
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::KeygenResolved { resolved, .. })))) => {
+                seen[i] = true;
+                event_id = Some(resolved.keygen_event_id);
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) | Err(_) => panic!("event stream closed while waiting for KeygenResolved"),
+        }
+    }
+    event_id.expect("at least one KeygenResolved should have arrived")
+}
+
+#[tokio::test]
+async fn ack_round_completes() {
+    let n = 2;
+    let (_relay, _clients, lobby_handles, nostr_keys, mut event_rx, start_event_id) =
+        setup_post_start_keygen(n, 11).await;
+
+    // Joiner publishes AckKeygen referencing the StartKeygen. The host
+    // is implicitly acked from publishing, so this should round out the
+    // selected set and fire AllAcked for everyone.
+    lobby_handles[1]
+        .ack_keygen(&nostr_keys[1], start_event_id)
+        .await
+        .unwrap();
+
+    // Capture both AllAcked events and the latest LobbyChanged
+    // snapshots so we can also assert on `state.acked` /
+    // `state.all_acked()`.
+    let mut saw_all_acked = vec![false; n];
+    let mut latest_states: Vec<Option<LobbyState>> = vec![None; n];
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !saw_all_acked.iter().all(|seen| *seen) {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, event_rx.recv()).await {
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::AllAcked)))) => saw_all_acked[i] = true,
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(state))))) => {
+                latest_states[i] = Some(state);
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) | Err(_) => break,
+        }
+    }
+    assert!(
+        saw_all_acked.iter().all(|seen| *seen),
+        "both sides should see AllAcked: {saw_all_acked:?}",
+    );
+    for (i, s) in latest_states.iter().enumerate() {
+        let Some(s) = s.as_ref() else { continue };
+        assert!(
+            s.all_acked(),
+            "participant {i}'s state.all_acked() should be true",
+        );
+        assert!(
+            s.acked.contains(&nostr_keys[0].public_key()),
+            "participant {i} should see the host (initiator) as acked",
+        );
+        assert!(
+            s.acked.contains(&nostr_keys[1].public_key()),
+            "participant {i} should see the joiner as acked",
+        );
+    }
+}
+
+#[tokio::test]
+async fn leave_after_start_aborts() {
+    let n = 2;
+    let (_relay, _clients, lobby_handles, nostr_keys, mut event_rx, _start_event_id) =
+        setup_post_start_keygen(n, 13).await;
+
+    // Joiner publishes Leave — they're in the selected set, so this
+    // tears the round down for everyone via `LobbyEvent::Cancelled`.
+    lobby_handles[1].leave(&nostr_keys[1]).await.unwrap();
+
+    let mut saw_cancelled = vec![false; n];
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !saw_cancelled.iter().all(|seen| *seen) {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, event_rx.recv()).await {
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::Cancelled)))) => saw_cancelled[i] = true,
+            Ok(Some(_)) => continue,
+            Ok(None) | Err(_) => break,
+        }
+    }
+    assert!(
+        saw_cancelled.iter().all(|seen| *seen),
+        "every party should see Cancelled after a selected joiner leaves: {saw_cancelled:?}",
+    );
+}
+
+#[tokio::test]
+async fn ack_with_wrong_etag_ignored() {
+    let n = 2;
+    let (_relay, _clients, lobby_handles, nostr_keys, mut event_rx, _start_event_id) =
+        setup_post_start_keygen(n, 17).await;
+
+    // Joiner sends an AckKeygen referencing a bogus event id (not the
+    // StartKeygen we just published). It must be silently dropped —
+    // `acked` doesn't grow, no `AllAcked` fires.
+    let bogus = EventId::all_zeros();
+    lobby_handles[1]
+        .ack_keygen(&nostr_keys[1], bogus)
+        .await
+        .unwrap();
+
+    // Drain a short window of events. Assert no AllAcked. The joiner's
+    // own `acked` set should still only contain the host.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut latest_states: Vec<Option<LobbyState>> = vec![None; n];
+    while tokio::time::Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        match tokio::time::timeout(remaining, event_rx.recv()).await {
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(state))))) => {
+                latest_states[i] = Some(state);
+            }
+            Ok(Some((_, TestEvent::Lobby(LobbyEvent::AllAcked)))) => {
+                panic!("AllAcked fired despite bogus e-tag")
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) | Err(_) => break,
+        }
+    }
+
+    for (i, s) in latest_states.iter().enumerate() {
+        let Some(s) = s.as_ref() else { continue };
+        assert_eq!(
+            s.acked.len(),
+            1,
+            "participant {i}'s acked set should only contain the host after a bogus ack",
+        );
+        assert!(
+            s.acked.contains(&nostr_keys[0].public_key()),
+            "participant {i}'s acked set should contain the host",
+        );
+    }
 }
 
 async fn collect_lobby_states<F>(

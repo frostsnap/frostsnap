@@ -3,15 +3,17 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use nostr_sdk::{
     nips::nip44::v2::{self, ConversationKey},
+    pool::Output,
     Alphabet, Client, Event, EventBuilder, EventId, Filter, Keys, Kind, Metadata, PublicKey,
-    RelayPoolNotification, SingleLetterTag, SubscriptionId, SyncOptions, Tag, TagKind, Timestamp,
+    RelayPoolNotification, RelayUrl, SingleLetterTag, SubscriptionId, SyncOptions, Tag, TagKind,
+    Timestamp,
 };
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 const PROFILE_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -87,10 +89,32 @@ pub struct ChannelState {
 }
 
 // =============================================================================
+// Send outcome
+// =============================================================================
+
+/// Result of a successful `ChannelRunnerHandle::dispatch`: the inner
+/// event id (what peers see after decryption, used by protocols for
+/// e-tag references) plus per-relay publish outcome from the nostr-sdk
+/// `Output<EventId>`. Callers decide what to do with `relay_failed`;
+/// `any_relay_success` is the minimum bar for a useful publish.
+#[derive(Debug, Clone)]
+pub struct SendOutcome {
+    pub inner_event_id: EventId,
+    pub relay_success: HashSet<RelayUrl>,
+    pub relay_failed: HashMap<RelayUrl, String>,
+}
+
+impl SendOutcome {
+    pub fn any_relay_success(&self) -> bool {
+        !self.relay_success.is_empty()
+    }
+}
+
+// =============================================================================
 // Events emitted by the runner
 // =============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ChannelRunnerEvent {
     ChatMessage {
         message_id: EventId,
@@ -99,11 +123,44 @@ pub enum ChannelRunnerEvent {
         timestamp: u64,
         reply_to: Option<EventId>,
     },
+    /// Domain-specific inner event for consumers to decode. `ack` is
+    /// `Some` only for events coming from a local `dispatch` — the
+    /// dispatch caller awaits this oneshot, so the consumer must
+    /// signal it after `process_event` has run (state updated +
+    /// `Sink<T>` notified). Incoming-from-subscription events carry
+    /// `ack: None`.
     AppEvent {
         inner_event: Event,
+        ack: Option<oneshot::Sender<()>>,
     },
     MembersChanged,
     CreationEventReceived,
+}
+
+// =============================================================================
+// Internal command sent through `cmd_tx` to the runner's background task.
+// =============================================================================
+
+enum RunnerCmd {
+    /// Publish an already-prepared inner event. On ≥1 relay success,
+    /// apply locally through the same path as incoming events (carrying
+    /// an ack oneshot) and signal `done` with `Ok(SendOutcome)`. On
+    /// zero relay success or publish error, signal `done` with `Err`
+    /// and DO NOT apply locally.
+    Dispatch {
+        inner_event: Event,
+        done: oneshot::Sender<Result<SendOutcome>>,
+    },
+    /// Publish without applying locally. The event will still come
+    /// through the subscription later (deduped via `seen_ids` if we
+    /// see the same outer id). Used by consumers that manage their
+    /// own optimistic local state (e.g. chat's `Pending` → `Sent`
+    /// status flow, where the local insert happens synchronously in
+    /// the consumer before the publish begins).
+    Publish {
+        inner_event: Event,
+        done: oneshot::Sender<Result<SendOutcome>>,
+    },
 }
 
 // =============================================================================
@@ -199,8 +256,8 @@ impl ChannelRunner {
                 )
                 .await
                 {
-                    Ok(outer_event_id) => {
-                        published_init_event = Some((outer_event_id, init_event.clone()));
+                    Ok(output) => {
+                        published_init_event = Some((output.val, init_event.clone()));
                     }
                     Err(e) => tracing::warn!(error = %e, "failed to publish channel init"),
                 }
@@ -208,7 +265,7 @@ impl ChannelRunner {
         }
 
         let (event_tx, event_rx) = mpsc::channel::<ChannelRunnerEvent>(64);
-        let (cmd_tx, mut cmd_rx) = mpsc::channel::<Event>(32);
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<RunnerCmd>(32);
         let (profile_tx, mut profile_rx) = mpsc::channel::<(PublicKey, NostrProfile)>(32);
 
         // Step 1: Replay cached events from local database immediately.
@@ -223,6 +280,7 @@ impl ChannelRunner {
                 &client,
                 &profile_tx,
                 &event_tx,
+                None,
             )
             .await;
         }
@@ -235,6 +293,7 @@ impl ChannelRunner {
                 &client,
                 &profile_tx,
                 &event_tx,
+                None,
             )
             .await;
         }
@@ -251,6 +310,7 @@ impl ChannelRunner {
                     &client,
                     &profile_tx,
                     &event_tx,
+                    None,
                 )
                 .await;
             }
@@ -285,32 +345,100 @@ impl ChannelRunner {
                 tokio::select! {
                     cmd = cmd_rx.recv() => {
                         match cmd {
-                            Some(inner_event) => {
-                                match send_prepared_message(
+                            Some(RunnerCmd::Publish { inner_event, done }) => {
+                                let inner_event_id = inner_event.id;
+                                let send_result = send_prepared_message(
+                                    &client,
+                                    &channel_keys,
+                                    inner_event,
+                                    expiration_from(message_expiration),
+                                ).await;
+                                match send_result {
+                                    Err(e) => {
+                                        let _ = done.send(Err(e));
+                                    }
+                                    Ok(output) => {
+                                        // Mark outer id seen so the
+                                        // subscription echo is filtered —
+                                        // the caller gets the relay result
+                                        // via `Output`, the inner event
+                                        // will still be processed via
+                                        // `seen_inner_ids` dedup if it
+                                        // reaches us any other way (e.g.
+                                        // the consumer has already done
+                                        // its optimistic local insert).
+                                        seen_ids.insert(output.val);
+                                        let _ = done.send(Ok(SendOutcome {
+                                            inner_event_id,
+                                            relay_success: output.success,
+                                            relay_failed: output.failed,
+                                        }));
+                                    }
+                                }
+                            }
+                            Some(RunnerCmd::Dispatch { inner_event, done }) => {
+                                // Inner id is known up-front (the event is
+                                // already signed by the user keys before
+                                // arriving here). Surface this — not the
+                                // outer id — to callers that build protocol
+                                // references (e.g. keygen's StartKeygen
+                                // e-tags point at Register events' inner ids).
+                                let inner_event_id = inner_event.id;
+                                let send_result = send_prepared_message(
                                     &client,
                                     &channel_keys,
                                     inner_event.clone(),
                                     expiration_from(message_expiration),
-                                ).await {
-                                    Ok(outer_event_id) => {
-                                        seen_ids.insert(outer_event_id);
+                                ).await;
+
+                                match send_result {
+                                    Err(e) => {
+                                        let _ = done.send(Err(e));
                                     }
-                                    Err(e) => tracing::error!(error = %e, "failed to send channel message"),
+                                    Ok(output) if output.success.is_empty() => {
+                                        let failed = output.failed.clone();
+                                        let _ = done.send(Err(anyhow!(
+                                            "no relay accepted the event: {:?}",
+                                            failed
+                                        )));
+                                        // DO NOT apply locally — keeps
+                                        // local state consistent with what
+                                        // peers see.
+                                    }
+                                    Ok(output) => {
+                                        seen_ids.insert(output.val);
+                                        // Apply locally through the SAME
+                                        // path as incoming events. Carry
+                                        // an ack so the dispatch future
+                                        // resolves only after the consumer
+                                        // has finished processing.
+                                        let (apply_tx, apply_rx) = oneshot::channel();
+                                        process_inner_event_once(
+                                            &inner_event,
+                                            &mut seen_inner_ids,
+                                            &state,
+                                            &client,
+                                            &profile_tx,
+                                            &event_tx,
+                                            Some(apply_tx),
+                                        )
+                                        .await;
+                                        // `apply_rx` resolves when the
+                                        // consumer signals the ack (or
+                                        // immediately for non-AppEvent
+                                        // kinds — see
+                                        // `process_inner_event`). If the
+                                        // consumer has been dropped we
+                                        // still surface the relay outcome
+                                        // — the network succeeded.
+                                        let _ = apply_rx.await;
+                                        let _ = done.send(Ok(SendOutcome {
+                                            inner_event_id,
+                                            relay_success: output.success,
+                                            relay_failed: output.failed,
+                                        }));
+                                    }
                                 }
-                                // Always echo locally, regardless of relay send
-                                // outcome. The publisher's own view of the lobby
-                                // shouldn't depend on relay reachability — other
-                                // participants may not receive the event, but the
-                                // publisher seeing themselves is orthogonal.
-                                process_inner_event_once(
-                                    &inner_event,
-                                    &mut seen_inner_ids,
-                                    &state,
-                                    &client,
-                                    &profile_tx,
-                                    &event_tx,
-                                )
-                                .await;
                             }
                             None => break,
                         }
@@ -344,6 +472,7 @@ impl ChannelRunner {
                                             &client,
                                             &profile_tx,
                                             &event_tx,
+                                            None,
                                         )
                                         .await;
                                     }
@@ -376,6 +505,7 @@ impl ChannelRunner {
                                     &client,
                                     &profile_tx,
                                     &event_tx,
+                                    None,
                                 )
                                 .await;
                             }
@@ -406,7 +536,7 @@ impl ChannelRunner {
 
 #[derive(Clone)]
 pub struct ChannelRunnerHandle {
-    cmd_tx: mpsc::Sender<Event>,
+    cmd_tx: mpsc::Sender<RunnerCmd>,
     state: Arc<Mutex<ChannelState>>,
     channel_keys: ChannelKeys,
 }
@@ -451,17 +581,66 @@ impl ChannelMessageDraft {
 }
 
 impl ChannelRunnerHandle {
-    pub async fn send_prepared(&self, prepared: Event) -> Result<()> {
+    /// Publish a prepared inner event to relays, then — if at least
+    /// one relay OK'd it — apply it locally through the same path as
+    /// incoming subscription events (so consumer `Sink<T>`s fire the
+    /// same way). Resolves only after both the relay OK and the
+    /// consumer's processing complete. On zero relay success, returns
+    /// `Err` WITHOUT applying locally.
+    pub async fn dispatch_prepared(&self, prepared: Event) -> Result<SendOutcome> {
+        let (done_tx, done_rx) = oneshot::channel();
         self.cmd_tx
-            .send(prepared)
+            .send(RunnerCmd::Dispatch {
+                inner_event: prepared,
+                done: done_tx,
+            })
             .await
-            .map_err(|_| anyhow!("channel closed"))
+            .map_err(|_| anyhow!("channel runner stopped"))?;
+        done_rx
+            .await
+            .map_err(|_| anyhow!("channel runner dropped pending dispatch"))?
     }
 
-    pub async fn send(&self, user_keys: &Keys, draft: ChannelMessageDraft) -> Result<Event> {
+    /// Convenience: build the inner event via
+    /// `ChannelMessageDraft::prepare` and dispatch it.
+    pub async fn dispatch(
+        &self,
+        user_keys: &Keys,
+        draft: ChannelMessageDraft,
+    ) -> Result<SendOutcome> {
         let prepared = draft.prepare(user_keys).await?;
-        self.send_prepared(prepared.clone()).await?;
-        Ok(prepared)
+        self.dispatch_prepared(prepared).await
+    }
+
+    /// Pure transport — publish to relays, don't apply locally.
+    /// Use when the consumer handles its own optimistic local state
+    /// and only needs the relay outcome (chat's `Pending` → `Sent`
+    /// status transition is the canonical example). The
+    /// `SendOutcome` is the same shape as `dispatch`; callers
+    /// inspect `any_relay_success` + `relay_failed` as they see fit.
+    pub async fn publish_prepared(&self, prepared: Event) -> Result<SendOutcome> {
+        let (done_tx, done_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(RunnerCmd::Publish {
+                inner_event: prepared,
+                done: done_tx,
+            })
+            .await
+            .map_err(|_| anyhow!("channel runner stopped"))?;
+        done_rx
+            .await
+            .map_err(|_| anyhow!("channel runner dropped pending publish"))?
+    }
+
+    /// Convenience: build the inner event via
+    /// `ChannelMessageDraft::prepare` and publish it.
+    pub async fn publish(
+        &self,
+        user_keys: &Keys,
+        draft: ChannelMessageDraft,
+    ) -> Result<SendOutcome> {
+        let prepared = draft.prepare(user_keys).await?;
+        self.publish_prepared(prepared).await
     }
 
     pub fn members(&self) -> HashMap<PublicKey, Option<NostrProfile>> {
@@ -488,11 +667,18 @@ async fn process_inner_event_once(
     client: &Client,
     profile_tx: &mpsc::Sender<(PublicKey, NostrProfile)>,
     event_tx: &mpsc::Sender<ChannelRunnerEvent>,
+    ack: Option<oneshot::Sender<()>>,
 ) {
     if !seen_inner_ids.insert(inner.id) {
+        // Duplicate — signal the ack anyway so a racing dispatch
+        // (e.g. relay echo arriving before our own apply completes)
+        // doesn't deadlock the caller.
+        if let Some(ack) = ack {
+            let _ = ack.send(());
+        }
         return;
     }
-    process_inner_event(inner, state, client, profile_tx, event_tx).await;
+    process_inner_event(inner, state, client, profile_tx, event_tx, ack).await;
 }
 
 async fn process_inner_event(
@@ -501,6 +687,7 @@ async fn process_inner_event(
     client: &Client,
     profile_tx: &mpsc::Sender<(PublicKey, NostrProfile)>,
     event_tx: &mpsc::Sender<ChannelRunnerEvent>,
+    ack: Option<oneshot::Sender<()>>,
 ) {
     let is_new_member = {
         let mut s = state.lock().unwrap();
@@ -526,6 +713,13 @@ async fn process_inner_event(
         let _ = event_tx
             .send(ChannelRunnerEvent::CreationEventReceived)
             .await;
+        // `CreationEventReceived` has no `ack` field, so signal the
+        // dispatch-ack (if any) right after queueing — the runner's
+        // own state was updated synchronously above, and consumer-
+        // side handling is a no-op.
+        if let Some(ack) = ack {
+            let _ = ack.send(());
+        }
     } else if inner.kind == Kind::ChannelMessage {
         let reply_to = extract_e_tag(inner);
         let _ = event_tx
@@ -537,10 +731,18 @@ async fn process_inner_event(
                 reply_to,
             })
             .await;
+        // Chat messages route around the dispatch-ack: chat uses
+        // its own optimistic-insert flow (see the `publish` path on
+        // the handle). If this ever fires via `Dispatch` we still
+        // don't block the caller — queueing on event_tx is enough.
+        if let Some(ack) = ack {
+            let _ = ack.send(());
+        }
     } else {
         let _ = event_tx
             .send(ChannelRunnerEvent::AppEvent {
                 inner_event: inner.clone(),
+                ack,
             })
             .await;
     }
@@ -581,7 +783,7 @@ pub(crate) async fn send_prepared_message(
     channel_keys: &ChannelKeys,
     inner_event: Event,
     expiration: Option<Timestamp>,
-) -> Result<EventId> {
+) -> Result<Output<EventId>> {
     let encrypted = encrypt_inner_event(&inner_event, channel_keys)?;
     let ephemeral_keys = Keys::generate();
 
@@ -596,8 +798,11 @@ pub(crate) async fn send_prepared_message(
         .build(ephemeral_keys.public_key())
         .sign_with_keys(&ephemeral_keys)?;
 
-    client.send_event(&outer_event).await?;
-    Ok(outer_event.id)
+    // `send_event` (default `AckPolicy::all()`) awaits each selected
+    // relay's OK/rejection with a 10s timeout. Returns per-relay
+    // `success`/`failed` in the `Output`.
+    let output = client.send_event(&outer_event).await?;
+    Ok(output)
 }
 
 /// Helper: compute the expiration timestamp from an optional duration.

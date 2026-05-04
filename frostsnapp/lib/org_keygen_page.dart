@@ -3,25 +3,36 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnap/animated_gradient_card.dart';
-import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/async_action_button.dart';
+import 'package:frostsnap/camera/camera.dart';
+import 'package:frostsnap/device_setup_step.dart';
+import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/nostr_chat/setup_dialog.dart';
-import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/device_list.dart';
-import 'package:frostsnap/src/rust/api/name.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/remote_keygen.dart';
 import 'package:frostsnap/threshold_selector.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:sliver_tools/sliver_tools.dart';
 
 // =============================================================================
 // Steps
 // =============================================================================
 
-enum OrgKeygenStep { walletType, sessionRole, joinSession, nameWallet, lobby, review }
+enum OrgKeygenStep {
+  walletType,
+  sessionRole,
+  joinSession,
+  nameWallet,
+  lobby,
+  review,
+  acceptKeygen,
+}
 
 enum OrgKeygenRole { host, participant }
 
@@ -35,7 +46,12 @@ enum WalletTypeChoice { personal }
 // =============================================================================
 
 class OrgKeygenController extends ChangeNotifier {
-  OrgKeygenController({required this.nostrClient});
+  OrgKeygenController({required this.nostrClient}) {
+    // Forward device-setup changes so existing listeners that watch
+    // this controller rebuild on device-list / name-preview changes
+    // without extra plumbing.
+    deviceSetup.addListener(notifyListeners);
+  }
 
   final NostrClient nostrClient;
 
@@ -45,6 +61,10 @@ class OrgKeygenController extends ChangeNotifier {
   OrgKeygenRole _role = OrgKeygenRole.host;
   OrgKeygenRole get role => _role;
   bool get isHost => _role == OrgKeygenRole.host;
+
+  /// Shared with `_DeviceSetupDialog` so typed names + upgrade state
+  /// survive across dialog close / reopen. Cancelled on page pop.
+  final DeviceSetupController deviceSetup = DeviceSetupController();
 
   final nameController = TextEditingController();
   final joinLinkController = TextEditingController();
@@ -58,6 +78,15 @@ class OrgKeygenController extends ChangeNotifier {
   RemoteLobbyHandle? get handle => _handle;
 
   StreamSubscription<FfiLobbyState>? _stateSub;
+  // Keep the broadcast-subscription reference alive for as long as we
+  // want to receive updates. If we only held the `StreamSubscription`
+  // returned by `.start().listen(...)` the Dart-side GC would collect
+  // the opaque `LobbyStateBroadcastSubscription` handle, triggering
+  // Rust's `Drop for BroadcastSubscription` → `_stop()` →
+  // unregister-from-map. Broadcasts after that point silently go
+  // nowhere; only the initial cached emit (which fires synchronously
+  // inside `_start`, before the drop) reaches Dart.
+  LobbyStateBroadcastSubscription? _stateBroadcastSub;
   FfiLobbyState? _state;
   FfiLobbyState? get lobbyState => _state;
 
@@ -67,15 +96,47 @@ class OrgKeygenController extends ChangeNotifier {
   String? _openError;
   String? get openError => _openError;
 
-  /// Host-side local threshold choice, before it's been published.
-  /// After `set_threshold`, the authoritative value is on
-  /// `_state.threshold`.
+  /// Host-side local threshold choice. Never published on its own —
+  /// it's only put on the wire as part of `StartKeygen`.
   int? _pendingThreshold;
 
+  /// Host-side network selection (developer-mode only). Defaults to
+  /// mainnet; feeds into `key_purpose_bitcoin(network)` when creating
+  /// the lobby.
+  BitcoinNetwork _network = BitcoinNetwork.bitcoin;
+  BitcoinNetwork get network => _network;
+  void setNetwork(BitcoinNetwork n) {
+    _network = n;
+    notifyListeners();
+  }
+
+  /// Host-only: pubkeys (as hex) that the host has deselected from the
+  /// keygen. The toggle UI lives on Ready participant rows; the
+  /// excluded set drops out of `selected` when `startKeygen` is called.
+  /// Self-exclusion is rejected (host can't kick themselves out of
+  /// their own keygen).
+  final Set<String> _excludedHex = {};
+
+  bool isExcluded(PublicKey pk) => _excludedHex.contains(pk.toHex());
+
+  void setIncluded(PublicKey pk, bool included) {
+    final me = _myPubkey;
+    if (me != null && pk.equals(other: me)) return;
+    final hex = pk.toHex();
+    final changed = included ? _excludedHex.remove(hex) : _excludedHex.add(hex);
+    if (changed) notifyListeners();
+  }
+
+  /// Devices counted across the *included* Ready participants. Drives
+  /// the threshold slider's domain and the "Continue with N devices"
+  /// label, so that excluding a participant updates the UI immediately.
   int get totalDevices {
     final s = _state;
     if (s == null) return 0;
-    return s.participants.fold(0, (sum, p) => sum + p.devices.length);
+    return s.participants.fold(0, (sum, p) {
+      if (_excludedHex.contains(p.pubkey.toHex())) return sum;
+      return sum + p.devices.length;
+    });
   }
 
   int get recommendedThreshold {
@@ -84,8 +145,7 @@ class OrgKeygenController extends ChangeNotifier {
     return max((total * 2 / 3).ceil(), 1).clamp(1, total);
   }
 
-  int get displayThreshold =>
-      _state?.threshold ?? _pendingThreshold ?? recommendedThreshold;
+  int get displayThreshold => _pendingThreshold ?? recommendedThreshold;
 
   /// Whether the local user has already marked themselves Ready.
   bool get meIsReady {
@@ -93,17 +153,7 @@ class OrgKeygenController extends ChangeNotifier {
     final s = _state;
     if (me == null || s == null) return false;
     return s.participants.any(
-      (p) => p.pubkey.equals(other: me) && p.status != FfiParticipantStatus.joining,
-    );
-  }
-
-  /// Whether the local user has accepted the current host-proposed threshold.
-  bool get meAccepted {
-    final me = _myPubkey;
-    final s = _state;
-    if (me == null || s == null) return false;
-    return s.participants.any(
-      (p) => p.pubkey.equals(other: me) && p.status == FfiParticipantStatus.accepted,
+      (p) => p.pubkey.equals(other: me) && p.status == FfiParticipantStatus.ready,
     );
   }
 
@@ -152,10 +202,10 @@ class OrgKeygenController extends ChangeNotifier {
       final handle = await nostrClient.createRemoteLobby(
         channelSecret: secret,
         nsec: nsec,
+        keyName: walletName,
+        purpose: keyPurposeBitcoin(network: _network),
       );
       _attachHandle(handle);
-      // Host publishes the wallet name immediately so joiners see it.
-      await handle.setKeyName(keyName: walletName, purpose: keyPurposeTest());
     } catch (e) {
       _openError = '$e';
       notifyListeners();
@@ -180,7 +230,12 @@ class OrgKeygenController extends ChangeNotifier {
   void _attachHandle(RemoteLobbyHandle handle) {
     _handle = handle;
     _myPubkey = handle.myPubkey();
-    _stateSub = handle.subState().start().listen((state) {
+    // Store the broadcast subscription itself so its Rust handle
+    // isn't GC'd out from under us — see the field declaration
+    // comment above for why.
+    final broadcastSub = handle.subState();
+    _stateBroadcastSub = broadcastSub;
+    _stateSub = broadcastSub.start().listen((state) {
       _state = state;
       notifyListeners();
     });
@@ -207,46 +262,78 @@ class OrgKeygenController extends ChangeNotifier {
     await h.markReady(devices: regs);
   }
 
-  /// Host — propose or change threshold (publishes immediately).
-  Future<void> proposeThreshold(int threshold) async {
-    final h = _handle;
-    if (h == null) return;
-    _pendingThreshold = threshold;
-    await h.setThreshold(threshold: threshold);
-  }
-
-  Future<void> acceptThreshold() async {
-    final h = _handle;
-    final s = _state;
-    if (h == null || s == null) return;
-    final t = s.threshold;
-    if (t == null) return;
-    await h.acceptThreshold(threshold: t);
-  }
-
   void setPendingThreshold(int v) {
     _pendingThreshold = v;
     notifyListeners();
   }
 
+  /// Host-only. Enter the review screen locally — nothing is
+  /// published until the host actually taps "Generate keys".
   Future<void> goToReview() async {
     final s = _state;
     if (s == null || !s.allReady) return;
     _pendingThreshold ??= recommendedThreshold;
-    // Ensure the host's proposal is on the wire as we enter the review step.
-    await proposeThreshold(_pendingThreshold!);
     _step = OrgKeygenStep.review;
     notifyListeners();
   }
 
-  Future<void> tryStartKeygen(BuildContext context) async {
+  /// Joiner-side. Triggered by the page's pending-keygen watcher when
+  /// `state.pendingKeygen` first arrives. Slides the lobby out and the
+  /// accept screen in.
+  void goToAcceptKeygen() {
+    if (_step == OrgKeygenStep.acceptKeygen) return;
+    _step = OrgKeygenStep.acceptKeygen;
+    notifyListeners();
+  }
+
+  /// Host-only. Publish `StartKeygen`. Threshold + selected-participant
+  /// set are snapshotted from local state here and sent as arguments —
+  /// the Rust side does not own any of this; Dart is authoritative.
+  Future<void> startKeygen() async {
     final h = _handle;
-    if (h == null) return;
-    try {
-      await h.startKeygen();
-    } catch (e) {
-      if (context.mounted) showErrorSnackbar(context, '$e');
+    final s = _state;
+    if (h == null) throw StateError('lobby handle is gone');
+    if (s == null) throw StateError('no lobby state yet');
+    final threshold = _pendingThreshold ?? recommendedThreshold;
+    final selected = <FfiSelectedParticipant>[];
+    for (final p in s.participants) {
+      if (p.status != FfiParticipantStatus.ready) continue;
+      if (_excludedHex.contains(p.pubkey.toHex())) continue;
+      final regId = p.registerEventId;
+      if (regId == null) continue;
+      selected.add(
+        FfiSelectedParticipant(pubkey: p.pubkey, registerEventId: regId),
+      );
     }
+    if (selected.isEmpty) {
+      throw StateError('no Ready participants to include');
+    }
+    await h.startKeygen(threshold: threshold, selected: selected);
+  }
+
+  /// Selected joiners only. Publish `AckKeygen` referencing the current
+  /// `pendingKeygen.startKeygenEventId`. The host is implicitly acked
+  /// by virtue of having published `StartKeygen`, so they don't call
+  /// this.
+  Future<void> ackKeygen() async {
+    final h = _handle;
+    final s = _state;
+    if (h == null) throw StateError('lobby handle is gone');
+    if (s == null || s.pendingKeygen == null) {
+      throw StateError('no pending keygen to ack');
+    }
+    await h.ackKeygen(startKeygenEventId: s.pendingKeygen!.startKeygenEventId);
+  }
+
+  /// Host-only. Publishes `CancelLobby` and blocks until relay OK +
+  /// local state has flipped to `cancelled = true`. The page's
+  /// cancellation watcher observes that flip and pops for everyone —
+  /// both the host (who just tapped Cancel) and joiners (via their
+  /// own echoes from the relay).
+  Future<void> cancelLobby() async {
+    final h = _handle;
+    if (h == null) throw StateError('lobby handle is gone');
+    await h.cancel();
   }
 
   Future<String> _loadNsec() async {
@@ -276,14 +363,71 @@ class OrgKeygenController extends ChangeNotifier {
         _pendingThreshold = null;
       case OrgKeygenStep.review:
         _step = OrgKeygenStep.lobby;
+      case OrgKeygenStep.acceptKeygen:
+        // Back from the accept screen is a binding action: it cancels
+        // the keygen for everyone. Show a confirmation, then publish
+        // the appropriate abort (host: CancelLobby, joiner: Leave —
+        // which is treated as a cancel post-StartKeygen). The
+        // resulting `Cancelled` flip is handled by the page's
+        // existing `_watchForCancellation` (dialog + pop).
+        unawaited(_confirmCancelKeygen(context));
+        return;
     }
     notifyListeners();
+  }
+
+  Future<void> _confirmCancelKeygen(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          icon: const Icon(Icons.cancel_outlined),
+          title: const Text('Cancel this keygen?'),
+          content: const Text(
+            'This will end the keygen for everyone. To try again, '
+            'someone will need to start a brand new session.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Keep going'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Cancel keygen'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) return;
+    try {
+      if (isHost) {
+        await cancelLobby();
+      } else {
+        await _handle?.leave();
+      }
+    } catch (_) {
+      // Best-effort: if the publish failed (no relay reachable), the
+      // local watcher won't fire, so fall back to popping the page
+      // directly so the user isn't stuck.
+      if (context.mounted) Navigator.of(context).pop();
+    }
   }
 
   Future<void> _teardownHandle({required bool cancel}) async {
     final sub = _stateSub;
     _stateSub = null;
     await sub?.cancel();
+    // Unregister from the Rust broadcast so we don't accumulate
+    // zombie subscriptions if the page is reopened.
+    _stateBroadcastSub?.stop();
+    _stateBroadcastSub = null;
     final h = _handle;
     _handle = null;
     if (h != null) {
@@ -302,6 +446,8 @@ class OrgKeygenController extends ChangeNotifier {
   @override
   void dispose() {
     unawaited(_teardownHandle(cancel: isHost));
+    deviceSetup.removeListener(notifyListeners);
+    deviceSetup.dispose();
     nameController.dispose();
     joinLinkController.dispose();
     super.dispose();
@@ -324,6 +470,17 @@ class OrgKeygenPage extends StatefulWidget {
 class _OrgKeygenPageState extends State<OrgKeygenPage> {
   late final _ConcreteController _ctrl;
 
+  /// Latched so we only react to the first `cancelled = true`
+  /// transition — the watcher fires for both the host (their own
+  /// tap) and joiners (peer echo); either way we pop the page once.
+  bool _reactedToCancel = false;
+
+  /// Latched so we only show the accept-keygen modal once per
+  /// `pending_keygen` transition. The state listener fires for every
+  /// lobby event; without the latch we'd re-open the dialog
+  /// repeatedly.
+  bool _reactedToPendingKeygen = false;
+
   @override
   void initState() {
     super.initState();
@@ -332,15 +489,93 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
       nostrContextLookup: () => NostrContext.of(context),
     );
     _ctrl.addListener(_onUpdate);
+    _ctrl.addListener(_watchForCancellation);
+    _ctrl.addListener(_watchForPendingKeygen);
   }
 
   void _onUpdate() {
     if (mounted) setState(() {});
   }
 
+  void _watchForCancellation() {
+    if (_reactedToCancel) return;
+    final state = _ctrl.lobbyState;
+    if (state == null || !state.cancelled) return;
+    _reactedToCancel = true;
+    // Defer to post-frame so we don't push a dialog mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final isHost = _ctrl.isHost;
+      if (!isHost) {
+        // Peer-initiated cancel: inform the user before kicking them
+        // out of the page. Host-initiated cancel needs no dialog —
+        // they tapped the button.
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.cancel_outlined),
+            title: const Text('Lobby cancelled'),
+            content: const Text(
+              'The host cancelled this keygen session. '
+              'You can start a new session or join a different invite.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    });
+  }
+
+  void _watchForPendingKeygen() {
+    if (_reactedToPendingKeygen) return;
+    final state = _ctrl.lobbyState;
+    final pending = state?.pendingKeygen;
+    final me = _ctrl.myPubkey;
+    if (pending == null || me == null) return;
+    // `pendingKeygen` is now `Some` for *every* receiver of a
+    // `StartKeygen` (selected or not), so we have to filter on
+    // inclusion before sliding into the accept screen. Excluded
+    // receivers stay on the lobby and see the "started without you"
+    // banner. Both host and selected joiners transition — the host's
+    // accept-view skips the pre-ack branch because they're already in
+    // `pending.acked`.
+    if (!pending.includes(pubkey: me)) return;
+    _reactedToPendingKeygen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _ctrl.goToAcceptKeygen();
+    });
+  }
+
+  /// Mode A's "Decline" button: terminal, single tap. The on-screen
+  /// warning card already discloses that the action is final, so we
+  /// don't double-confirm. `Leave` from a selected participant after
+  /// `StartKeygen` lands fires `Cancelled` for everyone — the local
+  /// `_watchForCancellation` listener handles popping the page.
+  Future<void> _declineKeygenImmediate() async {
+    try {
+      await _ctrl.handle?.leave();
+    } catch (_) {
+      // Best-effort: if the relay is unreachable the watcher won't
+      // fire, so fall back to popping directly.
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   void dispose() {
     _ctrl.removeListener(_onUpdate);
+    _ctrl.removeListener(_watchForCancellation);
+    _ctrl.removeListener(_watchForPendingKeygen);
     _ctrl.dispose();
     super.dispose();
   }
@@ -352,7 +587,41 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _ctrl.back(context);
       },
-      child: SafeArea(child: _buildStep(context)),
+      child: SafeArea(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            // Outgoing step (animation reversed by AnimatedSwitcher) slides
+            // out to the left; incoming slides in from the right. The fade
+            // softens the cross-over so brief layout differences don't pop.
+            final offset = Tween<Offset>(
+              begin: const Offset(1.0, 0.0),
+              end: Offset.zero,
+            ).animate(animation);
+            return SlideTransition(
+              position: offset,
+              child: FadeTransition(opacity: animation, child: child),
+            );
+          },
+          layoutBuilder: (currentChild, previousChildren) {
+            // Default stacks centered; we want top-aligned + stretched so
+            // step layouts (which start with a header at the top) line up.
+            return Stack(
+              alignment: Alignment.topCenter,
+              children: <Widget>[
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ],
+            );
+          },
+          child: KeyedSubtree(
+            key: ValueKey(_ctrl.step),
+            child: _buildStep(context),
+          ),
+        ),
+      ),
     );
   }
 
@@ -370,6 +639,12 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
         return _LobbyView(ctrl: _ctrl);
       case OrgKeygenStep.review:
         return _ReviewView(ctrl: _ctrl);
+      case OrgKeygenStep.acceptKeygen:
+        return _AcceptKeygenView(
+          ctrl: _ctrl,
+          onDeclineImmediate: _declineKeygenImmediate,
+          onCancelWithConfirm: () => _ctrl._confirmCancelKeygen(context),
+        );
     }
   }
 }
@@ -509,7 +784,13 @@ class _JoinSessionViewState extends State<_JoinSessionView> {
 
   void _onChanged() {
     if (!mounted) return;
-    if (_attempted) setState(() => _attempted = false);
+    // Always rebuild so the Join button's enabled state (which depends
+    // on the text) tracks the controller. Clear `_attempted` on the
+    // same tick so a prior "invalid link" error fades as the user
+    // starts editing.
+    setState(() {
+      if (_attempted) _attempted = false;
+    });
   }
 
   /// First time the field gains focus, drop the URL scheme in so the
@@ -538,16 +819,18 @@ class _JoinSessionViewState extends State<_JoinSessionView> {
     }
   }
 
-  void _scan() {
-    // QR scanning exists elsewhere in the app but hasn't been wired up
-    // to this flow yet. Surface a placeholder so the button isn't a
-    // dead-end, matching the mockup's shape.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('QR scanning from here is not wired up yet'),
-        duration: Duration(seconds: 2),
-      ),
+  Future<void> _scan() async {
+    final scanned = await MaybeFullscreenDialog.show<String>(
+      context: context,
+      child: const QrStringScanner(title: 'Scan invite'),
     );
+    if (!mounted || scanned == null) return;
+    ctrl.joinLinkController.text = scanned.trim();
+    // If what we scanned is a valid keygen link, submit immediately —
+    // the user's intent for scanning is "I've got the invite, take me
+    // there". If it's not valid, leave it in the field so the
+    // errorText guides them.
+    _trySubmit();
   }
 
   @override
@@ -637,6 +920,8 @@ class _NameView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -665,6 +950,11 @@ class _NameView extends StatelessWidget {
             onSubmitted: (_) => ctrl.submitName(),
           ),
         ),
+        if (devMode)
+          NetworkAdvancedOptions(
+            selected: ctrl.network,
+            onChanged: ctrl.setNetwork,
+          ),
         const Divider(height: 0),
         Padding(
           padding: const EdgeInsets.all(16),
@@ -731,16 +1021,42 @@ class _LobbyView extends StatelessWidget {
                         style: TextStyle(color: theme.colorScheme.onErrorContainer)),
                   ),
                 ),
-              if (state?.cancelled == true)
+              // Local participant saw a `StartKeygen` arrive but their
+              // pubkey isn't in the selected set — surface a terminal
+              // banner so the user can pop the page rather than sitting
+              // on a stale lobby view. Inclusion is derived from
+              // `pending_keygen.includes(myPubkey)` rather than a
+              // separate latched flag on `LobbyState`.
+              if (state != null &&
+                  state.pendingKeygen != null &&
+                  ctrl.myPubkey != null &&
+                  !state.pendingKeygen!.includes(pubkey: ctrl.myPubkey!))
                 Card.filled(
-                  color: theme.colorScheme.errorContainer,
+                  color: theme.colorScheme.surfaceContainerHighest,
                   child: ListTile(
-                    leading: Icon(Icons.cancel_outlined,
-                        color: theme.colorScheme.onErrorContainer),
-                    title: Text('Lobby cancelled by host',
-                        style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+                    leading: Icon(Icons.info_outline_rounded,
+                        color: theme.colorScheme.onSurfaceVariant),
+                    title: Text(
+                      'This round started without you',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    subtitle: Text(
+                      'The host chose a different set of participants. '
+                      'You can close this lobby — there\'s nothing more to do here.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    trailing: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
                   ),
                 ),
+              // `state.cancelled == true` is now handled at the page
+              // level by `_watchForCancellation` (dialog + pop), so
+              // no inline banner is needed — the user will be looking
+              // at the dialog within one frame of the state flip.
               if (!channelReady)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 48),
@@ -780,9 +1096,25 @@ class _LobbyView extends StatelessWidget {
         const Divider(height: 0),
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: _LobbyPrimaryButton(ctrl: ctrl),
+          child: Row(
+            children: [
+              // Host-only: explicit red "Cancel lobby" action. Publishes
+              // `CancelLobby` (awaits relay OK + local apply via
+              // `dispatch`), then the page pops on the resulting
+              // `state.cancelled = true` transition. Joiners see the
+              // same state change and get a dialog + pop.
+              if (ctrl.isHost && ctrl.handle != null)
+                AsyncActionButton(
+                  onPressed: ctrl.cancelLobby,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: theme.colorScheme.onError,
+                  ),
+                  child: const Text('Cancel lobby'),
+                ),
+              const Spacer(),
+              _LobbyPrimaryButton(ctrl: ctrl),
+            ],
           ),
         ),
       ],
@@ -815,7 +1147,7 @@ class _LobbyPrimaryButton extends StatelessWidget {
       return const FilledButton(onPressed: null, child: Text('Need at least 2 devices total'));
     }
     if (!ctrl.isHost) {
-      return const FilledButton(onPressed: null, child: Text('Waiting for host'));
+      return const _WaitingForHostStatus();
     }
     return FilledButton.icon(
       icon: const Icon(Icons.arrow_forward_rounded),
@@ -857,8 +1189,22 @@ class _ParticipantRowState extends State<_ParticipantRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = widget.participant;
-    final isReady = p.status == FfiParticipantStatus.ready ||
-        p.status == FfiParticipantStatus.accepted;
+    final isReady = p.status == FfiParticipantStatus.ready;
+    final excluded = widget.ctrl.isExcluded(p.pubkey);
+    // Host-only exclusion toggle: only meaningful for Ready participants
+    // who aren't the host themselves. Lives at the start of the trailing
+    // slot, before whichever status/action widgets the row renders.
+    final showExclusionToggle =
+        widget.ctrl.isHost && !widget.isMe && isReady;
+    final exclusionToggle = showExclusionToggle
+        ? Tooltip(
+            message: excluded ? 'Include in keygen' : 'Exclude from keygen',
+            child: Switch.adaptive(
+              value: !excluded,
+              onChanged: (v) => widget.ctrl.setIncluded(p.pubkey, v),
+            ),
+          )
+        : null;
 
     final Widget trailing;
     if (widget.readOnly) {
@@ -866,6 +1212,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
         mainAxisSize: MainAxisSize.min,
         spacing: 8,
         children: [
+          if (exclusionToggle != null) exclusionToggle,
           _reviewStatusLabel(context, p),
           AnimatedRotation(
             turns: _expanded ? 0.5 : 0.0,
@@ -907,30 +1254,23 @@ class _ParticipantRowState extends State<_ParticipantRow> {
                   size: 18, color: Colors.green),
             ],
           ),
-        FfiParticipantStatus.accepted => Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 4,
-            children: [
-              Text('Accepted',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(color: Colors.green)),
-              const Icon(Icons.verified_rounded,
-                  size: 18, color: Colors.green),
-            ],
-          ),
       };
 
       trailing = Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 4,
         children: [
+          if (exclusionToggle != null) exclusionToggle,
           statusLabel,
           SizedBox(width: 36, height: 36, child: trailingAction),
         ],
       );
     }
 
-    return Card.filled(
+    return AnimatedOpacity(
+      duration: Durations.short3,
+      opacity: excluded ? 0.55 : 1.0,
+      child: Card.filled(
       margin: const EdgeInsets.symmetric(vertical: 3),
       color: theme.colorScheme.surfaceContainerHigh,
       clipBehavior: Clip.hardEdge,
@@ -1004,17 +1344,16 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           ),
         ],
       ),
+      ),
     );
   }
 
-  /// Phase-aware status for the review step:
-  /// - everyone accepted → green "Ready"
-  /// - threshold not set: host "Selecting threshold" / others "Waiting"
-  /// - threshold set but participant hasn't accepted: host "Waiting" /
-  ///   others "Reviewing threshold"
+  /// Status label for the (host-only) review step. Since threshold
+  /// no longer has its own negotiation round-trip, any Ready
+  /// participant is green "Ready"; anyone still Joining is muted.
   Widget _reviewStatusLabel(BuildContext context, FfiLobbyParticipant p) {
     final theme = Theme.of(context);
-    if (p.status == FfiParticipantStatus.accepted) {
+    if (p.status == FfiParticipantStatus.ready) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 4,
@@ -1027,14 +1366,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
         ],
       );
     }
-    final thresholdSet = widget.ctrl.lobbyState?.threshold != null;
-    final String text;
-    if (!thresholdSet) {
-      text = p.isInitiator ? 'Selecting threshold' : 'Waiting';
-    } else {
-      text = p.isInitiator ? 'Waiting' : 'Reviewing threshold';
-    }
-    return Text(text,
+    return Text('Joining',
         style: theme.textTheme.bodySmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant));
   }
@@ -1193,9 +1525,10 @@ class _DashedBorderPainter extends CustomPainter {
 }
 
 void _showInviteDialog(BuildContext context, RemoteLobbyHandle handle) {
-  showDialog<void>(
+  MaybeFullscreenDialog.show<void>(
     context: context,
-    builder: (_) => _InviteDialog(inviteLink: handle.inviteLink()),
+    barrierDismissible: true,
+    child: _InviteDialog(inviteLink: handle.inviteLink()),
   );
 }
 
@@ -1206,96 +1539,69 @@ class _InviteDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Dialog(
-      clipBehavior: Clip.hardEdge,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 580),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                      child: Text('Invite participants',
-                          style: theme.textTheme.titleLarge)),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+    return FullscreenDialogScaffold(
+      title: const Text('Invite participants'),
+      body: SliverList.list(
+        children: [
+          Center(
+            child: Container(
+              width: 220,
+              height: 220,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-              child: Center(
-                child: Container(
-                  width: 220,
-                  height: 220,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: PrettyQrView.data(
-                    data: inviteLink,
-                    decoration: const PrettyQrDecoration(
-                      shape: PrettyQrSmoothSymbol(),
-                    ),
-                  ),
+              child: PrettyQrView.data(
+                data: inviteLink,
+                decoration: const PrettyQrDecoration(
+                  shape: PrettyQrSmoothSymbol(),
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: SelectableText(
-                inviteLink,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant),
-              ),
+          ),
+          const SizedBox(height: 16),
+          SelectableText(
+            inviteLink,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Row(
-                spacing: 12,
-                children: [
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      icon: const Icon(Icons.copy_rounded, size: 18),
-                      label: const Text('Copy'),
-                      onPressed: () async {
-                        await Clipboard.setData(
-                            ClipboardData(text: inviteLink));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Copied')),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      icon: const Icon(Icons.share_rounded, size: 18),
-                      label: const Text('Share invite'),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Share not wired up yet'),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
+          ),
+        ],
+      ),
+      footer: Row(
+        spacing: 12,
+        children: [
+          Expanded(
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              label: const Text('Copy'),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: inviteLink));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Copied')),
+                  );
+                }
+              },
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.share_rounded, size: 18),
+              label: const Text('Share invite'),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Share not wired up yet'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1306,10 +1612,10 @@ class _InviteDialog extends StatelessWidget {
 // =============================================================================
 
 void _showDeviceSetupDialog(BuildContext context, OrgKeygenController ctrl) {
-  showDialog<void>(
+  MaybeFullscreenDialog.show<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _DeviceSetupDialog(ctrl: ctrl),
+    child: _DeviceSetupDialog(ctrl: ctrl),
   );
 }
 
@@ -1322,14 +1628,10 @@ class _DeviceSetupDialog extends StatefulWidget {
 }
 
 class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
-  StreamSubscription<DeviceListUpdate>? _sub;
-  List<ConnectedDevice> _devices = [];
-  // Keyed by device id using the custom hash/eq helpers (DeviceId has no
-  // working `==`). Text controllers persist for the lifetime of the
-  // dialog; controllers for disconnected devices are disposed eagerly so
-  // the user's typed names for re-plugged devices don't accidentally
-  // resurrect.
-  final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
+  // The controller is owned by `OrgKeygenController` so typed names
+  // and name previews survive dialog close/reopen. We only subscribe
+  // here for rebuilds — ownership (including dispose) stays upstream.
+  DeviceSetupController get _setup => widget.ctrl.deviceSetup;
 
   bool _submitting = false;
   String? _submitError;
@@ -1337,47 +1639,18 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
   @override
   void initState() {
     super.initState();
-    _sub = GlobalStreams.deviceListSubject.listen((update) {
-      if (!mounted) return;
-      setState(() {
-        _devices = update.state.devices.toList();
-        _syncControllers();
-      });
-    });
-  }
-
-  void _syncControllers() {
-    final present = deviceIdSet(_devices.map((d) => d.id));
-    // Add controllers for newly-plugged devices, pre-seeding with the
-    // device's on-device name if it has one.
-    for (final dev in _devices) {
-      _nameControllers.putIfAbsent(
-        dev.id,
-        () => TextEditingController(text: dev.name ?? ''),
-      );
-    }
-    // Drop controllers for devices that are no longer connected.
-    final stale = _nameControllers.keys
-        .where((id) => !present.contains(id))
-        .toList();
-    for (final id in stale) {
-      _nameControllers.remove(id)?.dispose();
-    }
+    _setup.addListener(_onChanged);
   }
 
   @override
   void dispose() {
-    _sub?.cancel();
-    for (final c in _nameControllers.values) {
-      c.dispose();
-    }
+    _setup.removeListener(_onChanged);
     super.dispose();
   }
 
-  String _name(DeviceId id) => _nameControllers[id]?.text.trim() ?? '';
-
-  bool get _allNamed =>
-      _devices.isNotEmpty && _devices.every((d) => _name(d.id).isNotEmpty);
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _submit() async {
     setState(() {
@@ -1385,7 +1658,12 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
       _submitError = null;
     });
     try {
-      final devices = _devices.map((d) => (id: d.id, name: _name(d.id))).toList();
+      // Snapshot synchronously before the async gap so a device
+      // plug/unplug mid-`markReady` can't desync the list from the
+      // names we just validated via `_setup.ready`.
+      final devices = _setup.devices
+          .map((d) => (id: d.id, name: _setup.deviceNames[d.id]!))
+          .toList();
       await widget.ctrl.markReady(devices);
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -1401,139 +1679,60 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Dialog(
-      clipBehavior: Clip.hardEdge,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 580),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 20, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    onPressed: () => Navigator.of(context).pop(),
+    final count = _setup.connectedDeviceCount;
+
+    final errorBanner = _submitError == null
+        ? null
+        : SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Card.filled(
+                margin: EdgeInsets.zero,
+                color: theme.colorScheme.errorContainer,
+                child: ListTile(
+                  leading: Icon(
+                    Icons.error_outline,
+                    color: theme.colorScheme.onErrorContainer,
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text('Add your devices',
-                        style: theme.textTheme.titleLarge),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-              child: Text(
-                'Each device you add will hold one key in the wallet.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ),
-            Flexible(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                shrinkWrap: true,
-                children: [
-                  if (_submitError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Card.filled(
-                        color: theme.colorScheme.errorContainer,
-                        child: ListTile(
-                          leading: Icon(Icons.error_outline,
-                              color: theme.colorScheme.onErrorContainer),
-                          title: Text(_submitError!,
-                              style: TextStyle(
-                                  color: theme.colorScheme.onErrorContainer)),
-                        ),
-                      ),
+                  title: Text(
+                    _submitError!,
+                    style: TextStyle(
+                      color: theme.colorScheme.onErrorContainer,
                     ),
-                  if (_devices.isNotEmpty)
-                    Text('Devices', style: theme.textTheme.labelLarge),
-                  if (_devices.isNotEmpty) const SizedBox(height: 4),
-                  for (final device in _devices)
-                    _DeviceNameRow(
-                      controller: _nameControllers[device.id]!,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  const SizedBox(height: 8),
-                  // Always-visible plug-in prompt — both the empty state
-                  // and the "plug in more" hint.
-                  AnimatedGradientCard(
-                    child: const ListTile(
-                      dense: true,
-                      title: Text(
-                          'Plug in all devices you want to hold a key.'),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                      leading: Icon(Icons.usb_rounded),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 0),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  onPressed: (_allNamed && !_submitting) ? _submit : null,
-                  icon: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.arrow_forward_rounded),
-                  iconAlignment: IconAlignment.end,
-                  label: Text(
-                    'Continue with ${_devices.length} '
-                    '${_devices.length == 1 ? "device" : "devices"}',
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          );
+
+    return FullscreenDialogScaffold(
+      title: const Text('Add your devices'),
+      subtitle: 'Each device you add will hold one key in the wallet.',
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => Navigator.of(context).pop(),
+        tooltip: 'Back',
       ),
-    );
-  }
-}
-
-class _DeviceNameRow extends StatelessWidget {
-  const _DeviceNameRow({required this.controller, required this.onChanged});
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card.filled(
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      color: theme.colorScheme.surfaceContainerHigh,
-      child: ListTile(
-        leading: const Icon(Icons.key),
-        title: ValueListenableBuilder<TextEditingValue>(
-          valueListenable: controller,
-          builder: (context, value, _) => TextField(
-            controller: controller,
-            autofocus: value.text.trim().isEmpty,
-            maxLength: DeviceName.maxLength(),
-            inputFormatters: [nameInputFormatter],
-            decoration: InputDecoration(
-              hintText: 'Name this device',
-              isDense: true,
-              counterText: '',
-              suffixText: '${value.text.length}/${DeviceName.maxLength()}',
-              suffixStyle: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              border: const OutlineInputBorder(borderSide: BorderSide.none),
-              filled: true,
-            ),
-            onChanged: onChanged,
+      body: MultiSliver(
+        children: [
+          if (errorBanner != null) errorBanner,
+          DeviceSetupView(controller: _setup),
+        ],
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: (_setup.ready && !_submitting) ? _submit : null,
+          icon: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.arrow_forward_rounded),
+          iconAlignment: IconAlignment.end,
+          label: Text(
+            'Continue with $count ${count == 1 ? "device" : "devices"}',
           ),
         ),
       ),
@@ -1572,14 +1771,7 @@ class _ReviewView extends StatelessWidget {
                     threshold: ctrl.displayThreshold.clamp(1, max(total, 1)),
                     totalDevices: max(total, 1),
                     recommendedThreshold: ctrl.recommendedThreshold,
-                    onChanged: (v) {
-                      // Host's drag updates local pending state AND
-                      // publishes the proposal. Re-sending a SetThreshold
-                      // clears acceptances, matching the mockup's
-                      // lock/unlock semantics.
-                      ctrl.setPendingThreshold(v);
-                      unawaited(ctrl.proposeThreshold(v));
-                    },
+                    onChanged: (v) => ctrl.setPendingThreshold(v),
                   ),
                 ),
               ),
@@ -1608,32 +1800,452 @@ class _ReviewPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Host-only screen now: the review step is never reached by
+    // joiners (they see the accept-modal triggered by
+    // `state.pendingKeygen`). The only action here is terminal —
+    // publishing `StartKeygen`.
     final state = ctrl.lobbyState;
     if (state == null) {
       return const FilledButton(onPressed: null, child: Text('Connecting…'));
     }
-    if (!ctrl.isHost) {
-      if (state.threshold == null) {
-        return const FilledButton(onPressed: null, child: Text('Waiting for host'));
-      }
-      if (!ctrl.meAccepted) {
-        return FilledButton.icon(
-          icon: const Icon(Icons.check_rounded),
-          onPressed: ctrl.acceptThreshold,
-          label: const Text('Accept threshold'),
-        );
-      }
-      return const FilledButton(onPressed: null, child: Text('Waiting for host'));
-    }
-    if (!state.allAccepted) {
+    if (!state.allReady) {
       return const FilledButton(
         onPressed: null,
         child: Text('Waiting for participants'),
       );
     }
-    return FilledButton(
-      onPressed: () => ctrl.tryStartKeygen(context),
+    return AsyncActionButton(
+      onPressed: ctrl.startKeygen,
       child: const Text('Generate keys'),
+    );
+  }
+}
+
+// =============================================================================
+// Step 6: accept keygen (joiner)
+// =============================================================================
+
+class _AcceptKeygenView extends StatelessWidget {
+  const _AcceptKeygenView({
+    required this.ctrl,
+    required this.onDeclineImmediate,
+    required this.onCancelWithConfirm,
+  });
+  final OrgKeygenController ctrl;
+
+  /// Mode A's terminal "Decline" action — single tap, no confirmation
+  /// dialog (the on-screen warning card discloses the finality).
+  final Future<void> Function() onDeclineImmediate;
+
+  /// Mode B's "Cancel keygen" action — routes through the same
+  /// confirmation dialog as the OS back gesture, since the user has
+  /// already committed by acking and the cancel is more weighted.
+  final Future<void> Function() onCancelWithConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ctrl.lobbyState;
+    final pending = state?.pendingKeygen;
+    final me = ctrl.myPubkey;
+
+    if (pending == null) {
+      // Brief gap between step flip and the post-frame state arriving.
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final iAmAcked = me != null &&
+        pending.acked.any((pk) => pk.equals(other: me));
+
+    return iAmAcked
+        ? _AcceptKeygenWaitingView(
+            ctrl: ctrl,
+            pending: pending,
+            onCancelWithConfirm: onCancelWithConfirm,
+          )
+        : _AcceptKeygenDecisionView(
+            ctrl: ctrl,
+            pending: pending,
+            onDeclineImmediate: onDeclineImmediate,
+          );
+  }
+}
+
+/// Mode A: pre-ack. Hero N-of-M, wallet/network info, "decline is
+/// final" disclosure, Decline + Accept footer.
+class _AcceptKeygenDecisionView extends StatelessWidget {
+  const _AcceptKeygenDecisionView({
+    required this.ctrl,
+    required this.pending,
+    required this.onDeclineImmediate,
+  });
+  final OrgKeygenController ctrl;
+  final FfiPendingKeygen pending;
+  final Future<void> Function() onDeclineImmediate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = ctrl.lobbyState;
+    final keyName = state?.keyName ?? '';
+    final purpose = state?.purpose;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _Header(title: 'Generate this key?'),
+        Flexible(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            shrinkWrap: true,
+            children: [
+              _ThresholdHero(
+                threshold: pending.threshold,
+                total: pending.participants.length,
+              ),
+              const SizedBox(height: 24),
+              _AcceptInfoRow(
+                icon: Icons.account_balance_wallet_rounded,
+                label: 'Wallet',
+                value: keyName,
+              ),
+              Builder(
+                builder: (context) {
+                  final network = purpose?.bitcoinNetwork();
+                  if (network == null || network.isMainnet()) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: _AcceptInfoRow(
+                      icon: Icons.dns_rounded,
+                      label: 'Network',
+                      value: network.name(),
+                      valueColor: theme.colorScheme.error,
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 24),
+              Card.filled(
+                color: theme.colorScheme.surfaceContainerHighest,
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Declining is final. If the host wants to try '
+                          'again they will have to start a new session.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 0),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: () => onDeclineImmediate(),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                ),
+                child: const Text('Decline'),
+              ),
+              const Spacer(),
+              AsyncActionButton(
+                onPressed: ctrl.ackKeygen,
+                icon: Icons.arrow_forward_rounded,
+                child: const Text('Accept'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Mode B: post-ack. Compact N-of-M header, per-participant ack
+/// status list, single "Cancel keygen" action.
+class _AcceptKeygenWaitingView extends StatelessWidget {
+  const _AcceptKeygenWaitingView({
+    required this.ctrl,
+    required this.pending,
+    required this.onCancelWithConfirm,
+  });
+  final OrgKeygenController ctrl;
+  final FfiPendingKeygen pending;
+  final Future<void> Function() onCancelWithConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final me = ctrl.myPubkey;
+    final ackedHex = pending.acked.map((pk) => pk.toHex()).toSet();
+    final participants = pending.participants;
+    // `acked` is guaranteed to be a subset of `participants` Rust-side,
+    // so `length` equality is the canonical "everyone has acked" check.
+    final allAcked = ackedHex.length == participants.length;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _Header(title: 'Waiting on keygen'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Text(
+            allAcked
+                ? 'Everyone is in. Starting keygen…'
+                : '${ackedHex.length} of ${participants.length} accepted',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _ThresholdHero(
+            threshold: pending.threshold,
+            total: participants.length,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Flexible(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            shrinkWrap: true,
+            children: [
+              for (final p in participants)
+                _AckStatusRow(
+                  participant: p,
+                  isMe: me != null && p.pubkey.equals(other: me),
+                  isAcked: ackedHex.contains(p.pubkey.toHex()),
+                  isInitiator: pending.initiator.equals(other: p.pubkey),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 0),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: () => onCancelWithConfirm(),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                ),
+                child: const Text('Cancel keygen'),
+              ),
+              const Spacer(),
+              if (allAcked)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Starting keygen…',
+                      style: theme.textTheme.labelLarge,
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AckStatusRow extends StatelessWidget {
+  const _AckStatusRow({
+    required this.participant,
+    required this.isMe,
+    required this.isAcked,
+    required this.isInitiator,
+  });
+  final FfiLobbyParticipant participant;
+  final bool isMe;
+  final bool isAcked;
+  final bool isInitiator;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final name = participant.devices.isEmpty
+        ? participant.pubkey.toHex().substring(0, 8)
+        : participant.devices.map((d) => d.name).join(', ');
+    final label = StringBuffer(name);
+    if (isMe) label.write(' (you)');
+    if (isInitiator) label.write(' · host');
+
+    final trailing = isAcked
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.check_circle_rounded,
+                size: 18,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Accepted',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Waiting',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label.toString(),
+              style: theme.textTheme.bodyLarge,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _ThresholdHero extends StatelessWidget {
+  const _ThresholdHero({required this.threshold, required this.total});
+  final int threshold;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        children: [
+          RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              style: theme.textTheme.displayMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+              children: [
+                TextSpan(text: '$threshold'),
+                TextSpan(
+                  text: '  of  ',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+                TextSpan(text: '$total'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'signatures required to spend',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AcceptInfoRow extends StatelessWidget {
+  const _AcceptInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: valueColor ?? theme.colorScheme.onSurface,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1642,20 +2254,57 @@ class _ReviewPrimaryButton extends StatelessWidget {
 // Shared pieces
 // =============================================================================
 
-class _Header extends StatelessWidget {
-  const _Header({required this.title, required this.onBack});
-  final String title;
-  final VoidCallback onBack;
+class _WaitingForHostStatus extends StatelessWidget {
+  const _WaitingForHostStatus();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Waiting for host…',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.title, this.onBack});
+  final String title;
+
+  /// `null` hides the back arrow entirely — used on screens where the
+  /// only valid exits are the explicit footer actions.
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(onBack == null ? 16 : 4, 0, 16, 0),
       child: Row(
         children: [
-          IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: onBack),
-          const SizedBox(width: 8),
+          if (onBack != null) ...[
+            IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: onBack),
+            const SizedBox(width: 8),
+          ],
           Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
         ],
       ),

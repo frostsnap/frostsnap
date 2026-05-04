@@ -90,3 +90,9 @@ impl KeyPurpose {
 pub fn key_purpose_test() -> KeyPurpose {
     KeyPurpose::Test
 }
+
+/// Build a `KeyPurpose::Bitcoin(network)` from Dart.
+#[frb(sync)]
+pub fn key_purpose_bitcoin(network: BitcoinNetwork) -> KeyPurpose {
+    KeyPurpose::Bitcoin(network)
+}

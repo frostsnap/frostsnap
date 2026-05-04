@@ -201,7 +201,11 @@ class WalletAddColumn extends StatelessWidget {
     if (!context.mounted) return;
     final choice = await MaybeFullscreenDialog.show<WalletTypeChoice>(
       context: context,
-      barrierDismissible: true,
+      // Dismissing by tap-outside would silently drop an in-progress
+      // lobby without telling peers. Force the user through the
+      // explicit back / cancel paths, which publish `CancelLobby` for
+      // the host so joiners get evicted too.
+      barrierDismissible: false,
       child: OrgKeygenPage(nostrClient: nostrClient),
     );
     if (!context.mounted || choice != WalletTypeChoice.personal) return;

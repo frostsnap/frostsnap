@@ -6,9 +6,10 @@ use frostsnap_core::{
     message::EncodedSignature,
     AccessStructureId, AccessStructureRef, SignSessionId, SymmetricKey, WireSignTask,
 };
+use frostsnap_core::device::KeyPurpose;
 use frostsnap_nostr::{
     channel::{parse_frostsnap_link, parse_keygen_link},
-    keygen::LobbyClient,
+    keygen::{LobbyChannelMetadata, LobbyClient},
     ChannelClient, ChannelHandle, ChannelInitData, ChannelKeys, ChannelRunner, Client, Keys,
     NostrDatabaseExt, NostrLMDB, NostrProfile, ToBech32,
 };
@@ -433,17 +434,23 @@ impl NostrClient {
     }
 
     /// Open a remote keygen lobby at `channel_secret` as the initiator.
-    /// Publishes the nostr `ChannelCreation` event and returns a handle
-    /// the caller uses to register devices, publish metadata, or cancel.
+    /// Publishes the nostr `ChannelCreation` event — with the wallet
+    /// name + purpose carried inline in its content — and returns a
+    /// handle the caller uses to register devices or cancel.
     pub async fn create_remote_lobby(
         &self,
         channel_secret: ChannelSecret,
         nsec: String,
+        key_name: String,
+        purpose: KeyPurpose,
     ) -> Result<super::remote_keygen::RemoteLobbyHandle> {
         let keys = Keys::parse(&nsec)?;
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let invite_link = channel_secret.keygen_invite_link();
-        let init_event = lobby_client.build_creation_event(&keys).await?;
+        let metadata = LobbyChannelMetadata { key_name, purpose };
+        let init_event = lobby_client
+            .build_creation_event(&keys, &metadata)
+            .await?;
         let (broadcast, sink) = super::remote_keygen::RemoteLobbyHandle::build_bridge();
         let handle = lobby_client
             .run(self.client.clone(), keys.clone(), Some(init_event), sink)

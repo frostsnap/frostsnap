@@ -171,44 +171,42 @@ impl UsbSerialManager {
     }
 
     pub fn poll_ports(&mut self) -> Vec<DeviceChange> {
-        if !self.enabled.load(Ordering::Relaxed) {
-            return self.disconnect_all();
-        }
-
         let span = span!(Level::DEBUG, "poll_ports");
         let _enter = span.enter();
         let mut device_changes = vec![];
 
-        let connected_now: HashSet<String> = self
-            .serial_impl
-            .available_ports()
-            .into_iter()
-            .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
-            .map(|desc| desc.id)
-            .collect();
+        if self.enabled.load(Ordering::Relaxed) {
+            let connected_now: HashSet<String> = self
+                .serial_impl
+                .available_ports()
+                .into_iter()
+                .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
+                .map(|desc| desc.id)
+                .collect();
 
-        let newly_connected_ports = connected_now
-            .difference(&self.connected)
-            .cloned()
-            .collect::<Vec<_>>();
-        for port in newly_connected_ports {
-            event!(Level::INFO, port = port, "USB port connected");
-            self.connected.insert(port.clone());
-            self.pending.insert(port.clone());
-        }
+            let newly_connected_ports = connected_now
+                .difference(&self.connected)
+                .cloned()
+                .collect::<Vec<_>>();
+            for port in newly_connected_ports {
+                event!(Level::INFO, port = port, "USB port connected");
+                self.connected.insert(port.clone());
+                self.pending.insert(port.clone());
+            }
 
-        let disconnected_ports = self
-            .connected
-            .difference(&connected_now)
-            .cloned()
-            .collect::<Vec<_>>();
-        for port in disconnected_ports {
-            event!(
-                Level::DEBUG,
-                port = port.to_string(),
-                "USB port disconnected"
-            );
-            self.disconnect(&port, &mut device_changes);
+            let disconnected_ports = self
+                .connected
+                .difference(&connected_now)
+                .cloned()
+                .collect::<Vec<_>>();
+            for port in disconnected_ports {
+                event!(
+                    Level::DEBUG,
+                    port = port.to_string(),
+                    "USB port disconnected"
+                );
+                self.disconnect(&port, &mut device_changes);
+            }
         }
 
         for port_name in self.pending.drain().collect::<Vec<_>>() {
