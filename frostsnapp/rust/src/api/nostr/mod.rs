@@ -116,7 +116,7 @@ impl NostrSettings {
                 |row| row.get(0),
             )
             .ok();
-        nsec.and_then(|n| Keys::parse(&n).ok().map(|k| k.public_key()))
+        nsec.and_then(|n| Keys::parse(&n).ok().map(|k| k.public_key().into()))
     }
 
     /// Subscribe to identity changes. Emits current value immediately.
@@ -160,7 +160,7 @@ impl NostrSettings {
         // Update in-memory + emit
         {
             let mut inner = self.inner.write().unwrap();
-            inner.pubkey = Some(keys.public_key());
+            inner.pubkey = Some(keys.public_key().into());
         }
         self.emit_identity();
         tracing::info!("Nostr identity configured");
@@ -234,15 +234,16 @@ impl NostrClient {
     /// Checks the local cache first, then fetches from relays if not found.
     /// Returns None if the user has no profile.
     pub async fn fetch_profile(&self, pubkey: &PublicKey) -> Result<Option<NostrProfile>> {
+        let nostr_pk = (*pubkey).into();
         // 📦 Check cache first
-        if let Ok(Some(metadata)) = self.client.database().metadata(*pubkey).await {
+        if let Ok(Some(metadata)) = self.client.database().metadata(nostr_pk).await {
             return Ok(Some(NostrProfile::from_metadata(*pubkey, metadata)));
         }
 
         // 🌐 Fetch from relays
         match self
             .client
-            .fetch_metadata(*pubkey, Duration::from_secs(5))
+            .fetch_metadata(nostr_pk, Duration::from_secs(5))
             .await
         {
             Ok(Some(metadata)) => Ok(Some(NostrProfile::from_metadata(*pubkey, metadata))),
@@ -555,12 +556,12 @@ impl Nsec {
     /// Derive the public key from this secret key.
     #[frb(sync)]
     pub fn public_key(&self) -> PublicKey {
-        Keys::parse(&self.0).expect("validated").public_key()
+        Keys::parse(&self.0).expect("validated").public_key().into()
     }
 }
 
 // ============================================================================
-// PublicKey - Opaque mirror of nostr_sdk::PublicKey
+// PublicKey - Value mirror (32 bytes, x-only)
 // ============================================================================
 
 #[frb(mirror(ChannelSecret))]
@@ -613,8 +614,33 @@ impl ChannelSecretExt for ChannelSecret {
     }
 }
 
-#[frb(mirror(PublicKey), opaque)]
-pub struct _PublicKey {}
+/// Mirrors `frostsnap_nostr::PublicKey`. Same `dart_code` override as
+/// `EventId` — content-equality `==` / `hashCode` so `PublicKey` works
+/// as a `Map` key on the Dart side.
+#[frb(
+    mirror(PublicKey),
+    non_opaque,
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PublicKey && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
+pub struct _PublicKey(pub [u8; 32]);
 
 #[frb(external)]
 impl PublicKey {
@@ -622,38 +648,7 @@ impl PublicKey {
     pub fn to_hex(&self) -> String {}
 
     #[frb(sync)]
-    pub fn to_npub(&self) -> Result<String> {}
-
-    #[frb(sync)]
-    pub fn equals(&self, _other: &PublicKey) -> bool {}
-}
-
-pub trait PublicKeyExt {
-    #[frb(sync)]
-    fn to_hex(&self) -> String;
-
-    #[frb(sync)]
-    fn to_npub(&self) -> Result<String>;
-
-    #[frb(sync)]
-    fn equals(&self, other: &PublicKey) -> bool;
-}
-
-impl PublicKeyExt for PublicKey {
-    #[frb(sync)]
-    fn to_hex(&self) -> String {
-        frostsnap_nostr::PublicKey::to_hex(self)
-    }
-
-    #[frb(sync)]
-    fn to_npub(&self) -> Result<String> {
-        Ok(self.to_bech32()?)
-    }
-
-    #[frb(sync)]
-    fn equals(&self, other: &PublicKey) -> bool {
-        self == other
-    }
+    pub fn to_npub(&self) -> String {}
 }
 
 // ============================================================================

@@ -27,7 +27,7 @@ class GroupInfoPage extends StatelessWidget {
     final myPubkey = nostrState.myPubkey;
 
     final otherMembers = members
-        .where((m) => myPubkey == null || !m.equals(other: myPubkey))
+        .where((m) => myPubkey == null || m != myPubkey)
         .toList();
 
     return Scaffold(

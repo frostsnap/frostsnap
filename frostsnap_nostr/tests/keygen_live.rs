@@ -17,7 +17,7 @@ use frostsnap_nostr::{
         DeviceKind, DeviceRegistration, LobbyChannelMetadata, LobbyClient, LobbyEvent, LobbyHandle,
         LobbyState, ParticipantStatus, ProtocolClient, ProtocolHandle, SelectedCoordinator,
     },
-    EventId,
+    EventId, PublicKey,
 };
 use nostr_relay_builder::prelude::*;
 use nostr_sdk::{Client, Keys};
@@ -179,7 +179,7 @@ async fn run_keygen_test(
         .iter()
         .map(|&i| SelectedCoordinator {
             register_event_id: register_event_ids[i],
-            pubkey: nostr_sides[i].nostr_keys.public_key(),
+            pubkey: nostr_sides[i].nostr_keys.public_key().into(),
         })
         .collect();
     nostr_sides[0]
@@ -327,7 +327,7 @@ async fn host_sees_self_on_open() {
         .await
         .unwrap();
 
-    let me = nostr_keys.public_key();
+    let me: PublicKey = nostr_keys.public_key().into();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
     let mut seen = false;
     while !seen {
@@ -456,7 +456,7 @@ async fn lobby_full_lifecycle() {
     assert_eq!(host_view.participants.len(), 1);
     assert!(host_view
         .participants
-        .contains_key(&nostr_keys[0].public_key()));
+        .contains_key(&PublicKey::from(nostr_keys[0].public_key())));
 
     // Initiator cancels.
     lobby_handles[0].cancel_lobby(&nostr_keys[0]).await.unwrap();
@@ -568,7 +568,7 @@ async fn setup_post_start_keygen(
     let selected: Vec<SelectedCoordinator> = (0..n)
         .map(|i| SelectedCoordinator {
             register_event_id: register_event_ids[i],
-            pubkey: nostr_keys[i].public_key(),
+            pubkey: nostr_keys[i].public_key().into(),
         })
         .collect();
     lobby_handles[0]
@@ -668,11 +668,11 @@ async fn ack_round_completes() {
             "participant {i}'s resolved.all_acked() should be true",
         );
         assert!(
-            resolved.acked.contains(&nostr_keys[0].public_key()),
+            resolved.acked.contains(&PublicKey::from(nostr_keys[0].public_key())),
             "participant {i} should see the host (initiator) as acked",
         );
         assert!(
-            resolved.acked.contains(&nostr_keys[1].public_key()),
+            resolved.acked.contains(&PublicKey::from(nostr_keys[1].public_key())),
             "participant {i} should see the joiner as acked",
         );
     }
@@ -752,7 +752,7 @@ async fn ack_with_wrong_etag_ignored() {
             "participant {i}'s acked set should only contain the host after a bogus ack",
         );
         assert!(
-            resolved.acked.contains(&nostr_keys[0].public_key()),
+            resolved.acked.contains(&PublicKey::from(nostr_keys[0].public_key())),
             "participant {i}'s acked set should contain the host",
         );
     }

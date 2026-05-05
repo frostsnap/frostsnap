@@ -307,7 +307,7 @@ async fn run_signing_test(device_counts: &[usize], threshold: u16, seed: u64) {
     // Each included participant signs with the confirmed binonce set.
     for (i, _) in &offered_pairs {
         assert!(
-            subset_authors.contains(&sides[*i].keys.public_key()),
+            subset_authors.contains(&frostsnap_nostr::PublicKey::from(sides[*i].keys.public_key())),
             "coordinator {i} was expected to be included in the subset",
         );
         let device_id = *run.participants[*i].devices.keys().next().unwrap();

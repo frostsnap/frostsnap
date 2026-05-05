@@ -1,11 +1,11 @@
 use crate::channel::ChannelKeys;
-use crate::EventId;
+use crate::{EventId, PublicKey};
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use nostr_sdk::{
     nips::nip44::v2::{self, ConversationKey},
     pool::Output,
-    Alphabet, Client, Event, EventBuilder, Filter, Keys, Kind, Metadata, PublicKey,
+    Alphabet, Client, Event, EventBuilder, Filter, Keys, Kind, Metadata,
     RelayPoolNotification, RelayUrl, SingleLetterTag, SubscriptionId, SyncOptions, Tag, TagKind,
     Timestamp,
 };
@@ -39,7 +39,7 @@ impl EventMeta {
     pub fn from_event(event: &Event) -> Self {
         Self {
             event_id: event.id.into(),
-            author: event.pubkey,
+            author: event.pubkey.into(),
             timestamp: event.created_at.as_secs(),
         }
     }
@@ -690,9 +690,10 @@ async fn process_inner_event(
     event_tx: &mpsc::Sender<ChannelRunnerEvent>,
     ack: Option<oneshot::Sender<()>>,
 ) {
+    let author: PublicKey = inner.pubkey.into();
     let is_new_member = {
         let mut s = state.lock().unwrap();
-        if let std::collections::hash_map::Entry::Vacant(e) = s.members.entry(inner.pubkey) {
+        if let std::collections::hash_map::Entry::Vacant(e) = s.members.entry(author) {
             e.insert(None);
             true
         } else {
@@ -700,7 +701,7 @@ async fn process_inner_event(
         }
     };
     if is_new_member {
-        spawn_profile_fetch(inner.pubkey, client.clone(), profile_tx.clone());
+        spawn_profile_fetch(author, client.clone(), profile_tx.clone());
         let _ = event_tx.send(ChannelRunnerEvent::MembersChanged).await;
     }
 
@@ -726,7 +727,7 @@ async fn process_inner_event(
         let _ = event_tx
             .send(ChannelRunnerEvent::ChatMessage {
                 message_id: inner.id.into(),
-                author: inner.pubkey,
+                author,
                 content: inner.content.clone(),
                 timestamp: inner.created_at.as_secs(),
                 reply_to,
@@ -887,7 +888,10 @@ fn spawn_profile_fetch(
 }
 
 async fn get_cached_profile(client: &Client, pubkey: PublicKey) -> Option<NostrProfile> {
-    let filter = Filter::new().author(pubkey).kind(Kind::Metadata).limit(1);
+    let filter = Filter::new()
+        .author(nostr_sdk::PublicKey::from(pubkey))
+        .kind(Kind::Metadata)
+        .limit(1);
     match client.database().query(filter).await {
         Ok(events) => events.into_iter().next().and_then(|event| {
             serde_json::from_str::<nostr_sdk::Metadata>(&event.content)
@@ -899,7 +903,10 @@ async fn get_cached_profile(client: &Client, pubkey: PublicKey) -> Option<NostrP
 }
 
 async fn fetch_profile_from_relays(client: &Client, pubkey: PublicKey) -> Option<NostrProfile> {
-    match client.fetch_metadata(pubkey, PROFILE_FETCH_TIMEOUT).await {
+    match client
+        .fetch_metadata(nostr_sdk::PublicKey::from(pubkey), PROFILE_FETCH_TIMEOUT)
+        .await
+    {
         Ok(Some(metadata)) => Some(NostrProfile::from_metadata(pubkey, metadata)),
         Ok(None) => None,
         Err(e) => {

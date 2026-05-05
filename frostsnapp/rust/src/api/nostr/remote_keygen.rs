@@ -63,15 +63,17 @@ pub struct _SelectedParticipant {
     pub devices: Vec<DeviceRegistration>,
 }
 
-#[frb(mirror(ResolvedKeygen), non_opaque)]
-pub struct _ResolvedKeygen {
-    pub keygen_event_id: EventId,
-    pub participants: Vec<SelectedParticipant>,
-    pub threshold: u16,
-    pub key_name: String,
-    pub purpose: KeyPurpose,
-    pub acked: Vec<PublicKey>,
-}
+/// Mirrors `frostsnap_nostr::keygen::ResolvedKeygen` as an **opaque**
+/// handle. We deliberately don't list fields here — non-opaque value
+/// mirrors of structs containing opaque fields (e.g. `purpose:
+/// KeyPurpose`) trigger the by-value-encode disposal trap when any
+/// method serialises `&self`. Opaque mirroring sidesteps that: `&self`
+/// encodes as a handle clone, and the inherent helper methods on the
+/// source struct (`includes`, `all_acked`) are exposed via
+/// `#[frb(external)]`. Field accessors that Dart needs are
+/// synthesised via the `ResolvedKeygenExt` trait below.
+#[frb(mirror(ResolvedKeygen), opaque)]
+pub struct _ResolvedKeygen {}
 
 #[frb(external)]
 impl ResolvedKeygen {
@@ -82,10 +84,58 @@ impl ResolvedKeygen {
     pub fn all_acked(&self) -> bool {}
 }
 
+pub trait ResolvedKeygenExt {
+    #[frb(sync, getter)]
+    fn keygen_event_id(&self) -> EventId;
+
+    #[frb(sync, getter)]
+    fn threshold(&self) -> u16;
+
+    #[frb(sync, getter)]
+    fn participants(&self) -> Vec<SelectedParticipant>;
+
+    #[frb(sync, getter)]
+    fn acked(&self) -> Vec<PublicKey>;
+}
+
+impl ResolvedKeygenExt for ResolvedKeygen {
+    #[frb(sync, getter)]
+    fn keygen_event_id(&self) -> EventId {
+        self.keygen_event_id
+    }
+
+    #[frb(sync, getter)]
+    fn threshold(&self) -> u16 {
+        self.threshold
+    }
+
+    #[frb(sync, getter)]
+    fn participants(&self) -> Vec<SelectedParticipant> {
+        self.participants.clone()
+    }
+
+    #[frb(sync, getter)]
+    fn acked(&self) -> Vec<PublicKey> {
+        self.acked.clone()
+    }
+}
+
 /// Mirrors `frostsnap_nostr::keygen::LobbyState`. The `cancelled`
 /// latch is part of the state itself (flipped by `process_event`).
-/// `all_ready` is exposed as a method via `#[frb(external)]`.
-#[frb(mirror(LobbyState), non_opaque)]
+/// Same reasoning as `ResolvedKeygen` above for the Dart-emitted
+/// helpers.
+#[frb(
+    mirror(LobbyState),
+    non_opaque,
+    dart_code = "
+  bool allReady() =>
+      participants.isNotEmpty &&
+      participants.values.every((p) => p.status == ParticipantStatus.ready);
+
+  int totalDeviceCount() => participants.values
+      .fold(0, (sum, p) => sum + p.devices.length);
+"
+)]
 pub struct _LobbyState {
     pub initiator: Option<PublicKey>,
     pub key_name: Option<String>,
@@ -93,15 +143,6 @@ pub struct _LobbyState {
     pub participants: std::collections::HashMap<PublicKey, ParticipantInfo>,
     pub keygen: Option<ResolvedKeygen>,
     pub cancelled: bool,
-}
-
-#[frb(external)]
-impl LobbyState {
-    #[frb(sync)]
-    pub fn all_ready(&self) -> bool {}
-
-    #[frb(sync)]
-    pub fn total_device_count(&self) -> usize {}
 }
 
 #[frb(mirror(SelectedCoordinator), non_opaque)]
@@ -207,7 +248,7 @@ impl RemoteLobbyHandle {
 
     #[frb(sync)]
     pub fn my_pubkey(&self) -> PublicKey {
-        self.keys.public_key()
+        self.keys.public_key().into()
     }
 
     /// Subscribe to `LobbyState` updates. Fresh subscribers receive

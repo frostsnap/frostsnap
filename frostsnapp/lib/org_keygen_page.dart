@@ -121,7 +121,7 @@ class OrgKeygenController extends ChangeNotifier {
 
   void setIncluded(PublicKey pk, bool included) {
     final me = _myPubkey;
-    if (me != null && pk.equals(other: me)) return;
+    if (me != null && pk == me) return;
     final hex = pk.toHex();
     final changed = included ? _excludedHex.remove(hex) : _excludedHex.add(hex);
     if (changed) notifyListeners();
@@ -153,7 +153,7 @@ class OrgKeygenController extends ChangeNotifier {
     final s = _state;
     if (me == null || s == null) return false;
     return s.participants.values.any(
-      (p) => p.pubkey.equals(other: me) && p.status == ParticipantStatus.ready,
+      (p) => p.pubkey == me && p.status == ParticipantStatus.ready,
     );
   }
 
@@ -555,17 +555,43 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
     });
   }
 
-  /// Mode A's "Decline" button: terminal, single tap. The on-screen
-  /// warning card already discloses that the action is final, so we
-  /// don't double-confirm. `Leave` from a selected participant after
-  /// `StartKeygen` lands fires `Cancelled` for everyone — the local
-  /// `_watchForCancellation` listener handles popping the page.
-  Future<void> _declineKeygenImmediate() async {
+  /// Mode A's "Decline" button: routes through a confirm dialog
+  /// because the action is final. `Leave` from a selected participant
+  /// after `StartKeygen` lands fires `Cancelled` for everyone — the
+  /// local `_watchForCancellation` listener handles popping the page.
+  Future<void> _declineKeygen() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          icon: Icon(Icons.cancel_outlined, color: theme.colorScheme.error),
+          title: const Text('Decline this keygen?'),
+          content: const Text(
+            'Declining is final. If the host wants to try again they '
+            'will have to start a new session.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Back'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Decline'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) return;
     try {
       await _ctrl.handle?.leave();
     } catch (_) {
-      // Best-effort: if the relay is unreachable the watcher won't
-      // fire, so fall back to popping directly.
       if (!mounted) return;
       Navigator.of(context).pop();
     }
@@ -642,7 +668,7 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
       case OrgKeygenStep.acceptKeygen:
         return _AcceptKeygenView(
           ctrl: _ctrl,
-          onDeclineImmediate: _declineKeygenImmediate,
+          onDecline: _declineKeygen,
           onCancelWithConfirm: () => _ctrl._confirmCancelKeygen(context),
         );
     }
@@ -1166,6 +1192,7 @@ class _ParticipantRow extends StatefulWidget {
     required this.isInitiator,
     required this.keyOffset,
     this.readOnly = false,
+    this.trailingOverride,
   });
 
   final OrgKeygenController ctrl;
@@ -1182,13 +1209,17 @@ class _ParticipantRow extends StatefulWidget {
   /// In review/readonly mode, the trailing slot is a phase-aware label
   /// instead of an edit icon, and the row starts expanded.
   final bool readOnly;
+  /// If provided, replaces the entire status portion of the trailing
+  /// slot (e.g. the Ready/Joining pill or the ack-status indicator on
+  /// the accept screen). The expand chevron is still appended after.
+  final Widget? trailingOverride;
 
   @override
   State<_ParticipantRow> createState() => _ParticipantRowState();
 }
 
 class _ParticipantRowState extends State<_ParticipantRow> {
-  late bool _expanded = widget.readOnly;
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1204,20 +1235,34 @@ class _ParticipantRowState extends State<_ParticipantRow> {
     final exclusionToggle = showExclusionToggle
         ? Tooltip(
             message: excluded ? 'Include in keygen' : 'Exclude from keygen',
-            child: Switch.adaptive(
+            child: Checkbox(
               value: !excluded,
-              onChanged: (v) => widget.ctrl.setIncluded(p.pubkey, v),
+              onChanged: (v) => widget.ctrl.setIncluded(p.pubkey, v ?? true),
+              visualDensity: VisualDensity.compact,
             ),
           )
         : null;
 
     final Widget trailing;
-    if (widget.readOnly) {
+    if (widget.trailingOverride != null) {
       trailing = Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 8,
         children: [
-          if (exclusionToggle != null) exclusionToggle,
+          widget.trailingOverride!,
+          AnimatedRotation(
+            turns: _expanded ? 0.5 : 0.0,
+            duration: Durations.short3,
+            child: Icon(Icons.keyboard_arrow_down_rounded,
+                color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      );
+    } else if (widget.readOnly) {
+      trailing = Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
+        children: [
           _reviewStatusLabel(context, p),
           AnimatedRotation(
             turns: _expanded ? 0.5 : 0.0,
@@ -1228,7 +1273,12 @@ class _ParticipantRowState extends State<_ParticipantRow> {
         ],
       );
     } else {
-      final Widget trailingAction;
+      // Trailing slot fills with whichever control applies — the edit
+      // button (own row, ready) or the inclusion checkbox (host view of
+      // another ready participant). They're mutually exclusive, and
+      // sharing the same fixed 36x36 slot keeps every row's right edge
+      // aligned regardless of which control renders.
+      final Widget? trailingAction;
       if (widget.isMe && isReady) {
         trailingAction = IconButton(
           icon: const Icon(Icons.edit_rounded, size: 18),
@@ -1239,7 +1289,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           onPressed: () => _showDeviceSetupDialog(context, widget.ctrl),
         );
       } else {
-        trailingAction = const SizedBox.shrink();
+        trailingAction = exclusionToggle;
       }
 
       final statusLabel = switch (p.status) {
@@ -1265,9 +1315,12 @@ class _ParticipantRowState extends State<_ParticipantRow> {
         mainAxisSize: MainAxisSize.min,
         spacing: 4,
         children: [
-          if (exclusionToggle != null) exclusionToggle,
           statusLabel,
-          SizedBox(width: 36, height: 36, child: trailingAction),
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: trailingAction ?? const SizedBox.shrink(),
+          ),
         ],
       );
     }
@@ -1437,12 +1490,12 @@ List<Widget> _participantRows({
     final offset = keyNumber;
     keyNumber += p.devices.length;
     final isInitiator =
-        state.initiator != null && state.initiator!.equals(other: p.pubkey);
+        state.initiator != null && state.initiator! == p.pubkey;
     rows.add(
       _ParticipantRow(
         ctrl: ctrl,
         participant: p,
-        isMe: ctrl.myPubkey != null && p.pubkey.equals(other: ctrl.myPubkey!),
+        isMe: ctrl.myPubkey != null && p.pubkey == ctrl.myPubkey!,
         isInitiator: isInitiator,
         keyOffset: offset,
         readOnly: readOnly,
@@ -1836,14 +1889,14 @@ class _ReviewPrimaryButton extends StatelessWidget {
 class _AcceptKeygenView extends StatelessWidget {
   const _AcceptKeygenView({
     required this.ctrl,
-    required this.onDeclineImmediate,
+    required this.onDecline,
     required this.onCancelWithConfirm,
   });
   final OrgKeygenController ctrl;
 
-  /// Mode A's terminal "Decline" action — single tap, no confirmation
-  /// dialog (the on-screen warning card discloses the finality).
-  final Future<void> Function() onDeclineImmediate;
+  /// Mode A's terminal "Decline" action — routes through a confirm
+  /// dialog because the action is final.
+  final Future<void> Function() onDecline;
 
   /// Mode B's "Cancel keygen" action — routes through the same
   /// confirmation dialog as the OS back gesture, since the user has
@@ -1862,7 +1915,7 @@ class _AcceptKeygenView extends StatelessWidget {
     }
 
     final iAmAcked = me != null &&
-        pending.acked.any((pk) => pk.equals(other: me));
+        pending.acked.any((pk) => pk == me);
 
     return iAmAcked
         ? _AcceptKeygenWaitingView(
@@ -1873,22 +1926,23 @@ class _AcceptKeygenView extends StatelessWidget {
         : _AcceptKeygenDecisionView(
             ctrl: ctrl,
             pending: pending,
-            onDeclineImmediate: onDeclineImmediate,
+            onDecline: onDecline,
           );
   }
 }
 
-/// Mode A: pre-ack. Hero N-of-M, wallet/network info, "decline is
-/// final" disclosure, Decline + Accept footer.
+/// Mode A: pre-ack. Wallet + threshold + network info, participant
+/// list, Decline + Accept footer. The "declining is final" disclosure
+/// surfaces in a confirm dialog when Decline is tapped.
 class _AcceptKeygenDecisionView extends StatelessWidget {
   const _AcceptKeygenDecisionView({
     required this.ctrl,
     required this.pending,
-    required this.onDeclineImmediate,
+    required this.onDecline,
   });
   final OrgKeygenController ctrl;
   final ResolvedKeygen pending;
-  final Future<void> Function() onDeclineImmediate;
+  final Future<void> Function() onDecline;
 
   @override
   Widget build(BuildContext context) {
@@ -1907,15 +1961,17 @@ class _AcceptKeygenDecisionView extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             shrinkWrap: true,
             children: [
-              _ThresholdHero(
-                threshold: pending.threshold,
-                total: pending.participants.length,
-              ),
-              const SizedBox(height: 24),
               _AcceptInfoRow(
                 icon: Icons.account_balance_wallet_rounded,
                 label: 'Wallet',
                 value: keyName,
+              ),
+              const SizedBox(height: 12),
+              _AcceptInfoRow(
+                icon: Icons.security_rounded,
+                label: 'Threshold',
+                value:
+                    '${pending.threshold} of ${pending.participants.length} required to spend',
               ),
               Builder(
                 builder: (context) {
@@ -1935,33 +1991,17 @@ class _AcceptKeygenDecisionView extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 24),
-              Card.filled(
-                color: theme.colorScheme.surfaceContainerHighest,
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Declining is final. If the host wants to try '
-                          'again they will have to start a new session.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              Text(
+                'Participants',
+                style: theme.textTheme.labelLarge,
               ),
+              const SizedBox(height: 8),
+              if (state != null)
+                ..._ackParticipantRows(
+                  ctrl: ctrl,
+                  state: state,
+                  pending: pending,
+                ),
             ],
           ),
         ),
@@ -1971,7 +2011,7 @@ class _AcceptKeygenDecisionView extends StatelessWidget {
           child: Row(
             children: [
               TextButton(
-                onPressed: () => onDeclineImmediate(),
+                onPressed: () => onDecline(),
                 style: TextButton.styleFrom(
                   foregroundColor: theme.colorScheme.error,
                 ),
@@ -2006,13 +2046,10 @@ class _AcceptKeygenWaitingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final me = ctrl.myPubkey;
-    final initiator = ctrl.lobbyState?.initiator;
-    final ackedHex = pending.acked.map((pk) => pk.toHex()).toSet();
-    final participants = pending.participants;
-    // `acked` is guaranteed to be a subset of `participants` Rust-side,
-    // so `length` equality is the canonical "everyone has acked" check.
-    final allAcked = ackedHex.length == participants.length;
+    final state = ctrl.lobbyState;
+    final ackedCount = pending.acked.length;
+    final total = pending.participants.length;
+    final allAcked = ackedCount == total;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -2024,7 +2061,7 @@ class _AcceptKeygenWaitingView extends StatelessWidget {
           child: Text(
             allAcked
                 ? 'Everyone is in. Starting keygen…'
-                : '${ackedHex.length} of ${participants.length} accepted',
+                : '$ackedCount of $total accepted',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -2034,7 +2071,7 @@ class _AcceptKeygenWaitingView extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _ThresholdHero(
             threshold: pending.threshold,
-            total: participants.length,
+            total: total,
           ),
         ),
         const SizedBox(height: 12),
@@ -2043,13 +2080,11 @@ class _AcceptKeygenWaitingView extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             shrinkWrap: true,
             children: [
-              for (final p in participants)
-                _AckStatusRow(
-                  participant: p,
-                  isMe: me != null && p.pubkey.equals(other: me),
-                  isAcked: ackedHex.contains(p.pubkey.toHex()),
-                  isInitiator:
-                      initiator != null && initiator.equals(other: p.pubkey),
+              if (state != null)
+                ..._ackParticipantRows(
+                  ctrl: ctrl,
+                  state: state,
+                  pending: pending,
                 ),
             ],
           ),
@@ -2094,83 +2129,87 @@ class _AcceptKeygenWaitingView extends StatelessWidget {
   }
 }
 
-class _AckStatusRow extends StatelessWidget {
-  const _AckStatusRow({
-    required this.participant,
-    required this.isMe,
-    required this.isAcked,
-    required this.isInitiator,
-  });
-  final SelectedParticipant participant;
-  final bool isMe;
+/// Small ack-status pill — `Accepted ✓` (primary) or `Waiting` with
+/// a spinner. Passed as `_ParticipantRow.trailingOverride` on the
+/// accept screens so the lobby's accordion-style row is reused.
+class _AckStatusPill extends StatelessWidget {
+  const _AckStatusPill({required this.isAcked});
   final bool isAcked;
-  final bool isInitiator;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = participant.devices.isEmpty
-        ? participant.pubkey.toHex().substring(0, 8)
-        : participant.devices.map((d) => d.name).join(', ');
-    final label = StringBuffer(name);
-    if (isMe) label.write(' (you)');
-    if (isInitiator) label.write(' · host');
-
-    final trailing = isAcked
-        ? Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.check_circle_rounded,
-                size: 18,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Accepted',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Waiting',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
+    if (isAcked) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Text(
-              label.toString(),
-              style: theme.textTheme.bodyLarge,
-              overflow: TextOverflow.ellipsis,
-            ),
+          Icon(Icons.check_circle_rounded,
+              size: 18, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            'Accepted',
+            style: theme.textTheme.labelMedium
+                ?.copyWith(color: theme.colorScheme.primary),
           ),
-          trailing,
         ],
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Waiting',
+          style: theme.textTheme.labelMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+}
+
+/// Build the accept-screen participant accordion rows. Each
+/// `SelectedParticipant` is looked up in `state.participants` (where
+/// they must exist — they registered before being selected) so the
+/// lobby's `_ParticipantRow` widget can reuse its existing
+/// device-list expansion.
+List<Widget> _ackParticipantRows({
+  required OrgKeygenController ctrl,
+  required LobbyState state,
+  required ResolvedKeygen pending,
+}) {
+  final me = ctrl.myPubkey;
+  final initiator = state.initiator;
+  final ackedSet = pending.acked.toSet();
+  final rows = <Widget>[];
+  int keyNumber = 1;
+  for (final selected in pending.participants) {
+    final info = state.participants[selected.pubkey];
+    if (info == null) continue;
+    final offset = keyNumber;
+    keyNumber += info.devices.length;
+    rows.add(
+      _ParticipantRow(
+        ctrl: ctrl,
+        participant: info,
+        isMe: me != null && info.pubkey == me,
+        isInitiator: initiator != null && initiator == info.pubkey,
+        keyOffset: offset,
+        readOnly: true,
+        trailingOverride:
+            _AckStatusPill(isAcked: ackedSet.contains(info.pubkey)),
       ),
     );
   }
+  return rows;
 }
 
 class _ThresholdHero extends StatelessWidget {

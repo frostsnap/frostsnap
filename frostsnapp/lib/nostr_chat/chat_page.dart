@@ -375,7 +375,7 @@ class _ChatPageState extends State<ChatPage> {
         if (existing != null) {
           return;
         }
-        final isMe = _myPubkey != null && author.equals(other: _myPubkey!);
+        final isMe = _myPubkey != null && author == _myPubkey!;
         final message = ChatMessage(
           messageId: messageId,
           author: author,
@@ -500,7 +500,7 @@ class _ChatPageState extends State<ChatPage> {
           SigningEvent_Rejected() =>
             throw StateError('handled above'),
         };
-        final isMe = _myPubkey != null && author.equals(other: _myPubkey!);
+        final isMe = _myPubkey != null && author == _myPubkey!;
         _messageById[eventId] = ChatMessage(
           messageId: eventId,
           author: author,
@@ -778,7 +778,7 @@ class _ChatPageState extends State<ChatPage> {
             text: item.reason,
             author: item.author,
             profile: _getProfile(item.author),
-            isMe: _myPubkey != null && item.author.equals(other: _myPubkey!),
+            isMe: _myPubkey != null && item.author == _myPubkey!,
             onCopy: () => Clipboard.setData(ClipboardData(text: item.reason)),
             onReply: () => _startReply(
               ReplyTarget(
@@ -786,11 +786,11 @@ class _ChatPageState extends State<ChatPage> {
                 author: item.author,
                 preview: 'Error: ${item.reason}',
                 isMe:
-                    _myPubkey != null && item.author.equals(other: _myPubkey!),
+                    _myPubkey != null && item.author == _myPubkey!,
               ),
             ),
             onTapAvatar:
-                _myPubkey != null && item.author.equals(other: _myPubkey!)
+                _myPubkey != null && item.author == _myPubkey!
                 ? null
                 : () => _showMemberProfile(item.author),
           ),
@@ -842,7 +842,7 @@ class _ChatPageState extends State<ChatPage> {
     );
     final threshold = accessStruct?.threshold() ?? 0;
     final reqIsMe =
-        myPubkey != null && state.request.author.equals(other: myPubkey);
+        myPubkey != null && state.request.author == myPubkey;
     final idHex = request.eventId.toHex();
     final key = _timelineKeys.putIfAbsent(idHex, () => GlobalKey());
     final isComplete = state.partials.length >= threshold;
@@ -925,7 +925,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildOfferCard(SigningEvent_Offer offer, int? progressCount, int? progressTotal) {
-    final isMe = _myPubkey != null && offer.author.equals(other: _myPubkey!);
+    final isMe = _myPubkey != null && offer.author == _myPubkey!;
     return _SigningEventLine(
       profile: _getProfile(offer.author),
       author: offer.author,
@@ -945,7 +945,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildPartialCard(SigningEvent_Partial partial, int? progressCount, int? progressTotal) {
-    final isMe = _myPubkey != null && partial.author.equals(other: _myPubkey!);
+    final isMe = _myPubkey != null && partial.author == _myPubkey!;
     return _SigningEventLine(
       profile: _getProfile(partial.author),
       author: partial.author,
@@ -962,7 +962,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildCancelCard(SigningEvent_Cancel cancel) {
-    final isMe = _myPubkey != null && cancel.author.equals(other: _myPubkey!);
+    final isMe = _myPubkey != null && cancel.author == _myPubkey!;
     return _SigningEventLine(
       profile: _getProfile(cancel.author),
       author: cancel.author,
@@ -1364,7 +1364,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   String _displayName(PublicKey author) {
-    if (_myPubkey != null && author.equals(other: _myPubkey!)) return 'You';
+    if (_myPubkey != null && author == _myPubkey!) return 'You';
     return getDisplayName(_getProfile(author), author);
   }
 
@@ -1422,7 +1422,7 @@ class _ChatPageState extends State<ChatPage> {
       eventId: eventId,
       author: author,
       preview: preview,
-      isMe: _myPubkey != null && author.equals(other: _myPubkey!),
+      isMe: _myPubkey != null && author == _myPubkey!,
     );
   }
 
@@ -1514,7 +1514,7 @@ class _ChatPageState extends State<ChatPage> {
 
     final myPubkey = _myPubkey;
     final isRequester = myPubkey != null &&
-        activeRequest.request.author.equals(other: myPubkey);
+        activeRequest.request.author == myPubkey;
     final alreadySigned = myPubkey != null &&
         activeRequest.partials.containsKey(myPubkey.toHex());
     final sealed = activeRequest.sealedData;

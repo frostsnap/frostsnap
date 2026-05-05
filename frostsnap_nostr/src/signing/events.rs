@@ -10,12 +10,12 @@
 //!   `ChannelEvent::Signing { event, pending }`.
 
 use crate::channel_runner::NostrProfile;
-use crate::EventId;
+use crate::{EventId, PublicKey};
 use frostsnap_core::{
     coordinator::{ParticipantBinonces, ParticipantSignatureShares},
     SignSessionId, WireSignTask,
 };
-use nostr_sdk::{Event, PublicKey, TagKind};
+use nostr_sdk::{Event, TagKind};
 
 // ============================================================================
 // Channel events (top-level sink stream)
@@ -68,7 +68,7 @@ impl ChannelEvent {
     pub fn from_inner_chat_message(inner_event: &Event, pending: bool) -> Self {
         Self::ChatMessage {
             message_id: inner_event.id.into(),
-            author: inner_event.pubkey,
+            author: inner_event.pubkey.into(),
             content: inner_event.content.clone(),
             timestamp: inner_event.created_at.as_secs(),
             reply_to: inner_event.tags.iter().find_map(|tag| {

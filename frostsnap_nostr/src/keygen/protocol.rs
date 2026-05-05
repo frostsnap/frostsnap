@@ -4,7 +4,7 @@ use crate::{
         decode_bincode, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
         ChannelRunnerHandle, SendOutcome,
     },
-    EventId,
+    EventId, PublicKey,
 };
 use anyhow::Result;
 use frostsnap_coordinator::Sink;
@@ -12,7 +12,7 @@ use frostsnap_core::{
     coordinator::remote_keygen::{RemoteKeygenMessage, RemoteKeygenPayload},
     DeviceId,
 };
-use nostr_sdk::{Client, Keys, Kind, PublicKey};
+use nostr_sdk::{Client, Keys, Kind};
 use std::collections::BTreeMap;
 
 pub const KIND_FROSTSNAP_KEYGEN_PROTOCOL: Kind = Kind::Custom(9002);
@@ -51,7 +51,8 @@ impl ProtocolClient {
                 if inner_event.kind == KIND_FROSTSNAP_KEYGEN_PROTOCOL {
                     match decode_bincode::<KeygenProtocolMessage>(&inner_event) {
                         Ok(msg) => {
-                            if let Some(allowed) = allowed_senders.get(&inner_event.pubkey) {
+                            let signer: PublicKey = inner_event.pubkey.into();
+                            if let Some(allowed) = allowed_senders.get(&signer) {
                                 if allowed.contains(&msg.from) {
                                     sink.send(RemoteKeygenMessage {
                                         from: msg.from,
@@ -60,7 +61,7 @@ impl ProtocolClient {
                                 } else {
                                     tracing::warn!(
                                         event_id = %inner_event.id,
-                                        signer = %inner_event.pubkey,
+                                        signer = %signer,
                                         claimed_from = %msg.from,
                                         "keygen protocol message 'from' not owned by signer, dropping"
                                     );
@@ -68,7 +69,7 @@ impl ProtocolClient {
                             } else {
                                 tracing::warn!(
                                     event_id = %inner_event.id,
-                                    signer = %inner_event.pubkey,
+                                    signer = %signer,
                                     "keygen protocol message signed by non-participant, dropping"
                                 );
                             }

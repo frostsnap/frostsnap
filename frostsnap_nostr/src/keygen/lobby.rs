@@ -3,12 +3,12 @@ use crate::channel_runner::{
     decode_bincode, extract_e_tags, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
     ChannelRunnerHandle, SendOutcome, BINCODE_CONFIG,
 };
-use crate::EventId;
+use crate::{EventId, PublicKey};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use anyhow::Result;
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{coordinator::BeginKeygen, device::KeyPurpose, DeviceId, KeygenId};
-use nostr_sdk::{nips::nip44, Client, Event, EventBuilder, Keys, Kind, PublicKey};
+use nostr_sdk::{nips::nip44, Client, Event, EventBuilder, Keys, Kind};
 use rand_core::OsRng;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
@@ -340,8 +340,9 @@ pub fn build_subchannel_invites(
     selected_coordinators
         .iter()
         .map(|selected| {
+            let recipient_sdk: nostr_sdk::PublicKey = selected.pubkey.into();
             let conversation_key =
-                nip44::v2::ConversationKey::derive(sender_keys.secret_key(), &selected.pubkey)?;
+                nip44::v2::ConversationKey::derive(sender_keys.secret_key(), &recipient_sdk)?;
             let ciphertext = nip44::v2::encrypt_to_bytes(&conversation_key, &protocol_secret.0)?;
             Ok(SubchannelInvite {
                 recipient: nostr_pubkey_to_device_id(&selected.pubkey),
@@ -356,7 +357,8 @@ fn decrypt_subchannel_secret(
     sender_pubkey: PublicKey,
     invites: &[SubchannelInvite],
 ) -> Result<Option<ChannelKeys>> {
-    let local_device_id = nostr_pubkey_to_device_id(&recipient_keys.public_key());
+    let local_pubkey: PublicKey = recipient_keys.public_key().into();
+    let local_device_id = nostr_pubkey_to_device_id(&local_pubkey);
     let Some(envelope) = invites
         .iter()
         .find(|envelope| envelope.recipient == local_device_id)
@@ -364,8 +366,9 @@ fn decrypt_subchannel_secret(
         return Ok(None);
     };
 
+    let sender_sdk: nostr_sdk::PublicKey = sender_pubkey.into();
     let conversation_key =
-        nip44::v2::ConversationKey::derive(recipient_keys.secret_key(), &sender_pubkey)?;
+        nip44::v2::ConversationKey::derive(recipient_keys.secret_key(), &sender_sdk)?;
     let decrypted = nip44::v2::decrypt_to_bytes(&conversation_key, &envelope.ciphertext)?;
     anyhow::ensure!(
         decrypted.len() == 16,
@@ -495,8 +498,9 @@ impl LobbyClient {
                             // inline. Insert the initiator as `Joining`
                             // here so the invariant "initiator is set ⇒
                             // initiator is in participants" holds.
-                            lobby.initiator = Some(creation.pubkey);
-                            lobby.upsert_joining(creation.pubkey);
+                            let creation_author: PublicKey = creation.pubkey.into();
+                            lobby.initiator = Some(creation_author);
+                            lobby.upsert_joining(creation_author);
                             match LobbyChannelMetadata::decode_content(&creation.content) {
                                 Ok(meta) => {
                                     lobby.key_name = Some(meta.key_name);
@@ -657,7 +661,7 @@ async fn process_event(
     local_nostr_keys: &Keys,
 ) {
     let event_id: EventId = inner_event.id.into();
-    let author = inner_event.pubkey;
+    let author: PublicKey = inner_event.pubkey.into();
 
     events_by_id.insert(event_id, inner_event.clone());
 
@@ -728,13 +732,14 @@ async fn process_event(
                             // late and never saw it land live). Without
                             // this, the FFI's `pending.participants`
                             // filter_map would silently drop them.
+                            let reg_author: PublicKey = reg_event.pubkey.into();
                             lobby.process_register(
-                                reg_event.pubkey,
+                                reg_author,
                                 reg_event.id.into(),
                                 devices.clone(),
                             );
                             participants.push(SelectedParticipant {
-                                pubkey: reg_event.pubkey,
+                                pubkey: reg_author,
                                 devices,
                             });
                         }
@@ -864,11 +869,11 @@ mod tests {
         let recipient = Keys::generate();
         let selected = vec![SelectedCoordinator {
             register_event_id: EventId::ZERO,
-            pubkey: recipient.public_key(),
+            pubkey: recipient.public_key().into(),
         }];
 
         let invites = build_subchannel_invites(&sender, &selected).unwrap();
-        let decrypted = decrypt_subchannel_secret(&recipient, sender.public_key(), &invites)
+        let decrypted = decrypt_subchannel_secret(&recipient, sender.public_key().into(), &invites)
             .unwrap()
             .unwrap();
 
@@ -883,13 +888,13 @@ mod tests {
         let other = Keys::generate();
         let selected = vec![SelectedCoordinator {
             register_event_id: EventId::ZERO,
-            pubkey: recipient.public_key(),
+            pubkey: recipient.public_key().into(),
         }];
 
         let invites = build_subchannel_invites(&sender, &selected).unwrap();
 
         assert!(
-            decrypt_subchannel_secret(&other, sender.public_key(), &invites)
+            decrypt_subchannel_secret(&other, sender.public_key().into(), &invites)
                 .unwrap()
                 .is_none()
         );
