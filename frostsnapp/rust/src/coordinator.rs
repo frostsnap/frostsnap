@@ -28,13 +28,14 @@ use frostsnap_coordinator::{
     AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
     UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
 };
+use frostsnap_core::coordinator::remote_keygen::RemoteKeygenPayload;
 use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
 };
 use frostsnap_core::coordinator::{
-    signing::RemoteSignSessionId, BeginKeygen, CoordAccessStructure, CoordFrostKey,
-    CoordinatorSend, CoordinatorToUserMessage, FrostCoordinator, NonceReplenishRequest,
-    ParticipantBinonces, ParticipantSignatureShares,
+    signing::RemoteSignSessionId, BeginKeygen, BroadcastPayload, CoordAccessStructure,
+    CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage, FrostCoordinator,
+    NonceReplenishRequest, ParticipantBinonces, ParticipantSignatureShares,
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
@@ -47,12 +48,28 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
+/// Outbound routing slot for the active remote keygen ceremony.
+///
+/// `Coordinator::run_remote_keygen` registers itself here so the sync USB
+/// loop's `CoordinatorSend::Broadcast` outputs (produced when a USB device
+/// responds during a remote keygen) can be forwarded over Nostr by the
+/// run loop's outbound branch.
+///
+/// At most one remote keygen is active at a time.
+pub(crate) struct RemoteBroadcastRegistration {
+    pub keygen_id: KeygenId,
+    pub tx: mpsc::UnboundedSender<(DeviceId, RemoteKeygenPayload)>,
+    pub cancel: CancellationToken,
+}
+
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
-    key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
+    pub(crate) key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
     pub(crate) signing_session_signals: SignalMap,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
     pub(crate) ui_stack: Arc<Mutex<UiStack>>,
@@ -68,6 +85,7 @@ pub struct FfiCoordinator {
     // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
     pub(crate) backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
+    pub(crate) active_remote_broadcast: Arc<Mutex<Option<RemoteBroadcastRegistration>>>,
 }
 
 pub(crate) type Signal = Box<dyn Sink<()>>;
@@ -109,6 +127,7 @@ impl FfiCoordinator {
             device_names: Arc::new(Mutex::new(device_names)),
             backup_state: Arc::new(Mutex::new(backup_state)),
             backup_run_streams: Default::default(),
+            active_remote_broadcast: Default::default(),
         })
     }
 
@@ -136,6 +155,7 @@ impl FfiCoordinator {
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
         let device_list = self.device_list.clone();
         let device_list_stream = self.device_list_stream.clone();
+        let active_remote_broadcast = self.active_remote_broadcast.clone();
 
         let handle = std::thread::spawn(move || {
             loop {
@@ -332,8 +352,29 @@ impl FfiCoordinator {
                         CoordinatorSend::ToUser(msg) => {
                             ui_stack.process_to_user_message(msg);
                         }
-                        CoordinatorSend::Broadcast { .. } => {
-                            // TODO: route to nostr channel
+                        CoordinatorSend::Broadcast {
+                            channel,
+                            from,
+                            payload: BroadcastPayload::RemoteKeygen(payload),
+                        } => {
+                            if let Some(reg) = &*active_remote_broadcast.lock().unwrap() {
+                                if reg.keygen_id == channel {
+                                    let _ = reg.tx.send((from, payload));
+                                } else {
+                                    event!(
+                                        Level::WARN,
+                                        ?channel,
+                                        registered = ?reg.keygen_id,
+                                        "remote broadcast for non-active keygen, dropping"
+                                    );
+                                }
+                            } else {
+                                event!(
+                                    Level::WARN,
+                                    ?channel,
+                                    "remote broadcast with no registration, dropping"
+                                );
+                            }
                         }
                     }
                 }

@@ -1,10 +1,14 @@
 use super::{
-    keys::BeginKeygen, BroadcastPayload, CoordinatorSend, CoordinatorToUserKeyGenMessage,
-    CoordinatorToUserMessage, KeyPurpose,
+    keys::{BeginKeygen, KeyMutation},
+    BroadcastPayload, CompleteKey, CoordinatorSend, CoordinatorToUserKeyGenMessage,
+    CoordinatorToUserMessage, KeyPurpose, Mutation,
 };
 use crate::{
     message::keygen::{self, Keygen},
-    ActionError, DeviceId, Error, KeygenId, SessionHash,
+    symmetric_encryption::Ciphertext,
+    tweak::Xpub,
+    AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError, DeviceId, Error,
+    KeygenId, MasterAppkey, SessionHash,
 };
 use alloc::{
     boxed::Box,
@@ -498,15 +502,59 @@ impl super::FrostCoordinator {
                 "remote keygen not ready to finalize".into(),
             ));
         };
-        let local_devices = state.local_devices;
-        let finalize = super::KeyGenNeedsFinalize {
-            root_shared_key,
-            device_to_share_index: state.device_to_share_index,
-            pending_key_name: state.pending_key_name,
-            purpose: state.purpose,
+
+        // Build the access-structure metadata. Same shape `mutate_new_key`
+        // produces for local keygen; reproduced here so the remote-keygen
+        // path stays self-contained and so we can constrain the per-device
+        // share mutations to *our* devices.
+        let rootkey = root_shared_key.public_key();
+        let xpub_root = Xpub::from_rootkey(root_shared_key);
+        let app_shared_key = xpub_root.rootkey_to_master_appkey();
+        let access_structure_id =
+            AccessStructureId::from_app_poly(app_shared_key.key.point_polynomial());
+        let encrypted_rootkey = Ciphertext::encrypt(encryption_key, &rootkey, rng);
+        let master_appkey = MasterAppkey::from_xpub_unchecked(&app_shared_key);
+        let key_id = master_appkey.key_id();
+        let access_structure_ref = AccessStructureRef {
+            key_id,
+            access_structure_id,
         };
-        let mut result = self.finalize_keygen_inner(finalize, keygen_id, encryption_key, rng)?;
-        result.devices.retain(|d| local_devices.contains(d));
-        Ok(result)
+
+        if self.get_frost_key(key_id).is_none() {
+            self.mutate(Mutation::Keygen(KeyMutation::NewKey {
+                key_name: state.pending_key_name,
+                purpose: state.purpose,
+                complete_key: CompleteKey {
+                    master_appkey,
+                    encrypted_rootkey,
+                    access_structures: Default::default(),
+                },
+            }));
+        }
+
+        self.mutate(Mutation::Keygen(KeyMutation::NewAccessStructure {
+            shared_key: app_shared_key,
+            kind: AccessStructureKind::Master,
+        }));
+
+        // CRITICAL: only record share-index mappings for *our local devices*.
+        // The other coordinators' devices participated in the keygen but we
+        // don't hold their encrypted shares — claiming we do via NewShare
+        // mutations would lie to every later code path that walks the
+        // access structure (signing, recovery, backup).
+        for device_id in &state.local_devices {
+            let share_index = state.device_to_share_index[device_id];
+            self.mutate(Mutation::Keygen(KeyMutation::NewShare {
+                access_structure_ref,
+                device_id: *device_id,
+                share_index: ShareIndex::from(share_index),
+            }));
+        }
+
+        Ok(super::SendFinalizeKeygen {
+            devices: state.local_devices.iter().copied().collect(),
+            access_structure_ref,
+            keygen_id,
+        })
     }
 }

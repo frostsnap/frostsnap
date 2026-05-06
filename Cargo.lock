@@ -4184,6 +4184,8 @@ dependencies = [
  "rusqlite",
  "sha2",
  "time",
+ "tokio",
+ "tokio-util",
  "tracing",
  "tracing-logcat",
  "tracing-subscriber",

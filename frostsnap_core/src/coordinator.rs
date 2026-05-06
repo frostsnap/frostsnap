@@ -1135,6 +1135,10 @@ impl FrostCoordinator {
         let _ = self.pending_keygens.remove(&keygen_id);
     }
 
+    pub fn cancel_remote_keygen(&mut self, keygen_id: KeygenId) {
+        let _ = self.remote_keygen.active_keygens.remove(&keygen_id);
+    }
+
     pub fn clear_tmp_data(&mut self) {
         self.pending_keygens.clear();
         self.restoration.clear_tmp_data();

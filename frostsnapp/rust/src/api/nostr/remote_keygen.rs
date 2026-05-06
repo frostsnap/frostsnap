@@ -10,12 +10,15 @@ use flutter_rust_bridge::frb;
 use frostsnap_coordinator::Sink;
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::DeviceId;
+use frostsnap_nostr::channel::ChannelKeys;
 pub use frostsnap_nostr::keygen::{
-    DeviceKind, DeviceRegistration, LobbyState, ParticipantInfo, ParticipantStatus,
-    ResolvedKeygen, SelectedCoordinator, SelectedParticipant,
+    DeviceKind, DeviceRegistration, LobbyState, ParticipantInfo, ParticipantStatus, ResolvedKeygen,
+    SelectedCoordinator, SelectedParticipant,
 };
 use frostsnap_nostr::keygen::{LobbyEvent, LobbyHandle};
-use frostsnap_nostr::{EventId, Keys, PublicKey};
+use frostsnap_nostr::{Client, EventId, Keys, PublicKey};
+use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 
 // ============================================================================
 // FRB-mirrored types from frostsnap_nostr::keygen
@@ -155,13 +158,21 @@ pub struct _SelectedCoordinator {
 // Sink: LobbyEvent → BehaviorBroadcast<LobbyState>
 // ============================================================================
 
-/// Pass-through sink: every `LobbyChanged` becomes a broadcast snapshot.
-/// `Cancelled` is already reflected in `LobbyState.cancelled` by the
-/// time the event fires (set on the `process_event` side), so we don't
-/// need a separate latch on the bridge.
+/// Encrypted-subchannel keys + the resolved keygen, captured from
+/// `LobbyEvent::KeygenResolved` so `await_keygen_ready` can hand them off
+/// without exposing `ChannelKeys` to Dart.
+#[frb(ignore)]
+#[derive(Clone)]
+pub(crate) struct SessionInit {
+    pub resolved: ResolvedKeygen,
+    pub channel_keys: ChannelKeys,
+}
+
 #[derive(Clone)]
 struct LobbyBridgeSink {
     broadcast: BehaviorBroadcast<LobbyState>,
+    session_init: Arc<Mutex<Option<SessionInit>>>,
+    state_changed: Arc<Notify>,
 }
 
 impl Sink<LobbyEvent> for LobbyBridgeSink {
@@ -169,15 +180,23 @@ impl Sink<LobbyEvent> for LobbyBridgeSink {
         match event {
             LobbyEvent::LobbyChanged(state) => {
                 self.broadcast.add(&state);
+                self.state_changed.notify_waiters();
             }
-            LobbyEvent::KeygenResolved { .. } => {
-                // The DKG subchannel is out of scope for this slice.
+            LobbyEvent::KeygenResolved {
+                resolved,
+                channel_keys,
+            } => {
+                *self.session_init.lock().unwrap() = Some(SessionInit {
+                    resolved,
+                    channel_keys,
+                });
+                self.state_changed.notify_waiters();
             }
             LobbyEvent::AllAcked => {
                 // The latest `LobbyChanged` already carried the
-                // fully-acked state; consumers read it off the
-                // snapshot. Wiring the actual DKG-start pivot is the
-                // follow-up slice.
+                // fully-acked state; the notification below wakes any
+                // `await_keygen_ready` future so it can re-check.
+                self.state_changed.notify_waiters();
             }
             LobbyEvent::Cancelled => {
                 // The publishing path (`process_event`) already set
@@ -192,9 +211,26 @@ impl Sink<LobbyEvent> for LobbyBridgeSink {
                         self.broadcast.add(&snapshot);
                     }
                 }
+                self.state_changed.notify_waiters();
             }
         }
     }
+}
+
+// ============================================================================
+// KeygenStartArgs — handoff from lobby to `Coordinator::run_remote_keygen`
+// ============================================================================
+
+/// Bundle of everything `Coordinator::run_remote_keygen` needs to drive the
+/// ceremony: the resolved keygen, the encrypted-subchannel keys, this
+/// participant's nostr `Keys`, and the nostr `Client` used to subscribe to
+/// the protocol relay. Opaque to Dart — secrets stay inside Rust.
+#[frb(opaque)]
+pub struct KeygenStartArgs {
+    pub(crate) keys: Keys,
+    pub(crate) resolved: ResolvedKeygen,
+    pub(crate) channel_keys: ChannelKeys,
+    pub(crate) client: Client,
 }
 
 // ============================================================================
@@ -210,6 +246,19 @@ pub struct RemoteLobbyHandle {
     keys: Keys,
     invite_link: String,
     state_broadcast: BehaviorBroadcast<LobbyState>,
+    client: Client,
+    session_init: Arc<Mutex<Option<SessionInit>>>,
+    state_changed: Arc<Notify>,
+}
+
+/// Internal bundle returned by [`RemoteLobbyHandle::build_bridge`] alongside
+/// the bridge sink, so the caller can construct the handle with matching
+/// `Arc`s.
+#[frb(ignore)]
+pub(crate) struct LobbyBridge {
+    pub broadcast: BehaviorBroadcast<LobbyState>,
+    pub session_init: Arc<Mutex<Option<SessionInit>>>,
+    pub state_changed: Arc<Notify>,
 }
 
 impl RemoteLobbyHandle {
@@ -217,28 +266,40 @@ impl RemoteLobbyHandle {
         handle: LobbyHandle,
         keys: Keys,
         invite_link: String,
-        state_broadcast: BehaviorBroadcast<LobbyState>,
+        client: Client,
+        bridge: LobbyBridge,
     ) -> Self {
         Self {
             handle,
             keys,
             invite_link,
-            state_broadcast,
+            state_broadcast: bridge.broadcast,
+            client,
+            session_init: bridge.session_init,
+            state_changed: bridge.state_changed,
         }
     }
 
-    /// Build the bridging sink plus the broadcast it feeds. The caller
+    /// Build the bridging sink plus the shared state it feeds. The caller
     /// (`NostrClient::{create,join}_remote_lobby`) passes the sink into
-    /// `LobbyClient::run` and hands the broadcast back to `new`.
-    pub(crate) fn build_bridge() -> (
-        BehaviorBroadcast<LobbyState>,
-        impl Sink<LobbyEvent> + Clone,
-    ) {
+    /// `LobbyClient::run` and hands the bridge back to `new`.
+    pub(crate) fn build_bridge() -> (LobbyBridge, impl Sink<LobbyEvent> + Clone) {
         let broadcast = BehaviorBroadcast::<LobbyState>::default();
+        let session_init: Arc<Mutex<Option<SessionInit>>> = Default::default();
+        let state_changed: Arc<Notify> = Arc::new(Notify::new());
         let sink = LobbyBridgeSink {
             broadcast: broadcast.clone(),
+            session_init: session_init.clone(),
+            state_changed: state_changed.clone(),
         };
-        (broadcast, sink)
+        (
+            LobbyBridge {
+                broadcast,
+                session_init,
+                state_changed,
+            },
+            sink,
+        )
     }
 
     #[frb(sync)]
@@ -329,6 +390,41 @@ impl RemoteLobbyHandle {
             ));
         }
         Ok(())
+    }
+
+    /// Resolves once the lobby observes `AllAcked` with our pubkey in `acked`
+    /// (i.e. the ceremony is ready to start for us). Returns the bundle Dart
+    /// hands off to `Coordinator::run_remote_keygen`. After this returns, the
+    /// lobby's job is done — Dart can drop the handle.
+    pub async fn await_keygen_ready(&self) -> Result<KeygenStartArgs> {
+        let my_pubkey: PublicKey = self.keys.public_key().into();
+        loop {
+            // Arm the notification before reading state to avoid the TOCTOU
+            // race where a state change lands between our check and our wait.
+            let notified = self.state_changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            if let Some(state) = self.state_broadcast.latest() {
+                if state.cancelled {
+                    return Err(anyhow!("lobby was cancelled"));
+                }
+                if let Some(resolved) = state.keygen.as_ref() {
+                    if resolved.all_acked() && resolved.acked.contains(&my_pubkey) {
+                        let init = self.session_init.lock().unwrap().clone().ok_or_else(|| {
+                            anyhow!("AllAcked observed without KeygenResolved session_init")
+                        })?;
+                        return Ok(KeygenStartArgs {
+                            keys: self.keys.clone(),
+                            resolved: init.resolved,
+                            channel_keys: init.channel_keys,
+                            client: self.client.clone(),
+                        });
+                    }
+                }
+            }
+            notified.await;
+        }
     }
 }
 

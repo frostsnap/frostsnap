@@ -146,8 +146,12 @@ class DeviceSetupController extends ChangeNotifier {
 /// [DeviceSetupController]. Returns a [MultiSliver] — host inside a
 /// `CustomScrollView` (or `MultiSliver` parent).
 class DeviceSetupView extends StatefulWidget {
-  const DeviceSetupView({super.key, required this.controller});
+  const DeviceSetupView({super.key, required this.controller, this.onSubmitted});
   final DeviceSetupController controller;
+  /// Fired when the user presses Enter on any device-name TextField. The
+  /// caller decides whether the form is in a submittable state — this
+  /// just forwards the keypress up.
+  final VoidCallback? onSubmitted;
 
   @override
   State<DeviceSetupView> createState() => _DeviceSetupViewState();
@@ -393,6 +397,7 @@ class _DeviceSetupViewState extends State<DeviceSetupView> {
       style: monospaceTextStyle,
       maxLength: DeviceName.maxLength(),
       inputFormatters: [nameInputFormatter],
+      textInputAction: TextInputAction.done,
       decoration: InputDecoration(
         hintText: 'Enter device name',
         hintStyle: monospaceTextStyle.copyWith(color: cs.onSurfaceVariant),
@@ -402,6 +407,7 @@ class _DeviceSetupViewState extends State<DeviceSetupView> {
         counterText: '',
       ),
       onChanged: (name) => ctrl.setDeviceName(device.id, name),
+      onSubmitted: widget.onSubmitted == null ? null : (_) => widget.onSubmitted!(),
     );
   }
 }

@@ -1,14 +1,15 @@
+pub mod keygen_run;
 pub mod remote_keygen;
 
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
+use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
     coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
     message::EncodedSignature,
     AccessStructureId, AccessStructureRef, SignSessionId, SymmetricKey, WireSignTask,
 };
-use frostsnap_core::device::KeyPurpose;
 pub use frostsnap_nostr::NostrProfile;
 use frostsnap_nostr::{
     channel::{parse_frostsnap_link, parse_keygen_link},
@@ -475,10 +476,8 @@ impl NostrClient {
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let invite_link = channel_secret.keygen_invite_link();
         let metadata = LobbyChannelMetadata { key_name, purpose };
-        let init_event = lobby_client
-            .build_creation_event(&keys, &metadata)
-            .await?;
-        let (broadcast, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
+        let init_event = lobby_client.build_creation_event(&keys, &metadata).await?;
+        let (bridge, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
         let handle = lobby_client
             .run(self.client.clone(), keys.clone(), Some(init_event), sink)
             .await?;
@@ -486,7 +485,8 @@ impl NostrClient {
             handle,
             keys,
             invite_link,
-            broadcast,
+            self.client.clone(),
+            bridge,
         ))
     }
 
@@ -501,7 +501,7 @@ impl NostrClient {
         let keys = Keys::parse(&nsec)?;
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let invite_link = channel_secret.keygen_invite_link();
-        let (broadcast, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
+        let (bridge, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
         let handle = lobby_client
             .run(self.client.clone(), keys.clone(), None, sink)
             .await?;
@@ -509,7 +509,8 @@ impl NostrClient {
             handle,
             keys,
             invite_link,
-            broadcast,
+            self.client.clone(),
+            bridge,
         ))
     }
 
