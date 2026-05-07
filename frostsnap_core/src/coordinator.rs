@@ -548,21 +548,8 @@ impl FrostCoordinator {
             }
             DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Response(response)) => {
                 let keygen_id = response.keygen_id;
-                if self.remote_keygen.active_keygens.contains_key(&keygen_id) {
-                    let payload = remote_keygen::RemoteKeygenPayload::Input(*response.input);
-                    let mut outgoing = self.recv_remote_keygen_msg(
-                        keygen_id,
-                        remote_keygen::RemoteKeygenMessage {
-                            from,
-                            payload: payload.clone(),
-                        },
-                    )?;
-                    outgoing.push(CoordinatorSend::Broadcast {
-                        channel: keygen_id,
-                        from,
-                        payload: BroadcastPayload::RemoteKeygen(payload),
-                    });
-                    return Ok(outgoing);
+                if self.is_remote_keygen_active(keygen_id) {
+                    return self.receive_device_keygen_response(from, response);
                 }
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
@@ -654,21 +641,8 @@ impl FrostCoordinator {
                 keygen_id,
                 vrf_cert,
             }) => {
-                if self.remote_keygen.active_keygens.contains_key(&keygen_id) {
-                    let payload = remote_keygen::RemoteKeygenPayload::Certification(vrf_cert);
-                    let mut outgoing = self.recv_remote_keygen_msg(
-                        keygen_id,
-                        remote_keygen::RemoteKeygenMessage {
-                            from,
-                            payload: payload.clone(),
-                        },
-                    )?;
-                    outgoing.push(CoordinatorSend::Broadcast {
-                        channel: keygen_id,
-                        from,
-                        payload: BroadcastPayload::RemoteKeygen(payload),
-                    });
-                    return Ok(outgoing);
+                if self.is_remote_keygen_active(keygen_id) {
+                    return self.receive_device_keygen_certify(from, keygen_id, vrf_cert);
                 }
                 let mut outgoing = vec![];
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
@@ -735,19 +709,12 @@ impl FrostCoordinator {
                     )),
                 }
             }
-            DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Ack(self::KeyGenAck {
-                keygen_id,
-                ack_session_hash,
-            })) => {
-                if self.remote_keygen.active_keygens.contains_key(&keygen_id) {
-                    return self.recv_remote_keygen_msg(
-                        keygen_id,
-                        remote_keygen::RemoteKeygenMessage {
-                            from,
-                            payload: remote_keygen::RemoteKeygenPayload::Ack(ack_session_hash),
-                        },
-                    );
+            DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Ack(ack)) => {
+                let keygen_id = ack.keygen_id;
+                if self.is_remote_keygen_active(keygen_id) {
+                    return self.receive_device_keygen_ack(from, ack);
                 }
+                let ack_session_hash = ack.ack_session_hash;
                 let mut outgoing = vec![];
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
@@ -914,8 +881,7 @@ impl FrostCoordinator {
             return self.finalize_keygen_inner(finalize, keygen_id, encryption_key, rng);
         }
 
-        // Check remote keygen
-        if self.remote_keygen.active_keygens.contains_key(&keygen_id) {
+        if self.is_remote_keygen_active(keygen_id) {
             return self.finalize_remote_keygen(keygen_id, encryption_key, rng);
         }
 
@@ -1133,10 +1099,6 @@ impl FrostCoordinator {
 
     pub fn cancel_keygen(&mut self, keygen_id: KeygenId) {
         let _ = self.pending_keygens.remove(&keygen_id);
-    }
-
-    pub fn cancel_remote_keygen(&mut self, keygen_id: KeygenId) {
-        let _ = self.remote_keygen.active_keygens.remove(&keygen_id);
     }
 
     pub fn clear_tmp_data(&mut self) {

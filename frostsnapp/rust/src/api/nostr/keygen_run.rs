@@ -534,11 +534,11 @@ async fn run_session(
                     let mut coord = ctx.coordinator.lock().unwrap();
                     match coord
                         .MUTATE_NO_PERSIST()
-                        .recv_remote_keygen_msg(ctx.keygen_id, msg)
+                        .apply_keygen_message(ctx.keygen_id, msg)
                     {
                         Ok(v) => v,
                         Err(e) => {
-                            event!(Level::ERROR, error = %e, "recv_remote_keygen_msg failed");
+                            event!(Level::ERROR, error = %e, "apply_keygen_message failed");
                             Vec::new()
                         }
                     }

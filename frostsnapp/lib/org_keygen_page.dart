@@ -10,6 +10,7 @@ import 'package:frostsnap/device_setup_step.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/hex.dart';
+import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
@@ -961,7 +962,12 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
       return;
     }
 
-    if (kgState.allAcks &&
+    final localDevices = ctrl.localDevices;
+    final ackedSet = deviceIdSet(kgState.sessionAcks);
+    final allLocalAcked =
+        localDevices.isNotEmpty && localDevices.every(ackedSet.contains);
+    if (kgState.sessionHash != null &&
+        allLocalAcked &&
         ctrl.step == LobbyAndKeygenStep.acceptKeygenAwaiting &&
         !_verifyTransitionInFlight) {
       _verifyTransitionInFlight = true;
@@ -1414,22 +1420,35 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     final pending = state?.keygen;
     final me = _ctrl.myPubkey;
     final others = pending == null
-        ? const []
+        ? const <SelectedParticipant>[]
         : pending.participants.where((p) => p.pubkey != me).toList();
     final verified = _ctrl.verifiedParticipants;
-    // A one-participant keygen (others empty) is finalize-able as soon as
-    // the user taps Continue — there's nothing to verify out-of-band.
-    final allChecked = verified.length == others.length;
+    final allManuallyVerified = verified.length == others.length;
     final confirming = _ctrl.confirming;
-    final canContinue = allChecked && !confirming;
+
+    final ackedSet = deviceIdSet(
+      _ctrl.keygenState?.sessionAcks ?? const <DeviceId>[],
+    );
+    final readiness = <PublicKey, bool>{};
+    if (pending != null) {
+      for (final selected in pending.participants) {
+        readiness[selected.pubkey] = selected.devices.every(
+          (d) => ackedSet.contains(d.deviceId),
+        );
+      }
+    }
+    final allParticipantDevicesAcked = others.every(
+      (p) => readiness[p.pubkey] == true,
+    );
+    final canContinue =
+        allParticipantDevicesAcked && allManuallyVerified && !confirming;
 
     return MultiStepDialogScaffold(
       stepKey: LobbyAndKeygenStep.acceptKeygenVerify,
       title: const Text('Verify the security code'),
       subtitle:
-          'Contact each other participant out-of-band — phone, video '
-          'call, or in person. Confirm the code below matches what they '
-          'see on their device. Tick each one off as you do.',
+          'Read the code below to each participant. Tick when their '
+          'device shows the same.',
       forward: _ctrl.isAnimationForward,
       body: SliverToBoxAdapter(
         child: Column(
@@ -1466,6 +1485,7 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
                 state: state,
                 pending: pending,
                 verified: verified,
+                readiness: readiness,
                 enabled: !confirming,
                 onToggle: _ctrl.toggleVerified,
               ),
@@ -2568,12 +2588,15 @@ List<Widget> _ackParticipantRows({
 
 /// Build the verify-out-of-band checklist rows. One per *other*
 /// participant (self is filtered out — you don't verify with yourself).
-/// The trailing slot is a `Checkbox` rather than the ack pill.
+/// `readiness[pubkey] == true` means all of that participant's selected
+/// devices have acked; until then the row shows a spinner instead of
+/// the checkbox.
 List<Widget> _verifyChecklistRows({
   required LobbyAndKeygenController ctrl,
   required LobbyState state,
   required ResolvedKeygen pending,
   required Set<PublicKey> verified,
+  required Map<PublicKey, bool> readiness,
   required bool enabled,
   required void Function(PublicKey, bool) onToggle,
 }) {
@@ -2590,24 +2613,122 @@ List<Widget> _verifyChecklistRows({
     final offset = keyNumber;
     keyNumber += info.devices.length;
     if (info.pubkey == me) continue;
-    final isVerified = verified.contains(info.pubkey);
     rows.add(
-      _ParticipantRow(
+      _VerifyParticipantRow(
+        key: ValueKey(info.pubkey),
         ctrl: ctrl,
         participant: info,
-        isMe: false,
         isInitiator: initiator != null && initiator == info.pubkey,
         keyOffset: offset,
-        readOnly: true,
-        trailingOverride: Checkbox(
-          value: isVerified,
-          onChanged: enabled ? (v) => onToggle(info.pubkey, v ?? false) : null,
-          visualDensity: VisualDensity.compact,
-        ),
+        isReady: readiness[info.pubkey] ?? false,
+        isVerified: verified.contains(info.pubkey),
+        enabled: enabled,
+        onToggle: (v) => onToggle(info.pubkey, v),
       ),
     );
   }
   return rows;
+}
+
+/// Verify-screen row that pulses primary tint for 200ms when its
+/// participant transitions from waiting to ready.
+class _VerifyParticipantRow extends StatefulWidget {
+  const _VerifyParticipantRow({
+    super.key,
+    required this.ctrl,
+    required this.participant,
+    required this.isInitiator,
+    required this.keyOffset,
+    required this.isReady,
+    required this.isVerified,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final LobbyAndKeygenController ctrl;
+  final ParticipantInfo participant;
+  final bool isInitiator;
+  final int keyOffset;
+  final bool isReady;
+  final bool isVerified;
+  final bool enabled;
+  final void Function(bool) onToggle;
+
+  @override
+  State<_VerifyParticipantRow> createState() => _VerifyParticipantRowState();
+}
+
+class _VerifyParticipantRowState extends State<_VerifyParticipantRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_VerifyParticipantRow old) {
+    super.didUpdateWidget(old);
+    if (!old.isReady && widget.isReady) {
+      _pulse.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final trailing = widget.isReady
+        ? Checkbox(
+            value: widget.isVerified,
+            onChanged: widget.enabled
+                ? (v) => widget.onToggle(v ?? false)
+                : null,
+            visualDensity: VisualDensity.compact,
+          )
+        : SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
+    final row = _ParticipantRow(
+      ctrl: widget.ctrl,
+      participant: widget.participant,
+      isMe: false,
+      isInitiator: widget.isInitiator,
+      keyOffset: widget.keyOffset,
+      readOnly: true,
+      trailingOverride: trailing,
+    );
+    return AnimatedBuilder(
+      animation: _pulse,
+      child: row,
+      builder: (context, child) {
+        if (_pulse.value == 0) return child!;
+        final fade = 1 - _pulse.value;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withValues(alpha: fade * 0.18),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
 }
 
 class _ThresholdHero extends StatelessWidget {

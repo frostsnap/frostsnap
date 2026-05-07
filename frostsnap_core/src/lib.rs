@@ -384,7 +384,7 @@ impl<T: Clone> Versioned<&T> {
 
 /// Identifier for a remote keygen session. Used to route
 /// `CoordinatorSend::Broadcast` payloads and the receiving
-/// `recv_remote_keygen_msg` call to the right in-flight keygen. If a
+/// `apply_keygen_message` call to the right in-flight keygen. If a
 /// future broadcast type emerges for something other than keygen, this
 /// can be generalized to a broader `ChannelId`.
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]

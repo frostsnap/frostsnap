@@ -4,7 +4,7 @@
 //! of coordinators, each with its own local devices, plus a shared message queue
 //! that carries messages between them. `run_until_finished` delivers messages
 //! in random order, cascading through `recv_device_message` / `recv_coordinator_message`
-//! / `recv_remote_keygen_msg` until the queue drains.
+//! / `apply_keygen_message` until the queue drains.
 //!
 //! The `BroadcastInterceptor` hook lets downstream crates divert
 //! `CoordinatorSend::Broadcast` messages out of the in-memory queue (e.g. to publish
@@ -365,7 +365,7 @@ impl Run {
     ) -> MessageResult<()> {
         let outgoing = self.participants[to]
             .coordinator
-            .recv_remote_keygen_msg(channel, msg)?;
+            .apply_keygen_message(channel, msg)?;
         self.extend_from_coordinator(to, outgoing);
         Ok(())
     }
@@ -585,7 +585,7 @@ impl Run {
                     };
                     let outgoing = self.participants[to]
                         .coordinator
-                        .recv_remote_keygen_msg(channel, msg)?;
+                        .apply_keygen_message(channel, msg)?;
                     self.extend_from_coordinator(to, outgoing);
                 }
             },

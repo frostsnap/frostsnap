@@ -4,7 +4,10 @@ use super::{
     CoordinatorToUserMessage, KeyPurpose, Mutation,
 };
 use crate::{
-    message::keygen::{self, Keygen},
+    message::{
+        keygen::{self, Keygen},
+        KeyGenAck, KeyGenResponse,
+    },
     symmetric_encryption::Ciphertext,
     tweak::Xpub,
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError, DeviceId, Error,
@@ -318,12 +321,14 @@ fn process_remote_keygen_msg(
                 return Err(err("device acked wrong session hash"));
             }
 
-            if !state.local_devices.contains(&from) {
-                return Err(err("ack from device not local to this coordinator"));
+            if !state.device_to_share_index.contains_key(&from) {
+                return Err(err("ack from unknown device"));
             }
 
-            acks.insert(from);
-            let all_acks_received = acks.len() == state.local_devices.len();
+            if !acks.insert(from) {
+                return Ok(vec![]);
+            }
+            let all_acks_received = acks.len() == state.device_to_share_index.len();
 
             let outgoing = vec![CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
                 keygen_id,
@@ -455,7 +460,81 @@ impl super::FrostCoordinator {
         ])
     }
 
-    pub fn recv_remote_keygen_msg(
+    pub(super) fn is_remote_keygen_active(&self, keygen_id: KeygenId) -> bool {
+        self.remote_keygen.active_keygens.contains_key(&keygen_id)
+    }
+
+    pub(super) fn receive_device_keygen_response(
+        &mut self,
+        from: DeviceId,
+        response: KeyGenResponse,
+    ) -> crate::MessageResult<Vec<CoordinatorSend>> {
+        let keygen_id = response.keygen_id;
+        let payload = RemoteKeygenPayload::Input(*response.input);
+        let mut outgoing = self.apply_keygen_message(
+            keygen_id,
+            RemoteKeygenMessage {
+                from,
+                payload: payload.clone(),
+            },
+        )?;
+        outgoing.push(CoordinatorSend::Broadcast {
+            channel: keygen_id,
+            from,
+            payload: BroadcastPayload::RemoteKeygen(payload),
+        });
+        Ok(outgoing)
+    }
+
+    pub(super) fn receive_device_keygen_certify(
+        &mut self,
+        from: DeviceId,
+        keygen_id: KeygenId,
+        vrf_cert: vrf_cert::CertVrfProof,
+    ) -> crate::MessageResult<Vec<CoordinatorSend>> {
+        let payload = RemoteKeygenPayload::Certification(vrf_cert);
+        let mut outgoing = self.apply_keygen_message(
+            keygen_id,
+            RemoteKeygenMessage {
+                from,
+                payload: payload.clone(),
+            },
+        )?;
+        outgoing.push(CoordinatorSend::Broadcast {
+            channel: keygen_id,
+            from,
+            payload: BroadcastPayload::RemoteKeygen(payload),
+        });
+        Ok(outgoing)
+    }
+
+    pub(super) fn receive_device_keygen_ack(
+        &mut self,
+        from: DeviceId,
+        ack: KeyGenAck,
+    ) -> crate::MessageResult<Vec<CoordinatorSend>> {
+        let keygen_id = ack.keygen_id;
+        let payload = RemoteKeygenPayload::Ack(ack.ack_session_hash);
+        let mut outgoing = self.apply_keygen_message(
+            keygen_id,
+            RemoteKeygenMessage {
+                from,
+                payload: payload.clone(),
+            },
+        )?;
+        outgoing.push(CoordinatorSend::Broadcast {
+            channel: keygen_id,
+            from,
+            payload: BroadcastPayload::RemoteKeygen(payload),
+        });
+        Ok(outgoing)
+    }
+
+    pub fn cancel_remote_keygen(&mut self, keygen_id: KeygenId) {
+        let _ = self.remote_keygen.active_keygens.remove(&keygen_id);
+    }
+
+    pub fn apply_keygen_message(
         &mut self,
         keygen_id: KeygenId,
         msg: RemoteKeygenMessage,
