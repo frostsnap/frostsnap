@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
@@ -54,7 +53,7 @@ class DeviceSetupController extends ChangeNotifier {
   // `SliverDeviceList.didUpdateWidget` and resubscribe / reset the
   // rendered list on every parent rebuild.
   late final Stream<DeviceListUpdate> _updatesStream = _updates.stream;
-  final Map<DeviceId, String> _deviceNames = deviceIdMap<String>();
+  final Map<DeviceId, String> _deviceNames = {};
   final DeviceActionUpgradeController upgradeController =
       DeviceActionUpgradeController();
 
@@ -162,7 +161,7 @@ class DeviceSetupView extends StatefulWidget {
 }
 
 class _DeviceSetupViewState extends State<DeviceSetupView> {
-  final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
+  final Map<DeviceId, TextEditingController> _nameControllers = {};
 
   @override
   void initState() {
@@ -184,7 +183,7 @@ class _DeviceSetupViewState extends State<DeviceSetupView> {
     // Drop text controllers for devices that are no longer connected
     // so a fresh plug-in starts from blank rather than resurrecting
     // a previously-typed-but-discarded name.
-    final present = deviceIdSet(widget.controller.devices.map((d) => d.id));
+    final present = widget.controller.devices.map((d) => d.id).toSet();
     final stale = _nameControllers.keys
         .where((id) => !present.contains(id))
         .toList();

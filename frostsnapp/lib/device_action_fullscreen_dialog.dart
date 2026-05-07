@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/theme.dart';
@@ -55,15 +54,17 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     this.body,
     this.actionButtons,
     this.onDismissed,
-  }) : _actionNeeded = deviceIdSet(devices),
-       _connectedDevices = deviceIdSet(
-         coord.deviceListState().devices.map((dev) => dev.id),
-       ) {
+  }) : _actionNeeded = devices.toSet(),
+       _connectedDevices = coord
+           .deviceListState()
+           .devices
+           .map((dev) => dev.id)
+           .toSet() {
     _navigator = Navigator.of(context, rootNavigator: true);
     _deviceListSubscription = GlobalStreams.deviceListSubject.listen((update) {
-      _connectedDevices = deviceIdSet(
-        update.state.devices.map((dev) => dev.id).toList(),
-      );
+      _connectedDevices = update.state.devices
+          .map((dev) => dev.id)
+          .toSet();
       _reconcile();
     });
     // Defer the initial reconcile: the constructor is typically called from
@@ -93,7 +94,7 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
   }
 
   Future<void> clearAllExcept(Iterable<DeviceId> deviceIds) async {
-    final keep = deviceIdSet(deviceIds);
+    final keep = deviceIds.toSet();
     final before = _actionNeeded.length;
     _actionNeeded.retainWhere(keep.contains);
     if (_actionNeeded.length != before) _reconcile();

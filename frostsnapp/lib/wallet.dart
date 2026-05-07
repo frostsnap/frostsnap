@@ -331,7 +331,7 @@ class _TxListState extends State<TxList> {
 
     // TODO: This is a hack to scroll to top everytime we switch wallets.
     // There are better ways to do this but requires more involved changes.
-    if (prevKey == null || !keyIdEquals(walletCtx.keyId, prevKey!)) {
+    if (prevKey == null || walletCtx.keyId != prevKey!) {
       prevKey = walletCtx.keyId;
       if (scrollController.hasClients) scrollController.jumpTo(0.0);
     }

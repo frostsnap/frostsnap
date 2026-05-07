@@ -3,7 +3,6 @@ import 'dart:core';
 
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -83,7 +82,7 @@ class WalletListController extends ChangeNotifier {
     }
     final walletIndex = wallets.indexWhere(
       (w) => switch (w) {
-        WalletItemKey item => keyIdEquals(item.frostKey.keyId(), id),
+        WalletItemKey item => item.frostKey.keyId() == id,
         _ => false,
       },
     );
@@ -94,10 +93,8 @@ class WalletListController extends ChangeNotifier {
   void selectRecoveringWallet(RestorationId id) {
     final walletIndex = wallets.indexWhere(
       (w) => switch (w) {
-        WalletItemRestoration item => restorationIdEquals(
-          item.restorationState.restorationId,
-          id,
-        ),
+        WalletItemRestoration item =>
+          item.restorationState.restorationId == id,
         _ => false,
       },
     );

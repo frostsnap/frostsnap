@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:frostsnap/nostr_chat/group_info_page.dart';
@@ -7,7 +6,6 @@ import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/device_selector.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/nostr_chat/nostr_signing_page.dart';
 import 'package:frostsnap/nostr_chat/signing_card.dart';
 import 'package:frostsnap/sign_message.dart';
@@ -2765,7 +2763,7 @@ class _OfferSignSheet extends StatefulWidget {
 
 class _OfferSignSheetState extends State<_OfferSignSheet> {
   _OfferSignPhase _phase = _OfferSignPhase.offer;
-  late HashSet<DeviceId> _selectedDevices;
+  late Set<DeviceId> _selectedDevices;
   String? _error;
 
   /// All devices in this access structure, regardless of state. Used by
@@ -2810,7 +2808,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedDevices = deviceIdSet(_deviceItems.map((d) => d.id));
+    _selectedDevices = _deviceItems.map((d) => d.id).toSet();
   }
 
   Future<void> _doOffer() async {

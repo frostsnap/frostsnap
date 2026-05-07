@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/signing_card.dart';
 import 'package:frostsnap/secure_key_provider.dart';
@@ -47,7 +46,7 @@ class NostrSigningPage extends StatefulWidget {
 }
 
 class _NostrSigningPageState extends State<NostrSigningPage> {
-  Set<DeviceId> connectedDevices = deviceIdSet([]);
+  Set<DeviceId> connectedDevices = {};
   StreamSubscription<DeviceListUpdate>? devicesSub;
   StreamSubscription<SigningState>? signingSub;
   SigningSessionHandle? _handle;
@@ -216,9 +215,7 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
         .getCompletedSignatureShares(id: reservationId)
         .map((entry) => entry.$1)
         .toList();
-    final hasOutstanding = devices.any(
-      (d) => !completedIds.any((c) => deviceIdEquals(c, d)),
-    );
+    final hasOutstanding = devices.any((d) => !completedIds.contains(d));
     if (!hasOutstanding) return;
 
     // Install the remote signing dispatcher and keep the handle. The handle
@@ -431,9 +428,8 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
     final coreSignedIds = coord
         .getCompletedSignatureShares(id: reservationId)
         .map((entry) => entry.$1)
-        .toList();
-    bool coreSigned(DeviceId id) =>
-        coreSignedIds.any((d) => deviceIdEquals(d, id));
+        .toSet();
+    bool coreSigned(DeviceId id) => coreSignedIds.contains(id);
     // `_iHaveSigned` is keyed by our author pubkey — it flips true the moment
     // nostr has observed any partial from us. In the single-local-device
     // case that matches "our share is on the wire"; for multi-device it's

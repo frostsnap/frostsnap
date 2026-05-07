@@ -6,7 +6,6 @@ import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_setup_step.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/hex.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
@@ -39,7 +38,7 @@ class WalletCreateForm {
   BitcoinNetwork network = BitcoinNetwork.bitcoin;
   String? name;
 
-  final Set<DeviceId> selectedDevices = deviceIdSet([]);
+  final Set<DeviceId> selectedDevices = {};
 
   int? threshold;
 }
@@ -243,8 +242,7 @@ class WalletCreateController extends ChangeNotifier {
 
   int get connectedDeviceCount => _deviceSetup.connectedDeviceCount;
   bool get allWalletDevicesConnected => _form.selectedDevices.every(
-    (selectedId) =>
-        _deviceSetup.devices.any((dev) => deviceIdEquals(dev.id, selectedId)),
+    (selectedId) => _deviceSetup.devices.any((dev) => dev.id == selectedId),
   );
   bool get devicesNeedNonceReplenishment {
     final nonceRequest = coord.createNonceRequest(

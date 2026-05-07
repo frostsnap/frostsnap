@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -52,7 +51,7 @@ class SignMessageForm extends StatefulWidget {
 
 class _SignMessageFormState extends State<SignMessageForm> {
   final _messageController = TextEditingController();
-  Set<DeviceId> selected = deviceIdSet([]);
+  Set<DeviceId> selected = {};
 
   @override
   void initState() {
@@ -150,7 +149,7 @@ class SigningDeviceSelector extends StatefulWidget {
 }
 
 class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
-  final Set<DeviceId> selected = deviceIdSet([]);
+  final Set<DeviceId> selected = {};
 
   @override
   void initState() {
@@ -313,9 +312,9 @@ class DeviceSigningProgress extends StatelessWidget {
         if (!snapshot.hasData) {
           return CircularProgressIndicator();
         }
-        final devicesPluggedIn = deviceIdSet(
-          snapshot.data!.devices.map((device) => device.id).toList(),
-        );
+        final devicesPluggedIn = snapshot.data!.devices
+            .map((device) => device.id)
+            .toSet();
         return StreamBuilder<SigningState>(
           stream: stream,
           builder: (context, snapshot) {
@@ -323,7 +322,7 @@ class DeviceSigningProgress extends StatelessWidget {
               return CircularProgressIndicator();
             }
             final state = snapshot.data!;
-            final gotShares = deviceIdSet(state.gotShares);
+            final gotShares = state.gotShares.toSet();
             return ListView.builder(
               physics: NeverScrollableScrollPhysics(),
               shrinkWrap: true,

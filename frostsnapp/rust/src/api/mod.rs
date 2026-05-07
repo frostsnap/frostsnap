@@ -29,28 +29,202 @@ pub use frostsnap_core::{
     KeyId, KeygenId, MasterAppkey, RestorationId, SessionHash, SignSessionId, SymmetricKey,
 };
 
-#[frb(mirror(KeygenId))]
+// Wrapped-bytes IDs each need byte-content `==` / `hashCode` on the Dart
+// side; the FRB defaults delegate to `field0`, which is a
+// `NonGrowableListView<int>` using reference identity. Each mirror below
+// injects the same content-equality override, matching the pattern on
+// `_PublicKey` / `EventId` in `api/nostr/mod.rs`.
+
+#[frb(
+    mirror(KeygenId),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is KeygenId && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _KeygenId(pub [u8; 32]);
 
-#[frb(mirror(AccessStructureId))]
+#[frb(
+    mirror(AccessStructureId),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AccessStructureId && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _AccessStructureId(pub [u8; 32]);
 
-#[frb(mirror(DeviceId))]
+#[frb(
+    mirror(DeviceId),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DeviceId && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _DeviceId(pub [u8; 33]);
 
-#[frb(mirror(MasterAppkey))]
+#[frb(
+    mirror(MasterAppkey),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MasterAppkey && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _MasterAppkey(pub [u8; 65]);
 
-#[frb(mirror(KeyId))]
+#[frb(
+    mirror(KeyId),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is KeyId && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _KeyId(pub [u8; 32]);
 
-#[frb(mirror(SessionHash))]
+#[frb(
+    mirror(SessionHash),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SessionHash && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _SessionHash(pub [u8; 32]);
 
-#[frb(mirror(EncodedSignature))]
+#[frb(
+    mirror(EncodedSignature),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is EncodedSignature && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _EncodedSignature(pub [u8; 64]);
 
-#[frb(mirror(SignSessionId))]
+#[frb(
+    mirror(SignSessionId),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SignSessionId && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _SignSessionId(pub [u8; 32]);
 
 #[frb(mirror(AccessStructureRef))]
@@ -59,10 +233,52 @@ pub struct _AccessStructureRef {
     pub access_structure_id: AccessStructureId,
 }
 
-#[frb(mirror(RestorationId))]
+#[frb(
+    mirror(RestorationId),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RestorationId && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _RestorattionId([u8; 16]);
 
-#[frb(mirror(SymmetricKey))]
+#[frb(
+    mirror(SymmetricKey),
+    non_hash,
+    non_eq,
+    dart_code = "
+  @override
+  int get hashCode => Object.hashAll(field0);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SymmetricKey && _listEquals(field0, other.field0));
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+"
+)]
 pub struct _SymmetricKey(pub [u8; 32]);
 
 pub struct Api {}

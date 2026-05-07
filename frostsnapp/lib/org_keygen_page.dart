@@ -10,7 +10,6 @@ import 'package:frostsnap/device_setup_step.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/hex.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
@@ -963,7 +962,7 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     }
 
     final localDevices = ctrl.localDevices;
-    final ackedSet = deviceIdSet(kgState.sessionAcks);
+    final ackedSet = kgState.sessionAcks.toSet();
     final allLocalAcked =
         localDevices.isNotEmpty && localDevices.every(ackedSet.contains);
     if (kgState.sessionHash != null &&
@@ -1426,9 +1425,8 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     final allManuallyVerified = verified.length == others.length;
     final confirming = _ctrl.confirming;
 
-    final ackedSet = deviceIdSet(
-      _ctrl.keygenState?.sessionAcks ?? const <DeviceId>[],
-    );
+    final ackedSet = (_ctrl.keygenState?.sessionAcks ?? const <DeviceId>[])
+        .toSet();
     final readiness = <PublicKey, bool>{};
     if (pending != null) {
       for (final selected in pending.participants) {

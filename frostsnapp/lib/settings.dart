@@ -13,7 +13,6 @@ import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/nostr_chat/profile_settings_page.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -1168,7 +1167,7 @@ class KeysSettings extends StatelessWidget {
             builder: (context, snap) {
               if (!snap.hasData) return SizedBox();
               final frostKey = snap.data!.keys.firstWhereOrNull(
-                (frostkey) => keyIdEquals(frostkey.keyId(), keyId),
+                (frostkey) => frostkey.keyId() == keyId,
               );
               final accessStructures = frostKey?.accessStructures();
               return AccessStructureListWidget(

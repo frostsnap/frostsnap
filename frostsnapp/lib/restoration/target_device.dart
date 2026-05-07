@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
@@ -26,9 +25,7 @@ class TargetDevice {
       return completer.future;
     }
     final subscription = GlobalStreams.deviceListSubject.listen((update) {
-      final stillConnected = update.state.devices.any(
-        (d) => deviceIdEquals(d.id, id),
-      );
+      final stillConnected = update.state.devices.any((d) => d.id == id);
       if (!stillConnected && !completer.isCompleted) {
         completer.complete();
       }
@@ -47,9 +44,7 @@ class TargetDevice {
       return completer.future;
     }
     final subscription = GlobalStreams.deviceListSubject.listen((update) {
-      final isReconnected = update.state.devices.any(
-        (d) => deviceIdEquals(d.id, id),
-      );
+      final isReconnected = update.state.devices.any((d) => d.id == id);
       if (isReconnected && !completer.isCompleted) {
         completer.complete();
       }

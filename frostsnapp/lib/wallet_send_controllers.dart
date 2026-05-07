@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -363,7 +361,7 @@ class SelectedDevicesController with ChangeNotifier {
   WalletContext? _walletContext;
   FrostKey? _frostKey;
 
-  final HashSet<DeviceId> _selected = deviceIdSet([]);
+  final Set<DeviceId> _selected = {};
 
   SelectedDevicesController();
 
@@ -429,7 +427,7 @@ class SigningSessionController with ChangeNotifier {
   late final StreamSubscription<DeviceListUpdate> _deviceStateSub;
   StreamSubscription<SigningState>? _signingStateSub;
   SigningSessionHandle? _handle;
-  final HashSet<DeviceId> _connectedDevices = deviceIdSet([]);
+  final Set<DeviceId> _connectedDevices = {};
   UnsignedTx? _unsignedTx;
   SignedTx? _signedTx;
 
@@ -490,9 +488,7 @@ class SigningSessionController with ChangeNotifier {
     return devices.map(
       (device) => DeviceSignatureModel(
         id: device.id,
-        hasSignature: _state!.gotShares.any(
-          (thisId) => deviceIdEquals(thisId, device.id),
-        ),
+        hasSignature: _state!.gotShares.contains(device.id),
         isConnected: _connectedDevices.contains(device.id),
       ),
     );

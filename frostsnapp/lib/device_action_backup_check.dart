@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -26,7 +25,7 @@ class DeviceActionBackupCheckController with ChangeNotifier {
   }
 
   Future<CheckBackupState?> show(BuildContext context, DeviceId id) async {
-    final exists = accessStructure.devices().any((v) => deviceIdEquals(v, id));
+    final exists = accessStructure.devices().contains(id);
     if (!exists) return null;
     final connected =
         (await GlobalStreams.deviceListSubject.first).state.getDevice(id: id) !=

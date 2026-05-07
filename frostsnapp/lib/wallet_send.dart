@@ -1,7 +1,6 @@
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_selector.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
@@ -458,7 +457,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 : 'Select Signers',
             trailing: widget.remoteSigning ? null : '$threshold required',
             devices: deviceItems,
-            selected: deviceIdSet(selectedDevices),
+            selected: selectedDevices.toSet(),
             onToggle: (id) {
               if (state.isSignerSelected(dId: id)) {
                 state.deselectSigner(dId: id);
