@@ -521,6 +521,12 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         break;
     }
 
+    // Recovery's per-stage views are non-scrollable Column-rooted
+    // (`DialogContentWithActions`), so we can't use
+    // `MultiStepDialogSwitcher` (which forces outgoing children into the
+    // incoming step's size and would overflow). Use the default
+    // [Stack]-sizing behaviour instead until per-stage views migrate to
+    // sliver-based bodies.
     final switcher = AnimatedSwitcher(
       duration: Durations.medium4,
       reverseDuration: Duration.zero,

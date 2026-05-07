@@ -243,9 +243,8 @@ class WalletCreateController extends ChangeNotifier {
 
   int get connectedDeviceCount => _deviceSetup.connectedDeviceCount;
   bool get allWalletDevicesConnected => _form.selectedDevices.every(
-    (selectedId) => _deviceSetup.devices.any(
-      (dev) => deviceIdEquals(dev.id, selectedId),
-    ),
+    (selectedId) =>
+        _deviceSetup.devices.any((dev) => deviceIdEquals(dev.id, selectedId)),
   );
   bool get devicesNeedNonceReplenishment {
     final nonceRequest = coord.createNonceRequest(
@@ -788,25 +787,11 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final isAnimationForward = _controller.isAnimationForward;
     final step = _controller.step;
 
-    final animatedStep = AnimatedSwitcher(
-      duration: Durations.medium4,
+    final animatedStep = MultiStepDialogSwitcher(
+      forward: isAnimationForward,
+      // Outgoing steps dispose immediately so per-step streams (e.g.
+      // `nonceReplenish`) don't keep running during the slide.
       reverseDuration: Duration.zero,
-      transitionBuilder: (child, animation) {
-        final curvedAnimation = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeInOutCubicEmphasized,
-        );
-        return SlideTransition(
-          position:
-              Tween<Offset>(
-                begin: isAnimationForward
-                    ? const Offset(1, 0)
-                    : const Offset(-1, 0),
-                end: Offset.zero,
-              ).animate(curvedAnimation),
-          child: FadeTransition(opacity: animation, child: child),
-        );
-      },
       child: FullscreenDialogBody(
         key: ValueKey<WalletCreateStep>(step),
         title: Text('${_controller.title}$appBarTrailingText'),

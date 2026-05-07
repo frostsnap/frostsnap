@@ -24,7 +24,8 @@ import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/nostr/keygen_run.dart';
 import 'package:frostsnap/src/rust/api/nostr/remote_keygen.dart';
 import 'package:frostsnap/threshold_selector.dart';
-import 'package:frostsnap/wallet_create.dart' show LargeCircularProgressIndicator;
+import 'package:frostsnap/wallet_create.dart'
+    show LargeCircularProgressIndicator;
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 
@@ -32,12 +33,7 @@ import 'package:sliver_tools/sliver_tools.dart';
 // Steps
 // =============================================================================
 
-enum OrgKeygenStep {
-  walletType,
-  sessionRole,
-  joinSession,
-  nameWallet,
-}
+enum OrgKeygenStep { walletType, sessionRole, joinSession, nameWallet }
 
 enum LobbyAndKeygenStep { lobby, review, acceptKeygen }
 
@@ -66,6 +62,12 @@ class OrgKeygenController extends ChangeNotifier {
 
   OrgKeygenStep _step = OrgKeygenStep.walletType;
   OrgKeygenStep get step => _step;
+
+  /// Slide direction for the next [MultiStepDialogSwitcher] transition.
+  /// Set true on forward step changes (`choseOrganisation`,
+  /// `chooseCreateSession`, …), false on [back].
+  bool _isAnimationForward = true;
+  bool get isAnimationForward => _isAnimationForward;
 
   OrgKeygenRole _role = OrgKeygenRole.host;
   OrgKeygenRole get role => _role;
@@ -107,17 +109,20 @@ class OrgKeygenController extends ChangeNotifier {
   }
 
   void choseOrganisation() {
+    _isAnimationForward = true;
     _step = OrgKeygenStep.sessionRole;
     notifyListeners();
   }
 
   void chooseCreateSession() {
+    _isAnimationForward = true;
     _role = OrgKeygenRole.host;
     _step = OrgKeygenStep.nameWallet;
     notifyListeners();
   }
 
   void chooseJoinSession() {
+    _isAnimationForward = true;
     _role = OrgKeygenRole.participant;
     _step = OrgKeygenStep.joinSession;
     notifyListeners();
@@ -193,6 +198,7 @@ class OrgKeygenController extends ChangeNotifier {
       case OrgKeygenStep.nameWallet:
         _step = OrgKeygenStep.sessionRole;
     }
+    _isAnimationForward = false;
     notifyListeners();
   }
 
@@ -241,6 +247,10 @@ class LobbyAndKeygenController extends ChangeNotifier {
 
   LobbyAndKeygenStep _step = LobbyAndKeygenStep.lobby;
   LobbyAndKeygenStep get step => _step;
+
+  /// Slide direction for the next [MultiStepDialogSwitcher] transition.
+  bool _isAnimationForward = true;
+  bool get isAnimationForward => _isAnimationForward;
 
   LobbyState? _state;
   LobbyState? get lobbyState => _state;
@@ -313,11 +323,13 @@ class LobbyAndKeygenController extends ChangeNotifier {
   /// handle is final and non-null by construction.
   Future<void> markReady(List<({DeviceId id, String name})> devices) async {
     final regs = devices
-        .map((d) => DeviceRegistration(
-              deviceId: d.id,
-              name: d.name,
-              kind: DeviceKind.frostsnap,
-            ))
+        .map(
+          (d) => DeviceRegistration(
+            deviceId: d.id,
+            name: d.name,
+            kind: DeviceKind.frostsnap,
+          ),
+        )
         .toList();
     await handle.markReady(devices: regs);
   }
@@ -328,12 +340,14 @@ class LobbyAndKeygenController extends ChangeNotifier {
     final s = _state;
     if (s == null || !s.allReady()) return;
     _pendingThreshold ??= recommendedThreshold;
+    _isAnimationForward = true;
     _step = LobbyAndKeygenStep.review;
     notifyListeners();
   }
 
   void goToAcceptKeygen() {
     if (_step == LobbyAndKeygenStep.acceptKeygen) return;
+    _isAnimationForward = true;
     _step = LobbyAndKeygenStep.acceptKeygen;
     notifyListeners();
   }
@@ -349,7 +363,9 @@ class LobbyAndKeygenController extends ChangeNotifier {
       if (_excludedHex.contains(p.pubkey.toHex())) continue;
       final regId = p.registerEventId;
       if (regId == null) continue;
-      selected.add(SelectedCoordinator(pubkey: p.pubkey, registerEventId: regId));
+      selected.add(
+        SelectedCoordinator(pubkey: p.pubkey, registerEventId: regId),
+      );
     }
     if (selected.isEmpty) {
       throw StateError('no Ready participants to include');
@@ -383,6 +399,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
       case LobbyAndKeygenStep.acceptKeygen:
         return false;
       case LobbyAndKeygenStep.review:
+        _isAnimationForward = false;
         _step = LobbyAndKeygenStep.lobby;
         notifyListeners();
         return true;
@@ -527,42 +544,8 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
         if (!didPop) _ctrl.back(context);
       },
       child: SafeArea(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 320),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) {
-            // Outgoing step (animation reversed by AnimatedSwitcher) slides
-            // out to the left; incoming slides in from the right. The fade
-            // softens the cross-over so brief layout differences don't pop.
-            final offset = Tween<Offset>(
-              begin: const Offset(1.0, 0.0),
-              end: Offset.zero,
-            ).animate(animation);
-            return SlideTransition(
-              position: offset,
-              child: FadeTransition(opacity: animation, child: child),
-            );
-          },
-          layoutBuilder: (currentChild, previousChildren) {
-            // Default stacks centered; we want top-aligned + stretched so
-            // step layouts (which start with a header at the top) line up.
-            //
-            // `Positioned.fill` for the outgoing children: Stack sizes
-            // itself to the currentChild's intrinsic size only (positioned
-            // children are excluded from Stack sizing). Without this the
-            // Stack sizes to the larger of in/outgoing, so when the
-            // incoming step is shorter the dialog visibly shrinks once
-            // the outgoing finishes animating away.
-            return Stack(
-              alignment: Alignment.topCenter,
-              children: <Widget>[
-                for (final child in previousChildren)
-                  Positioned.fill(child: child),
-                if (currentChild != null) currentChild,
-              ],
-            );
-          },
+        child: MultiStepDialogSwitcher(
+          forward: _ctrl.isAnimationForward,
           child: KeyedSubtree(
             key: ValueKey(_ctrl.step),
             child: _buildStep(context),
@@ -587,7 +570,10 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
 }
 
 class _ConcreteController extends OrgKeygenController {
-  _ConcreteController({required super.nostrClient, required this.nostrContextLookup});
+  _ConcreteController({
+    required super.nostrClient,
+    required this.nostrContextLookup,
+  });
 
   final NostrContext Function() nostrContextLookup;
 
@@ -756,32 +742,8 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
         _ctrl.back();
       },
       child: SafeArea(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 320),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) {
-            final offset = Tween<Offset>(
-              begin: const Offset(1.0, 0.0),
-              end: Offset.zero,
-            ).animate(animation);
-            return SlideTransition(
-              position: offset,
-              child: FadeTransition(opacity: animation, child: child),
-            );
-          },
-          layoutBuilder: (currentChild, previousChildren) {
-            // See _OrgKeygenPageState.build for why we wrap previousChildren
-            // in `Positioned.fill` instead of letting them sit naturally.
-            return Stack(
-              alignment: Alignment.topCenter,
-              children: <Widget>[
-                for (final child in previousChildren)
-                  Positioned.fill(child: child),
-                if (currentChild != null) currentChild,
-              ],
-            );
-          },
+        child: MultiStepDialogSwitcher(
+          forward: _ctrl.isAnimationForward,
           child: KeyedSubtree(
             key: ValueKey(_ctrl.step),
             child: _buildStep(context),
@@ -813,39 +775,40 @@ class _WalletTypeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(title: 'Who is this for?', onBack: () => ctrl.back(context)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          child: Column(
-            spacing: 12,
-            children: [
-              _ChoiceCard(
-                icon: Icons.person_rounded,
-                title: 'Just me',
-                subtitle:
-                    'A personal wallet. You visit your devices in person to sign.',
-                onTap: () => ctrl.chosePersonal(context),
-              ),
-              _ChoiceCard(
-                icon: Icons.groups_rounded,
-                title: 'A group of us',
-                subtitle:
-                    'A shared wallet with other participants. You can each be in a different place.',
-                emphasized: true,
-                onTap: () async {
-                  final ok = await ensureNostrIdentity(context);
-                  if (!ok) return;
-                  ctrl.choseOrganisation();
-                },
-              ),
-            ],
-          ),
+    return FullscreenDialogScaffold(
+      title: const Text('Who is this for?'),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => ctrl.back(context),
+        tooltip: 'Back',
+      ),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          spacing: 12,
+          children: [
+            _ChoiceCard(
+              icon: Icons.person_rounded,
+              title: 'Just me',
+              subtitle:
+                  'A personal wallet. You visit your devices in person to sign.',
+              onTap: () => ctrl.chosePersonal(context),
+            ),
+            _ChoiceCard(
+              icon: Icons.groups_rounded,
+              title: 'A group of us',
+              subtitle:
+                  'A shared wallet with other participants. You can each be in a different place.',
+              emphasized: true,
+              onTap: () async {
+                final ok = await ensureNostrIdentity(context);
+                if (!ok) return;
+                ctrl.choseOrganisation();
+              },
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -860,33 +823,34 @@ class _SessionRoleView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(title: 'Start or join a session', onBack: () => ctrl.back(context)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          child: Column(
-            spacing: 12,
-            children: [
-              _ChoiceCard(
-                icon: Icons.add_circle_outline_rounded,
-                title: 'Start a new session',
-                subtitle: 'Invite others to join a wallet you\'re creating.',
-                emphasized: true,
-                onTap: ctrl.chooseCreateSession,
-              ),
-              _ChoiceCard(
-                icon: Icons.link_rounded,
-                title: 'Join an existing session',
-                subtitle: 'Accept an invite link from someone else.',
-                onTap: ctrl.chooseJoinSession,
-              ),
-            ],
-          ),
+    return FullscreenDialogScaffold(
+      title: const Text('Start or join a session'),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => ctrl.back(context),
+        tooltip: 'Back',
+      ),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          spacing: 12,
+          children: [
+            _ChoiceCard(
+              icon: Icons.add_circle_outline_rounded,
+              title: 'Start a new session',
+              subtitle: 'Invite others to join a wallet you\'re creating.',
+              emphasized: true,
+              onTap: ctrl.chooseCreateSession,
+            ),
+            _ChoiceCard(
+              icon: Icons.link_rounded,
+              title: 'Join an existing session',
+              subtitle: 'Accept an invite link from someone else.',
+              onTap: ctrl.chooseJoinSession,
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -944,8 +908,9 @@ class _JoinSessionViewState extends State<_JoinSessionView> {
     if (_prefilled || ctrl.joinLinkController.text.isNotEmpty) return;
     _prefilled = true;
     ctrl.joinLinkController.text = _prefix;
-    ctrl.joinLinkController.selection =
-        TextSelection.collapsed(offset: _prefix.length);
+    ctrl.joinLinkController.selection = TextSelection.collapsed(
+      offset: _prefix.length,
+    );
   }
 
   void _trySubmit() {
@@ -983,80 +948,77 @@ class _JoinSessionViewState extends State<_JoinSessionView> {
     final errorText = (_attempted && !ctrl.joinLinkValid)
         ? 'Not a valid invite link'
         : ctrl.connectError;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(title: 'Join session', onBack: () => ctrl.back(context)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: Card.outlined(
-            color: theme.colorScheme.surfaceContainerHigh,
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextField(
-                    autofocus: true,
-                    focusNode: _focusNode,
-                    controller: ctrl.joinLinkController,
-                    decoration: InputDecoration(
-                      filled: false,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                      hintText: _prefix,
-                      errorText: errorText,
-                      errorMaxLines: 2,
+    return FullscreenDialogScaffold(
+      title: const Text('Join session'),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => ctrl.back(context),
+        tooltip: 'Back',
+      ),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Card.outlined(
+          color: theme.colorScheme.surfaceContainerHigh,
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  autofocus: true,
+                  focusNode: _focusNode,
+                  controller: ctrl.joinLinkController,
+                  decoration: InputDecoration(
+                    filled: false,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
                     ),
-                    onSubmitted: (_) => _trySubmit(),
+                    hintText: _prefix,
+                    errorText: errorText,
+                    errorMaxLines: 2,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: _paste,
-                        icon: const Icon(Icons.paste),
-                        label: const Text('Paste'),
-                      ),
-                      TextButton.icon(
-                        onPressed: _scan,
-                        icon: const Icon(Icons.qr_code_scanner_rounded),
-                        label: const Text('Scan'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                  onSubmitted: (_) => _trySubmit(),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: _paste,
+                      icon: const Icon(Icons.paste),
+                      label: const Text('Paste'),
+                    ),
+                    TextButton.icon(
+                      onPressed: _scan,
+                      icon: const Icon(Icons.qr_code_scanner_rounded),
+                      label: const Text('Scan'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              icon: ctrl.connecting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_forward_rounded),
-              iconAlignment: IconAlignment.end,
-              onPressed: (ctrl.connecting ||
-                      ctrl.joinLinkController.text.trim().isEmpty)
-                  ? null
-                  : _trySubmit,
-              label: const Text('Join'),
-            ),
-          ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          icon: ctrl.connecting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.arrow_forward_rounded),
+          iconAlignment: IconAlignment.end,
+          onPressed:
+              (ctrl.connecting || ctrl.joinLinkController.text.trim().isEmpty)
+              ? null
+              : _trySubmit,
+          label: const Text('Join'),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1072,67 +1034,61 @@ class _NameView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final devMode =
         SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
     final canSubmit = ctrl.nameValid && !ctrl.connecting;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(title: 'Name this wallet', onBack: () => ctrl.back(context)),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Text(
-            'All wallet participants will see this name.',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: TextField(
-            autofocus: true,
-            controller: ctrl.nameController,
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              hintText: 'e.g. Acme Treasury',
-              errorText: ctrl.connectError,
-              errorMaxLines: 2,
+    return FullscreenDialogScaffold(
+      title: const Text('Name this wallet'),
+      subtitle: 'All wallet participants will see this name.',
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => ctrl.back(context),
+        tooltip: 'Back',
+      ),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              autofocus: true,
+              controller: ctrl.nameController,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                hintText: 'e.g. Acme Treasury',
+                errorText: ctrl.connectError,
+                errorMaxLines: 2,
+              ),
+              maxLength: 15,
+              textCapitalization: TextCapitalization.words,
+              onChanged: (_) => (ctrl as _ConcreteController).bump(),
+              onSubmitted: (_) {
+                if (canSubmit) unawaited(onSubmit());
+              },
             ),
-            maxLength: 15,
-            textCapitalization: TextCapitalization.words,
-            onChanged: (_) => (ctrl as _ConcreteController).bump(),
-            onSubmitted: (_) {
-              if (canSubmit) unawaited(onSubmit());
-            },
-          ),
+            if (devMode)
+              NetworkAdvancedOptions(
+                selected: ctrl.network,
+                onChanged: ctrl.setNetwork,
+              ),
+          ],
         ),
-        if (devMode)
-          NetworkAdvancedOptions(
-            selected: ctrl.network,
-            onChanged: ctrl.setNetwork,
-          ),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              onPressed: canSubmit ? () => unawaited(onSubmit()) : null,
-              icon: ctrl.connecting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_forward_rounded),
-              iconAlignment: IconAlignment.end,
-              label: const Text('Next'),
-            ),
-          ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: canSubmit ? () => unawaited(onSubmit()) : null,
+          icon: ctrl.connecting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.arrow_forward_rounded),
+          iconAlignment: IconAlignment.end,
+          label: const Text('Next'),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1154,136 +1110,129 @@ class _LobbyView extends StatelessWidget {
     // missing, participant counts wrong). Show a spinner instead.
     final channelReady = state != null && state.initiator != null;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // No back button: the only valid exits from the lobby are the
-        // explicit Cancel/Leave footer actions (which publish the
-        // appropriate abort to the relay). Sneaking out via OS back
-        // skips the publish and other participants would never know.
-        _Header(title: state?.keyName ?? ctrl.walletName),
-        if (channelReady)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Text(
-              'Add your devices while you wait for others to join.',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-          ),
-        Flexible(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            shrinkWrap: true,
-            children: [
-              // Local participant saw a `StartKeygen` arrive but their
-              // pubkey isn't in the selected set — surface a terminal
-              // banner so the user can pop the page rather than sitting
-              // on a stale lobby view. Inclusion is derived from
-              // `pending_keygen.includes(myPubkey)` rather than a
-              // separate latched flag on `LobbyState`.
-              if (state != null &&
-                  state.keygen != null &&
-                  !state.keygen!.includes(pubkey: ctrl.myPubkey))
-                Card.filled(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: ListTile(
-                    leading: Icon(Icons.info_outline_rounded,
-                        color: theme.colorScheme.onSurfaceVariant),
-                    title: Text(
-                      'This round started without you',
-                      style: theme.textTheme.titleSmall,
+    return FullscreenDialogScaffold(
+      title: Text(state?.keyName ?? ctrl.walletName),
+      // No back button or close button: the only valid exits from the
+      // lobby are the explicit Cancel/Leave footer actions (which
+      // publish the appropriate abort to the relay). Sneaking out via
+      // OS back skips the publish and other participants would never
+      // know.
+      showClose: false,
+      subtitle: channelReady
+          ? 'Add your devices while you wait for others to join.'
+          : null,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Local participant saw a `StartKeygen` arrive but their
+            // pubkey isn't in the selected set — surface a terminal
+            // banner so the user can pop the page rather than sitting
+            // on a stale lobby view. Inclusion is derived from
+            // `pending_keygen.includes(myPubkey)` rather than a
+            // separate latched flag on `LobbyState`.
+            if (state != null &&
+                state.keygen != null &&
+                !state.keygen!.includes(pubkey: ctrl.myPubkey))
+              Card.filled(
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: ListTile(
+                  leading: Icon(
+                    Icons.info_outline_rounded,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(
+                    'This round started without you',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  subtitle: Text(
+                    'The host chose a different set of participants. '
+                    'You can close this lobby — there\'s nothing more to do here.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                    subtitle: Text(
-                      'The host chose a different set of participants. '
-                      'You can close this lobby — there\'s nothing more to do here.',
-                      style: theme.textTheme.bodySmall?.copyWith(
+                  ),
+                  trailing: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ),
+            // `state.cancelled == true` is handled at the page level by
+            // `_watchForCancellation` (dialog + pop), so no inline banner
+            // is needed.
+            if (!channelReady)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 48),
+                child: Column(
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Connecting to relay…',
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    trailing: TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Close'),
-                    ),
-                  ),
-                ),
-              // `state.cancelled == true` is now handled at the page
-              // level by `_watchForCancellation` (dialog + pop), so
-              // no inline banner is needed — the user will be looking
-              // at the dialog within one frame of the state flip.
-              if (!channelReady)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 48),
-                  child: Column(
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 16),
-                      Text('Connecting to relay…',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)),
-                    ],
-                  ),
-                )
-              else ...[
-                Row(
-                  children: [
-                    Expanded(
-                        child: Text('Participants',
-                            style: theme.textTheme.labelLarge)),
-                    Text(
-                      state.allReady()
-                          ? 'All ready'
-                          : '${state.participants.values.where((p) => p.status != ParticipantStatus.joining).length} of ${state.participants.length} ready',
-                      style: theme.textTheme.labelLarge,
-                    ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                ..._participantRows(ctrl: ctrl, state: state, readOnly: false),
-                const SizedBox(height: 12),
-                if (ctrl.isHost)
-                  _InviteTile(
-                    onTap: () => _showInviteDialog(context, ctrl.handle),
+              )
+            else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Participants',
+                      style: theme.textTheme.labelLarge,
+                    ),
                   ),
-              ],
-            ],
-          ),
-        ),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // Host: red "Cancel lobby" action. Publishes `CancelLobby`
-              // (awaits relay OK + local apply via `dispatch`), then the
-              // page pops on the resulting `state.cancelled = true`
-              // transition. Joiners see the same state change and get a
-              // dialog + pop via `_watchForCancellation`.
-              //
-              // Joiner: red "Leave lobby" action. Publishes `Leave`,
-              // then pops the page directly (Leave doesn't flip
-              // `state.cancelled` for non-selected participants, so we
-              // can't rely on the cancellation watcher).
-              AsyncActionButton(
-                onPressed: ctrl.isHost
-                    ? ctrl.cancelLobby
-                    : () async {
-                        await ctrl.leaveLobby();
-                        if (context.mounted) Navigator.of(context).pop();
-                      },
-                style: FilledButton.styleFrom(
-                  backgroundColor: theme.colorScheme.error,
-                  foregroundColor: theme.colorScheme.onError,
-                ),
-                child: Text(ctrl.isHost ? 'Cancel lobby' : 'Leave lobby'),
+                  Text(
+                    state.allReady()
+                        ? 'All ready'
+                        : '${state.participants.values.where((p) => p.status != ParticipantStatus.joining).length} of ${state.participants.length} ready',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                ],
               ),
-              const Spacer(),
-              _LobbyPrimaryButton(ctrl: ctrl),
+              const SizedBox(height: 4),
+              ..._participantRows(ctrl: ctrl, state: state, readOnly: false),
+              const SizedBox(height: 12),
+              if (ctrl.isHost)
+                _InviteTile(
+                  onTap: () => _showInviteDialog(context, ctrl.handle),
+                ),
             ],
-          ),
+          ],
         ),
-      ],
+      ),
+      footer: Row(
+        children: [
+          // Host: red "Cancel lobby" action. Publishes `CancelLobby`,
+          // then the page pops on the resulting `state.cancelled = true`
+          // transition. Joiners see the same state change via
+          // `_watchForCancellation`.
+          //
+          // Joiner: red "Leave lobby" action. Publishes `Leave`, then
+          // pops the page directly (Leave doesn't flip
+          // `state.cancelled` for non-selected participants, so we
+          // can't rely on the cancellation watcher).
+          AsyncActionButton(
+            onPressed: ctrl.isHost
+                ? ctrl.cancelLobby
+                : () async {
+                    await ctrl.leaveLobby();
+                    if (context.mounted) Navigator.of(context).pop();
+                  },
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+              foregroundColor: theme.colorScheme.onError,
+            ),
+            child: Text(ctrl.isHost ? 'Cancel lobby' : 'Leave lobby'),
+          ),
+          const Spacer(),
+          _LobbyPrimaryButton(ctrl: ctrl),
+        ],
+      ),
     );
   }
 }
@@ -1306,10 +1255,16 @@ class _LobbyPrimaryButton extends StatelessWidget {
       );
     }
     if (!state.allReady()) {
-      return const FilledButton(onPressed: null, child: Text('Waiting for participants'));
+      return const FilledButton(
+        onPressed: null,
+        child: Text('Waiting for participants'),
+      );
     }
     if (ctrl.totalDevices < 2) {
-      return const FilledButton(onPressed: null, child: Text('Need at least 2 devices total'));
+      return const FilledButton(
+        onPressed: null,
+        child: Text('Need at least 2 devices total'),
+      );
     }
     if (!ctrl.isHost) {
       return const _WaitingForHostStatus();
@@ -1337,17 +1292,21 @@ class _ParticipantRow extends StatefulWidget {
   final LobbyAndKeygenController ctrl;
   final ParticipantInfo participant;
   final bool isMe;
+
   /// Whether this participant is the host who created the lobby.
   /// Computed by the parent (`_participantRows`) by comparing
   /// `participant.pubkey` against `state.initiator`.
   final bool isInitiator;
+
   /// The key-number of this participant's first device in the global
   /// (per-lobby) numbering — computed by the parent so device rows can
   /// show "Key #N" consistently.
   final int keyOffset;
+
   /// In review/readonly mode, the trailing slot is a phase-aware label
   /// instead of an edit icon, and the row starts expanded.
   final bool readOnly;
+
   /// If provided, replaces the entire status portion of the trailing
   /// slot (e.g. the Ready/Joining pill or the ack-status indicator on
   /// the accept screen). The expand chevron is still appended after.
@@ -1369,8 +1328,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
     // Host-only exclusion toggle: only meaningful for Ready participants
     // who aren't the host themselves. Lives at the start of the trailing
     // slot, before whichever status/action widgets the row renders.
-    final showExclusionToggle =
-        widget.ctrl.isHost && !widget.isMe && isReady;
+    final showExclusionToggle = widget.ctrl.isHost && !widget.isMe && isReady;
     final exclusionToggle = showExclusionToggle
         ? Tooltip(
             message: excluded ? 'Include in keygen' : 'Exclude from keygen',
@@ -1392,8 +1350,10 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           AnimatedRotation(
             turns: _expanded ? 0.5 : 0.0,
             duration: Durations.short3,
-            child: Icon(Icons.keyboard_arrow_down_rounded,
-                color: theme.colorScheme.onSurfaceVariant),
+            child: Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       );
@@ -1406,8 +1366,10 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           AnimatedRotation(
             turns: _expanded ? 0.5 : 0.0,
             duration: Durations.short3,
-            child: Icon(Icons.keyboard_arrow_down_rounded,
-                color: theme.colorScheme.onSurfaceVariant),
+            child: Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       );
@@ -1433,21 +1395,22 @@ class _ParticipantRowState extends State<_ParticipantRow> {
 
       final statusLabel = switch (p.status) {
         ParticipantStatus.joining => Text(
-            widget.isMe ? 'Waiting for you' : 'Joined',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          widget.isMe ? 'Waiting for you' : 'Joined',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
+        ),
         ParticipantStatus.ready => Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 4,
-            children: [
-              Text('Ready',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(color: Colors.green)),
-              const Icon(Icons.verified_rounded,
-                  size: 18, color: Colors.green),
-            ],
-          ),
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: [
+            Text(
+              'Ready',
+              style: theme.textTheme.labelMedium?.copyWith(color: Colors.green),
+            ),
+            const Icon(Icons.verified_rounded, size: 18, color: Colors.green),
+          ],
+        ),
       };
 
       trailing = Row(
@@ -1468,79 +1431,83 @@ class _ParticipantRowState extends State<_ParticipantRow> {
       duration: Durations.short3,
       opacity: excluded ? 0.55 : 1.0,
       child: Card.filled(
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      color: theme.colorScheme.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                CircleAvatar(
-                  backgroundColor: widget.isMe
-                      ? theme.colorScheme.surfaceContainerHighest
-                      : theme.colorScheme.secondaryContainer,
-                  child: Icon(
-                    widget.isMe
-                        ? Icons.person_rounded
-                        : Icons.person_outline_rounded,
-                    color: widget.isMe
-                        ? theme.colorScheme.onSurfaceVariant
-                        : theme.colorScheme.onSecondaryContainer,
-                    size: 20,
-                  ),
-                ),
-                if (widget.isInitiator)
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Tooltip(
-                      message: 'Host',
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHigh,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.star_rounded,
-                            size: 14, color: Color(0xFFFFC107)),
-                      ),
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        color: theme.colorScheme.surfaceContainerHigh,
+        clipBehavior: Clip.hardEdge,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    backgroundColor: widget.isMe
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : theme.colorScheme.secondaryContainer,
+                    child: Icon(
+                      widget.isMe
+                          ? Icons.person_rounded
+                          : Icons.person_outline_rounded,
+                      color: widget.isMe
+                          ? theme.colorScheme.onSurfaceVariant
+                          : theme.colorScheme.onSecondaryContainer,
+                      size: 20,
                     ),
                   ),
-              ],
+                  if (widget.isInitiator)
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Tooltip(
+                        message: 'Host',
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHigh,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.star_rounded,
+                            size: 14,
+                            color: Color(0xFFFFC107),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              title: Text(
+                widget.isMe ? 'You' : _shortPubkey(p.pubkey),
+                style: theme.textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                isReady
+                    ? '${p.devices.length} ${p.devices.length == 1 ? "device" : "devices"}'
+                    : '',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              trailing: trailing,
+              onTap: (isReady && p.devices.isNotEmpty)
+                  ? () => setState(() => _expanded = !_expanded)
+                  : null,
             ),
-            title: Text(
-              widget.isMe ? 'You' : _shortPubkey(p.pubkey),
-              style: theme.textTheme.titleSmall,
-              overflow: TextOverflow.ellipsis,
+            AnimatedCrossFade(
+              duration: Durations.short4,
+              crossFadeState: (isReady && _expanded)
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              firstChild: const SizedBox(width: double.infinity, height: 0),
+              secondChild: _DeviceList(
+                devices: p.devices,
+                keyOffset: widget.keyOffset,
+              ),
             ),
-            subtitle: Text(
-              isReady
-                  ? '${p.devices.length} ${p.devices.length == 1 ? "device" : "devices"}'
-                  : '',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            trailing: trailing,
-            onTap: (isReady && p.devices.isNotEmpty)
-                ? () => setState(() => _expanded = !_expanded)
-                : null,
-          ),
-          AnimatedCrossFade(
-            duration: Durations.short4,
-            crossFadeState: (isReady && _expanded)
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: const SizedBox(width: double.infinity, height: 0),
-            secondChild: _DeviceList(
-              devices: p.devices,
-              keyOffset: widget.keyOffset,
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1555,17 +1522,20 @@ class _ParticipantRowState extends State<_ParticipantRow> {
         mainAxisSize: MainAxisSize.min,
         spacing: 4,
         children: [
-          Text('Ready',
-              style: theme.textTheme.labelMedium
-                  ?.copyWith(color: Colors.green)),
-          const Icon(Icons.verified_rounded,
-              size: 18, color: Colors.green),
+          Text(
+            'Ready',
+            style: theme.textTheme.labelMedium?.copyWith(color: Colors.green),
+          ),
+          const Icon(Icons.verified_rounded, size: 18, color: Colors.green),
         ],
       );
     }
-    return Text('Joining',
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant));
+    return Text(
+      'Joining',
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
   }
 }
 
@@ -1589,17 +1559,25 @@ class _DeviceList extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
-                  Icon(Icons.key,
-                      size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  Icon(
+                    Icons.key,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 8),
-                  Text('Key #${keyOffset + i}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant)),
+                  Text(
+                    'Key #${keyOffset + i}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(devices[i].name,
-                        style: theme.textTheme.bodyMedium,
-                        overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      devices[i].name,
+                      style: theme.textTheme.bodyMedium,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
@@ -1628,8 +1606,7 @@ List<Widget> _participantRows({
   for (final p in state.participants.values) {
     final offset = keyNumber;
     keyNumber += p.devices.length;
-    final isInitiator =
-        state.initiator != null && state.initiator! == p.pubkey;
+    final isInitiator = state.initiator != null && state.initiator! == p.pubkey;
     rows.add(
       _ParticipantRow(
         ctrl: ctrl,
@@ -1667,13 +1644,19 @@ class _InviteTile extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.person_add_rounded,
-                    size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.person_add_rounded,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 10),
-                Text('Invite participants',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600)),
+                Text(
+                  'Invite participants',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1780,9 +1763,9 @@ class _InviteDialog extends StatelessWidget {
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: inviteLink));
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Copied')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Copied')));
                 }
               },
             ),
@@ -1811,7 +1794,10 @@ class _InviteDialog extends StatelessWidget {
 // Device setup dialog
 // =============================================================================
 
-void _showDeviceSetupDialog(BuildContext context, LobbyAndKeygenController ctrl) {
+void _showDeviceSetupDialog(
+  BuildContext context,
+  LobbyAndKeygenController ctrl,
+) {
   MaybeFullscreenDialog.show<void>(
     context: context,
     barrierDismissible: false,
@@ -1896,9 +1882,7 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
                   ),
                   title: Text(
                     _submitError!,
-                    style: TextStyle(
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
+                    style: TextStyle(color: theme.colorScheme.onErrorContainer),
                   ),
                 ),
               ),
@@ -1957,44 +1941,40 @@ class _ReviewView extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = ctrl.lobbyState;
     final total = ctrl.totalDevices;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(title: 'Choose threshold', onBack: () => ctrl.back()),
-        const SizedBox(height: 12),
-        Flexible(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            shrinkWrap: true,
-            children: [
-              IgnorePointer(
-                ignoring: !ctrl.isHost,
-                child: Opacity(
-                  opacity: ctrl.isHost ? 1.0 : 0.75,
-                  child: ThresholdSelector(
-                    threshold: ctrl.displayThreshold.clamp(1, max(total, 1)),
-                    totalDevices: max(total, 1),
-                    recommendedThreshold: ctrl.recommendedThreshold,
-                    onChanged: (v) => ctrl.setPendingThreshold(v),
-                  ),
+    return FullscreenDialogScaffold(
+      title: const Text('Choose threshold'),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => ctrl.back(),
+        tooltip: 'Back',
+      ),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            IgnorePointer(
+              ignoring: !ctrl.isHost,
+              child: Opacity(
+                opacity: ctrl.isHost ? 1.0 : 0.75,
+                child: ThresholdSelector(
+                  threshold: ctrl.displayThreshold.clamp(1, max(total, 1)),
+                  totalDevices: max(total, 1),
+                  recommendedThreshold: ctrl.recommendedThreshold,
+                  onChanged: (v) => ctrl.setPendingThreshold(v),
                 ),
               ),
-              const SizedBox(height: 16),
-              if (state != null)
-                ..._participantRows(ctrl: ctrl, state: state, readOnly: true),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            if (state != null)
+              ..._participantRows(ctrl: ctrl, state: state, readOnly: true),
+          ],
         ),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: _ReviewPrimaryButton(ctrl: ctrl),
-          ),
-        ),
-      ],
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: _ReviewPrimaryButton(ctrl: ctrl),
+      ),
     );
   }
 }
@@ -2031,10 +2011,7 @@ class _ReviewPrimaryButton extends StatelessWidget {
 // =============================================================================
 
 class _AcceptKeygenView extends StatelessWidget {
-  const _AcceptKeygenView({
-    required this.ctrl,
-    required this.onDecline,
-  });
+  const _AcceptKeygenView({required this.ctrl, required this.onDecline});
   final LobbyAndKeygenController ctrl;
 
   /// Mode A's terminal "Decline" action — routes through a confirm
@@ -2055,10 +2032,7 @@ class _AcceptKeygenView extends StatelessWidget {
     final iAmAcked = pending.acked.any((pk) => pk == me);
 
     return iAmAcked
-        ? _AcceptKeygenWaitingView(
-            ctrl: ctrl,
-            pending: pending,
-          )
+        ? _AcceptKeygenWaitingView(ctrl: ctrl, pending: pending)
         : _AcceptKeygenDecisionView(
             ctrl: ctrl,
             pending: pending,
@@ -2086,83 +2060,67 @@ class _AcceptKeygenDecisionView extends StatelessWidget {
     final state = ctrl.lobbyState;
     final keyName = state?.keyName ?? '';
     final purpose = state?.purpose;
+    final network = purpose?.bitcoinNetwork();
+    final showNetwork = network != null && !network.isMainnet();
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _Header(title: 'Generate this key?'),
-        Flexible(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            shrinkWrap: true,
-            children: [
-              _AcceptInfoRow(
-                icon: Icons.account_balance_wallet_rounded,
-                label: 'Wallet',
-                value: keyName,
-              ),
-              const SizedBox(height: 12),
-              _AcceptInfoRow(
-                icon: Icons.security_rounded,
-                label: 'Threshold',
-                value:
-                    '${pending.threshold} of ${pending.participants.length} required to spend',
-              ),
-              Builder(
-                builder: (context) {
-                  final network = purpose?.bitcoinNetwork();
-                  if (network == null || network.isMainnet()) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: _AcceptInfoRow(
-                      icon: Icons.dns_rounded,
-                      label: 'Network',
-                      value: network.name(),
-                      valueColor: theme.colorScheme.error,
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Participants',
-                style: theme.textTheme.labelLarge,
-              ),
-              const SizedBox(height: 8),
-              if (state != null)
-                ..._ackParticipantRows(
-                  ctrl: ctrl,
-                  state: state,
-                  pending: pending,
+    return FullscreenDialogScaffold(
+      title: const Text('Generate this key?'),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _AcceptInfoRow(
+              icon: Icons.account_balance_wallet_rounded,
+              label: 'Wallet',
+              value: keyName,
+            ),
+            const SizedBox(height: 12),
+            _AcceptInfoRow(
+              icon: Icons.security_rounded,
+              label: 'Threshold',
+              value:
+                  '${pending.threshold} of ${pending.participants.length} required to spend',
+            ),
+            if (showNetwork)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _AcceptInfoRow(
+                  icon: Icons.dns_rounded,
+                  label: 'Network',
+                  value: network.name(),
+                  valueColor: theme.colorScheme.error,
                 ),
-            ],
-          ),
-        ),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              TextButton(
-                onPressed: () => onDecline(),
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.error,
-                ),
-                child: const Text('Decline'),
               ),
-              const Spacer(),
-              AsyncActionButton(
-                onPressed: ctrl.ackKeygen,
-                icon: Icons.arrow_forward_rounded,
-                child: const Text('Accept'),
+            const SizedBox(height: 24),
+            Text('Participants', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 8),
+            if (state != null)
+              ..._ackParticipantRows(
+                ctrl: ctrl,
+                state: state,
+                pending: pending,
               ),
-            ],
-          ),
+          ],
         ),
-      ],
+      ),
+      footer: Row(
+        children: [
+          TextButton(
+            onPressed: () => onDecline(),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+            child: const Text('Decline'),
+          ),
+          const Spacer(),
+          AsyncActionButton(
+            onPressed: ctrl.ackKeygen,
+            icon: Icons.arrow_forward_rounded,
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2179,10 +2137,7 @@ class _AcceptKeygenDecisionView extends StatelessWidget {
 /// device disconnect) all converge on a single Rust-side cleanup driven by
 /// the spawned ceremony task.
 class _AcceptKeygenWaitingView extends StatefulWidget {
-  const _AcceptKeygenWaitingView({
-    required this.ctrl,
-    required this.pending,
-  });
+  const _AcceptKeygenWaitingView({required this.ctrl, required this.pending});
   final LobbyAndKeygenController ctrl;
   final ResolvedKeygen pending;
 
@@ -2340,15 +2295,15 @@ class _AcceptKeygenWaitingViewState extends State<_AcceptKeygenWaitingView> {
     setState(() => _confirming = true);
     try {
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-      // Don't pop here — `state.finished` from the stream flips _phase
-      // to `created` in _onCtrlChanged. The user then dismisses via Done.
+      // Don't pop here — `state.finished` from the stream pops the page
+      // directly via `_onCtrlChanged`.
       await session.confirmMatch(encryptionKey: encryptionKey);
     } catch (e) {
       if (!mounted) return;
       setState(() => _confirming = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Finalize failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Finalize failed: $e')));
     }
   }
 
@@ -2448,9 +2403,7 @@ class _AcceptKeygenWaitingViewState extends State<_AcceptKeygenWaitingView> {
                   size: 36,
                   progress: state == null
                       ? 0
-                      : state.sessionAcks
-                          .where(_localDevices.contains)
-                          .length,
+                      : state.sessionAcks.where(_localDevices.contains).length,
                   total: _localDevices.length,
                 ),
               ],
@@ -2517,10 +2470,15 @@ class _AcceptKeygenWaitingViewState extends State<_AcceptKeygenWaitingView> {
 
   @override
   Widget build(BuildContext context) {
-    return switch (_phase) {
-      _AcceptPhase.awaiting => _buildAwaitingView(context),
-      _AcceptPhase.verify => _buildVerifyView(context),
-    };
+    return MultiStepDialogSwitcher(
+      child: KeyedSubtree(
+        key: ValueKey(_phase),
+        child: switch (_phase) {
+          _AcceptPhase.awaiting => _buildAwaitingView(context),
+          _AcceptPhase.verify => _buildVerifyView(context),
+        },
+      ),
+    );
   }
 
   Widget _buildAwaitingView(BuildContext context) {
@@ -2532,78 +2490,53 @@ class _AcceptKeygenWaitingViewState extends State<_AcceptKeygenWaitingView> {
     final allAcked = ackedCount == total;
     final kg = _kgState;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _Header(title: 'Waiting on keygen'),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Text(
-            _statusLine(allAcked, ackedCount, total, kg),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _ThresholdHero(
-            threshold: pending.threshold,
-            total: total,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Flexible(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            shrinkWrap: true,
-            children: [
-              if (state != null)
-                ..._ackParticipantRows(
-                  ctrl: widget.ctrl,
-                  state: state,
-                  pending: pending,
-                ),
-            ],
-          ),
-        ),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              TextButton(
-                onPressed: _onCancelTapped,
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.error,
-                ),
-                child: const Text('Cancel keygen'),
+    return FullscreenDialogScaffold(
+      title: const Text('Waiting on keygen'),
+      subtitle: _statusLine(allAcked, ackedCount, total, kg),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ThresholdHero(threshold: pending.threshold, total: total),
+            const SizedBox(height: 12),
+            if (state != null)
+              ..._ackParticipantRows(
+                ctrl: widget.ctrl,
+                state: state,
+                pending: pending,
               ),
-              const Spacer(),
-              if (allAcked && (kg == null || !kg.allAcks))
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      _spinnerLabel(kg),
-                      style: theme.textTheme.labelLarge,
-                    ),
-                  ],
-                ),
-            ],
-          ),
+          ],
         ),
-      ],
+      ),
+      footer: Row(
+        children: [
+          TextButton(
+            onPressed: _onCancelTapped,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+            child: const Text('Cancel keygen'),
+          ),
+          const Spacer(),
+          if (allAcked && (kg == null || !kg.allAcks))
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(_spinnerLabel(kg), style: theme.textTheme.labelLarge),
+              ],
+            ),
+        ],
+      ),
     );
   }
 
@@ -2616,107 +2549,93 @@ class _AcceptKeygenWaitingViewState extends State<_AcceptKeygenWaitingView> {
     final allChecked = _verified.length == others.length;
     final canContinue = allChecked && !_confirming;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _Header(title: 'Verify the security code'),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Text(
-            'Contact each other participant out-of-band — phone, video '
-            'call, or in person. Confirm the code below matches what they '
-            'see on their device. Tick each one off as you do.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Card.filled(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 12,
-                horizontal: 16,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${pending.threshold}-of-${pending.participants.length}',
-                    style: theme.textTheme.labelLarge,
-                  ),
-                  Text(
-                    _formatChecksum(_kgState?.sessionHash?.field0),
-                    style: theme.textTheme.headlineLarge?.copyWith(
-                      fontFamily: monospaceTextStyle.fontFamily,
+    return FullscreenDialogScaffold(
+      title: const Text('Verify the security code'),
+      subtitle:
+          'Contact each other participant out-of-band — phone, video '
+          'call, or in person. Confirm the code below matches what they '
+          'see on their device. Tick each one off as you do.',
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card.filled(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${pending.threshold}-of-${pending.participants.length}',
+                      style: theme.textTheme.labelLarge,
                     ),
-                  ),
-                ],
+                    Text(
+                      _formatChecksum(_kgState?.sessionHash?.field0),
+                      style: theme.textTheme.headlineLarge?.copyWith(
+                        fontFamily: monospaceTextStyle.fontFamily,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Flexible(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            shrinkWrap: true,
-            children: [
-              if (state != null)
-                ..._verifyChecklistRows(
-                  ctrl: widget.ctrl,
-                  state: state,
-                  pending: pending,
-                  verified: _verified,
-                  enabled: !_confirming,
-                  onToggle: (pk, ok) {
-                    setState(() {
-                      if (ok) {
-                        _verified.add(pk);
-                      } else {
-                        _verified.remove(pk);
-                      }
-                    });
-                  },
-                ),
-            ],
-          ),
-        ),
-        const Divider(height: 0),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              TextButton(
-                onPressed: _confirming ? null : _onCancelTapped,
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.error,
-                ),
-                child: const Text('Cancel keygen'),
+            const SizedBox(height: 12),
+            if (state != null)
+              ..._verifyChecklistRows(
+                ctrl: widget.ctrl,
+                state: state,
+                pending: pending,
+                verified: _verified,
+                enabled: !_confirming,
+                onToggle: (pk, ok) {
+                  setState(() {
+                    if (ok) {
+                      _verified.add(pk);
+                    } else {
+                      _verified.remove(pk);
+                    }
+                  });
+                },
               ),
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: canContinue ? _confirmAndFinalize : null,
-                icon: _confirming
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.check_rounded),
-                label: const Text('Continue'),
-              ),
-            ],
-          ),
+          ],
         ),
-      ],
+      ),
+      footer: Row(
+        children: [
+          TextButton(
+            onPressed: _confirming ? null : _onCancelTapped,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+            child: const Text('Cancel keygen'),
+          ),
+          const Spacer(),
+          FilledButton.icon(
+            onPressed: canContinue ? _confirmAndFinalize : null,
+            icon: _confirming
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_rounded),
+            label: const Text('Continue'),
+          ),
+        ],
+      ),
     );
   }
 
   String _statusLine(
-      bool allAcked, int ackedCount, int total, KeyGenState? kg) {
+    bool allAcked,
+    int ackedCount,
+    int total,
+    KeyGenState? kg,
+  ) {
     if (!allAcked) return '$ackedCount of $total accepted';
     if (kg == null) return 'Everyone is in. Starting keygen…';
     if (kg.aborted != null) return 'Aborted';
@@ -2753,13 +2672,17 @@ class _AckStatusPill extends StatelessWidget {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle_rounded,
-              size: 18, color: theme.colorScheme.primary),
+          Icon(
+            Icons.check_circle_rounded,
+            size: 18,
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(width: 6),
           Text(
             'Accepted',
-            style: theme.textTheme.labelMedium
-                ?.copyWith(color: theme.colorScheme.primary),
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
           ),
         ],
       );
@@ -2778,8 +2701,9 @@ class _AckStatusPill extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           'Waiting',
-          style: theme.textTheme.labelMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
@@ -2814,8 +2738,9 @@ List<Widget> _ackParticipantRows({
         isInitiator: initiator != null && initiator == info.pubkey,
         keyOffset: offset,
         readOnly: true,
-        trailingOverride:
-            _AckStatusPill(isAcked: ackedSet.contains(info.pubkey)),
+        trailingOverride: _AckStatusPill(
+          isAcked: ackedSet.contains(info.pubkey),
+        ),
       ),
     );
   }
@@ -2857,9 +2782,7 @@ List<Widget> _verifyChecklistRows({
         readOnly: true,
         trailingOverride: Checkbox(
           value: isVerified,
-          onChanged: enabled
-              ? (v) => onToggle(info.pubkey, v ?? false)
-              : null,
+          onChanged: enabled ? (v) => onToggle(info.pubkey, v ?? false) : null,
           visualDensity: VisualDensity.compact,
         ),
       ),
@@ -2991,49 +2914,6 @@ class _WaitingForHostStatus extends StatelessWidget {
   }
 }
 
-/// Step header. Mirrors the spacing of the standard [TopBar] used by
-/// `FullscreenDialogScaffold` (8px top spacer + `EdgeInsets.fromLTRB(16,
-/// 12, 16, 16)` headline padding) so the title doesn't sit glued to the
-/// dialog edge.
-///
-/// TODO: migrate the per-step Column layouts to `FullscreenDialogBody`
-/// (sliver-based) so we can drop this in favour of the standard
-/// `TopBarSliver` directly.
-class _Header extends StatelessWidget {
-  const _Header({required this.title, this.onBack});
-  final String title;
-
-  /// `null` hides the back arrow entirely — used on screens where the
-  /// only valid exits are the explicit footer actions.
-  final VoidCallback? onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 8),
-        Padding(
-          padding: EdgeInsets.fromLTRB(onBack == null ? 16 : 4, 12, 16, 16),
-          child: Row(
-            children: [
-              if (onBack != null) ...[
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: onBack,
-                ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _ChoiceCard extends StatelessWidget {
   const _ChoiceCard({
     required this.icon,
@@ -3065,37 +2945,46 @@ class _ChoiceCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon,
-                  size: 32,
-                  color: emphasized
-                      ? theme.colorScheme.onSecondaryContainer
-                      : theme.colorScheme.onSurfaceVariant),
+              Icon(
+                icon,
+                size: 32,
+                color: emphasized
+                    ? theme.colorScheme.onSecondaryContainer
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   spacing: 4,
                   children: [
-                    Text(title,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: emphasized
-                              ? theme.colorScheme.onSecondaryContainer
-                              : null,
-                        )),
-                    Text(subtitle,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: emphasized
-                              ? theme.colorScheme.onSecondaryContainer
-                                  .withValues(alpha: 0.8)
-                              : theme.colorScheme.onSurfaceVariant,
-                        )),
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: emphasized
+                            ? theme.colorScheme.onSecondaryContainer
+                            : null,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: emphasized
+                            ? theme.colorScheme.onSecondaryContainer.withValues(
+                                alpha: 0.8,
+                              )
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded,
-                  color: emphasized
-                      ? theme.colorScheme.onSecondaryContainer
-                      : theme.colorScheme.onSurfaceVariant),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: emphasized
+                    ? theme.colorScheme.onSecondaryContainer
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
             ],
           ),
         ),

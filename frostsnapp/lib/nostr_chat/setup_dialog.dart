@@ -84,73 +84,77 @@ class _NostrSetupDialogState extends State<_NostrSetupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    return _showImport ? _buildImport(context) : _buildWelcome(context);
+  }
 
-    if (_showImport) {
-      return AlertDialog(
-        title: const Text('Import Nostr Identity'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Enter your nsec:'),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _nsecController,
-                decoration: InputDecoration(
-                  hintText: 'nsec1...',
-                  errorText: _errorText,
-                  border: const OutlineInputBorder(),
-                ),
-                autocorrect: false,
-                enableSuggestions: false,
-                enabled: !_isLoading,
+  Widget _buildImport(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Import Nostr Identity'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Enter your nsec:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _nsecController,
+              decoration: InputDecoration(
+                hintText: 'nsec1...',
+                errorText: _errorText,
+                border: const OutlineInputBorder(),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: theme.colorScheme.error,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Keep your nsec private! Never share it.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
+              autocorrect: false,
+              enableSuggestions: false,
+              enabled: !_isLoading,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: theme.colorScheme.error,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Keep your nsec private! Never share it.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
                     ),
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: _isLoading
-                ? null
-                : () => setState(() => _showImport = false),
-            child: const Text('Back'),
-          ),
-          FilledButton(
-            onPressed: _isLoading ? null : _importIdentity,
-            child: _isLoading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Import'),
-          ),
-        ],
-      );
-    }
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading
+              ? null
+              : () => setState(() => _showImport = false),
+          child: const Text('Back'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _importIdentity,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Import'),
+        ),
+      ],
+    );
+  }
 
+  Widget _buildWelcome(BuildContext context) {
+    final theme = Theme.of(context);
     return AlertDialog(
       title: const Text('Welcome to Frostsnap Chat'),
       content: SizedBox(

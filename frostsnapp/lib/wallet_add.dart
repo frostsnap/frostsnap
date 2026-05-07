@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration.dart';
-import 'package:frostsnap/dialog_content_with_actions.dart';
-import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
@@ -361,160 +360,36 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
 
   @override
   Widget build(BuildContext context) {
-    final windowSize = WindowSizeContext.of(context);
-
-    final title = switch (_state) {
-      _JoinState.input => 'Join Wallet',
-      _JoinState.loading => 'Joining...',
-      _JoinState.success => '',
-      _JoinState.error => 'Error',
-    };
-
-    final content = AnimatedSwitcher(
-      duration: Durations.medium2,
-      child: switch (_state) {
-        _JoinState.input => _buildInput(context),
-        _JoinState.loading => _buildLoading(context),
-        _JoinState.success => _buildSuccess(context),
-        _JoinState.error => _buildError(context),
-      },
-    );
-
-    if (windowSize == WindowSizeClass.compact) {
-      return content;
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TopBar(title: Text(title)),
-        content,
-      ],
+    return MultiStepDialogScaffold(
+      body: KeyedSubtree(
+        key: ValueKey(_state),
+        child: switch (_state) {
+          _JoinState.input => _buildInput(context),
+          _JoinState.loading => _buildLoading(context),
+          _JoinState.success => _buildSuccess(context),
+          _JoinState.error => _buildError(context),
+        },
+      ),
+      footer: _buildFooter(context),
     );
   }
 
-  Widget _buildInput(BuildContext context) {
+  Widget? _buildFooter(BuildContext context) {
     final theme = Theme.of(context);
-    return DialogContentWithActions(
-      key: const ValueKey('input'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.link_rounded, size: 64, color: theme.colorScheme.primary),
-          const SizedBox(height: 24),
-          Text(
-            'Paste an invite link to join an existing wallet.',
-            style: theme.textTheme.bodyLarge,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _controller,
-            decoration: InputDecoration(
-              hintText: 'frostsnap://channel/...',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.link),
-            ),
-            autofocus: true,
-            onSubmitted: (_) => _join(),
-          ),
-        ],
-      ),
-      actions: [
-        FilledButton.icon(
+    return switch (_state) {
+      _JoinState.input => Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
           onPressed: _join,
           icon: const Icon(Icons.login_rounded),
           label: const Text('Join'),
         ),
-      ],
-    );
-  }
-
-  Widget _buildLoading(BuildContext context) {
-    final theme = Theme.of(context);
-    return DialogContentWithActions(
-      key: const ValueKey('loading'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(
-            width: 64,
-            height: 64,
-            child: CircularProgressIndicator(strokeWidth: 3),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Joining wallet...',
-            style: theme.textTheme.headlineSmall,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text('Fetching wallet data from relays', textAlign: TextAlign.center),
-        ],
       ),
-      actions: [],
-    );
-  }
-
-  Widget _buildSuccess(BuildContext context) {
-    final theme = Theme.of(context);
-    return DialogContentWithActions(
-      key: const ValueKey('success'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const AnimatedCheckCircle(size: 64),
-          const SizedBox(height: 24),
-          Text(
-            _walletName ?? 'Wallet',
-            style: theme.textTheme.headlineSmall,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text('Wallet joined successfully', textAlign: TextAlign.center),
-        ],
-      ),
-      actions: [],
-    );
-  }
-
-  Widget _buildError(BuildContext context) {
-    final theme = Theme.of(context);
-    return DialogContentWithActions(
-      key: const ValueKey('error'),
-      content: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.errorContainer,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.error_outline_rounded,
-              size: 64,
-              color: theme.colorScheme.onErrorContainer,
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Failed to join wallet',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                color: theme.colorScheme.onErrorContainer,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _error ?? 'Unknown error',
-              style: TextStyle(color: theme.colorScheme.onErrorContainer),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        FilledButton.icon(
+      _JoinState.loading => null,
+      _JoinState.success => null,
+      _JoinState.error => Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
           onPressed: () => setState(() => _state = _JoinState.input),
           icon: const Icon(Icons.refresh),
           label: const Text('Try Again'),
@@ -523,7 +398,140 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
             foregroundColor: theme.colorScheme.onError,
           ),
         ),
-      ],
+      ),
+    };
+  }
+
+  Widget _buildInput(BuildContext context) {
+    final theme = Theme.of(context);
+    return FullscreenDialogBody(
+      title: const Text('Join Wallet'),
+      body: SliverToBoxAdapter(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.link_rounded,
+              size: 64,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Paste an invite link to join an existing wallet.',
+              style: theme.textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(
+                hintText: 'frostsnap://channel/...',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.link),
+              ),
+              autofocus: true,
+              onSubmitted: (_) => _join(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoading(BuildContext context) {
+    final theme = Theme.of(context);
+    return FullscreenDialogBody(
+      title: const Text('Joining…'),
+      body: SliverToBoxAdapter(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 64,
+              height: 64,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Joining wallet…',
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Fetching wallet data from relays',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuccess(BuildContext context) {
+    final theme = Theme.of(context);
+    return FullscreenDialogBody(
+      title: const Text('Joined'),
+      showClose: false,
+      body: SliverToBoxAdapter(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AnimatedCheckCircle(size: 64),
+            const SizedBox(height: 24),
+            Text(
+              _walletName ?? 'Wallet',
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Wallet joined successfully',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildError(BuildContext context) {
+    final theme = Theme.of(context);
+    return FullscreenDialogBody(
+      title: const Text('Error'),
+      body: SliverToBoxAdapter(
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.errorContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                size: 64,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Failed to join wallet',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _error ?? 'Unknown error',
+                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
