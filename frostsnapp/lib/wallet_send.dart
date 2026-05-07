@@ -453,7 +453,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           DeviceSelectorList(
-            title: widget.remoteSigning ? 'Offer to sign with' : 'Select Signers',
+            title: widget.remoteSigning
+                ? 'Offer to sign with'
+                : 'Select Signers',
             trailing: widget.remoteSigning ? null : '$threshold required',
             devices: deviceItems,
             selected: deviceIdSet(selectedDevices),
@@ -470,11 +472,15 @@ class _WalletSendPageState extends State<WalletSendPage> {
             child: FilledButton(
               onPressed: widget.remoteSigning
                   ? () => signersDone(context)
-                  : remaining == 0 ? () => signersDone(context) : null,
+                  : remaining == 0
+                  ? () => signersDone(context)
+                  : null,
               child: Text(
                 widget.remoteSigning
                     ? 'Send'
-                    : remaining > 0 ? 'Select ${remaining} more' : 'Sign transaction',
+                    : remaining > 0
+                    ? 'Select ${remaining} more'
+                    : 'Sign transaction',
               ),
             ),
           ),

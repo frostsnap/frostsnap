@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 
-/// A simple layout widget for dialog content with action buttons at the bottom.
-/// Provides consistent layout structure with internal scrolling, no visual chrome.
+/// **Legacy** — for non-workflow modal forms only. Multi-step
+/// workflows should use [MultiStepDialogScaffold] in
+/// `fullscreen_dialog_scaffold.dart`. Currently retained for
+/// `electrum_server_settings.dart`'s simple input/connecting/success
+/// /failure UI states (a single dialog with internal mode flips, not
+/// a step machine).
+///
+/// A simple layout widget for dialog content with action buttons at
+/// the bottom. Provides consistent layout structure with internal
+/// scrolling, no visual chrome.
 class DialogContentWithActions extends StatelessWidget {
   final Widget content;
   final List<Widget> actions;

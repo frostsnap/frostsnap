@@ -88,8 +88,7 @@ class DeviceSetupController extends ChangeNotifier {
       cannotUpgrade: (_) => true,
     );
   });
-  bool get devicesUsed =>
-      _deviceList.devices.any((dev) => dev.name != null);
+  bool get devicesUsed => _deviceList.devices.any((dev) => dev.name != null);
 
   /// True when at least one device is connected, none block progress
   /// (firmware issues, already-holds-a-key), and every connected
@@ -146,8 +145,13 @@ class DeviceSetupController extends ChangeNotifier {
 /// [DeviceSetupController]. Returns a [MultiSliver] — host inside a
 /// `CustomScrollView` (or `MultiSliver` parent).
 class DeviceSetupView extends StatefulWidget {
-  const DeviceSetupView({super.key, required this.controller, this.onSubmitted});
+  const DeviceSetupView({
+    super.key,
+    required this.controller,
+    this.onSubmitted,
+  });
   final DeviceSetupController controller;
+
   /// Fired when the user presses Enter on any device-name TextField. The
   /// caller decides whether the form is in a submittable state — this
   /// just forwards the keypress up.
@@ -181,8 +185,9 @@ class _DeviceSetupViewState extends State<DeviceSetupView> {
     // so a fresh plug-in starts from blank rather than resurrecting
     // a previously-typed-but-discarded name.
     final present = deviceIdSet(widget.controller.devices.map((d) => d.id));
-    final stale =
-        _nameControllers.keys.where((id) => !present.contains(id)).toList();
+    final stale = _nameControllers.keys
+        .where((id) => !present.contains(id))
+        .toList();
     for (final id in stale) {
       _nameControllers.remove(id)?.dispose();
     }
@@ -241,8 +246,7 @@ class _DeviceSetupViewState extends State<DeviceSetupView> {
                   icon: Icons.system_update_alt_rounded,
                   color: Colors.orange,
                 ),
-                onTap: () async =>
-                    await ctrl.upgradeController.run(parentCtx),
+                onTap: () async => await ctrl.upgradeController.run(parentCtx),
               ),
               cannotUpgrade: (reason) => _deviceRow(
                 context: context,
@@ -279,8 +283,7 @@ class _DeviceSetupViewState extends State<DeviceSetupView> {
                       await ctrl.upgradeController.run(context),
                   child: const Text('Start Upgrade'),
                 ),
-                onTap: () async =>
-                    await ctrl.upgradeController.run(context),
+                onTap: () async => await ctrl.upgradeController.run(context),
               ),
             ),
           ),
@@ -407,7 +410,9 @@ class _DeviceSetupViewState extends State<DeviceSetupView> {
         counterText: '',
       ),
       onChanged: (name) => ctrl.setDeviceName(device.id, name),
-      onSubmitted: widget.onSubmitted == null ? null : (_) => widget.onSubmitted!(),
+      onSubmitted: widget.onSubmitted == null
+          ? null
+          : (_) => widget.onSubmitted!(),
     );
   }
 }

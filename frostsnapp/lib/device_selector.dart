@@ -21,7 +21,8 @@ class DeviceItem {
   static List<DeviceItem> fromAccessStructure(AccessStructure accessStruct) {
     return accessStruct.devices().map((id) {
       final name = coord.getDeviceName(id: id) ?? '<unknown>';
-      final shareIndex = accessStruct.getDeviceShortShareIndex(deviceId: id) ?? 0;
+      final shareIndex =
+          accessStruct.getDeviceShortShareIndex(deviceId: id) ?? 0;
       final nonces = coord.noncesAvailable(id: id);
       return DeviceItem(
         id: id,
@@ -65,9 +66,7 @@ class DeviceSelectorList extends StatelessWidget {
           final isSelected = selected.contains(device.id);
           return CheckboxListTile(
             value: isSelected,
-            onChanged: device.enabled
-                ? (_) => onToggle(device.id)
-                : null,
+            onChanged: device.enabled ? (_) => onToggle(device.id) : null,
             secondary: Icon(Icons.key),
             title: Text('#${device.shareIndex} ${device.name}'),
             subtitle: device.disabledReason != null

@@ -36,8 +36,9 @@ class _NetworkAdvancedOptionsState extends State<NetworkAdvancedOptions> {
       children: [
         Text(
           'Network',
-          style: theme.textTheme.labelMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         SegmentedButton<String>(
           showSelectedIcon: false,

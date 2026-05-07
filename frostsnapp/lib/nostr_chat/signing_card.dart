@@ -69,21 +69,22 @@ class SigningRequestState extends ChangeNotifier {
       DateTime.fromMillisecondsSinceEpoch(request.timestamp * 1000);
 }
 
-String signingDetailsText(
-  SigningDetails details, {
-  WalletContext? walletCtx,
-}) => switch (details) {
-  SigningDetails_Message(:final message) => message,
-  SigningDetails_Nostr(:final content) => content,
-  SigningDetails_Transaction(:final transaction) => () {
-    if (walletCtx == null) return 'Bitcoin Transaction';
-    final recipients = transaction.recipients().where((r) => !r.isMine).toList();
-    if (recipients.isEmpty) return 'Bitcoin Transaction';
-    final r = recipients.first;
-    final addr = r.address(network: walletCtx.network)?.toString() ?? '?';
-    return 'Send ${r.amount} sats to $addr';
-  }(),
-};
+String signingDetailsText(SigningDetails details, {WalletContext? walletCtx}) =>
+    switch (details) {
+      SigningDetails_Message(:final message) => message,
+      SigningDetails_Nostr(:final content) => content,
+      SigningDetails_Transaction(:final transaction) => () {
+        if (walletCtx == null) return 'Bitcoin Transaction';
+        final recipients = transaction
+            .recipients()
+            .where((r) => !r.isMine)
+            .toList();
+        if (recipients.isEmpty) return 'Bitcoin Transaction';
+        final r = recipients.first;
+        final addr = r.address(network: walletCtx.network)?.toString() ?? '?';
+        return 'Send ${r.amount} sats to $addr';
+      }(),
+    };
 
 Widget _buildSigningDetails(
   BuildContext context,
@@ -126,18 +127,22 @@ Widget _buildSigningDetails(
               ),
             ],
           ),
-          onTap: onTap ?? () {
-            showBottomSheetOrDialog(
-              context,
-              title: const Text('Transaction Details'),
-              builder: (_, scrollController) => walletCtx.wrap(
-                Builder(builder: (ctx) => SingleChildScrollView(
-                  controller: scrollController,
-                  child: buildDetailsColumn(ctx, txDetails: txDetails),
-                )),
-              ),
-            );
-          },
+          onTap:
+              onTap ??
+              () {
+                showBottomSheetOrDialog(
+                  context,
+                  title: const Text('Transaction Details'),
+                  builder: (_, scrollController) => walletCtx.wrap(
+                    Builder(
+                      builder: (ctx) => SingleChildScrollView(
+                        controller: scrollController,
+                        child: buildDetailsColumn(ctx, txDetails: txDetails),
+                      ),
+                    ),
+                  ),
+                );
+              },
         ),
       );
     }
@@ -146,7 +151,10 @@ Widget _buildSigningDetails(
   final (IconData icon, String text) = switch (details) {
     SigningDetails_Message(:final message) => (Icons.message, message),
     SigningDetails_Nostr(:final content) => (Icons.tag, content),
-    SigningDetails_Transaction() => (Icons.currency_bitcoin, 'Bitcoin Transaction'),
+    SigningDetails_Transaction() => (
+      Icons.currency_bitcoin,
+      'Bitcoin Transaction',
+    ),
   };
 
   return Container(
@@ -473,106 +481,112 @@ class SigningRequestCard extends StatelessWidget {
     final bubble = GestureDetector(
       onTap: onTap,
       child: Opacity(
-      opacity: isCancelled ? 0.5 : 1.0,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.7,
-        ),
-        decoration: BoxDecoration(
-          color: isHighlighted
-              ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
-              : baseColor,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: isHighlighted
-              ? [
-                  BoxShadow(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.4),
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  ),
-                ]
-              : [],
-        ),
-        child: IntrinsicWidth(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _signingHeader(
-                theme,
-                icon: isCancelled ? Icons.cancel : Icons.draw,
-                iconColor: isCancelled ? theme.colorScheme.error : null,
-                title: isCancelled ? 'Cancelled' : 'Signing Request',
-              ),
-              if (!isMe) ...[
-                const SizedBox(height: 4),
-                Text(
-                  this.getDisplayName(request.author),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
+        opacity: isCancelled ? 0.5 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.7,
+          ),
+          decoration: BoxDecoration(
+            color: isHighlighted
+                ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+                : baseColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: isHighlighted
+                ? [
+                    BoxShadow(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : [],
+          ),
+          child: IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _signingHeader(
+                  theme,
+                  icon: isCancelled ? Icons.cancel : Icons.draw,
+                  iconColor: isCancelled ? theme.colorScheme.error : null,
+                  title: isCancelled ? 'Cancelled' : 'Signing Request',
                 ),
-              ],
-              const SizedBox(height: 8),
-              _buildSigningDetails(context, theme, signingDetails(signTask: request.signTask), onTap: onTap),
-              if (request.message.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(request.message, style: theme.textTheme.bodyMedium),
-              ],
-              if (!isCancelled && !isComplete) ...[
-                const SizedBox(height: 10),
-                _SigningStatusStrip(
-                  state: state,
-                  threshold: threshold,
-                  iOffered: iOffered,
-                  onOfferToSign: onOfferToSign,
-                ),
-              ],
-              if (!isCancelled && !isComplete && onCancel != null) ...[
-                const SizedBox(height: 6),
-                OutlinedButton(
-                  onPressed: onCancel,
-                  child: const Text('Cancel'),
-                ),
-              ],
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isComplete) ...[
-                    Icon(Icons.check_circle, size: 12, color: Colors.green),
-                    const SizedBox(width: 4),
-                  ],
+                if (!isMe) ...[
+                  const SizedBox(height: 4),
                   Text(
-                    _formatTime(time),
+                    this.getDisplayName(request.author),
                     style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 10,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: theme.colorScheme.primary,
                     ),
                   ),
-                  if (isMe && sendStatus != null) ...[
-                    const SizedBox(width: 4),
-                    Icon(
-                      switch (sendStatus!) {
-                        MessageStatus.pending => Icons.access_time,
-                        MessageStatus.sent => Icons.check,
-                        MessageStatus.failed => Icons.error_outline,
-                      },
-                      size: 12,
-                      color: sendStatus == MessageStatus.failed
-                          ? theme.colorScheme.error
-                          : theme.colorScheme.outline,
-                    ),
-                  ],
                 ],
-              ),
-            ],
+                const SizedBox(height: 8),
+                _buildSigningDetails(
+                  context,
+                  theme,
+                  signingDetails(signTask: request.signTask),
+                  onTap: onTap,
+                ),
+                if (request.message.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(request.message, style: theme.textTheme.bodyMedium),
+                ],
+                if (!isCancelled && !isComplete) ...[
+                  const SizedBox(height: 10),
+                  _SigningStatusStrip(
+                    state: state,
+                    threshold: threshold,
+                    iOffered: iOffered,
+                    onOfferToSign: onOfferToSign,
+                  ),
+                ],
+                if (!isCancelled && !isComplete && onCancel != null) ...[
+                  const SizedBox(height: 6),
+                  OutlinedButton(
+                    onPressed: onCancel,
+                    child: const Text('Cancel'),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isComplete) ...[
+                      Icon(Icons.check_circle, size: 12, color: Colors.green),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(
+                      _formatTime(time),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (isMe && sendStatus != null) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        switch (sendStatus!) {
+                          MessageStatus.pending => Icons.access_time,
+                          MessageStatus.sent => Icons.check,
+                          MessageStatus.failed => Icons.error_outline,
+                        },
+                        size: 12,
+                        color: sendStatus == MessageStatus.failed
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.outline,
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
 
     return _CardWrapper(
       bubble: bubble,
@@ -675,7 +689,8 @@ class _SigningStatusStrip extends StatelessWidget {
     // more offers to arrive. Friendlier message if this user is already
     // in the observed set.
     if (pending != null) {
-      final myInPending = iOffered; // if I offered, I'm in pending by construction
+      final myInPending =
+          iOffered; // if I offered, I'm in pending by construction
       final remaining = threshold - offerCount;
       return _StatusRow(
         color: theme.colorScheme.tertiary,

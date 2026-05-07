@@ -464,10 +464,7 @@ class _DevUsbButtonState extends State<_DevUsbButton> {
         },
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(
-            enabled ? Icons.usb : Icons.usb_off,
-            color: Colors.white,
-          ),
+          child: Icon(enabled ? Icons.usb : Icons.usb_off, color: Colors.white),
         ),
       ),
     );

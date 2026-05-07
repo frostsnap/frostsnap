@@ -191,33 +191,32 @@ class WalletAddColumn extends StatelessWidget {
   static void showWalletCreateDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
 
-    // Step 1 of the org-keygen redesign mockup: Personal vs Organisation.
-    // Organisation continues inside OrgKeygenPage (sessionRole → join |
-    // name → lobby → review → TODO start_keygen); Personal pops back
-    // here with `personal`, and we fall through to the existing local
-    // keygen dialog.
     final nostrClient = await NostrClient.connect();
     if (!context.mounted) return;
     final choice = await MaybeFullscreenDialog.show<WalletTypeChoice>(
       context: context,
-      // Dismissing by tap-outside would silently drop an in-progress
-      // lobby without telling peers. Force the user through the
-      // explicit back / cancel paths, which publish `CancelLobby` for
-      // the host so joiners get evicted too.
+      // tap-outside would silently drop an in-progress lobby without
+      // telling peers; force users through explicit back/cancel.
       barrierDismissible: false,
       child: OrgKeygenPage(nostrClient: nostrClient),
     );
-    if (!context.mounted || choice != WalletTypeChoice.personal) return;
+    if (!context.mounted || choice == null) return;
 
-    final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
-      context: context,
-      barrierDismissible: false,
-      child: WalletCreatePage(),
-    );
+    AccessStructureRef? asRef;
+    switch (choice) {
+      case WalletTypeChoicePersonal():
+        asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
+          context: context,
+          barrierDismissible: false,
+          child: WalletCreatePage(),
+        );
+      case WalletTypeChoiceOrganisation(:final accessStructureRef):
+        asRef = accessStructureRef;
+    }
 
     if (!context.mounted || asRef == null) return;
-    // Wallet-create page has popped. Wait for the user to unplug the
-    // devices (no-op if nothing is connected) before opening the new wallet.
+    // Wait for the user to unplug devices before opening the wallet
+    // (no-op if nothing's connected).
     await showUnplugDevicesDialog(context);
     if (!context.mounted) return;
     homeCtx.openNewlyCreatedWallet(asRef.keyId);
@@ -360,52 +359,20 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
 
   @override
   Widget build(BuildContext context) {
-    return MultiStepDialogScaffold(
-      body: KeyedSubtree(
-        key: ValueKey(_state),
-        child: switch (_state) {
-          _JoinState.input => _buildInput(context),
-          _JoinState.loading => _buildLoading(context),
-          _JoinState.success => _buildSuccess(context),
-          _JoinState.error => _buildError(context),
-        },
-      ),
-      footer: _buildFooter(context),
-    );
-  }
-
-  Widget? _buildFooter(BuildContext context) {
-    final theme = Theme.of(context);
     return switch (_state) {
-      _JoinState.input => Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          onPressed: _join,
-          icon: const Icon(Icons.login_rounded),
-          label: const Text('Join'),
-        ),
-      ),
-      _JoinState.loading => null,
-      _JoinState.success => null,
-      _JoinState.error => Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          onPressed: () => setState(() => _state = _JoinState.input),
-          icon: const Icon(Icons.refresh),
-          label: const Text('Try Again'),
-          style: FilledButton.styleFrom(
-            backgroundColor: theme.colorScheme.error,
-            foregroundColor: theme.colorScheme.onError,
-          ),
-        ),
-      ),
+      _JoinState.input => _buildInputStep(context),
+      _JoinState.loading => _buildLoadingStep(context),
+      _JoinState.success => _buildSuccessStep(context),
+      _JoinState.error => _buildErrorStep(context),
     };
   }
 
-  Widget _buildInput(BuildContext context) {
+  MultiStepDialogScaffold _buildInputStep(BuildContext context) {
     final theme = Theme.of(context);
-    return FullscreenDialogBody(
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.input,
       title: const Text('Join Wallet'),
+      showClose: true,
       body: SliverToBoxAdapter(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -435,13 +402,23 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
           ],
         ),
       ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: _join,
+          icon: const Icon(Icons.login_rounded),
+          label: const Text('Join'),
+        ),
+      ),
     );
   }
 
-  Widget _buildLoading(BuildContext context) {
+  MultiStepDialogScaffold _buildLoadingStep(BuildContext context) {
     final theme = Theme.of(context);
-    return FullscreenDialogBody(
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.loading,
       title: const Text('Joining…'),
+      showClose: true,
       body: SliverToBoxAdapter(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -468,11 +445,11 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
     );
   }
 
-  Widget _buildSuccess(BuildContext context) {
+  MultiStepDialogScaffold _buildSuccessStep(BuildContext context) {
     final theme = Theme.of(context);
-    return FullscreenDialogBody(
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.success,
       title: const Text('Joined'),
-      showClose: false,
       body: SliverToBoxAdapter(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -495,10 +472,12 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
     );
   }
 
-  Widget _buildError(BuildContext context) {
+  MultiStepDialogScaffold _buildErrorStep(BuildContext context) {
     final theme = Theme.of(context);
-    return FullscreenDialogBody(
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.error,
       title: const Text('Error'),
+      showClose: true,
       body: SliverToBoxAdapter(
         child: Container(
           decoration: BoxDecoration(
@@ -529,6 +508,18 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
                 textAlign: TextAlign.center,
               ),
             ],
+          ),
+        ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: () => setState(() => _state = _JoinState.input),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Try Again'),
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.error,
+            foregroundColor: theme.colorScheme.onError,
           ),
         ),
       ),

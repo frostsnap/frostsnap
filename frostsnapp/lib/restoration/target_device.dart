@@ -17,6 +17,14 @@ class TargetDevice {
 
   Future<void> onDisconnected() {
     final completer = Completer<void>();
+    // Resolve immediately if the device is *already* disconnected by
+    // the time the caller subscribes — otherwise a fast unplug between
+    // the caller's prior check and this listener registration would
+    // leave the future hanging forever.
+    if (coord.getConnectedDevice(id: id) == null) {
+      completer.complete();
+      return completer.future;
+    }
     final subscription = GlobalStreams.deviceListSubject.listen((update) {
       final stillConnected = update.state.devices.any(
         (d) => deviceIdEquals(d.id, id),
@@ -31,6 +39,13 @@ class TargetDevice {
 
   Future<void> waitForReconnection() {
     final completer = Completer<void>();
+    // Resolve immediately if the device is *already* connected — a
+    // fast unplug/replug before the wait view subscribes would
+    // otherwise hang the wait-reconnect stage forever.
+    if (coord.getConnectedDevice(id: id) != null) {
+      completer.complete();
+      return completer.future;
+    }
     final subscription = GlobalStreams.deviceListSubject.listen((update) {
       final isReconnected = update.state.devices.any(
         (d) => deviceIdEquals(d.id, id),

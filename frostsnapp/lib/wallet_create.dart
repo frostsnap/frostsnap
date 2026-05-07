@@ -282,7 +282,6 @@ class WalletCreateController extends ChangeNotifier {
   bool _isAnimationForward = true;
   bool get isAnimationForward => _isAnimationForward;
 
-  /// Does additional checks (maybe) and tries to populate the _form.
   Future<bool> _handleNext(BuildContext context) async {
     _isAnimationForward = true;
     // Skip canGoNext check for nonceReplenish since it auto-advances
@@ -390,8 +389,10 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep? prevStep;
     if (_step == WalletCreateStep.threshold ||
         _step == WalletCreateStep.nonceReplenish) {
-      // Skip nonce step on the way back since nonce generation is automatic
-      // and shouldn't be re-shown. Clear the stream so it can be re-generated.
+      // Back skips the automatic nonce step; cancel if generation is active.
+      if (_step == WalletCreateStep.nonceReplenish && _nonceStream != null) {
+        coord.cancelProtocol();
+      }
       prevStep = WalletCreateStep.devices;
       _nonceStream = null;
       _hasAutoAdvanced = false;
@@ -534,16 +535,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
-  /// Runs the full keygen flow: starts the Rust keygen stream, pumps each
-  /// state into the controller (for reactive rebuilds of the dialog body
-  /// and footer), shows the Final-check alert when all devices have ack'd,
-  /// and on a matching code finalizes the keygen and pops the page with
-  /// the resulting AccessStructureRef.
-  ///
-  /// This lives on the page (not `WalletCreateController.next()`) because
-  /// the keygen step is driven directly by the "Generate keys" button —
-  /// advancing past the threshold step IS running keygen. `next()` has no
-  /// threshold case; the button skips `next()` and calls this instead.
   Future<void> _beginThresholdKeygen(BuildContext context) async {
     if (_keygenInFlight) return;
     setState(() => _keygenInFlight = true);
@@ -559,9 +550,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           )
           .toBehaviorSubject();
 
-      // Dismiss any leftover keygen dialog from a previous attempt before
-      // spinning up a new one. Awaits the dismissal animation so the new
-      // dialog doesn't stack on top of the old one.
       final previous = _controller._keygenController;
       _controller._keygenController = null;
       await previous?.clearAllActionsNeeded();
@@ -674,10 +662,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           return;
         }
       } finally {
-        // Only dispose if we're still the active keygen controller. The
-        // field could have been nulled out from under us by
-        // `WalletCreateController.dispose()` or by a follow-up call to
-        // `_beginThresholdKeygen` that swapped in a fresh controller.
         if (identical(_controller._keygenController, keygenController)) {
           _controller._keygenController = null;
           keygenController.dispose();
@@ -714,11 +698,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   Widget buildNonceReplenish(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Use the pre-initialized stream
     final stream = _controller._nonceStream;
     if (stream == null) {
-      // This shouldn't happen as we skip the step when no nonces are needed
-      // But if it does, auto-advance immediately
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_controller._hasAutoAdvanced) {
           _controller._hasAutoAdvanced = true;
@@ -784,16 +765,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         ? ''
         : ' (${network.name()})';
 
-    final isAnimationForward = _controller.isAnimationForward;
     final step = _controller.step;
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
 
-    final animatedStep = MultiStepDialogSwitcher(
-      forward: isAnimationForward,
-      // Outgoing steps dispose immediately so per-step streams (e.g.
-      // `nonceReplenish`) don't keep running during the slide.
-      reverseDuration: Duration.zero,
-      child: FullscreenDialogBody(
-        key: ValueKey<WalletCreateStep>(step),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        goBackOrClose(context);
+      },
+      child: MultiStepDialogScaffold(
+        stepKey: step,
         title: Text('${_controller.title}$appBarTrailingText'),
         subtitle: _controller.subtitle.isEmpty ? null : _controller.subtitle,
         leading: IconButton(
@@ -802,57 +785,42 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           tooltip: 'Back',
         ),
         body: buildBody(context),
-      ),
-    );
-
-    final column = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Flexible(child: animatedStep),
-        if (step != WalletCreateStep.nonceReplenish)
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
-                  false)
-                buildAdvancedOptions(context),
-              FullscreenDialogFooter(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    onPressed:
-                        !_controller.canGoNext ||
-                            (step == WalletCreateStep.threshold &&
-                                _keygenInFlight)
-                        ? null
-                        : () {
-                            if (step == WalletCreateStep.threshold) {
-                              _beginThresholdKeygen(context);
-                            } else {
-                              _controller.next(context);
-                            }
-                          },
-                    child: Text(
-                      _controller.nextText ?? 'Next',
-                      softWrap: false,
-                      overflow: TextOverflow.fade,
+        footer: step == WalletCreateStep.nonceReplenish
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (devMode) buildAdvancedOptions(context),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed:
+                          !_controller.canGoNext ||
+                              (step == WalletCreateStep.threshold &&
+                                  _keygenInFlight)
+                          ? null
+                          : () {
+                              if (step == WalletCreateStep.threshold) {
+                                _beginThresholdKeygen(context);
+                              } else {
+                                _controller.next(context);
+                              }
+                            },
+                      child: Text(
+                        _controller.nextText ?? 'Next',
+                        softWrap: false,
+                        overflow: TextOverflow.fade,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-      ],
-    );
-
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        goBackOrClose(context);
-      },
-      child: column,
+        forward: _controller.isAnimationForward,
+        // Outgoing steps dispose immediately so per-step streams (e.g.
+        // `nonceReplenish`) don't keep running during the slide.
+        reverseDuration: Duration.zero,
+      ),
     );
   }
 

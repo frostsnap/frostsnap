@@ -35,26 +35,31 @@ import 'package:sliver_tools/sliver_tools.dart';
 
 enum OrgKeygenStep { walletType, sessionRole, joinSession, nameWallet }
 
-enum LobbyAndKeygenStep { lobby, review, acceptKeygen }
+enum LobbyAndKeygenStep {
+  lobby,
+  review,
+  acceptKeygenDecision,
+  acceptKeygenAwaiting,
+  acceptKeygenVerify,
+}
 
 enum OrgKeygenRole { host, participant }
 
-/// Result popped by `OrgKeygenPage` when the user picks a wallet type on
-/// the first step. Organisation continues inside the page — the page
-/// pops with `null` at that point only if the user backs out.
-enum WalletTypeChoice { personal }
+/// Result popped by `OrgKeygenPage`; `null` means cancelled/backed out.
+sealed class WalletTypeChoice {
+  const WalletTypeChoice();
+}
 
-// =============================================================================
-// Controller
-// =============================================================================
+final class WalletTypeChoicePersonal extends WalletTypeChoice {
+  const WalletTypeChoicePersonal();
+}
 
-/// Pre-lobby controller. Collects the user's wallet-type / role / name /
-/// join-link choices and produces a [RemoteLobbyHandle] when they submit.
-/// Once the handle is in hand, [OrgKeygenPage] navigates (via
-/// `pushReplacement`) to [LobbyAndKeygenPage] which owns its own
-/// [LobbyAndKeygenController] with a non-null handle. There is deliberately
-/// no "connecting" step here: the only on-screen acknowledgement of the
-/// pending lobby creation is the loading state on the submit button.
+final class WalletTypeChoiceOrganisation extends WalletTypeChoice {
+  const WalletTypeChoiceOrganisation(this.accessStructureRef);
+  final AccessStructureRef accessStructureRef;
+}
+
+/// Pre-lobby controller. Produces a [RemoteLobbyHandle] on submit.
 class OrgKeygenController extends ChangeNotifier {
   OrgKeygenController({required this.nostrClient});
 
@@ -63,9 +68,6 @@ class OrgKeygenController extends ChangeNotifier {
   OrgKeygenStep _step = OrgKeygenStep.walletType;
   OrgKeygenStep get step => _step;
 
-  /// Slide direction for the next [MultiStepDialogSwitcher] transition.
-  /// Set true on forward step changes (`choseOrganisation`,
-  /// `chooseCreateSession`, …), false on [back].
   bool _isAnimationForward = true;
   bool get isAnimationForward => _isAnimationForward;
 
@@ -91,21 +93,14 @@ class OrgKeygenController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Surfaces a `createRemoteLobby` / `joinRemoteLobby` failure on the
-  /// originating step (nameWallet / joinSession). Cleared on the next
-  /// submit.
   String? _connectError;
   String? get connectError => _connectError;
 
-  /// True while a `createRemoteLobby` / `joinRemoteLobby` await is in
-  /// flight. Drives the submit button's spinner.
   bool _connecting = false;
   bool get connecting => _connecting;
 
-  // --- step transitions ---
-
   void chosePersonal(BuildContext context) {
-    Navigator.of(context).pop(WalletTypeChoice.personal);
+    Navigator.of(context).pop(const WalletTypeChoicePersonal());
   }
 
   void choseOrganisation() {
@@ -210,15 +205,7 @@ class OrgKeygenController extends ChangeNotifier {
   }
 }
 
-/// Owns the in-flight lobby session: the [RemoteLobbyHandle] (final,
-/// non-null), the live [LobbyState] stream, the [DeviceSetupController]
-/// for the "Add devices" dialog, and the post-StartKeygen substep
-/// transitions.
-///
-/// Constructed by [LobbyAndKeygenPage] from a handle that has already
-/// been successfully created — there is no construction path that leaves
-/// `handle` unset, so the "lobby handle is gone" error class is
-/// structurally impossible.
+/// Owns a live lobby and its remote keygen sub-flow.
 class LobbyAndKeygenController extends ChangeNotifier {
   LobbyAndKeygenController({
     required this.handle,
@@ -248,16 +235,16 @@ class LobbyAndKeygenController extends ChangeNotifier {
   LobbyAndKeygenStep _step = LobbyAndKeygenStep.lobby;
   LobbyAndKeygenStep get step => _step;
 
-  /// Slide direction for the next [MultiStepDialogSwitcher] transition.
   bool _isAnimationForward = true;
   bool get isAnimationForward => _isAnimationForward;
+
+  /// Async keygen work can resume after the page has been dismissed.
+  bool _disposed = false;
 
   LobbyState? _state;
   LobbyState? get lobbyState => _state;
   StreamSubscription<LobbyState>? _stateSub;
-  // Held alive so Dart-side GC doesn't collect the opaque subscription
-  // handle and trigger Rust's `_stop()`. See the analogous comment on
-  // `_AcceptKeygenWaitingViewState._kgBroadcastSub`.
+  // Held alive so Dart-side GC doesn't trigger Rust's `_stop()`.
   LobbyStateBroadcastSubscription? _stateBroadcastSub;
 
   /// Shared with `_DeviceSetupDialog` so typed names + upgrade state
@@ -269,10 +256,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
   /// only put on the wire as part of `StartKeygen`.
   int? _pendingThreshold;
 
-  /// Host-only: pubkeys (as hex) that the host has deselected from the
-  /// keygen. The toggle UI lives on Ready participant rows; the
-  /// excluded set drops out of `selected` when `startKeygen` is called.
-  /// Self-exclusion is rejected.
+  /// Host-side deselection set; self-exclusion is rejected.
   final Set<String> _excludedHex = {};
 
   bool isExcluded(PublicKey pk) => _excludedHex.contains(pk.toHex());
@@ -284,9 +268,6 @@ class LobbyAndKeygenController extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  /// Devices counted across the *included* Ready participants. Drives
-  /// the threshold slider's domain and the "Continue with N devices"
-  /// label, so that excluding a participant updates the UI immediately.
   int get totalDevices {
     final s = _state;
     if (s == null) return 0;
@@ -309,7 +290,6 @@ class LobbyAndKeygenController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Whether the local user has already marked themselves Ready.
   bool get meIsReady {
     final s = _state;
     if (s == null) return false;
@@ -318,9 +298,6 @@ class LobbyAndKeygenController extends ChangeNotifier {
     );
   }
 
-  /// Throws on failure so the caller (the device-setup dialog) can keep
-  /// itself open and surface the error. No more "handle is gone" — the
-  /// handle is final and non-null by construction.
   Future<void> markReady(List<({DeviceId id, String name})> devices) async {
     final regs = devices
         .map(
@@ -334,8 +311,6 @@ class LobbyAndKeygenController extends ChangeNotifier {
     await handle.markReady(devices: regs);
   }
 
-  /// Host-only. Enter the review screen locally — nothing is published
-  /// until the host taps "Generate keys".
   void goToReview() {
     final s = _state;
     if (s == null || !s.allReady()) return;
@@ -345,11 +320,83 @@ class LobbyAndKeygenController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void goToAcceptKeygen() {
-    if (_step == LobbyAndKeygenStep.acceptKeygen) return;
+  void goToAcceptKeygenDecision() {
+    _ensureLocalDevicesComputed();
+    if (_step == LobbyAndKeygenStep.acceptKeygenDecision) return;
     _isAnimationForward = true;
-    _step = LobbyAndKeygenStep.acceptKeygen;
+    _step = LobbyAndKeygenStep.acceptKeygenDecision;
     notifyListeners();
+  }
+
+  /// Local transition after ack publish or when relay state already has our ack.
+  void goToAcceptKeygenAwaiting() {
+    _ensureLocalDevicesComputed();
+    if (_step == LobbyAndKeygenStep.acceptKeygenAwaiting) return;
+    _isAnimationForward = true;
+    _step = LobbyAndKeygenStep.acceptKeygenAwaiting;
+    notifyListeners();
+  }
+
+  void _ensureLocalDevicesComputed() {
+    if (_localDevices.isEmpty) {
+      _localDevices = _computeLocalDevices();
+    }
+  }
+
+  void goToAcceptKeygenVerify() {
+    if (_step == LobbyAndKeygenStep.acceptKeygenVerify) return;
+    _isAnimationForward = true;
+    _step = LobbyAndKeygenStep.acceptKeygenVerify;
+    notifyListeners();
+  }
+
+  bool get isOnAcceptKeygenStep =>
+      _step == LobbyAndKeygenStep.acceptKeygenDecision ||
+      _step == LobbyAndKeygenStep.acceptKeygenAwaiting ||
+      _step == LobbyAndKeygenStep.acceptKeygenVerify;
+
+  final Set<PublicKey> _verified = {};
+  Set<PublicKey> get verifiedParticipants => _verified;
+
+  void toggleVerified(PublicKey pk, bool ok) {
+    final changed = ok ? _verified.add(pk) : _verified.remove(pk);
+    if (changed) notifyListeners();
+  }
+
+  bool _confirming = false;
+  bool get confirming => _confirming;
+
+  List<DeviceId> _localDevices = const [];
+  List<DeviceId> get localDevices => _localDevices;
+
+  List<DeviceId> _computeLocalDevices() {
+    final s = _state;
+    final pending = s?.keygen;
+    if (pending == null) return const [];
+    for (final p in pending.participants) {
+      if (p.pubkey == _myPubkey) {
+        return p.devices.map((d) => d.deviceId).toList(growable: false);
+      }
+    }
+    return const [];
+  }
+
+  Future<void> confirmMatch({required SymmetricKey encryptionKey}) async {
+    final session = _keygenSession;
+    if (session == null || _confirming) return;
+    _confirming = true;
+    notifyListeners();
+    try {
+      await session.confirmMatch(encryptionKey: encryptionKey);
+    } finally {
+      _confirming = false;
+      notifyListeners();
+    }
+  }
+
+  /// Local-only teardown; no protocol message is published.
+  void cancelKeygen() {
+    _keygenSession?.cancel();
   }
 
   /// Host-only. Publish `StartKeygen`.
@@ -373,30 +420,25 @@ class LobbyAndKeygenController extends ChangeNotifier {
     await handle.startKeygen(threshold: threshold, selected: selected);
   }
 
-  /// Selected joiners only. Publish `AckKeygen`.
   Future<void> ackKeygen() async {
     final s = _state;
     if (s == null || s.keygen == null) {
       throw StateError('no pending keygen to ack');
     }
     await handle.ackKeygen(startKeygenEventId: s.keygen!.keygenEventId);
+    goToAcceptKeygenAwaiting();
   }
 
-  /// Host-only. Publish `CancelLobby` — the page pops on the resulting
-  /// `state.cancelled = true` transition (host-locally + relay-echoed
-  /// for joiners).
   Future<void> cancelLobby() => handle.cancel();
 
-  /// Joiner-side. Publish `Leave` and await relay OK so other
-  /// participants reliably see us drop.
   Future<void> leaveLobby() => handle.leave();
 
-  /// Within-page back: only review→lobby is reversible. Returns true if
-  /// handled, false if the caller should pop the page itself.
   bool back() {
     switch (_step) {
       case LobbyAndKeygenStep.lobby:
-      case LobbyAndKeygenStep.acceptKeygen:
+      case LobbyAndKeygenStep.acceptKeygenDecision:
+      case LobbyAndKeygenStep.acceptKeygenAwaiting:
+      case LobbyAndKeygenStep.acceptKeygenVerify:
         return false;
       case LobbyAndKeygenStep.review:
         _isAnimationForward = false;
@@ -405,15 +447,6 @@ class LobbyAndKeygenController extends ChangeNotifier {
         return true;
     }
   }
-
-  // --- Keygen ceremony state ---
-  //
-  // Once `state.keygen.allAcked()` lands, we hand off to
-  // `coord.startRemoteKeygen` and stream `KeyGenState` updates here.
-  // Lifted onto the controller (rather than the accept-view's State)
-  // so the FullscreenActionDialog body can react via
-  // `ListenableBuilder(listenable: ctrl, ...)` — same pattern as the
-  // local-keygen flow in `wallet_create.dart`.
 
   RemoteKeygenSessionHandle? _keygenSession;
   RemoteKeygenSessionHandle? get keygenSession => _keygenSession;
@@ -428,8 +461,6 @@ class LobbyAndKeygenController extends ChangeNotifier {
 
   bool _keygenStarting = false;
 
-  /// Idempotent: kick off the ceremony once. Called by the accept-view
-  /// when AllAcked + I'm in `acked`.
   Future<void> startKeygenCeremony() async {
     if (_keygenStarting || _keygenSession != null) return;
     _keygenStarting = true;
@@ -450,7 +481,14 @@ class LobbyAndKeygenController extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
     _keygenStateSub?.cancel();
     _keygenBroadcastSub?.stop();
     _keygenSession?.cancel();
@@ -478,6 +516,8 @@ class OrgKeygenPage extends StatefulWidget {
 class _OrgKeygenPageState extends State<OrgKeygenPage> {
   late final _ConcreteController _ctrl;
 
+  bool _joinLinkAttempted = false;
+
   @override
   void initState() {
     super.initState();
@@ -486,20 +526,47 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
       nostrContextLookup: () => NostrContext.of(context),
     );
     _ctrl.addListener(_onUpdate);
+    _ctrl.joinLinkController.addListener(_onJoinLinkTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.joinLinkController.removeListener(_onJoinLinkTextChanged);
+    _ctrl.removeListener(_onUpdate);
+    _ctrl.dispose();
+    super.dispose();
   }
 
   void _onUpdate() {
     if (mounted) setState(() {});
   }
 
+  void _onJoinLinkTextChanged() {
+    if (!mounted) return;
+    if (_joinLinkAttempted) {
+      setState(() => _joinLinkAttempted = false);
+    } else {
+      setState(() {});
+    }
+  }
+
+  /// Re-entry must be gated by `_ctrl.connecting` because the
+  /// TextField's `onSubmitted` (Enter key) routes here too and the
+  /// keyboard isn't blocked while the footer button is.
+  void _trySubmitJoinLink() {
+    if (_ctrl.connecting) return;
+    if (_ctrl.joinLinkValid) {
+      unawaited(_submitJoinLink());
+    } else {
+      setState(() => _joinLinkAttempted = true);
+    }
+  }
+
   Future<void> _submitName() async {
     final handle = await _ctrl.openLobbyAsHost();
     if (handle == null || !mounted) return;
     final settings = NostrContext.of(context).nostrSettings;
-    // The lobby+keygen flow is shown over this dialog — same scaffolding
-    // (`MaybeFullscreenDialog`), no back button. When it closes (success
-    // or cancel), we pop our own dialog so the wizard exits cleanly.
-    await MaybeFullscreenDialog.show<AccessStructureRef>(
+    final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
       barrierDismissible: false,
       child: LobbyAndKeygenPage(
@@ -509,14 +576,17 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
         loadNsec: () async => settings.getNsec(),
       ),
     );
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pop(asRef == null ? null : WalletTypeChoiceOrganisation(asRef));
   }
 
   Future<void> _submitJoinLink() async {
     final handle = await _ctrl.openLobbyAsJoiner();
     if (handle == null || !mounted) return;
     final settings = NostrContext.of(context).nostrSettings;
-    await MaybeFullscreenDialog.show<AccessStructureRef>(
+    final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
       barrierDismissible: false,
       child: LobbyAndKeygenPage(
@@ -526,14 +596,10 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
         loadNsec: () async => settings.getNsec(),
       ),
     );
-    if (mounted) Navigator.of(context).pop();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.removeListener(_onUpdate);
-    _ctrl.dispose();
-    super.dispose();
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pop(asRef == null ? null : WalletTypeChoiceOrganisation(asRef));
   }
 
   @override
@@ -543,29 +609,184 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _ctrl.back(context);
       },
-      child: SafeArea(
-        child: MultiStepDialogSwitcher(
-          forward: _ctrl.isAnimationForward,
-          child: KeyedSubtree(
-            key: ValueKey(_ctrl.step),
-            child: _buildStep(context),
-          ),
+      child: SafeArea(child: _buildStep(context)),
+    );
+  }
+
+  MultiStepDialogScaffold _buildStep(BuildContext context) {
+    switch (_ctrl.step) {
+      case OrgKeygenStep.walletType:
+        return _buildWalletTypeStep(context);
+      case OrgKeygenStep.sessionRole:
+        return _buildSessionRoleStep(context);
+      case OrgKeygenStep.joinSession:
+        return _buildJoinSessionStep(context);
+      case OrgKeygenStep.nameWallet:
+        return _buildNameStep(context);
+    }
+  }
+
+  Widget _backLeading() => IconButton(
+    icon: const Icon(Icons.arrow_back_rounded),
+    onPressed: () => _ctrl.back(context),
+    tooltip: 'Back',
+  );
+
+  MultiStepDialogScaffold _buildWalletTypeStep(BuildContext context) {
+    return MultiStepDialogScaffold(
+      stepKey: OrgKeygenStep.walletType,
+      title: const Text('Who is this for?'),
+      leading: _backLeading(),
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: Column(
+          spacing: 12,
+          children: [
+            _ChoiceCard(
+              icon: Icons.person_rounded,
+              title: 'Just me',
+              subtitle:
+                  'A personal wallet. You visit your devices in person to sign.',
+              onTap: () => _ctrl.chosePersonal(context),
+            ),
+            _ChoiceCard(
+              icon: Icons.groups_rounded,
+              title: 'A group of us',
+              subtitle:
+                  'A shared wallet with other participants. You can each be in a different place.',
+              emphasized: true,
+              onTap: () async {
+                final ok = await ensureNostrIdentity(context);
+                if (!ok) return;
+                _ctrl.choseOrganisation();
+              },
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStep(BuildContext context) {
-    switch (_ctrl.step) {
-      case OrgKeygenStep.walletType:
-        return _WalletTypeView(ctrl: _ctrl);
-      case OrgKeygenStep.sessionRole:
-        return _SessionRoleView(ctrl: _ctrl);
-      case OrgKeygenStep.joinSession:
-        return _JoinSessionView(ctrl: _ctrl, onSubmit: _submitJoinLink);
-      case OrgKeygenStep.nameWallet:
-        return _NameView(ctrl: _ctrl, onSubmit: _submitName);
-    }
+  MultiStepDialogScaffold _buildSessionRoleStep(BuildContext context) {
+    return MultiStepDialogScaffold(
+      stepKey: OrgKeygenStep.sessionRole,
+      title: const Text('Start or join a session'),
+      leading: _backLeading(),
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: Column(
+          spacing: 12,
+          children: [
+            _ChoiceCard(
+              icon: Icons.add_circle_outline_rounded,
+              title: 'Start a new session',
+              subtitle: 'Invite others to join a wallet you\'re creating.',
+              emphasized: true,
+              onTap: _ctrl.chooseCreateSession,
+            ),
+            _ChoiceCard(
+              icon: Icons.link_rounded,
+              title: 'Join an existing session',
+              subtitle: 'Accept an invite link from someone else.',
+              onTap: _ctrl.chooseJoinSession,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildJoinSessionStep(BuildContext context) {
+    final errorText = (_joinLinkAttempted && !_ctrl.joinLinkValid)
+        ? 'Not a valid invite link'
+        : _ctrl.connectError;
+    return MultiStepDialogScaffold(
+      stepKey: OrgKeygenStep.joinSession,
+      title: const Text('Join session'),
+      leading: _backLeading(),
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: _JoinSessionInput(
+          ctrl: _ctrl,
+          errorText: errorText,
+          onSubmit: _trySubmitJoinLink,
+        ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          icon: _ctrl.connecting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.arrow_forward_rounded),
+          iconAlignment: IconAlignment.end,
+          onPressed:
+              (_ctrl.connecting || _ctrl.joinLinkController.text.trim().isEmpty)
+              ? null
+              : _trySubmitJoinLink,
+          label: const Text('Join'),
+        ),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildNameStep(BuildContext context) {
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
+    final canSubmit = _ctrl.nameValid && !_ctrl.connecting;
+    return MultiStepDialogScaffold(
+      stepKey: OrgKeygenStep.nameWallet,
+      title: const Text('Name this wallet'),
+      subtitle: 'All wallet participants will see this name.',
+      leading: _backLeading(),
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              autofocus: true,
+              controller: _ctrl.nameController,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                hintText: 'e.g. Acme Treasury',
+                errorText: _ctrl.connectError,
+                errorMaxLines: 2,
+              ),
+              maxLength: 15,
+              textCapitalization: TextCapitalization.words,
+              onChanged: (_) => _ctrl.bump(),
+              onSubmitted: (_) {
+                if (canSubmit) unawaited(_submitName());
+              },
+            ),
+            if (devMode)
+              NetworkAdvancedOptions(
+                selected: _ctrl.network,
+                onChanged: _ctrl.setNetwork,
+              ),
+          ],
+        ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: canSubmit ? () => unawaited(_submitName()) : null,
+          icon: _ctrl.connecting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.arrow_forward_rounded),
+          iconAlignment: IconAlignment.end,
+          label: const Text('Next'),
+        ),
+      ),
+    );
   }
 }
 
@@ -587,13 +808,7 @@ class _ConcreteController extends OrgKeygenController {
 // Lobby + Keygen page (post-handle-acquisition)
 // =============================================================================
 
-/// The lobby/review/acceptKeygen flow. Pushed (via `pushReplacement`) by
-/// [OrgKeygenPage] only after a [RemoteLobbyHandle] has been successfully
-/// created. The handle is non-null in the controller — there is no path
-/// that constructs this page without one.
-///
-/// Pops with `null` if the user cancels/leaves before finalize, or with
-/// the resulting [AccessStructureRef] on a successful keygen.
+/// Lobby/review/accept-keygen flow. Pops with [AccessStructureRef] on success.
 class LobbyAndKeygenPage extends StatefulWidget {
   const LobbyAndKeygenPage({
     super.key,
@@ -617,6 +832,18 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
   bool _reactedToCancel = false;
   bool _reactedToPendingKeygen = false;
 
+  FullscreenActionDialogController? _fullscreenController;
+
+  /// `keygenState.sessionAcks` grows monotonically; this set dedupes
+  /// per-ack `removeActionNeeded` calls.
+  final Set<DeviceId> _ackedForwardedToDialog = <DeviceId>{};
+
+  bool _popped = false;
+
+  bool _verifyTransitionInFlight = false;
+
+  bool _ceremonyStarted = false;
+
   @override
   void initState() {
     super.initState();
@@ -629,6 +856,7 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     _ctrl.addListener(_onUpdate);
     _ctrl.addListener(_watchForCancellation);
     _ctrl.addListener(_watchForPendingKeygen);
+    _ctrl.addListener(_onAcceptKeygenChanged);
   }
 
   void _onUpdate() {
@@ -643,8 +871,6 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       if (!_ctrl.isHost) {
-        // Peer-initiated cancel: inform the user before kicking them
-        // out of the page.
         await showDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -676,10 +902,97 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     if (pending == null) return;
     if (!pending.includes(pubkey: _ctrl.myPubkey)) return;
     _reactedToPendingKeygen = true;
+    // If we've already acked (e.g. page rebuilt after relay-echo of our
+    // own AckKeygen), skip the decision step and go straight to awaiting.
+    final iAmAcked = pending.acked.any((pk) => pk == _ctrl.myPubkey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _ctrl.goToAcceptKeygen();
+      if (iAmAcked) {
+        _ctrl.goToAcceptKeygenAwaiting();
+      } else {
+        _ctrl.goToAcceptKeygenDecision();
+      }
     });
+  }
+
+  void _onAcceptKeygenChanged() {
+    if (!mounted || _popped) return;
+    final ctrl = _ctrl;
+
+    if (ctrl.step == LobbyAndKeygenStep.acceptKeygenAwaiting &&
+        !_ceremonyStarted) {
+      _ceremonyStarted = true;
+      unawaited(ctrl.startKeygenCeremony());
+    }
+
+    // Edge-detect "should overlay be up?" against a predicate (NOT
+    // stage equality), so a redundant notify doesn't reinstantiate.
+    final shouldShowOverlay =
+        ctrl.step == LobbyAndKeygenStep.acceptKeygenAwaiting &&
+        ctrl.keygenState != null;
+    final overlayUp = _fullscreenController != null;
+    if (shouldShowOverlay && !overlayUp) {
+      _fullscreenController = _buildFullscreenController(context);
+    } else if (!shouldShowOverlay && overlayUp) {
+      _maybeDisposeFullscreen();
+    }
+
+    final kgState = ctrl.keygenState;
+    if (kgState == null) return;
+
+    final fc = _fullscreenController;
+    if (fc != null) {
+      for (final id in kgState.sessionAcks) {
+        if (_ackedForwardedToDialog.add(id)) {
+          unawaited(fc.removeActionNeeded(id));
+        }
+      }
+    }
+
+    if (kgState.aborted != null) {
+      _popped = true;
+      unawaited(_dismissOverlayThenPop(null));
+      return;
+    }
+
+    if (kgState.finished != null) {
+      _popped = true;
+      unawaited(_dismissOverlayThenPop(kgState.finished));
+      return;
+    }
+
+    if (kgState.allAcks &&
+        ctrl.step == LobbyAndKeygenStep.acceptKeygenAwaiting &&
+        !_verifyTransitionInFlight) {
+      _verifyTransitionInFlight = true;
+      unawaited(_transitionToVerify());
+    }
+  }
+
+  Future<void> _transitionToVerify() async {
+    await _fullscreenController?.awaitDismissed();
+    if (!mounted || _popped) return;
+    _ctrl.goToAcceptKeygenVerify();
+  }
+
+  void _maybeDisposeFullscreen() {
+    final fc = _fullscreenController;
+    if (fc == null) return;
+    _fullscreenController = null;
+    fc.dispose();
+  }
+
+  /// Overlay route lives on the root navigator and would orphan
+  /// above a popped child dialog. `dispose()` alone doesn't dismiss
+  /// it — must `clearAllActionsNeeded` first.
+  Future<void> _dismissOverlayThenPop(AccessStructureRef? result) async {
+    final fc = _fullscreenController;
+    if (fc != null) {
+      await fc.clearAllActionsNeeded();
+      _maybeDisposeFullscreen();
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop(result);
   }
 
   Future<void> _declineKeygen() async {
@@ -715,9 +1028,58 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     try {
       await _ctrl.leaveLobby();
     } catch (_) {
-      // Best-effort: if the publish failed (no relay reachable), pop
-      // the page directly so the user isn't stuck.
-      if (mounted) Navigator.of(context).pop();
+      // Best-effort: if the publish failed (no relay reachable), still
+      // pop the page so the user isn't stuck on the decision screen.
+    }
+    // Pop on both success and failure paths — `Leave` doesn't flip
+    // `state.cancelled` for non-selected participants, so unlike the
+    // host's CancelLobby we can't rely on `_watchForCancellation` to
+    // unwind us. Same pattern as the lobby Leave button.
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _onCancelKeygenTapped() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          icon: const Icon(Icons.cancel_outlined),
+          title: const Text('Cancel this keygen?'),
+          content: const Text(
+            'This stops the keygen on your side. Other participants will '
+            'sit waiting until you tell them out-of-band.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Keep going'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Cancel keygen'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true || !mounted) return;
+    _ctrl.cancelKeygen();
+  }
+
+  Future<void> _confirmAndFinalize() async {
+    try {
+      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+      await _ctrl.confirmMatch(encryptionKey: encryptionKey);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Finalize failed: $e')));
     }
   }
 
@@ -726,6 +1088,8 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     _ctrl.removeListener(_onUpdate);
     _ctrl.removeListener(_watchForCancellation);
     _ctrl.removeListener(_watchForPendingKeygen);
+    _ctrl.removeListener(_onAcceptKeygenChanged);
+    _maybeDisposeFullscreen();
     _ctrl.dispose();
     super.dispose();
   }
@@ -736,388 +1100,37 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        // Within-page back only works for review→lobby. Anywhere else
-        // the user must use the explicit Cancel/Leave footer button —
-        // sneaking out via OS back skips the relay publish.
         _ctrl.back();
       },
-      child: SafeArea(
-        child: MultiStepDialogSwitcher(
-          forward: _ctrl.isAnimationForward,
-          child: KeyedSubtree(
-            key: ValueKey(_ctrl.step),
-            child: _buildStep(context),
-          ),
-        ),
-      ),
+      child: SafeArea(child: _buildStep(context)),
     );
   }
 
-  Widget _buildStep(BuildContext context) {
+  MultiStepDialogScaffold _buildStep(BuildContext context) {
     switch (_ctrl.step) {
       case LobbyAndKeygenStep.lobby:
-        return _LobbyView(ctrl: _ctrl);
+        return _buildLobbyStep(context);
       case LobbyAndKeygenStep.review:
-        return _ReviewView(ctrl: _ctrl);
-      case LobbyAndKeygenStep.acceptKeygen:
-        return _AcceptKeygenView(ctrl: _ctrl, onDecline: _declineKeygen);
-    }
-  }
-}
-
-// =============================================================================
-// Step 1: wallet type
-// =============================================================================
-
-class _WalletTypeView extends StatelessWidget {
-  const _WalletTypeView({required this.ctrl});
-  final OrgKeygenController ctrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return FullscreenDialogScaffold(
-      title: const Text('Who is this for?'),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: () => ctrl.back(context),
-        tooltip: 'Back',
-      ),
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Column(
-          spacing: 12,
-          children: [
-            _ChoiceCard(
-              icon: Icons.person_rounded,
-              title: 'Just me',
-              subtitle:
-                  'A personal wallet. You visit your devices in person to sign.',
-              onTap: () => ctrl.chosePersonal(context),
-            ),
-            _ChoiceCard(
-              icon: Icons.groups_rounded,
-              title: 'A group of us',
-              subtitle:
-                  'A shared wallet with other participants. You can each be in a different place.',
-              emphasized: true,
-              onTap: () async {
-                final ok = await ensureNostrIdentity(context);
-                if (!ok) return;
-                ctrl.choseOrganisation();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// Step 2: session role (start / join)
-// =============================================================================
-
-class _SessionRoleView extends StatelessWidget {
-  const _SessionRoleView({required this.ctrl});
-  final OrgKeygenController ctrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return FullscreenDialogScaffold(
-      title: const Text('Start or join a session'),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: () => ctrl.back(context),
-        tooltip: 'Back',
-      ),
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Column(
-          spacing: 12,
-          children: [
-            _ChoiceCard(
-              icon: Icons.add_circle_outline_rounded,
-              title: 'Start a new session',
-              subtitle: 'Invite others to join a wallet you\'re creating.',
-              emphasized: true,
-              onTap: ctrl.chooseCreateSession,
-            ),
-            _ChoiceCard(
-              icon: Icons.link_rounded,
-              title: 'Join an existing session',
-              subtitle: 'Accept an invite link from someone else.',
-              onTap: ctrl.chooseJoinSession,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// Step 3a: join session (participant)
-// =============================================================================
-
-class _JoinSessionView extends StatefulWidget {
-  const _JoinSessionView({required this.ctrl, required this.onSubmit});
-  final OrgKeygenController ctrl;
-  final Future<void> Function() onSubmit;
-
-  @override
-  State<_JoinSessionView> createState() => _JoinSessionViewState();
-}
-
-class _JoinSessionViewState extends State<_JoinSessionView> {
-  OrgKeygenController get ctrl => widget.ctrl;
-  bool _attempted = false;
-  bool _prefilled = false;
-  final _focusNode = FocusNode();
-  static const _prefix = 'frostsnap://keygen/';
-
-  @override
-  void initState() {
-    super.initState();
-    ctrl.joinLinkController.addListener(_onChanged);
-    _focusNode.addListener(_onFocus);
-  }
-
-  @override
-  void dispose() {
-    ctrl.joinLinkController.removeListener(_onChanged);
-    _focusNode.removeListener(_onFocus);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _onChanged() {
-    if (!mounted) return;
-    // Always rebuild so the Join button's enabled state (which depends
-    // on the text) tracks the controller. Clear `_attempted` on the
-    // same tick so a prior "invalid link" error fades as the user
-    // starts editing.
-    setState(() {
-      if (_attempted) _attempted = false;
-    });
-  }
-
-  /// First time the field gains focus, drop the URL scheme in so the
-  /// user only needs to paste/type the code.
-  void _onFocus() {
-    if (!_focusNode.hasFocus) return;
-    if (_prefilled || ctrl.joinLinkController.text.isNotEmpty) return;
-    _prefilled = true;
-    ctrl.joinLinkController.text = _prefix;
-    ctrl.joinLinkController.selection = TextSelection.collapsed(
-      offset: _prefix.length,
-    );
-  }
-
-  void _trySubmit() {
-    if (ctrl.joinLinkValid) {
-      unawaited(widget.onSubmit());
-    } else {
-      setState(() => _attempted = true);
+        return _buildReviewStep(context);
+      case LobbyAndKeygenStep.acceptKeygenDecision:
+        return _buildAcceptDecisionStep(context);
+      case LobbyAndKeygenStep.acceptKeygenAwaiting:
+        return _buildAcceptAwaitingStep(context);
+      case LobbyAndKeygenStep.acceptKeygenVerify:
+        return _buildAcceptVerifyStep(context);
     }
   }
 
-  Future<void> _paste() async {
-    final data = await Clipboard.getData('text/plain');
-    if (data?.text != null) {
-      ctrl.joinLinkController.text = data!.text!;
-    }
-  }
-
-  Future<void> _scan() async {
-    final scanned = await MaybeFullscreenDialog.show<String>(
-      context: context,
-      child: const QrStringScanner(title: 'Scan invite'),
-    );
-    if (!mounted || scanned == null) return;
-    ctrl.joinLinkController.text = scanned.trim();
-    // If what we scanned is a valid keygen link, submit immediately —
-    // the user's intent for scanning is "I've got the invite, take me
-    // there". If it's not valid, leave it in the field so the
-    // errorText guides them.
-    _trySubmit();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  MultiStepDialogScaffold _buildLobbyStep(BuildContext context) {
     final theme = Theme.of(context);
-    final errorText = (_attempted && !ctrl.joinLinkValid)
-        ? 'Not a valid invite link'
-        : ctrl.connectError;
-    return FullscreenDialogScaffold(
-      title: const Text('Join session'),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: () => ctrl.back(context),
-        tooltip: 'Back',
-      ),
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Card.outlined(
-          color: theme.colorScheme.surfaceContainerHigh,
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  autofocus: true,
-                  focusNode: _focusNode,
-                  controller: ctrl.joinLinkController,
-                  decoration: InputDecoration(
-                    filled: false,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                    hintText: _prefix,
-                    errorText: errorText,
-                    errorMaxLines: 2,
-                  ),
-                  onSubmitted: (_) => _trySubmit(),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: _paste,
-                      icon: const Icon(Icons.paste),
-                      label: const Text('Paste'),
-                    ),
-                    TextButton.icon(
-                      onPressed: _scan,
-                      icon: const Icon(Icons.qr_code_scanner_rounded),
-                      label: const Text('Scan'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      footer: Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          icon: ctrl.connecting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.arrow_forward_rounded),
-          iconAlignment: IconAlignment.end,
-          onPressed:
-              (ctrl.connecting || ctrl.joinLinkController.text.trim().isEmpty)
-              ? null
-              : _trySubmit,
-          label: const Text('Join'),
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// Step 3b: name wallet (host)
-// =============================================================================
-
-class _NameView extends StatelessWidget {
-  const _NameView({required this.ctrl, required this.onSubmit});
-  final OrgKeygenController ctrl;
-  final Future<void> Function() onSubmit;
-
-  @override
-  Widget build(BuildContext context) {
-    final devMode =
-        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
-    final canSubmit = ctrl.nameValid && !ctrl.connecting;
-    return FullscreenDialogScaffold(
-      title: const Text('Name this wallet'),
-      subtitle: 'All wallet participants will see this name.',
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: () => ctrl.back(context),
-        tooltip: 'Back',
-      ),
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              autofocus: true,
-              controller: ctrl.nameController,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                hintText: 'e.g. Acme Treasury',
-                errorText: ctrl.connectError,
-                errorMaxLines: 2,
-              ),
-              maxLength: 15,
-              textCapitalization: TextCapitalization.words,
-              onChanged: (_) => (ctrl as _ConcreteController).bump(),
-              onSubmitted: (_) {
-                if (canSubmit) unawaited(onSubmit());
-              },
-            ),
-            if (devMode)
-              NetworkAdvancedOptions(
-                selected: ctrl.network,
-                onChanged: ctrl.setNetwork,
-              ),
-          ],
-        ),
-      ),
-      footer: Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          onPressed: canSubmit ? () => unawaited(onSubmit()) : null,
-          icon: ctrl.connecting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.arrow_forward_rounded),
-          iconAlignment: IconAlignment.end,
-          label: const Text('Next'),
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// Step 4: lobby
-// =============================================================================
-
-class _LobbyView extends StatelessWidget {
-  const _LobbyView({required this.ctrl});
-  final LobbyAndKeygenController ctrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final state = ctrl.lobbyState;
-    // Until the NIP-28 ChannelCreation event lands, the lobby has no
-    // known initiator and rendering it would be misleading (host
-    // missing, participant counts wrong). Show a spinner instead.
+    final state = _ctrl.lobbyState;
     final channelReady = state != null && state.initiator != null;
 
-    return FullscreenDialogScaffold(
-      title: Text(state?.keyName ?? ctrl.walletName),
-      // No back button or close button: the only valid exits from the
-      // lobby are the explicit Cancel/Leave footer actions (which
-      // publish the appropriate abort to the relay). Sneaking out via
-      // OS back skips the publish and other participants would never
-      // know.
-      showClose: false,
+    return MultiStepDialogScaffold(
+      stepKey: LobbyAndKeygenStep.lobby,
+      title: Text(state?.keyName ?? _ctrl.walletName),
+      forward: _ctrl.isAnimationForward,
+      // Exit must publish Cancel/Leave.
       subtitle: channelReady
           ? 'Add your devices while you wait for others to join.'
           : null,
@@ -1125,15 +1138,9 @@ class _LobbyView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Local participant saw a `StartKeygen` arrive but their
-            // pubkey isn't in the selected set — surface a terminal
-            // banner so the user can pop the page rather than sitting
-            // on a stale lobby view. Inclusion is derived from
-            // `pending_keygen.includes(myPubkey)` rather than a
-            // separate latched flag on `LobbyState`.
             if (state != null &&
                 state.keygen != null &&
-                !state.keygen!.includes(pubkey: ctrl.myPubkey))
+                !state.keygen!.includes(pubkey: _ctrl.myPubkey))
               Card.filled(
                 color: theme.colorScheme.surfaceContainerHighest,
                 child: ListTile(
@@ -1158,9 +1165,6 @@ class _LobbyView extends StatelessWidget {
                   ),
                 ),
               ),
-            // `state.cancelled == true` is handled at the page level by
-            // `_watchForCancellation` (dialog + pop), so no inline banner
-            // is needed.
             if (!channelReady)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 48),
@@ -1195,11 +1199,11 @@ class _LobbyView extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              ..._participantRows(ctrl: ctrl, state: state, readOnly: false),
+              ..._participantRows(ctrl: _ctrl, state: state, readOnly: false),
               const SizedBox(height: 12),
-              if (ctrl.isHost)
+              if (_ctrl.isHost)
                 _InviteTile(
-                  onTap: () => _showInviteDialog(context, ctrl.handle),
+                  onTap: () => _showInviteDialog(context, _ctrl.handle),
                 ),
             ],
           ],
@@ -1207,31 +1211,545 @@ class _LobbyView extends StatelessWidget {
       ),
       footer: Row(
         children: [
-          // Host: red "Cancel lobby" action. Publishes `CancelLobby`,
-          // then the page pops on the resulting `state.cancelled = true`
-          // transition. Joiners see the same state change via
-          // `_watchForCancellation`.
-          //
-          // Joiner: red "Leave lobby" action. Publishes `Leave`, then
-          // pops the page directly (Leave doesn't flip
-          // `state.cancelled` for non-selected participants, so we
-          // can't rely on the cancellation watcher).
           AsyncActionButton(
-            onPressed: ctrl.isHost
-                ? ctrl.cancelLobby
+            onPressed: _ctrl.isHost
+                ? _ctrl.cancelLobby
                 : () async {
-                    await ctrl.leaveLobby();
+                    await _ctrl.leaveLobby();
                     if (context.mounted) Navigator.of(context).pop();
                   },
             style: FilledButton.styleFrom(
               backgroundColor: theme.colorScheme.error,
               foregroundColor: theme.colorScheme.onError,
             ),
-            child: Text(ctrl.isHost ? 'Cancel lobby' : 'Leave lobby'),
+            child: Text(_ctrl.isHost ? 'Cancel lobby' : 'Leave lobby'),
           ),
           const Spacer(),
-          _LobbyPrimaryButton(ctrl: ctrl),
+          _LobbyPrimaryButton(ctrl: _ctrl),
         ],
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildReviewStep(BuildContext context) {
+    final state = _ctrl.lobbyState;
+    final total = _ctrl.totalDevices;
+    return MultiStepDialogScaffold(
+      stepKey: LobbyAndKeygenStep.review,
+      title: const Text('Choose threshold'),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => _ctrl.back(),
+        tooltip: 'Back',
+      ),
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            IgnorePointer(
+              ignoring: !_ctrl.isHost,
+              child: Opacity(
+                opacity: _ctrl.isHost ? 1.0 : 0.75,
+                child: ThresholdSelector(
+                  threshold: _ctrl.displayThreshold.clamp(1, max(total, 1)),
+                  totalDevices: max(total, 1),
+                  recommendedThreshold: _ctrl.recommendedThreshold,
+                  onChanged: (v) => _ctrl.setPendingThreshold(v),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (state != null)
+              ..._participantRows(ctrl: _ctrl, state: state, readOnly: true),
+          ],
+        ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: _ReviewPrimaryButton(ctrl: _ctrl),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildAcceptDecisionStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = _ctrl.lobbyState;
+    final pending = state?.keygen;
+    final keyName = state?.keyName ?? '';
+    final purpose = state?.purpose;
+    final network = purpose?.bitcoinNetwork();
+    final showNetwork = network != null && !network.isMainnet();
+
+    return MultiStepDialogScaffold(
+      stepKey: LobbyAndKeygenStep.acceptKeygenDecision,
+      title: const Text('Generate this key?'),
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _AcceptInfoRow(
+              icon: Icons.account_balance_wallet_rounded,
+              label: 'Wallet',
+              value: keyName,
+            ),
+            const SizedBox(height: 12),
+            if (pending != null)
+              _AcceptInfoRow(
+                icon: Icons.security_rounded,
+                label: 'Threshold',
+                value:
+                    '${pending.threshold} of ${pending.participants.length} required to spend',
+              ),
+            if (showNetwork)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _AcceptInfoRow(
+                  icon: Icons.dns_rounded,
+                  label: 'Network',
+                  value: network.name(),
+                  valueColor: theme.colorScheme.error,
+                ),
+              ),
+            const SizedBox(height: 24),
+            Text('Participants', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 8),
+            if (state != null && pending != null)
+              ..._ackParticipantRows(
+                ctrl: _ctrl,
+                state: state,
+                pending: pending,
+              ),
+          ],
+        ),
+      ),
+      footer: Row(
+        children: [
+          TextButton(
+            onPressed: () => _declineKeygen(),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+            child: const Text('Decline'),
+          ),
+          const Spacer(),
+          AsyncActionButton(
+            onPressed: _ctrl.ackKeygen,
+            icon: Icons.arrow_forward_rounded,
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildAcceptAwaitingStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = _ctrl.lobbyState;
+    final pending = state?.keygen;
+    final ackedCount = pending?.acked.length ?? 0;
+    final total = pending?.participants.length ?? 0;
+    final allAcked = total > 0 && ackedCount == total;
+    final kg = _ctrl.keygenState;
+
+    return MultiStepDialogScaffold(
+      stepKey: LobbyAndKeygenStep.acceptKeygenAwaiting,
+      title: const Text('Waiting on keygen'),
+      subtitle: _statusLine(allAcked, ackedCount, total, kg),
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (pending != null)
+              _ThresholdHero(
+                threshold: pending.threshold,
+                total: pending.participants.length,
+              ),
+            const SizedBox(height: 12),
+            if (state != null && pending != null)
+              ..._ackParticipantRows(
+                ctrl: _ctrl,
+                state: state,
+                pending: pending,
+              ),
+          ],
+        ),
+      ),
+      footer: Row(
+        children: [
+          TextButton(
+            onPressed: _onCancelKeygenTapped,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+            child: const Text('Cancel keygen'),
+          ),
+          const Spacer(),
+          if (allAcked && (kg == null || !kg.allAcks))
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(_spinnerLabel(kg), style: theme.textTheme.labelLarge),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildAcceptVerifyStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = _ctrl.lobbyState;
+    final pending = state?.keygen;
+    final me = _ctrl.myPubkey;
+    final others = pending == null
+        ? const []
+        : pending.participants.where((p) => p.pubkey != me).toList();
+    final verified = _ctrl.verifiedParticipants;
+    // A one-participant keygen (others empty) is finalize-able as soon as
+    // the user taps Continue — there's nothing to verify out-of-band.
+    final allChecked = verified.length == others.length;
+    final confirming = _ctrl.confirming;
+    final canContinue = allChecked && !confirming;
+
+    return MultiStepDialogScaffold(
+      stepKey: LobbyAndKeygenStep.acceptKeygenVerify,
+      title: const Text('Verify the security code'),
+      subtitle:
+          'Contact each other participant out-of-band — phone, video '
+          'call, or in person. Confirm the code below matches what they '
+          'see on their device. Tick each one off as you do.',
+      forward: _ctrl.isAnimationForward,
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (pending != null)
+              Card.filled(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${pending.threshold}-of-${pending.participants.length}',
+                        style: theme.textTheme.labelLarge,
+                      ),
+                      Text(
+                        _formatChecksum(_ctrl.keygenState?.sessionHash?.field0),
+                        style: theme.textTheme.headlineLarge?.copyWith(
+                          fontFamily: monospaceTextStyle.fontFamily,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            if (state != null && pending != null)
+              ..._verifyChecklistRows(
+                ctrl: _ctrl,
+                state: state,
+                pending: pending,
+                verified: verified,
+                enabled: !confirming,
+                onToggle: _ctrl.toggleVerified,
+              ),
+          ],
+        ),
+      ),
+      footer: Row(
+        children: [
+          TextButton(
+            onPressed: confirming ? null : _onCancelKeygenTapped,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+            child: const Text('Cancel keygen'),
+          ),
+          const Spacer(),
+          FilledButton.icon(
+            onPressed: canContinue ? _confirmAndFinalize : null,
+            icon: confirming
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_rounded),
+            label: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _statusLine(
+    bool allAcked,
+    int ackedCount,
+    int total,
+    KeyGenState? kg,
+  ) {
+    if (!allAcked) return '$ackedCount of $total accepted';
+    if (kg == null) return 'Everyone is in. Starting keygen…';
+    if (kg.aborted != null) return 'Aborted';
+    if (kg.finished != null) return 'Finalized.';
+    if (kg.allAcks) return 'Confirm the code on this device.';
+    if (kg.sessionHash != null) {
+      return 'Verify the security code on every device, then confirm.';
+    }
+    if (!kg.allShares) {
+      return 'Awaiting shares (${kg.gotShares.length}/${kg.devices.length})…';
+    }
+    return 'Verifying with all participants…';
+  }
+
+  String _spinnerLabel(KeyGenState? kg) {
+    if (kg == null) return 'Starting keygen…';
+    if (!kg.allShares) return 'Awaiting shares…';
+    if (kg.sessionHash == null) return 'Verifying…';
+    return 'Awaiting acks…';
+  }
+
+  String _formatChecksum(List<int>? sessionHashBytes) {
+    final bytes = sessionHashBytes != null && sessionHashBytes.length >= 4
+        ? sessionHashBytes.sublist(0, 4)
+        : <int>[0, 0, 0, 0];
+    return toSpacedHex(Uint8List.fromList(bytes));
+  }
+
+  FullscreenActionDialogController _buildFullscreenController(
+    BuildContext context,
+  ) {
+    final localDevices = _ctrl.localDevices;
+    return FullscreenActionDialogController(
+      context: context,
+      devices: localDevices,
+      title: 'Security Check',
+      body: (context) => ListenableBuilder(
+        listenable: _ctrl,
+        builder: (context, _) {
+          final theme = Theme.of(context);
+          final pending = _ctrl.lobbyState?.keygen;
+          final sessionHash = _ctrl.keygenState?.sessionHash;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            spacing: 12,
+            children: [
+              const Text(
+                'Check that this code is identical and matches on every device',
+                textAlign: TextAlign.center,
+              ),
+              Card.filled(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: AnimatedCrossFade(
+                    firstChild: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 12,
+                        children: [
+                          CircularProgressIndicator(),
+                          Text('This can take a few seconds...'),
+                        ],
+                      ),
+                    ),
+                    secondChild: pending == null
+                        ? const SizedBox.shrink()
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${pending.threshold}-of-${pending.participants.length}',
+                                style: theme.textTheme.labelLarge,
+                              ),
+                              Text(
+                                _formatChecksum(sessionHash?.field0),
+                                style: theme.textTheme.headlineLarge?.copyWith(
+                                  fontFamily: monospaceTextStyle.fontFamily,
+                                ),
+                              ),
+                            ],
+                          ),
+                    crossFadeState: sessionHash == null
+                        ? CrossFadeState.showFirst
+                        : CrossFadeState.showSecond,
+                    duration: Durations.medium1,
+                  ),
+                ),
+              ),
+              Text(
+                'The security check code confirms that all devices have behaved honestly during key generation.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+      actionButtons: [
+        OutlinedButton(
+          onPressed: () => _ctrl.cancelKeygen(),
+          child: const Text('Cancel'),
+        ),
+        ListenableBuilder(
+          listenable: _ctrl,
+          builder: (context, _) {
+            final theme = Theme.of(context);
+            final state = _ctrl.keygenState;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 12,
+              children: [
+                Text(
+                  'Confirm on device',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                LargeCircularProgressIndicator(
+                  size: 36,
+                  progress: state == null
+                      ? 0
+                      : state.sessionAcks.where(localDevices.contains).length,
+                  total: localDevices.length,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// Step 3a body: join-link input
+// =============================================================================
+
+class _JoinSessionInput extends StatefulWidget {
+  const _JoinSessionInput({
+    required this.ctrl,
+    required this.errorText,
+    required this.onSubmit,
+  });
+  final OrgKeygenController ctrl;
+
+  final String? errorText;
+
+  final VoidCallback onSubmit;
+
+  @override
+  State<_JoinSessionInput> createState() => _JoinSessionInputState();
+}
+
+class _JoinSessionInputState extends State<_JoinSessionInput> {
+  OrgKeygenController get ctrl => widget.ctrl;
+  bool _prefilled = false;
+  final _focusNode = FocusNode();
+  static const _prefix = 'frostsnap://keygen/';
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocus);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocus);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocus() {
+    if (!_focusNode.hasFocus) return;
+    if (_prefilled || ctrl.joinLinkController.text.isNotEmpty) return;
+    _prefilled = true;
+    ctrl.joinLinkController.text = _prefix;
+    ctrl.joinLinkController.selection = TextSelection.collapsed(
+      offset: _prefix.length,
+    );
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData('text/plain');
+    if (data?.text != null) {
+      ctrl.joinLinkController.text = data!.text!;
+    }
+  }
+
+  Future<void> _scan() async {
+    final scanned = await MaybeFullscreenDialog.show<String>(
+      context: context,
+      child: const QrStringScanner(title: 'Scan invite'),
+    );
+    if (!mounted || scanned == null) return;
+    ctrl.joinLinkController.text = scanned.trim();
+    widget.onSubmit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card.outlined(
+      color: theme.colorScheme.surfaceContainerHigh,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              autofocus: true,
+              focusNode: _focusNode,
+              controller: ctrl.joinLinkController,
+              decoration: InputDecoration(
+                filled: false,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+                hintText: _prefix,
+                errorText: widget.errorText,
+                errorMaxLines: 2,
+              ),
+              onSubmitted: (_) => widget.onSubmit(),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _paste,
+                  icon: const Icon(Icons.paste),
+                  label: const Text('Paste'),
+                ),
+                TextButton.icon(
+                  onPressed: _scan,
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                  label: const Text('Scan'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1293,14 +1811,8 @@ class _ParticipantRow extends StatefulWidget {
   final ParticipantInfo participant;
   final bool isMe;
 
-  /// Whether this participant is the host who created the lobby.
-  /// Computed by the parent (`_participantRows`) by comparing
-  /// `participant.pubkey` against `state.initiator`.
   final bool isInitiator;
 
-  /// The key-number of this participant's first device in the global
-  /// (per-lobby) numbering — computed by the parent so device rows can
-  /// show "Key #N" consistently.
   final int keyOffset;
 
   /// In review/readonly mode, the trailing slot is a phase-aware label
@@ -1929,56 +2441,6 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
   }
 }
 
-// =============================================================================
-// Step 5: review
-// =============================================================================
-
-class _ReviewView extends StatelessWidget {
-  const _ReviewView({required this.ctrl});
-  final LobbyAndKeygenController ctrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final state = ctrl.lobbyState;
-    final total = ctrl.totalDevices;
-    return FullscreenDialogScaffold(
-      title: const Text('Choose threshold'),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: () => ctrl.back(),
-        tooltip: 'Back',
-      ),
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            IgnorePointer(
-              ignoring: !ctrl.isHost,
-              child: Opacity(
-                opacity: ctrl.isHost ? 1.0 : 0.75,
-                child: ThresholdSelector(
-                  threshold: ctrl.displayThreshold.clamp(1, max(total, 1)),
-                  totalDevices: max(total, 1),
-                  recommendedThreshold: ctrl.recommendedThreshold,
-                  onChanged: (v) => ctrl.setPendingThreshold(v),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (state != null)
-              ..._participantRows(ctrl: ctrl, state: state, readOnly: true),
-          ],
-        ),
-      ),
-      footer: Align(
-        alignment: Alignment.centerRight,
-        child: _ReviewPrimaryButton(ctrl: ctrl),
-      ),
-    );
-  }
-}
-
 class _ReviewPrimaryButton extends StatelessWidget {
   const _ReviewPrimaryButton({required this.ctrl});
   final LobbyAndKeygenController ctrl;
@@ -2007,656 +2469,13 @@ class _ReviewPrimaryButton extends StatelessWidget {
 }
 
 // =============================================================================
-// Step 6: accept keygen (joiner)
+// Step 6: accept keygen (joiner) — see _LobbyAndKeygenPageState's
+// `_buildAcceptDecisionStep` / `_buildAcceptAwaitingStep` /
+// `_buildAcceptVerifyStep` builder methods. Helpers below
+// (`_AckStatusPill`, `_ThresholdHero`, `_AcceptInfoRow`,
+// `_ackParticipantRows`, `_verifyChecklistRows`) are reused by those
+// builders.
 // =============================================================================
-
-class _AcceptKeygenView extends StatelessWidget {
-  const _AcceptKeygenView({required this.ctrl, required this.onDecline});
-  final LobbyAndKeygenController ctrl;
-
-  /// Mode A's terminal "Decline" action — routes through a confirm
-  /// dialog because the action is final.
-  final Future<void> Function() onDecline;
-
-  @override
-  Widget build(BuildContext context) {
-    final state = ctrl.lobbyState;
-    final pending = state?.keygen;
-    final me = ctrl.myPubkey;
-
-    if (pending == null) {
-      // Brief gap between step flip and the post-frame state arriving.
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final iAmAcked = pending.acked.any((pk) => pk == me);
-
-    return iAmAcked
-        ? _AcceptKeygenWaitingView(ctrl: ctrl, pending: pending)
-        : _AcceptKeygenDecisionView(
-            ctrl: ctrl,
-            pending: pending,
-            onDecline: onDecline,
-          );
-  }
-}
-
-/// Mode A: pre-ack. Wallet + threshold + network info, participant
-/// list, Decline + Accept footer. The "declining is final" disclosure
-/// surfaces in a confirm dialog when Decline is tapped.
-class _AcceptKeygenDecisionView extends StatelessWidget {
-  const _AcceptKeygenDecisionView({
-    required this.ctrl,
-    required this.pending,
-    required this.onDecline,
-  });
-  final LobbyAndKeygenController ctrl;
-  final ResolvedKeygen pending;
-  final Future<void> Function() onDecline;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final state = ctrl.lobbyState;
-    final keyName = state?.keyName ?? '';
-    final purpose = state?.purpose;
-    final network = purpose?.bitcoinNetwork();
-    final showNetwork = network != null && !network.isMainnet();
-
-    return FullscreenDialogScaffold(
-      title: const Text('Generate this key?'),
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _AcceptInfoRow(
-              icon: Icons.account_balance_wallet_rounded,
-              label: 'Wallet',
-              value: keyName,
-            ),
-            const SizedBox(height: 12),
-            _AcceptInfoRow(
-              icon: Icons.security_rounded,
-              label: 'Threshold',
-              value:
-                  '${pending.threshold} of ${pending.participants.length} required to spend',
-            ),
-            if (showNetwork)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: _AcceptInfoRow(
-                  icon: Icons.dns_rounded,
-                  label: 'Network',
-                  value: network.name(),
-                  valueColor: theme.colorScheme.error,
-                ),
-              ),
-            const SizedBox(height: 24),
-            Text('Participants', style: theme.textTheme.labelLarge),
-            const SizedBox(height: 8),
-            if (state != null)
-              ..._ackParticipantRows(
-                ctrl: ctrl,
-                state: state,
-                pending: pending,
-              ),
-          ],
-        ),
-      ),
-      footer: Row(
-        children: [
-          TextButton(
-            onPressed: () => onDecline(),
-            style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.error,
-            ),
-            child: const Text('Decline'),
-          ),
-          const Spacer(),
-          AsyncActionButton(
-            onPressed: ctrl.ackKeygen,
-            icon: Icons.arrow_forward_rounded,
-            child: const Text('Accept'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Mode B: post-ack. Compact N-of-M header, per-participant ack
-/// status list, single "Cancel keygen" action.
-///
-/// Kicks off the ceremony in `initState` by awaiting
-/// `lobby.awaitKeygenReady()` (which only resolves once `AllAcked` lands),
-/// then calling `coord.startRemoteKeygen` to obtain a
-/// [RemoteKeygenSessionHandle]. All subsequent control — subscribing to
-/// state, confirming the code match, cancelling — goes through that handle.
-/// Cancellation paths (user cancel, page-pop, code-match decline, local
-/// device disconnect) all converge on a single Rust-side cleanup driven by
-/// the spawned ceremony task.
-class _AcceptKeygenWaitingView extends StatefulWidget {
-  const _AcceptKeygenWaitingView({required this.ctrl, required this.pending});
-  final LobbyAndKeygenController ctrl;
-  final ResolvedKeygen pending;
-
-  @override
-  State<_AcceptKeygenWaitingView> createState() =>
-      _AcceptKeygenWaitingViewState();
-}
-
-/// Sub-phases of `_AcceptKeygenWaitingView` after the user has acked.
-///
-/// - `awaiting`: pre-allAcks; the FullscreenActionDialog is in charge of the
-///   per-device ack progress overlay. Body shows the "Waiting on keygen"
-///   shell.
-/// - `verify`: allAcks landed and the fullscreen dialog has dismissed.
-///   We now require the user to verify the security code with **every other
-///   participant** out-of-band before finalizing — per-participant checklist.
-///
-/// `state.finished` causes the page to pop directly (same as the local
-/// keygen flow) — no intermediate "wallet created" screen.
-enum _AcceptPhase { awaiting, verify }
-
-class _AcceptKeygenWaitingViewState extends State<_AcceptKeygenWaitingView> {
-  /// The session handle the ceremony task lives behind. Held until either
-  /// finalize succeeds, the user cancels, or the page is disposed — at
-  /// which point the handle's `Drop` (or explicit `cancel`) tears down the
-  /// run loop centrally.
-  KeyGenState? get _kgState => widget.ctrl.keygenState;
-  RemoteKeygenSessionHandle? get _session => widget.ctrl.keygenSession;
-
-  /// Fullscreen dialog showing the security code + per-device ack progress.
-  /// Constructed once we know our local devices (from `widget.pending`).
-  /// Auto-dismisses when all `_localDevices` have been removed via
-  /// `removeActionNeeded` as their session-acks land. Same shape as
-  /// `wallet_create.dart` uses for local keygen.
-  FullscreenActionDialogController? _fullscreenController;
-
-  /// Cached so `LargeCircularProgressIndicator.progress` and the
-  /// `removeActionNeeded` forwarding both look at the same set.
-  late final List<DeviceId> _localDevices = _computeLocalDevices();
-
-  /// Sub-phase. Drives `build` and the `_onCtrlChanged` transitions.
-  /// Acts as the single latch — no more separate `_confirmShown` flag.
-  _AcceptPhase _phase = _AcceptPhase.awaiting;
-
-  /// Latched true once we've initiated a page-pop. Subsequent state
-  /// changes (e.g. a finished+aborted race during teardown) are ignored —
-  /// without this we'd hit `Navigator.pop` while the navigator is locked
-  /// from the previous pop and Flutter asserts.
-  bool _popped = false;
-
-  /// Tracks which session_acks we've already forwarded to the fullscreen
-  /// controller, since the state's `sessionAcks` list grows monotonically
-  /// and we'd otherwise call `removeActionNeeded` for the same device on
-  /// every rebuild.
-  final Set<DeviceId> _ackedForwardedToDialog = <DeviceId>{};
-
-  /// Pubkeys of *other* participants the user has ticked off as
-  /// out-of-band-verified. Continue is enabled when this contains every
-  /// non-self participant.
-  final Set<PublicKey> _verified = <PublicKey>{};
-
-  /// True while `confirmMatch` is awaiting. Disables Continue and shows
-  /// a spinner. The page-pop happens via `state.finished` in
-  /// `_onCtrlChanged`, not inline after the await — so a parallel
-  /// `state.aborted` (e.g. local-device disconnect) can still pop.
-  bool _confirming = false;
-
-  /// In-flight transition to the `verify` phase. Set true while we're
-  /// `await`ing the fullscreen dialog's dismissal animation, so a
-  /// re-fired `_onCtrlChanged` mid-await doesn't kick off a second
-  /// transition.
-  bool _verifyTransitionInFlight = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // The controller fires `notifyListeners` whenever its `keygenState`
-    // updates (among other things). Hook the side effects — show the
-    // fullscreen dialog, forward acks, fire the code-match dialog, pop
-    // on finished/aborted — off that single listener.
-    widget.ctrl.addListener(_onCtrlChanged);
-    unawaited(widget.ctrl.startKeygenCeremony());
-  }
-
-  /// Compute the device IDs registered to *this* participant — the set the
-  /// FullscreenActionDialog tracks for ack progress.
-  List<DeviceId> _computeLocalDevices() {
-    final me = widget.ctrl.myPubkey;
-    for (final p in widget.pending.participants) {
-      if (p.pubkey == me) {
-        return p.devices.map((d) => d.deviceId).toList();
-      }
-    }
-    return const [];
-  }
-
-  void _onCtrlChanged() {
-    if (!mounted || _popped) return;
-    final state = _kgState;
-    if (state == null) return;
-
-    // Lazily build the fullscreen dialog the first time we have a state
-    // to display. Building in initState would risk pushing a route
-    // mid-build; the controller fires AFTER startKeygenCeremony's first
-    // emit so this runs out-of-build.
-    _fullscreenController ??= _buildFullscreenController(context);
-
-    // Forward each new ack to the fullscreen dialog so its progress
-    // indicator advances and it auto-dismisses once every local device
-    // has acked.
-    final controller = _fullscreenController;
-    if (controller != null) {
-      for (final id in state.sessionAcks) {
-        if (_ackedForwardedToDialog.add(id)) {
-          unawaited(controller.removeActionNeeded(id));
-        }
-      }
-    }
-
-    if (state.aborted != null) {
-      _popped = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).pop();
-      });
-      return;
-    }
-
-    if (state.finished != null) {
-      _popped = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).pop(state.finished);
-      });
-      return;
-    }
-
-    // All our local devices have acked → wait for the fullscreen dialog
-    // to dismiss, then transition to the verify-out-of-band sub-view.
-    if (state.allAcks &&
-        _phase == _AcceptPhase.awaiting &&
-        !_verifyTransitionInFlight) {
-      _verifyTransitionInFlight = true;
-      unawaited(_transitionToVerify());
-    }
-  }
-
-  Future<void> _transitionToVerify() async {
-    await _fullscreenController?.awaitDismissed();
-    if (!mounted || _popped) return;
-    setState(() => _phase = _AcceptPhase.verify);
-  }
-
-  Future<void> _confirmAndFinalize() async {
-    final session = _session;
-    if (session == null || _confirming) return;
-    setState(() => _confirming = true);
-    try {
-      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-      // Don't pop here — `state.finished` from the stream pops the page
-      // directly via `_onCtrlChanged`.
-      await session.confirmMatch(encryptionKey: encryptionKey);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _confirming = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Finalize failed: $e')));
-    }
-  }
-
-  /// Build the fullscreen "Security Check" dialog. The body and the
-  /// progress button both use `ListenableBuilder` so they rebuild on
-  /// every controller `notifyListeners` (which fires whenever
-  /// `keygenState` updates) — same pattern as `wallet_create.dart`.
-  FullscreenActionDialogController _buildFullscreenController(
-    BuildContext context,
-  ) {
-    return FullscreenActionDialogController(
-      context: context,
-      devices: _localDevices,
-      title: 'Security Check',
-      body: (context) => ListenableBuilder(
-        listenable: widget.ctrl,
-        builder: (context, _) {
-          final theme = Theme.of(context);
-          final sessionHash = widget.ctrl.keygenState?.sessionHash;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            spacing: 12,
-            children: [
-              const Text(
-                'Check that this code is identical and matches on every device',
-                textAlign: TextAlign.center,
-              ),
-              Card.filled(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: AnimatedCrossFade(
-                    firstChild: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: 12,
-                        children: [
-                          CircularProgressIndicator(),
-                          Text('This can take a few seconds...'),
-                        ],
-                      ),
-                    ),
-                    secondChild: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${widget.pending.threshold}-of-${widget.pending.participants.length}',
-                          style: theme.textTheme.labelLarge,
-                        ),
-                        Text(
-                          _formatChecksum(sessionHash?.field0),
-                          style: theme.textTheme.headlineLarge?.copyWith(
-                            fontFamily: monospaceTextStyle.fontFamily,
-                          ),
-                        ),
-                      ],
-                    ),
-                    crossFadeState: sessionHash == null
-                        ? CrossFadeState.showFirst
-                        : CrossFadeState.showSecond,
-                    duration: Durations.medium1,
-                  ),
-                ),
-              ),
-              Text(
-                'The security check code confirms that all devices have behaved honestly during key generation.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-      actionButtons: [
-        OutlinedButton(
-          onPressed: () => _session?.cancel(),
-          child: const Text('Cancel'),
-        ),
-        ListenableBuilder(
-          listenable: widget.ctrl,
-          builder: (context, _) {
-            final theme = Theme.of(context);
-            final state = widget.ctrl.keygenState;
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 12,
-              children: [
-                Text(
-                  'Confirm on device',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                LargeCircularProgressIndicator(
-                  size: 36,
-                  progress: state == null
-                      ? 0
-                      : state.sessionAcks.where(_localDevices.contains).length,
-                  total: _localDevices.length,
-                ),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  String _formatChecksum(List<int>? sessionHashBytes) {
-    final bytes = sessionHashBytes != null && sessionHashBytes.length >= 4
-        ? sessionHashBytes.sublist(0, 4)
-        : <int>[0, 0, 0, 0];
-    return toSpacedHex(Uint8List.fromList(bytes));
-  }
-
-  Future<void> _onCancelTapped() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return AlertDialog(
-          icon: const Icon(Icons.cancel_outlined),
-          title: const Text('Cancel this keygen?'),
-          content: const Text(
-            'This stops the keygen on your side. Other participants will '
-            'sit waiting until you tell them out-of-band.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Keep going'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: theme.colorScheme.error,
-                foregroundColor: theme.colorScheme.onError,
-              ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Cancel keygen'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirm != true || !mounted) return;
-    // Local-only teardown — no protocol message published. The ensuing
-    // state.aborted pops the page via _onKgState.
-    _session?.cancel();
-  }
-
-  @override
-  void dispose() {
-    widget.ctrl.removeListener(_onCtrlChanged);
-    final fullscreen = _fullscreenController;
-    _fullscreenController = null;
-    fullscreen?.dispose();
-    // Note: the `_keygenSession` and its stream subscription are owned
-    // by `LobbyAndKeygenController`; they're cleaned up in its
-    // `dispose`. We just unhook our listener here.
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiStepDialogSwitcher(
-      child: KeyedSubtree(
-        key: ValueKey(_phase),
-        child: switch (_phase) {
-          _AcceptPhase.awaiting => _buildAwaitingView(context),
-          _AcceptPhase.verify => _buildVerifyView(context),
-        },
-      ),
-    );
-  }
-
-  Widget _buildAwaitingView(BuildContext context) {
-    final theme = Theme.of(context);
-    final state = widget.ctrl.lobbyState;
-    final pending = widget.pending;
-    final ackedCount = pending.acked.length;
-    final total = pending.participants.length;
-    final allAcked = ackedCount == total;
-    final kg = _kgState;
-
-    return FullscreenDialogScaffold(
-      title: const Text('Waiting on keygen'),
-      subtitle: _statusLine(allAcked, ackedCount, total, kg),
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _ThresholdHero(threshold: pending.threshold, total: total),
-            const SizedBox(height: 12),
-            if (state != null)
-              ..._ackParticipantRows(
-                ctrl: widget.ctrl,
-                state: state,
-                pending: pending,
-              ),
-          ],
-        ),
-      ),
-      footer: Row(
-        children: [
-          TextButton(
-            onPressed: _onCancelTapped,
-            style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.error,
-            ),
-            child: const Text('Cancel keygen'),
-          ),
-          const Spacer(),
-          if (allAcked && (kg == null || !kg.allAcks))
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(_spinnerLabel(kg), style: theme.textTheme.labelLarge),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVerifyView(BuildContext context) {
-    final theme = Theme.of(context);
-    final pending = widget.pending;
-    final state = widget.ctrl.lobbyState;
-    final me = widget.ctrl.myPubkey;
-    final others = pending.participants.where((p) => p.pubkey != me).toList();
-    final allChecked = _verified.length == others.length;
-    final canContinue = allChecked && !_confirming;
-
-    return FullscreenDialogScaffold(
-      title: const Text('Verify the security code'),
-      subtitle:
-          'Contact each other participant out-of-band — phone, video '
-          'call, or in person. Confirm the code below matches what they '
-          'see on their device. Tick each one off as you do.',
-      showClose: false,
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card.filled(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${pending.threshold}-of-${pending.participants.length}',
-                      style: theme.textTheme.labelLarge,
-                    ),
-                    Text(
-                      _formatChecksum(_kgState?.sessionHash?.field0),
-                      style: theme.textTheme.headlineLarge?.copyWith(
-                        fontFamily: monospaceTextStyle.fontFamily,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (state != null)
-              ..._verifyChecklistRows(
-                ctrl: widget.ctrl,
-                state: state,
-                pending: pending,
-                verified: _verified,
-                enabled: !_confirming,
-                onToggle: (pk, ok) {
-                  setState(() {
-                    if (ok) {
-                      _verified.add(pk);
-                    } else {
-                      _verified.remove(pk);
-                    }
-                  });
-                },
-              ),
-          ],
-        ),
-      ),
-      footer: Row(
-        children: [
-          TextButton(
-            onPressed: _confirming ? null : _onCancelTapped,
-            style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.error,
-            ),
-            child: const Text('Cancel keygen'),
-          ),
-          const Spacer(),
-          FilledButton.icon(
-            onPressed: canContinue ? _confirmAndFinalize : null,
-            icon: _confirming
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check_rounded),
-            label: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _statusLine(
-    bool allAcked,
-    int ackedCount,
-    int total,
-    KeyGenState? kg,
-  ) {
-    if (!allAcked) return '$ackedCount of $total accepted';
-    if (kg == null) return 'Everyone is in. Starting keygen…';
-    if (kg.aborted != null) return 'Aborted';
-    if (kg.finished != null) return 'Finalized.';
-    if (kg.allAcks) return 'Confirm the code on this device.';
-    if (kg.sessionHash != null) {
-      return 'Verify the security code on every device, then confirm.';
-    }
-    if (!kg.allShares) {
-      return 'Awaiting shares (${kg.gotShares.length}/${kg.devices.length})…';
-    }
-    return 'Verifying with all participants…';
-  }
-
-  String _spinnerLabel(KeyGenState? kg) {
-    if (kg == null) return 'Starting keygen…';
-    if (!kg.allShares) return 'Awaiting shares…';
-    if (kg.sessionHash == null) return 'Verifying…';
-    return 'Awaiting acks…';
-  }
-}
 
 /// Small ack-status pill — `Accepted ✓` (primary) or `Waiting` with
 /// a spinner. Passed as `_ParticipantRow.trailingOverride` on the

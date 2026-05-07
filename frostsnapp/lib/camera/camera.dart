@@ -134,9 +134,6 @@ class _QrStringScannerState extends State<QrStringScanner> {
         scanFrame: _scanFrame,
       );
     }
-    return MobileQrScanner<String>(
-      title: widget.title,
-      onDetect: _onDetect,
-    );
+    return MobileQrScanner<String>(title: widget.title, onDetect: _onDetect);
   }
 }

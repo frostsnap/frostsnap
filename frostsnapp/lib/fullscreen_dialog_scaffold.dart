@@ -3,44 +3,10 @@ import 'package:frostsnap/theme.dart';
 
 import 'maybe_fullscreen_dialog.dart';
 
-// =============================================================================
-// Canonical modal-dialog patterns
-// =============================================================================
-//
-// Multi-step (shared footer):
-//
-//   MaybeFullscreenDialog.show<T>(
-//     context: context,
-//     barrierDismissible: false,
-//     child: SomePage(...),
-//   );
-//
-//   // Inside SomePage.build:
-//   MultiStepDialogScaffold(
-//     forward: _isForward,
-//     body: FullscreenDialogBody(
-//       key: ValueKey(_step),
-//       title: const Text(...),
-//       leading: <back button or null>,
-//       showClose: false,
-//       body: <sliver>,
-//     ),
-//     footer: <Row of buttons, single button, or null>,
-//   )
-//
-// Multi-step (per-step footer): each step is a complete
-// [FullscreenDialogScaffold]; wrap the switch in a
-// [MultiStepDialogSwitcher] and key the swapped child.
-//
-// Single-step: [FullscreenDialogScaffold].
-//
-// Conventions:
-// - Title + leading/back/close lives on the [TopBarSliver] embedded in
-//   [FullscreenDialogBody] — don't roll a custom header.
-// - Body is sliver-based — no `Column` + `Flexible(ListView)`.
-// - Footer is [FullscreenDialogFooter] (handles keyboard inset + safe
-//   area). For multi-step, prefer [MultiStepDialogScaffold] over
-//   composing by hand.
+// Multi-step dialog convention:
+// - step builders live on State and return MultiStepDialogScaffold
+// - workflow controllers stay widget-unaware
+// - bodies are slivers; footers use FullscreenDialogFooter
 
 /// Padding applied to the subtitle block when present.
 const _subtitlePadding = EdgeInsets.fromLTRB(16, 0, 16, 16);
@@ -48,18 +14,7 @@ const _subtitlePadding = EdgeInsets.fromLTRB(16, 0, 16, 16);
 /// Padding applied to the body sliver.
 const _bodyPadding = EdgeInsets.fromLTRB(16, 16, 16, 24);
 
-/// Scrollable body for a full-screen dialog: a [TopBarSliver] header,
-/// an optional subtitle, and a caller-provided body sliver, hosted
-/// inside a [CustomScrollView].
-///
-/// This is designed as the box-level child of an [AnimatedSwitcher]
-/// for multi-step flows — unlike a `Column`-rooted scaffold, a
-/// `CustomScrollView` can live under the default [Stack] layout that
-/// `AnimatedSwitcher` uses without triggering Flex-inside-Stack
-/// errors.
-///
-/// Host inside [MaybeFullscreenDialog.show] — do not wrap in a
-/// standalone `Dialog`.
+/// Scrollable dialog body with the standard top bar and body padding.
 class FullscreenDialogBody extends StatelessWidget {
   const FullscreenDialogBody({
     super.key,
@@ -243,20 +198,30 @@ class MultiStepDialogSwitcher extends StatelessWidget {
   }
 }
 
-/// Multi-step dialog scaffold: a [MultiStepDialogSwitcher] sized by
-/// [Flexible] above an optional [FullscreenDialogFooter].
+/// Multi-step dialog scaffold — the canonical chrome container for
+/// every per-step dialog flow in the app.
 ///
-/// Use when every step shares the same footer slot (or no footer).
-/// Steps with no footer should pass `footer: null`, not
-/// `SizedBox.shrink()` — the footer's 16-px outer padding + safe area
-/// would otherwise paint visible blank space.
+/// Owns:
+/// - A keyed [FullscreenDialogBody] (header + subtitle + body sliver)
+///   inside a [MultiStepDialogSwitcher] so step changes slide.
+/// - A pinned [FullscreenDialogFooter] (`null` omits it entirely; pass
+///   `null`, not `SizedBox.shrink()`, to skip the 16-px gutter).
 ///
-/// For flows where each step has its own complete chrome, build each
-/// step as a [FullscreenDialogScaffold] and wrap the switch in
-/// [MultiStepDialogSwitcher] directly.
+/// Each per-step builder method on the State should return a
+/// fully-configured `MultiStepDialogScaffold(stepKey: ..., title: ...,
+/// body: ..., footer: ..., forward: ...)`.
+///
+/// Defaults [showClose] to `false` because non-dismissible workflows
+/// are the common case (lobbies, protocol stages). Each step that
+/// *does* want a tap-to-close affordance opts in explicitly.
 class MultiStepDialogScaffold extends StatelessWidget {
   const MultiStepDialogScaffold({
     super.key,
+    required this.stepKey,
+    required this.title,
+    this.subtitle,
+    this.leading,
+    this.showClose = false,
     required this.body,
     this.footer,
     this.forward = true,
@@ -264,8 +229,21 @@ class MultiStepDialogScaffold extends StatelessWidget {
     this.reverseDuration,
   });
 
-  /// The per-step body. Should be a [FullscreenDialogBody] with a
-  /// unique [Key] per step so the switcher transitions on change.
+  /// Drives the inner [MultiStepDialogSwitcher]'s key. Wrap with
+  /// `ValueKey(...)` if it isn't already a [Key].
+  final Object stepKey;
+
+  final Widget title;
+  final String? subtitle;
+
+  /// Back / cancel icon shown in the header's leading slot. `null`
+  /// hides it (use for stages where back isn't valid — match the
+  /// flow's [PopScope] rules).
+  final Widget? leading;
+
+  final bool showClose;
+
+  /// A sliver — the per-step body content.
   final Widget body;
 
   /// Pinned footer rendered below the switcher. `null` omits the
@@ -279,6 +257,7 @@ class MultiStepDialogScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final f = footer;
+    final keyValue = stepKey is Key ? stepKey as Key : ValueKey(stepKey);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -288,7 +267,14 @@ class MultiStepDialogScaffold extends StatelessWidget {
             forward: forward,
             duration: duration,
             reverseDuration: reverseDuration,
-            child: body,
+            child: FullscreenDialogBody(
+              key: keyValue,
+              title: title,
+              subtitle: subtitle,
+              leading: leading,
+              showClose: showClose,
+              body: body,
+            ),
           ),
         ),
         if (f != null) FullscreenDialogFooter(child: f),

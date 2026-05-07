@@ -39,7 +39,8 @@ class NostrSigningPage extends StatefulWidget {
     required this.nsec,
   });
 
-  AccessStructureId get accessStructureId => accessStructureRef.accessStructureId;
+  AccessStructureId get accessStructureId =>
+      accessStructureRef.accessStructureId;
 
   @override
   State<NostrSigningPage> createState() => _NostrSigningPageState();
@@ -53,14 +54,17 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
   SigningState? localSigningState;
   FullscreenActionDialogController<void>? actionDialogController;
   bool _cancelRequested = false;
+
   /// Set when the remote sign session's stream closes normally — i.e. all
   /// our local targets have contributed and the dispatcher was popped off
   /// the ui_stack. Used by `dispose` to skip `_handle.cancel()` when the
   /// session finished cleanly.
   bool _remoteSessionComplete = false;
+
   /// Periodic re-publish of any shares that core has cached but nostr hasn't
   /// echoed back. Covers app-restart-mid-publish and transient relay failures.
   Timer? _broadcastRetryTimer;
+
   /// Single-flight guard on `_reconcileUnbroadcastShares` so the periodic
   /// timer and listener-driven triggers don't race.
   bool _reconciling = false;
@@ -86,14 +90,18 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
       asRef: widget.accessStructureRef,
     );
     if (accessStruct == null) return [];
-    return offerShareIndices(binonces: myOffer.binonces).map((idx) {
-      for (final deviceId in accessStruct.devices()) {
-        if (accessStruct.getDeviceShortShareIndex(deviceId: deviceId) == idx) {
-          return deviceId;
-        }
-      }
-      return null;
-    }).whereType<DeviceId>().toList();
+    return offerShareIndices(binonces: myOffer.binonces)
+        .map((idx) {
+          for (final deviceId in accessStruct.devices()) {
+            if (accessStruct.getDeviceShortShareIndex(deviceId: deviceId) ==
+                idx) {
+              return deviceId;
+            }
+          }
+          return null;
+        })
+        .whereType<DeviceId>()
+        .toList();
   }
 
   @override
@@ -332,7 +340,9 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
     final threshold = widget.threshold;
     final myHex = widget.myPubkey?.toHex();
     final myOffer = myHex != null ? state.offers[myHex] : null;
-    final otherOffers = state.offers.entries.where((e) => e.key != myHex).toList();
+    final otherOffers = state.offers.entries
+        .where((e) => e.key != myHex)
+        .toList();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -352,15 +362,20 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
                 alignment: AlignmentDirectional.center,
                 children: [
                   SizedBox(
-                    width: 40, height: 40,
+                    width: 40,
+                    height: 40,
                     child: CircularProgressIndicator(
                       value: totalSigned / (threshold > 0 ? threshold : 1),
-                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                      backgroundColor:
+                          theme.colorScheme.surfaceContainerHighest,
                       strokeCap: StrokeCap.round,
                       strokeWidth: 3,
                     ),
                   ),
-                  Text('$totalSigned/$threshold', style: theme.textTheme.labelSmall),
+                  Text(
+                    '$totalSigned/$threshold',
+                    style: theme.textTheme.labelSmall,
+                  ),
                 ],
               ),
             ],
@@ -376,9 +391,9 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
                   profile: widget.getProfile(myOffer.author),
                   pubkey: myOffer.author,
                   name: 'You',
-                  keyLabel: offerShareIndices(binonces: myOffer.binonces)
-                      .map((i) => '#$i')
-                      .join(', '),
+                  keyLabel: offerShareIndices(
+                    binonces: myOffer.binonces,
+                  ).map((i) => '#$i').join(', '),
                   signed: state.partials.containsKey(myHex),
                 ),
               ...otherOffers.map((entry) {
@@ -389,9 +404,9 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
                   profile: profile,
                   pubkey: offer.author,
                   name: getDisplayName(profile, offer.author),
-                  keyLabel: offerShareIndices(binonces: offer.binonces)
-                      .map((i) => '#$i')
-                      .join(', '),
+                  keyLabel: offerShareIndices(
+                    binonces: offer.binonces,
+                  ).map((i) => '#$i').join(', '),
                   signed: hasSigned,
                 );
               }),
@@ -430,10 +445,10 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
     final headerText = nostrConfirmed
         ? 'Signed!'
         : broadcastingAny
-            ? 'Broadcasting signatures…'
-            : devices.length == 1
-                ? 'Plug in ${coord.getDeviceName(id: devices.first) ?? "device"} to sign'
-                : 'Plug in your devices to sign';
+        ? 'Broadcasting signatures…'
+        : devices.length == 1
+        ? 'Plug in ${coord.getDeviceName(id: devices.first) ?? "device"} to sign'
+        : 'Plug in your devices to sign';
 
     return [
       Padding(
@@ -446,8 +461,12 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
       ),
       ...devices.map((deviceId) {
         final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
-        final shareIndex = accessStruct?.getDeviceShortShareIndex(deviceId: deviceId);
-        final label = shareIndex != null ? '#$shareIndex $deviceName' : deviceName;
+        final shareIndex = accessStruct?.getDeviceShortShareIndex(
+          deviceId: deviceId,
+        );
+        final label = shareIndex != null
+            ? '#$shareIndex $deviceName'
+            : deviceName;
         final isConnected = connectedDevices.contains(deviceId);
         final deviceCoreSigned = coreSigned(deviceId);
         final Widget trailing;
@@ -513,7 +532,10 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
                 Align(
                   alignment: AlignmentDirectional.centerStart,
                   child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4.0, horizontal: 12.0),
+                    padding: EdgeInsets.symmetric(
+                      vertical: 4.0,
+                      horizontal: 12.0,
+                    ),
                     child: TextButton(
                       onPressed: () => Navigator.pop(context),
                       child: Text(_iHaveSigned ? 'Done' : 'Cancel'),
@@ -624,41 +646,53 @@ class _SignerChip extends StatelessWidget {
             NostrAvatar.small(profile: profile, pubkey: pubkey),
             if (signed)
               Positioned(
-                right: -2, bottom: -2,
+                right: -2,
+                bottom: -2,
                 child: Container(
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,
                     shape: BoxShape.circle,
                   ),
                   padding: const EdgeInsets.all(1),
-                  child: Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 16,
+                    color: Colors.green,
+                  ),
                 ),
               ),
             if (!signed)
               Positioned(
-                right: -2, bottom: -2,
+                right: -2,
+                bottom: -2,
                 child: Container(
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,
                     shape: BoxShape.circle,
                   ),
                   padding: const EdgeInsets.all(1),
-                  child: Icon(Icons.hourglass_empty, size: 14, color: theme.colorScheme.outline),
+                  child: Icon(
+                    Icons.hourglass_empty,
+                    size: 14,
+                    color: theme.colorScheme.outline,
+                  ),
                 ),
               ),
           ],
         ),
         const SizedBox(height: 4),
         Text.rich(
-          TextSpan(children: [
-            TextSpan(text: '$keyLabel ', style: theme.textTheme.labelSmall),
-            TextSpan(
-              text: name,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+          TextSpan(
+            children: [
+              TextSpan(text: '$keyLabel ', style: theme.textTheme.labelSmall),
+              TextSpan(
+                text: name,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
           overflow: TextOverflow.ellipsis,
         ),
       ],

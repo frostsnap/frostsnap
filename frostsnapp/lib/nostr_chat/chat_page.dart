@@ -15,8 +15,16 @@ import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
-import 'package:frostsnap/src/rust/api/signing.dart' show RemoteSignSessionId, UnsignedTx, SigningDetails_Message, SigningDetails_Transaction, wireSignTaskBitcoinTransaction, wireSignTaskTest;
-import 'package:frostsnap/src/rust/lib.dart' show WireSignTask, ParticipantBinonces;
+import 'package:frostsnap/src/rust/api/signing.dart'
+    show
+        RemoteSignSessionId,
+        UnsignedTx,
+        SigningDetails_Message,
+        SigningDetails_Transaction,
+        wireSignTaskBitcoinTransaction,
+        wireSignTaskTest;
+import 'package:frostsnap/src/rust/lib.dart'
+    show WireSignTask, ParticipantBinonces;
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -128,8 +136,12 @@ class TimelineTransaction extends TimelineItem {
   final SigningRequestState? signingState;
   @override
   final DateTime timestamp;
-  TimelineTransaction(this.tx, {required this.kind, required int timestampSecs, this.signingState})
-    : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
+  TimelineTransaction(
+    this.tx, {
+    required this.kind,
+    required int timestampSecs,
+    this.signingState,
+  }) : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
 }
 
 class ChatPage extends StatefulWidget {
@@ -169,8 +181,10 @@ class _ChatPageState extends State<ChatPage> {
   NostrClient? _client;
   ConnectionState _connectionState = const ConnectionState.connecting();
   ReplyTarget? _replyingTo;
-  ({AccessStructureRef asRef, String testMessage, List<DeviceId> devices})? _pendingSignRequest;
-  ({AccessStructureRef asRef, UnsignedTx unsignedTx, List<DeviceId> devices})? _pendingTxSignRequest;
+  ({AccessStructureRef asRef, String testMessage, List<DeviceId> devices})?
+  _pendingSignRequest;
+  ({AccessStructureRef asRef, UnsignedTx unsignedTx, List<DeviceId> devices})?
+  _pendingTxSignRequest;
 
   NostrContext? _nostrContext;
   PublicKey? get _myPubkey => _nostrContext?.myPubkey;
@@ -221,7 +235,9 @@ class _ChatPageState extends State<ChatPage> {
 
       final currentState = _txTimelineState[txid];
 
-      if (lastSeen != null && currentState != TxTimelineKind.mempool && currentState != TxTimelineKind.confirmed) {
+      if (lastSeen != null &&
+          currentState != TxTimelineKind.mempool &&
+          currentState != TxTimelineKind.confirmed) {
         _removeTxTimelineItem(txid, TxTimelineKind.needsBroadcast);
         _txTimelineState[txid] = TxTimelineKind.mempool;
         _insertTimelineItem(
@@ -420,17 +436,14 @@ class _ChatPageState extends State<ChatPage> {
         if (event is SigningEvent_RoundConfirmed) {
           final state = _signingRequests[event.requestId];
           if (state != null && _client != null) {
-            final binonces = event.subset
-                .expand((e) => e.binonces)
-                .toList();
+            final binonces = event.subset.expand((e) => e.binonces).toList();
             final sealed = _client!.sealRoundConfirmed(
               accessStructureId: widget.accessStructureId,
               requestId: event.requestId,
               signTask: event.signTask,
               binonces: binonces,
             );
-            final subsetEventIds =
-                event.subset.map((e) => e.eventId).toList();
+            final subsetEventIds = event.subset.map((e) => e.eventId).toList();
             state.setRoundConfirmed(sealed, subsetEventIds);
           }
           break;
@@ -460,8 +473,7 @@ class _ChatPageState extends State<ChatPage> {
           SigningEvent_Cancel(:final eventId) => eventId,
           SigningEvent_RoundConfirmed() ||
           SigningEvent_RoundPending() ||
-          SigningEvent_Rejected() =>
-            throw StateError('handled above'),
+          SigningEvent_Rejected() => throw StateError('handled above'),
         };
         final idHex = eventId.toHex();
         if (!_seenSigningEventIds.add(idHex)) break;
@@ -497,8 +509,7 @@ class _ChatPageState extends State<ChatPage> {
           ),
           SigningEvent_RoundConfirmed() ||
           SigningEvent_RoundPending() ||
-          SigningEvent_Rejected() =>
-            throw StateError('handled above'),
+          SigningEvent_Rejected() => throw StateError('handled above'),
         };
         final isMe = _myPubkey != null && author == _myPubkey!;
         _messageById[eventId] = ChatMessage(
@@ -543,32 +554,42 @@ class _ChatPageState extends State<ChatPage> {
               state.addOffer(event.author.toHex(), event);
             }
             final threshold = _getThreshold(event.requestId);
-            _insertTimelineItem(TimelineSigning(
-              event,
-              progressCount: state?.offers.length,
-              progressTotal: threshold > 0 ? threshold : null,
-            ));
+            _insertTimelineItem(
+              TimelineSigning(
+                event,
+                progressCount: state?.offers.length,
+                progressTotal: threshold > 0 ? threshold : null,
+              ),
+            );
           case SigningEvent_Partial():
             final state = _signingRequests[event.requestId];
             if (state != null) {
               final authorHex = event.author.toHex();
               final offer = state.offers[authorHex];
               if (offer != null && (event.timestamp - offer.timestamp) < 300) {
-                _timeline.removeWhere((item) =>
-                    item is TimelineSigning &&
-                    item.event is SigningEvent_Offer &&
-                    (item.event as SigningEvent_Offer).author.toHex() == authorHex &&
-                    (item.event as SigningEvent_Offer).requestId.toHex() == event.requestId.toHex());
+                _timeline.removeWhere(
+                  (item) =>
+                      item is TimelineSigning &&
+                      item.event is SigningEvent_Offer &&
+                      (item.event as SigningEvent_Offer).author.toHex() ==
+                          authorHex &&
+                      (item.event as SigningEvent_Offer).requestId.toHex() ==
+                          event.requestId.toHex(),
+                );
               }
               state.addPartial(authorHex, event);
               final threshold = _getThreshold(event.requestId);
-              _insertTimelineItem(TimelineSigning(
-                event,
-                progressCount: state.partials.length,
-                progressTotal: threshold > 0 ? threshold : null,
-              ));
+              _insertTimelineItem(
+                TimelineSigning(
+                  event,
+                  progressCount: state.partials.length,
+                  progressTotal: threshold > 0 ? threshold : null,
+                ),
+              );
               if (state.partials.length >= threshold) {
-                final details = signingDetails(signTask: state.request.signTask);
+                final details = signingDetails(
+                  signTask: state.request.signTask,
+                );
                 if (details is SigningDetails_Transaction) {
                   final txid = details.transaction.txid;
                   final existing = _txTimelineState[txid];
@@ -636,10 +657,12 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _removeTxTimelineItem(String txid, TxTimelineKind kind) {
-    _timeline.removeWhere((item) =>
-        item is TimelineTransaction &&
-        item.kind == kind &&
-        item.tx.txid == txid);
+    _timeline.removeWhere(
+      (item) =>
+          item is TimelineTransaction &&
+          item.kind == kind &&
+          item.tx.txid == txid,
+    );
   }
 
   void _jumpToBottom() {
@@ -734,15 +757,28 @@ class _ChatPageState extends State<ChatPage> {
             onRetry: () => _retryMessage(message),
             onCopy: () => _copyMessage(message),
           ),
-          TimelineSigning(event: final event, :final progressCount, :final progressTotal) => switch (event) {
-            SigningEvent_Request() => _buildRequestCard(event),
-            SigningEvent_Offer() => _buildOfferCard(event, progressCount, progressTotal),
-            SigningEvent_Partial() => _buildPartialCard(event, progressCount, progressTotal),
-            SigningEvent_Cancel() => _buildCancelCard(event),
-            SigningEvent_RoundConfirmed() ||
-            SigningEvent_RoundPending() ||
-            SigningEvent_Rejected() => const SizedBox.shrink(),
-          },
+          TimelineSigning(
+            event: final event,
+            :final progressCount,
+            :final progressTotal,
+          ) =>
+            switch (event) {
+              SigningEvent_Request() => _buildRequestCard(event),
+              SigningEvent_Offer() => _buildOfferCard(
+                event,
+                progressCount,
+                progressTotal,
+              ),
+              SigningEvent_Partial() => _buildPartialCard(
+                event,
+                progressCount,
+                progressTotal,
+              ),
+              SigningEvent_Cancel() => _buildCancelCard(event),
+              SigningEvent_RoundConfirmed() ||
+              SigningEvent_RoundPending() ||
+              SigningEvent_Rejected() => const SizedBox.shrink(),
+            },
           TimelineSigningComplete(:final requestState) => _SigningCompleteCard(
             details: signingDetailsText(
               signingDetails(signTask: requestState.request.signTask),
@@ -750,7 +786,12 @@ class _ChatPageState extends State<ChatPage> {
             ),
             onShowSignature: () => _completeAndShowSignature(requestState),
           ),
-          TimelineTransaction(:final tx, :final kind, :final timestamp, :final signingState) =>
+          TimelineTransaction(
+            :final tx,
+            :final kind,
+            :final timestamp,
+            :final signingState,
+          ) =>
             switch (kind) {
               TxTimelineKind.needsBroadcast => _TransactionCard(
                 key: _timelineKeys.putIfAbsent(tx.txid, () => GlobalKey()),
@@ -785,12 +826,10 @@ class _ChatPageState extends State<ChatPage> {
                 eventId: item.eventId,
                 author: item.author,
                 preview: 'Error: ${item.reason}',
-                isMe:
-                    _myPubkey != null && item.author == _myPubkey!,
+                isMe: _myPubkey != null && item.author == _myPubkey!,
               ),
             ),
-            onTapAvatar:
-                _myPubkey != null && item.author == _myPubkey!
+            onTapAvatar: _myPubkey != null && item.author == _myPubkey!
                 ? null
                 : () => _showMemberProfile(item.author),
           ),
@@ -841,8 +880,7 @@ class _ChatPageState extends State<ChatPage> {
       asRef: widget.accessStructureRef,
     );
     final threshold = accessStruct?.threshold() ?? 0;
-    final reqIsMe =
-        myPubkey != null && state.request.author == myPubkey;
+    final reqIsMe = myPubkey != null && state.request.author == myPubkey;
     final idHex = request.eventId.toHex();
     final key = _timelineKeys.putIfAbsent(idHex, () => GlobalKey());
     final isComplete = state.partials.length >= threshold;
@@ -891,7 +929,9 @@ class _ChatPageState extends State<ChatPage> {
         );
         final isSend = txDetails.isSend;
         final accentColor = isSend
-            ? Colors.redAccent.harmonizeWith(Theme.of(context).colorScheme.primary)
+            ? Colors.redAccent.harmonizeWith(
+                Theme.of(context).colorScheme.primary,
+              )
             : Colors.green.harmonizeWith(Theme.of(context).colorScheme.primary);
         return Row(
           mainAxisSize: MainAxisSize.min,
@@ -924,7 +964,11 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildOfferCard(SigningEvent_Offer offer, int? progressCount, int? progressTotal) {
+  Widget _buildOfferCard(
+    SigningEvent_Offer offer,
+    int? progressCount,
+    int? progressTotal,
+  ) {
     final isMe = _myPubkey != null && offer.author == _myPubkey!;
     return _SigningEventLine(
       profile: _getProfile(offer.author),
@@ -939,12 +983,18 @@ class _ChatPageState extends State<ChatPage> {
       timestamp: DateTime.fromMillisecondsSinceEpoch(offer.timestamp * 1000),
       onTapPill: () => _scrollToAndHighlight(offer.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(offer.author),
-      progress: progressTotal != null && progressTotal > 0 ? progressCount! / progressTotal : null,
+      progress: progressTotal != null && progressTotal > 0
+          ? progressCount! / progressTotal
+          : null,
       progressTooltip: '$progressCount out of $progressTotal needed',
     );
   }
 
-  Widget _buildPartialCard(SigningEvent_Partial partial, int? progressCount, int? progressTotal) {
+  Widget _buildPartialCard(
+    SigningEvent_Partial partial,
+    int? progressCount,
+    int? progressTotal,
+  ) {
     final isMe = _myPubkey != null && partial.author == _myPubkey!;
     return _SigningEventLine(
       profile: _getProfile(partial.author),
@@ -955,7 +1005,9 @@ class _ChatPageState extends State<ChatPage> {
       timestamp: DateTime.fromMillisecondsSinceEpoch(partial.timestamp * 1000),
       onTapPill: () => _scrollToAndHighlight(partial.requestId),
       onTapAvatar: isMe ? null : () => _showMemberProfile(partial.author),
-      progress: progressTotal != null && progressTotal > 0 ? progressCount! / progressTotal : null,
+      progress: progressTotal != null && progressTotal > 0
+          ? progressCount! / progressTotal
+          : null,
       progressTooltip: '$progressCount of $progressTotal signed',
       progressColor: Colors.green,
     );
@@ -1001,20 +1053,24 @@ class _ChatPageState extends State<ChatPage> {
 
     await showBottomSheetOrDialog(
       context,
-      title: Text(state.offers.length + 1 >= threshold ? 'Sign' : 'Offer to Sign'),
+      title: Text(
+        state.offers.length + 1 >= threshold ? 'Sign' : 'Offer to Sign',
+      ),
       builder: (context, scrollController) {
         if (walletCtx != null) {
           return walletCtx.wrap(
-            Builder(builder: (ctx) => _OfferSignSheet(
-              state: state,
-              accessStructureRef: widget.accessStructureRef,
-              client: _client!,
-              nostrContext: _nostrContext!,
-              threshold: threshold,
-              getProfile: _getProfile,
-              deviceForShareIndex: _deviceForShareIndex,
-              scrollController: scrollController,
-            )),
+            Builder(
+              builder: (ctx) => _OfferSignSheet(
+                state: state,
+                accessStructureRef: widget.accessStructureRef,
+                client: _client!,
+                nostrContext: _nostrContext!,
+                threshold: threshold,
+                getProfile: _getProfile,
+                deviceForShareIndex: _deviceForShareIndex,
+                scrollController: scrollController,
+              ),
+            ),
           );
         }
         return _OfferSignSheet(
@@ -1126,9 +1182,9 @@ class _ChatPageState extends State<ChatPage> {
         tx: signedTx,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Transaction broadcast!')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Transaction broadcast!')));
       }
     } catch (e) {
       if (mounted) {
@@ -1245,7 +1301,6 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
   }
-
 
   Future<void> _sendMessage() async {
     final content = _messageController.text.trim();
@@ -1374,37 +1429,29 @@ class _ChatPageState extends State<ChatPage> {
         '${signingDetailsText(signingDetails(signTask: signTask))}${message.isNotEmpty ? '\n$message' : ''}',
       SigningEvent_Offer(:final binonces, :final author) =>
         '${_displayName(author)} offered to sign with ${offerShareIndices(binonces: binonces).map((i) => 'key #$i').join(', ')}',
-      SigningEvent_Partial(:final author) =>
-        '${_displayName(author)} signed',
+      SigningEvent_Partial(:final author) => '${_displayName(author)} signed',
       SigningEvent_Cancel(:final author) =>
         '${_displayName(author)} cancelled the signing request',
       SigningEvent_RoundConfirmed() ||
       SigningEvent_RoundPending() ||
-      SigningEvent_Rejected() =>
-        throw StateError('round decisions have no chat copy text'),
+      SigningEvent_Rejected() => throw StateError(
+        'round decisions have no chat copy text',
+      ),
     };
     Clipboard.setData(ClipboardData(text: text));
   }
 
   ReplyTarget _signingReplyTarget(SigningEvent event) {
     final (eventId, author) = switch (event) {
-      SigningEvent_Request(:final eventId, :final author) => (
-        eventId,
-        author,
-      ),
+      SigningEvent_Request(:final eventId, :final author) => (eventId, author),
       SigningEvent_Offer(:final eventId, :final author) => (eventId, author),
-      SigningEvent_Partial(:final eventId, :final author) => (
-        eventId,
-        author,
-      ),
-      SigningEvent_Cancel(:final eventId, :final author) => (
-        eventId,
-        author,
-      ),
+      SigningEvent_Partial(:final eventId, :final author) => (eventId, author),
+      SigningEvent_Cancel(:final eventId, :final author) => (eventId, author),
       SigningEvent_RoundConfirmed() ||
       SigningEvent_RoundPending() ||
-      SigningEvent_Rejected() =>
-        throw StateError('round decisions cannot be replied to'),
+      SigningEvent_Rejected() => throw StateError(
+        'round decisions cannot be replied to',
+      ),
     };
     final preview = switch (event) {
       SigningEvent_Request(:final signTask) =>
@@ -1415,8 +1462,9 @@ class _ChatPageState extends State<ChatPage> {
       SigningEvent_Cancel() => 'Cancelled',
       SigningEvent_RoundConfirmed() ||
       SigningEvent_RoundPending() ||
-      SigningEvent_Rejected() =>
-        throw StateError('round decisions cannot be replied to'),
+      SigningEvent_Rejected() => throw StateError(
+        'round decisions cannot be replied to',
+      ),
     };
     return ReplyTarget(
       eventId: eventId,
@@ -1513,9 +1561,10 @@ class _ChatPageState extends State<ChatPage> {
     if (activeRequest == null) return const SizedBox.shrink();
 
     final myPubkey = _myPubkey;
-    final isRequester = myPubkey != null &&
-        activeRequest.request.author == myPubkey;
-    final alreadySigned = myPubkey != null &&
+    final isRequester =
+        myPubkey != null && activeRequest.request.author == myPubkey;
+    final alreadySigned =
+        myPubkey != null &&
         activeRequest.partials.containsKey(myPubkey.toHex());
     final sealed = activeRequest.sealedData;
     final myDevice = _getMyDevice(activeRequest);
@@ -1525,9 +1574,7 @@ class _ChatPageState extends State<ChatPage> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
-      ),
+      decoration: BoxDecoration(color: theme.colorScheme.primaryContainer),
       child: Row(
         children: [
           _signingPillWidget(activeRequest.request.eventId),
@@ -1562,7 +1609,10 @@ class _ChatPageState extends State<ChatPage> {
     final theme = Theme.of(context);
     final isConnected = _connectionState is ConnectionState_Connected;
 
-    final hasAttachment = _replyingTo != null || _pendingSignRequest != null || _pendingTxSignRequest != null;
+    final hasAttachment =
+        _replyingTo != null ||
+        _pendingSignRequest != null ||
+        _pendingTxSignRequest != null;
 
     return Container(
       color: hasAttachment ? theme.colorScheme.surface : Colors.transparent,
@@ -2311,10 +2361,7 @@ class _SigningCompleteCard extends StatelessWidget {
   final String details;
   final VoidCallback? onShowSignature;
 
-  const _SigningCompleteCard({
-    required this.details,
-    this.onShowSignature,
-  });
+  const _SigningCompleteCard({required this.details, this.onShowSignature});
 
   @override
   Widget build(BuildContext context) {
@@ -2412,7 +2459,9 @@ class _TransactionCardState extends State<_TransactionCard> {
 
     final statusText = widget.onBroadcast != null
         ? 'Signed'
-        : isSend ? 'Sending' : 'Receiving';
+        : isSend
+        ? 'Sending'
+        : 'Receiving';
 
     final baseColor = theme.colorScheme.surfaceContainerHighest;
     return Align(
@@ -2422,90 +2471,95 @@ class _TransactionCardState extends State<_TransactionCard> {
         child: GestureDetector(
           onTap: widget.onTap,
           child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: widget.isHighlighted
-                ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
-                : baseColor,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: widget.isHighlighted
-                ? [
-                    BoxShadow(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.4),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : [],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isSend ? Icons.north_east : Icons.south_east,
-                size: 18,
-                color: accentColor,
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      statusText,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: widget.isHighlighted
+                  ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+                  : baseColor,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: widget.isHighlighted
+                  ? [
+                      BoxShadow(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        spreadRadius: 1,
                       ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SatoshiText(
-                          value: txDetails.netValue,
-                          showSign: true,
-                          style: theme.textTheme.bodyLarge,
-                        ),
-                        const SizedBox(width: 12),
-                        if (widget.onBroadcast != null)
-                          _broadcasting
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : FilledButton.tonal(
-                                  onPressed: () async {
-                                    setState(() => _broadcasting = true);
-                                    try {
-                                      await widget.onBroadcast!();
-                                    } finally {
-                                      if (mounted) setState(() => _broadcasting = false);
-                                    }
-                                  },
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    minimumSize: const Size(0, 28),
-                                  ),
-                                  child: const Text('Broadcast'),
-                                )
-                        else
-                          Text(
-                            _formatTime(widget.timestamp),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 10,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
+                    ]
+                  : [],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isSend ? Icons.north_east : Icons.south_east,
+                  size: 18,
+                  color: accentColor,
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        statusText,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SatoshiText(
+                            value: txDetails.netValue,
+                            showSign: true,
+                            style: theme.textTheme.bodyLarge,
+                          ),
+                          const SizedBox(width: 12),
+                          if (widget.onBroadcast != null)
+                            _broadcasting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : FilledButton.tonal(
+                                    onPressed: () async {
+                                      setState(() => _broadcasting = true);
+                                      try {
+                                        await widget.onBroadcast!();
+                                      } finally {
+                                        if (mounted)
+                                          setState(() => _broadcasting = false);
+                                      }
+                                    },
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
+                                      minimumSize: const Size(0, 28),
+                                    ),
+                                    child: const Text('Broadcast'),
+                                  )
+                          else
+                            Text(
+                              _formatTime(widget.timestamp),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 10,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );
@@ -2702,7 +2756,8 @@ class _OfferSignSheet extends StatefulWidget {
   });
 
   KeyId get keyId => accessStructureRef.keyId;
-  AccessStructureId get accessStructureId => accessStructureRef.accessStructureId;
+  AccessStructureId get accessStructureId =>
+      accessStructureRef.accessStructureId;
 
   @override
   State<_OfferSignSheet> createState() => _OfferSignSheetState();
@@ -2716,7 +2771,9 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
   /// All devices in this access structure, regardless of state. Used by
   /// both the eligible list and the empty-state reasoner.
   List<DeviceItem> get _allDevices {
-    final accessStructure = coord.getAccessStructure(asRef: widget.accessStructureRef);
+    final accessStructure = coord.getAccessStructure(
+      asRef: widget.accessStructureRef,
+    );
     if (accessStructure == null) return const [];
     return DeviceItem.fromAccessStructure(accessStructure);
   }
@@ -2741,7 +2798,9 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     if (all.isEmpty) return _NoDevicesReason.notASigner;
 
     final offered = _offeredShareIndices;
-    final remaining = all.where((d) => !offered.contains(d.shareIndex)).toList();
+    final remaining = all
+        .where((d) => !offered.contains(d.shareIndex))
+        .toList();
     if (remaining.isEmpty) return _NoDevicesReason.allAlreadyOffered;
 
     // There are devices left to offer, but none of them are enabled.
@@ -2758,7 +2817,8 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     if (_selectedDevices.isEmpty) return;
 
     final nSelectedByOthers = widget.state.offers.length;
-    final willMeetThreshold = nSelectedByOthers + _selectedDevices.length >= widget.threshold;
+    final willMeetThreshold =
+        nSelectedByOthers + _selectedDevices.length >= widget.threshold;
 
     setState(() => _phase = _OfferSignPhase.waiting);
 
@@ -2862,7 +2922,8 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (_phase == _OfferSignPhase.waiting || _phase == _OfferSignPhase.signing) {
+    if (_phase == _OfferSignPhase.waiting ||
+        _phase == _OfferSignPhase.signing) {
       return Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
@@ -2871,7 +2932,9 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
             Text(
-              _phase == _OfferSignPhase.waiting ? 'Broadcasting offer...' : 'Signing...',
+              _phase == _OfferSignPhase.waiting
+                  ? 'Broadcasting offer...'
+                  : 'Signing...',
               style: theme.textTheme.bodyMedium,
             ),
           ],
