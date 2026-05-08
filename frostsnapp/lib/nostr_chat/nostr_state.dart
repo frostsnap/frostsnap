@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:rxdart/rxdart.dart';
@@ -14,8 +15,56 @@ class NostrContext extends InheritedWidget {
   final Set<String> _fetchingProfiles = {};
   NostrClient? _client;
 
+  /// Per-access-structure settings cache. Each entry holds the Rust
+  /// opaque subscription handle alongside the `BehaviorSubject` that
+  /// fans its events out to Dart consumers.
+  ///
+  /// **Why the handle is retained**: `subAccessStructure(...).start()`
+  /// returns only the underlying Stream — the opaque subscription
+  /// object itself is dropped when the call expression goes out of
+  /// scope. Rust's `Drop` on that object calls `_stop()`, which
+  /// removes the sink from the broadcast's subscriber map and
+  /// silently halts updates. Holding the handle in this cache keeps
+  /// the Rust side alive for the lifetime of this `NostrContext`.
+  final Map<AccessStructureId, _AccessStructureWatch> _accessStructureCache =
+      {};
+
   NostrContext({super.key, required this.nostrSettings, required super.child}) {
     identityStream = nostrSettings.subIdentity().toBehaviorSubject();
+  }
+
+  /// Long-lived `BehaviorSubject` for an access structure's settings.
+  /// Created on first call and reused for the lifetime of this
+  /// `NostrContext`. Consumers should call `.stream` (or use it
+  /// directly) — the underlying Rust subscription is held by this
+  /// context, not by individual widgets.
+  BehaviorSubject<AccessStructureSettings> watchAccessStructure(
+    AccessStructureRef asRef,
+  ) {
+    final cached = _accessStructureCache[asRef.accessStructureId];
+    if (cached != null) return cached.subject;
+    final sub = nostrSettings.subAccessStructure(accessStructureRef: asRef);
+    final subject = sub.start().toBehaviorSubject();
+    _accessStructureCache[asRef.accessStructureId] = _AccessStructureWatch(
+      sub: sub,
+      subject: subject,
+    );
+    return subject;
+  }
+
+  /// Convenience: `Stream<bool>` over a wallet's coordination-UI flag.
+  Stream<bool> watchCoordinationUi(AccessStructureRef asRef) =>
+      watchAccessStructure(asRef).map((s) => s.coordinationUiEnabled);
+
+  /// Sync read of the current coordination-UI flag (sources from the
+  /// `BehaviorSubject` cache if present, otherwise the sync getter).
+  bool isCoordinationUiEnabled(AccessStructureRef asRef) {
+    final cached =
+        _accessStructureCache[asRef.accessStructureId]?.subject.valueOrNull;
+    if (cached != null) return cached.coordinationUiEnabled;
+    return nostrSettings.isCoordinationUiEnabled(
+      accessStructureId: asRef.accessStructureId,
+    );
   }
 
   static NostrContext of(BuildContext context) {
@@ -160,4 +209,17 @@ class ProfileBuilder extends StatelessWidget {
       },
     );
   }
+}
+
+/// Pairs a Rust opaque `AccessStructureSettingsBroadcastSubscription`
+/// with the `BehaviorSubject` that re-broadcasts its stream to Dart
+/// consumers. Both must be retained together: the subject keeps Dart
+/// listeners hot, and the subscription handle keeps the Rust side
+/// from `Drop`-ing the underlying broadcast registration.
+class _AccessStructureWatch {
+  _AccessStructureWatch({required this.sub, required this.subject});
+
+  // ignore: unused_field
+  final AccessStructureSettingsBroadcastSubscription sub;
+  final BehaviorSubject<AccessStructureSettings> subject;
 }

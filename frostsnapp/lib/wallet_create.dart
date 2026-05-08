@@ -788,6 +788,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 12,
                 children: [
                   if (devMode) buildAdvancedOptions(context),
                   Align(

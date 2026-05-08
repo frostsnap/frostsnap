@@ -126,13 +126,15 @@ class OrgKeygenController extends ChangeNotifier {
   /// Awaits `createRemoteLobby`. Returns the handle on success; sets
   /// `connectError` and returns null on failure. The caller is expected
   /// to navigate to [LobbyAndKeygenPage] when this returns non-null.
-  Future<RemoteLobbyHandle?> openLobbyAsHost() async {
+  ///
+  /// Caller must obtain `nsec` via `requireNostrSigningIdentity` first —
+  /// this is the publish point for the lobby-create event.
+  Future<RemoteLobbyHandle?> openLobbyAsHost({required String nsec}) async {
     if (!nameValid) return null;
     _connecting = true;
     _connectError = null;
     notifyListeners();
     try {
-      final nsec = await _loadNsec();
       final secret = ChannelSecret.generate();
       final handle = await nostrClient.createRemoteLobby(
         channelSecret: secret,
@@ -150,8 +152,9 @@ class OrgKeygenController extends ChangeNotifier {
     }
   }
 
-  /// Joiner counterpart to [openLobbyAsHost].
-  Future<RemoteLobbyHandle?> openLobbyAsJoiner() async {
+  /// Joiner counterpart to [openLobbyAsHost]. Caller passes a fresh
+  /// nsec acquired via `requireNostrSigningIdentity`.
+  Future<RemoteLobbyHandle?> openLobbyAsJoiner({required String nsec}) async {
     if (!joinLinkValid) return null;
     _connecting = true;
     _connectError = null;
@@ -160,7 +163,6 @@ class OrgKeygenController extends ChangeNotifier {
       final secret = ChannelSecret.fromKeygenLink(
         link: joinLinkController.text.trim(),
       );
-      final nsec = await _loadNsec();
       final handle = await nostrClient.joinRemoteLobby(
         channelSecret: secret,
         nsec: nsec,
@@ -173,12 +175,6 @@ class OrgKeygenController extends ChangeNotifier {
       _connecting = false;
       notifyListeners();
     }
-  }
-
-  Future<String> _loadNsec() async {
-    throw UnimplementedError(
-      '_loadNsec must be overridden by the owning page where NostrContext is accessible',
-    );
   }
 
   void back(BuildContext context) {
@@ -211,9 +207,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
     required this.handle,
     required this.isHost,
     required this.walletName,
-    required Future<String> Function() loadNsec,
-  }) : _loadNsec = loadNsec,
-       _myPubkey = handle.myPubkey() {
+  }) : _myPubkey = handle.myPubkey() {
     deviceSetup.addListener(notifyListeners);
     final broadcastSub = handle.subState();
     _stateBroadcastSub = broadcastSub;
@@ -226,8 +220,6 @@ class LobbyAndKeygenController extends ChangeNotifier {
   final RemoteLobbyHandle handle;
   final bool isHost;
   final String walletName;
-  // ignore: unused_field
-  final Future<String> Function() _loadNsec;
 
   final PublicKey _myPubkey;
   PublicKey get myPubkey => _myPubkey;
@@ -514,17 +506,14 @@ class OrgKeygenPage extends StatefulWidget {
 }
 
 class _OrgKeygenPageState extends State<OrgKeygenPage> {
-  late final _ConcreteController _ctrl;
+  late final OrgKeygenController _ctrl;
 
   bool _joinLinkAttempted = false;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = _ConcreteController(
-      nostrClient: widget.nostrClient,
-      nostrContextLookup: () => NostrContext.of(context),
-    );
+    _ctrl = OrgKeygenController(nostrClient: widget.nostrClient);
     _ctrl.addListener(_onUpdate);
     _ctrl.joinLinkController.addListener(_onJoinLinkTextChanged);
   }
@@ -563,9 +552,10 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   }
 
   Future<void> _submitName() async {
-    final handle = await _ctrl.openLobbyAsHost();
+    final nsec = await requireNostrSigningIdentity(context);
+    if (nsec == null || !mounted) return;
+    final handle = await _ctrl.openLobbyAsHost(nsec: nsec);
     if (handle == null || !mounted) return;
-    final settings = NostrContext.of(context).nostrSettings;
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
       barrierDismissible: false,
@@ -573,7 +563,6 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
         handle: handle,
         isHost: true,
         walletName: _ctrl.walletName,
-        loadNsec: () async => settings.getNsec(),
       ),
     );
     if (!mounted) return;
@@ -583,9 +572,10 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   }
 
   Future<void> _submitJoinLink() async {
-    final handle = await _ctrl.openLobbyAsJoiner();
+    final nsec = await requireNostrSigningIdentity(context);
+    if (nsec == null || !mounted) return;
+    final handle = await _ctrl.openLobbyAsJoiner(nsec: nsec);
     if (handle == null || !mounted) return;
-    final settings = NostrContext.of(context).nostrSettings;
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
       barrierDismissible: false,
@@ -593,7 +583,6 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
         handle: handle,
         isHost: false,
         walletName: '', // joiner learns it via state.keyName
-        loadNsec: () async => settings.getNsec(),
       ),
     );
     if (!mounted) return;
@@ -655,11 +644,7 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
               subtitle:
                   'A shared wallet with other participants. You can each be in a different place.',
               emphasized: true,
-              onTap: () async {
-                final ok = await ensureNostrIdentity(context);
-                if (!ok) return;
-                _ctrl.choseOrganisation();
-              },
+              onTap: () => _ctrl.choseOrganisation(),
             ),
           ],
         ),
@@ -790,20 +775,6 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   }
 }
 
-class _ConcreteController extends OrgKeygenController {
-  _ConcreteController({
-    required super.nostrClient,
-    required this.nostrContextLookup,
-  });
-
-  final NostrContext Function() nostrContextLookup;
-
-  @override
-  Future<String> _loadNsec() async {
-    return nostrContextLookup().nostrSettings.getNsec();
-  }
-}
-
 // =============================================================================
 // Lobby + Keygen page (post-handle-acquisition)
 // =============================================================================
@@ -815,13 +786,11 @@ class LobbyAndKeygenPage extends StatefulWidget {
     required this.handle,
     required this.isHost,
     required this.walletName,
-    required this.loadNsec,
   });
 
   final RemoteLobbyHandle handle;
   final bool isHost;
   final String walletName;
-  final Future<String> Function() loadNsec;
 
   @override
   State<LobbyAndKeygenPage> createState() => _LobbyAndKeygenPageState();
@@ -851,7 +820,6 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
       handle: widget.handle,
       isHost: widget.isHost,
       walletName: widget.walletName,
-      loadNsec: widget.loadNsec,
     );
     _ctrl.addListener(_onUpdate);
     _ctrl.addListener(_watchForCancellation);
@@ -997,6 +965,19 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
       _maybeDisposeFullscreen();
     }
     if (!mounted) return;
+    if (result != null) {
+      // The wallet was just created via remote keygen — boot it into
+      // the chat-first remote shell on first view.
+      try {
+        await NostrContext.of(context).nostrSettings.setCoordinationUiEnabled(
+              accessStructureRef: result,
+              enabled: true,
+            );
+      } catch (e) {
+        debugPrint('Failed to enable coordination UI for new wallet: $e');
+      }
+      if (!mounted) return;
+    }
     Navigator.of(context).pop(result);
   }
 

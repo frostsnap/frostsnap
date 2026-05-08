@@ -67,6 +67,22 @@ class ProfileSettingsPage extends StatelessWidget {
                 icon: const Icon(Icons.casino),
                 label: const Text('Generate new random identity'),
               ),
+              const SizedBox(height: 12),
+              if (pubkey != null)
+                OutlinedButton.icon(
+                  onPressed: () => _removeNsec(context),
+                  icon: Icon(
+                    Icons.person_remove_outlined,
+                    color: theme.colorScheme.error,
+                  ),
+                  label: Text(
+                    'Remove Nostr signing identity',
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: theme.colorScheme.error),
+                  ),
+                ),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -292,6 +308,46 @@ class ProfileSettingsPage extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('New Nostr identity generated')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
+  void _removeNsec(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Nostr signing identity'),
+        content: const Text(
+          'Removes the nsec from this app. The app will no longer be able to '
+          'send signed Nostr events until you set up an identity again.\n\n'
+          'This does not delete chat history, and remote-coordinated wallets '
+          'stay in remote mode (you can still read incoming messages).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await NostrContext.of(context).nostrSettings.clearNsec();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nostr signing identity removed')),
       );
     } catch (e) {
       if (!context.mounted) return;

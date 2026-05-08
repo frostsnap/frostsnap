@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:frostsnap/backup_workflow.dart';
-import 'package:frostsnap/nostr_chat/chat_page.dart';
-import 'package:frostsnap/secure_key_provider.dart';
-import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/nostr_chat/chat_page.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
+import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/device_list.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -106,20 +107,6 @@ class WalletHome extends StatelessWidget {
     final walletListController = homeCtx.walletListController;
     final scaffoldKey = homeCtx.scaffoldKey;
 
-    final bottomBar = ListenableBuilder(
-      listenable: walletListController,
-      builder: (context, _) {
-        final bar = WalletBottomBar();
-        return switch (walletListController.selected) {
-          WalletItemKey item => item.tryWrapInWalletContext(
-            context: context,
-            child: bar,
-          ),
-          _ => bar,
-        };
-      },
-    );
-
     final mediaSize = MediaQuery.sizeOf(context);
     final isNarrowDisplay = mediaSize.width < 840;
     final drawer = WalletDrawer(
@@ -139,10 +126,9 @@ class WalletHome extends StatelessWidget {
             body = buildNoWalletBody(context);
           } else {
             body = switch (selected) {
-              WalletItemKey item => item.tryWrapInWalletContext(
-                key: Key('wrapped-${item.frostKey.keyId().toHex()}'),
-                context: context,
-                child: TxList(key: Key(item.frostKey.keyId().toHex())),
+              WalletItemKey item => WalletModeShell(
+                key: Key('shell-${item.frostKey.keyId().toHex()}'),
+                walletItem: item,
               ),
               WalletItemRestoration item => WalletRecoveryPage(
                 key: Key(item.restorationState.restorationId.toHex()),
@@ -207,7 +193,6 @@ class WalletHome extends StatelessWidget {
             ),
             child: body,
           ),
-          bottomNavigationBar: bottomBar,
         );
       },
     );
@@ -283,6 +268,339 @@ class _FloatingProgress extends State<FloatingProgress>
   }
 }
 
+/// Per-wallet shell: owns the Scaffold for a selected wallet and decides
+/// between the local layout (today's flat TxList + bottom bar) and the
+/// remote layout (tabbed Chat / Wallet) based on the persisted
+/// `coordination_ui_enabled` flag.
+class WalletModeShell extends StatelessWidget {
+  const WalletModeShell({super.key, required this.walletItem});
+
+  final WalletItemKey walletItem;
+
+  @override
+  Widget build(BuildContext context) {
+    final keyHex = walletItem.frostKey.keyId().toHex();
+    final asRef = walletItem.frostKey.accessStructures()[0].accessStructureRef();
+    final nostr = NostrContext.of(context);
+    return walletItem.tryWrapInWalletContext(
+      key: Key('shell-context-$keyHex'),
+      context: context,
+      child: StreamBuilder<bool>(
+        stream: nostr.watchCoordinationUi(asRef),
+        initialData: nostr.isCoordinationUiEnabled(asRef),
+        builder: (context, snap) {
+          final isRemote = snap.data ?? false;
+          if (isRemote) {
+            return _RemoteWalletShell(
+              key: Key('remote-$keyHex'),
+              walletItem: walletItem,
+              accessStructureRef: asRef,
+            );
+          }
+          return _LocalWalletShell(
+            key: Key('local-$keyHex'),
+            walletItem: walletItem,
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Today's flat layout: TxList body (which carries its own SliverAppBar) +
+/// `[Receive, Send, More]` capsule at the bottom.
+class _LocalWalletShell extends StatelessWidget {
+  const _LocalWalletShell({super.key, required this.walletItem});
+  final WalletItemKey walletItem;
+
+  @override
+  Widget build(BuildContext context) {
+    final keyHex = walletItem.frostKey.keyId().toHex();
+    return Scaffold(
+      extendBody: true,
+      resizeToAvoidBottomInset: true,
+      body: TxList(key: Key('txlist-$keyHex')),
+      bottomNavigationBar: WalletBottomBar(),
+    );
+  }
+}
+
+/// Chat-first remote-mode shell. The body is the channel chat; the
+/// wallet's transaction history is reachable as a secondary route via
+/// the AppBar's wallet/history action. There are no Send/Receive
+/// actions — in-channel signing flows replace them and aren't designed
+/// yet.
+class _RemoteWalletShell extends StatefulWidget {
+  const _RemoteWalletShell({
+    super.key,
+    required this.walletItem,
+    required this.accessStructureRef,
+  });
+
+  final WalletItemKey walletItem;
+  final AccessStructureRef accessStructureRef;
+
+  @override
+  State<_RemoteWalletShell> createState() => _RemoteWalletShellState();
+}
+
+class _RemoteWalletShellState extends State<_RemoteWalletShell> {
+  late final ChatChromeController _chrome;
+  late Future<ChannelConnectionParams> _channelParams;
+
+  @override
+  void initState() {
+    super.initState();
+    _chrome = ChatChromeController();
+    _channelParams = _loadChannelParams();
+  }
+
+  @override
+  void dispose() {
+    _chrome.dispose();
+    super.dispose();
+  }
+
+  Future<ChannelConnectionParams> _loadChannelParams() async {
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    return coord.channelConnectionParams(
+      accessStructureRef: widget.accessStructureRef,
+      encryptionKey: encryptionKey,
+    );
+  }
+
+  Widget _buildConnectionIndicator(ConnectionState state) {
+    final (color, tooltip) = switch (state) {
+      ConnectionState_Connecting() => (Colors.orange, 'Connecting...'),
+      ConnectionState_Connected() => (Colors.green, 'Connected'),
+      ConnectionState_Disconnected(:final reason) => (
+        Colors.red,
+        'Disconnected${reason != null ? ': $reason' : ''}',
+      ),
+    };
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+    );
+  }
+
+  void _openWalletActivity(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => walletCtx.wrap(const RemoteWalletActivityPage()),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final walletCtx = WalletContext.of(context)!;
+    final homeCtx = HomeContext.of(context);
+    final mediaSize = MediaQuery.sizeOf(context);
+    final isNarrowDisplay = mediaSize.width < 840;
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+    final walletName = frostKey?.keyName() ?? 'Unknown';
+
+    return Scaffold(
+      extendBody: true,
+      resizeToAvoidBottomInset: true,
+      appBar: AppBar(
+        leading: isNarrowDisplay
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: () =>
+                    homeCtx?.scaffoldKey.currentState?.openDrawer(),
+                tooltip: 'Open menu',
+              )
+            : null,
+        title: Text(walletName),
+        actions: [
+          ListenableBuilder(
+            listenable: _chrome,
+            builder: (context, _) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildConnectionIndicator(_chrome.connectionState),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.receipt_long),
+                  tooltip: 'Transaction history',
+                  onPressed: () => _openWalletActivity(context),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.group),
+                  tooltip: 'Group Info',
+                  onPressed: _chrome.openGroupInfo,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (frostKey != null)
+            BackupWarningBanner(frostKey: frostKey, shrink: false),
+          Expanded(
+            child: FutureBuilder<ChannelConnectionParams>(
+              future: _channelParams,
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return _ChatLoadFailed(
+                    error: snap.error!,
+                    onRetry: () => setState(() {
+                      _channelParams = _loadChannelParams();
+                    }),
+                  );
+                }
+                if (!snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return ChatPageBody(
+                  accessStructureRef: widget.accessStructureRef,
+                  walletName: walletName,
+                  channelParams: snap.data!,
+                  chrome: _chrome,
+                  autofocus: false,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      backgroundColor: theme.colorScheme.surface,
+    );
+  }
+}
+
+/// Read-only wallet activity (balance + transaction history) for a
+/// remote-coordinated wallet. Pushed as a secondary route from the
+/// chat shell's wallet/history app-bar action; reuses
+/// `walletTxSlivers` for the body.
+class RemoteWalletActivityPage extends StatefulWidget {
+  const RemoteWalletActivityPage({super.key});
+
+  @override
+  State<RemoteWalletActivityPage> createState() =>
+      _RemoteWalletActivityPageState();
+}
+
+class _RemoteWalletActivityPageState extends State<RemoteWalletActivityPage> {
+  final _scrollController = ScrollController();
+  final _atTopNotifier = ValueNotifier<bool>(true);
+
+  // Match the local-mode TxList threshold so the pinned balance card
+  // collapses at the same scroll offset.
+  static const _atTopThreshold = 48.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(() {
+      if (!mounted) return;
+      _atTopNotifier.value = _scrollController.offset <= _atTopThreshold;
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _atTopNotifier.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final walletCtx = WalletContext.of(context)!;
+    final settingsCtx = SettingsContext.of(context)!;
+    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+    final walletName = frostKey?.keyName() ?? 'Unknown';
+    return Scaffold(
+      body: CustomScrollView(
+        controller: _scrollController,
+        physics: const ClampingScrollPhysics(),
+        slivers: [
+          SliverAppBar.medium(
+            pinned: true,
+            elevation: 0,
+            surfaceTintColor: Colors.transparent,
+            title: Text(walletName),
+            actionsPadding: const EdgeInsets.only(right: 8),
+            actions: [
+              StreamBuilder(
+                stream: settingsCtx.chainStatusStream(walletCtx.network),
+                builder: (context, snap) {
+                  if (!snap.hasData) return const SizedBox();
+                  return ChainStatusIcon(chainStatus: snap.data!);
+                },
+              ),
+            ],
+          ),
+          ...walletTxSlivers(
+            context: context,
+            atTopNotifier: _atTopNotifier,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Empty/error state for the chat surface when the channel-params
+/// future fails (e.g. the encryption key fetch errored). Without an
+/// explicit error path the FutureBuilder would show a permanent spinner.
+class _ChatLoadFailed extends StatelessWidget {
+  const _ChatLoadFailed({required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 48,
+              color: theme.colorScheme.error,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Couldn\'t open chat',
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$error',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.tonalIcon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class TxList extends StatefulWidget {
   const TxList({super.key});
   @override
@@ -326,7 +644,6 @@ class _TxListState extends State<TxList> {
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context)!;
     final settingsCtx = SettingsContext.of(context)!;
-    final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
 
     // TODO: This is a hack to scroll to top everytime we switch wallets.
@@ -337,6 +654,8 @@ class _TxListState extends State<TxList> {
     }
 
     const scrolledUnderElevation = 1.0;
+    final homeCtx = HomeContext.of(context);
+    final isNarrowDisplay = MediaQuery.sizeOf(context).width < 840;
 
     return CustomScrollView(
       controller: scrollController,
@@ -346,6 +665,19 @@ class _TxListState extends State<TxList> {
           pinned: true,
           elevation: 0,
           surfaceTintColor: Colors.transparent,
+          // The wallet shell is a nested Scaffold without its own drawer;
+          // wire the hamburger to the outer WalletHome's scaffold key on
+          // narrow displays, otherwise Flutter would synthesise a back
+          // button (no AppBar predecessor) instead of a menu icon.
+          leading: isNarrowDisplay
+              ? IconButton(
+                  icon: const Icon(Icons.menu),
+                  tooltip: 'Open menu',
+                  onPressed: () =>
+                      homeCtx?.scaffoldKey.currentState?.openDrawer(),
+                )
+              : null,
+          automaticallyImplyLeading: false,
           title: Text(frostKey?.keyName() ?? 'Unknown'),
           scrolledUnderElevation: scrolledUnderElevation,
           actionsPadding: EdgeInsets.only(right: 8),
@@ -362,128 +694,153 @@ class _TxListState extends State<TxList> {
             ),
           ],
         ),
-        PinnedHeaderSliver(
-          child: UpdatingBalance(
-            txStream: walletCtx.txStream,
-            atTopNotifier: atTopNotifier,
-            scrolledUnderElevation: scrolledUnderElevation,
-            expandedHeight: 144.0,
-            frostKey: frostKey,
-          ),
-        ),
-        StreamBuilder(
-          stream: MergeStream<void>([
-            walletCtx.signingSessionSignals,
-            // Also rebuild on canonical tx list changes since `unbroadcastedTxs` excludes from the
-            // canonical tx list.
-            walletCtx.txStream.map((_) => {}),
-          ]),
-          builder: (context, _) {
-            final chainTipHeight = walletCtx.wallet.superWallet.height();
-            final now = DateTime.now();
-            final unbroadcastedTiles = coord
-                .unbroadcastedTxs(
-                  sWallet: walletCtx.wallet.superWallet,
-                  masterAppkey: walletCtx.masterAppkey,
-                )
-                .map((unbroadcastedTx) {
-                  final txDetails = TxDetailsModel(
-                    tx: unbroadcastedTx.tx,
-                    chainTipHeight: chainTipHeight,
-                    now: now,
-                  );
-                  final session = unbroadcastedTx.activeSession;
-                  if (session != null) {
-                    final signingState = session.state();
-                    return TxSentOrReceivedTile(
-                      onTap: () => showBottomSheetOrDialog(
-                        context,
-                        title: Text('Transaction Details'),
-                        builder: (context, scrollController) => walletCtx.wrap(
-                          TxDetailsPage(
-                            scrollController: scrollController,
-                            txStates: walletCtx.txStream,
-                            txDetails: txDetails,
-                            psbtMan: fsCtx.psbtManager,
-                            signingParams: TxSigningParams.restore(
-                              sessionId: signingState.sessionId,
-                            ),
-                          ),
-                        ),
-                      ),
-                      txDetails: txDetails,
-                      signingState: signingState,
-                    );
-                  } else {
-                    return TxSentOrReceivedTile(
-                      onTap: () => showBottomSheetOrDialog(
-                        context,
-                        title: Text('Transaction Details'),
-                        builder: (context, scrollController) => walletCtx.wrap(
-                          TxDetailsPage.needsBroadcast(
-                            scrollController: scrollController,
-                            txStates: walletCtx.txStream,
-                            txDetails: txDetails,
-                            finishedSigningSessionId: unbroadcastedTx.sessionId,
-                            psbtMan: fsCtx.psbtManager,
-                          ),
-                        ),
-                      ),
-                      txDetails: txDetails,
-                    );
-                  }
-                });
-
-            return SliverVisibility(
-              visible: unbroadcastedTiles.isNotEmpty,
-              sliver: SliverList.list(children: unbroadcastedTiles.toList()),
-            );
-          },
-        ),
-        SliverSafeArea(
-          top: false,
-          sliver: StreamBuilder(
-            stream: walletCtx.txStream,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return SliverToBoxAdapter(
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              final transactions = snapshot.data?.txs ?? [];
-              final chainTipHeight = walletCtx.wallet.superWallet.height();
-              final now = DateTime.now();
-              return SliverList.builder(
-                itemCount: transactions.length,
-                itemBuilder: (context, index) {
-                  final txDetails = TxDetailsModel(
-                    tx: transactions[index],
-                    chainTipHeight: chainTipHeight,
-                    now: now,
-                  );
-                  return TxSentOrReceivedTile(
-                    txDetails: txDetails,
-                    onTap: () => showBottomSheetOrDialog(
-                      context,
-                      title: Text('Transaction Details'),
-                      builder: (context, scrollController) => walletCtx.wrap(
-                        TxDetailsPage(
-                          scrollController: scrollController,
-                          txStates: walletCtx.txStream,
-                          txDetails: txDetails,
-                          psbtMan: fsCtx.psbtManager,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
+        ...walletTxSlivers(
+          context: context,
+          atTopNotifier: atTopNotifier,
+          scrolledUnderElevation: scrolledUnderElevation,
         ),
       ],
     );
   }
+}
+
+/// The wallet body's slivers below the app bar — pinned balance, the
+/// unbroadcasted-txs list, and the canonical tx history. Extracted from
+/// `TxList` so a tabbed remote-wallet shell can mount them inside its own
+/// `CustomScrollView` without doubling the app bar.
+///
+/// Caller supplies the [atTopNotifier] tracked against the enclosing
+/// `CustomScrollView`'s scroll controller; the pinned balance reads it
+/// to know when to expand vs collapse.
+List<Widget> walletTxSlivers({
+  required BuildContext context,
+  required ValueNotifier<bool> atTopNotifier,
+  double scrolledUnderElevation = 1.0,
+}) {
+  final walletCtx = WalletContext.of(context)!;
+  final fsCtx = FrostsnapContext.of(context)!;
+  final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
+  return <Widget>[
+    PinnedHeaderSliver(
+      child: UpdatingBalance(
+        txStream: walletCtx.txStream,
+        atTopNotifier: atTopNotifier,
+        scrolledUnderElevation: scrolledUnderElevation,
+        expandedHeight: 144.0,
+        frostKey: frostKey,
+      ),
+    ),
+    StreamBuilder(
+      stream: MergeStream<void>([
+        walletCtx.signingSessionSignals,
+        // Also rebuild on canonical tx list changes since `unbroadcastedTxs` excludes from the
+        // canonical tx list.
+        walletCtx.txStream.map((_) => {}),
+      ]),
+      builder: (context, _) {
+        final chainTipHeight = walletCtx.wallet.superWallet.height();
+        final now = DateTime.now();
+        final unbroadcastedTiles = coord
+            .unbroadcastedTxs(
+              sWallet: walletCtx.wallet.superWallet,
+              masterAppkey: walletCtx.masterAppkey,
+            )
+            .map((unbroadcastedTx) {
+              final txDetails = TxDetailsModel(
+                tx: unbroadcastedTx.tx,
+                chainTipHeight: chainTipHeight,
+                now: now,
+              );
+              final session = unbroadcastedTx.activeSession;
+              if (session != null) {
+                final signingState = session.state();
+                return TxSentOrReceivedTile(
+                  onTap: () => showBottomSheetOrDialog(
+                    context,
+                    title: Text('Transaction Details'),
+                    builder: (context, scrollController) => walletCtx.wrap(
+                      TxDetailsPage(
+                        scrollController: scrollController,
+                        txStates: walletCtx.txStream,
+                        txDetails: txDetails,
+                        psbtMan: fsCtx.psbtManager,
+                        signingParams: TxSigningParams.restore(
+                          sessionId: signingState.sessionId,
+                        ),
+                      ),
+                    ),
+                  ),
+                  txDetails: txDetails,
+                  signingState: signingState,
+                );
+              } else {
+                return TxSentOrReceivedTile(
+                  onTap: () => showBottomSheetOrDialog(
+                    context,
+                    title: Text('Transaction Details'),
+                    builder: (context, scrollController) => walletCtx.wrap(
+                      TxDetailsPage.needsBroadcast(
+                        scrollController: scrollController,
+                        txStates: walletCtx.txStream,
+                        txDetails: txDetails,
+                        finishedSigningSessionId: unbroadcastedTx.sessionId,
+                        psbtMan: fsCtx.psbtManager,
+                      ),
+                    ),
+                  ),
+                  txDetails: txDetails,
+                );
+              }
+            });
+
+        return SliverVisibility(
+          visible: unbroadcastedTiles.isNotEmpty,
+          sliver: SliverList.list(children: unbroadcastedTiles.toList()),
+        );
+      },
+    ),
+    SliverSafeArea(
+      top: false,
+      sliver: StreamBuilder(
+        stream: walletCtx.txStream,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return SliverToBoxAdapter(
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final transactions = snapshot.data?.txs ?? [];
+          final chainTipHeight = walletCtx.wallet.superWallet.height();
+          final now = DateTime.now();
+          return SliverList.builder(
+            itemCount: transactions.length,
+            itemBuilder: (context, index) {
+              final txDetails = TxDetailsModel(
+                tx: transactions[index],
+                chainTipHeight: chainTipHeight,
+                now: now,
+              );
+              return TxSentOrReceivedTile(
+                txDetails: txDetails,
+                onTap: () => showBottomSheetOrDialog(
+                  context,
+                  title: Text('Transaction Details'),
+                  builder: (context, scrollController) => walletCtx.wrap(
+                    TxDetailsPage(
+                      scrollController: scrollController,
+                      txStates: walletCtx.txStream,
+                      txDetails: txDetails,
+                      psbtMan: fsCtx.psbtManager,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    ),
+  ];
 }
 
 class WalletDrawer extends StatelessWidget {
@@ -776,13 +1133,6 @@ class WalletBottomBar extends StatelessWidget {
       },
     );
 
-    final chatButton = IconButton(
-      onPressed: () => _openChat(context, walletCtx),
-      icon: Icon(Icons.chat_bubble_outline),
-      style: iconButtonStyle,
-      tooltip: 'Chat',
-    );
-
     final moreButton = IconButton(
       onPressed: () => showBottomSheetOrDialog(
         context,
@@ -818,41 +1168,12 @@ class WalletBottomBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(child: receiveButton),
-                    Flexible(child: chatButton),
                     Flexible(child: sendButton),
                     Flexible(child: moreButton),
                   ],
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openChat(BuildContext context, WalletContext walletCtx) async {
-    if (!await ensureNostrIdentity(context)) return;
-    if (!context.mounted) return;
-
-    final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
-    final walletName = frostKey?.keyName() ?? 'Unknown Wallet';
-    final asRef = frostKey!.accessStructures()[0].accessStructureRef();
-    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    final channelParams = coord.channelConnectionParams(
-      accessStructureRef: asRef,
-      encryptionKey: encryptionKey,
-    );
-
-    if (!context.mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => walletCtx.wrap(
-          ChatPage(
-            accessStructureRef: asRef,
-            walletName: walletName,
-            channelParams: channelParams,
           ),
         ),
       ),

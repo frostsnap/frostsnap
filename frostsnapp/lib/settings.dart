@@ -12,6 +12,7 @@ import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/nostr_chat/profile_settings_page.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -185,6 +186,39 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.policy,
                     bodyBuilder: (context) {
                       return CheckAddressPage();
+                    },
+                  ),
+                  SettingsItem(
+                    title: Text('Coordinate over Nostr'),
+                    icon: Icons.chat_bubble_outline,
+                    builder: (context, title, icon) {
+                      final frostKey = walletCtx.wallet.frostKey();
+                      if (frostKey == null) return const SizedBox.shrink();
+                      final asRef = frostKey
+                          .accessStructures()[0]
+                          .accessStructureRef();
+                      final nostr = NostrContext.of(context);
+                      return StreamBuilder<bool>(
+                        stream: nostr.watchCoordinationUi(asRef),
+                        initialData: nostr.isCoordinationUiEnabled(asRef),
+                        builder: (context, snap) {
+                          return Tooltip(
+                            message:
+                                'Sign with co-signers over the internet using Nostr',
+                            child: SwitchListTile(
+                              title: title,
+                              value: snap.data ?? false,
+                              onChanged: (value) async {
+                                await nostr.nostrSettings
+                                    .setCoordinationUiEnabled(
+                                      accessStructureRef: asRef,
+                                      enabled: value,
+                                    );
+                              },
+                            ),
+                          );
+                        },
+                      );
                     },
                   ),
                   SettingsItem(

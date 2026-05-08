@@ -1,4 +1,4 @@
-use crate::{DeviceId, KeyId, RestorationId};
+use crate::{AccessStructureId, DeviceId, KeyId, RestorationId};
 use alloc::boxed::Box;
 use alloc::str::FromStr;
 use alloc::string::ToString;
@@ -32,6 +32,18 @@ impl ToSql for KeyId {
 }
 
 impl ToSql for RestorationId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.to_string()))
+    }
+}
+
+impl FromSql for AccessStructureId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Self::from_str(value.as_str()?).map_err(|e| FromSqlError::Other(Box::new(e)))
+    }
+}
+
+impl ToSql for AccessStructureId {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.to_string()))
     }

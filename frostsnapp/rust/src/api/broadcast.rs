@@ -144,6 +144,19 @@ impl<T> Default for BehaviorBroadcast<T> {
     }
 }
 
+impl<T> BehaviorBroadcast<T> {
+    /// Create a `BehaviorBroadcast` with a pre-populated cached value.
+    /// Fresh subscribers see `initial` on subscribe without the caller
+    /// having to follow `default()` with `add()` — and without the
+    /// `add()` fan-out to a (necessarily empty) subscriber set.
+    pub fn seeded(initial: T) -> Self {
+        Self {
+            inner: Broadcast::default(),
+            latest: Arc::new(RwLock::new(Some(initial))),
+        }
+    }
+}
+
 impl<T> Clone for BehaviorBroadcast<T> {
     fn clone(&self) -> Self {
         Self {
@@ -164,10 +177,15 @@ impl<T: SseEncode + Clone> BehaviorBroadcast<T> {
 
     #[frb(sync)]
     pub fn add(&self, data: &T) {
-        // Cache first, then fanout. A concurrent `subscribe → _start` that
-        // lands between these steps will see the new cached value AND still
-        // receive the fanout — at worst a duplicate emission, never a miss.
-        *self.latest.write().unwrap() = Some(data.clone());
+        // Hold `latest.write()` for the full add — cache update AND
+        // fan-out. Pairs with `_start` taking `latest.read()` for its
+        // full critical section (cached emit + sink register). The two
+        // operations are mutually exclusive on this lock, so a fresh
+        // subscriber sees either: (a) the cached value at register
+        // time plus all subsequent fan-outs in order, or (b) all
+        // fan-outs in order. Never misses, never reorders.
+        let mut latest = self.latest.write().unwrap();
+        *latest = Some(data.clone());
         self.inner.add(data);
     }
 
@@ -203,8 +221,15 @@ impl<T: SseEncode + Clone> BehaviorBroadcastSubscription<T> {
         if self.inner._is_running() {
             return Err(StartError::AlreadyRunning);
         }
-        if let Some(latest) = self.latest.read().unwrap().clone() {
-            if sink.add(latest).is_err() {
+        // Hold `latest.read()` across cached emit + sink register. Pairs
+        // with `BehaviorBroadcast::add` taking `latest.write()` across
+        // its cache-update + fan-out. Without this, the subscriber could
+        // read cached A, then a concurrent `add(B)` could write cache and
+        // fan out (without us — sink isn't in the map yet), and we'd
+        // register after the fact: cached A delivered, B silently lost.
+        let latest = self.latest.read().unwrap();
+        if let Some(value) = latest.clone() {
+            if sink.add(value).is_err() {
                 tracing::event!(
                     Level::ERROR,
                     id = self.inner._id(),

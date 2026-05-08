@@ -5,6 +5,7 @@ import 'package:frostsnap/nostr_chat/group_info_page.dart';
 import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
+import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/device_selector.dart';
 import 'package:frostsnap/nostr_chat/nostr_signing_page.dart';
 import 'package:frostsnap/nostr_chat/signing_card.dart';
@@ -142,16 +143,31 @@ class TimelineTransaction extends TimelineItem {
   }) : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
 }
 
-class ChatPage extends StatefulWidget {
+/// Body of the chat surface — owns the channel connection, timeline,
+/// composer, and signing-request state. Returns a body widget (no
+/// Scaffold/AppBar) so it embeds cleanly inside the remote-wallet
+/// shell's TabBarView.
+///
+/// `chrome` (optional) lets a host AppBar render the connection
+/// indicator + group-info action without reaching into this state.
+/// `autofocus` controls whether the composer pops the keyboard at
+/// mount time — defaults to `false`, which is what the embedded use
+/// wants. (Reintroduce a Scaffold wrapper if a future deep-link or
+/// debug screen needs to push chat as its own route.)
+class ChatPageBody extends StatefulWidget {
   final AccessStructureRef accessStructureRef;
   final String walletName;
   final ChannelConnectionParams channelParams;
+  final ChatChromeController? chrome;
+  final bool autofocus;
 
-  const ChatPage({
+  const ChatPageBody({
     super.key,
     required this.accessStructureRef,
     required this.walletName,
     required this.channelParams,
+    this.chrome,
+    this.autofocus = false,
   });
 
   KeyId get keyId => accessStructureRef.keyId;
@@ -159,10 +175,35 @@ class ChatPage extends StatefulWidget {
       accessStructureRef.accessStructureId;
 
   @override
-  State<ChatPage> createState() => _ChatPageState();
+  State<ChatPageBody> createState() => _ChatPageBodyState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+/// Read-only handle for a host (Scaffold/AppBar) to observe a chat
+/// body's connection state and trigger its group-info sheet without
+/// reaching into widget state.
+class ChatChromeController extends ChangeNotifier {
+  ConnectionState _connectionState = const ConnectionState.connecting();
+  ConnectionState get connectionState => _connectionState;
+
+  VoidCallback? _openGroupInfo;
+
+  /// Null until the embedded `ChatPageBody` initialises and binds its
+  /// handler. Hosts should pass this directly to `IconButton.onPressed`
+  /// — `null` disables the button until the body is ready.
+  VoidCallback? get openGroupInfo => _openGroupInfo;
+
+  void updateConnectionState(ConnectionState state) {
+    _connectionState = state;
+    notifyListeners();
+  }
+
+  void bindOpenGroupInfo(VoidCallback handler) {
+    _openGroupInfo = handler;
+    notifyListeners();
+  }
+}
+
+class _ChatPageBodyState extends State<ChatPageBody> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late final FocusNode _inputFocusNode;
@@ -191,9 +232,23 @@ class _ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     _inputFocusNode = FocusNode(onKeyEvent: _handleKeyEvent);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _inputFocusNode.requestFocus();
-    });
+    if (widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _inputFocusNode.requestFocus();
+      });
+    }
+    // Bind chrome callbacks AFTER the current build completes — these
+    // notify listeners on the ChatChromeController, and a host AppBar's
+    // ListenableBuilder higher up the tree would otherwise be dirtied
+    // mid-build (this widget is constructed during the host's build).
+    final chrome = widget.chrome;
+    if (chrome != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        chrome.bindOpenGroupInfo(_openGroupInfo);
+        chrome.updateConnectionState(_connectionState);
+      });
+    }
   }
 
   @override
@@ -417,6 +472,7 @@ class _ChatPageState extends State<ChatPage> {
 
       case ChannelEvent_ConnectionState(:final field0):
         _connectionState = field0;
+        widget.chrome?.updateConnectionState(field0);
         if (field0 is ConnectionState_Connected && _pendingTxState != null) {
           _applyTxState(_pendingTxState!);
           _pendingTxState = null;
@@ -1027,8 +1083,9 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _onCancelRequest(SigningRequestState state) async {
     if (_client == null) return;
+    final nsec = await requireNostrSigningIdentity(context);
+    if (nsec == null || !mounted) return;
     setState(() => state.cancelled = true);
-    final nsec = _nostrContext!.nostrSettings.getNsec();
     try {
       await _client!.sendSignCancel(
         accessStructureId: widget.accessStructureId,
@@ -1085,7 +1142,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _openSigningPage(SigningRequestState state) {
+  void _openSigningPage(SigningRequestState state) async {
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null) return;
     final details = signingDetails(signTask: state.request.signTask);
@@ -1096,7 +1153,8 @@ class _ChatPageState extends State<ChatPage> {
       chainTipHeight: walletCtx.superWallet.height(),
       now: DateTime.now(),
     );
-    final nsec = _nostrContext!.nostrSettings.getNsec();
+    final nsec = await requireNostrSigningIdentity(context);
+    if (nsec == null || !mounted) return;
     showBottomSheetOrDialog(
       context,
       title: const Text('Signing'),
@@ -1307,7 +1365,8 @@ class _ChatPageState extends State<ChatPage> {
     if (content.isEmpty && pending == null && pendingTx == null) return;
     if (_client == null) return;
 
-    final nsec = _nostrContext!.nostrSettings.getNsec();
+    final nsec = await requireNostrSigningIdentity(context);
+    if (nsec == null || !mounted) return;
     final replyToId = _replyingTo?.eventId;
     _messageController.clear();
     setState(() {
@@ -1333,6 +1392,7 @@ class _ChatPageState extends State<ChatPage> {
             pendingTx.asRef,
             pendingTx.devices,
             signTask,
+            nsec: nsec,
           );
         }
       } else if (pending != null) {
@@ -1349,6 +1409,7 @@ class _ChatPageState extends State<ChatPage> {
             pending.asRef,
             pending.devices,
             signTask,
+            nsec: nsec,
           );
         }
       } else {
@@ -1371,9 +1432,9 @@ class _ChatPageState extends State<ChatPage> {
     EventId requestId,
     AccessStructureRef asRef,
     List<DeviceId> devices,
-    WireSignTask signTask,
-  ) async {
-    final nsec = _nostrContext!.nostrSettings.getNsec();
+    WireSignTask signTask, {
+    required String nsec,
+  }) async {
     final reservationId = RemoteSignSessionId(field0: requestId.field0);
     final allBinonces = <ParticipantBinonces>[];
     for (final device in devices) {
@@ -1396,7 +1457,8 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _retryMessage(ChatMessage message) async {
     if (message.status != MessageStatus.failed || _client == null) return;
 
-    final nsec = _nostrContext!.nostrSettings.getNsec();
+    final nsec = await requireNostrSigningIdentity(context);
+    if (nsec == null || !mounted) return;
     setState(() {
       _timeline.removeWhere(
         (item) => item is TimelineChat && item.message == message,
@@ -1507,50 +1569,12 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.surface.withValues(alpha: 0.4),
-        scrolledUnderElevation: 0,
-        title: Text(widget.walletName),
-        actions: [
-          _buildConnectionIndicator(),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.group),
-            tooltip: 'Group Info',
-            onPressed: _openGroupInfo,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(child: _buildTimeline(theme)),
-          _buildSigningBanner(theme),
-          _buildMessageInput(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConnectionIndicator() {
-    final (color, tooltip) = switch (_connectionState) {
-      ConnectionState_Connecting() => (Colors.orange, 'Connecting...'),
-      ConnectionState_Connected() => (Colors.green, 'Connected'),
-      ConnectionState_Disconnected(:final reason) => (
-        Colors.red,
-        'Disconnected${reason != null ? ': $reason' : ''}',
-      ),
-    };
-
-    return Tooltip(
-      message: tooltip,
-      child: Container(
-        width: 12,
-        height: 12,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
+    return Column(
+      children: [
+        Expanded(child: _buildTimeline(theme)),
+        _buildSigningBanner(theme),
+        _buildMessageInput(),
+      ],
     );
   }
 
@@ -2814,6 +2838,9 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
   Future<void> _doOffer() async {
     if (_selectedDevices.isEmpty) return;
 
+    final nsec = await requireNostrSigningIdentity(context);
+    if (nsec == null || !mounted) return;
+
     final nSelectedByOthers = widget.state.offers.length;
     final willMeetThreshold =
         nSelectedByOthers + _selectedDevices.length >= widget.threshold;
@@ -2821,7 +2848,6 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     setState(() => _phase = _OfferSignPhase.waiting);
 
     try {
-      final nsec = widget.nostrContext.nostrSettings.getNsec();
       final reservationId = RemoteSignSessionId(
         field0: widget.state.request.eventId.field0,
       );
@@ -2858,7 +2884,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
         return;
       }
 
-      await _startSigning();
+      await _startSigning(nsec: nsec);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -2869,7 +2895,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     }
   }
 
-  Future<void> _startSigning() async {
+  Future<void> _startSigning({required String nsec}) async {
     final walletCtx = WalletContext.of(context);
     final fsCtx = FrostsnapContext.of(context);
     if (walletCtx == null || fsCtx == null) return;
@@ -2886,7 +2912,6 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
 
       setState(() => _phase = _OfferSignPhase.signing);
 
-      final nsec = widget.nostrContext.nostrSettings.getNsec();
       await showBottomSheetOrDialog(
         context,
         title: const Text('Signing'),

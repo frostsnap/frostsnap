@@ -14,13 +14,29 @@ Future<NostrSetupResult> showNostrSetupDialog(BuildContext context) async {
   return result ?? NostrSetupResult.cancelled;
 }
 
-/// Ensures a Nostr identity exists, prompting the user if needed.
-/// Returns true if identity is ready, false if the user cancelled.
-Future<bool> ensureNostrIdentity(BuildContext context) async {
-  final nostr = NostrContext.of(context);
-  if (nostr.nostrSettings.hasIdentity()) return true;
+/// Returns the user's nsec, prompting setup if missing. Returns null
+/// iff the user cancels the setup dialog or `getNsec` somehow fails
+/// after a successful setup.
+///
+/// Use this at *publish* points (sending a chat message, proposing or
+/// signing a request, creating/joining a remote keygen lobby) — not
+/// merely to enter chat-shaped UI. Reading history, opening a remote
+/// wallet, or toggling `coordination_ui_enabled` should not gate.
+Future<String?> requireNostrSigningIdentity(BuildContext context) async {
+  // First try to read existing identity. If present, return immediately —
+  // skipping the dialog avoids a frame-flash on every publish.
+  try {
+    return NostrContext.of(context).nostrSettings.getNsec();
+  } catch (_) {
+    // No identity yet — fall through to setup.
+  }
   final result = await showNostrSetupDialog(context);
-  return result != NostrSetupResult.cancelled;
+  if (result == NostrSetupResult.cancelled || !context.mounted) return null;
+  try {
+    return NostrContext.of(context).nostrSettings.getNsec();
+  } catch (_) {
+    return null;
+  }
 }
 
 class _NostrSetupDialog extends StatefulWidget {

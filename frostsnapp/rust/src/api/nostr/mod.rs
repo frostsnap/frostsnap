@@ -1,14 +1,17 @@
 pub mod keygen_run;
 pub mod remote_keygen;
 
+use crate::api::broadcast::{BehaviorBroadcast, BehaviorBroadcastSubscription, StartError};
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
+use crate::nostr_settings_state::NostrSettingsState;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::persist::Persisted;
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
     coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
     message::EncodedSignature,
-    AccessStructureId, AccessStructureRef, SignSessionId, SymmetricKey, WireSignTask,
+    AccessStructureId, AccessStructureRef, KeyId, SignSessionId, SymmetricKey, WireSignTask,
 };
 pub use frostsnap_nostr::NostrProfile;
 use frostsnap_nostr::{
@@ -59,139 +62,260 @@ fn get_nostr_lmdb() -> Result<Arc<NostrLMDB>> {
 // NostrSettings - Identity settings with reactive updates
 // ============================================================================
 
-/// Nostr identity settings - follows same pattern as Settings struct.
-/// Created during app load, passed to Dart via context.
-#[frb(opaque)]
-pub struct NostrSettings {
-    db: Arc<Mutex<Connection>>,
-    #[allow(dead_code)]
-    data_dir: PathBuf,
-    inner: RwLock<NostrSettingsInner>,
+/// FRB-translatable view of an access structure's local Nostr-coordination
+/// settings. Carried directly by the per-access-structure broadcast so
+/// fresh subscribers see current state without a separate sync read.
+#[derive(Clone, Debug)]
+pub struct AccessStructureSettings {
+    pub key_id: KeyId,
+    pub coordination_ui_enabled: bool,
 }
 
-struct NostrSettingsInner {
-    pubkey: Option<PublicKey>,
-    /// Sink for identity updates. Stream value is the local pubkey;
-    /// Dart computes npub on demand via `PublicKeyExt::toNpub()`.
+impl AccessStructureSettings {
+    fn default_for_ref(asref: AccessStructureRef) -> Self {
+        Self {
+            key_id: asref.key_id,
+            coordination_ui_enabled: false,
+        }
+    }
+}
+
+/// Nostr identity + per-access-structure coordination settings.
+/// Mirrors the `Settings` pattern (`api/settings.rs`): a `Persisted<State>`
+/// with a `Mutation` enum, plus the FRB-side stream sinks. Lives behind a
+/// `RustAutoOpaque` on `AppCtx`, so `&mut self` setters are fine.
+#[frb(opaque)]
+pub struct NostrSettings {
+    settings: Persisted<NostrSettingsState>,
+    db: Arc<Mutex<Connection>>,
+
+    /// Sink for identity updates. Emits the local pubkey; Dart computes
+    /// npub on demand via `PublicKey.toNpub()`.
     identity_sink: Option<StreamSink<Option<PublicKey>>>,
+
+    /// One `BehaviorBroadcast` per access structure. Lazily created on
+    /// first subscribe (or pre-populated from `load`); each carries the
+    /// latest `AccessStructureSettings` so newly-mounted UI sees the
+    /// current state immediately. Multi-subscriber on the Rust side, no
+    /// shared subject on the Dart side.
+    coordination_broadcasts:
+        RwLock<HashMap<AccessStructureId, BehaviorBroadcast<AccessStructureSettings>>>,
 }
 
 impl NostrSettings {
-    /// Create by loading existing identity from SQLite.
+    /// Create by loading existing state from SQLite.
     /// Called during app initialization.
     pub(crate) fn new(db: Arc<Mutex<Connection>>, data_dir: PathBuf) -> Result<Self> {
-        // Ensure table exists
+        let settings: Persisted<NostrSettingsState> = {
+            let mut conn = db.lock().unwrap();
+            Persisted::new(&mut *conn, ())?
+        };
+
+        // Pre-populate one broadcast per loaded access structure so a fresh
+        // subscriber sees the current state without waiting for a change
+        // event.
+        let coordination_broadcasts = RwLock::new(HashMap::new());
         {
-            let db_guard = db.lock().unwrap();
-            db_guard.execute(
-                "CREATE TABLE IF NOT EXISTS nostr_settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )",
-                [],
-            )?;
+            let mut map = coordination_broadcasts.write().unwrap();
+            for (asid, settings) in &settings.access_structure_settings {
+                map.insert(
+                    *asid,
+                    BehaviorBroadcast::seeded(AccessStructureSettings {
+                        key_id: settings.key_id,
+                        coordination_ui_enabled: settings.coordination_ui_enabled,
+                    }),
+                );
+            }
         }
 
-        // Initialize LMDB
+        // Initialize LMDB at the configured data dir.
         get_or_init_nostr_lmdb(&data_dir);
 
-        // Load existing identity
-        let pubkey = Self::load_pubkey_from_db(&db);
-
         Ok(Self {
+            settings,
             db,
-            data_dir,
-            inner: RwLock::new(NostrSettingsInner {
-                pubkey,
-                identity_sink: None,
-            }),
+            identity_sink: None,
+            coordination_broadcasts,
         })
-    }
-
-    fn load_pubkey_from_db(db: &Arc<Mutex<Connection>>) -> Option<PublicKey> {
-        let db_guard = db.lock().unwrap();
-        let nsec: Option<String> = db_guard
-            .query_row(
-                "SELECT value FROM nostr_settings WHERE key = 'nsec'",
-                [],
-                |row| row.get(0),
-            )
-            .ok();
-        nsec.and_then(|n| Keys::parse(&n).ok().map(|k| k.public_key().into()))
     }
 
     /// Subscribe to identity changes. Emits current value immediately.
     /// Stream values are the local nostr pubkey; Dart computes the
     /// bech32 `npub` on demand via `PublicKey.toNpub()`.
-    pub fn sub_identity(&self, sink: StreamSink<Option<PublicKey>>) -> Result<()> {
-        {
-            let mut inner = self.inner.write().unwrap();
-            inner.identity_sink.replace(sink);
-        }
+    pub fn sub_identity(&mut self, sink: StreamSink<Option<PublicKey>>) -> Result<()> {
+        self.identity_sink.replace(sink);
         self.emit_identity();
         Ok(())
     }
 
-    fn emit_identity(&self) {
-        let inner = self.inner.read().unwrap();
-        if let Some(sink) = &inner.identity_sink {
-            let _ = sink.add(inner.pubkey);
+    /// Subscribe to per-access-structure coordination settings updates.
+    /// New subscribers immediately receive the current `AccessStructureSettings`
+    /// (the BehaviorBroadcast cached value); subsequent emissions arrive
+    /// every time `set_coordination_ui_enabled` is called for this asref.
+    #[frb(sync)]
+    pub fn sub_access_structure(
+        &self,
+        access_structure_ref: AccessStructureRef,
+    ) -> AccessStructureSettingsBroadcastSubscription {
+        let broadcast = self.broadcast_for(access_structure_ref);
+        AccessStructureSettingsBroadcastSubscription(broadcast.subscribe())
+    }
+
+    /// Get-or-create the broadcast for an access structure, seeding the
+    /// cached value with the latest persisted settings (or the default
+    /// `coordination_ui_enabled = false` for an asref we've never seen).
+    fn broadcast_for(
+        &self,
+        access_structure_ref: AccessStructureRef,
+    ) -> BehaviorBroadcast<AccessStructureSettings> {
+        let asid = access_structure_ref.access_structure_id;
+        if let Some(b) = self.coordination_broadcasts.read().unwrap().get(&asid) {
+            return b.clone();
         }
+        let mut map = self.coordination_broadcasts.write().unwrap();
+        // Re-check inside the write lock; another caller may have inserted.
+        if let Some(b) = map.get(&asid) {
+            return b.clone();
+        }
+        let initial = self
+            .settings
+            .access_structure_settings
+            .get(&asid)
+            .map(|s| AccessStructureSettings {
+                key_id: s.key_id,
+                coordination_ui_enabled: s.coordination_ui_enabled,
+            })
+            .unwrap_or_else(|| AccessStructureSettings::default_for_ref(access_structure_ref));
+        let broadcast = BehaviorBroadcast::seeded(initial);
+        map.insert(asid, broadcast.clone());
+        broadcast
+    }
+
+    fn emit_identity(&self) {
+        if let Some(sink) = &self.identity_sink {
+            let _ = sink.add(self.settings.pubkey);
+        }
+    }
+
+    fn emit_access_structure(&self, asref: AccessStructureRef) {
+        let asid = asref.access_structure_id;
+        let snapshot = self
+            .settings
+            .access_structure_settings
+            .get(&asid)
+            .map(|s| AccessStructureSettings {
+                key_id: s.key_id,
+                coordination_ui_enabled: s.coordination_ui_enabled,
+            })
+            .unwrap_or_else(|| AccessStructureSettings::default_for_ref(asref));
+        self.broadcast_for(asref).add(&snapshot);
     }
 
     /// Get current identity synchronously.
     #[frb(sync)]
     pub fn current(&self) -> Option<PublicKey> {
-        self.inner.read().unwrap().pubkey
+        self.settings.pubkey
     }
 
-    /// Set/import nsec. Persists to DB and notifies subscribers.
-    pub fn set_nsec(&self, nsec: String) -> Result<()> {
-        let keys = Keys::parse(&nsec)?;
-
-        // Persist
-        {
-            let db = self.db.lock().unwrap();
-            db.execute(
-                "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
-                [&nsec],
-            )?;
-        }
-
-        // Update in-memory + emit
-        {
-            let mut inner = self.inner.write().unwrap();
-            inner.pubkey = Some(keys.public_key().into());
-        }
+    /// Set/import nsec. Persists and notifies subscribers.
+    pub fn set_nsec(&mut self, nsec: String) -> Result<()> {
+        let mut conn = self.db.lock().unwrap();
+        self.settings
+            .mutate2(&mut *conn, |st, update| st.set_nsec(Some(nsec), update))?;
+        drop(conn);
         self.emit_identity();
         tracing::info!("Nostr identity configured");
         Ok(())
     }
 
+    /// Remove the configured Nostr signing identity.
+    /// Does not delete chat history or per-access-structure settings.
+    pub fn clear_nsec(&mut self) -> Result<()> {
+        let mut conn = self.db.lock().unwrap();
+        self.settings
+            .mutate2(&mut *conn, |st, update| st.set_nsec(None, update))?;
+        drop(conn);
+        self.emit_identity();
+        tracing::info!("Nostr identity cleared");
+        Ok(())
+    }
+
     /// Generate new random identity.
-    pub fn generate(&self) -> Result<String> {
+    pub fn generate(&mut self) -> Result<String> {
         let keys = Keys::generate();
         let nsec = keys.secret_key().to_bech32()?;
         self.set_nsec(nsec.clone())?;
         Ok(nsec)
     }
 
-    /// Get nsec for export/backup.
+    /// Get nsec for export/backup. Returns an error if no identity is set.
     #[frb(sync)]
     pub fn get_nsec(&self) -> Result<String> {
-        let db = self.db.lock().unwrap();
-        db.query_row(
-            "SELECT value FROM nostr_settings WHERE key = 'nsec'",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|_| anyhow!("no Nostr identity configured"))
+        self.settings
+            .nsec
+            .clone()
+            .ok_or_else(|| anyhow!("no Nostr identity configured"))
     }
 
     /// Check if identity exists.
     #[frb(sync)]
     pub fn has_identity(&self) -> bool {
-        self.inner.read().unwrap().pubkey.is_some()
+        self.settings.pubkey.is_some()
+    }
+
+    /// Whether the wallet behind this access structure should render its
+    /// chat-first (remote-coordinated) UI shape.
+    #[frb(sync)]
+    pub fn is_coordination_ui_enabled(&self, access_structure_id: AccessStructureId) -> bool {
+        self.settings
+            .is_coordination_ui_enabled(access_structure_id)
+    }
+
+    pub fn set_coordination_ui_enabled(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        enabled: bool,
+    ) -> Result<()> {
+        let mut conn = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *conn, |st, update| {
+            st.set_coordination_ui_enabled(access_structure_ref, enabled, update);
+            Ok(())
+        })?;
+        drop(conn);
+        self.emit_access_structure(access_structure_ref);
+        Ok(())
+    }
+}
+
+/// FRB-typed wrapper around the per-access-structure subscription so the
+/// Dart side can call `start(StreamSink)` / `stop()` directly. Mirrors
+/// the `LobbyStateBroadcastSubscription` pattern.
+pub struct AccessStructureSettingsBroadcastSubscription(
+    pub(crate) BehaviorBroadcastSubscription<AccessStructureSettings>,
+);
+
+impl AccessStructureSettingsBroadcastSubscription {
+    #[frb(sync)]
+    pub fn id(&self) -> u32 {
+        self.0._id()
+    }
+
+    #[frb(sync)]
+    pub fn is_running(&self) -> bool {
+        self.0._is_running()
+    }
+
+    #[frb(sync)]
+    pub fn start(
+        &self,
+        sink: StreamSink<AccessStructureSettings>,
+    ) -> std::result::Result<(), StartError> {
+        self.0._start(sink)
+    }
+
+    #[frb(sync)]
+    pub fn stop(&self) -> bool {
+        self.0._stop()
     }
 }
 
@@ -367,10 +491,8 @@ impl NostrClient {
     ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
-        let event_id = handle
-            .send_message(content, reply_to.map(|id| id.into()), &keys)
-            .await?;
-        Ok(event_id.into())
+        let event_id = handle.send_message(content, reply_to, &keys).await?;
+        Ok(event_id)
     }
 
     /// Propose a transaction for signing over the channel.
@@ -385,7 +507,7 @@ impl NostrClient {
         let sign_task = WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone());
         let handle = self.get_handle(access_structure_ref.access_structure_id)?;
         let event_id = handle.send_sign_request(&keys, sign_task, message).await?;
-        Ok(event_id.into())
+        Ok(event_id)
     }
 
     /// Propose a test message for signing over the channel.
@@ -402,7 +524,7 @@ impl NostrClient {
         };
         let handle = self.get_handle(access_structure_ref.access_structure_id)?;
         let event_id = handle.send_sign_request(&keys, sign_task, message).await?;
-        Ok(event_id.into())
+        Ok(event_id)
     }
 
     /// Send a signing offer with pre-allocated binonces over the channel.
@@ -415,10 +537,8 @@ impl NostrClient {
     ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
-        let event_id = handle
-            .send_sign_offer(&keys, request_id.into(), binonces)
-            .await?;
-        Ok(event_id.into())
+        let event_id = handle.send_sign_offer(&keys, request_id, binonces).await?;
+        Ok(event_id)
     }
 
     /// Send signature shares over the channel. `offer_subset` is the
@@ -435,12 +555,10 @@ impl NostrClient {
     ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
-        let offer_subset: Vec<frostsnap_nostr::EventId> =
-            offer_subset.into_iter().map(|e| e.into()).collect();
         let event_id = handle
-            .send_sign_partial(&keys, request_id.into(), offer_subset, shares)
+            .send_sign_partial(&keys, request_id, offer_subset, shares)
             .await?;
-        Ok(event_id.into())
+        Ok(event_id)
     }
 
     /// Cancel a signing request. Only the original requester should call this.
@@ -452,8 +570,8 @@ impl NostrClient {
     ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
-        let event_id = handle.send_sign_cancel(&keys, request_id.into()).await?;
-        Ok(event_id.into())
+        let event_id = handle.send_sign_cancel(&keys, request_id).await?;
+        Ok(event_id)
     }
 
     /// Disconnect from a channel.
