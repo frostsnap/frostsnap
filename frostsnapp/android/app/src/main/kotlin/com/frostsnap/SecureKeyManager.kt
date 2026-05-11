@@ -5,6 +5,7 @@ import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.security.keystore.UserNotAuthenticatedException
@@ -24,18 +25,20 @@ import javax.crypto.Mac
 
 class SecureKeyManager : FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
     private lateinit var channel: MethodChannel
+    private lateinit var appContext: Context
     private var activity: Activity? = null
     private var pendingResult: Result? = null
     private val TAG = "SecureKeyManager"
-    
+
     companion object {
         private const val CHANNEL = "com.frostsnap/secure_key"
         private const val KEY_ALIAS = "frostsnap-app-encryption"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val REQUEST_CODE_CONFIRM_DEVICE_CREDENTIALS = 1
     }
-    
+
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        appContext = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, CHANNEL)
         channel.setMethodCallHandler(this)
     }
@@ -50,6 +53,7 @@ class SecureKeyManager : FlutterPlugin, MethodCallHandler, ActivityAware, Plugin
             "requiresAuthentication" -> requiresAuthentication(result)
             "clearKey" -> clearKey(result)
             "deleteKey" -> deleteKey(result)
+            "openSecuritySettings" -> openSecuritySettings(result)
             else -> result.notImplemented()
         }
     }
@@ -74,9 +78,20 @@ class SecureKeyManager : FlutterPlugin, MethodCallHandler, ActivityAware, Plugin
     
     private fun getOrCreateKey(result: Result) {
         try {
+            // Fail fast if there's no device lock screen. KeyGenParameterSpec
+            // with setUserAuthenticationRequired(true) cannot bind a key without
+            // device credentials, and the resulting low-level exception is opaque,
+            // so we surface a typed error the UI can act on. Use the application
+            // context so this works even when no Activity is attached yet.
+            val keyguardManager = appContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            if (!keyguardManager.isDeviceSecure) {
+                result.error("NO_LOCK_SCREEN", "Device does not have a secure lock screen", null)
+                return
+            }
+
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
             keyStore.load(null)
-            
+
             // Create key if it doesn't exist
             if (!keyStore.containsAlias(KEY_ALIAS)) {
                 createKey()
@@ -148,6 +163,20 @@ class SecureKeyManager : FlutterPlugin, MethodCallHandler, ActivityAware, Plugin
         Log.i(TAG, "Key created successfully with TEE backing")
     }
     
+    private fun openSecuritySettings(result: Result) {
+        val activity = activity ?: run {
+            result.error("NO_ACTIVITY", "Activity not available", null)
+            return
+        }
+        try {
+            activity.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+            result.success(null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open security settings", e)
+            result.error("SETTINGS_ERROR", "Failed to open security settings: ${e.message}", null)
+        }
+    }
+
     private fun launchLockScreen(result: Result) {
         val activity = activity ?: run {
             result.error("NO_ACTIVITY", "Activity not available for authentication", null)
