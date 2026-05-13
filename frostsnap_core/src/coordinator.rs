@@ -634,24 +634,20 @@ impl FrostCoordinator {
                         let cert_scheme = certpedpop::vrf_cert::VrfCertScheme::<Sha256>::new(
                             crate::message::keygen::VRF_CERT_SCHEME_ID,
                         );
-                        let share_index = state.device_to_share_index.get(&from).ok_or(
-                            Error::coordinator_invalid_message(
+                        let receiver_idx = state
+                            .devices_in_order
+                            .iter()
+                            .position(|d| d == &from)
+                            .ok_or(Error::coordinator_invalid_message(
                                 message_kind,
                                 "got share from device that was not part of keygen",
-                            ),
-                        )?;
-
-                        // Input-generator indices: [0..n_coordinators) are coordinators;
-                        // [n_coordinators..n_coordinators + n_devices) are devices in
-                        // share-index order. Share indices are 1-based, hence the `- 1`.
-                        let n_coordinators = state.coordinator_public_keys.len() as u32;
-                        let input_gen_index = u32::from(*share_index) - 1 + n_coordinators;
+                            ))? as u32;
 
                         state
                             .input_aggregator
                             .add_input(
-                                &schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
-                                input_gen_index,
+                                &schnorr_fun::Schnorr::<Sha256>::verify_only(),
+                                certpedpop::Party::Receiver(receiver_idx),
                                 *response.input,
                             )
                             .map_err(|e| Error::coordinator_invalid_message(message_kind, e))?;
@@ -663,28 +659,28 @@ impl FrostCoordinator {
                             })];
 
                         if state.input_aggregator.is_finished() {
-                            // Remove the entry to take ownership
-                            let mut agg_input = state.input_aggregator.finish().unwrap();
-                            agg_input.grind_fingerprint::<Sha256>(self.keygen_fingerprint);
+                            let agg_input = state
+                                .input_aggregator
+                                .finish_with_fingerprint::<Sha256>(self.keygen_fingerprint)
+                                .expect("input aggregator just reported finished");
 
-                            // First we calculate our (the coordinator) certificate and add our VRF outputs
-                            let sig = state
+                            let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
+                            let (verified, sig) = state
                                 .contributer
-                                .verify_agg_input(&cert_scheme, &agg_input, &state.my_keypair)
+                                .verify_agg_input(
+                                    &schnorr,
+                                    &cert_scheme,
+                                    agg_input.clone(),
+                                    &state.my_keypair,
+                                )
                                 .expect("will be able to certify agg_input we created");
-
-                            let mut certifier = certpedpop::Certifier::new(
-                                cert_scheme,
-                                agg_input.clone(),
-                                &state.coordinator_public_keys,
-                            );
-
+                            let mut certifier = certpedpop::Certifier::new(cert_scheme, verified);
                             certifier
                                 .receive_certificate(state.my_keypair.public_key(), sig)
                                 .expect("will be able to verify our own certificate");
 
                             outgoing.push(CoordinatorSend::ToDevice {
-                                destinations: state.device_to_share_index.keys().cloned().collect(),
+                                destinations: state.devices_in_order.iter().copied().collect(),
                                 message: Keygen::CertifyPlease {
                                     keygen_id,
                                     agg_input,
@@ -695,7 +691,7 @@ impl FrostCoordinator {
                             entry.insert(KeyGenState::WaitingForCertificates(
                                 KeyGenWaitingForCertificates {
                                     keygen_id: state.keygen_id,
-                                    device_to_share_index: state.device_to_share_index,
+                                    devices_in_order: state.devices_in_order,
                                     pending_key_name: state.pending_key_name,
                                     purpose: state.purpose,
                                     certifier,
@@ -748,7 +744,7 @@ impl FrostCoordinator {
                                 .collect();
 
                             outgoing.push(CoordinatorSend::ToDevice {
-                                destinations: state.device_to_share_index.keys().cloned().collect(),
+                                destinations: state.devices_in_order.iter().copied().collect(),
                                 message: Keygen::Check {
                                     keygen_id,
                                     certificate,
@@ -765,7 +761,7 @@ impl FrostCoordinator {
                             entry.insert(
                                 KeyGenState::WaitingForAcks(KeyGenWaitingForAcks {
                                     certified_keygen,
-                                    device_to_share_index: state.device_to_share_index,
+                                    devices_in_order: state.devices_in_order,
                                     acks: Default::default(),
                                     pending_key_name: state.pending_key_name,
                                     purpose: state.purpose,
@@ -801,7 +797,7 @@ impl FrostCoordinator {
                             ));
                         }
 
-                        if !state.device_to_share_index.contains_key(&from) {
+                        if !state.devices_in_order.contains(&from) {
                             entry.insert(KeyGenState::WaitingForAcks(state));
                             return Err(Error::coordinator_invalid_message(
                                 message_kind,
@@ -811,22 +807,37 @@ impl FrostCoordinator {
 
                         if state.acks.insert(from) {
                             let all_acks_received =
-                                state.acks.len() == state.device_to_share_index.len();
+                                state.acks.len() == state.devices_in_order.len();
                             if all_acks_received {
                                 // XXX: we don't keep around the certified keygen for anything,
                                 // although it would make sense for settings where the secret key for
                                 // the DeviceId is persisted -- this would allow them to recover their
                                 // secret share from the certified keygen.
-                                let root_shared_key = state
-                                    .certified_keygen
-                                    .agg_input()
-                                    .shared_key()
-                                    .non_zero()
-                                    .expect("can't be zero we we contributed to it");
+                                let verified_agg_input =
+                                    state.certified_keygen.verified_agg_input();
+                                let root_shared_key = verified_agg_input.shared_key();
+                                assert_eq!(
+                                    verified_agg_input.n_receivers(),
+                                    state.devices_in_order.len(),
+                                    "chilldkg receiver count must match devices_in_order"
+                                );
+                                let device_to_share_index: BTreeMap<DeviceId, ShareIndex> = state
+                                    .devices_in_order
+                                    .iter()
+                                    .zip(verified_agg_input.receiver_keys())
+                                    .map(|(device, (share_index, receiver_key))| {
+                                        assert_eq!(
+                                            device.pubkey(),
+                                            receiver_key,
+                                            "device order must match keygen receiver order"
+                                        );
+                                        (*device, share_index)
+                                    })
+                                    .collect();
 
                                 entry.insert(KeyGenState::NeedsFinalize(KeyGenNeedsFinalize {
                                     root_shared_key,
-                                    device_to_share_index: state.device_to_share_index,
+                                    device_to_share_index,
                                     pending_key_name: state.pending_key_name,
                                     purpose: state.purpose,
                                 }));
@@ -951,7 +962,6 @@ impl FrostCoordinator {
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SendBeginKeygen, ActionError> {
         let BeginKeygen {
-            device_to_share_index,
             threshold,
             key_name,
             purpose,
@@ -969,35 +979,36 @@ impl FrostCoordinator {
         let coordinator_secret = Scalar::random(rng);
         let coordinator_keypair = KeyPair::new(coordinator_secret);
 
-        let n_devices = device_to_share_index.len();
+        let n_devices = devices_in_order.len();
 
         if n_devices < threshold as usize {
             panic!(
                 "caller needs to ensure that threshold < devices.len(). Tried {threshold}-of-{n_devices}",
             );
         }
-        let share_receivers_enckeys = device_to_share_index
-            .iter()
-            .map(|(device, share_index)| (ShareIndex::from(*share_index), device.pubkey()))
-            .collect::<BTreeMap<_, _>>();
+        let receiver_keys: Vec<Point> = devices_in_order.iter().map(|d| d.pubkey()).collect();
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
 
         let coordinator_public_keys = vec![coordinator_keypair.public_key()];
 
+        let n_receivers = receiver_keys.len() as u32;
         let mut input_aggregator = certpedpop::Coordinator::new(
             threshold.into(),
-            1 + n_devices as u32,
-            &share_receivers_enckeys,
+            coordinator_public_keys.len() as u32,
+            n_receivers,
         );
-        let (contributer, input) = certpedpop::Contributor::gen_keygen_input(
-            &schnorr,
-            threshold.into(),
-            &share_receivers_enckeys,
-            0,
-            rng,
-        );
+        let (contributer, input) =
+            certpedpop::Contributor::<certpedpop::AuxContributor>::gen_keygen_input(
+                &schnorr,
+                threshold.into(),
+                &coordinator_public_keys,
+                &receiver_keys,
+                0,
+                rng,
+            )
+            .map_err(|e| ActionError::StateInconsistent(format!("gen_keygen_input failed: {e}")))?;
         input_aggregator
-            .add_input(&schnorr, 0, input)
+            .add_input(&schnorr, certpedpop::Party::AuxContributor(0), input)
             .expect("we just generated the input");
 
         self.pending_keygens.insert(
@@ -1005,12 +1016,11 @@ impl FrostCoordinator {
             KeyGenState::WaitingForResponses(KeyGenWaitingForResponses {
                 keygen_id,
                 input_aggregator,
-                device_to_share_index: device_to_share_index.clone(),
+                devices_in_order: devices_in_order.clone(),
                 pending_key_name: key_name.clone(),
                 purpose,
                 contributer: Box::new(contributer),
                 my_keypair: coordinator_keypair,
-                coordinator_public_keys: coordinator_public_keys.clone(),
             }),
         );
 
@@ -1035,21 +1045,17 @@ impl FrostCoordinator {
     ) -> Result<SendFinalizeKeygen, ActionError> {
         match self.pending_keygens.remove(&keygen_id) {
             Some(KeyGenState::NeedsFinalize(finalize)) => {
-                let device_to_share_index_converted = finalize
-                    .device_to_share_index
-                    .iter()
-                    .map(|(device, share_index)| (*device, ShareIndex::from(*share_index)))
-                    .collect();
+                let devices = finalize.device_to_share_index.keys().copied().collect();
                 let access_structure_ref = self.mutate_new_key(
                     finalize.pending_key_name,
                     finalize.root_shared_key,
-                    device_to_share_index_converted,
+                    finalize.device_to_share_index,
                     encryption_key,
                     finalize.purpose,
                     rng,
                 );
                 Ok(SendFinalizeKeygen {
-                    devices: finalize.device_to_share_index.into_keys().collect(),
+                    devices,
                     access_structure_ref,
                     keygen_id,
                 })
@@ -1681,18 +1687,17 @@ impl SignSession {
 pub struct KeyGenWaitingForResponses {
     pub keygen_id: KeygenId,
     pub input_aggregator: certpedpop::Coordinator,
-    pub device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
+    pub devices_in_order: Vec<DeviceId>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
-    pub contributer: Box<certpedpop::Contributor>,
+    pub contributer: Box<certpedpop::Contributor<certpedpop::AuxContributor>>,
     pub my_keypair: KeyPair,
-    pub coordinator_public_keys: Vec<Point>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenWaitingForCertificates {
     pub keygen_id: KeygenId,
-    pub device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
+    pub devices_in_order: Vec<DeviceId>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
     pub certifier: certpedpop::Certifier<certpedpop::vrf_cert::VrfCertScheme<Sha256>>,
@@ -1702,7 +1707,7 @@ pub struct KeyGenWaitingForCertificates {
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenWaitingForAcks {
     pub certified_keygen: certpedpop::CertifiedKeygen<certpedpop::vrf_cert::CertVrfProof>,
-    pub device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
+    pub devices_in_order: Vec<DeviceId>,
     pub acks: BTreeSet<DeviceId>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
@@ -1711,7 +1716,7 @@ pub struct KeyGenWaitingForAcks {
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyGenNeedsFinalize {
     pub root_shared_key: SharedKey,
-    pub device_to_share_index: BTreeMap<DeviceId, core::num::NonZeroU32>,
+    pub device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
 }

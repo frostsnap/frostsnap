@@ -49,22 +49,6 @@ impl From<Begin> for CoordinatorToDeviceMessage {
     }
 }
 
-impl Begin {
-    /// Generate the device to share index mapping based on the device order in the Vec
-    pub fn device_to_share_index(&self) -> BTreeMap<DeviceId, core::num::NonZeroU32> {
-        self.devices
-            .iter()
-            .enumerate()
-            .map(|(index, device_id)| {
-                (
-                    *device_id,
-                    core::num::NonZeroU32::new((index as u32) + 1).expect("we added one"),
-                )
-            })
-            .collect()
-    }
-}
-
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
 pub enum DeviceKeygen {
     Response(super::KeyGenResponse),

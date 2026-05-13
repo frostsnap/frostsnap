@@ -204,14 +204,10 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             Workflow::UserPrompt(prompt) => {
                 match prompt {
                     Prompt::KeyGen { phase } => {
-                        // Extract t_of_n and session_hash from phase
-                        let t_of_n = phase.t_of_n();
                         let session_hash = phase.session_hash();
-                        // Extract the first 4 bytes as security check code
                         let mut security_check_code = [0u8; 4];
                         security_check_code.copy_from_slice(&session_hash.0[..4]);
-                        // Create the KeygenCheck widget with just the display data
-                        let widget = KeygenCheck::new(t_of_n, security_check_code);
+                        let widget = KeygenCheck::new(phase.t_of_n(), security_check_code);
                         // Store both widget and phase in the WidgetTree
                         WidgetTree::KeygenCheck {
                             widget: Box::new(widget),

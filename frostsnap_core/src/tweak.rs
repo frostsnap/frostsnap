@@ -428,7 +428,7 @@ mod test {
         let cert_scheme = certpedpop::vrf_cert::VrfCertScheme::<sha2::Sha256>::new("chilldkg-vrf");
         let output = certpedpop::simulate_keygen(
             &schnorr,
-            cert_scheme,
+            &cert_scheme,
             3,
             5,
             5,
@@ -440,12 +440,7 @@ mod test {
             &mut rand::thread_rng(),
         );
 
-        let frost_key = output
-            .certified_keygen
-            .agg_input()
-            .shared_key()
-            .non_zero()
-            .unwrap();
+        let frost_key = output.certified_keygen.verified_agg_input().shared_key();
         let root_xpub = Xpub::from_rootkey(frost_key);
         let secp = Secp256k1::verification_only();
         let xpub = bitcoin::bip32::Xpub {
