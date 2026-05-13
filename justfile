@@ -26,22 +26,17 @@ flash BOARD=default_board +ARGS="":
 flash-firmware +ARGS="":
     #!/bin/sh
     set -e
-    ADDR_OTADATA=$(awk -F, '$1 == "otadata" { gsub(/ /, "", $4); print $4 }' {{partitions_csv}})
-    ADDR_APP=$(awk -F, '$1 == "ota_0" { gsub(/ /, "", $4); print $4 }' {{partitions_csv}})
-    [ -n "$ADDR_OTADATA" ] || { echo "Failed to find otadata offset in {{partitions_csv}}" >&2; exit 1; }
-    [ -n "$ADDR_APP" ] || { echo "Failed to find ota_0 offset in {{partitions_csv}}" >&2; exit 1; }
-    for f in device/blank-otadata.bin "{{firmware_bin}}"; do
-        [ -f "$f" ] || { echo "Missing: $f" >&2; exit 1; }
-    done
-    flash() { espflash write-bin --chip esp32c3 --baud 921600 --no-stub "$@"; }
+    ADDR_APP=$(espflash partition-table --to-csv device/partitions.bin | awk -F, '$1 == "ota_0" { print $4 }')
+    [ -n "$ADDR_APP" ] || { echo "Failed to find ota_0 offset in device/partitions.bin" >&2; exit 1; }
+    [ -f "{{firmware_bin}}" ] || { echo "Missing: {{firmware_bin}}" >&2; exit 1; }
     if [ "{{ARGS}}" = "--table" ]; then
         printf "%-12s  %s\n" "Address" "Component"
-        printf "%-12s  %s\n" "$ADDR_OTADATA" "device/blank-otadata.bin"
+        printf "%-12s  %s\n" "otadata" "(erase)"
         printf "%-12s  %s\n" "$ADDR_APP" "{{firmware_bin}}"
         exit 0
     fi
-    flash $ADDR_OTADATA    device/blank-otadata.bin   {{ARGS}}
-    flash $ADDR_APP        "{{firmware_bin}}"         {{ARGS}}
+    just erase-device otadata
+    espflash write-bin --chip esp32c3 --baud 921600 --no-stub "$ADDR_APP" "{{firmware_bin}}" {{ARGS}}
 
 # Flash bootloader + partitions + firmware (for initial secure boot setup)
 flash-bootloader +ARGS="":
@@ -78,8 +73,18 @@ legacy-flash BOARD="legacy" +ARGS="":
 monitor +ARGS="":
     espflash monitor --no-stub
 
-erase-device +ARGS="nvs":
-    cd device && espflash erase-parts --partition-table partitions.csv {{ARGS}}
+erase-device +LABELS="nvs":
+    #!/bin/sh
+    set -e
+    TABLE=$(espflash partition-table --to-csv device/partitions.bin)
+    for LABEL in {{LABELS}}; do
+        LINE=$(printf '%s\n' "$TABLE" | awk -F, -v label="$LABEL" '$1 == label { print $4, $5 }')
+        [ -n "$LINE" ] || { echo "Partition '$LABEL' not found in device/partitions.bin" >&2; exit 1; }
+        ADDR=${LINE% *}
+        SIZE=${LINE#* }
+        head -c $(( SIZE )) /dev/zero | LC_ALL=C tr '\0' '\377' | \
+            espflash write-bin --chip esp32c3 --baud 921600 --no-stub "$ADDR" /dev/stdin
+    done
 
 build-firmware BOARD=default_board +ARGS="":
     cd device && cargo build --release --bin {{BOARD}} ${DEVICE_BUILD_ARGS:-} {{ARGS}}
