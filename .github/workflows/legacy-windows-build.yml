@@ -1,0 +1,102 @@
+name: Legacy Windows Build
+
+# Manual-only: produces a Windows build that bundles the unsigned legacy
+# firmware instead of the signed frontier firmware. Useful for testing
+# against legacy / unprovisioned devices that cannot accept frontier OTA.
+
+on:
+  workflow_dispatch:
+  # TODO: remove before merging to master — temporary push trigger for testing
+  push:
+    branches:
+      - legacy-windows-build
+
+jobs:
+  build-legacy-firmware:
+    name: Build legacy firmware
+    runs-on: ubuntu-latest
+    env:
+      RISCV_VERSION: "2024.09.03-nightly"
+    defaults:
+      run:
+        working-directory: ./device
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@just
+      - uses: ./.github/actions/fetch-cargo-deps
+      - uses: "./.github/actions/install-cargo-bins"
+      - name: Setup RISC-V GCC
+        run: just fetch-riscv ${{ env.RISCV_VERSION }}
+      - name: Add RISC-V GCC to PATH
+        run: echo "PATH=$PATH:${GITHUB_WORKSPACE}/riscv/bin" >> $GITHUB_ENV
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: riscv32imc-unknown-none-elf
+
+      - uses: "./.github/actions/cache-rust-target"
+        with:
+          key: "build-legacy-firmware-windows-v0"
+          path: "target/riscv32imc-unknown-none-elf/release"
+
+      - run: just build-firmware legacy --locked
+      - run: just save-image legacy
+
+      - uses: "./.github/actions/upload-artifact"
+        with:
+          name: frostsnap-legacy-${{ github.sha }}.bin
+          path: target/riscv32imc-unknown-none-elf/release/legacy.bin
+
+  app-build-windows-legacy:
+    name: Build Windows app with legacy firmware
+    needs: [build-legacy-firmware]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download legacy firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: frostsnap-legacy-${{ github.sha }}.bin
+          path: firmware
+
+      - name: Place firmware at conventional path
+        shell: bash
+        run: |
+          mkdir -p target/riscv32imc-unknown-none-elf/release/
+          cp firmware/legacy.bin target/riscv32imc-unknown-none-elf/release/legacy.bin
+
+      - uses: taiki-e/install-action@just
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: "./.github/actions/fetch-cargo-deps"
+      - uses: "./.github/actions/fetch-dart-deps"
+      - uses: "./.github/actions/generate-frb"
+      - uses: "./.github/actions/install-cargo-bins"
+      - uses: "./.github/actions/cache-rust-target"
+        with:
+          key: "app-build-windows-legacy-v0"
+
+      - name: Run build_runner / FRB codegen
+        shell: bash
+        run: just maybe-gen
+
+      - name: Build Windows app with legacy firmware bundled
+        shell: bash
+        run: |
+          set -e
+          BUILD_COMMIT=$(just get-build-commit)
+          BUILD_VERSION=$(just get-build-version)
+          cd frostsnapp && \
+            BUNDLE_FIRMWARE=../../target/riscv32imc-unknown-none-elf/release/legacy.bin \
+            flutter build windows --release \
+              --dart-define=BUILD_COMMIT="$BUILD_COMMIT" \
+              --dart-define=BUILD_VERSION="$BUILD_VERSION"
+
+      - uses: "./.github/actions/upload-artifact"
+        with:
+          name: Frostsnap-legacy-${{ github.sha }}-windows
+          path: frostsnapp/build/windows/x64/runner/Release
