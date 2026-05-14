@@ -49,6 +49,12 @@ type EspSerial<'a, D> = SerialInterface<'a, TimgTimer<Timer0<TIMG0>, Blocking>, 
 type EspMutationLog<'a> = MutationLog<'a, esp_storage::FlashStorage>;
 type EspSigner<'a> = FrostSigner<NonceAbSlot<'a, esp_storage::FlashStorage>>;
 
+/// Max consecutive magic-bytes frames tolerated after we've replied to the
+/// coord but before it ack's. Absorbs the coord's `awaiting_magic` retry loop,
+/// which may queue several frames before reading our reply (in-flight noise).
+/// At the 100 ms coord cadence this is ~1 s before we give up and re-handshake.
+const MAGIC_BYTES_RESET_THRESHOLD: u32 = 9;
+
 struct DeviceLoop<'a> {
     // Borrowed from Resources
     rng: &'a mut ChaCha20Rng,
@@ -444,13 +450,12 @@ impl<'a> DeviceLoop<'a> {
                 if last_message_was_magic_bytes {
                     if is_upstream_established {
                         self.soft_reset = true;
-                    } else if self.magic_bytes_timeout_counter > 2 {
+                    } else if self.magic_bytes_timeout_counter > MAGIC_BYTES_RESET_THRESHOLD {
                         // Coord is still in `awaiting_magic` long after we
                         // replied — it didn't see our Announce. Reset so we
-                        // re-handshake on the next magic bytes. Threshold has
-                        // a small margin because the coord may have queued a
-                        // few magic-bytes frames during its initial retry loop
-                        // before reading our reply (in-flight noise).
+                        // re-handshake on the next magic bytes. See
+                        // `MAGIC_BYTES_RESET_THRESHOLD` for the in-flight-noise
+                        // margin rationale.
                         self.upstream_connection
                             .set_state(UpstreamConnectionState::PowerOn, self.ui);
                         self.magic_bytes_timeout_counter = 0;
