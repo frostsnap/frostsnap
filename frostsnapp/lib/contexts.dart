@@ -70,6 +70,12 @@ class SuperWalletContext extends InheritedWidget {
     return stream;
   }
 
+  void evictWallet(KeyId keyId) {
+    _txStreams.remove(keyId);
+    _signingSessionSignals.remove(keyId);
+    _backupStreams.remove(keyId);
+  }
+
   (Wallet, Stream<TxState>)? txStateStream(KeyId keyId) {
     final frostKey = coord.getFrostKey(keyId: keyId);
     if (frostKey == null) {

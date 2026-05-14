@@ -922,7 +922,9 @@ class DeleteWalletPage extends StatelessWidget {
                             "Hold to Delete",
                           ),
                           onComplete: () async {
+                            final superCtx = SuperWalletContext.of(context);
                             await coord.deleteKey(keyId: keyId);
+                            superCtx?.evictWallet(keyId);
                             Navigator.popUntil(context, (r) => r.isFirst);
                             if (context.mounted) {
                               showDialog(
