@@ -201,7 +201,7 @@ class WalletRecoveryPage extends StatelessWidget {
                           )
                         : FilledButton.icon(
                             icon: const Icon(Icons.add),
-                            label: const Text('Add another key'),
+                            label: const Text('Add key'),
                             onPressed: openAddKeyDialog,
                           ),
                   ),
@@ -424,7 +424,7 @@ class WalletRecoveryPage extends StatelessWidget {
                           alignment: AlignmentDirectional.centerEnd,
                           child: TextButton.icon(
                             icon: const Icon(Icons.add),
-                            label: const Text('Add another key'),
+                            label: const Text('Add key'),
                             onPressed: openAddKeyDialog,
                           ),
                         ),
