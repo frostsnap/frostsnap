@@ -2005,6 +2005,8 @@ dependencies = [
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-storage",
+ "esp32c3",
+ "esp32s3",
  "frost_backup",
  "frostsnap_comms",
  "frostsnap_core",

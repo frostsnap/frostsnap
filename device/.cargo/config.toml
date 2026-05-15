@@ -16,6 +16,7 @@ rustflags = ["-C", "link-arg=-Tlinkall.x"]
 ESP_BOOTLOADER_ESP_IDF_CONFIG_PARTITION_TABLE_OFFSET = "0xD000"
 CC_xtensa_esp32s3_none_elf = "xtensa-esp32s3-elf-gcc"
 AR_xtensa_esp32s3_none_elf = "xtensa-esp32s3-elf-ar"
+CFLAGS_xtensa_esp32s3_none_elf = "-mlongcalls"
 
 [profile.release]
 debug = 0

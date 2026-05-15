@@ -7,6 +7,7 @@ edition = "2021"
 [features]
 default = ["chip-esp32c3", "stack_guard", "firmware"]
 chip-esp32c3 = [
+    "dep:esp32c3",
     "esp-hal/esp32c3",
     "esp-bootloader-esp-idf/esp32c3",
     "esp-storage/esp32c3",
@@ -15,11 +16,13 @@ chip-esp32c3 = [
     "firmware",
 ]
 chip-esp32s3 = [
+    "dep:esp32s3",
     "esp-hal/esp32s3",
     "esp-bootloader-esp-idf/esp32s3",
     "esp-storage/esp32s3",
     "frostsnap_cst816s/chip-esp32s3",
     "frostsnap_widgets/chip-esp32s3",
+    "firmware",
 ]
 firmware = [
     "dep:frostsnap_core",
@@ -46,6 +49,8 @@ frostsnap_embedded = { workspace = true, optional = true }
 frost_backup = { workspace = true, features = ["bincode"], optional = true }
 bitcoin = { workspace = true, optional = true }
 esp-hal = { workspace = true, features = ["rt"] }
+esp32c3 = { version = "0.31", optional = true }
+esp32s3 = { version = "0.34", optional = true }
 rand_core.workspace = true
 esp-alloc = { workspace = true }
 esp-bootloader-esp-idf.workspace = true

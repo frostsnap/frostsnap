@@ -39,6 +39,10 @@
 
           DEFAULTS="sdkconfig.defaults"
           ${if variant == "dev" then ''DEFAULTS="$DEFAULTS;sdkconfig.defaults.dev"'' else ""}
+          ${if chip == "esp32s3" then ''
+            echo "CONFIG_PARTITION_TABLE_OFFSET=0x8000" > sdkconfig.defaults.esp32s3
+            DEFAULTS="$DEFAULTS;sdkconfig.defaults.esp32s3"
+          '' else ""}
 
           idf.py -DSDKCONFIG_DEFAULTS="$DEFAULTS" set-target ${chip}
 

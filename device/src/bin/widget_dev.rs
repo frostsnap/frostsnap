@@ -62,9 +62,8 @@ fn main() -> ! {
             // Main loop
             loop {
                 let now = esp_hal::time::Instant::now();
-                let now_ms = frostsnap_widgets::Instant::from_millis(
-                    now.duration_since_epoch().as_millis(),
-                );
+                let now_ms =
+                    frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
 
                 // Process all pending touch events
                 touch_handler::process_all_touch_events(

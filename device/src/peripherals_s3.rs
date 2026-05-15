@@ -1,4 +1,4 @@
-//! ESP32-S3 widget bring-up peripheral initialization and management
+//! ESP32-S3 peripheral initialization and management
 //!
 //! Pinout summary:
 //! - Display (ST7789 over SPI2):
@@ -15,24 +15,36 @@
 //! - Detect pins:
 //!   - `GPIO0`  = Upstream detect (pull-up)
 //!   - `GPIO10` = Downstream detect (pull-up)
+//! - UART links:
+//!   - Upstream UART1: `GPIO18` RX, `GPIO19` TX
+//!   - Downstream UART0: `GPIO21` RX, `GPIO20` TX
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, rc::Rc};
+use core::cell::RefCell;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Io, Output, Pull},
+    hmac::Hmac,
     i2c::master::{Config as I2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
+    peripherals::{DS, RSA},
     spi::master::Spi,
     time::Rate,
+    uart::Uart,
+    usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
 use frostsnap_cst816s::CST816S;
 use mipidsi::{interface::SpiInterface, models::ST7789};
+use rand_chacha::ChaCha20Rng;
+use rand_core::{RngCore, SeedableRng};
+
+use crate::efuse::EfuseController;
 
 #[macro_export]
 macro_rules! init_display {
@@ -112,7 +124,7 @@ type Display<'a> = mipidsi::Display<
     Output<'a>,
 >;
 
-/// All device peripherals initialized and ready to use (widget bring-up subset)
+/// All device peripherals initialized and ready to use
 pub struct DevicePeripherals<'a> {
     /// Display
     pub display: Display<'a>,
@@ -123,23 +135,78 @@ pub struct DevicePeripherals<'a> {
     /// Display backlight
     pub backlight: channel::Channel<'a, LowSpeed>,
 
+    /// UART for upstream device connection (if detected)
+    pub uart_upstream: Option<Uart<'static, Blocking>>,
+
+    /// UART for downstream device connection
+    pub uart_downstream: Uart<'static, Blocking>,
+
+    /// USB JTAG for debugging and upstream connection
+    pub jtag: UsbSerialJtag<'a, Blocking>,
+
     /// Pin to detect upstream device connection
     pub upstream_detect: Input<'a>,
 
     /// Pin to detect downstream device connection
     pub downstream_detect: Input<'a>,
+
+    /// SHA256 hardware accelerator
+    pub sha256: esp_hal::sha::Sha<'a>,
+
+    /// HMAC hardware module (Rc for shared ownership)
+    pub hmac: Rc<RefCell<Hmac<'a>>>,
+
+    /// Digital Signature peripheral
+    pub ds: DS<'a>,
+
+    /// RSA hardware accelerator
+    pub rsa: RSA<'a>,
+
+    /// eFuse controller
+    pub efuse: EfuseController,
+
+    /// Initial RNG seeded from hardware
+    pub initial_rng: ChaCha20Rng,
+}
+
+/// Extract entropy from hardware RNG mixed with SHA256
+fn extract_entropy(
+    rng: &mut impl RngCore,
+    sha256: &mut esp_hal::sha::Sha<'_>,
+    bytes: usize,
+) -> ChaCha20Rng {
+    use frostsnap_core::sha2::digest::FixedOutput;
+
+    let mut digest = sha256.start::<esp_hal::sha::Sha256>();
+    for _ in 0..(bytes.div_ceil(64)) {
+        let mut entropy = [0u8; 64];
+        rng.fill_bytes(&mut entropy);
+        frostsnap_core::sha2::digest::Update::update(&mut digest, entropy.as_ref());
+    }
+
+    let result = digest.finalize_fixed();
+    ChaCha20Rng::from_seed(result.into())
 }
 
 impl<'a> DevicePeripherals<'a> {
-    /// Widget bring-up mode never requires provisioning.
+    /// Check if the device needs factory provisioning
     pub fn needs_factory_provisioning(&self) -> bool {
-        false
+        !self.efuse.has_hmac_keys_initialized()
     }
 
-    /// Initialize all widget-dev peripherals.
+    /// Initialize all device peripherals including initial RNG
     pub fn init(mut peripherals: esp_hal::peripherals::Peripherals) -> Box<Self> {
         let mut io = Io::new(peripherals.IO_MUX.reborrow());
         let mut delay = Delay::new();
+
+        let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
+
+        let trng_source =
+            esp_hal::rng::TrngSource::new(peripherals.RNG.reborrow(), peripherals.ADC1.reborrow());
+        let mut trng = esp_hal::rng::Trng::try_new().expect("TRNG source should be enabled");
+        let initial_rng = extract_entropy(&mut trng, &mut sha256, 1024);
+        drop(trng);
+        drop(trng_source);
 
         let upstream_detect = Input::new(
             peripherals.GPIO0,
@@ -188,12 +255,42 @@ impl<'a> DevicePeripherals<'a> {
         let _ = display.clear(Rgb565::BLACK);
         backlight.start_duty_fade(100, 0, 500).unwrap();
 
+        let efuse = EfuseController::new();
+        let hmac = Rc::new(RefCell::new(Hmac::new(peripherals.HMAC)));
+
+        let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
+
+        let uart_upstream = if upstream_detect.is_low() {
+            Some(
+                Uart::new(peripherals.UART1, esp_hal::uart::Config::default())
+                    .unwrap()
+                    .with_rx(peripherals.GPIO18)
+                    .with_tx(peripherals.GPIO19),
+            )
+        } else {
+            None
+        };
+
+        let uart_downstream = Uart::new(peripherals.UART0, esp_hal::uart::Config::default())
+            .unwrap()
+            .with_rx(peripherals.GPIO21)
+            .with_tx(peripherals.GPIO20);
+
         Box::new(Self {
             display,
             touch_receiver,
             backlight,
+            uart_upstream,
+            uart_downstream,
+            jtag,
             upstream_detect,
             downstream_detect,
+            sha256,
+            hmac,
+            ds: peripherals.DS,
+            efuse,
+            initial_rng,
+            rsa: peripherals.RSA,
         })
     }
 }

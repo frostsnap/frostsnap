@@ -92,16 +92,69 @@ fn private_exponentiation(
         panic!("DS key read error!");
     }
 
+    write_iv(regs, iv);
+    write_challenge(regs, &challenge);
+    write_encrypted_params(regs, y_ciph, m_ciph, rb_ciph, box_ciph);
+
+    start_modular_exponentiation(regs);
+    while regs.query_busy().read().query_busy().bit_is_set() {}
+
+    let mut sig = [0u32; 96];
+    if regs.query_check().read().bits() == 0 {
+        for (i, sig_word) in sig.iter_mut().enumerate().take(DS_KEY_SIZE_BITS / 32) {
+            let word = regs.z_mem(i).read().bits();
+            *sig_word = word;
+        }
+    } else {
+        panic!("Failed to read signature from DS!")
+    }
+
+    regs.set_finish().write(|w| w.set_finish().set_bit());
+    while regs.query_busy().read().query_busy().bit() {}
+
+    sig
+}
+
+#[cfg(feature = "chip-esp32c3")]
+fn write_iv(regs: &esp32c3::ds::RegisterBlock, iv: &[u8]) {
     for (i, v) in iv.chunks(4).enumerate() {
         let data = u32::from_le_bytes(v.try_into().unwrap());
         regs.iv_mem(i).write(|w| unsafe { w.bits(data) });
     }
+}
 
+#[cfg(feature = "chip-esp32s3")]
+fn write_iv(regs: &esp32s3::ds::RegisterBlock, iv: &[u8]) {
+    for (i, v) in iv.chunks(4).enumerate() {
+        let data = u32::from_le_bytes(v.try_into().unwrap());
+        regs.iv_(i).write(|w| unsafe { w.bits(data) });
+    }
+}
+
+#[cfg(feature = "chip-esp32c3")]
+fn write_challenge(regs: &esp32c3::ds::RegisterBlock, challenge: &[u8; 384]) {
     for (i, v) in challenge.chunks(4).enumerate() {
         let data = u32::from_le_bytes(v.try_into().unwrap());
         regs.x_mem(i).write(|w| unsafe { w.bits(data) });
     }
+}
 
+#[cfg(feature = "chip-esp32s3")]
+fn write_challenge(regs: &esp32s3::ds::RegisterBlock, challenge: &[u8; 384]) {
+    for (i, v) in challenge.chunks(4).enumerate() {
+        let data = u32::from_le_bytes(v.try_into().unwrap());
+        regs.x_mem(i).write(|w| unsafe { w.bits(data) });
+    }
+}
+
+#[cfg(feature = "chip-esp32c3")]
+fn write_encrypted_params(
+    regs: &esp32c3::ds::RegisterBlock,
+    y_ciph: &[u8],
+    m_ciph: &[u8],
+    rb_ciph: &[u8],
+    box_ciph: &[u8],
+) {
     for (i, v) in y_ciph.chunks(4).enumerate() {
         let data = u32::from_le_bytes(v.try_into().unwrap());
         regs.y_mem(i).write(|w| unsafe { w.bits(data) });
@@ -121,22 +174,34 @@ fn private_exponentiation(
         let data = u32::from_le_bytes(v.try_into().unwrap());
         regs.box_mem(i).write(|w| unsafe { w.bits(data) });
     }
+}
 
-    regs.set_continue().write(|w| w.set_continue().set_bit());
-    while regs.query_busy().read().query_busy().bit_is_set() {}
+#[cfg(feature = "chip-esp32s3")]
+fn write_encrypted_params(
+    regs: &esp32s3::ds::RegisterBlock,
+    y_ciph: &[u8],
+    m_ciph: &[u8],
+    rb_ciph: &[u8],
+    box_ciph: &[u8],
+) {
+    let chunks = y_ciph
+        .chunks(4)
+        .chain(m_ciph.chunks(4))
+        .chain(rb_ciph.chunks(4))
+        .chain(box_ciph.chunks(4));
 
-    let mut sig = [0u32; 96];
-    if regs.query_check().read().bits() == 0 {
-        for (i, sig_word) in sig.iter_mut().enumerate().take(DS_KEY_SIZE_BITS / 32) {
-            let word = regs.z_mem(i).read().bits();
-            *sig_word = word;
-        }
-    } else {
-        panic!("Failed to read signature from DS!")
+    for (i, chunk) in chunks.enumerate() {
+        let data = u32::from_le_bytes(chunk.try_into().unwrap());
+        regs.c_mem(i).write(|w| unsafe { w.bits(data) });
     }
+}
 
-    regs.set_finish().write(|w| w.set_finish().set_bit());
-    while regs.query_busy().read().query_busy().bit() {}
+#[cfg(feature = "chip-esp32c3")]
+fn start_modular_exponentiation(regs: &esp32c3::ds::RegisterBlock) {
+    regs.set_continue().write(|w| w.set_continue().set_bit());
+}
 
-    sig
+#[cfg(feature = "chip-esp32s3")]
+fn start_modular_exponentiation(regs: &esp32s3::ds::RegisterBlock) {
+    regs.set_me().write(|w| w.set_me().set_bit());
 }
