@@ -715,6 +715,14 @@ class _BackupStatusTrailing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final iconSlot = Padding(
+      padding: const EdgeInsets.all(8),
+      child: Icon(
+        isComplete ? Icons.check_circle : Icons.radio_button_unchecked,
+        size: 18,
+        color: theme.colorScheme.primary,
+      ),
+    );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -724,33 +732,28 @@ class _BackupStatusTrailing extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        isComplete
-            ? Padding(
-                padding: const EdgeInsets.all(8),
-                child: Icon(
-                  Icons.check_circle,
-                  size: 18,
-                  color: theme.colorScheme.primary,
-                ),
-              )
-            : IconButton(
-                tooltip: 'Mark as backed up',
-                icon: const Icon(Icons.radio_button_unchecked, size: 18),
-                color: theme.colorScheme.primary,
-                visualDensity: VisualDensity.compact,
-                onPressed: () async {
-                  final confirmed = await _confirmMarkBackupComplete(
-                    context,
-                    shareIndex,
-                  );
-                  if (!confirmed) return;
-                  if (!context.mounted) return;
-                  await coord.markBackupComplete(
-                    accessStructureRef: accessStructure.accessStructureRef(),
-                    shareIndex: shareIndex,
-                  );
-                },
-              ),
+        if (isComplete)
+          iconSlot
+        else
+          Tooltip(
+            message: 'Mark as backed up',
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () async {
+                final confirmed = await _confirmMarkBackupComplete(
+                  context,
+                  shareIndex,
+                );
+                if (!confirmed) return;
+                if (!context.mounted) return;
+                await coord.markBackupComplete(
+                  accessStructureRef: accessStructure.accessStructureRef(),
+                  shareIndex: shareIndex,
+                );
+              },
+              child: iconSlot,
+            ),
+          ),
       ],
     );
   }
