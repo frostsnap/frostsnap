@@ -407,7 +407,6 @@ class _BackupChecklistState extends State<BackupChecklist> {
 
             final backupRun = snapshot.data!;
 
-            // Devices are already sorted by share index and contain all metadata
             final deviceInfoList = backupRun.devices;
 
             final allComplete = backupRun.isComplete;

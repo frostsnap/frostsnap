@@ -1300,18 +1300,17 @@ impl FfiCoordinator {
         let backup_complete_states = backup_state.get_backup_run(key_id);
 
         let devices = access_structure
-            .iter_shares()
-            .map(|(device_id, share_index)| {
+            .share_index_to_devices()
+            .into_iter()
+            .flat_map(|(share_index, device_ids)| {
                 let share_index_short =
                     u32::try_from(share_index).expect("share index should fit in u32");
-
                 let complete = backup_complete_states.get(&share_index_short).copied();
-
-                BackupDevice {
+                device_ids.into_iter().map(move |device_id| BackupDevice {
                     device_id,
                     share_index: share_index_short,
                     complete,
-                }
+                })
             })
             .collect();
 
