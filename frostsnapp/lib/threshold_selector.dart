@@ -278,7 +278,7 @@ class _ThresholdSelectorState extends State<ThresholdSelector>
       children: [
         Padding(
           padding: EdgeInsets.only(left: trackPadding),
-          child: Text('Loss tolerance', style: labelStyle),
+          child: Text('Redundancy', style: labelStyle),
         ),
         const Spacer(),
         Padding(
