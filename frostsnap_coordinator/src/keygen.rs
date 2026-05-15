@@ -75,6 +75,10 @@ impl KeyGen {
     pub fn keygen_id(&self) -> KeygenId {
         self.state.keygen_id
     }
+
+    pub fn devices(&self) -> &[DeviceId] {
+        &self.state.devices
+    }
 }
 
 impl UiProtocol for KeyGen {

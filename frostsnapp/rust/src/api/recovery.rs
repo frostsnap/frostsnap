@@ -209,9 +209,10 @@ impl super::coordinator::Coordinator {
         &self,
         phase: &PhysicalBackupPhase,
         restoration_id: RestorationId,
+        device_name: String,
     ) {
         self.0
-            .tell_device_to_save_physical_backup(*phase, restoration_id)
+            .tell_device_to_save_physical_backup(*phase, restoration_id, device_name)
     }
 
     pub fn tell_device_to_consolidate_physical_backup(
@@ -219,11 +220,13 @@ impl super::coordinator::Coordinator {
         access_structure_ref: AccessStructureRef,
         phase: &PhysicalBackupPhase,
         encryption_key: SymmetricKey,
+        device_name: String,
     ) -> anyhow::Result<()> {
         self.0.tell_device_to_consolidate_physical_backup(
             access_structure_ref,
             *phase,
             encryption_key,
+            device_name,
         )?;
         Ok(())
     }
