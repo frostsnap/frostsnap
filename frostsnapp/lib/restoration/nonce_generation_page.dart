@@ -50,25 +50,28 @@ class _NonceGenerationPageState extends State<NonceGenerationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return Padding(
       key: const ValueKey('nonceGeneration'),
-      child: NonceReplenishIndicator(
-        stream: widget.stream,
-        onTerminal: (terminal) {
-          _handleTerminal(() {
-            switch (terminal) {
-              case NonceReplenishCompleted():
-                widget.onComplete();
-                break;
-              case NonceReplenishAborted():
-                widget.onError('Device disconnected during preparation');
-                break;
-              case NonceReplenishFailed(:final error):
-                widget.onError('Failed to prepare device: $error');
-                break;
-            }
-          });
-        },
+      padding: const EdgeInsets.fromLTRB(20, 32, 20, 28),
+      child: Center(
+        child: NonceReplenishIndicator(
+          stream: widget.stream,
+          onTerminal: (terminal) {
+            _handleTerminal(() {
+              switch (terminal) {
+                case NonceReplenishCompleted():
+                  widget.onComplete();
+                  break;
+                case NonceReplenishAborted():
+                  widget.onError('Device disconnected during preparation');
+                  break;
+                case NonceReplenishFailed(:final error):
+                  widget.onError('Failed to prepare device: $error');
+                  break;
+              }
+            });
+          },
+        ),
       ),
     );
   }
