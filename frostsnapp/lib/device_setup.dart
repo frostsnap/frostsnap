@@ -34,7 +34,7 @@ class DeviceNameFieldState extends State<DeviceNameField> {
     if (name != null) {
       _controller.text = name;
     }
-    coord.updateNamePreview(id: widget.id, name: _controller.text);
+    coord.updateNamePreview(id: widget.id, name: _controller.text.trim());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onCanSubmitChanged?.call(canSubmit);
@@ -84,8 +84,10 @@ class DeviceNameFieldState extends State<DeviceNameField> {
             ),
             inputFormatters: [nameInputFormatter],
             onSubmitted: (_) => _handleSubmitted(context),
-            onChanged: (value) async =>
-                await coord.updateNamePreview(id: widget.id, name: value),
+            onChanged: (value) async => await coord.updateNamePreview(
+              id: widget.id,
+              name: value.trim(),
+            ),
           ),
         ],
       ),

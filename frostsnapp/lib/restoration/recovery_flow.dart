@@ -320,6 +320,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                     accessStructureRef: accessStructureRef,
                     phase: backupPhase,
                     encryptionKey: encryptionKey,
+                    deviceName: deviceName,
                   );
                   if (mounted) {
                     Navigator.pop(context);
@@ -355,6 +356,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   await coord.tellDeviceToSavePhysicalBackup(
                     phase: backupPhase,
                     restorationId: restorationId,
+                    deviceName: deviceName,
                   );
                   setState(() {
                     recoveryContext = (recoveryContext as NewRestorationContext)
@@ -384,6 +386,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   await coord.tellDeviceToSavePhysicalBackup(
                     phase: backupPhase,
                     restorationId: restorationId,
+                    deviceName: deviceName,
                   );
                   setState(() {
                     flowState.stage = RecoveryFlowStage.physicalBackupSuccess(

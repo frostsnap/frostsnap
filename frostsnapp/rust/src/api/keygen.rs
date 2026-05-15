@@ -21,6 +21,15 @@ pub struct _KeyGenState {
     pub keygen_id: KeygenId,
 }
 
+/// A device-name commit handed to `finalize_keygen` so the coordinator can persist the
+/// user-typed name locally at the same moment it sends the keygen-finalize message to the
+/// device. Names for non-participants of the current keygen are silently dropped on the
+/// Rust side; empty / whitespace-only / over-long names are validated per entry and skipped.
+pub struct DeviceNameCommit {
+    pub id: DeviceId,
+    pub name: String,
+}
+
 impl super::coordinator::Coordinator {
     pub fn generate_new_key(
         &self,
@@ -43,7 +52,9 @@ impl super::coordinator::Coordinator {
         &self,
         keygen_id: KeygenId,
         encryption_key: SymmetricKey,
+        device_names: Vec<DeviceNameCommit>,
     ) -> Result<AccessStructureRef> {
-        self.0.finalize_keygen(keygen_id, encryption_key)
+        self.0
+            .finalize_keygen(keygen_id, encryption_key, device_names)
     }
 }
