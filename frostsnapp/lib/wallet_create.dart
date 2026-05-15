@@ -493,11 +493,11 @@ class WalletCreateController extends ChangeNotifier {
   };
 
   void setDeviceName(DeviceId id, String name) async {
-    final trimmedName = name.trim();
-    if (trimmedName.isNotEmpty) {
-      _form.deviceNames[id] = trimmedName;
+    final trimmed = name.trim();
+    if (trimmed.isNotEmpty) {
+      _form.deviceNames[id] = trimmed;
       notifyListeners();
-      await coord.updateNamePreview(id: id, name: trimmedName);
+      await coord.updateNamePreview(id: id, name: trimmed);
     } else {
       _form.deviceNames.remove(id);
       notifyListeners();
@@ -828,9 +828,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       device.id,
       () => TextEditingController(text: currentName),
     );
-    if (textController.text != currentName) {
-      textController.text = currentName;
-    }
     return TextField(
       controller: textController,
       style: monospaceTextStyle,
@@ -992,9 +989,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
           try {
             final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+            final deviceNames = [
+              for (final id in state.devices)
+                if (_controller.form.deviceNames[id] != null)
+                  DeviceNameCommit(
+                    id: id,
+                    name: _controller.form.deviceNames[id]!,
+                  ),
+            ];
             final asRef = await coord.finalizeKeygen(
               keygenId: state.keygenId,
               encryptionKey: encryptionKey,
+              deviceNames: deviceNames,
             );
             _controller._asRef = asRef;
             if (context.mounted) Navigator.pop(context, asRef);
