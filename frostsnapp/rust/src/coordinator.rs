@@ -647,10 +647,33 @@ impl FfiCoordinator {
         self.device_names.lock().unwrap().get(id)
     }
 
+    /// Persist a user-typed device name into the coord's local `device_names` store without
+    /// waiting for the device's `SetName` round-trip. Stores verbatim — name hygiene (trim,
+    /// charset, length) is the Dart input layer's responsibility; the keygen and recovery
+    /// `TextField`s enforce it via `maxLength: DeviceName.maxLength()` and `nameInputFormatter`,
+    /// and the Dart-side commit paths trim before submitting. The device's eventual `SetName`
+    /// remains the durable source of truth.
+    fn commit_device_name_locally(&self, db: &mut rusqlite::Connection, id: DeviceId, name: &str) {
+        let mut device_names = self.device_names.lock().unwrap();
+        if let Err(e) = device_names.staged_mutate(db, |names| {
+            names.insert(id, name.to_string());
+            Ok(())
+        }) {
+            event!(
+                Level::ERROR,
+                id = id.to_string(),
+                name = name,
+                error = e.to_string(),
+                "failed to persist device name locally"
+            );
+        }
+    }
+
     pub fn finalize_keygen(
         &self,
         keygen_id: KeygenId,
         symmetric_key: SymmetricKey,
+        device_names: Vec<crate::api::keygen::DeviceNameCommit>,
     ) -> Result<AccessStructureRef> {
         let access_structure_ref = {
             let mut coordinator = self.coordinator.lock().unwrap();
@@ -659,6 +682,8 @@ impl FfiCoordinator {
             let keygen = ui_stack
                 .get_mut::<frostsnap_coordinator::keygen::KeyGen>()
                 .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
+
+            let participant_set: BTreeSet<DeviceId> = keygen.devices().iter().copied().collect();
 
             let finalized_keygen = coordinator.staged_mutate(&mut db, |coordinator| {
                 Ok(coordinator.finalize_keygen(
@@ -670,6 +695,19 @@ impl FfiCoordinator {
             let access_structure_ref = finalized_keygen.access_structure_ref;
 
             self.usb_sender.send_from_core(finalized_keygen);
+
+            for commit in device_names {
+                if !participant_set.contains(&commit.id) {
+                    event!(
+                        Level::DEBUG,
+                        id = commit.id.to_string(),
+                        "ignoring device name commit for non-participant"
+                    );
+                    continue;
+                }
+                self.commit_device_name_locally(&mut db, commit.id, &commit.name);
+            }
+
             keygen.keygen_finalized(access_structure_ref);
             access_structure_ref
         };
@@ -1100,6 +1138,7 @@ impl FfiCoordinator {
         &self,
         phase: PhysicalBackupPhase,
         restoration_id: RestorationId,
+        device_name: String,
     ) {
         {
             let mut coord = self.coordinator.lock().unwrap();
@@ -1107,6 +1146,11 @@ impl FfiCoordinator {
                 .MUTATE_NO_PERSIST()
                 .tell_device_to_save_physical_backup(phase, restoration_id);
             self.usb_sender.send_from_core(messages);
+        }
+
+        {
+            let mut db = self.db.lock().unwrap();
+            self.commit_device_name_locally(&mut db, phase.from, &device_name);
         }
 
         // hook into to user messages to see when it is successfully saved
@@ -1143,6 +1187,7 @@ impl FfiCoordinator {
         access_structure_ref: AccessStructureRef,
         phase: PhysicalBackupPhase,
         encryption_key: SymmetricKey,
+        device_name: String,
     ) -> Result<()> {
         let msgs = {
             let mut coordinator = self.coordinator.lock().unwrap();
@@ -1156,6 +1201,11 @@ impl FfiCoordinator {
         };
 
         self.usb_sender.send_from_core(msgs);
+
+        {
+            let mut db = self.db.lock().unwrap();
+            self.commit_device_name_locally(&mut db, phase.from, &device_name);
+        }
 
         // hook into to user messages to see when it is successfully consolidated
         let success = self.block_for_to_user_message([phase.from], move |to_user| {
