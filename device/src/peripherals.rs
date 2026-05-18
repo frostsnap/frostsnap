@@ -112,7 +112,7 @@ impl embedded_hal::digital::ErrorType for NoCs {
 }
 
 /// Type alias for the display to reduce complexity
-type Display<'a> = mipidsi::Display<
+pub type Display<'a> = mipidsi::Display<
     SpiInterface<
         'a,
         embedded_hal_bus::spi::ExclusiveDevice<
@@ -125,6 +125,14 @@ type Display<'a> = mipidsi::Display<
     ST7789,
     Output<'a>,
 >;
+
+pub fn flush_display(_display: &mut Display<'_>) {}
+
+pub fn poll_touch_input() {}
+
+pub fn adjust_touch_point(point: Point) -> Point {
+    crate::touch_calibration::adjust_touch_point(point)
+}
 
 /// All device peripherals initialized and ready to use
 pub struct DevicePeripherals<'a> {

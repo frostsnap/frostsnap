@@ -3,8 +3,6 @@ use embedded_graphics::prelude::Point;
 use frostsnap_cst816s::{interrupt::TouchReceiver, TouchGesture};
 use frostsnap_widgets::{debug::OverlayDebug, DynWidget, Widget};
 
-use crate::touch_calibration::adjust_touch_point;
-
 /// Process all pending touch events from the receiver
 pub fn process_all_touch_events<W>(
     touch_receiver: &mut TouchReceiver,
@@ -15,9 +13,12 @@ pub fn process_all_touch_events<W>(
 ) where
     W: Widget<Color = Rgb565>,
 {
+    crate::peripherals::poll_touch_input();
+
     while let Some(touch_event) = touch_receiver.dequeue() {
         // Apply touch calibration adjustments
-        let touch_point = adjust_touch_point(Point::new(touch_event.x, touch_event.y));
+        let touch_point =
+            crate::peripherals::adjust_touch_point(Point::new(touch_event.x, touch_event.y));
         let lift_up = touch_event.action == 1;
         let gesture = touch_event.gesture;
 

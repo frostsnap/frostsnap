@@ -19,20 +19,7 @@ use crate::{
     UpstreamConnectionState,
 };
 
-// Type alias for the display to match factory
-type DeviceDisplay<'a> = mipidsi::Display<
-    mipidsi::interface::SpiInterface<
-        'a,
-        embedded_hal_bus::spi::ExclusiveDevice<
-            esp_hal::spi::master::Spi<'a, esp_hal::Blocking>,
-            crate::peripherals::NoCs,
-            embedded_hal_bus::spi::NoDelay,
-        >,
-        esp_hal::gpio::Output<'a>,
-    >,
-    mipidsi::models::ST7789,
-    esp_hal::gpio::Output<'a>,
->;
+type DeviceDisplay<'a> = crate::peripherals::Display<'a>;
 
 pub struct FrostyUi<'a> {
     pub display: frostsnap_widgets::SuperDrawTarget<
@@ -380,6 +367,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             // Draw the widget tree
             // Draw the UI stack (includes debug stats overlay)
             let _ = self.widget.draw(&mut self.display, now_ms);
+            if let Some(mut display) = self.display.inner_mut() {
+                crate::peripherals::flush_display(&mut display);
+            }
         }
 
         // Check widget states and generate UI events
@@ -480,5 +470,8 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
         self.last_redraw_time = now;
         let _ = self.widget.draw(&mut self.display, now_ms);
+        if let Some(mut display) = self.display.inner_mut() {
+            crate::peripherals::flush_display(&mut display);
+        }
     }
 }

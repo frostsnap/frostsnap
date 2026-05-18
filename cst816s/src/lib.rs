@@ -261,6 +261,40 @@ pub mod interrupt {
     static mut EVENT_QUEUE: Queue<TouchEvent, QUEUE_CAPACITY> = Queue::new();
     static mut PRODUCER: Option<Producer<'static, TouchEvent, QUEUE_CAPACITY>> = None;
 
+    /// Return an empty touch receiver without registering the physical controller.
+    ///
+    /// This is useful for virtual or bring-up builds that render a UI but do not
+    /// initialize the CST816S hardware.
+    pub fn empty_receiver() -> TouchReceiver {
+        unsafe {
+            let event_queue = &raw mut EVENT_QUEUE;
+            let (_producer, consumer) = (*event_queue).split();
+            consumer
+        }
+    }
+
+    /// Return a touch receiver backed by a software producer.
+    ///
+    /// This is used by virtual input backends that translate non-CST816S host
+    /// input into normal touch events.
+    pub fn virtual_receiver() -> TouchReceiver {
+        unsafe {
+            let event_queue = &raw mut EVENT_QUEUE;
+            let (producer, consumer) = (*event_queue).split();
+            (&raw mut PRODUCER).write(Some(producer));
+            consumer
+        }
+    }
+
+    /// Enqueue a touch event from a virtual input backend.
+    pub fn enqueue_virtual(event: TouchEvent) {
+        unsafe {
+            if let Some(producer) = (&raw mut PRODUCER).as_mut().and_then(Option::as_mut) {
+                let _ = producer.enqueue(event);
+            }
+        }
+    }
+
     /// Register a CST816S instance as the global interrupt handler
     /// Returns a Receiver for reading touch events from the main thread
     pub fn register(

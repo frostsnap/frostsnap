@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["std", "chip-esp32c3"]
+default = ["std"]
 prefill-words = []
 std = []
-chip-esp32c3 = ["esp-hal/esp32c3"]
-chip-esp32s3 = ["esp-hal/esp32s3"]
+chip-esp32c3 = ["dep:esp-hal", "esp-hal/esp32c3"]
+chip-esp32s3 = ["dep:esp-hal", "esp-hal/esp32s3"]
 
 [dependencies]
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }
@@ -30,7 +30,7 @@ u8g2-fonts = { version = "0.4", default-features = false, features = [
     "embedded_graphics_textstyle",
 ] }
 tinybmp = "0.6"
-esp-hal = { workspace = true }
+esp-hal = { workspace = true, optional = true }
 
 
 # Only needed for memory debug on ESP32

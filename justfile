@@ -232,7 +232,7 @@ qemu-esp32s3-image BOARD=default_board OUTPUT=qemu_esp32s3_flash:
     PARTITIONS_BIN=$(mktemp -t frostsnap-qemu-partitions.XXXXXX.bin)
     trap 'rm -f "$PARTITIONS_BIN"' EXIT
     mkdir -p "$(dirname "{{OUTPUT}}")"
-    just env={{env}} build-firmware-signed {{BOARD}} esp32s3
+    just env={{env}} build-firmware-signed {{BOARD}} esp32s3 "" --features qemu-display
     espflash partition-table "{{partitions_csv_esp32s3}}" --to-binary --output "$PARTITIONS_BIN"
     for f in "$BOOTLOADER" "$PARTITIONS_BIN" device/blank-otadata.bin "{{firmware_bin_esp32s3}}"; do
         [ -f "$f" ] || { echo "Missing: $f" >&2; exit 1; }
@@ -252,11 +252,13 @@ qemu-esp32s3 BOARD=default_board +ARGS="":
     if [ ! -f "{{qemu_esp32s3_efuse}}" ]; then
         dd if=/dev/zero bs=1024 count=1 of="{{qemu_esp32s3_efuse}}"
     fi
-    qemu-system-xtensa -nographic \
-        -machine esp32s3 \
+    qemu-system-xtensa \
+        -machine esp32s3,graphics=on \
+        -display sdl,show-cursor=on \
         -drive file="{{qemu_esp32s3_flash}}",if=mtd,format=raw \
         -drive file="{{qemu_esp32s3_efuse}}",if=none,format=raw,id=efuse \
         -global driver=nvram.esp32s3.efuse,property=drive,value=efuse \
+        -serial mon:stdio \
         {{ARGS}}
 
 # --- App build ---

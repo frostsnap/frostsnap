@@ -38,6 +38,8 @@ macro_rules! text_display {
             text_style,
         )
         .draw($display);
+
+        crate::peripherals::flush_display($display);
     };
 }
 

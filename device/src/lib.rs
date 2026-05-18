@@ -69,6 +69,10 @@ pub mod peripherals;
 #[cfg(feature = "chip-esp32s3")]
 #[path = "peripherals_s3.rs"]
 pub mod peripherals;
+#[cfg(all(feature = "firmware", feature = "qemu-display"))]
+pub mod qemu_display;
+#[cfg(all(feature = "firmware", feature = "qemu-display"))]
+pub mod qemu_touch;
 #[cfg(feature = "firmware")]
 pub mod resources;
 #[cfg(feature = "firmware")]

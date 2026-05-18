@@ -23,28 +23,36 @@ use alloc::{boxed::Box, rc::Rc};
 use core::cell::RefCell;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use esp_hal::{
-    delay::Delay,
-    gpio::{Input, InputConfig, Io, Output, Pull},
+    gpio::{Input, InputConfig, Pull},
     hmac::Hmac,
-    i2c::master::{Config as I2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
     peripherals::{DS, RSA},
-    spi::master::Spi,
     time::Rate,
     uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
-use frostsnap_cst816s::CST816S;
-use mipidsi::{interface::SpiInterface, models::ST7789};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 
 use crate::efuse::EfuseController;
+
+#[cfg(not(feature = "qemu-display"))]
+use esp_hal::{
+    delay::Delay,
+    gpio::Io,
+    gpio::Output,
+    i2c::master::{Config as I2cConfig, I2c},
+    spi::master::Spi,
+};
+#[cfg(not(feature = "qemu-display"))]
+use frostsnap_cst816s::CST816S;
+#[cfg(not(feature = "qemu-display"))]
+use mipidsi::{interface::SpiInterface, models::ST7789};
 
 #[macro_export]
 macro_rules! init_display {
@@ -110,7 +118,8 @@ impl embedded_hal::digital::ErrorType for NoCs {
 }
 
 /// Type alias for the display to reduce complexity
-type Display<'a> = mipidsi::Display<
+#[cfg(not(feature = "qemu-display"))]
+pub type Display<'a> = mipidsi::Display<
     SpiInterface<
         'a,
         embedded_hal_bus::spi::ExclusiveDevice<
@@ -123,6 +132,35 @@ type Display<'a> = mipidsi::Display<
     ST7789,
     Output<'a>,
 >;
+
+#[cfg(feature = "qemu-display")]
+pub type Display<'a> = crate::qemu_display::VirtualDisplay<'a>;
+
+#[cfg(not(feature = "qemu-display"))]
+pub fn flush_display(_display: &mut Display<'_>) {}
+
+#[cfg(feature = "qemu-display")]
+pub fn flush_display(display: &mut Display<'_>) {
+    display.flush_if_dirty();
+}
+
+#[cfg(not(feature = "qemu-display"))]
+pub fn poll_touch_input() {}
+
+#[cfg(feature = "qemu-display")]
+pub fn poll_touch_input() {
+    crate::qemu_touch::poll();
+}
+
+#[cfg(not(feature = "qemu-display"))]
+pub fn adjust_touch_point(point: Point) -> Point {
+    crate::touch_calibration::adjust_touch_point(point)
+}
+
+#[cfg(feature = "qemu-display")]
+pub fn adjust_touch_point(point: Point) -> Point {
+    point
+}
 
 /// All device peripherals initialized and ready to use
 pub struct DevicePeripherals<'a> {
@@ -196,7 +234,9 @@ impl<'a> DevicePeripherals<'a> {
 
     /// Initialize all device peripherals including initial RNG
     pub fn init(mut peripherals: esp_hal::peripherals::Peripherals) -> Box<Self> {
+        #[cfg(not(feature = "qemu-display"))]
         let mut io = Io::new(peripherals.IO_MUX.reborrow());
+        #[cfg(not(feature = "qemu-display"))]
         let mut delay = Delay::new();
 
         let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
@@ -237,8 +277,13 @@ impl<'a> DevicePeripherals<'a> {
             })
             .unwrap();
 
+        #[cfg(not(feature = "qemu-display"))]
         let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
 
+        #[cfg(feature = "qemu-display")]
+        let mut display = crate::qemu_display::VirtualDisplay::new();
+
+        #[cfg(not(feature = "qemu-display"))]
         let i2c = I2c::new(
             peripherals.I2C0,
             I2cConfig::default().with_frequency(Rate::from_khz(400)),
@@ -247,10 +292,18 @@ impl<'a> DevicePeripherals<'a> {
         .with_sda(peripherals.GPIO16)
         .with_scl(peripherals.GPIO7);
 
+        #[cfg(not(feature = "qemu-display"))]
         let mut capsense = CST816S::new_esp32(i2c, peripherals.GPIO17, peripherals.GPIO15);
+        #[cfg(not(feature = "qemu-display"))]
         capsense.setup(&mut delay).unwrap();
 
+        #[cfg(not(feature = "qemu-display"))]
         let touch_receiver = frostsnap_cst816s::interrupt::register(capsense, &mut io);
+        #[cfg(feature = "qemu-display")]
+        let touch_receiver = {
+            crate::qemu_touch::init();
+            frostsnap_cst816s::interrupt::virtual_receiver()
+        };
 
         let _ = display.clear(Rgb565::BLACK);
         backlight.start_duty_fade(100, 0, 500).unwrap();
@@ -260,6 +313,7 @@ impl<'a> DevicePeripherals<'a> {
 
         let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
+        #[cfg(not(feature = "qemu-display"))]
         let uart_upstream = if upstream_detect.is_low() {
             Some(
                 Uart::new(peripherals.UART1, esp_hal::uart::Config::default())
@@ -270,6 +324,8 @@ impl<'a> DevicePeripherals<'a> {
         } else {
             None
         };
+        #[cfg(feature = "qemu-display")]
+        let uart_upstream = None;
 
         let uart_downstream = Uart::new(peripherals.UART0, esp_hal::uart::Config::default())
             .unwrap()
