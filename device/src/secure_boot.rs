@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use alloc::{vec, vec::Vec};
 use crc::Crc;
 use embedded_storage::nor_flash::NorFlashErrorKind;
-use esp_hal::efuse::Efuse;
+use esp_hal::efuse as hal_efuse;
 use esp_hal::rsa::{operand_sizes::Op3072, Rsa, RsaModularExponentiation};
 use esp_hal::sha::{Sha, Sha256};
 use esp_hal::Blocking;
@@ -255,18 +255,15 @@ fn find_secure_boot_key() -> Option<[u8; 32]> {
 
     // Search through all key blocks
     for (i, &purpose_field) in key_purpose_fields.iter().enumerate() {
-        let purpose: u8 = Efuse::read_field_le(purpose_field);
+        let purpose: u8 = hal_efuse::read_field_le(purpose_field);
 
-        // Find matching secure boot digest revoke field
         if let Some((_, revoke_field)) = secure_boot_digests
             .iter()
             .find(|(purpose_val, _)| *purpose_val == purpose)
         {
-            // Check if this key is revoked
-            let is_revoked = Efuse::read_bit(*revoke_field);
+            let is_revoked = hal_efuse::read_bit(*revoke_field);
             if !is_revoked {
-                // Read the key data (32 bytes)
-                let key_data: [u8; 32] = Efuse::read_field_le(key_data_fields[i]);
+                let key_data: [u8; 32] = hal_efuse::read_field_le(key_data_fields[i]);
                 return Some(key_data);
             }
         }

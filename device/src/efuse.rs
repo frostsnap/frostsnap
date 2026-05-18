@@ -1,7 +1,7 @@
 use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use esp_hal::efuse::{self as hal_efuse, Efuse};
+use esp_hal::efuse::{self as hal_efuse};
 use esp_hal::peripherals::EFUSE;
 use frostsnap_core::AccessStructureRef;
 use rand_chacha::rand_core::RngCore;
@@ -147,7 +147,7 @@ impl EfuseController {
             KeyId::Key4 => hal_efuse::KEY_PURPOSE_4,
             KeyId::Key5 => hal_efuse::KEY_PURPOSE_5,
         };
-        let field_value: u8 = Efuse::read_field_le(efuse_field);
+        let field_value: u8 = hal_efuse::read_field_le(efuse_field);
         KeyPurpose::try_from(field_value).expect("key purpose was invalid")
     }
 
@@ -165,7 +165,7 @@ impl EfuseController {
             KeyId::Key4 => hal_efuse::BLOCK_KEY4,
             KeyId::Key5 => hal_efuse::BLOCK_KEY5,
         };
-        let bytes: [u8; 32] = Efuse::read_field_le::<[u8; 32]>(field);
+        let bytes: [u8; 32] = hal_efuse::read_field_le::<[u8; 32]>(field);
 
         Ok(bytes)
     }
