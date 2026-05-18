@@ -66,8 +66,11 @@ pub mod panic;
 pub mod partitions;
 #[cfg(feature = "chip-esp32c3")]
 pub mod peripherals;
-#[cfg(feature = "chip-esp32s3")]
-#[path = "peripherals_s3.rs"]
+#[cfg(all(feature = "chip-esp32s3", feature = "s3-fpc-board"))]
+#[path = "peripherals_s3_fpc.rs"]
+pub mod peripherals;
+#[cfg(all(feature = "chip-esp32s3", not(feature = "s3-fpc-board")))]
+#[path = "peripherals_s3_waveshare.rs"]
 pub mod peripherals;
 #[cfg(all(feature = "firmware", feature = "qemu-display"))]
 pub mod qemu_display;

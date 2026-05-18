@@ -1,20 +1,10 @@
-//! ESP32-S3 peripheral initialization and management
+//! ESP32-S3 FPC board peripheral initialization and management
 //!
-//! Pinout summary:
-//! - Display (ST7789 over SPI2):
-//!   - `GPIO5`  = SCL
-//!   - `GPIO45`  = SDA (MOSI)
-//!   - `GPIO4`  = DC
-//!   - `GPIO6`  = RST
-//!   - `GPIO1`  = Backlight (LEDC)
-//! - Touchscreen (CST816S over I2C0):
-//!   - `GPIO46`  = SDA
-//!   - `GPIO7`  = SCL
-//!   - `GPIO47`  = INT
-//!   - `GPIO15`  = RST
-//! - Detect pins:
-//!   - `GPIO0`  = Upstream detect (pull-up)
-//!   - `GPIO10` = Downstream detect (pull-up)
+//! FPC board pinout:
+//! - Display (ST7789 over SPI2): SCL=`GPIO5`, SDA/MOSI=`GPIO45`, DC=`GPIO4`, RST=`GPIO6`,
+//!   Backlight=`GPIO1`.
+//! - Touchscreen: SDA=`GPIO16`, SCL=`GPIO7`, INT=`GPIO17`, RST=`GPIO15`.
+//! - Detect pins: Upstream=`GPIO0`, Downstream=`GPIO10`.
 //! - UART links:
 //!   - Upstream UART1: `GPIO18` RX, `GPIO19` TX
 //!   - Downstream UART0: `GPIO21` RX, `GPIO20` TX
@@ -74,11 +64,15 @@ macro_rules! init_display {
                 .with_frequency(Rate::from_mhz(80))
                 .with_mode(Mode::_2),
         )
-        .unwrap()
-        .with_sck($peripherals.GPIO5)
-        .with_mosi($peripherals.GPIO45);
+        .unwrap();
 
-        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs).unwrap();
+        let spi = spi
+            .with_sck($peripherals.GPIO5)
+            .with_mosi($peripherals.GPIO45);
+
+        let spi_device =
+            embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, crate::peripherals::NoCs)
+                .unwrap();
         let buffer: &'static mut [u8] = Box::leak(Box::new([0u8; 512]));
         let di = SpiInterface::new(
             spi_device,
@@ -288,12 +282,14 @@ impl<'a> DevicePeripherals<'a> {
             peripherals.I2C0,
             I2cConfig::default().with_frequency(Rate::from_khz(400)),
         )
-        .unwrap()
-        .with_sda(peripherals.GPIO16)
-        .with_scl(peripherals.GPIO7);
+        .unwrap();
+
+        #[cfg(not(feature = "qemu-display"))]
+        let i2c = i2c.with_sda(peripherals.GPIO16).with_scl(peripherals.GPIO7);
 
         #[cfg(not(feature = "qemu-display"))]
         let mut capsense = CST816S::new_esp32(i2c, peripherals.GPIO17, peripherals.GPIO15);
+
         #[cfg(not(feature = "qemu-display"))]
         capsense.setup(&mut delay).unwrap();
 

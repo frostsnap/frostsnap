@@ -1,5 +1,4 @@
 use crate::init_display;
-use crate::peripherals::NoCs;
 use embedded_graphics::{prelude::*, text::Alignment};
 use frostsnap_widgets::string_ext::StringFixed;
 
@@ -25,6 +24,13 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
 
     let peripherals = unsafe { Peripherals::steal() };
 
+    #[cfg(all(feature = "chip-esp32s3", not(feature = "s3-fpc-board")))]
+    let mut bl = Output::new(
+        unsafe { esp_hal::peripherals::GPIO15::steal() },
+        Level::Low,
+        OutputConfig::default(),
+    );
+    #[cfg(not(all(feature = "chip-esp32s3", not(feature = "s3-fpc-board"))))]
     let mut bl = Output::new(
         unsafe { esp_hal::peripherals::GPIO1::steal() },
         Level::Low,

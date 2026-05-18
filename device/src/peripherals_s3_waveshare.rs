@@ -1,20 +1,11 @@
-//! Device peripheral initialization and management
+//! ESP32-S3 Waveshare board peripheral initialization and management
 //!
-//! Pinout summary (ESP32-C3):
-//! - Display (ST7789 over SPI2):
-//!   - `GPIO8`  = SCK
-//!   - `GPIO7`  = MOSI
-//!   - `GPIO9`  = DC
-//!   - `GPIO6`  = RST
-//!   - `GPIO1`  = Backlight (LEDC)
-//! - Touchscreen (CST816S over I2C0):
-//!   - `GPIO4`  = SDA
-//!   - `GPIO5`  = SCL
-//!   - `GPIO2`  = INT
-//!   - `GPIO3`  = RST
-//! - Detect pins:
-//!   - `GPIO0`  = Upstream detect (pull-up)
-//!   - `GPIO10` = Downstream detect (pull-up)
+//! Waveshare pinout:
+//! - Display (ST7789 over SPI2): DC=`GPIO4`, CS=`GPIO5`, SCL=`GPIO6`,
+//!   SDA/MOSI=`GPIO7`, RST=`GPIO8`, Backlight=`GPIO15`.
+//! - Touchscreen (CST816S over I2C0): SCL=`GPIO10`, SDA=`GPIO11`,
+//!   RST=`GPIO13`, INT=`GPIO14`.
+//! - Detect pins: Upstream=`GPIO0`, Downstream=`GPIO12`.
 //! - UART links:
 //!   - Upstream UART1: `GPIO18` RX, `GPIO19` TX
 //!   - Downstream UART0: `GPIO21` RX, `GPIO20` TX
@@ -23,28 +14,36 @@ use alloc::{boxed::Box, rc::Rc};
 use core::cell::RefCell;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use esp_hal::{
-    delay::Delay,
-    gpio::{Input, InputConfig, Io, Output, Pull},
+    gpio::{Input, InputConfig, Pull},
     hmac::Hmac,
-    i2c::master::{Config as I2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
         LSGlobalClkSource, Ledc, LowSpeed,
     },
     peripherals::{DS, RSA},
-    spi::master::Spi,
     time::Rate,
     uart::Uart,
     usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
-use frostsnap_cst816s::CST816S;
-use mipidsi::{interface::SpiInterface, models::ST7789};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 
 use crate::efuse::EfuseController;
+
+#[cfg(not(feature = "qemu-display"))]
+use esp_hal::{
+    delay::Delay,
+    gpio::Io,
+    gpio::Output,
+    i2c::master::{Config as I2cConfig, I2c},
+    spi::master::Spi,
+};
+#[cfg(not(feature = "qemu-display"))]
+use frostsnap_cst816s::CST816S;
+#[cfg(not(feature = "qemu-display"))]
+use mipidsi::{interface::SpiInterface, models::ST7789};
 
 #[macro_export]
 macro_rules! init_display {
@@ -64,62 +63,45 @@ macro_rules! init_display {
             $peripherals.SPI2,
             SpiConfig::default()
                 .with_frequency(Rate::from_mhz(80))
-                .with_mode(Mode::_2),
+                .with_mode(Mode::_0),
         )
-        .unwrap()
-        .with_sck($peripherals.GPIO8)
-        .with_mosi($peripherals.GPIO7);
+        .unwrap();
 
-        let spi_device =
-            embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, crate::peripherals::NoCs)
-                .unwrap();
+        let spi = spi
+            .with_sck($peripherals.GPIO6)
+            .with_mosi($peripherals.GPIO7);
+
+        let cs = Output::new($peripherals.GPIO5, Level::High, OutputConfig::default());
+        let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, cs).unwrap();
         let buffer: &'static mut [u8] = Box::leak(Box::new([0u8; 512]));
         let di = SpiInterface::new(
             spi_device,
-            Output::new($peripherals.GPIO9, Level::Low, OutputConfig::default()),
+            Output::new($peripherals.GPIO4, Level::Low, OutputConfig::default()),
             buffer,
         );
 
-        let display = mipidsi::Builder::new(ST7789, di)
+        mipidsi::Builder::new(ST7789, di)
             .display_size(240, 280)
-            .display_offset(0, 20) // 240*280 panel
+            .display_offset(0, 20)
             .invert_colors(ColorInversion::Inverted)
             .reset_pin(Output::new(
-                $peripherals.GPIO6,
+                $peripherals.GPIO8,
                 Level::Low,
                 OutputConfig::default(),
             ))
             .init($delay)
-            .unwrap();
-
-        display
+            .unwrap()
     }};
 }
 
-/// Dummy CS pin for our display
-pub struct NoCs;
-
-impl embedded_hal::digital::OutputPin for NoCs {
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl embedded_hal::digital::ErrorType for NoCs {
-    type Error = core::convert::Infallible;
-}
-
 /// Type alias for the display to reduce complexity
+#[cfg(not(feature = "qemu-display"))]
 pub type Display<'a> = mipidsi::Display<
     SpiInterface<
         'a,
         embedded_hal_bus::spi::ExclusiveDevice<
             Spi<'a, Blocking>,
-            NoCs,
+            Output<'a>,
             embedded_hal_bus::spi::NoDelay,
         >,
         Output<'a>,
@@ -128,12 +110,33 @@ pub type Display<'a> = mipidsi::Display<
     Output<'a>,
 >;
 
+#[cfg(feature = "qemu-display")]
+pub type Display<'a> = crate::qemu_display::VirtualDisplay<'a>;
+
+#[cfg(not(feature = "qemu-display"))]
 pub fn flush_display(_display: &mut Display<'_>) {}
 
+#[cfg(feature = "qemu-display")]
+pub fn flush_display(display: &mut Display<'_>) {
+    display.flush_if_dirty();
+}
+
+#[cfg(not(feature = "qemu-display"))]
 pub fn poll_touch_input() {}
 
+#[cfg(feature = "qemu-display")]
+pub fn poll_touch_input() {
+    crate::qemu_touch::poll();
+}
+
+#[cfg(not(feature = "qemu-display"))]
 pub fn adjust_touch_point(point: Point) -> Point {
     crate::touch_calibration::adjust_touch_point(point)
+}
+
+#[cfg(feature = "qemu-display")]
+pub fn adjust_touch_point(point: Point) -> Point {
+    point
 }
 
 /// All device peripherals initialized and ready to use
@@ -208,19 +211,13 @@ impl<'a> DevicePeripherals<'a> {
 
     /// Initialize all device peripherals including initial RNG
     pub fn init(mut peripherals: esp_hal::peripherals::Peripherals) -> Box<Self> {
-        // Initialize Io for interrupt handling.
+        #[cfg(not(feature = "qemu-display"))]
         let mut io = Io::new(peripherals.IO_MUX.reborrow());
-
-        // Enable stack guard if feature is enabled
-        #[cfg(feature = "stack_guard")]
-        crate::stack_guard::enable_stack_guard(peripherals.ASSIST_DEBUG.reborrow());
-
+        #[cfg(not(feature = "qemu-display"))]
         let mut delay = Delay::new();
 
-        // Initialize SHA256 early for entropy extraction
         let mut sha256 = esp_hal::sha::Sha::new(peripherals.SHA);
 
-        // Get initial entropy from hardware RNG mixed with SHA256
         let trng_source =
             esp_hal::rng::TrngSource::new(peripherals.RNG.reborrow(), peripherals.ADC1.reborrow());
         let mut trng = esp_hal::rng::Trng::try_new().expect("TRNG source should be enabled");
@@ -228,17 +225,15 @@ impl<'a> DevicePeripherals<'a> {
         drop(trng);
         drop(trng_source);
 
-        // Detection pins (using AnyPin to avoid generics)
         let upstream_detect = Input::new(
             peripherals.GPIO0,
             InputConfig::default().with_pull(Pull::Up),
         );
         let downstream_detect = Input::new(
-            peripherals.GPIO10,
+            peripherals.GPIO12,
             InputConfig::default().with_pull(Pull::Up),
         );
 
-        // Initialize backlight control
         let mut ledc = Ledc::new(peripherals.LEDC);
         ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
         let mut lstimer0 = ledc.timer::<LowSpeed>(timerledc::Number::Timer0);
@@ -249,46 +244,56 @@ impl<'a> DevicePeripherals<'a> {
                 frequency: Rate::from_khz(24),
             })
             .unwrap();
-        // Leak the timer so it lives forever (we never need to drop it)
         let lstimer0 = Box::leak(Box::new(lstimer0));
-        let mut backlight = ledc.channel(channel::Number::Channel0, peripherals.GPIO1);
+        let mut backlight = ledc.channel(channel::Number::Channel0, peripherals.GPIO15);
         backlight
             .configure(channel::config::Config {
                 timer: lstimer0,
-                duty_pct: 0, // Start with backlight off
+                duty_pct: 0,
                 drive_mode: esp_hal::gpio::DriveMode::PushPull,
             })
             .unwrap();
 
+        #[cfg(not(feature = "qemu-display"))]
         let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
 
-        // Initialize I2C for touch sensor
+        #[cfg(feature = "qemu-display")]
+        let mut display = crate::qemu_display::VirtualDisplay::new();
+
+        #[cfg(not(feature = "qemu-display"))]
         let i2c = I2c::new(
             peripherals.I2C0,
             I2cConfig::default().with_frequency(Rate::from_khz(400)),
         )
-        .unwrap()
-        .with_sda(peripherals.GPIO4)
-        .with_scl(peripherals.GPIO5);
+        .unwrap();
 
-        let mut capsense = CST816S::new_esp32(i2c, peripherals.GPIO2, peripherals.GPIO3);
+        #[cfg(not(feature = "qemu-display"))]
+        let i2c = i2c
+            .with_sda(peripherals.GPIO11)
+            .with_scl(peripherals.GPIO10);
+
+        #[cfg(not(feature = "qemu-display"))]
+        let mut capsense = CST816S::new_esp32(i2c, peripherals.GPIO14, peripherals.GPIO13);
+        #[cfg(not(feature = "qemu-display"))]
         capsense.setup(&mut delay).unwrap();
 
-        // Register the capsense instance with the interrupt handler
+        #[cfg(not(feature = "qemu-display"))]
         let touch_receiver = frostsnap_cst816s::interrupt::register(capsense, &mut io);
+        #[cfg(feature = "qemu-display")]
+        let touch_receiver = {
+            crate::qemu_touch::init();
+            frostsnap_cst816s::interrupt::virtual_receiver()
+        };
 
-        // Clear display and turn on backlight
         let _ = display.clear(Rgb565::BLACK);
         backlight.start_duty_fade(0, 100, 500).unwrap();
 
-        // Initialize other crypto peripherals
         let efuse = EfuseController::new();
         let hmac = Rc::new(RefCell::new(Hmac::new(peripherals.HMAC)));
 
-        // Initialize JTAG
         let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
-        // Initialize upstream UART only if upstream device is detected
+        #[cfg(not(feature = "qemu-display"))]
         let uart_upstream = if upstream_detect.is_low() {
             Some(
                 Uart::new(peripherals.UART1, esp_hal::uart::Config::default())
@@ -299,8 +304,9 @@ impl<'a> DevicePeripherals<'a> {
         } else {
             None
         };
+        #[cfg(feature = "qemu-display")]
+        let uart_upstream = None;
 
-        // Always initialize downstream UART
         let uart_downstream = Uart::new(peripherals.UART0, esp_hal::uart::Config::default())
             .unwrap()
             .with_rx(peripherals.GPIO21)
