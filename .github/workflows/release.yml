@@ -17,9 +17,25 @@ env:
   TAG_NAME: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
 
 jobs:
+  verify-firmware:
+    name: "Verify release firmware"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Download firmware from release
+        run: |
+          mkdir -p firmware
+          gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
+      - name: Verify firmware signature and known version
+        run: cargo run -p frostsnap_factory --release -- verify-firmware --require-known-version -i firmware/firmware.bin
+
   build-android:
     name: "Build Android"
+    needs: ["verify-firmware"]
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
     steps:
       - uses: actions/checkout@v4
       - name: Download firmware from release
@@ -29,6 +45,7 @@ jobs:
       - uses: "./.github/actions/build-android"
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Upload APK to release
         run: |
           cp frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk "Frostsnap-${{ env.TAG_NAME }}.apk"
@@ -40,6 +57,7 @@ jobs:
 
   build-linux:
     name: "Build Linux"
+    needs: ["verify-firmware"]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +68,7 @@ jobs:
       - uses: "./.github/actions/build-linux"
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Upload Linux bundle as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -75,6 +94,7 @@ jobs:
 
   build-windows:
     name: "Build Windows"
+    needs: ["verify-firmware"]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +105,7 @@ jobs:
       - uses: "./.github/actions/build-windows"
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Zip Windows build
         run: Compress-Archive -Path frostsnapp/build/windows/x64/runner/Release/* -DestinationPath Frostsnap-${{ env.TAG_NAME }}.zip
       - name: Upload Windows build to release
@@ -92,6 +113,7 @@ jobs:
 
   build-macos:
     name: "Build macOS"
+    needs: ["verify-firmware"]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -102,6 +124,7 @@ jobs:
       - uses: "./.github/actions/build-macos"
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Zip and upload .app to release
         run: |
           cd frostsnapp/build/macos/Build/Products/Release

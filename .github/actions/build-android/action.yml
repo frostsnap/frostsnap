@@ -5,6 +5,9 @@ inputs:
   firmware_path:
     description: "Path to signed firmware binary"
     required: true
+  env:
+    description: "Environment (dev or prod) — determines genuine cert key and firmware path"
+    default: "dev"
 
 runs:
   using: "composite"
@@ -13,6 +16,7 @@ runs:
     - uses: "./.github/actions/set-up-app-build"
       with:
         firmware_path: ${{ inputs.firmware_path }}
+        env: ${{ inputs.env }}
     - uses: "./.github/actions/cache-rust-target"
       with:
         key: "android-app-v0"
@@ -36,9 +40,15 @@ runs:
         ndk-version: r25c
         link-to-sdk: true
         add-to-path: true
+    - name: Restore release signing keystore
+      if: env.ANDROID_KEYSTORE != ''
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.android"
+        echo "$ANDROID_KEYSTORE" | base64 -d > "$HOME/.android/debug.keystore"
     - name: Build App APK
       shell: bash
-      run: just build apk --release --flavor direct
+      run: just env=${{ inputs.env }} build apk --release --flavor direct
     - name: Build appbundle
       shell: bash
-      run: just build appbundle --release --flavor playstore
+      run: just env=${{ inputs.env }} build appbundle --release --flavor playstore
