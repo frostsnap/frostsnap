@@ -40,12 +40,13 @@ runs:
         ndk-version: r25c
         link-to-sdk: true
         add-to-path: true
-    - name: Restore release signing keystore
-      if: env.ANDROID_KEYSTORE != ''
-      shell: bash
-      run: |
-        mkdir -p "$HOME/.android"
-        echo "$ANDROID_KEYSTORE" | base64 -d > "$HOME/.android/debug.keystore"
+    # Release signing is set up in .github/workflows/release.yml *before* this
+    # action runs. release.yml sets FROSTSNAP_RELEASE_BUILD=true and the four
+    # ANDROID_RELEASE_* env vars scoped to the step that invokes this action;
+    # gradle then errors loudly if any are missing and otherwise wires the
+    # release signing config. PR / test builds leave FROSTSNAP_RELEASE_BUILD
+    # unset and fall through to debug signing — intentional, so production
+    # credentials never live on a CI runner outside the release workflow.
     - name: Build App APK
       shell: bash
       run: just env=${{ inputs.env }} build apk --release --flavor direct
