@@ -34,10 +34,13 @@ use tracing::{event, Level};
 
 mod coordinator_to_user;
 pub mod keys;
+pub mod remote_keygen;
+pub mod remote_signing;
 pub mod restoration;
 pub mod signing;
 pub use coordinator_to_user::*;
 pub use keys::BeginKeygen;
+pub use signing::{ParticipantBinonces, ParticipantSignatureShares};
 use signing::SigningMutation;
 
 pub const MIN_NONCES_BEFORE_REQUEST: u32 = NONCE_BATCH_SIZE / 2;
@@ -52,8 +55,42 @@ pub struct FrostCoordinator {
     active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
     active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
+    remote_signing: remote_signing::State,
     restoration: restoration::State,
+    remote_keygen: remote_keygen::State,
     pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
+}
+
+/// The key data needed for signing: the shared key and its purpose.
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub struct KeyContext {
+    pub app_shared_key: Xpub<SharedKey>,
+    pub purpose: KeyPurpose,
+}
+
+impl KeyContext {
+    pub fn master_appkey(&self) -> MasterAppkey {
+        MasterAppkey::from_xpub_unchecked(&self.app_shared_key)
+    }
+
+    pub fn key_id(&self) -> KeyId {
+        self.master_appkey().key_id()
+    }
+
+    pub fn access_structure_id(&self) -> AccessStructureId {
+        AccessStructureId::from_app_poly(self.app_shared_key.key.point_polynomial())
+    }
+
+    pub fn access_structure_ref(&self) -> AccessStructureRef {
+        AccessStructureRef {
+            key_id: self.key_id(),
+            access_structure_id: self.access_structure_id(),
+        }
+    }
+
+    pub fn threshold(&self) -> usize {
+        self.app_shared_key.key.threshold()
+    }
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
@@ -384,7 +421,7 @@ impl FrostCoordinator {
                     .remove(&session_id)
                     .expect("it existed in the order");
                 let n_sigs = session_state.init.group_request.n_signatures();
-                for (device_id, nonce_segment) in &session_state.init.nonces {
+                for (device_id, nonce_segment) in &session_state.init.local_nonces {
                     if session_state.sent_req_to_device.contains(device_id) {
                         let consume_to = nonce_segment
                             .index
@@ -413,6 +450,12 @@ impl FrostCoordinator {
                     .restoration
                     .apply_mutation_restoration(inner, self.keygen_fingerprint)
                     .map(Mutation::Restoration);
+            }
+            RemoteSigning(inner) => {
+                return self
+                    .remote_signing
+                    .apply_mutation(inner, &mut self.nonce_cache)
+                    .map(Mutation::RemoteSigning);
             }
         }
 
@@ -627,6 +670,9 @@ impl FrostCoordinator {
             }
             DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Response(response)) => {
                 let keygen_id = response.keygen_id;
+                if self.is_remote_keygen_active(keygen_id) {
+                    return self.receive_device_keygen_response(from, response);
+                }
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
                 match state {
@@ -713,6 +759,9 @@ impl FrostCoordinator {
                 keygen_id,
                 vrf_cert,
             }) => {
+                if self.is_remote_keygen_active(keygen_id) {
+                    return self.receive_device_keygen_certify(from, keygen_id, vrf_cert);
+                }
                 let mut outgoing = vec![];
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
@@ -778,10 +827,15 @@ impl FrostCoordinator {
                     )),
                 }
             }
-            DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Ack(self::KeyGenAck {
-                keygen_id,
-                ack_session_hash,
-            })) => {
+            DeviceToCoordinatorMessage::KeyGen(keygen::DeviceKeygen::Ack(ack)) => {
+                let keygen_id = ack.keygen_id;
+                if self.is_remote_keygen_active(keygen_id) {
+                    return self.receive_device_keygen_ack(from, ack);
+                }
+                let self::KeyGenAck {
+                    keygen_id,
+                    ack_session_hash,
+                } = ack;
                 let mut outgoing = vec![];
                 let (state, entry) = self.pending_keygens.take_entry(keygen_id);
 
@@ -871,6 +925,15 @@ impl FrostCoordinator {
                     ref replenish_nonces,
                 },
             ) => {
+                if !self.active_signing_sessions.contains_key(&session_id) {
+                    return self.receive_device_signature_share(
+                        from,
+                        session_id,
+                        signature_shares,
+                        replenish_nonces.as_ref(),
+                        message_kind,
+                    );
+                }
                 let active_sign_session = self
                     .active_signing_sessions
                     .get(&session_id)
@@ -921,7 +984,14 @@ impl FrostCoordinator {
                 }
 
                 outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::Signing(
-                    CoordinatorToUserSigningMessage::GotShare { session_id, from },
+                    CoordinatorToUserSigningMessage::GotShare {
+                        session_id,
+                        from,
+                        shares: signing::ParticipantSignatureShares {
+                            share_index: *signer_index,
+                            signature_shares: signature_shares.clone(),
+                        },
+                    },
                 )));
 
                 self.mutate(Mutation::Signing(
@@ -1043,6 +1113,9 @@ impl FrostCoordinator {
         encryption_key: SymmetricKey,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SendFinalizeKeygen, ActionError> {
+        if self.is_remote_keygen_active(keygen_id) {
+            return self.finalize_remote_keygen(keygen_id, encryption_key, rng);
+        }
         match self.pending_keygens.remove(&keygen_id) {
             Some(KeyGenState::NeedsFinalize(finalize)) => {
                 let devices = finalize.device_to_share_index.keys().copied().collect();
@@ -1172,7 +1245,7 @@ impl FrostCoordinator {
             .collect();
 
         let start_sign = StartSign {
-            nonces: device_requests,
+            local_nonces: device_requests,
             group_request,
         };
 
@@ -1203,7 +1276,7 @@ impl FrostCoordinator {
 
         let nonces_for_device = *active_sign_session
             .init
-            .nonces
+            .local_nonces
             .get(&device_id)
             .expect("device must be part of the signing session");
 
@@ -1311,7 +1384,7 @@ impl FrostCoordinator {
         Some(access_structure)
     }
 
-    fn mutate_new_key(
+    pub(super) fn mutate_new_key(
         &mut self,
         name: String,
         root_shared_key: SharedKey,
@@ -1408,7 +1481,7 @@ impl FrostCoordinator {
             .flat_map(|session| {
                 session
                     .init
-                    .nonces
+                    .local_nonces
                     .values()
                     .map(|device_nonces| device_nonces.stream_id)
             })
@@ -1522,7 +1595,10 @@ impl FrostCoordinator {
     pub fn clear_tmp_data(&mut self) {
         self.pending_keygens.clear();
         self.restoration.clear_tmp_data();
+        self.remote_signing.clear_tmp_data();
+        self.remote_keygen.clear_tmp_data();
     }
+
 
     pub fn knows_about_share(
         &self,
@@ -1595,6 +1671,40 @@ impl SignSessionProgress {
             sign_item.schnorr_fun_message(),
             rng,
         );
+
+        Self {
+            sign_item,
+            sign_session,
+            signature_shares: Default::default(),
+            app_shared_key,
+        }
+    }
+
+    // ========================================================================
+    // TODO(remote-keygen): nonce randomization is currently disabled here.
+    //
+    // This deterministic variant exists so that multiple coordinators in a
+    // remote-coordinated session converge on the same `CoordinatorSignSession`
+    // without having to agree on randomness out-of-band. It is a SHORT-TERM
+    // HACK — running FROST signing without per-session randomness weakens the
+    // unforgeability margin against malicious adversaries.
+    //
+    // The proper fix is to feed shared randomness (e.g. derived from the
+    // committed session id / agreed pre-commit value / VRF over the participant
+    // set) into `randomized_coordinator_sign_session` so every coordinator
+    // independently arrives at the same randomized session. Once that lands,
+    // this constructor must be deleted and all callers switched back to `new`.
+    // ========================================================================
+    /// Create without randomization - all coordinators with same inputs get same session.
+    pub fn new_deterministic<NG>(
+        frost: &Frost<sha2::Sha256, NG>,
+        app_shared_key: Xpub<SharedKey>,
+        sign_item: SignItem,
+        nonces: BTreeMap<frost::ShareIndex, frost::Nonce>,
+    ) -> Self {
+        let tweaked_key = sign_item.app_tweak.derive_xonly_key(&app_shared_key);
+        let sign_session =
+            frost.coordinator_sign_session(&tweaked_key, nonces, sign_item.schnorr_fun_message());
 
         Self {
             sign_item,
@@ -1822,6 +1932,11 @@ pub enum StartSignError {
     SignTask(SignTaskError),
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
+    NoSuchRemoteSignSession,
+    /// A second `offer_to_sign` for the same `(RemoteSignSessionId, DeviceId)`
+    /// arrived with different access structure or sign task than the
+    /// first. Remote sessions commit to those values at offer time.
+    ConflictingRemoteSignSession,
 }
 
 impl fmt::Display for StartSignError {
@@ -1858,6 +1973,13 @@ impl fmt::Display for StartSignError {
                 "the access structure you wanted to sign with did not exist"
             ),
             StartSignError::CouldntDecryptRootKey => write!(f, "the decryption key did not"),
+            StartSignError::NoSuchRemoteSignSession => {
+                write!(f, "no open remote sign session found with that id")
+            }
+            StartSignError::ConflictingRemoteSignSession => write!(
+                f,
+                "a remote sign session with this id was offered with different access structure or sign task"
+            ),
         }
     }
 }
@@ -1895,6 +2017,8 @@ pub enum Mutation {
     Signing(signing::SigningMutation),
     #[delegate_kind]
     Restoration(restoration::RestorationMutation),
+    #[delegate_kind]
+    RemoteSigning(remote_signing::RemoteSigningMutation),
 }
 
 impl Mutation {
@@ -1917,6 +2041,7 @@ impl Mutation {
             Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)) => *key_id,
             Mutation::Signing(inner) => inner.tied_to_key(coord)?,
             Mutation::Restoration(inner) => inner.tied_to_key()?,
+            Mutation::RemoteSigning(inner) => inner.tied_to_key(coord)?,
         })
     }
 
@@ -1942,6 +2067,22 @@ pub enum CoordinatorSend {
         destinations: BTreeSet<DeviceId>,
     },
     ToUser(CoordinatorToUserMessage),
+    Broadcast {
+        /// Identifies which in-flight session this broadcast belongs to.
+        /// Today the only broadcast payload is a remote keygen, so this
+        /// is always a `KeygenId`. If we ever get a second broadcast
+        /// session type (e.g. a group signing protocol), this field
+        /// should be generalized to a `ChannelId` newtype that both
+        /// session kinds can be converted into.
+        channel: KeygenId,
+        from: DeviceId,
+        payload: BroadcastPayload,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum BroadcastPayload {
+    RemoteKeygen(remote_keygen::RemoteKeygenPayload),
 }
 
 pub struct NonceReplenishRequest {
@@ -2012,7 +2153,11 @@ impl IntoIterator for VerifyAddress {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
 pub struct StartSign {
-    pub nonces: BTreeMap<DeviceId, CoordNonceStreamState>,
+    /// Nonce stream allocations for devices whose nonces we manage locally.
+    /// We need to consume these streams when the session completes. Remote
+    /// participants' nonces are not tracked here — they're committed into
+    /// `group_request.agg_nonces` at offer time.
+    pub local_nonces: BTreeMap<DeviceId, CoordNonceStreamState>,
     pub group_request: GroupSignReq,
 }
 

@@ -7,9 +7,10 @@ use flutter_rust_bridge::frb;
 use frostsnap_core::{AccessStructureId, DeviceId, MasterAppkey};
 
 use crate::api::bitcoin::BitcoinNetworkExt;
-use crate::api::broadcast::{Broadcast, UnitBroadcastSubscription};
+use crate::api::broadcast::Broadcast;
 use crate::api::signing::UnsignedTx;
 use crate::frb_generated::RustAutoOpaque;
+use frostsnap_macros::broadcast_handle;
 
 use super::{
     coordinator::{AccessStructure, Coordinator, FrostKey},
@@ -163,6 +164,8 @@ impl BuildTxInner {
     }
 }
 
+broadcast_handle! { pub struct UnitBcast(pub Broadcast<()>); }
+
 pub struct BuildTxState {
     pub(crate) coord: RustAutoOpaque<Coordinator>,
     pub(crate) super_wallet: SuperWallet,
@@ -174,8 +177,8 @@ pub struct BuildTxState {
 
 impl BuildTxState {
     #[frb(sync)]
-    pub fn subscribe(&self) -> UnitBroadcastSubscription {
-        UnitBroadcastSubscription(self.broadcast.subscribe())
+    pub fn subscribe(&self) -> UnitBcast {
+        UnitBcast::new(self.broadcast.clone())
     }
 
     #[frb(sync)]

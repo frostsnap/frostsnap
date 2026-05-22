@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
@@ -186,6 +188,13 @@ class _WalletMoreState extends State<WalletMore> {
               ),
             ),
           ),
+          if (frostKey != null)
+            _CoordinateOverNostrTile(
+              frostKey: frostKey,
+              tileColor: tileColor,
+              shape: tileShape,
+              contentPadding: contentPadding,
+            ),
           ListTile(
             contentPadding: contentPadding,
             tileColor: tileColor,
@@ -242,6 +251,51 @@ class _WalletMoreState extends State<WalletMore> {
       ),
       trailing: trailing,
       onTap: onTap,
+    );
+  }
+}
+
+/// Local-mode promotion entry on the More sheet. Hidden when the wallet
+/// is already in remote mode (chat is then a primary tab). Tapping flips
+/// `coordination_ui_enabled` and dismisses the sheet so the user lands
+/// on the just-rebuilt remote shell.
+class _CoordinateOverNostrTile extends StatelessWidget {
+  const _CoordinateOverNostrTile({
+    required this.frostKey,
+    required this.tileColor,
+    required this.shape,
+    required this.contentPadding,
+  });
+
+  final FrostKey frostKey;
+  final Color tileColor;
+  final ShapeBorder shape;
+  final EdgeInsetsGeometry contentPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final asRef = frostKey.accessStructures()[0].accessStructureRef();
+    final nostr = NostrContext.of(context);
+    if (nostr.isCoordinationUiEnabled(asRef)) {
+      return const SizedBox.shrink();
+    }
+    return ListTile(
+      contentPadding: contentPadding,
+      tileColor: tileColor,
+      shape: shape,
+      title: const Text('Coordinate over Nostr'),
+      subtitle: const Text(
+        'Sign with co-signers over the internet using Nostr',
+      ),
+      leading: const Icon(Icons.chat_bubble_outline),
+      onTap: () async {
+        await nostr.nostrSettings.setCoordinationUiEnabled(
+          accessStructureRef: asRef,
+          enabled: true,
+        );
+        if (!context.mounted) return;
+        Navigator.pop(context); // close the More sheet
+      },
     );
   }
 }

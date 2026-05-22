@@ -10,7 +10,6 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/snackbar.dart';
@@ -70,7 +69,7 @@ class TxSigningParams {
     );
   }
 
-  Stream<SigningState> startSigning() {
+  Future<SigningSessionHandle> startSigning() {
     switch (mode) {
       case SigningMode.start:
         return coord.startSigningTx(
@@ -144,29 +143,63 @@ String humanReadableTimeDifference(DateTime currentTime, DateTime itemTime) {
   }
 }
 
-bool isSigningDone(SigningState state) => state.finishedSignatures != null;
+/// Explicit discriminator for what a [TxSentOrReceivedTile] is
+/// rendering, replacing the old `SigningState?`-as-flag convention
+/// that conflated "no signing context" with "signing complete".
+sealed class TxTileMode {
+  const TxTileMode();
+}
+
+/// Wallet-history row: no signing context. Tile renders confirmed /
+/// unconfirmed states based purely on `tx.timestamp()` /
+/// `tx.confirmationTime`.
+class TxTileHistory extends TxTileMode {
+  const TxTileHistory();
+}
+
+/// Active signing session in progress. Tile shows "Signing...".
+/// `state` is the latest per-tick progress when available; it can be
+/// `null` for the brief window between page mount and the first
+/// stream event (the subtitle shows "Signing..." without a count
+/// during that gap).
+class TxTileSigning extends TxTileMode {
+  final SigningState? state;
+  const TxTileSigning(this.state);
+}
+
+/// Signed and awaiting broadcast. Tile shows "Signed" + "Tap to
+/// broadcast". The `signedTx` is typed positive evidence that
+/// signing produced a broadcastable artifact.
+class TxTileBroadcastable extends TxTileMode {
+  final SignedTx signedTx;
+  const TxTileBroadcastable(this.signedTx);
+}
 
 class TxSentOrReceivedTile extends StatelessWidget {
   final TxDetailsModel txDetails;
-  final SigningState? signingState;
+  final TxTileMode mode;
   final bool hideSubtitle;
   final void Function()? onTap;
 
   const TxSentOrReceivedTile({
     super.key,
     required this.txDetails,
-    this.signingState,
+    this.mode = const TxTileHistory(),
     this.hideSubtitle = false,
     this.onTap,
   });
 
-  bool get signingDone => signingState == null || isSigningDone(signingState!);
+  bool get signingDone => switch (mode) {
+    TxTileHistory() => true,
+    TxTileBroadcastable() => true,
+    TxTileSigning() => false,
+  };
   bool get needsBroadcast => txDetails.tx.timestamp() == null;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isSigning = signingState != null;
+    final isSigning = mode is TxTileSigning;
     final accentColor = isSigning
         ? theme.colorScheme.primary
         : txDetails.isSend
@@ -211,9 +244,12 @@ class TxSentOrReceivedTile extends StatelessWidget {
               children: [
                 Flexible(
                   child: Text(
-                    signingDone
-                        ? txDetails.lastUpdateString
-                        : '${signingState!.neededFrom.length - signingState!.gotShares.length} signatures left',
+                    switch (mode) {
+                      TxTileSigning(state: final s?) =>
+                        '${s.neededFrom.length - s.gotShares.length} signatures left',
+                      TxTileSigning(state: null) => 'Signing...',
+                      _ => txDetails.lastUpdateString,
+                    },
                     overflow: TextOverflow.fade,
                   ),
                 ),
@@ -263,6 +299,11 @@ class TxDetailsPage extends StatefulWidget {
   final PsbtManager psbtMan;
   final Psbt? psbt;
   final TxSigningParams? signingParams;
+  /// Typed broadcastable artifact for the already-signed-from-history
+  /// path. `Some` when constructed via [`TxDetailsPage.needsBroadcast`];
+  /// for active-signing pages this is `null` until signing completes
+  /// and the page builds it from `unsignedTx.complete(sigs)`.
+  final SignedTx? signedTx;
 
   const TxDetailsPage({
     super.key,
@@ -273,7 +314,7 @@ class TxDetailsPage extends StatefulWidget {
     this.signingParams,
     this.finishedSigningSessionId,
     this.psbt,
-  });
+  }) : signedTx = null;
 
   const TxDetailsPage.needsBroadcast({
     super.key,
@@ -282,6 +323,7 @@ class TxDetailsPage extends StatefulWidget {
     required this.txDetails,
     required this.psbtMan,
     required SignSessionId this.finishedSigningSessionId,
+    required SignedTx this.signedTx,
   }) : signingParams = null,
        psbt = null;
 
@@ -297,9 +339,15 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   late final StreamSubscription<TxState> txStateSub;
   StreamSubscription<DeviceListUpdate>? devicesSub;
   StreamSubscription<SigningState>? signingSub;
+  SigningSessionHandle? signingHandle;
   SigningState? signingState;
+  /// The typed signed-tx artifact, set when `finishedSignatures` arrives
+  /// on an active signing session or seeded from a finished session at
+  /// mount time. Drives `signingDone` and `broadcast(...)` — no more
+  /// reading raw sigs off `SigningState`.
+  SignedTx? signedTx;
   bool? broadcastDone;
-  Set<DeviceId> connectedDevices = deviceIdSet([]);
+  Set<DeviceId> connectedDevices = {};
   Psbt? psbt;
 
   FullscreenActionDialogController<void>? actionDialogController;
@@ -324,7 +372,20 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     );
   }
 
-  bool get signingDone => signingState == null || isSigningDone(signingState!);
+  /// Tile-rendering mode for this page's header tile. Positive
+  /// evidence only — derived from whether we hold a typed `SignedTx`
+  /// (broadcastable), an in-flight `SigningState` (signing), or
+  /// neither (history / pre-active-signing transient).
+  TxTileMode get _tileMode {
+    final tx = signedTx;
+    if (tx != null) return TxTileBroadcastable(tx);
+    if (widget.signingParams != null) return TxTileSigning(signingState);
+    return const TxTileHistory();
+  }
+
+  /// "Are we done signing?" Derived from the same discriminator the
+  /// tile uses, so the page and tile cannot disagree.
+  bool get signingDone => _tileMode is! TxTileSigning;
 
   onTxStateData(TxState data) {
     final tx = data.txs.firstWhereOrNull((tx) => tx.txid == txDetails.tx.txid);
@@ -340,14 +401,23 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       this.isFirstRun = false;
 
     final signatures = data.finishedSignatures;
+    final unsignedTx = signingHandle?.unsignedTx();
+
+    // Produce the typed SignedTx artifact when signing completes.
+    // Method on UnsignedTx; takes the raw sigs and gives back the
+    // signed tx wrapper. The page then drives broadcast/PSBT/etc.
+    // off the typed value, not raw sigs.
+    SignedTx? newSignedTx;
+    if (signatures != null && unsignedTx != null) {
+      newSignedTx = unsignedTx.complete(signatures: signatures);
+    }
 
     var psbt = this.psbt;
     if (psbt != null) {
-      if (signatures != null) {
-        psbt = txDetails.tx.attachSignaturesToPsbt(
-          signatures: signatures,
-          psbt: psbt,
-        );
+      if (newSignedTx != null) {
+        // Method on SignedTx: it carries the sigs internally, so
+        // the call site doesn't have to pair raw sigs with the PSBT.
+        psbt = newSignedTx.toSignedPsbt(psbt: psbt);
         if (psbt == null) {
           showErrorSnackbar(
             context,
@@ -362,10 +432,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       }
 
       if ((widget.signingParams?.mode == SigningMode.start && isFirstRun) ||
-          signatures != null) {
+          newSignedTx != null) {
         isFirstRun = false;
         widget.psbtMan.insert(ssid: data.sessionId, psbt: psbt);
-        if (signatures == null) {
+        if (newSignedTx == null) {
           showMessageSnackbar(
             context,
             'PSBT saved: ${psbt.serialize().length} bytes',
@@ -378,16 +448,16 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       signingState = data;
       ssid = data.sessionId;
       if (psbt != null) this.psbt = psbt;
+      if (newSignedTx != null) signedTx = newSignedTx;
     });
 
     final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    data.connectedButNeedRequest.forEach(
-      (id) => coord.requestDeviceSign(
-        deviceId: id,
-        sessionId: data.sessionId,
-        encryptionKey: encryptionKey,
-      ),
-    );
+    final handle = signingHandle;
+    if (handle != null) {
+      for (final id in data.connectedButNeedRequest) {
+        handle.requestDeviceSign(deviceId: id, encryptionKey: encryptionKey);
+      }
+    }
     await actionDialogController?.batchRemoveActionNeeded(data.gotShares);
 
     return null;
@@ -420,6 +490,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     txDetails = widget.txDetails;
     ssid = widget.finishedSigningSessionId;
     psbt = widget.psbt;
+    signedTx = widget.signedTx;
     // Attempt to get psbt elsewhere.
     if (psbt == null && ssid != null) {
       psbt = widget.psbtMan.withSsid(ssid: ssid!);
@@ -430,28 +501,49 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     txStateSub = widget.txStates.listen(onTxStateData);
 
+    final signingParams = widget.signingParams;
+    if (signingParams != null) {
+      // `devices` is invariant for both start and restore — for restore we
+      // hydrated it synchronously from the active session. Seed the dialog
+      // controller up front so we never go through the lazy / nullable
+      // pattern mid-stream.
+      actionDialogController = _buildActionDialogController(
+        signingParams.devices,
+      );
+      devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
+      broadcastDone = false;
+      _startSigningSession(signingParams);
+    }
+  }
+
+  Future<void> _startSigningSession(TxSigningParams signingParams) async {
     try {
-      final signingParams = widget.signingParams;
-      if (signingParams != null) {
-        // `devices` is invariant for both start and restore — for restore we
-        // hydrated it synchronously from the active session. Seed the dialog
-        // controller up front so we never go through the lazy / nullable
-        // pattern mid-stream.
-        actionDialogController = _buildActionDialogController(
-          signingParams.devices,
-        );
-        devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
-        broadcastDone = false;
-        late final StreamSubscription<SigningState> sub;
-        sub = signingParams.startSigning().listen((state) {
-          // Ensure `onSigningSessionData` is called sequentially.
-          sub.pause();
-          onSigningSessionData(state).whenComplete(sub.resume);
-        });
-        signingSub = sub;
+      final handle = await signingParams.startSigning();
+      if (!mounted) {
+        handle.cancel();
+        return;
       }
+      signingHandle = handle;
+      // Sync-seed `signingState` from the active session before the
+      // stream subscribes, so first-paint already shows real progress
+      // instead of falling through the `signingState == null` guard.
+      final session = coord.activeSigningSession(
+        sessionId: handle.sessionId(),
+      );
+      if (session != null) {
+        signingState = session.state();
+      }
+      late final StreamSubscription<SigningState> sub;
+      sub = handle.subState().watch().listen((state) {
+        // Ensure `onSigningSessionData` is called sequentially.
+        sub.pause();
+        onSigningSessionData(state).whenComplete(sub.resume);
+      });
+      signingSub = sub;
     } catch (e) {
+      if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         showErrorSnackbar(context, e.toString());
         Navigator.popUntil(context, (r) => r.isFirst);
       });
@@ -462,7 +554,8 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   void dispose() {
     devicesSub?.cancel();
     devicesSub = null;
-    if (signingSub?.cancel() != null) {
+    if (signingSub != null) {
+      signingSub!.cancel();
       coord.cancelProtocol();
       signingSub = null;
     }
@@ -497,7 +590,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: TxSentOrReceivedTile(
                     txDetails: txDetails,
-                    signingState: signingState,
+                    mode: _tileMode,
                     hideSubtitle: true,
                   ),
                 ),
@@ -579,9 +672,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               ? '#$shareIndex $deviceName'
               : deviceName;
           final Widget trailing;
-          if (signingState!.gotShares.any(
-            (gotSharesFrom) => deviceIdEquals(deviceId, gotSharesFrom),
-          )) {
+          if (signingState!.gotShares.contains(deviceId)) {
             trailing = AnimatedCheckCircle();
           } else {
             trailing = Text(
@@ -761,14 +852,20 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   bool isBroadcasting = false;
 
   broadcast(BuildContext context) async {
+    final signed = signedTx;
+    if (signed == null) {
+      // The broadcast affordance is gated on `signingDone`, which
+      // requires `signedTx != null`. Reaching here without one means
+      // a caller bypassed the UI gating — bail rather than broadcast
+      // an unsigned skeleton.
+      showErrorSnackbar(context, 'No signed transaction to broadcast.');
+      return;
+    }
     if (mounted) setState(() => isBroadcasting = true);
     final walletCtx = WalletContext.of(context)!;
-    final tx = await txDetails.tx.withSignatures(
-      signatures: signingState?.finishedSignatures ?? [],
-    );
     var broadcastError = '';
     final broadcasted = await walletCtx.wallet.superWallet
-        .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
+        .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: signed.rawTx())
         .timeout(BROADCAST_TIMEOUT)
         .then<bool>(
           (_) => ssid != null,

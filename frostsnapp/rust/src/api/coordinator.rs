@@ -7,15 +7,18 @@ pub use frostsnap_coordinator::erase_device::EraseDeviceState;
 pub use frostsnap_core::coordinator::restoration::RestorationState;
 pub use frostsnap_core::coordinator::CoordAccessStructure as AccessStructure;
 use frostsnap_core::{
-    coordinator::CoordFrostKey,
+    coordinator::{CoordFrostKey, KeyContext},
     schnorr_fun::frost::{ShareIndex, SharedKey},
     tweak::Xpub,
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SymmetricKey,
 };
+use frostsnap_nostr::ChannelInitData;
 use std::collections::BTreeMap;
 use tracing::{event, Level};
 
-use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
+use crate::{
+    api::nostr::ChannelConnectionParams, coordinator::FfiCoordinator, frb_generated::StreamSink,
+};
 
 pub use super::backup_run::{BackupDevice, BackupRun};
 
@@ -185,6 +188,37 @@ impl Coordinator {
         self.0.key_state()
     }
 
+    #[frb(sync)]
+    pub fn channel_connection_params(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) -> ChannelConnectionParams {
+        let inner = self.0.inner();
+        let key_data = inner
+            .get_frost_key(access_structure_ref.key_id)
+            .expect("key must exist");
+        let access_structure = key_data
+            .get_access_structure(access_structure_ref.access_structure_id)
+            .expect("access structure must exist");
+        let key_context = KeyContext {
+            app_shared_key: access_structure.app_shared_key(),
+            purpose: key_data.purpose,
+        };
+        let root_shared_key = key_data
+            .complete_key
+            .root_shared_key(access_structure_ref.access_structure_id, encryption_key);
+        let init_data = root_shared_key.map(|rsk| ChannelInitData {
+            key_name: key_data.key_name.clone(),
+            purpose: key_data.purpose,
+            root_shared_key: rsk,
+        });
+        ChannelConnectionParams {
+            key_context,
+            init_data,
+        }
+    }
+
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {
         self.0.sub_key_events(SinkWrap(stream));
         Ok(())
@@ -250,6 +284,16 @@ impl Coordinator {
 
     pub fn erase_all_devices(&self) {
         self.0.erase_all_devices();
+    }
+
+    #[frb(sync)]
+    pub fn set_usb_enabled(&self, value: bool) {
+        self.0.set_usb_enabled(value);
+    }
+
+    #[frb(sync)]
+    pub fn usb_enabled(&self) -> bool {
+        self.0.usb_enabled()
     }
 
     pub fn cancel_protocol(&self) {

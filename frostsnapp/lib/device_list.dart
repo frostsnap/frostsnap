@@ -164,6 +164,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
         SliverPadding(
           padding: EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 16),
           sliver: SliverDeviceList(
+            updates: GlobalStreams.deviceListSubject,
             deviceBuilder: _buildDevice,
             noDeviceWidget: Padding(
               padding: EdgeInsets.symmetric(vertical: 40),

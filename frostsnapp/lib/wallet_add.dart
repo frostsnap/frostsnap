@@ -1,12 +1,19 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/nostr.dart';
+import 'package:frostsnap/src/rust/lib.dart';
+import 'package:frostsnap/org_keygen_page.dart';
 import 'package:frostsnap/wallet_create.dart';
 
-enum AddType { newWallet, recoverWallet }
+enum AddType { newWallet, recoverWallet, joinFromLink }
 
 enum VerticalButtonGroupPosition { top, bottom, middle, single }
 
@@ -61,6 +68,14 @@ class WalletAddColumn extends StatelessWidget {
           icon: Icon(Icons.restore_rounded, size: iconSize),
           title: 'Restore wallet',
           subtitle: 'Use an existing device key or load a physical backup',
+        ),
+        buildCard(
+          context,
+          action: () => onPressed(AddType.joinFromLink),
+          isThreeLine: true,
+          icon: Icon(Icons.link_rounded, size: iconSize),
+          title: 'Join wallet from link',
+          subtitle: 'Join an existing wallet using a shared nostr link',
         ),
       ],
     );
@@ -176,15 +191,32 @@ class WalletAddColumn extends StatelessWidget {
   static void showWalletCreateDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
 
-    final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
+    final nostrClient = await NostrClient.connect();
+    if (!context.mounted) return;
+    final choice = await MaybeFullscreenDialog.show<WalletTypeChoice>(
       context: context,
+      // tap-outside would silently drop an in-progress lobby without
+      // telling peers; force users through explicit back/cancel.
       barrierDismissible: false,
-      child: WalletCreatePage(),
+      child: OrgKeygenPage(nostrClient: nostrClient),
     );
+    if (!context.mounted || choice == null) return;
+
+    AccessStructureRef? asRef;
+    switch (choice) {
+      case WalletTypeChoicePersonal():
+        asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
+          context: context,
+          barrierDismissible: false,
+          child: WalletCreatePage(),
+        );
+      case WalletTypeChoiceOrganisation(:final accessStructureRef):
+        asRef = accessStructureRef;
+    }
 
     if (!context.mounted || asRef == null) return;
-    // Wallet-create page has popped. Wait for the user to unplug the
-    // devices (no-op if nothing is connected) before opening the new wallet.
+    // Wait for the user to unplug devices before opening the wallet
+    // (no-op if nothing's connected).
     await showUnplugDevicesDialog(context);
     if (!context.mounted) return;
     homeCtx.openNewlyCreatedWallet(asRef.keyId);
@@ -204,6 +236,20 @@ class WalletAddColumn extends StatelessWidget {
     await coord.cancelProtocol();
     if (restorationId == null) return;
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
+  }
+
+  static void showJoinFromLinkDialog(
+    BuildContext context, {
+    String? initialLink,
+  }) async {
+    final homeCtx = HomeContext.of(context)!;
+    final keyId = await MaybeFullscreenDialog.show<KeyId>(
+      context: context,
+      child: JoinFromLinkPage(initialLink: initialLink),
+    );
+    if (keyId != null && context.mounted) {
+      homeCtx.openNewlyCreatedWallet(keyId);
+    }
   }
 
   static void showAddKeyDialog(
@@ -229,6 +275,254 @@ Function(AddType) makeOnPressed(BuildContext context) {
         WalletAddColumn.showWalletCreateDialog(context);
       case AddType.recoverWallet:
         WalletAddColumn.showWalletRecoverDialog(context);
+      case AddType.joinFromLink:
+        WalletAddColumn.showJoinFromLinkDialog(context);
     }
   };
+}
+
+enum _JoinState { input, loading, success, error }
+
+class JoinFromLinkPage extends StatefulWidget {
+  final String? initialLink;
+
+  const JoinFromLinkPage({super.key, this.initialLink});
+
+  @override
+  State<JoinFromLinkPage> createState() => _JoinFromLinkPageState();
+}
+
+class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
+  late final TextEditingController _controller;
+  _JoinState _state = _JoinState.input;
+  String? _error;
+  KeyId? _keyId;
+  String? _walletName;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialLink ?? '');
+    if (widget.initialLink != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _join());
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  ChannelSecret _parseLink(String link) {
+    final hexStr = link.replaceFirst('frostsnap://channel/', '');
+    if (hexStr.length != 32) throw 'Invalid link: expected 32 hex characters';
+    final bytes = Uint8List(16);
+    for (var i = 0; i < 16; i++) {
+      bytes[i] = int.parse(hexStr.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+    return ChannelSecret(field0: U8Array16(bytes));
+  }
+
+  Future<void> _join() async {
+    final link = _controller.text.trim();
+    if (link.isEmpty) return;
+
+    setState(() {
+      _state = _JoinState.loading;
+      _error = null;
+    });
+
+    try {
+      final channelSecret = _parseLink(link);
+      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+      final client = await NostrClient.connect();
+      final keyId = await client.joinFromLink(
+        coord: coord,
+        channelSecret: channelSecret,
+        encryptionKey: encryptionKey,
+      );
+      _keyId = keyId;
+      _walletName = coord.getFrostKey(keyId: keyId)?.keyName() ?? 'Wallet';
+      if (!mounted) return;
+      setState(() => _state = _JoinState.success);
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (mounted) Navigator.pop(context, _keyId);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state = _JoinState.error;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (_state) {
+      _JoinState.input => _buildInputStep(context),
+      _JoinState.loading => _buildLoadingStep(context),
+      _JoinState.success => _buildSuccessStep(context),
+      _JoinState.error => _buildErrorStep(context),
+    };
+  }
+
+  MultiStepDialogScaffold _buildInputStep(BuildContext context) {
+    final theme = Theme.of(context);
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.input,
+      title: const Text('Join Wallet'),
+      showClose: true,
+      body: SliverToBoxAdapter(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.link_rounded,
+              size: 64,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Paste an invite link to join an existing wallet.',
+              style: theme.textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(
+                hintText: 'frostsnap://channel/...',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.link),
+              ),
+              autofocus: true,
+              onSubmitted: (_) => _join(),
+            ),
+          ],
+        ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: _join,
+          icon: const Icon(Icons.login_rounded),
+          label: const Text('Join'),
+        ),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildLoadingStep(BuildContext context) {
+    final theme = Theme.of(context);
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.loading,
+      title: const Text('Joining…'),
+      showClose: true,
+      body: SliverToBoxAdapter(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 64,
+              height: 64,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Joining wallet…',
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Fetching wallet data from relays',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildSuccessStep(BuildContext context) {
+    final theme = Theme.of(context);
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.success,
+      title: const Text('Joined'),
+      body: SliverToBoxAdapter(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AnimatedCheckCircle(size: 64),
+            const SizedBox(height: 24),
+            Text(
+              _walletName ?? 'Wallet',
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Wallet joined successfully',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _buildErrorStep(BuildContext context) {
+    final theme = Theme.of(context);
+    return MultiStepDialogScaffold(
+      stepKey: _JoinState.error,
+      title: const Text('Error'),
+      showClose: true,
+      body: SliverToBoxAdapter(
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.errorContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                size: 64,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Failed to join wallet',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _error ?? 'Unknown error',
+                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: () => setState(() => _state = _JoinState.input),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Try Again'),
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.error,
+            foregroundColor: theme.colorScheme.onError,
+          ),
+        ),
+      ),
+    );
+  }
 }

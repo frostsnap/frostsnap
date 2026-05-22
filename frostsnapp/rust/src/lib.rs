@@ -4,6 +4,7 @@ mod device_list;
 #[allow(clippy::all)]
 mod frb_generated;
 pub mod logger;
+mod nostr_settings_state;
 pub mod sink_wrap;
 
 pub use bitcoin::Network;

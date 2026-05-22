@@ -26,6 +26,8 @@ use frostsnap_core::{DeviceId, Gist};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{event, span, Level};
 
@@ -63,6 +65,8 @@ pub struct UsbSerialManager {
     challenges: HashMap<DeviceId, frostsnap_comms::GenuineChallenge>,
     /// Devices that passed genuine certificate verification
     genuine_devices: HashMap<DeviceId, frostsnap_comms::genuine_certificate::CertificateBody>,
+    /// Whether USB polling is enabled
+    enabled: Arc<AtomicBool>,
 }
 
 pub struct DevicePort {
@@ -99,6 +103,7 @@ impl UsbSerialManager {
             genuine_cert_key: None,
             challenges: Default::default(),
             genuine_devices: Default::default(),
+            enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -115,6 +120,7 @@ impl UsbSerialManager {
     pub fn usb_sender(&self) -> UsbSender {
         UsbSender {
             sender: self.outbox_sender.clone(),
+            enabled: self.enabled.clone(),
         }
     }
 
@@ -143,6 +149,15 @@ impl UsbSerialManager {
         }
     }
 
+    pub fn disconnect_all(&mut self) -> Vec<DeviceChange> {
+        let mut changes = vec![];
+        let ports: Vec<String> = self.connected.iter().cloned().collect();
+        for port in ports {
+            self.disconnect(&port, &mut changes);
+        }
+        changes
+    }
+
     pub fn active_ports(&self) -> HashSet<String> {
         self.registered_devices
             .iter()
@@ -160,36 +175,38 @@ impl UsbSerialManager {
         let _enter = span.enter();
         let mut device_changes = vec![];
 
-        let connected_now: HashSet<String> = self
-            .serial_impl
-            .available_ports()
-            .into_iter()
-            .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
-            .map(|desc| desc.id)
-            .collect();
+        if self.enabled.load(Ordering::Relaxed) {
+            let connected_now: HashSet<String> = self
+                .serial_impl
+                .available_ports()
+                .into_iter()
+                .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
+                .map(|desc| desc.id)
+                .collect();
 
-        let newly_connected_ports = connected_now
-            .difference(&self.connected)
-            .cloned()
-            .collect::<Vec<_>>();
-        for port in newly_connected_ports {
-            event!(Level::INFO, port = port, "USB port connected");
-            self.connected.insert(port.clone());
-            self.pending.insert(port.clone());
-        }
+            let newly_connected_ports = connected_now
+                .difference(&self.connected)
+                .cloned()
+                .collect::<Vec<_>>();
+            for port in newly_connected_ports {
+                event!(Level::INFO, port = port, "USB port connected");
+                self.connected.insert(port.clone());
+                self.pending.insert(port.clone());
+            }
 
-        let disconnected_ports = self
-            .connected
-            .difference(&connected_now)
-            .cloned()
-            .collect::<Vec<_>>();
-        for port in disconnected_ports {
-            event!(
-                Level::DEBUG,
-                port = port.to_string(),
-                "USB port disconnected"
-            );
-            self.disconnect(&port, &mut device_changes);
+            let disconnected_ports = self
+                .connected
+                .difference(&connected_now)
+                .cloned()
+                .collect::<Vec<_>>();
+            for port in disconnected_ports {
+                event!(
+                    Level::DEBUG,
+                    port = port.to_string(),
+                    "USB port disconnected"
+                );
+                self.disconnect(&port, &mut device_changes);
+            }
         }
 
         for port_name in self.pending.drain().collect::<Vec<_>>() {
@@ -746,9 +763,18 @@ impl UsbSerialManager {
 #[derive(Clone)]
 pub struct UsbSender {
     sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
+    enabled: Arc<AtomicBool>,
 }
 
 impl UsbSender {
+    pub fn set_enabled(&self, value: bool) {
+        self.enabled.store(value, Ordering::Relaxed);
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Relaxed)
+    }
+
     pub fn send_cancel_all(&self) {
         self.sender
             .send(CoordinatorSendMessage {

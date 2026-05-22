@@ -7,6 +7,7 @@ pub mod firmware;
 pub mod firmware_upgrade;
 pub mod keygen;
 pub mod nonce_replenish;
+pub mod remote_keygen;
 mod serial_port;
 pub mod signing;
 mod ui_protocol;

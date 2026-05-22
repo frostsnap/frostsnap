@@ -1,8 +1,6 @@
-mod common;
-
-use common::TestDeviceKeyGen;
 use frostsnap_core::device_nonces::{NonceJobBatch, RatchetSeedMaterial, SecretNonceSlot};
 use frostsnap_core::nonce_stream::NonceStreamId;
+use frostsnap_core::test::TestDeviceKeyGen;
 
 #[test]
 fn test_nonce_generation_deterministic() {

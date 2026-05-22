@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
@@ -23,12 +25,16 @@ class WalletSendPage extends StatefulWidget {
   final MasterAppkey masterAppkey;
   final double initialFeerate;
   final ScrollController? scrollController;
+  final void Function(UnsignedTx, List<DeviceId>)? onTxReady;
+  final bool remoteSigning;
   const WalletSendPage({
     super.key,
     required this.superWallet,
     required this.masterAppkey,
     this.initialFeerate = 3.0,
     this.scrollController,
+    this.onTxReady,
+    this.remoteSigning = false,
   });
 
   BuildTxState buildTx() {
@@ -45,7 +51,7 @@ class WalletSendPage extends StatefulWidget {
 class _WalletSendPageState extends State<WalletSendPage> {
   static const sectionPadding = EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0);
 
-  late final UnitBroadcastSubscription sub;
+  late final StreamSubscription<void> _sub;
 
   late final ScrollController scrollController;
   late final BuildTxState state;
@@ -70,11 +76,17 @@ class _WalletSendPageState extends State<WalletSendPage> {
     state.setAccessId(
       accessId: state.accessStructures().first.accessStructureId(),
     );
+    if (widget.remoteSigning) {
+      for (final (id, _) in state.availableSigners()) {
+        state.selectSigner(dId: id);
+      }
+    }
     if (state.confirmationEstimates() == null)
       state.refreshConfirmationEstimates();
 
-    sub = state.subscribe();
-    sub.start().listen((_) => mounted ? setState(() {}) : null);
+    _sub = state.subscribe().watch().listen(
+      (_) => mounted ? setState(() {}) : null,
+    );
 
     addrController = AddressInputController(state);
     amountController = AmountInputController(state: state);
@@ -84,7 +96,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
   void dispose() {
     amountController.dispose();
     addrController.dispose();
-    sub.dispose();
+    _sub.cancel();
     state.dispose();
     if (widget.scrollController == null) scrollController.dispose();
     super.dispose();
@@ -433,6 +445,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final selectedDevices = state.selectedSigners();
     final remaining = threshold - selectedDevices.length;
 
+    final deviceItems = DeviceItem.fromAccessStructure(accessStruct);
     final signersInputCard = Card.outlined(
       color: cardColor,
       shape: cardShape(context),
@@ -440,43 +453,35 @@ class _WalletSendPageState extends State<WalletSendPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          ListTile(
-            dense: true,
-            title: Text('Select Signers'),
-            trailing: Text('${threshold} required'),
-          ),
-          Column(
-            children: state.availableSigners().map((device) {
-              final (id, name) = device;
-              final nonces = coord.noncesAvailable(id: id);
-              final isSelected = state.isSignerSelected(dId: id);
-
-              if (nonces == 0) state.deselectSigner(dId: id);
-
-              return CheckboxListTile(
-                value: isSelected,
-                onChanged: remaining > 0 || isSelected
-                    ? (selected) => selected ?? false
-                          ? state.selectSigner(dId: id)
-                          : state.deselectSigner(dId: id)
-                    : null,
-                secondary: Icon(Icons.key),
-                title: Text(name ?? '<unknown>'),
-                subtitle: nonces == 0
-                    ? Text(
-                        'no nonces remaining or too many signing sessions',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      )
-                    : null,
-              );
-            }).toList(),
+          DeviceSelectorList(
+            title: widget.remoteSigning
+                ? 'Offer to sign with'
+                : 'Select Signers',
+            trailing: widget.remoteSigning ? null : '$threshold required',
+            devices: deviceItems,
+            selected: selectedDevices.toSet(),
+            onToggle: (id) {
+              if (state.isSignerSelected(dId: id)) {
+                state.deselectSigner(dId: id);
+              } else if (remaining > 0) {
+                state.selectSigner(dId: id);
+              }
+            },
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: FilledButton(
-              onPressed: remaining == 0 ? () => signersDone(context) : null,
+              onPressed: widget.remoteSigning
+                  ? () => signersDone(context)
+                  : remaining == 0
+                  ? () => signersDone(context)
+                  : null,
               child: Text(
-                remaining > 0 ? 'Select ${remaining} more' : 'Sign transaction',
+                widget.remoteSigning
+                    ? 'Send'
+                    : remaining > 0
+                    ? 'Select ${remaining} more'
+                    : 'Sign transaction',
               ),
             ),
           ),
@@ -566,6 +571,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
       showErrorSnackbar(context, 'Invalid transaction: $why');
     }
 
+    if (widget.remoteSigning && unsignedTx != null) {
+      widget.onTxReady!(unsignedTx, state.selectedSigners().toList());
+      Navigator.pop(context);
+      return;
+    }
+
     final fsCtx = FrostsnapContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final access = walletCtx.wallet.frostKey()!.accessStructures()[0];
@@ -631,7 +642,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
   recipientScan(BuildContext context) async {
     final addressResult = await MaybeFullscreenDialog.show<String>(
       context: context,
-      child: AddressScanner(),
+      child: const QrStringScanner(title: 'Scan address'),
     );
     if (!context.mounted || addressResult == null) return;
     addrController.controller.text = addressResult;

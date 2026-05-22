@@ -28,6 +28,17 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>frostsnap</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.frostsnap.channel</string>
+		</dict>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to scan QR codes for Bitcoin addresses and PSBTs.</string>
 </dict>

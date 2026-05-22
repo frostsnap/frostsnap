@@ -12,7 +12,8 @@ import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
+import 'package:frostsnap/nostr_chat/profile_settings_page.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -42,6 +43,28 @@ class SettingsContent extends StatelessWidget {
         constraints: BoxConstraints(maxWidth: settingsMaxWidth),
         child: child,
       ),
+    );
+  }
+}
+
+class UsbToggleButton extends StatefulWidget {
+  const UsbToggleButton({super.key});
+
+  @override
+  State<UsbToggleButton> createState() => _UsbToggleButtonState();
+}
+
+class _UsbToggleButtonState extends State<UsbToggleButton> {
+  @override
+  Widget build(BuildContext context) {
+    final enabled = coord.usbEnabled();
+    return IconButton(
+      icon: Icon(Icons.usb, color: enabled ? null : Colors.red),
+      tooltip: enabled ? 'USB enabled' : 'USB disabled',
+      onPressed: () {
+        coord.setUsbEnabled(value: !enabled);
+        setState(() {});
+      },
     );
   }
 }
@@ -166,6 +189,39 @@ class SettingsPage extends StatelessWidget {
                     },
                   ),
                   SettingsItem(
+                    title: Text('Coordinate over Nostr'),
+                    icon: Icons.chat_bubble_outline,
+                    builder: (context, title, icon) {
+                      final frostKey = walletCtx.wallet.frostKey();
+                      if (frostKey == null) return const SizedBox.shrink();
+                      final asRef = frostKey
+                          .accessStructures()[0]
+                          .accessStructureRef();
+                      final nostr = NostrContext.of(context);
+                      return StreamBuilder<bool>(
+                        stream: nostr.watchCoordinationUi(asRef),
+                        initialData: nostr.isCoordinationUiEnabled(asRef),
+                        builder: (context, snap) {
+                          return Tooltip(
+                            message:
+                                'Sign with co-signers over the internet using Nostr',
+                            child: SwitchListTile(
+                              title: title,
+                              value: snap.data ?? false,
+                              onChanged: (value) async {
+                                await nostr.nostrSettings
+                                    .setCoordinationUiEnabled(
+                                      accessStructureRef: asRef,
+                                      enabled: value,
+                                    );
+                              },
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  SettingsItem(
                     title: Text(
                       "Delete wallet",
                       style: TextStyle(color: Colors.redAccent),
@@ -190,6 +246,13 @@ class SettingsPage extends StatelessWidget {
                   icon: Icons.info_outline,
                   bodyBuilder: (context) {
                     return AboutPage();
+                  },
+                ),
+                SettingsItem(
+                  title: Text('Nostr profile'),
+                  icon: Icons.person,
+                  bodyBuilder: (context) {
+                    return ProfileSettingsPage();
                   },
                 ),
                 SettingsItem(
@@ -239,6 +302,33 @@ class SettingsPage extends StatelessWidget {
                             },
                             value: snap.data?.developerMode ?? false,
                           ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                SettingsItem(
+                  title: Text("USB"),
+                  icon: Icons.usb,
+                  builder: (context, title, icon) {
+                    final settingsCtx = SettingsContext.of(context)!;
+                    return StreamBuilder(
+                      stream: settingsCtx.developerSettings,
+                      builder: (context, snap) {
+                        if (!(snap.data?.developerMode ?? false)) {
+                          return SizedBox.shrink();
+                        }
+                        return StatefulBuilder(
+                          builder: (context, setState) {
+                            return SwitchListTile(
+                              title: title,
+                              value: coord.usbEnabled(),
+                              onChanged: (value) {
+                                coord.setUsbEnabled(value: value);
+                                setState(() {});
+                              },
+                            );
+                          },
                         );
                       },
                     );
@@ -1113,7 +1203,7 @@ class KeysSettings extends StatelessWidget {
             builder: (context, snap) {
               if (!snap.hasData) return SizedBox();
               final frostKey = snap.data!.keys.firstWhereOrNull(
-                (frostkey) => keyIdEquals(frostkey.keyId(), keyId),
+                (frostkey) => frostkey.keyId() == keyId,
               );
               final accessStructures = frostKey?.accessStructures();
               return AccessStructureListWidget(

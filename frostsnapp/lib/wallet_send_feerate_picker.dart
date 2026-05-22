@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 
 enum Eta {
@@ -32,8 +33,7 @@ class FeeRatePickerDialog extends StatefulWidget {
 
 class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   BuildTxState get state => widget.state;
-  // Subscription to `BuildTxState` changes.
-  late final UnitBroadcastSubscription sub;
+  late final StreamSubscription<void> _sub;
   // Current selection.
   Eta? currentSelection;
   // Custom feerate input controller.
@@ -45,8 +45,9 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   initState() {
     super.initState();
 
-    sub = widget.state.subscribe();
-    sub.start().listen((_) => mounted ? setState(() {}) : null);
+    _sub = widget.state.subscribe().watch().listen(
+      (_) => mounted ? setState(() {}) : null,
+    );
 
     final currentTarget = state.confirmationTarget();
 
@@ -69,7 +70,7 @@ class _FeeRatePickerDialogState extends State<FeeRatePickerDialog> {
   void dispose() {
     customFeerateController.dispose();
     customFeerateFocusNode.dispose();
-    sub.dispose();
+    _sub.cancel();
     super.dispose();
   }
 

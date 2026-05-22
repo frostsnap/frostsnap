@@ -28,12 +28,14 @@ use frostsnap_coordinator::{
     AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
     UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
 };
+use frostsnap_core::coordinator::remote_keygen::RemoteKeygenPayload;
 use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
 };
 use frostsnap_core::coordinator::{
-    BeginKeygen, CoordAccessStructure, CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage,
-    FrostCoordinator, NonceReplenishRequest,
+    signing::RemoteSignSessionId, BeginKeygen, BroadcastPayload, CoordAccessStructure,
+    CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage, FrostCoordinator,
+    NonceReplenishRequest, ParticipantBinonces, ParticipantSignatureShares,
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
@@ -46,15 +48,31 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
+/// Outbound routing slot for the active remote keygen ceremony.
+///
+/// `Coordinator::run_remote_keygen` registers itself here so the sync USB
+/// loop's `CoordinatorSend::Broadcast` outputs (produced when a USB device
+/// responds during a remote keygen) can be forwarded over Nostr by the
+/// run loop's outbound branch.
+///
+/// At most one remote keygen is active at a time.
+pub(crate) struct RemoteBroadcastRegistration {
+    pub keygen_id: KeygenId,
+    pub tx: mpsc::UnboundedSender<(DeviceId, RemoteKeygenPayload)>,
+    pub cancel: CancellationToken,
+}
+
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
-    key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
-    signing_session_signals: Arc<Mutex<HashMap<KeyId, Signal>>>,
+    pub(crate) key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
+    pub(crate) signing_session_signals: SignalMap,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
-    ui_stack: Arc<Mutex<UiStack>>,
+    pub(crate) ui_stack: Arc<Mutex<UiStack>>,
     pub(crate) usb_sender: UsbSender,
     firmware_bin: Option<ValidatedFirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<Box<dyn Sink<f32>>>>>,
@@ -67,9 +85,11 @@ pub struct FfiCoordinator {
     // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
     pub(crate) backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
+    pub(crate) active_remote_broadcast: Arc<Mutex<Option<RemoteBroadcastRegistration>>>,
 }
 
-type Signal = Box<dyn Sink<()>>;
+pub(crate) type Signal = Box<dyn Sink<()>>;
+pub(crate) type SignalMap = Arc<Mutex<HashMap<KeyId, Signal>>>;
 
 impl FfiCoordinator {
     pub fn new(
@@ -107,6 +127,7 @@ impl FfiCoordinator {
             device_names: Arc::new(Mutex::new(device_names)),
             backup_state: Arc::new(Mutex::new(backup_state)),
             backup_run_streams: Default::default(),
+            active_remote_broadcast: Default::default(),
         })
     }
 
@@ -134,6 +155,7 @@ impl FfiCoordinator {
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
         let device_list = self.device_list.clone();
         let device_list_stream = self.device_list_stream.clone();
+        let active_remote_broadcast = self.active_remote_broadcast.clone();
 
         let handle = std::thread::spawn(move || {
             loop {
@@ -330,6 +352,30 @@ impl FfiCoordinator {
                         CoordinatorSend::ToUser(msg) => {
                             ui_stack.process_to_user_message(msg);
                         }
+                        CoordinatorSend::Broadcast {
+                            channel,
+                            from,
+                            payload: BroadcastPayload::RemoteKeygen(payload),
+                        } => {
+                            if let Some(reg) = &*active_remote_broadcast.lock().unwrap() {
+                                if reg.keygen_id == channel {
+                                    let _ = reg.tx.send((from, payload));
+                                } else {
+                                    event!(
+                                        Level::WARN,
+                                        ?channel,
+                                        registered = ?reg.keygen_id,
+                                        "remote broadcast for non-active keygen, dropping"
+                                    );
+                                }
+                            } else {
+                                event!(
+                                    Level::WARN,
+                                    ?channel,
+                                    "remote broadcast with no registration, dropping"
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -454,101 +500,6 @@ impl FfiCoordinator {
         ui_protocol.emit_state();
         self.start_protocol(ui_protocol);
 
-        Ok(())
-    }
-
-    pub fn start_signing(
-        &self,
-        access_structure_ref: AccessStructureRef,
-        devices: BTreeSet<DeviceId>,
-        task: WireSignTask,
-        sink: impl Sink<SigningState>,
-    ) -> anyhow::Result<()> {
-        let mut coordinator = self.coordinator.lock().unwrap();
-        let session_id =
-            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
-                Ok(coordinator.start_sign(
-                    access_structure_ref,
-                    task,
-                    &devices,
-                    &mut rand::thread_rng(),
-                )?)
-            })?;
-
-        let signals = self.signing_session_signals.clone();
-        let sink = sink.inspect(move |_| {
-            if let Some(signal_sink) = signals.lock().unwrap().get(&access_structure_ref.key_id) {
-                signal_sink.send(());
-            }
-        });
-
-        let mut ui_protocol = frostsnap_coordinator::signing::SigningDispatcher::new(
-            devices,
-            access_structure_ref.key_id,
-            session_id,
-            sink,
-        );
-        ui_protocol.emit_state();
-        self.start_protocol(ui_protocol);
-
-        Ok(())
-    }
-
-    pub fn request_device_sign(
-        &self,
-        device_id: DeviceId,
-        session_id: SignSessionId,
-        encryption_key: SymmetricKey,
-    ) -> anyhow::Result<()> {
-        let mut ui_stack = self.ui_stack.lock().unwrap();
-
-        let signing = ui_stack
-            .get_mut::<frostsnap_coordinator::signing::SigningDispatcher>()
-            .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
-
-        let mut db = self.db.lock().unwrap();
-
-        let sign_req = self
-            .coordinator
-            .lock()
-            .unwrap()
-            .staged_mutate(&mut *db, |coordinator| {
-                Ok(coordinator.request_device_sign(session_id, device_id, encryption_key))
-            })?;
-
-        signing.send_sign_request(sign_req);
-
-        Ok(())
-    }
-
-    pub fn try_restore_signing_session(
-        &self,
-        session_id: SignSessionId,
-        sink: impl Sink<SigningState>,
-    ) -> anyhow::Result<()> {
-        let coordinator = self.coordinator.lock().unwrap();
-
-        let active_sign_session = coordinator
-            .active_signing_sessions_by_ssid()
-            .get(&session_id)
-            .ok_or(anyhow!("this signing session no longer exists"))?;
-
-        let key_id = active_sign_session.key_id;
-
-        let signals = self.signing_session_signals.clone();
-        let sink = sink.inspect(move |_| {
-            if let Some(signal_sink) = signals.lock().unwrap().get(&key_id) {
-                signal_sink.send(());
-            }
-        });
-
-        let mut dispatcher =
-            frostsnap_coordinator::signing::SigningDispatcher::restore_signing_session(
-                active_sign_session,
-                sink,
-            );
-        dispatcher.emit_state();
-        self.start_protocol(dispatcher);
         Ok(())
     }
 
@@ -991,49 +942,14 @@ impl FfiCoordinator {
         self.usb_sender.erase_all()
     }
 
-    pub fn cancel_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
-        let session = {
-            let mut db = self.db.lock().unwrap();
-            event!(
-                Level::INFO,
-                ssid = ssid.to_string(),
-                "canceling sign session"
-            );
-            let mut coord = self.coordinator.lock().unwrap();
-            let session = coord.active_signing_sessions_by_ssid().get(&ssid).cloned();
-            coord.staged_mutate(&mut *db, |coordinator| {
-                coordinator.cancel_sign_session(ssid);
-                Ok(())
-            })?;
-            session
-        };
-        if let Some(session) = session {
-            let key_id = session.key_id;
-            self.emit_signing_signal(key_id);
-        }
-        Ok(())
+    pub fn set_usb_enabled(&self, value: bool) {
+        self.usb_sender.set_enabled(value);
     }
 
-    pub fn forget_finished_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
-        let deleted_session = {
-            let mut db = self.db.lock().unwrap();
-            event!(
-                Level::INFO,
-                ssid = ssid.to_string(),
-                "forgetting finished sign session"
-            );
-            let mut coord = self.coordinator.lock().unwrap();
-            coord.staged_mutate(&mut *db, |coordinator| {
-                Ok(coordinator.forget_finished_sign_session(ssid))
-            })?
-        };
-
-        if let Some(session) = deleted_session {
-            self.emit_signing_signal(session.key_id);
-        }
-
-        Ok(())
+    pub fn usb_enabled(&self) -> bool {
+        self.usb_sender.is_enabled()
     }
+
     pub fn cancel_restoration(&self, restoration_id: RestorationId) -> anyhow::Result<()> {
         let mut db = self.db.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
@@ -1050,21 +966,7 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn sub_signing_session_signals(&self, key_id: KeyId, new_stream: impl Sink<()>) {
-        // Emit an initial signal immediately so that subscribers (especially BehaviorSubjects on
-        // the Dart side) get an initial value. This is important for UI state that needs to show
-        // the correct state immediately on app restart (e.g., the "Continue" button when there
-        // are unbroadcasted transactions).
-        //
-        // NOTE: This signal stream design is a bit annoying because we should really just have a
-        // stream of signing sessions rather than a signal stream that causes consumers to
-        // recompute state.
-        new_stream.send(());
-        let mut signal_streams = self.signing_session_signals.lock().unwrap();
-        signal_streams.insert(key_id, Box::new(new_stream));
-    }
-
-    pub fn emit_signing_signal(&self, key_id: KeyId) {
+    pub(crate) fn emit_signing_signal(&self, key_id: KeyId) {
         let signal_streams = self.signing_session_signals.lock().unwrap();
         if let Some(stream) = signal_streams.get(&key_id) {
             stream.send(())

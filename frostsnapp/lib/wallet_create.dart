@@ -2,18 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
-import 'package:frostsnap/device_action_upgrade.dart';
+import 'package:frostsnap/device_setup_step.dart';
+import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/hex.dart';
-import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/threshold_selector.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
-import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
@@ -21,10 +20,7 @@ import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
-import 'maybe_fullscreen_dialog.dart';
-import 'wallet_device_list.dart';
 
 /// Smallest strict majority of `totalDevices` — the recommended / default
 /// signing threshold for a new wallet.
@@ -42,13 +38,9 @@ class WalletCreateForm {
   BitcoinNetwork network = BitcoinNetwork.bitcoin;
   String? name;
 
-  final Set<DeviceId> selectedDevices = deviceIdSet([]);
-  final Map<DeviceId, String> deviceNames = deviceIdMap<String>();
+  final Set<DeviceId> selectedDevices = {};
 
   int? threshold;
-
-  bool get allDevicesNamed =>
-      selectedDevices.every((id) => deviceNames.containsKey(id));
 }
 
 class WalletCreateController extends ChangeNotifier {
@@ -56,8 +48,7 @@ class WalletCreateController extends ChangeNotifier {
   final WalletCreateForm _form = WalletCreateForm();
   final _nameController = TextEditingController();
   String? _nameError;
-  late final StreamSubscription _deviceListSub;
-  late DeviceListState _deviceList;
+  final DeviceSetupController _deviceSetup = DeviceSetupController();
 
   bool _hasAutoAdvanced = false;
   ValueStream<NonceReplenishState>? _nonceStream;
@@ -67,43 +58,31 @@ class WalletCreateController extends ChangeNotifier {
   AccessStructureRef? _asRef;
 
   WalletCreateController() {
-    {
-      bool firstRun = true;
-      _nameController.addListener(() {
-        final name = _nameController.text;
-        if (!firstRun) {
-          if (name.isEmpty) {
-            nameError = 'Wallet name required';
-            return;
-          }
-          if (name.length > keyNameMaxLength()) {
-            nameError =
-                'Wallet name cannot be over ${keyNameMaxLength()} chars';
-            return;
-          }
-        } else if (name.isNotEmpty) {
-          firstRun = false;
-          notifyListeners();
+    bool firstRun = true;
+    _nameController.addListener(() {
+      final name = _nameController.text;
+      if (!firstRun) {
+        if (name.isEmpty) {
+          nameError = 'Wallet name required';
+          return;
         }
-        nameError = null;
-      });
-    }
-    {
-      _deviceListSub = GlobalStreams.deviceListSubject.listen((update) {
-        _deviceList = update.state;
-        for (final change in update.changes) {
-          if (change.kind == DeviceListChangeKind.added) {
-            final id = change.device.id;
-            final name = _form.deviceNames[id];
-            if (name != null) {
-              coord.updateNamePreview(id: id, name: name);
-            }
-          }
+        if (name.length > keyNameMaxLength()) {
+          nameError = 'Wallet name cannot be over ${keyNameMaxLength()} chars';
+          return;
         }
+      } else if (name.isNotEmpty) {
+        firstRun = false;
         notifyListeners();
-      });
-    }
+      }
+      nameError = null;
+    });
+    // Re-broadcast device-setup changes so existing listeners that
+    // watch `WalletCreateController` pick them up (canGoNext/nextText
+    // both depend on the connected device list).
+    _deviceSetup.addListener(notifyListeners);
   }
+
+  DeviceSetupController get deviceSetup => _deviceSetup;
 
   FullscreenActionDialogController _buildKeygenController(
     BuildContext context,
@@ -216,10 +195,8 @@ class WalletCreateController extends ChangeNotifier {
   @override
   void dispose() {
     _nameController.dispose();
-    _deviceListSub.cancel();
-    for (final device in _deviceList.devices) {
-      coord.sendCancel(id: device.id);
-    }
+    _deviceSetup.removeListener(notifyListeners);
+    _deviceSetup.dispose();
     // Null the field first so the page's `_beginThresholdKeygen` finally (if
     // it's racing) doesn't double-dispose via its `identical` check.
     final keygenController = _keygenController;
@@ -237,20 +214,10 @@ class WalletCreateController extends ChangeNotifier {
     await coord.cancelProtocol();
   }
 
-  Future<void> resetDeviceNames(Iterable<ConnectedDevice> devices) async {
-    for (final device in devices) {
-      final id = device.id;
-      final name = form.deviceNames[id];
-      (name != null)
-          ? await coord.updateNamePreview(id: id, name: name)
-          : await coord.sendCancel(id: id);
-    }
-  }
-
-  Future<void> resetKeygenState(Iterable<ConnectedDevice> devices) async {
+  Future<void> resetKeygenState() async {
     await _keygenController?.clearAllActionsNeeded();
     _keygenState = null;
-    await resetDeviceNames(devices);
+    await _deviceSetup.resendNamePreviews();
     notifyListeners();
   }
 
@@ -273,29 +240,9 @@ class WalletCreateController extends ChangeNotifier {
     notifyListeners();
   }
 
-  int get connectedDeviceCount => _deviceList.devices.length;
-  bool get devicesNeedUpgrade =>
-      _deviceList.devices.any((dev) => dev.needsFirmwareUpgrade());
-  bool get devicesCanUpgrade => _deviceList.devices.any((dev) {
-    final eligibility = dev.firmwareUpgradeEligibility();
-    return eligibility.when(
-      upToDate: () => false,
-      canUpgrade: () => true,
-      cannotUpgrade: (_) => false,
-    );
-  });
-  bool get devicesUsed => _deviceList.devices.any((dev) => dev.name != null);
-  bool get devicesIncompatible => _deviceList.devices.any((dev) {
-    final eligibility = dev.firmwareUpgradeEligibility();
-    return eligibility.when(
-      upToDate: () => false,
-      canUpgrade: () => false,
-      cannotUpgrade: (_) => true,
-    );
-  });
+  int get connectedDeviceCount => _deviceSetup.connectedDeviceCount;
   bool get allWalletDevicesConnected => _form.selectedDevices.every(
-    (selectedId) =>
-        _deviceList.devices.any((dev) => deviceIdEquals(dev.id, selectedId)),
+    (selectedId) => _deviceSetup.devices.any((dev) => dev.id == selectedId),
   );
   bool get devicesNeedNonceReplenishment {
     final nonceRequest = coord.createNonceRequest(
@@ -313,12 +260,7 @@ class WalletCreateController extends ChangeNotifier {
   bool get canGoNext => switch (_step) {
     WalletCreateStep.name =>
       _nameError == null && _nameController.value.text.isNotEmpty,
-    WalletCreateStep.devices =>
-      _deviceList.devices.isNotEmpty &&
-          !devicesNeedUpgrade &&
-          !devicesUsed &&
-          !devicesIncompatible &&
-          _deviceList.devices.every((d) => _form.deviceNames.containsKey(d.id)),
+    WalletCreateStep.devices => _deviceSetup.ready,
     WalletCreateStep.nonceReplenish => false, // Auto-advances, no manual next
     WalletCreateStep.threshold =>
       allWalletDevicesConnected &&
@@ -338,7 +280,6 @@ class WalletCreateController extends ChangeNotifier {
   bool _isAnimationForward = true;
   bool get isAnimationForward => _isAnimationForward;
 
-  /// Does additional checks (maybe) and tries to populate the _form.
   Future<bool> _handleNext(BuildContext context) async {
     _isAnimationForward = true;
     // Skip canGoNext check for nonceReplenish since it auto-advances
@@ -349,7 +290,7 @@ class WalletCreateController extends ChangeNotifier {
         return true;
       case WalletCreateStep.devices:
         _form.selectedDevices.clear();
-        _form.selectedDevices.addAll(_deviceList.devices.map((dev) => dev.id));
+        _form.selectedDevices.addAll(_deviceSetup.devices.map((dev) => dev.id));
         final needsNonces = await _shouldShowNonceStep();
         if (needsNonces) {
           final devices = _form.selectedDevices.toList();
@@ -446,8 +387,10 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep? prevStep;
     if (_step == WalletCreateStep.threshold ||
         _step == WalletCreateStep.nonceReplenish) {
-      // Skip nonce step on the way back since nonce generation is automatic
-      // and shouldn't be re-shown. Clear the stream so it can be re-generated.
+      // Back skips the automatic nonce step; cancel if generation is active.
+      if (_step == WalletCreateStep.nonceReplenish && _nonceStream != null) {
+        coord.cancelProtocol();
+      }
       prevStep = WalletCreateStep.devices;
       _nonceStream = null;
       _hasAutoAdvanced = false;
@@ -469,9 +412,9 @@ class WalletCreateController extends ChangeNotifier {
 
   String? get nextText => switch (_step) {
     WalletCreateStep.name => null,
-    WalletCreateStep.devices => switch (_deviceList.devices.length) {
+    WalletCreateStep.devices => switch (_deviceSetup.connectedDeviceCount) {
       1 => 'Continue with 1 device',
-      _ => 'Continue with ${_deviceList.devices.length} devices',
+      final n => 'Continue with $n devices',
     },
     WalletCreateStep.nonceReplenish => null,
     WalletCreateStep.threshold => 'Generate keys',
@@ -492,18 +435,8 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.threshold => '',
   };
 
-  void setDeviceName(DeviceId id, String name) async {
-    final trimmed = name.trim();
-    if (trimmed.isNotEmpty) {
-      _form.deviceNames[id] = trimmed;
-      notifyListeners();
-      await coord.updateNamePreview(id: id, name: trimmed);
-    } else {
-      _form.deviceNames.remove(id);
-      notifyListeners();
-      await coord.sendCancel(id: id);
-    }
-  }
+  Future<void> setDeviceName(DeviceId id, String name) =>
+      _deviceSetup.setDeviceName(id, name);
 }
 
 enum WalletCreateStep { name, devices, nonceReplenish, threshold }
@@ -542,10 +475,7 @@ class WalletCreatePage extends StatefulWidget {
 }
 
 class _WalletCreatePageState extends State<WalletCreatePage> {
-  static const topSectionPadding = EdgeInsets.fromLTRB(16, 0, 16, 16);
-  static const sectionPadding = EdgeInsets.fromLTRB(16, 16, 16, 24);
   late WalletCreateController _controller;
-  final _upgradeController = DeviceActionUpgradeController();
   bool _keygenInFlight = false;
 
   @override
@@ -557,11 +487,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   @override
   void dispose() {
-    // dispose all dynamic controllers
-    for (final c in _nameControllers.values) {
-      c.dispose();
-    }
-    _upgradeController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -585,265 +510,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
-  Widget buildDevicesBody(BuildContext context) {
-    final theme = Theme.of(context);
-    final parentCtx = context;
-    return MultiSliver(
-      children: [
-        SliverDeviceList(
-          deviceBuilder: (context, device) {
-            final cs = Theme.of(context).colorScheme;
-
-            if (device.name != null) {
-              return _deviceRow(
-                context: context,
-                title: Text(
-                  device.name!,
-                  style: monospaceTextStyle.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
-                ),
-                trailing: buildDeviceTrailingInfo(
-                  context,
-                  text: 'Already holds a key',
-                  subText: 'Unplug to continue',
-                  icon: Icons.warning_rounded,
-                  color: cs.error,
-                ),
-                enabled: false,
-              );
-            }
-
-            return device.firmwareUpgradeEligibility().when(
-              upToDate: () => _deviceRow(
-                context: context,
-                title: _inlineNameField(context, device),
-                trailing: Icon(
-                  Icons.edit_rounded,
-                  color: cs.onSurfaceVariant,
-                  size: 20,
-                ),
-              ),
-              canUpgrade: () => _deviceRow(
-                context: context,
-                title: const SizedBox.shrink(),
-                trailing: buildDeviceTrailingInfo(
-                  context,
-                  text: 'Old firmware',
-                  subText: 'Tap to upgrade',
-                  icon: Icons.system_update_alt_rounded,
-                  color: Colors.orange,
-                ),
-                onTap: () async => await _upgradeController.run(parentCtx),
-              ),
-              cannotUpgrade: (reason) => _deviceRow(
-                context: context,
-                title: const SizedBox.shrink(),
-                trailing: buildDeviceTrailingInfo(
-                  context,
-                  text: 'Incompatible firmware',
-                  subText: reason,
-                  icon: Icons.warning_rounded,
-                  color: cs.error,
-                ),
-                enabled: false,
-              ),
-            );
-          },
-        ),
-
-        if (_controller.devicesCanUpgrade && !_controller.devicesIncompatible)
-          SliverToBoxAdapter(
-            child: Card.outlined(
-              margin: EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                    title: Text(
-                      'One or more devices require a firmware update before continuing.',
-                    ),
-                    leading: Icon(
-                      Icons.system_update_alt_rounded,
-                      color: Colors.orange,
-                    ),
-                    trailing: TextButton(
-                      onPressed: () async =>
-                          await _upgradeController.run(context),
-                      child: Text('Start Upgrade'),
-                    ),
-                    onTap: () async => await _upgradeController.run(context),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        if (_controller.devicesIncompatible)
-          SliverToBoxAdapter(
-            child: Card.outlined(
-              margin: EdgeInsets.symmetric(vertical: 8),
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                title: Text(
-                  'One or more devices have incompatible firmware. Unplug them to continue.',
-                ),
-                leading: Icon(
-                  Icons.warning_rounded,
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ),
-          ),
-        SliverToBoxAdapter(
-          child: AnimatedGradientCard(
-            child: ListTile(
-              dense: true,
-              title: Text(
-                'Plug in all devices to include them in this wallet.',
-              ),
-              contentPadding: EdgeInsets.symmetric(horizontal: 16),
-              leading: Icon(Icons.info_rounded),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _deviceRow({
-    required BuildContext context,
-    required Widget title,
-    required Widget trailing,
-    VoidCallback? onTap,
-    bool enabled = true,
-  }) {
-    final cs = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      color: cs.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
-      child: ListTile(
-        onTap: onTap,
-        enabled: enabled,
-        leading: Icon(
-          Icons.key,
-          color: enabled
-              ? cs.onSurfaceVariant
-              : cs.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-        title: title,
-        trailing: trailing,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      ),
-    );
-  }
-
-  Widget buildDeviceTrailingInfo(
-    BuildContext context, {
-    String? text,
-    String? subText,
-    IconData? icon,
-    Color? color,
-  }) => Row(
-    mainAxisSize: MainAxisSize.min,
-    spacing: 8,
-    children: [
-      Flexible(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (text != null)
-              Text(
-                text,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(color: color),
-              ),
-            if (subText != null)
-              Text(
-                subText,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(color: color),
-              ),
-          ],
-        ),
-      ),
-      if (icon != null) Icon(icon, color: color),
-    ],
-  );
-
-  final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
-
-  void showRenameDeviceDialog(
-    BuildContext context,
-    ConnectedDevice device,
-  ) async {
-    await showBottomSheetOrDialog(
-      context,
-      title: Text("Name device"),
-      builder: (context, _) {
-        final mediaQuery = MediaQuery.of(context);
-        return SafeArea(
-          minimum: const EdgeInsets.symmetric(
-            horizontal: 20,
-          ).copyWith(bottom: 32 + mediaQuery.viewInsets.bottom, top: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 12,
-            children: [
-              TextFormField(
-                autofocus: true,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Device Name',
-                ),
-                maxLength: DeviceName.maxLength(),
-                inputFormatters: [nameInputFormatter],
-                initialValue: _controller.form.deviceNames[device.id],
-                onChanged: (name) => _controller.setDeviceName(device.id, name),
-                onFieldSubmitted: (_) => Navigator.pop(context),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Done'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _inlineNameField(BuildContext context, ConnectedDevice device) {
-    final cs = Theme.of(context).colorScheme;
-    final currentName = _controller.form.deviceNames[device.id] ?? '';
-    final textController = _nameControllers.putIfAbsent(
-      device.id,
-      () => TextEditingController(text: currentName),
-    );
-    return TextField(
-      controller: textController,
-      style: monospaceTextStyle,
-      maxLength: DeviceName.maxLength(),
-      inputFormatters: [nameInputFormatter],
-      decoration: InputDecoration(
-        hintText: 'Enter device name',
-        hintStyle: monospaceTextStyle.copyWith(color: cs.onSurfaceVariant),
-        border: InputBorder.none,
-        isDense: true,
-        contentPadding: EdgeInsets.zero,
-        counterText: '',
-      ),
-      onChanged: (name) => _controller.setDeviceName(device.id, name),
-    );
-  }
+  Widget buildDevicesBody(BuildContext context) =>
+      DeviceSetupView(controller: _controller.deviceSetup);
 
   Widget buildThresholdBody(BuildContext context) {
     final form = _controller.form;
@@ -865,16 +533,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
-  /// Runs the full keygen flow: starts the Rust keygen stream, pumps each
-  /// state into the controller (for reactive rebuilds of the dialog body
-  /// and footer), shows the Final-check alert when all devices have ack'd,
-  /// and on a matching code finalizes the keygen and pops the page with
-  /// the resulting AccessStructureRef.
-  ///
-  /// This lives on the page (not `WalletCreateController.next()`) because
-  /// the keygen step is driven directly by the "Generate keys" button —
-  /// advancing past the threshold step IS running keygen. `next()` has no
-  /// threshold case; the button skips `next()` and calls this instead.
   Future<void> _beginThresholdKeygen(BuildContext context) async {
     if (_keygenInFlight) return;
     setState(() => _keygenInFlight = true);
@@ -890,9 +548,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           )
           .toBehaviorSubject();
 
-      // Dismiss any leftover keygen dialog from a previous attempt before
-      // spinning up a new one. Awaits the dismissal animation so the new
-      // dialog doesn't stack on top of the old one.
       final previous = _controller._keygenController;
       _controller._keygenController = null;
       await previous?.clearAllActionsNeeded();
@@ -914,7 +569,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           }
 
           if (state.aborted != null) {
-            await _controller.resetKeygenState(coord.deviceListState().devices);
+            await _controller.resetKeygenState();
             return;
           }
 
@@ -991,10 +646,10 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             final encryptionKey = await SecureKeyProvider.getEncryptionKey();
             final deviceNames = [
               for (final id in state.devices)
-                if (_controller.form.deviceNames[id] != null)
+                if (_controller.deviceSetup.deviceNames[id] != null)
                   DeviceNameCommit(
                     id: id,
-                    name: _controller.form.deviceNames[id]!,
+                    name: _controller.deviceSetup.deviceNames[id]!,
                   ),
             ];
             final asRef = await coord.finalizeKeygen(
@@ -1014,10 +669,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           return;
         }
       } finally {
-        // Only dispose if we're still the active keygen controller. The
-        // field could have been nulled out from under us by
-        // `WalletCreateController.dispose()` or by a follow-up call to
-        // `_beginThresholdKeygen` that swapped in a fresh controller.
         if (identical(_controller._keygenController, keygenController)) {
           _controller._keygenController = null;
           keygenController.dispose();
@@ -1054,11 +705,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   Widget buildNonceReplenish(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Use the pre-initialized stream
     final stream = _controller._nonceStream;
     if (stream == null) {
-      // This shouldn't happen as we skip the step when no nonces are needed
-      // But if it does, auto-advance immediately
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_controller._hasAutoAdvanced) {
           _controller._hasAutoAdvanced = true;
@@ -1119,99 +767,49 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final mediaQuery = MediaQuery.of(context);
-    final windowSize = WindowSizeContext.of(context);
-    final isFullscreen = windowSize == WindowSizeClass.compact;
-
     final network = _controller.form.network;
     final appBarTrailingText = network.isMainnet()
         ? ''
         : ' (${network.name()})';
 
-    final header = TopBarSliver(
-      title: Text('${_controller.title}$appBarTrailingText'),
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back_rounded),
-        onPressed: () => goBackOrClose(context),
-        tooltip: 'Back',
-      ),
-    );
+    final step = _controller.step;
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
 
-    final column = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Flexible(
-          child: AnimatedSwitcher(
-            duration: Durations.medium4,
-            reverseDuration: Duration.zero,
-            transitionBuilder: (child, animation) {
-              final curvedAnimation = CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeInOutCubicEmphasized,
-              );
-              return SlideTransition(
-                position: Tween<Offset>(
-                  begin: _controller.isAnimationForward
-                      ? const Offset(1, 0)
-                      : const Offset(-1, 0),
-                  end: Offset.zero,
-                ).animate(curvedAnimation),
-                child: FadeTransition(opacity: animation, child: child),
-              );
-            },
-            child: CustomScrollView(
-              key: ValueKey<WalletCreateStep>(_controller.step),
-              physics: ClampingScrollPhysics(),
-              shrinkWrap: windowSize != WindowSizeClass.compact,
-              slivers: [
-                header,
-                if (_controller.subtitle.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: topSectionPadding.copyWith(
-                        top: isFullscreen ? null : 8,
-                      ),
-                      child: Text(
-                        _controller.subtitle,
-                        style: theme.textTheme.titleMedium,
-                      ),
-                    ),
-                  ),
-                SliverPadding(
-                  padding: sectionPadding,
-                  sliver: buildBody(context),
-                ),
-                SliverPadding(padding: EdgeInsets.only(bottom: 16)),
-              ],
-            ),
-          ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        goBackOrClose(context);
+      },
+      child: MultiStepDialogScaffold(
+        stepKey: step,
+        title: Text('${_controller.title}$appBarTrailingText'),
+        subtitle: _controller.subtitle.isEmpty ? null : _controller.subtitle,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => goBackOrClose(context),
+          tooltip: 'Back',
         ),
-        if (_controller.step != WalletCreateStep.nonceReplenish)
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
-                  false)
-                buildAdvancedOptions(context),
-              Padding(
-                padding: EdgeInsets.all(
-                  16,
-                ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
-                child: SafeArea(
-                  top: false,
-                  child: Align(
+        body: buildBody(context),
+        footer: step == WalletCreateStep.nonceReplenish
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 12,
+                children: [
+                  if (devMode) buildAdvancedOptions(context),
+                  Align(
                     alignment: Alignment.centerRight,
                     child: FilledButton(
                       onPressed:
                           !_controller.canGoNext ||
-                              (_controller.step == WalletCreateStep.threshold &&
+                              (step == WalletCreateStep.threshold &&
                                   _keygenInFlight)
                           ? null
                           : () {
-                              if (_controller.step ==
-                                  WalletCreateStep.threshold) {
+                              if (step == WalletCreateStep.threshold) {
                                 _beginThresholdKeygen(context);
                               } else {
                                 _controller.next(context);
@@ -1224,20 +822,13 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-      ],
-    );
-
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        goBackOrClose(context);
-      },
-      child: column,
+        forward: _controller.isAnimationForward,
+        // Outgoing steps dispose immediately so per-step streams (e.g.
+        // `nonceReplenish`) don't keep running during the slide.
+        reverseDuration: Duration.zero,
+      ),
     );
   }
 
@@ -1253,99 +844,10 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     Navigator.pop(context, null);
   }
 
-  bool _isAdvancedOptionsHidden = true;
-  StatefulBuilder buildAdvancedOptions(BuildContext context) {
-    final theme = Theme.of(context);
-    return StatefulBuilder(
-      builder: (context, setState) {
-        final mayHide = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: 12,
-          children: [
-            Text(
-              'Network',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: BitcoinNetwork.supportedNetworks()
-                  .map(
-                    (network) => ButtonSegment(
-                      value: network.name(),
-                      label: Text(
-                        network.name(),
-                        overflow: TextOverflow.fade,
-                        softWrap: false,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              selected: {_controller.form.network.name()},
-              onSelectionChanged: (selectedSet) {
-                _isAdvancedOptionsHidden = true;
-                final selected = selectedSet.first;
-                _controller.setNetwork(
-                  BitcoinNetwork.fromString(string: selected)!,
-                );
-              },
-            ),
-            SizedBox(height: 8),
-          ],
-        );
-        return Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16).copyWith(top: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AnimatedCrossFade(
-                firstChild: SizedBox(),
-                secondChild: mayHide,
-                crossFadeState: _isAdvancedOptionsHidden
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
-                duration: Durations.medium2,
-                sizeCurve: Curves.easeInOutCubicEmphasized,
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                spacing: 8,
-                children: [
-                  if (!_controller.form.network.isMainnet())
-                    InputChip(
-                      surfaceTintColor: theme.colorScheme.error,
-                      label: Text(_controller.form.network.name()),
-                      deleteIcon: Icon(Icons.clear_rounded),
-                      onDeleted: () {
-                        _isAdvancedOptionsHidden = true;
-                        _controller.setNetwork(BitcoinNetwork.bitcoin);
-                      },
-                    ),
-                  TextButton.icon(
-                    onPressed: () => setState(
-                      () =>
-                          _isAdvancedOptionsHidden = !_isAdvancedOptionsHidden,
-                    ),
-                    icon: Icon(
-                      _isAdvancedOptionsHidden
-                          ? Icons.arrow_drop_up_rounded
-                          : Icons.arrow_drop_down_rounded,
-                    ),
-                    label: Text(
-                      'Developer',
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
+  Widget buildAdvancedOptions(BuildContext context) {
+    return NetworkAdvancedOptions(
+      selected: _controller.form.network,
+      onChanged: (n) => _controller.setNetwork(n),
     );
   }
 }

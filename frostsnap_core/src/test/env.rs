@@ -1,18 +1,24 @@
-use crate::common::{Env, Run, TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
-use bitcoin::Address;
-use frostsnap_core::coordinator::restoration::RecoverShare;
-use frostsnap_core::device::{self, DeviceToUserMessage};
-use frostsnap_core::message::{self, DeviceSend, DeviceToCoordinatorMessage, EncodedSignature};
-use frostsnap_core::tweak::BitcoinBip32Path;
-use frostsnap_core::{
+use super::{Env, Run, TestDeviceKeyGen, TEST_ENCRYPTION_KEY};
+use crate::coordinator::restoration::RecoverShare;
+use crate::device::{self, DeviceToUserMessage};
+use crate::message::{self, DeviceSend, DeviceToCoordinatorMessage, EncodedSignature};
+use crate::tweak::BitcoinBip32Path;
+use crate::{
     coordinator::{
         CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
     },
     CheckedSignTask, DeviceId, KeyId, RestorationId, SessionHash, SignSessionId,
 };
-use rand::RngCore;
+use alloc::{
+    boxed::Box,
+    collections::{BTreeMap, BTreeSet},
+    string::String,
+    vec,
+    vec::Vec,
+};
+use bitcoin::Address;
+use rand_core::RngCore;
 use schnorr_fun::Signature;
-use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
 pub struct TestEnv {
@@ -25,8 +31,7 @@ pub struct TestEnv {
 
     // backups
     pub backups: BTreeMap<DeviceId, (String, frost_backup::ShareBackup)>,
-    pub physical_backups_entered:
-        Vec<frostsnap_core::coordinator::restoration::PhysicalBackupPhase>,
+    pub physical_backups_entered: Vec<crate::coordinator::restoration::PhysicalBackupPhase>,
 
     // nonces
     pub received_nonce_replenishes: BTreeSet<DeviceId>,
@@ -46,6 +51,7 @@ impl Env for TestEnv {
     fn user_react_to_coordinator(
         &mut self,
         run: &mut Run,
+        ci: usize,
         message: CoordinatorToUserMessage,
         rng: &mut impl RngCore,
     ) {
@@ -76,22 +82,20 @@ impl Env for TestEnv {
                     );
 
                     if all_acks_received {
-                        assert_eq!(
-                            self.coordinator_got_keygen_acks.len(),
-                            self.received_keygen_shares.len()
-                        );
-                        let send_finalize_keygen = run
+                        let send_finalize_keygen = run.participants[ci]
                             .coordinator
                             .finalize_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng)
                             .unwrap();
                         self.keygen_acks
                             .insert(send_finalize_keygen.access_structure_ref.key_id);
-                        run.extend(send_finalize_keygen);
+                        run.extend_from_coordinator(ci, send_finalize_keygen);
                     }
                 }
             },
             CoordinatorToUserMessage::Signing(signing_message) => match signing_message {
-                CoordinatorToUserSigningMessage::GotShare { from, session_id } => {
+                CoordinatorToUserSigningMessage::GotShare {
+                    from, session_id, ..
+                } => {
                     assert!(
                         self.received_signing_shares
                             .entry(session_id)
@@ -115,13 +119,12 @@ impl Env for TestEnv {
                 }
             },
             CoordinatorToUserMessage::Restoration(msg) => {
-                use frostsnap_core::coordinator::restoration::ToUserRestoration::*;
+                let coord = &mut run.participants[ci].coordinator;
+                use crate::coordinator::restoration::ToUserRestoration::*;
                 match msg {
                     GotHeldShares {
                         held_by, shares, ..
                     } => {
-                        // This logic here is just about doing something sensible in the context of a test.
-                        // We start a new restoration if we get a new share but don't already know about it.
                         for held_share in shares {
                             let recover_share = RecoverShare {
                                 held_by,
@@ -130,17 +133,16 @@ impl Env for TestEnv {
 
                             match held_share.access_structure_ref {
                                 Some(access_structure_ref)
-                                    if run
-                                        .coordinator
+                                    if coord
                                         .get_access_structure(access_structure_ref)
                                         .is_some() =>
                                 {
-                                    if !run.coordinator.knows_about_share(
+                                    if !coord.knows_about_share(
                                         held_by,
                                         access_structure_ref,
                                         held_share.share_image.index,
                                     ) {
-                                        run.coordinator
+                                        coord
                                             .recover_share(
                                                 access_structure_ref,
                                                 &recover_share,
@@ -150,11 +152,10 @@ impl Env for TestEnv {
                                     }
                                 }
                                 _ => {
-                                    let existing_restoration =
-                                        run.coordinator.restoring().find(|state| {
-                                            state.access_structure.access_structure_ref()
-                                                == held_share.access_structure_ref
-                                        });
+                                    let existing_restoration = coord.restoring().find(|state| {
+                                        state.access_structure.access_structure_ref()
+                                            == held_share.access_structure_ref
+                                    });
 
                                     match existing_restoration {
                                         Some(existing_restoration) => {
@@ -165,7 +166,7 @@ impl Env for TestEnv {
                                                     recover_share.held_share.share_image,
                                                 )
                                             {
-                                                run.coordinator
+                                                coord
                                                     .add_recovery_share_to_restoration(
                                                         existing_restoration.restoration_id,
                                                         &recover_share,
@@ -174,8 +175,7 @@ impl Env for TestEnv {
                                                     .unwrap();
                                             }
                                         }
-                                        None => run
-                                            .coordinator
+                                        None => coord
                                             .start_restoring_key_from_recover_share(
                                                 &recover_share,
                                                 RestorationId::new(rng),
@@ -205,20 +205,25 @@ impl Env for TestEnv {
         message: DeviceToUserMessage,
         rng: &mut impl RngCore,
     ) {
+        let ci = run.owner_of(from);
         match message {
             DeviceToUserMessage::FinalizeKeyGen { .. } => {}
             DeviceToUserMessage::CheckKeyGen { phase, .. } => {
                 self.keygen_checks.insert(from, phase.session_hash());
-                let ack = run
-                    .device(from)
+                let ack = run.participants[ci]
+                    .devices
+                    .get_mut(&from)
+                    .unwrap()
                     .keygen_ack(*phase, &mut TestDeviceKeyGen, rng)
                     .unwrap();
                 run.extend_from_device(from, ack);
             }
             DeviceToUserMessage::SignatureRequest { phase } => {
                 self.sign_tasks.insert(from, phase.sign_task().clone());
-                let sign_ack = run
-                    .device(from)
+                let sign_ack = run.participants[ci]
+                    .devices
+                    .get_mut(&from)
+                    .unwrap()
                     .sign_ack(*phase, &mut TestDeviceKeyGen)
                     .unwrap();
                 run.extend_from_device(from, sign_ack);
@@ -237,7 +242,7 @@ impl Env for TestEnv {
                         self.backups.insert(from, (key_name, backup));
                     }
                     EnterBackup { phase } => {
-                        let device = run.device(from);
+                        let device = run.participants[ci].devices.get_mut(&from).unwrap();
                         let share_backup = self
                             .backup_to_enter
                             .remove(&from)
@@ -248,11 +253,11 @@ impl Env for TestEnv {
                         run.extend_from_device(from, response);
                     }
                     ConsolidateBackup(phase) => {
-                        let ack = run.device(from).finish_consolidation(
-                            &mut TestDeviceKeyGen,
-                            phase,
-                            rng,
-                        );
+                        let ack = run.participants[ci]
+                            .devices
+                            .get_mut(&from)
+                            .unwrap()
+                            .finish_consolidation(&mut TestDeviceKeyGen, phase, rng);
                         run.extend_from_device(from, ack);
                     }
                     BackupSaved { .. } => { /* informational */ }
@@ -267,7 +272,6 @@ impl Env for TestEnv {
                     .insert(from, (address, bip32_path));
             }
             DeviceToUserMessage::NonceJobs(mut batch) => {
-                // Run the batch to completion and send a single response
                 batch.run_until_finished(&mut TestDeviceKeyGen);
                 let segments = batch.into_segments();
                 let response =

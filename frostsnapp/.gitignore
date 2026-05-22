@@ -68,3 +68,4 @@ appimage/linuxdeploy
 
 # macOS DMG files
 *.dmg
+.relay/

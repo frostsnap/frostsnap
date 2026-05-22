@@ -4,13 +4,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
-import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'hex.dart';
 
@@ -52,7 +50,7 @@ class SignMessageForm extends StatefulWidget {
 
 class _SignMessageFormState extends State<SignMessageForm> {
   final _messageController = TextEditingController();
-  Set<DeviceId> selected = deviceIdSet([]);
+  Set<DeviceId> selected = {};
 
   @override
   void initState() {
@@ -76,15 +74,18 @@ class _SignMessageFormState extends State<SignMessageForm> {
     if (buttonReady) {
       submitButtonOnPressed = () async {
         final message = _messageController.text;
-        final signingStream = coord
-            .startSigning(
-              accessStructureRef: accessStructure.accessStructureRef(),
-              devices: selected.toList(),
-              message: message,
-            )
-            .toBehaviorSubject();
+        final handle = await coord.startSigning(
+          accessStructureRef: accessStructure.accessStructureRef(),
+          devices: selected.toList(),
+          message: message,
+        );
 
-        await signMessageWorkflowDialog(context, signingStream, message);
+        if (!context.mounted) {
+          await handle.cancel();
+          return;
+        }
+
+        await signMessageWorkflowDialog(context, handle, message);
         if (context.mounted) {
           Navigator.pop(context);
         }
@@ -147,7 +148,7 @@ class SigningDeviceSelector extends StatefulWidget {
 }
 
 class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
-  final Set<DeviceId> selected = deviceIdSet([]);
+  final Set<DeviceId> selected = {};
 
   @override
   void initState() {
@@ -197,77 +198,90 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
 
 Future<bool> signMessageWorkflowDialog(
   BuildContext context,
-  Stream<SigningState> signingStream,
+  SigningSessionHandle handle,
   String message,
 ) async {
   final signatures = await showSigningProgressDialog(
     context,
-    signingStream,
+    handle,
     Text("signing ‘$message’"),
   );
   if (signatures != null && context.mounted) {
-    await _showSignatureDialog(context, signatures[0]);
+    await showSignatureDialog(context, signatures[0]);
   }
   return signatures == null;
 }
 
 Future<List<EncodedSignature>?> showSigningProgressDialog(
   BuildContext context,
-  Stream<SigningState> signingStream,
+  SigningSessionHandle handle,
   Widget description,
 ) async {
-  final stream = signingStream.toBehaviorSubject();
-  SignSessionId? sessionId;
-
-  final finishedSigning = stream
-      .asyncMap((event) {
-        return event.finishedSignatures;
-      })
-      .firstWhere((signatures) => signatures != null);
-
-  stream.forEach((signingState) async {
-    sessionId = signingState.sessionId;
-    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    for (final deviceId in signingState.connectedButNeedRequest) {
-      coord.requestDeviceSign(
-        deviceId: deviceId,
-        sessionId: sessionId!,
-        encryptionKey: encryptionKey,
-      );
-    }
-  });
-
-  final result = await showDeviceActionDialog(
-    context: context,
-    complete: finishedSigning,
-    builder: (context) {
-      return Column(
-        children: [
-          DialogHeader(
-            child: Column(
-              children: [
-                description,
-                SizedBox(height: 10),
-                Text("plug in each device"),
-              ],
-            ),
-          ),
-          DeviceSigningProgress(stream: stream),
-        ],
-      );
+  final finished = Completer<List<EncodedSignature>>();
+  final finishSub = handle.subState().watch().listen(
+    (state) {
+      final sigs = state.finishedSignatures;
+      if (sigs != null && !finished.isCompleted) finished.complete(sigs);
+    },
+    onError: (e, st) {
+      if (!finished.isCompleted) finished.completeError(e, st);
     },
   );
 
-  if (result == null) {
-    if (sessionId != null) {
-      coord.cancelSignSession(ssid: sessionId!);
+  final requestSub = handle.subState().watch().listen(
+    (state) async {
+      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+      for (final deviceId in state.connectedButNeedRequest) {
+        await handle.requestDeviceSign(
+          deviceId: deviceId,
+          encryptionKey: encryptionKey,
+        );
+      }
+    },
+    // finishSub already forwards errors into the completer; swallow here
+    // so the stream's error isn't reported as unhandled twice.
+    onError: (_, __) {},
+  );
+
+  // Stable stream for the dialog's progress widget. Evaluating
+  // `handle.subState().watch()` inside the builder closure would mint a
+  // fresh Stream per rebuild and churn the underlying Rust sink.
+  final progressStream = handle.subState().watch();
+
+  try {
+    final result = await showDeviceActionDialog(
+      context: context,
+      complete: finished.future,
+      builder: (context) {
+        return Column(
+          children: [
+            DialogHeader(
+              child: Column(
+                children: [
+                  description,
+                  SizedBox(height: 10),
+                  Text("plug in each device"),
+                ],
+              ),
+            ),
+            DeviceSigningProgress(stream: progressStream),
+          ],
+        );
+      },
+    );
+
+    if (result == null) {
+      coord.cancelSignSession(ssid: handle.sessionId());
+      await handle.cancel();
     }
-    coord.cancelProtocol();
+    return result;
+  } finally {
+    await finishSub.cancel();
+    await requestSub.cancel();
   }
-  return result;
 }
 
-Future<void> _showSignatureDialog(
+Future<void> showSignatureDialog(
   BuildContext context,
   EncodedSignature signature,
 ) {
@@ -298,8 +312,13 @@ Future<void> _showSignatureDialog(
 
 class DeviceSigningProgress extends StatelessWidget {
   final Stream<SigningState> stream;
+  final Map<DeviceId, Widget>? signerAvatars;
 
-  const DeviceSigningProgress({super.key, required this.stream});
+  const DeviceSigningProgress({
+    super.key,
+    required this.stream,
+    this.signerAvatars,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -310,9 +329,9 @@ class DeviceSigningProgress extends StatelessWidget {
         if (!snapshot.hasData) {
           return CircularProgressIndicator();
         }
-        final devicesPluggedIn = deviceIdSet(
-          snapshot.data!.devices.map((device) => device.id).toList(),
-        );
+        final devicesPluggedIn = snapshot.data!.devices
+            .map((device) => device.id)
+            .toSet();
         return StreamBuilder<SigningState>(
           stream: stream,
           builder: (context, snapshot) {
@@ -320,7 +339,7 @@ class DeviceSigningProgress extends StatelessWidget {
               return CircularProgressIndicator();
             }
             final state = snapshot.data!;
-            final gotShares = deviceIdSet(state.gotShares);
+            final gotShares = state.gotShares.toSet();
             return ListView.builder(
               physics: NeverScrollableScrollPhysics(),
               shrinkWrap: true,
@@ -345,6 +364,7 @@ class DeviceSigningProgress extends StatelessWidget {
                   );
                 }
                 return ListTile(
+                  leading: signerAvatars?[id],
                   title: Text(name ?? "<unknown>"),
                   trailing: SizedBox(height: iconSize, child: icon),
                 );

@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
@@ -32,7 +31,7 @@ class LoadPsbtPage extends StatefulWidget {
 
 class LoadPsbtPageState extends State<LoadPsbtPage> {
   String? fileContents;
-  Set<DeviceId> selectedDevices = deviceIdSet([]);
+  Set<DeviceId> selectedDevices = {};
   SignedTx? signedTx;
   final selectorKey = Key('key-selector');
 

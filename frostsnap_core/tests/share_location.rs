@@ -1,15 +1,10 @@
-use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::coordinator::KeyLocationState;
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::HeldShare2;
+use frostsnap_core::test::{RunSingleCoordinator as Run, TestEnv, TEST_ENCRYPTION_KEY};
 use frostsnap_core::DeviceId;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-
-mod common;
-mod env;
-use crate::common::Run;
-use crate::env::TestEnv;
 
 /// Tests that find_share correctly locates a share in a complete wallet held by a single device.
 ///

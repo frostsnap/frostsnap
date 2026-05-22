@@ -1,6 +1,200 @@
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{Data, DeriveInput, Fields, parse_macro_input};
+use proc_macro2::TokenStream as TokenStream2;
+use quote::{ToTokens, format_ident, quote};
+use syn::{
+    Data, DeriveInput, Fields, GenericArgument, ItemStruct, PathArguments, Type, parse::Parse,
+    parse::ParseStream, parse_macro_input,
+};
+
+/// Emits a non-opaque "leaf handle" type for a Rust-managed broadcast
+/// stream, plus its FRB shim and Dart-side `Stream<T> watch()`.
+///
+/// Input is a single tuple struct: `pub struct Name(pub Inner<T>);` where
+/// `Inner` is either `Broadcast` or `BehaviorBroadcast`. The field type is
+/// wrapped in `RustAutoOpaque<...>` and `#[frb(non_opaque)]` is attached.
+///
+/// Requirements at the call site:
+/// - `use flutter_rust_bridge::frb;` so `#[frb(...)]` attributes resolve.
+///
+/// All other paths in the emitted code are fully qualified.
+#[proc_macro]
+pub fn broadcast_handle(input: TokenStream) -> TokenStream {
+    let spec = parse_macro_input!(input as BroadcastHandleSpec);
+    expand_broadcast_handle(spec)
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+struct BroadcastHandleSpec {
+    item_struct: ItemStruct,
+}
+
+impl Parse for BroadcastHandleSpec {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let item_struct = input.parse()?;
+        if !input.is_empty() {
+            return Err(input.error(
+                "broadcast_handle! expects exactly one struct: `pub struct Name(pub Inner<T>);`",
+            ));
+        }
+        Ok(Self { item_struct })
+    }
+}
+
+fn expand_broadcast_handle(spec: BroadcastHandleSpec) -> syn::Result<TokenStream2> {
+    let mut item_struct = spec.item_struct;
+
+    for attr in &item_struct.attrs {
+        if attr.path.is_ident("frb") {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "broadcast_handle! does not accept #[frb(...)] attributes; the macro emits non_opaque + dart_code itself",
+            ));
+        }
+    }
+
+    if !matches!(item_struct.vis, syn::Visibility::Public(_)) {
+        return Err(syn::Error::new_spanned(
+            &item_struct.ident,
+            "broadcast_handle! struct must be `pub`",
+        ));
+    }
+
+    let struct_ident = item_struct.ident.clone();
+
+    let field = match &mut item_struct.fields {
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => &mut fields.unnamed[0],
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &item_struct.fields,
+                "broadcast_handle! requires a tuple struct with exactly one field: `pub struct Name(pub Inner<T>);`",
+            ));
+        }
+    };
+
+    if !matches!(field.vis, syn::Visibility::Public(_)) {
+        return Err(syn::Error::new_spanned(
+            &field.ty,
+            "broadcast_handle! field must be `pub`",
+        ));
+    }
+
+    let inner_ty = field.ty.clone();
+    let element_ty = element_type_from_inner(&inner_ty)?;
+    field.ty = syn::parse_quote!(crate::frb_generated::RustAutoOpaque<#inner_ty>);
+
+    let req_ident = format_ident!("{}WatchReq", struct_ident);
+    let dart_type_str = dart_type(&element_ty);
+    let dart_code = build_handle_dart_code(&req_ident, &dart_type_str);
+    let dart_lit = syn::LitStr::new(&dart_code, proc_macro2::Span::call_site());
+
+    item_struct
+        .attrs
+        .push(syn::parse_quote!(#[frb(non_opaque)]));
+    item_struct
+        .attrs
+        .push(syn::parse_quote!(#[frb(dart_code = #dart_lit)]));
+
+    let req_struct = quote! {
+        pub struct #req_ident {
+            pub sink: crate::frb_generated::StreamSink<#element_ty>,
+        }
+    };
+
+    let impl_block = quote! {
+        impl #struct_ident {
+            #[frb(ignore)]
+            pub fn new(inner: #inner_ty) -> Self {
+                Self(crate::frb_generated::RustAutoOpaque::new(inner))
+            }
+
+            #[frb(sync)]
+            pub fn subscriber_count(&self) -> u32 {
+                self.0.blocking_read().subscriber_count()
+            }
+
+            #[frb(sync)]
+            pub fn detach(&self, id: crate::api::broadcast::SinkRegistrationId) -> bool {
+                self.0.blocking_read().unregister(id)
+            }
+
+            #[frb(sync)]
+            pub fn frb_attach_watch(
+                &self,
+                req: #req_ident,
+            ) -> crate::api::broadcast::SinkRegistrationId {
+                let #req_ident { sink } = req;
+                self.0.blocking_read().register(sink)
+            }
+        }
+    };
+
+    Ok(quote! {
+        #req_struct
+        #item_struct
+        #impl_block
+    })
+}
+
+fn element_type_from_inner(ty: &Type) -> syn::Result<Type> {
+    let Type::Path(path) = ty else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "broadcast_handle! field type must be `Broadcast<T>` or `BehaviorBroadcast<T>`",
+        ));
+    };
+    let Some(last) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "broadcast_handle! field type must be `Broadcast<T>` or `BehaviorBroadcast<T>`",
+        ));
+    };
+    let last_ident = last.ident.to_string();
+    if last_ident != "Broadcast" && last_ident != "BehaviorBroadcast" {
+        return Err(syn::Error::new_spanned(
+            &last.ident,
+            "broadcast_handle! field type must be `Broadcast<T>` or `BehaviorBroadcast<T>`",
+        ));
+    }
+    let PathArguments::AngleBracketed(args) = &last.arguments else {
+        return Err(syn::Error::new_spanned(
+            &last.arguments,
+            "broadcast_handle! field type must have one generic arg, e.g. Broadcast<()>",
+        ));
+    };
+    let Some(GenericArgument::Type(item_ty)) = args.args.first() else {
+        return Err(syn::Error::new_spanned(
+            &args.args,
+            "broadcast_handle! field type's first generic arg must be a type",
+        ));
+    };
+    Ok(item_ty.clone())
+}
+
+fn build_handle_dart_code(req_ident: &syn::Ident, dart_type: &str) -> String {
+    format!(
+        "\n  Stream<{dart_type}> watch() =>\n      rustBroadcastStream<{dart_type}>(\n        attach: (sink) => frbAttachWatch(req: {req_ident}(sink: sink)),\n        detach: (id) => detach(id: id as SinkRegistrationId),\n      );\n",
+    )
+}
+
+fn dart_type(ty: &Type) -> String {
+    match ty {
+        Type::Tuple(tuple) if tuple.elems.is_empty() => "void".to_string(),
+        Type::Path(path) => {
+            let Some(last) = path.path.segments.last() else {
+                return ty.to_token_stream().to_string();
+            };
+            match last.ident.to_string().as_str() {
+                "i32" | "i64" | "u32" | "u64" | "usize" => "int".to_string(),
+                "f64" | "f32" => "double".to_string(),
+                "String" => "String".to_string(),
+                "bool" => "bool".to_string(),
+                other => other.to_string(),
+            }
+        }
+        _ => ty.to_token_stream().to_string(),
+    }
+}
 
 #[proc_macro_derive(Kind, attributes(delegate_kind))]
 pub fn derive_kind(input: TokenStream) -> TokenStream {

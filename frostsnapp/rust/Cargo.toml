@@ -10,6 +10,8 @@ crate-type = ["cdylib", "staticlib"]
 anyhow = "1"
 frostsnap_coordinator = { workspace = true }
 frostsnap_core = { workspace = true }
+frostsnap_macros = { workspace = true }
+frostsnap_nostr = { workspace = true }
 lazy_static = "1.4"
 tracing-subscriber = { version = "0.3" }
 tracing = { workspace = true, features = ["std"] }
@@ -24,6 +26,8 @@ rand = "0.8"
 time = { version = "0.3.36", features = ["formatting"] }
 bip21 = {version = "0.5.0", default-features = false}
 futures.workspace = true
+tokio = { version = "1", features = ["sync", "rt"] }
+tokio-util = { version = "0.7" }
 
 [dependencies.flutter_rust_bridge]
 version = "=2.11.1"

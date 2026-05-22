@@ -43,7 +43,7 @@ impl BeginKeygen {
         purpose: KeyPurpose,
         rng: &mut impl rand_core::RngCore, // for the keygen id
     ) -> Self {
-        let mut id = [0u8; 16];
+        let mut id = [0u8; 32];
         rng.fill_bytes(&mut id[..]);
 
         Self::new_with_id(
