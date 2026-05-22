@@ -34,15 +34,38 @@ jobs:
     name: "Build Android"
     needs: ["verify-firmware"]
     runs-on: ubuntu-latest
-    env:
-      ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
     steps:
       - uses: actions/checkout@v4
+      # Decode the keystore secret to a file the build step can hand to gradle.
+      # Base64 secret is scoped to this step only — not needed in subsequent steps.
+      - name: Stage release keystore for gradle
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE }}
+        shell: bash
+        run: |
+          if [ -z "${ANDROID_RELEASE_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_RELEASE_KEYSTORE secret is empty or unset — refusing to build." >&2
+            exit 1
+          fi
+          keystore_path="$RUNNER_TEMP/release.keystore"
+          umask 077
+          # `printenv` rather than `echo "$VAR"` so the secret never appears on a
+          # shell command line, even under bash debug tracing.
+          printenv ANDROID_RELEASE_KEYSTORE_BASE64 | base64 -d > "$keystore_path"
+          echo "ANDROID_RELEASE_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
       - name: Download firmware from release
         run: |
           mkdir -p firmware
           gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
       - uses: "./.github/actions/build-android"
+        env:
+          # FROSTSNAP_RELEASE_BUILD=true is the explicit "this build must be release-signed"
+          # switch — gradle fails loudly at configuration time if any of the four
+          # ANDROID_RELEASE_* env vars are missing or empty when this is set.
+          FROSTSNAP_RELEASE_BUILD: 'true'
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         with:
           firmware_path: firmware/firmware.bin
           env: prod
