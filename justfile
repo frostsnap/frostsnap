@@ -134,6 +134,7 @@ sign-firmware INPUT="target/riscv32imc-unknown-none-elf/release/frontier.bin" OU
 get-build-commit:
     #!/bin/sh
     BUILD_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    git update-index -q --refresh
     if [ "$BUILD_COMMIT" != "unknown" ] && ! git diff-index --quiet HEAD --; then
         BUILD_COMMIT="${BUILD_COMMIT}-modified"
     fi
@@ -142,6 +143,7 @@ get-build-commit:
 get-build-version:
     #!/bin/sh
     BUILD_VERSION=$(git describe --tags --always 2>/dev/null || echo "unknown")
+    git update-index -q --refresh
     if [ "$BUILD_VERSION" != "unknown" ] && ! git diff-index --quiet HEAD --; then
         BUILD_VERSION="${BUILD_VERSION}-modified"
     fi
