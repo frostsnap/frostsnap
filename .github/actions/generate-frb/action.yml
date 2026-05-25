@@ -33,7 +33,7 @@ runs:
       if: steps.generate-frb.outputs.cache-hit != 'true'
       uses: subosito/flutter-action@v2
       with:
-        channel: stable
+        flutter-version-file: frostsnapp/.fvmrc
         cache: true
 
     - uses: taiki-e/install-action@just

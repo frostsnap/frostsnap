@@ -21,11 +21,11 @@ runs:
       uses: subosito/flutter-action@v2
       if: steps.fetch-dart-cache.cache-hit != 'true'
       with:
-        channel: stable
+        flutter-version-file: frostsnapp/.fvmrc
         cache: true
 
     - name: Get Flutter Dependencies
       working-directory: frostsnapp
       if: steps.fetch-dart-cache.cache-hit != 'true'
-      run: flutter pub get
+      run: flutter pub get --enforce-lockfile
       shell: sh

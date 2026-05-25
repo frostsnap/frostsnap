@@ -5,6 +5,9 @@ inputs:
   firmware_path:
     description: "Path to signed firmware binary"
     required: true
+  env:
+    description: "Environment (dev or prod) — determines genuine cert key and firmware path"
+    default: "dev"
 
 runs:
   using: "composite"
@@ -12,6 +15,7 @@ runs:
     - uses: "./.github/actions/set-up-app-build"
       with:
         firmware_path: ${{ inputs.firmware_path }}
+        env: ${{ inputs.env }}
     - uses: dtolnay/rust-toolchain@stable
       with:
         targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -26,4 +30,4 @@ runs:
       run: gem install cocoapods
     - name: Build macOS App
       shell: bash
-      run: just build macos --release
+      run: just env=${{ inputs.env }} build macos --release

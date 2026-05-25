@@ -63,9 +63,50 @@ android {
         }
     }
 
+    // Release signing for the `direct` flavor is opt-in via FROSTSNAP_RELEASE_BUILD=true,
+    // which is set exclusively by .github/workflows/release.yml. When that switch is on,
+    // all four ANDROID_RELEASE_* env vars are REQUIRED and a missing one fails the build
+    // loudly at gradle configuration time. Without the switch (PR builds, test.yml,
+    // local dev), the `direct` flavor falls back to debug signing — so building locally
+    // doesn't require setting up any credentials.
+    //
+    // The keystore configured by these env vars is the project's permanent direct-APK
+    // signing identity. Rotating it breaks the upgrade path for every direct-APK user
+    // on Android — for a Bitcoin wallet that means forcing every user through a
+    // hardware-device wallet restore. Don't rotate without first shipping an in-app
+    // passphrase-encrypted export feature so users have a migration path off their
+    // current install.
+    def releaseSigningEnabled = System.getenv('FROSTSNAP_RELEASE_BUILD') == 'true'
+    if (releaseSigningEnabled) {
+        def missing = [
+            'ANDROID_RELEASE_KEYSTORE_PATH',
+            'ANDROID_RELEASE_KEYSTORE_PASSWORD',
+            'ANDROID_RELEASE_KEY_ALIAS',
+            'ANDROID_RELEASE_KEY_PASSWORD',
+        ].findAll { !System.getenv(it) }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "FROSTSNAP_RELEASE_BUILD=true but required env var(s) missing or empty: " +
+                missing.join(', ') + ". Release builds must set the keystore path, " +
+                "store password, key alias, and key password."
+            )
+        }
+    }
+
     signingConfigs {
+        // AGP's default debug keystore (~/.android/debug.keystore with hardcoded
+        // password "android"). Used for `debug` build types and as the local-dev
+        // fallback for the `direct` flavor's `release` build type.
         debug {
-            // Standard debug keystore - automatically available
+        }
+
+        release {
+            if (releaseSigningEnabled) {
+                storeFile file(System.getenv("ANDROID_RELEASE_KEYSTORE_PATH"))
+                storePassword System.getenv("ANDROID_RELEASE_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_RELEASE_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_RELEASE_KEY_PASSWORD")
+            }
         }
     }
 
@@ -82,15 +123,16 @@ android {
 
     // Configure signing per flavor
     productFlavors {
-        // Default flavor for direct APK distribution
-        // Uses debug signing even in release mode for easy testing/distribution
+        // Default flavor for direct APK distribution.
+        // Uses the release signing config when FROSTSNAP_RELEASE_BUILD=true
+        // (release.yml only); otherwise falls back to debug signing so local dev
+        // builds and PR/test CI work with no setup.
         direct {
             dimension "distribution"
             isDefault = true
-            // Apply debug signing to release builds for this flavor
-            signingConfig = signingConfigs.debug
+            signingConfig = releaseSigningEnabled ? signingConfigs.release : signingConfigs.debug
         }
-        
+
         // Flavor for Google Play Store distribution
         // Must remain unsigned - Google signs with their own keys
         playstore {

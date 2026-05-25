@@ -17,18 +17,58 @@ env:
   TAG_NAME: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
 
 jobs:
-  build-android:
-    name: "Build Android"
+  verify-firmware:
+    name: "Verify release firmware"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Download firmware from release
+        run: |
+          mkdir -p firmware
+          gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
+      - name: Verify firmware signature and known version
+        run: cargo run -p frostsnap_factory --release -- verify-firmware --require-known-version -i firmware/firmware.bin
+
+  build-android:
+    name: "Build Android"
+    needs: ["verify-firmware"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Decode the keystore secret to a file the build step can hand to gradle.
+      # Base64 secret is scoped to this step only — not needed in subsequent steps.
+      - name: Stage release keystore for gradle
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE }}
+        shell: bash
+        run: |
+          if [ -z "${ANDROID_RELEASE_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_RELEASE_KEYSTORE secret is empty or unset — refusing to build." >&2
+            exit 1
+          fi
+          keystore_path="$RUNNER_TEMP/release.keystore"
+          umask 077
+          # `printenv` rather than `echo "$VAR"` so the secret never appears on a
+          # shell command line, even under bash debug tracing.
+          printenv ANDROID_RELEASE_KEYSTORE_BASE64 | base64 -d > "$keystore_path"
+          echo "ANDROID_RELEASE_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
       - name: Download firmware from release
         run: |
           mkdir -p firmware
           gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
       - uses: "./.github/actions/build-android"
+        env:
+          # FROSTSNAP_RELEASE_BUILD=true is the explicit "this build must be release-signed"
+          # switch — gradle fails loudly at configuration time if any of the four
+          # ANDROID_RELEASE_* env vars are missing or empty when this is set.
+          FROSTSNAP_RELEASE_BUILD: 'true'
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Upload APK to release
         run: |
           cp frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk "Frostsnap-${{ env.TAG_NAME }}.apk"
@@ -40,6 +80,7 @@ jobs:
 
   build-linux:
     name: "Build Linux"
+    needs: ["verify-firmware"]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +91,7 @@ jobs:
       - uses: "./.github/actions/build-linux"
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Upload Linux bundle as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -75,6 +117,7 @@ jobs:
 
   build-windows:
     name: "Build Windows"
+    needs: ["verify-firmware"]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +128,7 @@ jobs:
       - uses: "./.github/actions/build-windows"
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Zip Windows build
         run: Compress-Archive -Path frostsnapp/build/windows/x64/runner/Release/* -DestinationPath Frostsnap-${{ env.TAG_NAME }}.zip
       - name: Upload Windows build to release
@@ -92,6 +136,7 @@ jobs:
 
   build-macos:
     name: "Build macOS"
+    needs: ["verify-firmware"]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -102,6 +147,7 @@ jobs:
       - uses: "./.github/actions/build-macos"
         with:
           firmware_path: firmware/firmware.bin
+          env: prod
       - name: Zip and upload .app to release
         run: |
           cd frostsnapp/build/macos/Build/Products/Release

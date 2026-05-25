@@ -5,6 +5,9 @@ inputs:
   firmware_path:
     description: "Path to signed firmware binary"
     required: true
+  env:
+    description: "Environment (dev or prod) — determines genuine cert key and firmware path"
+    default: "dev"
 
 runs:
   using: "composite"
@@ -13,6 +16,7 @@ runs:
     - uses: "./.github/actions/set-up-app-build"
       with:
         firmware_path: ${{ inputs.firmware_path }}
+        env: ${{ inputs.env }}
     - uses: "./.github/actions/cache-rust-target"
       with:
         key: "android-app-v0"
@@ -36,9 +40,16 @@ runs:
         ndk-version: r25c
         link-to-sdk: true
         add-to-path: true
+    # Release signing is set up in .github/workflows/release.yml *before* this
+    # action runs. release.yml sets FROSTSNAP_RELEASE_BUILD=true and the four
+    # ANDROID_RELEASE_* env vars scoped to the step that invokes this action;
+    # gradle then errors loudly if any are missing and otherwise wires the
+    # release signing config. PR / test builds leave FROSTSNAP_RELEASE_BUILD
+    # unset and fall through to debug signing — intentional, so production
+    # credentials never live on a CI runner outside the release workflow.
     - name: Build App APK
       shell: bash
-      run: just build apk --release --flavor direct
+      run: just env=${{ inputs.env }} build apk --release --flavor direct
     - name: Build appbundle
       shell: bash
-      run: just build appbundle --release --flavor playstore
+      run: just env=${{ inputs.env }} build appbundle --release --flavor playstore

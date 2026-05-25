@@ -5,6 +5,9 @@ inputs:
   firmware_path:
     description: "Path to signed firmware binary"
     required: true
+  env:
+    description: "Environment (dev or prod) — determines genuine cert key and firmware path"
+    default: "dev"
 
 runs:
   using: "composite"
@@ -12,10 +15,11 @@ runs:
     - uses: "./.github/actions/set-up-app-build"
       with:
         firmware_path: ${{ inputs.firmware_path }}
+        env: ${{ inputs.env }}
     - uses: dtolnay/rust-toolchain@stable
     - uses: "./.github/actions/cache-rust-target"
       with:
         key: "app-build-windows-v0"
     - name: Build App Windows
       shell: bash
-      run: just build windows --release
+      run: just env=${{ inputs.env }} build windows --release

@@ -296,7 +296,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Provisioning single device (color: {color})");
             process::run_with_state(&mut factory_state);
         }
-        cli::Commands::VerifyFirmware { input } => {
+        cli::Commands::VerifyFirmware {
+            input,
+            require_known_version,
+        } => {
             let signed = std::fs::read(&input)?;
             secure_boot::verify_firmware(&signed)?;
 
@@ -307,6 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 frostsnap_comms::firmware_reader::firmware_size(&firmware)
                     .map_err(|e| format!("Failed to parse firmware: {e}"))?;
             let firmware_digest = Sha256::digest(&bytes[..firmware_size as usize]);
+            let digest = Sha256Digest(firmware_digest.into());
 
             println!("Verified: {}", input.display());
             println!(
@@ -316,6 +320,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 total_size - firmware_size
             );
             println!("  Firmware digest: {}", hex::encode(&firmware_digest));
+
+            match frostsnap_coordinator::VersionNumber::from_digest(&digest) {
+                Some(version) => println!("  Known version: v{}", version),
+                None if require_known_version => {
+                    return Err(format!(
+                        "Firmware digest {} is not in KNOWN_FIRMWARE_VERSIONS. \
+                         Add an entry to frostsnap_coordinator/src/firmware.rs before releasing.",
+                        hex::encode(&firmware_digest)
+                    )
+                    .into());
+                }
+                None => println!("  Known version: (not in KNOWN_FIRMWARE_VERSIONS)"),
+            }
         }
         cli::Commands::GenuineCheck => {
             let known_keys = load_known_genuine_keys();

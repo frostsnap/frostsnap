@@ -16,7 +16,7 @@ runs:
     - uses: dtolnay/rust-toolchain@stable
     - uses: subosito/flutter-action@v2
       with:
-        channel: stable
+        flutter-version-file: frostsnapp/.fvmrc
         cache: true
     - uses: "./.github/actions/fetch-cargo-deps"
     - uses: "./.github/actions/fetch-dart-deps"
