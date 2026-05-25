@@ -256,8 +256,14 @@ impl ChannelRunner {
                 )
                 .await
                 {
-                    Ok(output) => {
+                    Ok(output) if !output.success.is_empty() => {
                         published_init_event = Some((output.val, init_event.clone()));
+                    }
+                    Ok(output) => {
+                        tracing::warn!(
+                            "no relay accepted channel init: {:?}",
+                            output.failed,
+                        );
                     }
                     Err(e) => tracing::warn!(error = %e, "failed to publish channel init"),
                 }

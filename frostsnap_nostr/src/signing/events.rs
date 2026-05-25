@@ -9,6 +9,7 @@
 //! - [`SigningEvent`] is the decoded signing-protocol event, carried inside
 //!   `ChannelEvent::Signing { event, pending }`.
 
+use crate::channel::ParticipantShares;
 use crate::channel_runner::NostrProfile;
 use crate::{EventId, PublicKey};
 use frostsnap_core::{
@@ -62,6 +63,33 @@ pub enum ChannelEvent {
         timestamp: u64,
         reason: String,
     },
+    /// The channel's fold state — currently just the initial participant
+    /// mapping from the creation event. Emitted when the creation event
+    /// is received (either fetched from relay or just published).
+    ChannelState {
+        participants: Vec<ChannelParticipant>,
+    },
+}
+
+/// Dart-friendly representation of a participant's share ownership.
+/// Converted from `ParticipantShares` (which uses opaque `ShareIndex`).
+#[derive(Debug, Clone)]
+pub struct ChannelParticipant {
+    pub pubkey: PublicKey,
+    pub share_indices: Vec<u32>,
+}
+
+impl From<&ParticipantShares> for ChannelParticipant {
+    fn from(p: &ParticipantShares) -> Self {
+        Self {
+            pubkey: p.pubkey,
+            share_indices: p
+                .share_indices
+                .iter()
+                .map(|si| u32::try_from(*si).expect("share index fits u32"))
+                .collect(),
+        }
+    }
 }
 
 impl ChannelEvent {

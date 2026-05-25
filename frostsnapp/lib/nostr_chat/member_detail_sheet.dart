@@ -7,11 +7,16 @@ import 'package:url_launcher/url_launcher.dart';
 class MemberDetailSheet extends StatelessWidget {
   final PublicKey pubkey;
   final NostrProfile? profile;
+  final List<int> shareIndices;
+  /// For the current user, maps share index → device name.
+  final Map<int, String> deviceNamesPerShare;
 
   const MemberDetailSheet({
     super.key,
     required this.pubkey,
     required this.profile,
+    this.shareIndices = const [],
+    this.deviceNamesPerShare = const {},
   });
 
   @override
@@ -45,6 +50,21 @@ class MemberDetailSheet extends StatelessWidget {
                 getDisplayName(profile, pubkey),
                 style: theme.textTheme.titleLarge,
               ),
+              if (shareIndices.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: shareIndices.map((i) {
+                    final deviceName = deviceNamesPerShare[i];
+                    return Chip(
+                      avatar: Icon(Icons.key, size: 16),
+                      label: Text(
+                        deviceName != null ? '#$i · $deviceName' : 'Share #$i',
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
               const SizedBox(height: 24),
               _InfoSection(
                 label: 'npub',

@@ -5,7 +5,6 @@ import 'package:frostsnap/nostr_chat/group_info_page.dart';
 import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
-import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/device_selector.dart';
 import 'package:frostsnap/nostr_chat/nostr_signing_page.dart';
 import 'package:frostsnap/nostr_chat/signing_card.dart';
@@ -213,7 +212,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   String? _highlightedId;
   final Map<EventId, SigningRequestState> _signingRequests = {};
   final Set<String> _seenSigningEventIds = {};
-  List<PublicKey> _memberPubkeys = [];
+  late List<PublicKey> _memberPubkeys;
   StreamSubscription<ChannelEvent>? _subscription;
   StreamSubscription<TxState>? _txSubscription;
   final Map<String, TxTimelineKind> _txTimelineState = {};
@@ -226,7 +225,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   _pendingTxSignRequest;
 
   NostrContext? _nostrContext;
-  PublicKey? get _myPubkey => _nostrContext?.myPubkey;
+  PublicKey get _myPubkey => _nostrContext!.myPubkey;
 
   @override
   void initState() {
@@ -257,6 +256,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     final nostr = NostrContext.of(context);
     if (_nostrContext == null) {
       _nostrContext = nostr;
+      _memberPubkeys = [nostr.myPubkey];
       _connect();
       _subscribeTxStream();
     }
@@ -340,6 +340,14 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     return _nostrContext!.getProfile(pubkey);
   }
 
+  List<int> _shareIndicesForPubkey(PublicKey pubkey) {
+    final hex = pubkey.toHex();
+    for (final p in _participantShares) {
+      if (p.pubkey.toHex() == hex) return p.shareIndices.toList();
+    }
+    return const [];
+  }
+
   void _showMemberProfile(PublicKey pubkey) {
     showModalBottomSheet(
       context: context,
@@ -347,14 +355,17 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) =>
-          MemberDetailSheet(pubkey: pubkey, profile: _getProfile(pubkey)),
+      builder: (_) => MemberDetailSheet(
+        pubkey: pubkey,
+        profile: _getProfile(pubkey),
+        shareIndices: _shareIndicesForPubkey(pubkey),
+      ),
     );
   }
 
   DeviceId? _getMyDevice(SigningRequestState? state) {
-    if (state == null || _myPubkey == null) return null;
-    final myOffer = state.offers[_myPubkey!.toHex()];
+    if (state == null) return null;
+    final myOffer = state.offers[_myPubkey.toHex()];
     if (myOffer == null) return null;
     for (final idx in offerShareIndices(binonces: myOffer.binonces)) {
       final device = _deviceForShareIndex(widget.accessStructureRef, idx);
@@ -444,7 +455,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         if (existing != null) {
           return;
         }
-        final isMe = _myPubkey != null && author == _myPubkey!;
+        final isMe = author == _myPubkey;
         final message = ChatMessage(
           messageId: messageId,
           author: author,
@@ -480,6 +491,9 @@ class _ChatPageBodyState extends State<ChatPageBody> {
 
       case ChannelEvent_GroupMetadata(:final members):
         _memberPubkeys = members.map((m) => m.pubkey).toList();
+        if (!_memberPubkeys.any((m) => m == _myPubkey)) {
+          _memberPubkeys.add(_myPubkey);
+        }
         _nostrContext!.updateProfilesFromChannel(members);
 
       case ChannelEvent_Signing(:final event, :final pending):
@@ -565,7 +579,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           SigningEvent_RoundPending() ||
           SigningEvent_Rejected() => throw StateError('handled above'),
         };
-        final isMe = _myPubkey != null && author == _myPubkey!;
+        final isMe = author == _myPubkey;
         _messageById[eventId] = ChatMessage(
           messageId: eventId,
           author: author,
@@ -698,8 +712,13 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             reason: reason,
           ),
         );
+
+      case ChannelEvent_ChannelState(:final participants):
+        _participantShares = participants;
     }
   }
+
+  List<ChannelParticipant> _participantShares = [];
 
   int _getThreshold(EventId requestId) {
     final state = _signingRequests[requestId];
@@ -873,17 +892,17 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             text: item.reason,
             author: item.author,
             profile: _getProfile(item.author),
-            isMe: _myPubkey != null && item.author == _myPubkey!,
+            isMe: item.author == _myPubkey,
             onCopy: () => Clipboard.setData(ClipboardData(text: item.reason)),
             onReply: () => _startReply(
               ReplyTarget(
                 eventId: item.eventId,
                 author: item.author,
                 preview: 'Error: ${item.reason}',
-                isMe: _myPubkey != null && item.author == _myPubkey!,
+                isMe: item.author == _myPubkey,
               ),
             ),
-            onTapAvatar: _myPubkey != null && item.author == _myPubkey!
+            onTapAvatar: item.author == _myPubkey
                 ? null
                 : () => _showMemberProfile(item.author),
           ),
@@ -928,13 +947,12 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       return SigningErrorCard(text: 'Unknown signing request');
     }
     final myPubkey = _myPubkey;
-    final iOffered =
-        myPubkey != null && state.offers.containsKey(myPubkey.toHex());
+    final iOffered = state.offers.containsKey(myPubkey.toHex());
     final accessStruct = coord.getAccessStructure(
       asRef: widget.accessStructureRef,
     );
     final threshold = accessStruct?.threshold() ?? 0;
-    final reqIsMe = myPubkey != null && state.request.author == myPubkey;
+    final reqIsMe = state.request.author == myPubkey;
     final idHex = request.eventId.toHex();
     final key = _timelineKeys.putIfAbsent(idHex, () => GlobalKey());
     final isComplete = state.partials.length >= threshold;
@@ -1023,7 +1041,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     int? progressCount,
     int? progressTotal,
   ) {
-    final isMe = _myPubkey != null && offer.author == _myPubkey!;
+    final isMe = offer.author == _myPubkey;
     return _SigningEventLine(
       profile: _getProfile(offer.author),
       author: offer.author,
@@ -1049,7 +1067,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     int? progressCount,
     int? progressTotal,
   ) {
-    final isMe = _myPubkey != null && partial.author == _myPubkey!;
+    final isMe = partial.author == _myPubkey;
     return _SigningEventLine(
       profile: _getProfile(partial.author),
       author: partial.author,
@@ -1068,7 +1086,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   Widget _buildCancelCard(SigningEvent_Cancel cancel) {
-    final isMe = _myPubkey != null && cancel.author == _myPubkey!;
+    final isMe = cancel.author == _myPubkey;
     return _SigningEventLine(
       profile: _getProfile(cancel.author),
       author: cancel.author,
@@ -1083,7 +1101,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
 
   Future<void> _onCancelRequest(SigningRequestState state) async {
     if (_client == null) return;
-    final nsec = await requireNostrSigningIdentity(context);
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
     setState(() => state.cancelled = true);
     try {
@@ -1153,7 +1171,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       chainTipHeight: walletCtx.superWallet.height(),
       now: DateTime.now(),
     );
-    final nsec = await requireNostrSigningIdentity(context);
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
     showBottomSheetOrDialog(
       context,
@@ -1365,7 +1383,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     if (content.isEmpty && pending == null && pendingTx == null) return;
     if (_client == null) return;
 
-    final nsec = await requireNostrSigningIdentity(context);
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
     final replyToId = _replyingTo?.eventId;
     _messageController.clear();
@@ -1457,7 +1475,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   Future<void> _retryMessage(ChatMessage message) async {
     if (message.status != MessageStatus.failed || _client == null) return;
 
-    final nsec = await requireNostrSigningIdentity(context);
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
     setState(() {
       _timeline.removeWhere(
@@ -1479,7 +1497,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   String _displayName(PublicKey author) {
-    if (_myPubkey != null && author == _myPubkey!) return 'You';
+    if (author == _myPubkey) return 'You';
     return getDisplayName(_getProfile(author), author);
   }
 
@@ -1530,7 +1548,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       eventId: eventId,
       author: author,
       preview: preview,
-      isMe: _myPubkey != null && author == _myPubkey!,
+      isMe: author == _myPubkey,
     );
   }
 
@@ -1544,13 +1562,16 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   void _openGroupInfo() {
+    final walletCtx = WalletContext.of(context);
+    final page = GroupInfoPage(
+      walletName: widget.walletName,
+      members: _memberPubkeys,
+      accessStructureId: widget.accessStructureId,
+      participantShares: _participantShares,
+    );
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => GroupInfoPage(
-          walletName: widget.walletName,
-          members: _memberPubkeys,
-          accessStructureId: widget.accessStructureId,
-        ),
+        builder: (_) => walletCtx != null ? walletCtx.wrap(page) : page,
       ),
     );
   }
@@ -1583,10 +1604,8 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     if (activeRequest == null) return const SizedBox.shrink();
 
     final myPubkey = _myPubkey;
-    final isRequester =
-        myPubkey != null && activeRequest.request.author == myPubkey;
+    final isRequester = activeRequest.request.author == myPubkey;
     final alreadySigned =
-        myPubkey != null &&
         activeRequest.partials.containsKey(myPubkey.toHex());
     final sealed = activeRequest.sealedData;
     final myDevice = _getMyDevice(activeRequest);
@@ -2838,7 +2857,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
   Future<void> _doOffer() async {
     if (_selectedDevices.isEmpty) return;
 
-    final nsec = await requireNostrSigningIdentity(context);
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
 
     final nSelectedByOthers = widget.state.offers.length;

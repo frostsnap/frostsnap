@@ -30,8 +30,8 @@ use std::{
 };
 
 pub use frostsnap_nostr::{
-    ChannelEvent, ChannelSecret, ConfirmedSubsetEntry, ConnectionState, EventId, GroupMember,
-    PublicKey, SigningEvent,
+    ChannelEvent, ChannelParticipant, ChannelSecret, ConfirmedSubsetEntry, ConnectionState,
+    EventId, GroupMember, ParticipantShares, PublicKey, SigningEvent,
 };
 
 #[frb(opaque)]
@@ -39,6 +39,8 @@ pub struct ChannelConnectionParams {
     pub(crate) key_context: KeyContext,
     pub(crate) init_data: Option<ChannelInitData>,
 }
+
+
 
 static NOSTR_LMDB: OnceLock<Arc<NostrLMDB>> = OnceLock::new();
 
@@ -354,13 +356,13 @@ impl NostrClient {
     /// Events are streamed to the sink. Use send_message to interact.
     pub async fn connect_to_channel(
         &self,
-        params: ChannelConnectionParams,
+        params: &ChannelConnectionParams,
         sink: StreamSink<ChannelEvent>,
     ) {
         let access_structure_id = params.key_context.access_structure_id();
         let key_context = params.key_context.clone();
         let channel_sink = ChannelEventSink { sink };
-        let channel_client = ChannelClient::new(params.key_context, params.init_data);
+        let channel_client = ChannelClient::new(params.key_context.clone(), params.init_data.clone());
         let handle = match channel_client.run(self.client.clone(), channel_sink).await {
             Ok(h) => h,
             Err(e) => {
@@ -896,6 +898,15 @@ pub enum _ChannelEvent {
         timestamp: u64,
         reason: String,
     },
+    ChannelState {
+        participants: Vec<ChannelParticipant>,
+    },
+}
+
+#[frb(mirror(ChannelParticipant), non_opaque)]
+pub struct _ChannelParticipant {
+    pub pubkey: PublicKey,
+    pub share_indices: Vec<u32>,
 }
 
 /// Compute the UI-shape `SigningDetails` for a sign task. Dart calls

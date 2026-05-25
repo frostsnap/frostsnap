@@ -15,7 +15,7 @@ class ProfileSettingsPage extends StatelessWidget {
       appBar: AppBar(title: const Text('Nostr Profile')),
       body: MyProfileBuilder(
         builder: (context, pubkey, profile) {
-          final npub = pubkey?.toNpub();
+          final npub = pubkey.toNpub();
 
           return ListView(
             padding: const EdgeInsets.all(24),
@@ -34,13 +34,11 @@ class ProfileSettingsPage extends StatelessWidget {
                 const SizedBox(height: 4),
               ],
               const SizedBox(height: 12),
-              if (npub != null) ...[
-                _InfoSection(
+              _InfoSection(
                   label: 'Your npub',
                   value: npub,
                   onCopy: () => _copyToClipboard(context, npub, 'npub'),
                 ),
-              ],
               const SizedBox(height: 32),
               Text(
                 'ADVANCED',
@@ -68,8 +66,7 @@ class ProfileSettingsPage extends StatelessWidget {
                 label: const Text('Generate new random identity'),
               ),
               const SizedBox(height: 12),
-              if (pubkey != null)
-                OutlinedButton.icon(
+              OutlinedButton.icon(
                   onPressed: () => _removeNsec(context),
                   icon: Icon(
                     Icons.person_remove_outlined,

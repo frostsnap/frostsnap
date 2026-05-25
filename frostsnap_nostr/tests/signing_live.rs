@@ -405,10 +405,32 @@ fn extract_key_artifacts(
             TEST_ENCRYPTION_KEY,
         )
         .expect("can decrypt rootkey with test encryption key");
+    let participant_devices: Vec<_> = run
+        .participants
+        .iter()
+        .map(|p| {
+            let secret_bytes = p.keypair.secret_key().to_bytes();
+            let keys = Keys::new(nostr_sdk::SecretKey::from_slice(&secret_bytes).unwrap());
+            let pubkey: frostsnap_nostr::PublicKey = keys.public_key().into();
+            let devices: Vec<_> = p.devices.keys().copied().collect();
+            (pubkey, devices)
+        })
+        .collect();
+    let devices_in_order: Vec<_> = run
+        .participants
+        .iter()
+        .flat_map(|p| p.devices.keys().copied())
+        .collect();
+    let participants = frostsnap_nostr::channel::ParticipantShares::from_device_lists(
+        &participant_devices,
+        &devices_in_order,
+    )
+    .expect("all devices should be in devices_in_order");
     let init_data = ChannelInitData {
         key_name: key_data.key_name.clone(),
         purpose: KeyPurpose::Test,
         root_shared_key,
+        participants,
     };
     let key_context = init_data.key_context();
     (key_context, init_data, key_data)

@@ -2,7 +2,10 @@ mod events;
 mod tree;
 
 use events::SigningMessage;
-pub use events::{ChannelEvent, ConfirmedSubsetEntry, ConnectionState, GroupMember, SigningEvent};
+pub use events::{
+    ChannelEvent, ChannelParticipant, ConfirmedSubsetEntry, ConnectionState, GroupMember,
+    SigningEvent,
+};
 
 use self::tree::{SigningEventTree, TimerAction, WireEvent};
 use crate::EventId;
@@ -186,7 +189,24 @@ impl ChannelClient {
                                         .collect(),
                                 });
                             }
-                            Some(ChannelRunnerEvent::CreationEventReceived) => {}
+                            Some(ChannelRunnerEvent::CreationEventReceived) => {
+                                if let Some(creation_event) = runner_handle_for_task.creation_event() {
+                                    match crate::channel_runner::decode_bincode::<crate::ChannelInitData>(&creation_event) {
+                                        Ok(init_data) => {
+                                            sink.send(ChannelEvent::ChannelState {
+                                                participants: init_data
+                                                    .participants
+                                                    .iter()
+                                                    .map(ChannelParticipant::from)
+                                                    .collect(),
+                                            });
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(error = %e, "failed to decode channel init data");
+                                        }
+                                    }
+                                }
+                            }
                             None => break,
                         }
                     }

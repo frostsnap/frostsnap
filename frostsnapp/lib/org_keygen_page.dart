@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +14,6 @@ import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
-import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/theme.dart';
@@ -132,7 +132,7 @@ class OrgKeygenController extends ChangeNotifier {
   /// `connectError` and returns null on failure. The caller is expected
   /// to navigate to [LobbyAndKeygenPage] when this returns non-null.
   ///
-  /// Caller must obtain `nsec` via `requireNostrSigningIdentity` first —
+  /// Caller must obtain `nsec` via `ensureIdentity` first —
   /// this is the publish point for the lobby-create event.
   Future<RemoteLobbyHandle?> openLobbyAsHost({required String nsec}) async {
     if (!nameValid) return null;
@@ -158,7 +158,7 @@ class OrgKeygenController extends ChangeNotifier {
   }
 
   /// Joiner counterpart to [openLobbyAsHost]. Caller passes a fresh
-  /// nsec acquired via `requireNostrSigningIdentity`.
+  /// nsec acquired via `ensureIdentity`.
   Future<RemoteLobbyHandle?> openLobbyAsJoiner({required String nsec}) async {
     if (!joinLinkValid) return null;
     _connecting = true;
@@ -546,7 +546,7 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   }
 
   Future<void> _submitName() async {
-    final nsec = await requireNostrSigningIdentity(context);
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
     final handle = await _ctrl.openLobbyAsHost(nsec: nsec);
     if (handle == null || !mounted) return;
@@ -566,7 +566,7 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   }
 
   Future<void> _submitJoinLink() async {
-    final nsec = await requireNostrSigningIdentity(context);
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
     final handle = await _ctrl.openLobbyAsJoiner(nsec: nsec);
     if (handle == null || !mounted) return;
@@ -960,15 +960,62 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     }
     if (!mounted) return;
     if (result != null) {
-      // The wallet was just created via remote keygen — boot it into
-      // the chat-first remote shell on first view.
-      try {
-        await NostrContext.of(context).nostrSettings.setCoordinationUiEnabled(
-          accessStructureRef: result,
-          enabled: true,
-        );
-      } catch (e) {
-        debugPrint('Failed to enable coordination UI for new wallet: $e');
+      // Build participant shares and create the signing channel while
+      // ResolvedKeygen is still available.
+      final keygen = _ctrl.lobbyState?.keygen;
+      if (keygen != null) {
+        try {
+          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+          final accessStruct = coord.getAccessStructure(asRef: result);
+          if (accessStruct == null) {
+            throw StateError('access structure missing after keygen finalize');
+          }
+          final participants = keygen.participants.map((p) {
+            final indices = <int>[];
+            for (final d in p.devices) {
+              final idx = accessStruct.getDeviceShortShareIndex(
+                deviceId: d.deviceId,
+              );
+              if (idx == null) {
+                throw StateError(
+                  'device ${d.deviceId} has no share index in access structure',
+                );
+              }
+              indices.add(idx);
+            }
+            return ChannelParticipant(
+              pubkey: p.pubkey,
+              shareIndices: Uint32List.fromList(indices),
+            );
+          }).toList();
+          final params = coord.connectMaybeCreateChannel(
+            accessStructureRef: result,
+            encryptionKey: encryptionKey,
+            participants: participants,
+          );
+          // Connect and wait for the creation event to be confirmed
+          // (ChannelState received = creation event accepted by relay).
+          final client = await NostrClient.connect();
+          final stream = client.connectToChannel(params: params);
+          await stream
+              .firstWhere((event) => event is ChannelEvent_ChannelState)
+              .timeout(const Duration(seconds: 30));
+
+          // Only enable coordination UI after channel is confirmed.
+          await NostrContext.of(context)
+              .nostrSettings
+              .setCoordinationUiEnabled(
+                accessStructureRef: result,
+                enabled: true,
+              );
+        } catch (e) {
+          debugPrint('Failed to create signing channel: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to create signing channel: $e')),
+            );
+          }
+        }
       }
       if (!mounted) return;
     }

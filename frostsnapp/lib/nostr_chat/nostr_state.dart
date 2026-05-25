@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/nostr_chat/setup_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -42,10 +43,37 @@ class NostrContext extends InheritedWidget {
     return context.dependOnInheritedWidgetOfExactType<NostrContext>();
   }
 
-  // Convenience accessor — current local nostr pubkey, or null if no
-  // identity is configured. Dart computes the bech32 `npub` form on
-  // demand via `myPubkey?.toNpub()`.
-  PublicKey? get myPubkey => identityStream.value;
+  /// Current local nostr pubkey. Throws if no identity is configured —
+  /// callers downstream of `ensureIdentity` can rely on this.
+  PublicKey get myPubkey {
+    final pk = identityStream.value;
+    if (pk == null) {
+      throw StateError(
+        'nostr identity not configured — '
+        'call ensureIdentity() before accessing myPubkey',
+      );
+    }
+    return pk;
+  }
+
+  /// Whether a nostr identity has been configured.
+  bool get hasIdentity => identityStream.value != null;
+
+  /// The single way to obtain the nostr signing identity. Shows the
+  /// setup dialog if no identity exists. Returns the nsec string,
+  /// or null if the user cancels.
+  Future<String?> ensureIdentity(BuildContext context) async {
+    try {
+      return nostrSettings.getNsec();
+    } catch (_) {}
+    final result = await showNostrSetupDialog(context);
+    if (result == NostrSetupResult.cancelled || !context.mounted) return null;
+    try {
+      return nostrSettings.getNsec();
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Get a stream of profile updates for a pubkey.
   Stream<NostrProfile?> profileStream(PublicKey pubkey) {
@@ -101,9 +129,10 @@ class NostrContext extends InheritedWidget {
   bool updateShouldNotify(NostrContext oldWidget) => false;
 }
 
-/// Builder widget for reactive identity updates.
+/// Builder widget for reactive identity updates. The pubkey is non-nullable
+/// because all widgets using this are downstream of the identity gate.
 class NostrIdentityBuilder extends StatelessWidget {
-  final Widget Function(BuildContext, PublicKey?) builder;
+  final Widget Function(BuildContext, PublicKey) builder;
 
   const NostrIdentityBuilder({super.key, required this.builder});
 
@@ -112,41 +141,37 @@ class NostrIdentityBuilder extends StatelessWidget {
     final nostr = NostrContext.of(context);
     return StreamBuilder<PublicKey?>(
       stream: nostr.identityStream,
-      initialData: nostr.myPubkey,
-      builder: (context, snap) => builder(context, snap.data),
+      initialData: nostr.identityStream.value,
+      builder: (context, snap) {
+        final pk = snap.data;
+        if (pk == null) return const SizedBox.shrink();
+        return builder(context, pk);
+      },
     );
   }
 }
 
 /// StreamBuilder wrapper for the current user's profile based on identity.
+/// Requires a nostr identity to be configured (gate via
+/// `ensureIdentity` before rendering).
 class MyProfileBuilder extends StatelessWidget {
   final Widget Function(
     BuildContext context,
-    PublicKey? pubkey,
+    PublicKey pubkey,
     NostrProfile? profile,
-  )
-  builder;
+  ) builder;
 
   const MyProfileBuilder({super.key, required this.builder});
 
   @override
   Widget build(BuildContext context) {
     final nostr = NostrContext.of(context);
-    return StreamBuilder<PublicKey?>(
-      stream: nostr.identityStream,
-      initialData: nostr.myPubkey,
-      builder: (context, identitySnap) {
-        final pubkey = identitySnap.data;
-        if (pubkey == null) {
-          return builder(context, null, null);
-        }
-        return StreamBuilder<NostrProfile?>(
-          stream: nostr.profileStream(pubkey),
-          initialData: nostr.getProfile(pubkey),
-          builder: (context, profileSnap) {
-            return builder(context, pubkey, profileSnap.data);
-          },
-        );
+    final pubkey = nostr.myPubkey;
+    return StreamBuilder<NostrProfile?>(
+      stream: nostr.profileStream(pubkey),
+      initialData: nostr.getProfile(pubkey),
+      builder: (context, profileSnap) {
+        return builder(context, pubkey, profileSnap.data);
       },
     );
   }

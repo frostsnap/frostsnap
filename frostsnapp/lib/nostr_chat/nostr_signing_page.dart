@@ -20,7 +20,7 @@ class NostrSigningPage extends StatefulWidget {
   final SigningRequestState signingState;
   final int threshold;
   final NostrProfile? Function(PublicKey) getProfile;
-  final PublicKey? myPubkey;
+  final PublicKey myPubkey;
   final NostrClient client;
   final AccessStructureRef accessStructureRef;
   final String nsec;
@@ -32,7 +32,7 @@ class NostrSigningPage extends StatefulWidget {
     required this.signingState,
     required this.threshold,
     required this.getProfile,
-    this.myPubkey,
+    required this.myPubkey,
     required this.client,
     required this.accessStructureRef,
     required this.nsec,
@@ -71,18 +71,17 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
   static const margin = EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0);
 
   bool get _iHaveSigned {
-    final myHex = widget.myPubkey?.toHex();
-    return myHex != null && widget.signingState.partials.containsKey(myHex);
+    final myHex = widget.myPubkey.toHex();
+    return widget.signingState.partials.containsKey(myHex);
   }
 
   bool get _iHaveOffered {
-    final myHex = widget.myPubkey?.toHex();
-    return myHex != null && widget.signingState.offers.containsKey(myHex);
+    final myHex = widget.myPubkey.toHex();
+    return widget.signingState.offers.containsKey(myHex);
   }
 
   List<DeviceId> get _myDevices {
-    final myHex = widget.myPubkey?.toHex();
-    if (myHex == null) return [];
+    final myHex = widget.myPubkey.toHex();
     final myOffer = widget.signingState.offers[myHex];
     if (myOffer == null) return [];
     final accessStruct = coord.getAccessStructure(
@@ -335,8 +334,8 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
     final state = widget.signingState;
     final totalSigned = state.partials.length;
     final threshold = widget.threshold;
-    final myHex = widget.myPubkey?.toHex();
-    final myOffer = myHex != null ? state.offers[myHex] : null;
+    final myHex = widget.myPubkey.toHex();
+    final myOffer = state.offers[myHex];
     final otherOffers = state.offers.entries
         .where((e) => e.key != myHex)
         .toList();

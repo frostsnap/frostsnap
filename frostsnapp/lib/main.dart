@@ -450,18 +450,39 @@ class _DevUsbOverlay extends StatelessWidget {
         return Stack(
           children: [
             child,
-            Positioned(
-              right: 8,
-              bottom: 8,
-              // SafeArea + a tooltip-less button: we sit ABOVE the
-              // Navigator here, so there's no Overlay ancestor that a
-              // Tooltip widget could use. The regular `UsbToggleButton`
-              // uses IconButton's tooltip and crashes in this position.
-              child: SafeArea(child: _DevUsbButton()),
-            ),
+            _DraggableDevButton(),
           ],
         );
       },
+    );
+  }
+}
+
+class _DraggableDevButton extends StatefulWidget {
+  @override
+  State<_DraggableDevButton> createState() => _DraggableDevButtonState();
+}
+
+class _DraggableDevButtonState extends State<_DraggableDevButton> {
+  Offset _offset = const Offset(-1, -1);
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    if (_offset.dx < 0) {
+      _offset = Offset(size.width - 56, size.height / 2 - 24);
+    }
+    return Positioned(
+      left: _offset.dx.clamp(0, size.width - 48),
+      top: _offset.dy.clamp(0, size.height - 48),
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            _offset += details.delta;
+          });
+        },
+        child: SafeArea(child: _DevUsbButton()),
+      ),
     );
   }
 }

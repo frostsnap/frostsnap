@@ -14,6 +14,7 @@ use frostsnap_core::{
 };
 use frostsnap_nostr::ChannelInitData;
 use std::collections::BTreeMap;
+
 use tracing::{event, Level};
 
 use crate::{
@@ -188,12 +189,66 @@ impl Coordinator {
         self.0.key_state()
     }
 
+    /// Build params that will create the signing channel if it doesn't
+    /// exist on the relay yet. Called once after keygen with the full
+    /// participant→share mapping.
     #[frb(sync)]
-    pub fn channel_connection_params(
+    pub fn connect_maybe_create_channel(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+        participants: Vec<frostsnap_nostr::ChannelParticipant>,
+    ) -> ChannelConnectionParams {
+        let (key_context, root_shared_key, key_name, purpose) =
+            self.channel_key_data(access_structure_ref, encryption_key);
+        let participant_shares = participants
+            .into_iter()
+            .map(|p| frostsnap_nostr::channel::ParticipantShares {
+                pubkey: p.pubkey,
+                share_indices: p
+                    .share_indices
+                    .into_iter()
+                    .map(|i| {
+                        frostsnap_core::schnorr_fun::frost::ShareIndex::from(
+                            core::num::NonZeroU32::new(i).expect("share index must be non-zero"),
+                        )
+                    })
+                    .collect(),
+            })
+            .collect();
+        let init_data = root_shared_key.map(|rsk| ChannelInitData {
+            key_name,
+            purpose,
+            root_shared_key: rsk,
+            participants: participant_shares,
+        });
+        ChannelConnectionParams {
+            key_context,
+            init_data,
+        }
+    }
+
+    /// Build params that join an existing signing channel. No creation
+    /// event is published — the channel must already exist on the relay.
+    #[frb(sync)]
+    pub fn connect_to_channel(
         &self,
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
     ) -> ChannelConnectionParams {
+        let (key_context, _, _, _) =
+            self.channel_key_data(access_structure_ref, encryption_key);
+        ChannelConnectionParams {
+            key_context,
+            init_data: None,
+        }
+    }
+
+    fn channel_key_data(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) -> (KeyContext, Option<frostsnap_core::schnorr_fun::frost::SharedKey>, String, frostsnap_core::device::KeyPurpose) {
         let inner = self.0.inner();
         let key_data = inner
             .get_frost_key(access_structure_ref.key_id)
@@ -208,15 +263,7 @@ impl Coordinator {
         let root_shared_key = key_data
             .complete_key
             .root_shared_key(access_structure_ref.access_structure_id, encryption_key);
-        let init_data = root_shared_key.map(|rsk| ChannelInitData {
-            key_name: key_data.key_name.clone(),
-            purpose: key_data.purpose,
-            root_shared_key: rsk,
-        });
-        ChannelConnectionParams {
-            key_context,
-            init_data,
-        }
+        (key_context, root_shared_key, key_data.key_name.clone(), key_data.purpose)
     }
 
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {

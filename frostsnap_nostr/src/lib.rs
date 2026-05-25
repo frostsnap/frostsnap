@@ -3,21 +3,21 @@ pub mod channel_runner;
 pub mod keygen;
 pub mod signing;
 
-pub use channel::{ChannelInitData, ChannelKeys, ChannelSecret};
+pub use channel::{ChannelInitData, ChannelKeys, ChannelSecret, ParticipantShares};
 pub use channel_runner::{ChannelRunner, NostrProfile};
 pub use nostr_lmdb::NostrLMDB;
 pub use nostr_sdk::nips::nip19::ToBech32;
 pub use nostr_sdk::prelude::NostrDatabaseExt;
 pub use nostr_sdk::{Client, Keys, Metadata};
 pub use signing::{
-    ChannelClient, ChannelEvent, ChannelHandle, ConfirmedSubsetEntry, ConnectionState, GroupMember,
-    SigningEvent,
+    ChannelClient, ChannelEvent, ChannelHandle, ChannelParticipant, ConfirmedSubsetEntry,
+    ConnectionState, GroupMember, SigningEvent,
 };
 
 /// Owned x-only nostr public key — 32 bytes, value-typed, `Copy`. Same
 /// rationale as `EventId`: foreign opaque types confuse FRB, so we
 /// own the bytes here and convert at the `nostr-sdk` boundary only.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, bincode::Encode, bincode::Decode)]
 pub struct PublicKey(pub [u8; 32]);
 
 impl PublicKey {

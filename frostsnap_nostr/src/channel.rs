@@ -1,6 +1,6 @@
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use frostsnap_core::schnorr_fun::frost::SharedKey;
+use frostsnap_core::schnorr_fun::frost::{ShareIndex, SharedKey};
 use frostsnap_core::{
     coordinator::KeyContext, device::KeyPurpose, AccessStructureId, AccessStructureRef, KeyId,
     MasterAppkey,
@@ -90,6 +90,61 @@ impl ChannelKeys {
     }
 }
 
+/// Which key shares a nostr participant holds, as determined at keygen time.
+#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
+pub struct ParticipantShares {
+    pub pubkey: crate::PublicKey,
+    pub share_indices: Vec<ShareIndex>,
+}
+
+impl ParticipantShares {
+    /// Build from a list of participants with their devices, cross-referenced
+    /// against an ordered device list (positional share indices, 1-based).
+    pub fn from_device_lists(
+        participants: &[(crate::PublicKey, Vec<frostsnap_core::DeviceId>)],
+        devices_in_order: &[frostsnap_core::DeviceId],
+    ) -> Result<Vec<Self>, ParticipantSharesError> {
+        participants
+            .iter()
+            .map(|(pubkey, devices)| {
+                let share_indices = devices
+                    .iter()
+                    .map(|did| {
+                        let pos = devices_in_order
+                            .iter()
+                            .position(|d| d == did)
+                            .ok_or(ParticipantSharesError::UnknownDevice { device_id: *did })?;
+                        Ok(ShareIndex::from(
+                            core::num::NonZeroU32::new((pos as u32) + 1).expect("pos+1 >= 1"),
+                        ))
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(Self {
+                    pubkey: *pubkey,
+                    share_indices,
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+pub enum ParticipantSharesError {
+    UnknownDevice { device_id: frostsnap_core::DeviceId },
+}
+
+impl core::fmt::Display for ParticipantSharesError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::UnknownDevice { device_id } => {
+                write!(f, "device {device_id} not found in devices_in_order")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParticipantSharesError {}
+
 /// Key metadata published in the NIP28 channel creation event.
 /// Contains just enough to reconstruct the key in a coordinator.
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
@@ -97,6 +152,7 @@ pub struct ChannelInitData {
     pub key_name: String,
     pub purpose: KeyPurpose,
     pub root_shared_key: SharedKey,
+    pub participants: Vec<ParticipantShares>,
 }
 
 impl ChannelInitData {

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:flutter/services.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/nostr_chat/chat_page.dart';
@@ -348,13 +349,19 @@ class _RemoteWalletShell extends StatefulWidget {
 
 class _RemoteWalletShellState extends State<_RemoteWalletShell> {
   late final ChatChromeController _chrome;
-  late Future<ChannelConnectionParams> _channelParams;
+  Future<ChannelConnectionParams>? _channelParams;
 
   @override
   void initState() {
     super.initState();
     _chrome = ChatChromeController();
-    _channelParams = _loadChannelParams();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _channelParams = _ensureIdentityThenConnect();
+        });
+      }
+    });
   }
 
   @override
@@ -363,9 +370,21 @@ class _RemoteWalletShellState extends State<_RemoteWalletShell> {
     super.dispose();
   }
 
-  Future<ChannelConnectionParams> _loadChannelParams() async {
+  Future<ChannelConnectionParams> _ensureIdentityThenConnect() async {
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
+    if (nsec == null) {
+      if (mounted) {
+        await NostrContext.of(context)
+            .nostrSettings
+            .setCoordinationUiEnabled(
+              accessStructureRef: widget.accessStructureRef,
+              enabled: false,
+            );
+      }
+      throw StateError('nostr identity required for remote wallet');
+    }
     final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    return coord.channelConnectionParams(
+    return coord.connectToChannel(
       accessStructureRef: widget.accessStructureRef,
       encryptionKey: encryptionKey,
     );
@@ -457,7 +476,7 @@ class _RemoteWalletShellState extends State<_RemoteWalletShell> {
                   return _ChatLoadFailed(
                     error: snap.error!,
                     onRetry: () => setState(() {
-                      _channelParams = _loadChannelParams();
+                      _channelParams = _ensureIdentityThenConnect();
                     }),
                   );
                 }
@@ -573,7 +592,7 @@ class _ChatLoadFailed extends StatelessWidget {
             const SizedBox(height: 12),
             Text('Couldn\'t open chat', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text(
+            SelectableText(
               '$error',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -581,10 +600,26 @@ class _ChatLoadFailed extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+                IconButton(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: '$error'));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Error copied')),
+                    );
+                  },
+                  icon: const Icon(Icons.copy),
+                  tooltip: 'Copy error',
+                ),
+              ],
             ),
           ],
         ),
