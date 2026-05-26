@@ -918,8 +918,7 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
       return;
     }
 
-    if (kgState.finished != null) {
-      _popped = true;
+    if (kgState.finished != null && !_popped) {
       unawaited(_dismissOverlayThenPop(kgState.finished));
       return;
     }
@@ -961,66 +960,90 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     }
     if (!mounted) return;
     if (result != null) {
-      // Build participant shares and create the signing channel while
-      // ResolvedKeygen is still available.
       final keygen = _ctrl.lobbyState?.keygen;
       if (keygen != null) {
-        try {
-          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-          final accessStruct = coord.getAccessStructure(asRef: result);
-          if (accessStruct == null) {
-            throw StateError('access structure missing after keygen finalize');
+        // Share indices are positional (1-based) from the keygen's
+        // device ordering. No coordinator lookup needed.
+        final devicesInOrder = keygen.participants
+            .expand((p) => p.devices.map((d) => d.deviceId))
+            .toList();
+        final participants = keygen.participants.map((p) {
+          final indices = <int>[];
+          for (final d in p.devices) {
+            indices.add(devicesInOrder.indexOf(d.deviceId) + 1);
           }
-          final participants = keygen.participants.map((p) {
-            final indices = <int>[];
-            for (final d in p.devices) {
-              final idx = accessStruct.getDeviceShortShareIndex(
-                deviceId: d.deviceId,
-              );
-              if (idx == null) {
-                throw StateError(
-                  'device ${d.deviceId} has no share index in access structure',
-                );
-              }
-              indices.add(idx);
-            }
-            return ChannelParticipant(
-              pubkey: p.pubkey,
-              shareIndices: Uint32List.fromList(indices),
-            );
-          }).toList();
+          return ChannelParticipant(
+            pubkey: p.pubkey,
+            shareIndices: Uint32List.fromList(indices),
+          );
+        }).toList();
+
+        await _connectSigningChannel(result, participants);
+      }
+      if (!mounted) return;
+      _popped = true;
+    }
+    Navigator.of(context).pop(result);
+  }
+
+  /// Retry channel creation until it succeeds. Shows a persistent
+  /// dialog so the user sees progress. Never falls back to local mode.
+  Future<void> _connectSigningChannel(
+    AccessStructureRef asRef,
+    List<ChannelParticipant> participants,
+  ) async {
+    final status = ValueNotifier<String>('Connecting…');
+    // Show a persistent dialog that stays up for the entire setup.
+    final dialogRoute = DialogRoute(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => ValueListenableBuilder<String>(
+        valueListenable: status,
+        builder: (ctx, text, _) => AlertDialog(
+          icon: const CircularProgressIndicator(),
+          title: const Text('Setting up signing channel…'),
+          content: Text(text),
+        ),
+      ),
+    );
+    Navigator.of(context).push(dialogRoute);
+
+    try {
+      while (mounted) {
+        try {
+          status.value = 'Connecting to relay…';
+          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
           final params = coord.connectMaybeCreateChannel(
-            accessStructureRef: result,
+            accessStructureRef: asRef,
             encryptionKey: encryptionKey,
             participants: participants,
           );
-          // Connect and wait for the creation event to be confirmed
-          // (ChannelState received = creation event accepted by relay).
           final client = await NostrClient.connect();
           final stream = client.connectToChannel(params: params);
+          status.value = 'Waiting for channel confirmation…';
           await stream
               .firstWhere((event) => event is ChannelEvent_ChannelState)
               .timeout(const Duration(seconds: 30));
-
-          // Only enable coordination UI after channel is confirmed.
+          status.value = 'Enabling remote mode…';
           await NostrContext.of(context)
               .nostrSettings
               .setCoordinationUiEnabled(
-                accessStructureRef: result,
+                accessStructureRef: asRef,
                 enabled: true,
               );
+          return;
         } catch (e) {
-          debugPrint('Failed to create signing channel: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Failed to create signing channel: $e')),
-            );
-          }
+          debugPrint('Channel setup attempt failed: $e — retrying');
+          status.value = 'Retrying… ($e)';
+          await Future.delayed(const Duration(seconds: 3));
         }
       }
-      if (!mounted) return;
+    } finally {
+      status.dispose();
+      if (mounted && dialogRoute.isActive) {
+        Navigator.of(context).removeRoute(dialogRoute);
+      }
     }
-    Navigator.of(context).pop(result);
   }
 
   Future<void> _declineKeygen() async {
