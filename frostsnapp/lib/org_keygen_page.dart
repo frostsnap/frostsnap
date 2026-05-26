@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/copy_feedback.dart';
@@ -375,13 +373,13 @@ class LobbyAndKeygenController extends ChangeNotifier {
     return const [];
   }
 
-  Future<void> confirmMatch({required SymmetricKey encryptionKey}) async {
+  Future<RemoteKeygenResult?> confirmMatch({required SymmetricKey encryptionKey}) async {
     final session = _keygenSession;
-    if (session == null || _confirming) return;
+    if (session == null || _confirming) return null;
     _confirming = true;
     notifyListeners();
     try {
-      await session.confirmMatch(encryptionKey: encryptionKey);
+      return await session.confirmMatch(encryptionKey: encryptionKey);
     } finally {
       _confirming = false;
       notifyListeners();
@@ -806,6 +804,8 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
 
   bool _verifyTransitionInFlight = false;
 
+  bool _remoteFinalizeInFlight = false;
+
   bool _ceremonyStarted = false;
 
   @override
@@ -914,12 +914,12 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
 
     if (kgState.aborted != null) {
       _popped = true;
-      unawaited(_dismissOverlayThenPop(null));
+      unawaited(_dismissOverlayThenPop(null, null));
       return;
     }
 
-    if (kgState.finished != null && !_popped) {
-      unawaited(_dismissOverlayThenPop(kgState.finished));
+    if (kgState.finished != null && !_popped && !_remoteFinalizeInFlight) {
+      unawaited(_dismissOverlayThenPop(kgState.finished, null));
       return;
     }
 
@@ -952,34 +952,18 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
   /// Overlay route lives on the root navigator and would orphan
   /// above a popped child dialog. `dispose()` alone doesn't dismiss
   /// it — must `clearAllActionsNeeded` first.
-  Future<void> _dismissOverlayThenPop(AccessStructureRef? result) async {
+  Future<void> _dismissOverlayThenPop(
+    AccessStructureRef? result,
+    List<ChannelParticipant>? participants,
+  ) async {
     final fc = _fullscreenController;
     if (fc != null) {
       await fc.clearAllActionsNeeded();
       _maybeDisposeFullscreen();
     }
     if (!mounted) return;
-    if (result != null) {
-      final keygen = _ctrl.lobbyState?.keygen;
-      if (keygen != null) {
-        // Share indices are positional (1-based) from the keygen's
-        // device ordering. No coordinator lookup needed.
-        final devicesInOrder = keygen.participants
-            .expand((p) => p.devices.map((d) => d.deviceId))
-            .toList();
-        final participants = keygen.participants.map((p) {
-          final indices = <int>[];
-          for (final d in p.devices) {
-            indices.add(devicesInOrder.indexOf(d.deviceId) + 1);
-          }
-          return ChannelParticipant(
-            pubkey: p.pubkey,
-            shareIndices: Uint32List.fromList(indices),
-          );
-        }).toList();
-
-        await _connectSigningChannel(result, participants);
-      }
+    if (result != null && participants != null) {
+      await _connectSigningChannel(result, participants);
       if (!mounted) return;
       _popped = true;
     }
@@ -1123,10 +1107,15 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
   }
 
   Future<void> _confirmAndFinalize() async {
+    _remoteFinalizeInFlight = true;
     try {
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-      await _ctrl.confirmMatch(encryptionKey: encryptionKey);
+      final result = await _ctrl.confirmMatch(encryptionKey: encryptionKey);
+      if (result != null) {
+        await _dismissOverlayThenPop(result.accessStructureRef, result.participants);
+      }
     } catch (e) {
+      _remoteFinalizeInFlight = false;
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

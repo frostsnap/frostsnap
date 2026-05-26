@@ -1118,7 +1118,8 @@ impl FrostCoordinator {
         }
         match self.pending_keygens.remove(&keygen_id) {
             Some(KeyGenState::NeedsFinalize(finalize)) => {
-                let devices = finalize.device_to_share_index.keys().copied().collect();
+                let device_to_share_index = finalize.device_to_share_index.clone();
+                let local_devices = device_to_share_index.keys().copied().collect();
                 let access_structure_ref = self.mutate_new_key(
                     finalize.pending_key_name,
                     finalize.root_shared_key,
@@ -1128,9 +1129,10 @@ impl FrostCoordinator {
                     rng,
                 );
                 Ok(SendFinalizeKeygen {
-                    devices,
+                    local_devices,
                     access_structure_ref,
                     keygen_id,
+                    device_to_share_index,
                 })
             }
             _ => Err(ActionError::StateInconsistent("no such keygen".into())),
@@ -2206,9 +2208,10 @@ impl IntoIterator for SendBeginKeygen {
 }
 
 pub struct SendFinalizeKeygen {
-    pub devices: Vec<DeviceId>,
+    pub local_devices: Vec<DeviceId>,
     pub access_structure_ref: AccessStructureRef,
     pub keygen_id: KeygenId,
+    pub device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
 }
 
 impl IntoIterator for SendFinalizeKeygen {
@@ -2221,7 +2224,7 @@ impl IntoIterator for SendFinalizeKeygen {
                 keygen_id: self.keygen_id,
             }
             .into(),
-            destinations: self.devices.into_iter().collect(),
+            destinations: self.local_devices.into_iter().collect(),
         })
     }
 }

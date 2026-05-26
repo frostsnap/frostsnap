@@ -635,20 +635,26 @@ impl super::FrostCoordinator {
             kind: AccessStructureKind::Master,
         }));
 
-        // CRITICAL: only record share-index mappings for *our local devices*.
+        // Build the full device→share_index map for ALL devices.
+        let device_to_share_index: BTreeMap<DeviceId, ShareIndex> = state
+            .devices_in_order
+            .iter()
+            .enumerate()
+            .map(|(i, device_id)| {
+                let share_index = ShareIndex::from(
+                    core::num::NonZeroU32::new((i as u32) + 1).expect("i+1 >= 1"),
+                );
+                (*device_id, share_index)
+            })
+            .collect();
+
+        // Only record share-index mappings for *our local devices*.
         // The other coordinators' devices participated in the keygen but we
         // don't hold their encrypted shares — claiming we do via NewShare
         // mutations would lie to every later code path that walks the
         // access structure (signing, recovery, backup).
         for device_id in &state.local_devices {
-            let position = state
-                .devices_in_order
-                .iter()
-                .position(|d| d == device_id)
-                .expect("local device must be in devices_in_order");
-            let share_index = ShareIndex::from(
-                core::num::NonZeroU32::new((position as u32) + 1).expect("position+1 >= 1"),
-            );
+            let share_index = device_to_share_index[device_id];
             self.mutate(Mutation::Keygen(KeyMutation::NewShare {
                 access_structure_ref,
                 device_id: *device_id,
@@ -657,9 +663,10 @@ impl super::FrostCoordinator {
         }
 
         Ok(super::SendFinalizeKeygen {
-            devices: state.local_devices.iter().copied().collect(),
+            local_devices: state.local_devices.iter().copied().collect(),
             access_structure_ref,
             keygen_id,
+            device_to_share_index,
         })
     }
 }

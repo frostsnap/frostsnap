@@ -36,8 +36,8 @@ use frostsnap_core::coordinator::{
 use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
 use frostsnap_core::{AccessStructureRef, DeviceId, KeyId, KeygenId, SymmetricKey};
 use frostsnap_macros::broadcast_handle;
-use frostsnap_nostr::keygen::ProtocolClient;
-use frostsnap_nostr::Keys;
+use frostsnap_nostr::keygen::{ProtocolClient, SelectedParticipant};
+use frostsnap_nostr::{ChannelParticipant, Keys};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
@@ -60,6 +60,12 @@ impl Sink<RemoteKeygenMessage> for MpscKeygenSink {
     fn send(&self, msg: RemoteKeygenMessage) {
         let _ = self.0.send(msg);
     }
+}
+
+#[frb(non_opaque)]
+pub struct RemoteKeygenResult {
+    pub access_structure_ref: AccessStructureRef,
+    pub participants: Vec<ChannelParticipant>,
 }
 
 // ============================================================================
@@ -89,7 +95,7 @@ pub struct RemoteKeygenSessionHandle {
 enum SessionCommand {
     ConfirmMatch {
         encryption_key: SymmetricKey,
-        reply: oneshot::Sender<Result<AccessStructureRef>>,
+        reply: oneshot::Sender<Result<RemoteKeygenResult>>,
     },
 }
 
@@ -112,7 +118,7 @@ impl RemoteKeygenSessionHandle {
     /// finalizes core state, sends `Keygen::Finalize` to local devices via
     /// USB, marks the UiProtocol finalized so `state.finished` propagates to
     /// Dart, then breaks the run loop. Cleanup runs but skips the abort path.
-    pub async fn confirm_match(&self, encryption_key: SymmetricKey) -> Result<AccessStructureRef> {
+    pub async fn confirm_match(&self, encryption_key: SymmetricKey) -> Result<RemoteKeygenResult> {
         let (reply, rx) = oneshot::channel();
         self.command_tx
             .send(SessionCommand::ConfirmMatch {
@@ -160,6 +166,7 @@ struct LoopContext {
     keygen_id: KeygenId,
     keys: Keys,
     local_devices: BTreeSet<DeviceId>,
+    participants: Vec<SelectedParticipant>,
 }
 
 impl LoopContext {
@@ -193,11 +200,13 @@ impl LoopContext {
         }
     }
 
-    /// Run the finalize state mutations + side effects. Returns the new
-    /// `AccessStructureRef`. Does NOT clear the `active_remote_broadcast`
-    /// slot or fire any cancel — that's the loop-cleanup's job.
-    fn finalize(&self, encryption_key: SymmetricKey) -> Result<AccessStructureRef> {
-        let access_structure_ref = {
+    /// Run the finalize state mutations + side effects. Returns
+    /// `RemoteKeygenResult` with the access structure and the full
+    /// participant→share-index mapping. Does NOT clear the
+    /// `active_remote_broadcast` slot or fire any cancel — that's the
+    /// loop-cleanup's job.
+    fn finalize(&self, encryption_key: SymmetricKey) -> Result<RemoteKeygenResult> {
+        let (access_structure_ref, device_to_share_index) = {
             let mut coord = self.coordinator.lock().unwrap();
             let mut db = self.db.lock().unwrap();
             let mut ui_stack = self.ui_stack.lock().unwrap();
@@ -213,9 +222,10 @@ impl LoopContext {
                 )?)
             })?;
             let asr = finalized.access_structure_ref;
+            let d2si = finalized.device_to_share_index.clone();
             self.usb_sender.send_from_core(finalized);
             kg.keygen_finalized(asr);
-            asr
+            (asr, d2si)
         };
 
         // emit_key_state — same logic as `FfiCoordinator::emit_key_state`,
@@ -258,7 +268,29 @@ impl LoopContext {
             let _ = stream.add(backup_run);
         }
 
-        Ok(access_structure_ref)
+        let participants = self
+            .participants
+            .iter()
+            .map(|p| {
+                let share_indices = p
+                    .devices
+                    .iter()
+                    .map(|d| {
+                        let si = device_to_share_index[&d.device_id];
+                        u32::try_from(si).expect("share index fits u32")
+                    })
+                    .collect();
+                ChannelParticipant {
+                    pubkey: p.pubkey,
+                    share_indices,
+                }
+            })
+            .collect();
+
+        Ok(RemoteKeygenResult {
+            access_structure_ref,
+            participants,
+        })
     }
 
     /// Central cleanup — runs whether we exited via cancel, disconnect,
@@ -445,6 +477,7 @@ impl Coordinator {
                 .collect()
         };
 
+        let participants = resolved.participants.clone();
         let ctx = LoopContext {
             coordinator: self.0.coordinator.clone(),
             db: self.0.db.clone(),
@@ -457,6 +490,7 @@ impl Coordinator {
             keygen_id,
             keys: keys.clone(),
             local_devices,
+            participants,
         };
         ctx.drain_outgoing(&outbound_tx, initial);
 
