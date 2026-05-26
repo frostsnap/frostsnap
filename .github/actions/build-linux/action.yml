@@ -27,3 +27,6 @@ runs:
     - name: Build App Linux
       shell: bash
       run: just env=${{ inputs.env }} build linux --release
+    - name: Verify cargokit lockfile not drifted during build
+      shell: bash
+      run: git diff --exit-code frostsnapp/rust_builder/cargokit/build_tool/pubspec.lock
