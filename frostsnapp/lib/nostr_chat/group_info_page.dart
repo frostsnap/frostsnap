@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
-import 'package:frostsnap/snackbar.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/wallet_more.dart';
@@ -242,8 +241,7 @@ class GroupInfoPage extends StatelessWidget {
   void _copyInviteLink(BuildContext context) {
     final secret = ChannelSecret.fromAccessStructureId(id: accessStructureId);
     final link = secret.inviteLink();
-    Clipboard.setData(ClipboardData(text: link));
-    showMessageSnackbar(context, 'Invite link copied to clipboard');
+    copyToClipboard(link);
   }
 
   void _confirmLeaveRemote(BuildContext context) {

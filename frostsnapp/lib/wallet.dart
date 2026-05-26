@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
-import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/nostr_chat/chat_page.dart';
@@ -610,12 +610,7 @@ class _ChatLoadFailed extends StatelessWidget {
                   label: const Text('Retry'),
                 ),
                 IconButton(
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: '$error'));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Error copied')),
-                    );
-                  },
+                  onPressed: () => copyToClipboard('$error'),
                   icon: const Icon(Icons.copy),
                   tooltip: 'Copy error',
                 ),

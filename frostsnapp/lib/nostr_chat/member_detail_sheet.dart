@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -116,13 +116,7 @@ class MemberDetailSheet extends StatelessWidget {
   }
 
   void _copyToClipboard(BuildContext context, String value, String label) {
-    Clipboard.setData(ClipboardData(text: value));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label copied to clipboard'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    copyToClipboard(value);
   }
 
   void _openInNostrClient(BuildContext context, String npub) {

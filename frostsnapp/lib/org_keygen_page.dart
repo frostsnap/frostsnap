@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/async_action_button.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
@@ -2312,14 +2313,7 @@ class _InviteDialog extends StatelessWidget {
             child: FilledButton.tonalIcon(
               icon: const Icon(Icons.copy_rounded, size: 18),
               label: const Text('Copy'),
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: inviteLink));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('Copied')));
-                }
-              },
+              onPressed: () => copyToClipboard(inviteLink),
             ),
           ),
           Expanded(

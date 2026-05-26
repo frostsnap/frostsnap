@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/nostr_chat/group_info_page.dart';
 import 'package:frostsnap/nostr_chat/member_detail_sheet.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
@@ -893,7 +894,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             author: item.author,
             profile: _getProfile(item.author),
             isMe: item.author == _myPubkey,
-            onCopy: () => Clipboard.setData(ClipboardData(text: item.reason)),
+            onCopy: () => copyToClipboard(item.reason),
             onReply: () => _startReply(
               ReplyTarget(
                 eventId: item.eventId,
