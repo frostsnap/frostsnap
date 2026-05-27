@@ -18,35 +18,29 @@
 
 use crate::api::broadcast::BehaviorBroadcast;
 use crate::coordinator::RemoteBroadcastRegistration;
-use crate::frb_generated::StreamSink;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
-use frostsnap_coordinator::backup_run::BackupState;
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination,
 };
 pub use frostsnap_coordinator::keygen::KeyGenState;
-use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::remote_keygen::RemoteKeyGen;
-use frostsnap_coordinator::{Sink, UiProtocol, UiStack, UsbSender};
+use frostsnap_coordinator::{Sink, UiProtocol};
 use frostsnap_core::coordinator::remote_keygen::{RemoteKeygenMessage, RemoteKeygenPayload};
-use frostsnap_core::coordinator::{
-    BroadcastPayload, CoordinatorSend, FrostCoordinator, SendFinalizeKeygen,
-};
+use frostsnap_core::coordinator::{BroadcastPayload, CoordinatorSend};
 use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
-use frostsnap_core::{AccessStructureRef, DeviceId, KeyId, KeygenId, SymmetricKey};
+use frostsnap_core::{AccessStructureRef, DeviceId, KeygenId, SymmetricKey};
 use frostsnap_macros::broadcast_handle;
 use frostsnap_nostr::keygen::{ProtocolClient, SelectedParticipant};
 use frostsnap_nostr::{ChannelParticipant, Keys};
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::collections::BTreeSet;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{event, Level};
 
 use super::remote_keygen::KeygenStartArgs;
-use crate::api::backup_run::{BackupDevice, BackupRun};
-use crate::api::coordinator::{Coordinator, KeyState};
+use crate::api::coordinator::Coordinator;
+use crate::coordinator::FfiCoordinator;
 
 // ============================================================================
 // Wrappers
@@ -150,26 +144,18 @@ impl Drop for RemoteKeygenSessionHandle {
 }
 
 // ============================================================================
-// LoopContext — bundle of FfiCoordinator sub-Arcs the spawned task uses
+// RemoteKeygenSession — cloned FfiCoordinator + session-local data
 // ============================================================================
 
-struct LoopContext {
-    coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
-    db: Arc<Mutex<rusqlite::Connection>>,
-    ui_stack: Arc<Mutex<UiStack>>,
-    usb_sender: UsbSender,
-    backup_state: Arc<Mutex<Persisted<BackupState>>>,
-    backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
-    key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
-    active_remote_broadcast: Arc<Mutex<Option<RemoteBroadcastRegistration>>>,
-
+struct RemoteKeygenSession {
+    coord: FfiCoordinator,
     keygen_id: KeygenId,
     keys: Keys,
     local_devices: BTreeSet<DeviceId>,
     participants: Vec<SelectedParticipant>,
 }
 
-impl LoopContext {
+impl RemoteKeygenSession {
     fn drain_outgoing(
         &self,
         outbound_tx: &mpsc::UnboundedSender<(DeviceId, RemoteKeygenPayload)>,
@@ -181,13 +167,13 @@ impl LoopContext {
                     message,
                     destinations,
                 } => {
-                    self.usb_sender.send(CoordinatorSendMessage {
+                    self.coord.usb_sender.send(CoordinatorSendMessage {
                         target_destinations: Destination::from(destinations),
                         message_body: CoordinatorSendBody::Core(message),
                     });
                 }
                 CoordinatorSend::ToUser(m) => {
-                    self.ui_stack.lock().unwrap().process_to_user_message(m);
+                    self.coord.ui_stack.lock().unwrap().process_to_user_message(m);
                 }
                 CoordinatorSend::Broadcast {
                     from,
@@ -200,73 +186,11 @@ impl LoopContext {
         }
     }
 
-    /// Run the finalize state mutations + side effects. Returns
-    /// `RemoteKeygenResult` with the access structure and the full
-    /// participant→share-index mapping. Does NOT clear the
-    /// `active_remote_broadcast` slot or fire any cancel — that's the
-    /// loop-cleanup's job.
+    /// Run the finalize via FfiCoordinator helper + build RemoteKeygenResult.
     fn finalize(&self, encryption_key: SymmetricKey) -> Result<RemoteKeygenResult> {
-        let (access_structure_ref, device_to_share_index) = {
-            let mut coord = self.coordinator.lock().unwrap();
-            let mut db = self.db.lock().unwrap();
-            let mut ui_stack = self.ui_stack.lock().unwrap();
-            let kg = ui_stack
-                .get_mut::<RemoteKeyGen>()
-                .ok_or_else(|| anyhow!("RemoteKeyGen UiProtocol no longer on the stack"))?;
-
-            let finalized: SendFinalizeKeygen = coord.staged_mutate(&mut *db, |coord| {
-                Ok(coord.finalize_remote_keygen(
-                    self.keygen_id,
-                    encryption_key,
-                    &mut rand::thread_rng(),
-                )?)
-            })?;
-            let asr = finalized.access_structure_ref;
-            let d2si = finalized.device_to_share_index.clone();
-            self.usb_sender.send_from_core(finalized);
-            kg.keygen_finalized(asr);
-            (asr, d2si)
-        };
-
-        // emit_key_state — same logic as `FfiCoordinator::emit_key_state`,
-        // inlined here so we don't have to clone all of FfiCoordinator
-        // into the loop context.
-        {
-            let coord = self.coordinator.lock().unwrap();
-            let state = build_key_state(&coord);
-            if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
-                stream.send(state);
-            }
-        }
-
-        // Backup-run setup (mirrors FfiCoordinator::finalize_keygen).
-        {
-            let coord = self.coordinator.lock().unwrap();
-            let access_structure = coord
-                .get_access_structure(access_structure_ref)
-                .ok_or_else(|| anyhow!("access structure missing immediately after finalize"))?;
-            let share_indices: Vec<u32> = access_structure
-                .iter_shares()
-                .map(|(_, share_index)| {
-                    u32::try_from(share_index).expect("share index should fit in u32")
-                })
-                .collect();
-            drop(coord);
-
-            let mut backup_state = self.backup_state.lock().unwrap();
-            let mut db = self.db.lock().unwrap();
-            backup_state.mutate2(&mut *db, |state, mutations| {
-                state.start_run(access_structure_ref, share_indices, mutations);
-                Ok(())
-            })?;
-        }
-
-        // backup_stream_emit (best-effort — silent if no subscriber).
-        let key_id = access_structure_ref.key_id;
-        let backup_run = build_backup_run(&self.coordinator, &self.backup_state, key_id);
-        if let Some(stream) = self.backup_run_streams.lock().unwrap().get(&key_id) {
-            let _ = stream.add(backup_run);
-        }
+        let (access_structure_ref, device_to_share_index) = self
+            .coord
+            .finalize_remote_keygen_with_side_effects(self.keygen_id, encryption_key)?;
 
         let participants = self
             .participants
@@ -298,73 +222,27 @@ impl LoopContext {
     /// successful-finalize path (no abort needed) from any abort path.
     fn cleanup(&self, finalized: bool) {
         if !finalized {
-            // Abort path — covers user-cancel, disconnect, handle-drop, errors.
-            // Idempotent against `active_keygens.remove` already having been
-            // called by `finalize_remote_keygen` (returns Ok(()) silently).
-            self.coordinator
+            self.coord
+                .coordinator
                 .lock()
                 .unwrap()
                 .MUTATE_NO_PERSIST()
                 .cancel_remote_keygen(self.keygen_id);
 
             for d in &self.local_devices {
-                self.usb_sender.send_cancel(*d);
+                self.coord.usb_sender.send_cancel(*d);
             }
 
-            if let Some(kg) = self.ui_stack.lock().unwrap().get_mut::<RemoteKeyGen>() {
+            if let Some(kg) = self.coord.ui_stack.lock().unwrap().get_mut::<RemoteKeyGen>() {
                 kg.cancel();
             }
         }
 
-        // Always: clear the outbound routing slot if it's still ours.
-        let mut slot = self.active_remote_broadcast.lock().unwrap();
+        let mut slot = self.coord.active_remote_broadcast.lock().unwrap();
         if matches!(&*slot, Some(reg) if reg.keygen_id == self.keygen_id) {
             *slot = None;
         }
     }
-}
-
-fn build_backup_run(
-    coordinator: &Arc<Mutex<Persisted<FrostCoordinator>>>,
-    backup_state: &Arc<Mutex<Persisted<BackupState>>>,
-    key_id: KeyId,
-) -> BackupRun {
-    let backup_state = backup_state.lock().unwrap();
-    let coord = coordinator.lock().unwrap();
-    let frost_key = match coord.get_frost_key(key_id) {
-        Some(k) => k,
-        None => return BackupRun::default(),
-    };
-    let access_structure = frost_key
-        .complete_key
-        .access_structures
-        .values()
-        .next()
-        .expect("access structure must exist");
-    let backup_complete_states = backup_state.get_backup_run(key_id);
-    let devices = access_structure
-        .iter_shares()
-        .map(|(device_id, share_index)| {
-            let share_index_short =
-                u32::try_from(share_index).expect("share index should fit in u32");
-            BackupDevice {
-                device_id,
-                share_index: share_index_short,
-                complete: backup_complete_states.get(&share_index_short).copied(),
-            }
-        })
-        .collect();
-    BackupRun { devices }
-}
-
-fn build_key_state(coordinator: &FrostCoordinator) -> KeyState {
-    let keys = coordinator
-        .iter_keys()
-        .cloned()
-        .map(crate::api::coordinator::FrostKey)
-        .collect();
-    let restoring = coordinator.restoring().collect();
-    KeyState { keys, restoring }
 }
 
 // ============================================================================
@@ -477,20 +355,12 @@ impl Coordinator {
                 .collect()
         };
 
-        let participants = resolved.participants.clone();
-        let ctx = LoopContext {
-            coordinator: self.0.coordinator.clone(),
-            db: self.0.db.clone(),
-            ui_stack: self.0.ui_stack.clone(),
-            usb_sender: self.0.usb_sender.clone(),
-            backup_state: self.0.backup_state.clone(),
-            backup_run_streams: self.0.backup_run_streams.clone(),
-            key_event_stream: self.0.key_event_stream.clone(),
-            active_remote_broadcast: self.0.active_remote_broadcast.clone(),
+        let ctx = RemoteKeygenSession {
+            coord: self.0.clone(),
             keygen_id,
             keys: keys.clone(),
             local_devices,
-            participants,
+            participants: resolved.participants.clone(),
         };
         ctx.drain_outgoing(&outbound_tx, initial);
 
@@ -515,7 +385,7 @@ impl Coordinator {
 }
 
 async fn run_session(
-    ctx: LoopContext,
+    ctx: RemoteKeygenSession,
     protocol_handle: frostsnap_nostr::keygen::ProtocolHandle,
     mut inbound_rx: mpsc::UnboundedReceiver<RemoteKeygenMessage>,
     mut outbound_rx: mpsc::UnboundedReceiver<(DeviceId, RemoteKeygenPayload)>,
@@ -545,7 +415,7 @@ async fn run_session(
 
             Some(msg) = inbound_rx.recv() => {
                 let outgoing: Vec<CoordinatorSend> = {
-                    let mut coord = ctx.coordinator.lock().unwrap();
+                    let mut coord = ctx.coord.coordinator.lock().unwrap();
                     match coord
                         .MUTATE_NO_PERSIST()
                         .apply_keygen_message(ctx.keygen_id, msg)

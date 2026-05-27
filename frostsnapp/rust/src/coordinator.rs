@@ -25,8 +25,9 @@ use frostsnap_coordinator::wait_for_single_device::{
     WaitForSingleDevice, WaitForSingleDeviceState,
 };
 use frostsnap_coordinator::{
-    AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
-    UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
+    remote_keygen::RemoteKeyGen, AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink,
+    UiProtocol, UiStack, UsbSender, UsbSerialManager, ValidatedFirmwareBin,
+    WaitForToUserMessage,
 };
 use frostsnap_core::coordinator::remote_keygen::RemoteKeygenPayload;
 use frostsnap_core::coordinator::restoration::{
@@ -35,7 +36,7 @@ use frostsnap_core::coordinator::restoration::{
 use frostsnap_core::coordinator::{
     signing::RemoteSignSessionId, BeginKeygen, BroadcastPayload, CoordAccessStructure,
     CoordFrostKey, CoordinatorSend, CoordinatorToUserMessage, FrostCoordinator,
-    NonceReplenishRequest, ParticipantBinonces, ParticipantSignatureShares,
+    NonceReplenishRequest, ParticipantBinonces, ParticipantSignatureShares, SendFinalizeKeygen,
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::{
@@ -67,22 +68,21 @@ pub(crate) struct RemoteBroadcastRegistration {
     pub cancel: CancellationToken,
 }
 
+#[derive(Clone)]
 pub struct FfiCoordinator {
-    usb_manager: Mutex<Option<UsbSerialManager>>,
+    usb_manager: Arc<Mutex<Option<UsbSerialManager>>>,
     pub(crate) key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
     pub(crate) signing_session_signals: SignalMap,
-    thread_handle: Mutex<Option<JoinHandle<()>>>,
+    thread_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     pub(crate) ui_stack: Arc<Mutex<UiStack>>,
     pub(crate) usb_sender: UsbSender,
     firmware_bin: Option<ValidatedFirmwareBin>,
     firmware_upgrade_progress: Arc<Mutex<Option<Box<dyn Sink<f32>>>>>,
     device_list: Arc<Mutex<DeviceList>>,
     device_list_stream: Arc<Mutex<Option<Box<dyn Sink<DeviceListUpdate>>>>>,
-    // // persisted things
     pub(crate) db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
     pub(crate) coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
-    // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
     pub(crate) backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
     pub(crate) active_remote_broadcast: Arc<Mutex<Option<RemoteBroadcastRegistration>>>,
@@ -108,7 +108,7 @@ impl FfiCoordinator {
         let usb_sender = usb_manager.usb_sender();
         let firmware_bin = usb_manager.upgrade_bin();
 
-        let usb_manager = Mutex::new(Some(usb_manager));
+        let usb_manager = Arc::new(Mutex::new(Some(usb_manager)));
         drop(db_);
 
         Ok(Self {
@@ -1267,6 +1267,70 @@ impl FfiCoordinator {
             .collect();
 
         BackupRun { devices }
+    }
+
+    /// Remote-keygen finalize + shared post-finalize side effects.
+    /// Returns (AccessStructureRef, full device→share map).
+    /// Does NOT build ChannelParticipant (no nostr pubkeys here).
+    pub(crate) fn finalize_remote_keygen_with_side_effects(
+        &self,
+        keygen_id: KeygenId,
+        encryption_key: SymmetricKey,
+    ) -> Result<(AccessStructureRef, BTreeMap<DeviceId, ShareIndex>)> {
+        let (asr, device_to_share_index) = {
+            let mut coord = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
+            let mut ui_stack = self.ui_stack.lock().unwrap();
+            let kg = ui_stack
+                .get_mut::<RemoteKeyGen>()
+                .ok_or_else(|| anyhow!("RemoteKeyGen UiProtocol no longer on the stack"))?;
+
+            let finalized: SendFinalizeKeygen = coord.staged_mutate(&mut *db, |coord| {
+                Ok(coord.finalize_remote_keygen(
+                    keygen_id,
+                    encryption_key,
+                    &mut rand::thread_rng(),
+                )?)
+            })?;
+            let asr = finalized.access_structure_ref;
+            let d2si = finalized.device_to_share_index.clone();
+            self.usb_sender.send_from_core(finalized);
+            kg.keygen_finalized(asr);
+            (asr, d2si)
+        };
+
+        self.emit_key_state();
+
+        // Best-effort backup setup — don't fail the finalize
+        if let Err(e) = (|| -> Result<()> {
+            let coord = self.coordinator.lock().unwrap();
+            let access_structure = coord
+                .get_access_structure(asr)
+                .ok_or_else(|| anyhow!("access structure missing after finalize"))?;
+            let share_indices: Vec<u32> = access_structure
+                .iter_shares()
+                .map(|(_, si)| u32::try_from(si).expect("share index fits u32"))
+                .collect();
+            drop(coord);
+
+            let mut backup_state = self.backup_state.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
+            backup_state.mutate2(&mut *db, |state, mutations| {
+                state.start_run(asr, share_indices, mutations);
+                Ok(())
+            })?;
+            Ok(())
+        })() {
+            tracing::warn!(error = %e, "best-effort backup setup failed after remote finalize");
+        }
+
+        // Best-effort backup stream emit
+        let backup_run = self.build_backup_run(asr.key_id);
+        if let Some(stream) = self.backup_run_streams.lock().unwrap().get(&asr.key_id) {
+            let _ = stream.add(backup_run);
+        }
+
+        Ok((asr, device_to_share_index))
     }
 
     pub(crate) fn backup_stream_emit(&self, key_id: KeyId) -> Result<()> {
