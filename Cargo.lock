@@ -1890,10 +1890,10 @@ dependencies = [
  "bincode",
  "cbc",
  "clap",
- "crc",
  "frostsnap_comms",
  "frostsnap_coordinator",
  "frostsnap_core",
+ "frostsnap_secure_boot",
  "hmac",
  "mysql",
  "rand 0.8.6",
@@ -1917,6 +1917,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "frostsnap_secure_boot"
+version = "0.1.0"
+dependencies = [
+ "crc",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
+ "rsa",
+ "sha2",
 ]
 
 [[package]]
@@ -3873,6 +3884,7 @@ dependencies = [
  "frostsnap_coordinator",
  "frostsnap_core",
  "frostsnap_desktop_camera",
+ "frostsnap_secure_boot",
  "futures",
  "image",
  "lazy_static",

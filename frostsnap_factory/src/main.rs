@@ -11,7 +11,8 @@ pub mod db;
 pub mod ds;
 pub mod genuine_check;
 pub mod process;
-pub mod secure_boot;
+
+use frostsnap_secure_boot as secure_boot;
 
 const BOARD_REVISION: &str = "2.7-1625";
 
@@ -269,7 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli::Commands::SignFirmware { input, output, key } => {
             let pem = std::fs::read(&key)?;
             let firmware = std::fs::read(&input)?;
-            let signed = secure_boot::sign_firmware(&firmware, &pem)?;
+            let signed = secure_boot::sign_firmware(&firmware, &pem, &mut rand::thread_rng())?;
             std::fs::write(&output, &signed)?;
             println!(
                 "Signed {} bytes -> {} bytes written to {}",
@@ -301,7 +302,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             require_known_version,
         } => {
             let signed = std::fs::read(&input)?;
-            secure_boot::verify_firmware(&signed)?;
+            secure_boot::verify_and_extract_pk(&signed)?;
 
             use sha2::{Digest, Sha256};
             let bytes: &'static [u8] = Box::leak(signed.into_boxed_slice());

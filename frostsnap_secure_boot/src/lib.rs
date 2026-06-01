@@ -1,20 +1,31 @@
+//! ESP32-C3 Secure Boot v2 firmware signing and verification.
+//!
+//! Signing is generic over an RNG supplied by the caller so this crate stays
+//! `rand`-free; only `rand_core` is depended on. Verification needs no RNG.
+
 use crc::Crc;
+use rand_core::{CryptoRng, RngCore};
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::pss::SigningKey;
-use rsa::signature::{hazmat::RandomizedPrehashSigner, SignatureEncoding};
+use rsa::signature::{SignatureEncoding, hazmat::RandomizedPrehashSigner};
 use rsa::traits::PublicKeyParts;
 use rsa::{BigUint, RsaPrivateKey};
 use sha2::{Digest, Sha256};
+
+// Re-export so callers don't have to depend on `rsa` directly to name the
+// type returned by `verify_and_extract_pk` / `public_key_from_private_pem`.
+pub use rsa::RsaPublicKey;
 
 const SECTOR_SIZE: usize = 4096;
 const SIGNATURE_BLOCK_MAGIC: [u8; 4] = [0xE7, 0x02, 0x00, 0x00];
 const CRC: Crc<u32> = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
 const RSA_KEY_BYTES: usize = 384;
 
-pub fn sign_firmware(
+pub fn sign_firmware<R: RngCore + CryptoRng>(
     firmware: &[u8],
     pem_key: &[u8],
+    rng: &mut R,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let pem_str = std::str::from_utf8(pem_key)?;
     let private_key = RsaPrivateKey::from_pkcs8_pem(pem_str)
@@ -28,17 +39,43 @@ pub fn sign_firmware(
 
     let image_digest: [u8; 32] = Sha256::digest(&signed).into();
 
-    let sig_block = build_signature_block(&private_key, &image_digest)?;
+    let sig_block = build_signature_block(&private_key, &image_digest, rng)?;
     signed.extend_from_slice(&sig_block);
 
     Ok(signed)
 }
 
-/// Verify that a signed firmware binary has a valid Secure Boot v2 signature.
+/// Verify that a signed firmware image is signed by the expected key.
 ///
-/// Checks the signature block magic, CRC32, image digest, Montgomery constants,
-/// and RSA-PSS signature. Returns the embedded RSA public key on success.
-pub fn verify_firmware(signed_firmware: &[u8]) -> Result<rsa::RsaPublicKey, VerifyError> {
+/// Wraps [`verify_and_extract_pk`] and additionally checks that the public key
+/// embedded in the signature block equals `expected_pk`. This is what most
+/// callers want — proving "signed by *the right party*" rather than just
+/// "signed by *somebody*".
+pub fn verify_firmware(
+    signed_firmware: &[u8],
+    expected_pk: &RsaPublicKey,
+) -> Result<(), VerifyError> {
+    let embedded = verify_and_extract_pk(signed_firmware)?;
+    if &embedded != expected_pk {
+        return Err(VerifyError::UnexpectedKey);
+    }
+    Ok(())
+}
+
+/// Verify the Secure Boot v2 signature block on a signed firmware image and
+/// return the RSA public key embedded in that block.
+///
+/// This only proves the image's signature block is internally self-consistent
+/// (magic + CRC32 + image SHA-256 + Montgomery constants + RSA-PSS over the
+/// digest using the embedded modulus). **It does NOT check that the embedded
+/// key is any particular expected key.** Most callers should use
+/// [`verify_firmware`] instead, which requires an expected key. Use this lower
+/// level entry point only when you genuinely need to bootstrap an expected key
+/// out of a known-good signed image (e.g. recovering the prod secure-boot
+/// public key from the signed prod bootloader).
+pub fn verify_and_extract_pk(
+    signed_firmware: &[u8],
+) -> Result<rsa::RsaPublicKey, VerifyError> {
     if signed_firmware.len() < SECTOR_SIZE * 2 {
         return Err(VerifyError::TooSmall);
     }
@@ -113,6 +150,7 @@ pub enum VerifyError {
     InvalidPublicKey(String),
     MontgomeryMismatch,
     SignatureInvalid(String),
+    UnexpectedKey,
 }
 
 impl std::fmt::Display for VerifyError {
@@ -136,15 +174,34 @@ impl std::fmt::Display for VerifyError {
             VerifyError::SignatureInvalid(e) => {
                 write!(f, "RSA-PSS signature verification failed: {e}")
             }
+            VerifyError::UnexpectedKey => write!(
+                f,
+                "signature block's embedded RSA key is not the expected key"
+            ),
         }
     }
 }
 
 impl std::error::Error for VerifyError {}
 
-fn build_signature_block(
+/// Derive an RSA public key from a PEM-encoded RSA private key.
+///
+/// Accepts either PKCS#1 or PKCS#8 PEM. Used by callers that have access to a
+/// signing private key and want to compute the expected verification key
+/// without storing the public key separately.
+pub fn public_key_from_private_pem(
+    pem: &[u8],
+) -> Result<rsa::RsaPublicKey, Box<dyn std::error::Error>> {
+    let pem_str = std::str::from_utf8(pem)?;
+    let private_key = RsaPrivateKey::from_pkcs8_pem(pem_str)
+        .or_else(|_| RsaPrivateKey::from_pkcs1_pem(pem_str))?;
+    Ok(private_key.to_public_key())
+}
+
+fn build_signature_block<R: RngCore + CryptoRng>(
     private_key: &RsaPrivateKey,
     image_digest: &[u8; 32],
+    rng: &mut R,
 ) -> Result<[u8; SECTOR_SIZE], Box<dyn std::error::Error>> {
     let public_key = private_key.to_public_key();
     let n = public_key.n();
@@ -171,8 +228,7 @@ fn build_signature_block(
     let m_prime_le = m_prime.to_le_bytes();
 
     let signing_key = SigningKey::<Sha256>::new(private_key.clone());
-    let mut rng = rand::thread_rng();
-    let signature = signing_key.sign_prehash_with_rng(&mut rng, image_digest)?;
+    let signature = signing_key.sign_prehash_with_rng(rng, image_digest)?;
     let sig_bytes = signature.to_vec();
 
     let mut sig_le = [0u8; RSA_KEY_BYTES];
@@ -225,18 +281,18 @@ mod tests {
     #[test]
     fn sign_and_verify_aligned() {
         let firmware = vec![0xABu8; 4096 * 4];
-        let signed = sign_firmware(&firmware, &TEST_KEY_PEM).unwrap();
+        let signed = sign_firmware(&firmware, &TEST_KEY_PEM, &mut rand::thread_rng()).unwrap();
         assert_eq!(signed.len(), 4096 * 5);
-        verify_firmware(&signed).unwrap();
+        verify_and_extract_pk(&signed).unwrap();
     }
 
     #[test]
     fn sign_and_verify_unaligned() {
         let firmware = vec![0xCDu8; 5000];
-        let signed = sign_firmware(&firmware, &TEST_KEY_PEM).unwrap();
+        let signed = sign_firmware(&firmware, &TEST_KEY_PEM, &mut rand::thread_rng()).unwrap();
         assert_eq!(signed.len(), 12288);
         assert!(signed[5000..8192].iter().all(|&b| b == 0xFF));
-        verify_firmware(&signed).unwrap();
+        verify_and_extract_pk(&signed).unwrap();
     }
 
     #[test]
@@ -244,11 +300,13 @@ mod tests {
         let reference = match std::fs::read("tests/fixtures/test-firmware-signed.bin") {
             Ok(data) => data,
             Err(_) => {
-                eprintln!("Skipping: tests/fixtures/test-firmware-signed.bin not found (generate with espsecure.py)");
+                eprintln!(
+                    "Skipping: tests/fixtures/test-firmware-signed.bin not found (generate with espsecure.py)"
+                );
                 return;
             }
         };
-        verify_firmware(&reference).unwrap();
+        verify_and_extract_pk(&reference).unwrap();
     }
 
     #[test]
@@ -266,7 +324,7 @@ mod tests {
             }
         };
 
-        let signed = sign_firmware(&firmware, &pem).unwrap();
+        let signed = sign_firmware(&firmware, &pem, &mut rand::thread_rng()).unwrap();
         assert_eq!(signed.len(), reference.len(), "output size mismatch");
 
         let our_block = &signed[signed.len() - SECTOR_SIZE..];
@@ -277,6 +335,6 @@ mod tests {
         assert_eq!(&our_block[36..812], &ref_block[36..812]);
         assert_eq!(&our_block[1200..], &ref_block[1200..]);
 
-        verify_firmware(&signed).unwrap();
+        verify_and_extract_pk(&signed).unwrap();
     }
 }

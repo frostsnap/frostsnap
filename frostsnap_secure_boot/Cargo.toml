@@ -1,0 +1,13 @@
+[package]
+name = "frostsnap_secure_boot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rsa.workspace = true
+sha2.workspace = true
+crc.workspace = true
+rand_core.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
