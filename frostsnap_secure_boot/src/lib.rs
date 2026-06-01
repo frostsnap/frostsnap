@@ -198,6 +198,18 @@ pub fn public_key_from_private_pem(
     Ok(private_key.to_public_key())
 }
 
+/// Decode a PEM-encoded RSA public key.
+///
+/// Accepts the SubjectPublicKeyInfo form (`-----BEGIN PUBLIC KEY-----`, what
+/// `openssl rsa -pubout` produces by default).
+pub fn public_key_from_pem(
+    pem: &[u8],
+) -> Result<rsa::RsaPublicKey, Box<dyn std::error::Error>> {
+    use rsa::pkcs8::DecodePublicKey;
+    let pem_str = std::str::from_utf8(pem)?;
+    Ok(rsa::RsaPublicKey::from_public_key_pem(pem_str)?)
+}
+
 fn build_signature_block<R: RngCore + CryptoRng>(
     private_key: &RsaPrivateKey,
     image_digest: &[u8; 32],
@@ -293,6 +305,15 @@ mod tests {
         assert_eq!(signed.len(), 12288);
         assert!(signed[5000..8192].iter().all(|&b| b == 0xFF));
         verify_and_extract_pk(&signed).unwrap();
+    }
+
+    #[test]
+    fn public_key_pem_roundtrip() {
+        use rsa::pkcs8::{EncodePublicKey, LineEnding};
+        let pk_from_priv = public_key_from_private_pem(&TEST_KEY_PEM).unwrap();
+        let pem = pk_from_priv.to_public_key_pem(LineEnding::LF).unwrap();
+        let pk_from_pub = public_key_from_pem(pem.as_bytes()).unwrap();
+        assert_eq!(pk_from_priv, pk_from_pub);
     }
 
     #[test]

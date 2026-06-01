@@ -71,18 +71,17 @@ fn verify_signed_firmware(source: &str, env_name: &str) {
 
 fn expected_secure_boot_pk(env_name: &str) -> frostsnap_secure_boot::RsaPublicKey {
     match env_name {
-        // Prod: the prod secure-boot private key is not in the repo, but the
-        // signed prod bootloader is — its signature block embeds the prod
-        // public key, which we recover by running the same self-consistency
-        // check we run on firmware.
+        // Prod: read the committed prod secure-boot public key directly.
+        // (The matching private key is held offline and never enters the
+        // repo. The PEM was produced once from the signed prod bootloader's
+        // embedded key and committed as the single named source of truth.)
         "prod" => {
-            let path = "../../frostsnap_factory/bootloader/prod/signed-bootloader.bin";
+            let path = "../../frostsnap_factory/bootloader/prod/secure-boot-public-key.pem";
             println!("cargo:rerun-if-changed={path}");
-            let bytes =
-                fs::read(path).unwrap_or_else(|e| panic!("read prod bootloader {path}: {e}"));
-            frostsnap_secure_boot::verify_and_extract_pk(&bytes).unwrap_or_else(|e| {
-                panic!("prod bootloader at {path} failed secure-boot verification: {e}")
-            })
+            let pem = fs::read(path)
+                .unwrap_or_else(|e| panic!("read prod pubkey {path}: {e}"));
+            frostsnap_secure_boot::public_key_from_pem(&pem)
+                .unwrap_or_else(|e| panic!("parse prod pubkey {path}: {e}"))
         }
         // Dev: the dev secure-boot private key IS in the repo (development
         // material), so derive the expected public key from it directly.
