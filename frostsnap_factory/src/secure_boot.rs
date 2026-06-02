@@ -34,11 +34,26 @@ pub fn sign_firmware(
     Ok(signed)
 }
 
+/// Result of a successful Secure Boot v2 verification.
+#[derive(Debug)]
+pub struct Verified {
+    /// The RSA public key embedded in (and validated against) the signature block.
+    pub public_key: rsa::RsaPublicKey,
+    /// SHA-256 over the signature block's public-key fields (`block[36..812]`) — the
+    /// ESP32 Secure Boot v2 "key digest" burned into device eFuses. Identifies *which*
+    /// key signed the image; pass it to [`classify_signer`].
+    pub key_digest: [u8; 32],
+    /// SHA-256 of the signed image (`block[4..36]`).
+    pub image_digest: [u8; 32],
+}
+
 /// Verify that a signed firmware binary has a valid Secure Boot v2 signature.
 ///
 /// Checks the signature block magic, CRC32, image digest, Montgomery constants,
-/// and RSA-PSS signature. Returns the embedded RSA public key on success.
-pub fn verify_firmware(signed_firmware: &[u8]) -> Result<rsa::RsaPublicKey, VerifyError> {
+/// and RSA-PSS signature. Returns the embedded key and its digest on success — note
+/// this only proves the image is *self-consistently* signed; use [`classify_signer`]
+/// on the returned `key_digest` to learn *who* signed it.
+pub fn verify_firmware(signed_firmware: &[u8]) -> Result<Verified, VerifyError> {
     if signed_firmware.len() < SECTOR_SIZE * 2 {
         return Err(VerifyError::TooSmall);
     }
@@ -100,7 +115,16 @@ pub fn verify_firmware(signed_firmware: &[u8]) -> Result<rsa::RsaPublicKey, Veri
         .verify_prehash(&expected_digest, &signature)
         .map_err(|e| VerifyError::SignatureInvalid(e.to_string()))?;
 
-    Ok(public_key)
+    // The eFuse key digest is SHA-256 over the public-key fields as they sit in the block
+    // (modulus ‖ exponent ‖ Montgomery R ‖ M′); the checks above already proved these are
+    // consistent with `public_key`.
+    let key_digest: [u8; 32] = Sha256::digest(&block[36..812]).into();
+
+    Ok(Verified {
+        public_key,
+        key_digest,
+        image_digest: expected_digest,
+    })
 }
 
 #[derive(Debug)]
@@ -141,6 +165,66 @@ impl std::fmt::Display for VerifyError {
 }
 
 impl std::error::Error for VerifyError {}
+
+impl VerifyError {
+    /// Whether this error means the input simply isn't a Secure Boot v2 image at all
+    /// (raw/unsigned binary), as opposed to a signed image that is corrupt or tampered.
+    pub fn is_not_signed(&self) -> bool {
+        matches!(
+            self,
+            VerifyError::TooSmall | VerifyError::NotSectorAligned | VerifyError::BadMagic
+        )
+    }
+}
+
+/// Who signed a firmware image, by comparing its key digest against the digests pinned
+/// under `frostsnap_factory/secure_boot_key/{prod,dev}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signer {
+    Prod,
+    Dev,
+    Unknown,
+}
+
+/// Load a pinned Secure Boot key digest. Mirrors `load_known_genuine_keys` in `main.rs`:
+/// the path is relative to the repo root, and a missing/unparsable file is treated as
+/// "no such pinned key" rather than an error.
+///
+/// Each `key_digest.hex` is the 64-char hex eFuse digest (`SHA-256(block[36..812])`) of a
+/// signer. To (re)generate one, run `verify-firmware` on an image signed by that key and
+/// copy its `Signer key digest` line. `dev` is the committed shared key
+/// `bootloader/dev/secure-boot-key.pem`; `prod` is pinned from the public `prod/public_key.pem`.
+fn load_pinned_digest(env: &str) -> Option<[u8; 32]> {
+    let path = format!("frostsnap_factory/secure_boot_key/{env}/key_digest.hex");
+    let content = std::fs::read_to_string(path).ok()?;
+    let content = content.trim();
+    let content = content.strip_prefix("0x").unwrap_or(content);
+    frostsnap_core::hex::decode(content).ok()?.try_into().ok()
+}
+
+/// Pure classification logic, separated from disk I/O so it can be unit-tested.
+fn classify_against(
+    key_digest: &[u8; 32],
+    prod: Option<[u8; 32]>,
+    dev: Option<[u8; 32]>,
+) -> Signer {
+    if prod.as_ref() == Some(key_digest) {
+        Signer::Prod
+    } else if dev.as_ref() == Some(key_digest) {
+        Signer::Dev
+    } else {
+        Signer::Unknown
+    }
+}
+
+/// Classify a verified firmware's `key_digest` against the pinned Frostsnap keys.
+pub fn classify_signer(key_digest: &[u8; 32]) -> Signer {
+    classify_against(
+        key_digest,
+        load_pinned_digest("prod"),
+        load_pinned_digest("dev"),
+    )
+}
 
 fn build_signature_block(
     private_key: &RsaPrivateKey,
@@ -237,6 +321,56 @@ mod tests {
         assert_eq!(signed.len(), 12288);
         assert!(signed[5000..8192].iter().all(|&b| b == 0xFF));
         verify_firmware(&signed).unwrap();
+    }
+
+    #[test]
+    fn classifies_not_signed_vs_tampered() {
+        // Every "not a Secure Boot image" shape must report as not-signed.
+        for raw in [
+            vec![0u8; 100],             // too small
+            vec![0u8; 20000],           // not sector-aligned
+            vec![0u8; SECTOR_SIZE * 2], // aligned & big enough, but no magic
+        ] {
+            let err = verify_firmware(&raw).unwrap_err();
+            assert!(
+                err.is_not_signed(),
+                "len {} should be 'not signed', got {err:?}",
+                raw.len()
+            );
+        }
+
+        // A validly signed image with one firmware byte flipped: signed but corrupt.
+        let firmware = vec![0xABu8; SECTOR_SIZE * 4];
+        let mut signed = sign_firmware(&firmware, &TEST_KEY_PEM).unwrap();
+        signed[0] ^= 0xFF;
+        let err = verify_firmware(&signed).unwrap_err();
+        assert!(
+            !err.is_not_signed(),
+            "tampered image should be 'invalid', not 'not signed', got {err:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_key_is_classified_unknown() {
+        let firmware = vec![0xABu8; SECTOR_SIZE * 4];
+        let signed = sign_firmware(&firmware, &TEST_KEY_PEM).unwrap();
+        let verified = verify_firmware(&signed).unwrap();
+        // The runtime-generated test key is not a pinned Frostsnap key.
+        assert_eq!(classify_signer(&verified.key_digest), Signer::Unknown);
+    }
+
+    #[test]
+    fn classify_against_logic() {
+        let prod = [1u8; 32];
+        let dev = [2u8; 32];
+        assert_eq!(classify_against(&prod, Some(prod), Some(dev)), Signer::Prod);
+        assert_eq!(classify_against(&dev, Some(prod), Some(dev)), Signer::Dev);
+        assert_eq!(
+            classify_against(&[9u8; 32], Some(prod), Some(dev)),
+            Signer::Unknown
+        );
+        // Missing pinned files ⇒ everything is Unknown (never a false positive).
+        assert_eq!(classify_against(&prod, None, None), Signer::Unknown);
     }
 
     #[test]
