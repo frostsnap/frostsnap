@@ -53,6 +53,6 @@ runs:
     - name: Build appbundle
       shell: bash
       run: just env=${{ inputs.env }} build appbundle --release --flavor playstore
-    - name: Verify cargokit lockfile not drifted during build
+    - name: Verify no checked-out files drifted during build
       shell: bash
-      run: git diff --exit-code frostsnapp/rust_builder/cargokit/build_tool/pubspec.lock
+      run: git diff --exit-code
