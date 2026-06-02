@@ -349,6 +349,7 @@ class _RemoteWalletShell extends StatefulWidget {
 
 class _RemoteWalletShellState extends State<_RemoteWalletShell> {
   late final ChatChromeController _chrome;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Future<ChannelConnectionParams>? _channelParams;
 
   @override
@@ -374,12 +375,10 @@ class _RemoteWalletShellState extends State<_RemoteWalletShell> {
     final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null) {
       if (mounted) {
-        await NostrContext.of(context)
-            .nostrSettings
-            .setCoordinationUiEnabled(
-              accessStructureRef: widget.accessStructureRef,
-              enabled: false,
-            );
+        await NostrContext.of(context).nostrSettings.setCoordinationUiEnabled(
+          accessStructureRef: widget.accessStructureRef,
+          enabled: false,
+        );
       }
       throw StateError('nostr identity required for remote wallet');
     }
@@ -409,13 +408,8 @@ class _RemoteWalletShellState extends State<_RemoteWalletShell> {
     );
   }
 
-  void _openWalletActivity(BuildContext context) {
-    final walletCtx = WalletContext.of(context)!;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => walletCtx.wrap(const RemoteWalletActivityPage()),
-      ),
-    );
+  void _openTxHistoryTray() {
+    _scaffoldKey.currentState?.openEndDrawer();
   }
 
   @override
@@ -427,10 +421,16 @@ class _RemoteWalletShellState extends State<_RemoteWalletShell> {
     final isNarrowDisplay = mediaSize.width < 840;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
     final walletName = frostKey?.keyName() ?? 'Unknown';
+    final drawerWidth = mediaSize.width < 480 ? mediaSize.width * 0.9 : 420.0;
 
     return Scaffold(
+      key: _scaffoldKey,
       extendBody: true,
       resizeToAvoidBottomInset: true,
+      endDrawer: Drawer(
+        width: drawerWidth,
+        child: walletCtx.wrap(const _TxHistoryTray()),
+      ),
       appBar: AppBar(
         leading: isNarrowDisplay
             ? IconButton(
@@ -452,7 +452,7 @@ class _RemoteWalletShellState extends State<_RemoteWalletShell> {
                 IconButton(
                   icon: const Icon(Icons.receipt_long),
                   tooltip: 'Transaction history',
-                  onPressed: () => _openWalletActivity(context),
+                  onPressed: _openTxHistoryTray,
                 ),
                 IconButton(
                   icon: const Icon(Icons.group),
@@ -500,24 +500,21 @@ class _RemoteWalletShellState extends State<_RemoteWalletShell> {
   }
 }
 
-/// Read-only wallet activity (balance + transaction history) for a
-/// remote-coordinated wallet. Pushed as a secondary route from the
-/// chat shell's wallet/history app-bar action; reuses
-/// `walletTxSlivers` for the body.
-class RemoteWalletActivityPage extends StatefulWidget {
-  const RemoteWalletActivityPage({super.key});
+/// Tx-history tray that slides in from the right over the chat
+/// shell. Reuses `walletTxSlivers` for the body but with the backup
+/// banner suppressed — banners belong on the chat surface, not in
+/// the tray.
+class _TxHistoryTray extends StatefulWidget {
+  const _TxHistoryTray();
 
   @override
-  State<RemoteWalletActivityPage> createState() =>
-      _RemoteWalletActivityPageState();
+  State<_TxHistoryTray> createState() => _TxHistoryTrayState();
 }
 
-class _RemoteWalletActivityPageState extends State<RemoteWalletActivityPage> {
+class _TxHistoryTrayState extends State<_TxHistoryTray> {
   final _scrollController = ScrollController();
   final _atTopNotifier = ValueNotifier<bool>(true);
 
-  // Match the local-mode TxList threshold so the pinned balance card
-  // collapses at the same scroll offset.
   static const _atTopThreshold = 48.0;
 
   @override
@@ -551,6 +548,12 @@ class _RemoteWalletActivityPageState extends State<RemoteWalletActivityPage> {
             pinned: true,
             elevation: 0,
             surfaceTintColor: Colors.transparent,
+            automaticallyImplyLeading: false,
+            leading: IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.of(context).maybePop(),
+              tooltip: 'Close',
+            ),
             title: Text(walletName),
             actionsPadding: const EdgeInsets.only(right: 8),
             actions: [
@@ -563,7 +566,11 @@ class _RemoteWalletActivityPageState extends State<RemoteWalletActivityPage> {
               ),
             ],
           ),
-          ...walletTxSlivers(context: context, atTopNotifier: _atTopNotifier),
+          ...walletTxSlivers(
+            context: context,
+            atTopNotifier: _atTopNotifier,
+            showBackupBanner: false,
+          ),
         ],
       ),
     );
@@ -738,6 +745,7 @@ List<Widget> walletTxSlivers({
   required BuildContext context,
   required ValueNotifier<bool> atTopNotifier,
   double scrolledUnderElevation = 1.0,
+  bool showBackupBanner = true,
 }) {
   final walletCtx = WalletContext.of(context)!;
   final fsCtx = FrostsnapContext.of(context)!;
@@ -745,6 +753,7 @@ List<Widget> walletTxSlivers({
   return <Widget>[
     PinnedHeaderSliver(
       child: UpdatingBalance(
+        showBackupBanner: showBackupBanner,
         txStream: walletCtx.txStream,
         atTopNotifier: atTopNotifier,
         scrolledUnderElevation: scrolledUnderElevation,
@@ -1344,6 +1353,7 @@ class UpdatingBalance extends StatefulWidget {
   final FrostKey? frostKey;
   final double? scrolledUnderElevation;
   final double expandedHeight;
+  final bool showBackupBanner;
 
   const UpdatingBalance({
     super.key,
@@ -1352,6 +1362,7 @@ class UpdatingBalance extends StatefulWidget {
     this.frostKey,
     this.scrolledUnderElevation,
     this.expandedHeight = 180.0,
+    this.showBackupBanner = true,
   });
 
   @override
@@ -1476,7 +1487,7 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
               ),
             ),
           ),
-          if (frostKey != null)
+          if (widget.showBackupBanner && frostKey != null)
             Align(
               alignment: Alignment.topLeft,
               child: BackupWarningBanner(frostKey: frostKey, shrink: !atTop),
