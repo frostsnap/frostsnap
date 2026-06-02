@@ -127,6 +127,9 @@ pub trait AccessStructureExt {
 
     #[frb(sync)]
     fn get_device_short_share_index(&self, device_id: DeviceId) -> Option<u32>;
+
+    #[frb(sync)]
+    fn local_share_indices(&self) -> Vec<u32>;
 }
 
 impl AccessStructureExt for AccessStructure {
@@ -156,6 +159,14 @@ impl AccessStructureExt for AccessStructure {
         self.device_to_share_indicies()
             .get(&device_id)
             .and_then(|share_index| u32::try_from(*share_index).ok())
+    }
+
+    #[frb(sync)]
+    fn local_share_indices(&self) -> Vec<u32> {
+        use core::convert::TryFrom;
+        self.iter_shares()
+            .filter_map(|(_, si)| u32::try_from(si).ok())
+            .collect()
     }
 }
 

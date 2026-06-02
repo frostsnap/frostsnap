@@ -31,6 +31,18 @@ class GroupInfoPage extends StatelessWidget {
     return const [];
   }
 
+  List<int> _mySharesFromLocal(BuildContext context) {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return const [];
+    final accessStruct = coord.getAccessStructure(
+      asRef: AccessStructureRef(
+        keyId: walletCtx.keyId,
+        accessStructureId: accessStructureId,
+      ),
+    );
+    return accessStruct?.localShareIndices() ?? const [];
+  }
+
   int _totalShares() {
     return participantShares.fold<int>(
       0,
@@ -120,7 +132,7 @@ class GroupInfoPage extends StatelessWidget {
           // Your profile first
           MyProfileBuilder(
             builder: (context, pubkey, profile) {
-              final myShares = _shareIndicesFor(pubkey);
+              final myShares = _mySharesFromLocal(context);
               return ListTile(
                 leading: NostrAvatar.medium(profile: profile, pubkey: pubkey),
                 title: Row(
@@ -146,7 +158,13 @@ class GroupInfoPage extends StatelessWidget {
                                 ))
                             .toList(),
                       )
-                    : const Text('Edit your Nostr profile'),
+                    : Text(
+                        'holds no keys',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showMemberDetail(context, pubkey),
               );
@@ -198,7 +216,7 @@ class GroupInfoPage extends StatelessWidget {
     final profile = NostrContext.of(context).getProfile(pubkey);
     final nostr = NostrContext.of(context);
     final isMe = pubkey == nostr.myPubkey;
-    final shares = _shareIndicesFor(pubkey);
+    final shares = isMe ? _mySharesFromLocal(context) : _shareIndicesFor(pubkey);
 
     // For own profile, look up device names per share from the local
     // access structure.
@@ -215,7 +233,7 @@ class GroupInfoPage extends StatelessWidget {
         if (accessStruct != null) {
           for (final deviceId in accessStruct.devices()) {
             final idx = accessStruct.getDeviceShortShareIndex(deviceId: deviceId);
-            if (idx != null && shares.contains(idx)) {
+            if (idx != null) {
               deviceNames[idx] = coord.getDeviceName(id: deviceId) ?? '<unknown>';
             }
           }
@@ -326,9 +344,10 @@ class _MemberTile extends StatelessWidget {
                       .toList(),
                 )
               : Text(
-                  shortenNpub(pubkey.toNpub()),
+                  'holds no keys',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
                   ),
                 ),
           trailing: const Icon(Icons.chevron_right),
