@@ -1,7 +1,7 @@
 mod events;
 mod tree;
 
-use events::SigningMessage;
+use events::{ReceiveAddressPayload, SigningMessage};
 pub use events::{
     ChannelEvent, ChannelParticipant, ConfirmedSubsetEntry, ConnectionState, GroupMember,
     SigningEvent,
@@ -31,6 +31,7 @@ use tokio::sync::mpsc;
 use tokio::time::{sleep_until, Instant};
 
 const KIND_FROSTSNAP_SIGNING: Kind = Kind::Custom(9001);
+const KIND_FROSTSNAP_RECEIVE_ADDRESS: Kind = Kind::Custom(7800);
 
 /// How long to wait for more sign offers before deciding the round. Every
 /// new offer resets the timer; when this window elapses without a new offer
@@ -133,6 +134,39 @@ impl ChannelClient {
                                     }
                                 }
                             }
+                            Some(ChannelCommand::SendPreparedReceiveAddress(prepared, payload)) => {
+                                let message_id: EventId = prepared.id.into();
+                                sink.send(ChannelEvent::ReceiveAddress {
+                                    message_id,
+                                    author: prepared.pubkey.into(),
+                                    timestamp: prepared.created_at.as_secs(),
+                                    pending: true,
+                                    derivation_index: payload.derivation_index,
+                                    address: payload.address.clone(),
+                                    memo: payload.memo.clone(),
+                                });
+                                match runner_handle_for_task.publish_prepared(prepared).await {
+                                    Ok(outcome) if outcome.any_relay_success() => {
+                                        sink.send(ChannelEvent::MessageSent { message_id });
+                                    }
+                                    Ok(outcome) => {
+                                        let reason = format!(
+                                            "no relay accepted: {:?}",
+                                            outcome.relay_failed
+                                        );
+                                        tracing::error!(%reason, "no relay accepted receive-address message");
+                                        sink.send(ChannelEvent::ReceiveAddressSendFailed {
+                                            message_id, reason,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(error = %e, "failed to send receive-address message");
+                                        sink.send(ChannelEvent::ReceiveAddressSendFailed {
+                                            message_id, reason: e.to_string(),
+                                        });
+                                    }
+                                }
+                            }
                             None => break,
                         }
                     }
@@ -164,6 +198,30 @@ impl ChannelClient {
                                             );
                                         }
                                         Err(err_event) => sink.send(err_event),
+                                    }
+                                } else if inner_event.kind == KIND_FROSTSNAP_RECEIVE_ADDRESS {
+                                    match crate::channel_runner::decode_bincode::<ReceiveAddressPayload>(&inner_event) {
+                                        Ok(payload) => {
+                                            sink.send(ChannelEvent::ReceiveAddress {
+                                                message_id: inner_event.id.into(),
+                                                author: inner_event.pubkey.into(),
+                                                timestamp: inner_event.created_at.as_secs(),
+                                                pending: false,
+                                                derivation_index: payload.derivation_index,
+                                                address: payload.address,
+                                                memo: payload.memo,
+                                            });
+                                        }
+                                        Err(e) => {
+                                            sink.send(ChannelEvent::Error {
+                                                event_id: inner_event.id.into(),
+                                                author: inner_event.pubkey.into(),
+                                                timestamp: inner_event.created_at.as_secs(),
+                                                reason: format!(
+                                                    "failed to decode receive-address payload: {e}"
+                                                ),
+                                            });
+                                        }
                                     }
                                 }
                                 // Signal the dispatch ack AFTER
@@ -236,6 +294,11 @@ enum ChannelCommand {
     /// `ChatMessage` already on the sink) and then reported via
     /// `MessageSent` / `MessageSendFailed`.
     SendPreparedMessage(Event),
+    /// Receive-address share message — same optimistic→sent/failed
+    /// lifecycle as chat, but emits `ChannelEvent::ReceiveAddress`
+    /// (pending=true) on entry and `ReceiveAddressSendFailed` on
+    /// failure. Success reuses `MessageSent { id }`.
+    SendPreparedReceiveAddress(Event, ReceiveAddressPayload),
 }
 
 /// Handle for sending messages to an active channel. Chat goes via
@@ -263,6 +326,34 @@ impl ChannelHandle {
 
         self.cmd_tx
             .send(ChannelCommand::SendPreparedMessage(prepared))
+            .await
+            .map_err(|_| anyhow!("channel closed"))?;
+
+        Ok(message_id)
+    }
+
+    pub async fn send_receive_address(
+        &self,
+        keys: &Keys,
+        derivation_index: u32,
+        address: String,
+        memo: String,
+    ) -> Result<EventId> {
+        let payload = ReceiveAddressPayload {
+            derivation_index,
+            address,
+            memo,
+        };
+        let draft = ChannelMessageDraft::app(
+            KIND_FROSTSNAP_RECEIVE_ADDRESS,
+            &payload,
+            vec![],
+        )?;
+        let prepared = draft.prepare(keys).await?;
+        let message_id: EventId = prepared.id.into();
+
+        self.cmd_tx
+            .send(ChannelCommand::SendPreparedReceiveAddress(prepared, payload))
             .await
             .map_err(|_| anyhow!("channel closed"))?;
 

@@ -467,6 +467,27 @@ impl NostrClient {
         Ok(event_id)
     }
 
+    /// Share a receive address in the channel. The message is
+    /// published optimistically (a `ChannelEvent::ReceiveAddress`
+    /// with `pending: true` fires on the sink before this returns).
+    /// `MessageSent { id }` follows on relay success;
+    /// `ReceiveAddressSendFailed { id, reason }` on failure.
+    pub async fn send_receive_address(
+        &self,
+        access_structure_id: AccessStructureId,
+        nsec: String,
+        derivation_index: u32,
+        address: String,
+        memo: String,
+    ) -> Result<EventId> {
+        let keys = Keys::parse(&nsec)?;
+        let handle = self.get_handle(access_structure_id)?;
+        let event_id = handle
+            .send_receive_address(&keys, derivation_index, address, memo)
+            .await?;
+        Ok(event_id)
+    }
+
     /// Propose a transaction for signing over the channel.
     pub async fn send_sign_request(
         &self,
@@ -881,6 +902,19 @@ pub enum _ChannelEvent {
         message_id: EventId,
     },
     MessageSendFailed {
+        message_id: EventId,
+        reason: String,
+    },
+    ReceiveAddress {
+        message_id: EventId,
+        author: PublicKey,
+        timestamp: u64,
+        pending: bool,
+        derivation_index: u32,
+        address: String,
+        memo: String,
+    },
+    ReceiveAddressSendFailed {
         message_id: EventId,
         reason: String,
     },

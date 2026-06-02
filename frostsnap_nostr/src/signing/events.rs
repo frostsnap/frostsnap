@@ -49,6 +49,19 @@ pub enum ChannelEvent {
         message_id: EventId,
         reason: String,
     },
+    ReceiveAddress {
+        message_id: EventId,
+        author: PublicKey,
+        timestamp: u64,
+        pending: bool,
+        derivation_index: u32,
+        address: String,
+        memo: String,
+    },
+    ReceiveAddressSendFailed {
+        message_id: EventId,
+        reason: String,
+    },
     ConnectionState(ConnectionState),
     GroupMetadata {
         members: Vec<GroupMember>,
@@ -244,4 +257,12 @@ pub(crate) enum SigningMessage {
         signature_shares: ParticipantSignatureShares,
     },
     Cancel,
+}
+
+/// Wire format for receive-address share messages (kind 7800).
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct ReceiveAddressPayload {
+    pub derivation_index: u32,
+    pub address: String,
+    pub memo: String,
 }

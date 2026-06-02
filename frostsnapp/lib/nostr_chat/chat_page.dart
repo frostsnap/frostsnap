@@ -73,6 +73,13 @@ class ReplyTarget {
   });
 }
 
+/// Safety cap on how far a peer's claimed receive index may be ahead
+/// of this wallet's local cursor before we auto-advance via
+/// `mark_address_shared`. Bigger jumps require explicit user
+/// confirmation. BDK's default gap-limit is 20; 100 covers normal
+/// usage without letting a malicious peer push the cursor far ahead.
+const int _receiveIndexLookahead = 100;
+
 sealed class TimelineItem {
   DateTime get timestamp;
 }
@@ -103,6 +110,39 @@ class TimelineSigning extends TimelineItem {
             } *
             1000,
       );
+}
+
+class ReceiveAddressCardModel {
+  final EventId messageId;
+  final PublicKey author;
+  final DateTime timestamp;
+  final bool isMe;
+  final int derivationIndex;
+  final String address;
+  final String memo;
+  MessageStatus status;
+  String? failureReason;
+  bool markedShared;
+
+  ReceiveAddressCardModel({
+    required this.messageId,
+    required this.author,
+    required this.timestamp,
+    required this.isMe,
+    required this.derivationIndex,
+    required this.address,
+    required this.memo,
+    required this.status,
+    this.failureReason,
+    this.markedShared = false,
+  });
+}
+
+class TimelineReceiveAddress extends TimelineItem {
+  final ReceiveAddressCardModel card;
+  @override
+  DateTime get timestamp => card.timestamp;
+  TimelineReceiveAddress(this.card);
 }
 
 class TimelineError extends TimelineItem {
@@ -209,6 +249,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   late final FocusNode _inputFocusNode;
   final List<TimelineItem> _timeline = [];
   final Map<EventId, ChatMessage> _messageById = {};
+  final Map<EventId, ReceiveAddressCardModel> _receiveCardById = {};
   final Map<String, GlobalKey> _timelineKeys = {};
   String? _highlightedId;
   final Map<EventId, SigningRequestState> _signingRequests = {};
@@ -476,12 +517,55 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         if (msg != null) {
           msg.status = MessageStatus.sent;
         }
+        final card = _receiveCardById[messageId];
+        if (card != null && card.status != MessageStatus.sent) {
+          card.status = MessageStatus.sent;
+          unawaited(_markAddressSharedFor(card));
+        }
 
       case ChannelEvent_MessageSendFailed(:final messageId, :final reason):
         final msg = _messageById[messageId];
         if (msg != null) {
           msg.status = MessageStatus.failed;
           msg.failureReason = reason;
+        }
+
+      case ChannelEvent_ReceiveAddress(
+        :final messageId,
+        :final author,
+        :final timestamp,
+        :final pending,
+        :final derivationIndex,
+        :final address,
+        :final memo,
+      ):
+        final existing = _receiveCardById[messageId];
+        if (existing != null) return;
+        final isMe = author == _myPubkey;
+        final card = ReceiveAddressCardModel(
+          messageId: messageId,
+          author: author,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
+          isMe: isMe,
+          derivationIndex: derivationIndex,
+          address: address,
+          memo: memo,
+          status: pending ? MessageStatus.pending : MessageStatus.sent,
+        );
+        _receiveCardById[messageId] = card;
+        _insertTimelineItem(TimelineReceiveAddress(card));
+        if (!isMe && card.status == MessageStatus.sent) {
+          _maybeMarkAddressSharedForPeer(card);
+        }
+
+      case ChannelEvent_ReceiveAddressSendFailed(
+        :final messageId,
+        :final reason,
+      ):
+        final card = _receiveCardById[messageId];
+        if (card != null) {
+          card.status = MessageStatus.failed;
+          card.failureReason = reason;
         }
 
       case ChannelEvent_ConnectionState(:final field0):
@@ -909,6 +993,21 @@ class _ChatPageBodyState extends State<ChatPageBody> {
                 ? null
                 : () => _showMemberProfile(item.author),
           ),
+          TimelineReceiveAddress(:final card) => _ReceiveAddressCard(
+            card: card,
+            profile: _getProfile(card.author),
+            verified: _verifyCard(card),
+            localNextIndex: WalletContext.of(context)?.superWallet
+                .nextAddress(
+                  masterAppkey: WalletContext.of(context)!.masterAppkey,
+                )
+                .index,
+            onApplyAnyway: () => unawaited(_markAddressSharedFor(card)),
+            onRetry: card.isMe ? () => _retryReceiveSend(card) : null,
+            onTapAvatar: card.isMe
+                ? null
+                : () => _showMemberProfile(card.author),
+          ),
         };
         if (!showDateDivider) return child;
         return Column(
@@ -1306,6 +1405,19 @@ class _ChatPageBodyState extends State<ChatPageBody> {
                 _proposeSendBitcoin();
               },
             ),
+            const SizedBox(height: 8),
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              tileColor: theme.colorScheme.surfaceContainer,
+              leading: const Icon(Icons.call_received_rounded),
+              title: const Text('Receive Bitcoin'),
+              onTap: () {
+                Navigator.pop(context);
+                _proposeReceiveAddress();
+              },
+            ),
           ],
         );
       },
@@ -1348,6 +1460,179 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       );
     });
     _inputFocusNode.requestFocus();
+  }
+
+  Future<void> _proposeReceiveAddress() async {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null || _client == null) return;
+
+    final info = walletCtx.superWallet.nextAddress(
+      masterAppkey: walletCtx.masterAppkey,
+    );
+    final memoController = TextEditingController();
+
+    final share = await showBottomSheetOrDialog<bool>(
+      context,
+      title: const Text('Share a receive address'),
+      builder: (sheetContext, scrollController) {
+        final theme = Theme.of(sheetContext);
+        return ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          children: [
+            Text(
+              'Address #${info.index}',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SelectableText(
+                info.address.toString(),
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: memoController,
+              decoration: const InputDecoration(
+                labelText: 'What is this for? (optional)',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(sheetContext, false),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  icon: const Icon(Icons.send_rounded),
+                  label: const Text('Copy & share'),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+    if (share != true || !mounted) return;
+
+    final addressStr = info.address.toString();
+    copyToClipboard(addressStr);
+
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
+    if (nsec == null || !mounted) return;
+
+    try {
+      await _client!.sendReceiveAddress(
+        accessStructureId: widget.accessStructureRef.accessStructureId,
+        nsec: nsec,
+        derivationIndex: info.index,
+        address: addressStr,
+        memo: memoController.text.trim(),
+      );
+      // Optimistic ReceiveAddress event already emitted by Rust;
+      // markAddressShared happens on MessageSent.
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to send: $e')));
+    }
+  }
+
+  Future<void> _markAddressSharedFor(ReceiveAddressCardModel card) async {
+    if (card.markedShared) return;
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    try {
+      await walletCtx.superWallet.markAddressShared(
+        masterAppkey: walletCtx.masterAppkey,
+        derivationIndex: card.derivationIndex,
+      );
+      if (!mounted) return;
+      setState(() {
+        card.markedShared = true;
+      });
+    } catch (e) {
+      debugPrint('markAddressShared failed: $e');
+    }
+  }
+
+  /// Verify a card's claimed address against the wallet descriptor.
+  /// Returns true if the address matches what's derived locally.
+  /// Falls back to true for self (we generated it).
+  bool _verifyCard(ReceiveAddressCardModel card) {
+    if (card.isMe) return true;
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return false;
+    final info = walletCtx.superWallet.getAddressInfo(
+      masterAppkey: walletCtx.masterAppkey,
+      index: card.derivationIndex,
+    );
+    if (info == null) return false;
+    return info.address.toString() == card.address;
+  }
+
+  Future<void> _retryReceiveSend(ReceiveAddressCardModel card) async {
+    if (_client == null) return;
+    final nsec = await NostrContext.of(context).ensureIdentity(context);
+    if (nsec == null || !mounted) return;
+    try {
+      await _client!.sendReceiveAddress(
+        accessStructureId: widget.accessStructureRef.accessStructureId,
+        nsec: nsec,
+        derivationIndex: card.derivationIndex,
+        address: card.address,
+        memo: card.memo,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Retry failed: $e')));
+    }
+  }
+
+  /// Receiver-side: verify the claimed address against the wallet
+  /// descriptor and call mark_address_shared only if verified AND
+  /// within the lookahead window.
+  void _maybeMarkAddressSharedForPeer(ReceiveAddressCardModel card) {
+    if (card.markedShared) return;
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+
+    final info = walletCtx.superWallet.getAddressInfo(
+      masterAppkey: walletCtx.masterAppkey,
+      index: card.derivationIndex,
+    );
+    if (info == null || info.address.toString() != card.address) {
+      // Verification failed — render verifies again at render time;
+      // do NOT advance the cursor here.
+      return;
+    }
+
+    final localNext = walletCtx.superWallet
+        .nextAddress(masterAppkey: walletCtx.masterAppkey)
+        .index;
+    if (card.derivationIndex > localNext + _receiveIndexLookahead) {
+      // Out of safe window — require explicit user confirmation
+      // via the "Apply anyway" button on the card.
+      return;
+    }
+    unawaited(_markAddressSharedFor(card));
   }
 
   Future<void> _proposeSendBitcoin() async {
@@ -3141,5 +3426,286 @@ class _NoDevicesCard extends StatelessWidget {
           "Plug in one of your devices for this wallet to offer a signature.",
         );
     }
+  }
+}
+
+class _ReceiveAddressCard extends StatelessWidget {
+  final ReceiveAddressCardModel card;
+  final NostrProfile? profile;
+  final bool verified;
+  final int? localNextIndex;
+  final VoidCallback onApplyAnyway;
+  final VoidCallback? onRetry;
+  final VoidCallback? onTapAvatar;
+
+  const _ReceiveAddressCard({
+    required this.card,
+    required this.profile,
+    required this.verified,
+    required this.localNextIndex,
+    required this.onApplyAnyway,
+    this.onRetry,
+    this.onTapAvatar,
+  });
+
+  bool get _outOfWindow =>
+      localNextIndex != null &&
+      card.derivationIndex > localNextIndex! + _receiveIndexLookahead;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isMe = card.isMe;
+    final align = isMe ? Alignment.centerRight : Alignment.centerLeft;
+    final tileColor = theme.colorScheme.surfaceContainer;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Align(
+        alignment: align,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Material(
+            color: tileColor,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      InkWell(
+                        onTap: onTapAvatar,
+                        child: NostrAvatar.small(
+                          profile: profile,
+                          pubkey: card.author,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          isMe
+                              ? 'You shared a receive address'
+                              : '${getDisplayName(profile, card.author)} shared a receive address',
+                          style: theme.textTheme.labelLarge,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Chip(
+                        avatar: const Icon(Icons.tag_rounded, size: 14),
+                        label: Text('#${card.derivationIndex}'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () => copyToClipboard(card.address),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SelectableText(
+                              card.address,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.copy_rounded,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (card.memo.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      card.memo,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  _ReceiveStatusRow(
+                    card: card,
+                    verified: verified,
+                    outOfWindow: _outOfWindow,
+                    localNextIndex: localNextIndex,
+                    onApplyAnyway: onApplyAnyway,
+                    onRetry: onRetry,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiveStatusRow extends StatelessWidget {
+  final ReceiveAddressCardModel card;
+  final bool verified;
+  final bool outOfWindow;
+  final int? localNextIndex;
+  final VoidCallback onApplyAnyway;
+  final VoidCallback? onRetry;
+
+  const _ReceiveStatusRow({
+    required this.card,
+    required this.verified,
+    required this.outOfWindow,
+    required this.localNextIndex,
+    required this.onApplyAnyway,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (card.status == MessageStatus.failed) {
+      return Row(
+        children: [
+          Icon(Icons.error_outline, size: 16, color: theme.colorScheme.error),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Failed to share',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+          if (onRetry != null)
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Retry'),
+            ),
+        ],
+      );
+    }
+
+    if (card.status == MessageStatus.pending) {
+      return Row(
+        children: [
+          const SizedBox(
+            height: 14,
+            width: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Sharing…',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Sent — render verification state
+    if (card.isMe) {
+      return Row(
+        children: [
+          Icon(
+            Icons.check_circle_rounded,
+            size: 16,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 6),
+          Text('Shared', style: theme.textTheme.labelSmall),
+        ],
+      );
+    }
+
+    if (!verified) {
+      return Row(
+        children: [
+          Icon(Icons.error_outline, size: 16, color: theme.colorScheme.error),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Address does not match this wallet',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (outOfWindow && !card.markedShared) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.verified_rounded,
+                size: 16,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Verified, but #${card.derivationIndex} is far ahead of your wallet (#$localNextIndex).',
+                  style: theme.textTheme.labelSmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: onApplyAnyway,
+              child: const Text('Apply anyway'),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Icon(
+          Icons.verified_rounded,
+          size: 16,
+          color: theme.colorScheme.primary,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          card.markedShared ? 'Verified · marked shared' : 'Verified',
+          style: theme.textTheme.labelSmall,
+        ),
+      ],
+    );
   }
 }
