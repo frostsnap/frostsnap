@@ -350,16 +350,18 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   void _showMemberProfile(PublicKey pubkey) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => MemberDetailSheet(
+    final profile = _getProfile(pubkey);
+    final hasName =
+        (profile?.displayName?.isNotEmpty ?? false) ||
+        (profile?.name?.isNotEmpty ?? false);
+    showBottomSheetOrDialog(
+      context,
+      title: hasName ? Text(getDisplayName(profile, pubkey)) : null,
+      builder: (sheetContext, scrollController) => MemberDetailSheet(
         pubkey: pubkey,
-        profile: _getProfile(pubkey),
-        shareIndices: _shareIndicesForPubkey(pubkey),
+        profile: profile,
+        keyIndices: _shareIndicesForPubkey(pubkey),
+        scrollController: scrollController,
       ),
     );
   }
@@ -1606,8 +1608,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
 
     final myPubkey = _myPubkey;
     final isRequester = activeRequest.request.author == myPubkey;
-    final alreadySigned =
-        activeRequest.partials.containsKey(myPubkey.toHex());
+    final alreadySigned = activeRequest.partials.containsKey(myPubkey.toHex());
     final sealed = activeRequest.sealedData;
     final myDevice = _getMyDevice(activeRequest);
     final canSign = sealed != null && myDevice != null && !alreadySigned;
