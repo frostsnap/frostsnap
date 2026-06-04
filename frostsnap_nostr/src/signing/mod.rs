@@ -1,11 +1,11 @@
 mod events;
 mod tree;
 
-use events::{ReceiveAddressPayload, SigningMessage};
 pub use events::{
     ChannelEvent, ChannelParticipant, ConfirmedSubsetEntry, ConnectionState, GroupMember,
     SigningEvent,
 };
+use events::{ReceiveAddressPayload, SigningMessage};
 
 use self::tree::{SigningEventTree, TimerAction, WireEvent};
 use crate::EventId;
@@ -142,7 +142,6 @@ impl ChannelClient {
                                     timestamp: prepared.created_at.as_secs(),
                                     pending: true,
                                     derivation_index: payload.derivation_index,
-                                    address: payload.address.clone(),
                                     memo: payload.memo.clone(),
                                 });
                                 match runner_handle_for_task.publish_prepared(prepared).await {
@@ -208,7 +207,6 @@ impl ChannelClient {
                                                 timestamp: inner_event.created_at.as_secs(),
                                                 pending: false,
                                                 derivation_index: payload.derivation_index,
-                                                address: payload.address,
                                                 memo: payload.memo,
                                             });
                                         }
@@ -336,24 +334,20 @@ impl ChannelHandle {
         &self,
         keys: &Keys,
         derivation_index: u32,
-        address: String,
         memo: String,
     ) -> Result<EventId> {
         let payload = ReceiveAddressPayload {
             derivation_index,
-            address,
             memo,
         };
-        let draft = ChannelMessageDraft::app(
-            KIND_FROSTSNAP_RECEIVE_ADDRESS,
-            &payload,
-            vec![],
-        )?;
+        let draft = ChannelMessageDraft::app(KIND_FROSTSNAP_RECEIVE_ADDRESS, &payload, vec![])?;
         let prepared = draft.prepare(keys).await?;
         let message_id: EventId = prepared.id.into();
 
         self.cmd_tx
-            .send(ChannelCommand::SendPreparedReceiveAddress(prepared, payload))
+            .send(ChannelCommand::SendPreparedReceiveAddress(
+                prepared, payload,
+            ))
             .await
             .map_err(|_| anyhow!("channel closed"))?;
 

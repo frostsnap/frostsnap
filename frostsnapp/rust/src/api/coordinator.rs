@@ -247,8 +247,7 @@ impl Coordinator {
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
     ) -> ChannelConnectionParams {
-        let (key_context, _, _, _) =
-            self.channel_key_data(access_structure_ref, encryption_key);
+        let (key_context, _, _, _) = self.channel_key_data(access_structure_ref, encryption_key);
         ChannelConnectionParams {
             key_context,
             init_data: None,
@@ -259,7 +258,12 @@ impl Coordinator {
         &self,
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
-    ) -> (KeyContext, Option<frostsnap_core::schnorr_fun::frost::SharedKey>, String, frostsnap_core::device::KeyPurpose) {
+    ) -> (
+        KeyContext,
+        Option<frostsnap_core::schnorr_fun::frost::SharedKey>,
+        String,
+        frostsnap_core::device::KeyPurpose,
+    ) {
         let inner = self.0.inner();
         let key_data = inner
             .get_frost_key(access_structure_ref.key_id)
@@ -274,7 +278,12 @@ impl Coordinator {
         let root_shared_key = key_data
             .complete_key
             .root_shared_key(access_structure_ref.access_structure_id, encryption_key);
-        (key_context, root_shared_key, key_data.key_name.clone(), key_data.purpose)
+        (
+            key_context,
+            root_shared_key,
+            key_data.key_name.clone(),
+            key_data.purpose,
+        )
     }
 
     pub fn sub_key_events(&self, stream: StreamSink<KeyState>) -> Result<()> {

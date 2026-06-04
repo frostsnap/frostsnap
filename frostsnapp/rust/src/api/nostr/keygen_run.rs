@@ -173,7 +173,11 @@ impl RemoteKeygenSession {
                     });
                 }
                 CoordinatorSend::ToUser(m) => {
-                    self.coord.ui_stack.lock().unwrap().process_to_user_message(m);
+                    self.coord
+                        .ui_stack
+                        .lock()
+                        .unwrap()
+                        .process_to_user_message(m);
                 }
                 CoordinatorSend::Broadcast {
                     from,
@@ -233,7 +237,13 @@ impl RemoteKeygenSession {
                 self.coord.usb_sender.send_cancel(*d);
             }
 
-            if let Some(kg) = self.coord.ui_stack.lock().unwrap().get_mut::<RemoteKeyGen>() {
+            if let Some(kg) = self
+                .coord
+                .ui_stack
+                .lock()
+                .unwrap()
+                .get_mut::<RemoteKeyGen>()
+            {
                 kg.cancel();
             }
         }

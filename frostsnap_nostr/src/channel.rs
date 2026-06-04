@@ -31,7 +31,7 @@ impl ChannelSecret {
 
     pub fn from_access_structure_id(id: &AccessStructureId) -> Self {
         // 🧪 bump counter to create fresh channels during testing
-        let hash = prefix_hash("NOSTR_CHANNEL_SECRET/5", &id.0);
+        let hash = prefix_hash("NOSTR_CHANNEL_SECRET/6", &id.0);
         let mut secret = [0u8; 16];
         secret.copy_from_slice(&hash[..16]);
         ChannelSecret(secret)

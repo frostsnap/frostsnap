@@ -26,8 +26,7 @@ use frostsnap_coordinator::wait_for_single_device::{
 };
 use frostsnap_coordinator::{
     remote_keygen::RemoteKeyGen, AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink,
-    UiProtocol, UiStack, UsbSender, UsbSerialManager, ValidatedFirmwareBin,
-    WaitForToUserMessage,
+    UiProtocol, UiStack, UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
 };
 use frostsnap_core::coordinator::remote_keygen::RemoteKeygenPayload;
 use frostsnap_core::coordinator::restoration::{

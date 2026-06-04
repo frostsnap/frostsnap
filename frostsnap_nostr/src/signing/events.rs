@@ -55,7 +55,6 @@ pub enum ChannelEvent {
         timestamp: u64,
         pending: bool,
         derivation_index: u32,
-        address: String,
         memo: String,
     },
     ReceiveAddressSendFailed {
@@ -260,9 +259,13 @@ pub(crate) enum SigningMessage {
 }
 
 /// Wire format for receive-address share messages (kind 7800).
+/// Carries only the structural information needed to derive the
+/// address — receivers compute the actual address themselves from
+/// their wallet descriptor. Keychain is always external and
+/// account is the wallet's default; neither needs to be on the
+/// wire today.
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct ReceiveAddressPayload {
     pub derivation_index: u32,
-    pub address: String,
     pub memo: String,
 }

@@ -40,8 +40,6 @@ pub struct ChannelConnectionParams {
     pub(crate) init_data: Option<ChannelInitData>,
 }
 
-
-
 static NOSTR_LMDB: OnceLock<Arc<NostrLMDB>> = OnceLock::new();
 
 fn get_or_init_nostr_lmdb(data_dir: &Path) -> Arc<NostrLMDB> {
@@ -362,7 +360,8 @@ impl NostrClient {
         let access_structure_id = params.key_context.access_structure_id();
         let key_context = params.key_context.clone();
         let channel_sink = ChannelEventSink { sink };
-        let channel_client = ChannelClient::new(params.key_context.clone(), params.init_data.clone());
+        let channel_client =
+            ChannelClient::new(params.key_context.clone(), params.init_data.clone());
         let handle = match channel_client.run(self.client.clone(), channel_sink).await {
             Ok(h) => h,
             Err(e) => {
@@ -477,13 +476,12 @@ impl NostrClient {
         access_structure_id: AccessStructureId,
         nsec: String,
         derivation_index: u32,
-        address: String,
         memo: String,
     ) -> Result<EventId> {
         let keys = Keys::parse(&nsec)?;
         let handle = self.get_handle(access_structure_id)?;
         let event_id = handle
-            .send_receive_address(&keys, derivation_index, address, memo)
+            .send_receive_address(&keys, derivation_index, memo)
             .await?;
         Ok(event_id)
     }
@@ -911,7 +909,6 @@ pub enum _ChannelEvent {
         timestamp: u64,
         pending: bool,
         derivation_index: u32,
-        address: String,
         memo: String,
     },
     ReceiveAddressSendFailed {

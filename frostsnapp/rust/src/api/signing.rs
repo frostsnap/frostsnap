@@ -475,11 +475,9 @@ impl SigningSessionHandle {
             let mut db = self.db.lock().unwrap();
             let mut coord = self.coordinator.lock().unwrap();
             coord.staged_mutate(&mut *db, |coordinator| match &self.remote {
-                None => Ok(coordinator.request_device_sign(
-                    self.session_id,
-                    device_id,
-                    encryption_key,
-                )),
+                None => {
+                    Ok(coordinator.request_device_sign(self.session_id, device_id, encryption_key))
+                }
                 Some(ctx) => Ok(coordinator.sign_with_nonce_reservation(
                     ctx.remote_sign_session_id,
                     device_id,

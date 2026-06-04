@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:frostsnap/copy_feedback.dart';
@@ -74,12 +75,6 @@ class ReplyTarget {
   });
 }
 
-/// Compact display form for a bech32 address: first 6 + last 4.
-String _truncateAddress(String addr) {
-  if (addr.length <= 12) return addr;
-  return '${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}';
-}
-
 /// Safety cap on how far a peer's claimed receive index may be ahead
 /// of this wallet's local cursor before we auto-advance via
 /// `mark_address_shared`. Bigger jumps require explicit user
@@ -91,11 +86,55 @@ sealed class TimelineItem {
   DateTime get timestamp;
 }
 
-class TimelineChat extends TimelineItem {
+/// Timeline variants that render as canonical chat bubbles. The
+/// abstract `buildBubble` enforces — at compile time — that anything
+/// claiming to be a chat message produces a [ChatBubble]. Free-form
+/// system cards (signing, transaction, error) stay direct siblings
+/// of [TimelineItem].
+sealed class ChatBubbleItem extends TimelineItem {
+  ChatBubble buildBubble(BuildContext context, ChatBubbleHandlers h);
+}
+
+class TimelineChat extends ChatBubbleItem {
   final ChatMessage message;
   @override
   DateTime get timestamp => message.timestamp;
   TimelineChat(this.message);
+
+  @override
+  ChatBubble buildBubble(BuildContext context, ChatBubbleHandlers h) {
+    final replyTarget = h.getReplyTarget(message.replyTo);
+    return ChatBubble(
+      key: h.timelineKeys.putIfAbsent(
+        message.messageId.toHex(),
+        () => GlobalKey(),
+      ),
+      author: message.author,
+      authorProfile: h.getProfile(message.author),
+      isMe: message.isMe,
+      timestamp: message.timestamp,
+      status: message.status,
+      failureReason: message.failureReason,
+      replyQuote: replyTarget == null
+          ? null
+          : _ChatReplyQuote(
+              target: replyTarget,
+              targetProfile: h.getProfile(replyTarget.author),
+              onTap: () => h.onScrollToHighlight(replyTarget.messageId),
+            ),
+      text: message.content,
+      onTapAvatar: message.isMe
+          ? null
+          : () => h.onShowMemberProfile(message.author),
+      onReply: () => h.onReplyChat(message),
+      onCopy: () => h.onCopyChat(message),
+      onRetry: () => h.onRetryChat(message),
+      onTapQuote: replyTarget == null
+          ? null
+          : () => h.onScrollToHighlight(replyTarget.messageId),
+      isHighlighted: h.highlightedId == message.messageId.toHex(),
+    );
+  }
 }
 
 class TimelineSigning extends TimelineItem {
@@ -125,7 +164,6 @@ class ReceiveAddressCardModel {
   final DateTime timestamp;
   final bool isMe;
   final int derivationIndex;
-  final String address;
   final String memo;
   MessageStatus status;
   String? failureReason;
@@ -137,7 +175,6 @@ class ReceiveAddressCardModel {
     required this.timestamp,
     required this.isMe,
     required this.derivationIndex,
-    required this.address,
     required this.memo,
     required this.status,
     this.failureReason,
@@ -145,11 +182,37 @@ class ReceiveAddressCardModel {
   });
 }
 
-class TimelineReceiveAddress extends TimelineItem {
+class TimelineReceiveAddress extends ChatBubbleItem {
   final ReceiveAddressCardModel card;
   @override
   DateTime get timestamp => card.timestamp;
   TimelineReceiveAddress(this.card);
+
+  @override
+  ChatBubble buildBubble(BuildContext context, ChatBubbleHandlers h) {
+    // The address is derived locally from the receiver's own
+    // descriptor — see `_ReceiveAttachment`. Sender and receiver
+    // render an IDENTICAL attachment; no verification step exists
+    // because there's no claim to verify.
+    final canOpen = card.status == MessageStatus.sent;
+    return ChatBubble(
+      key: h.timelineKeys.putIfAbsent(
+        card.messageId.toHex(),
+        () => GlobalKey(),
+      ),
+      author: card.author,
+      authorProfile: h.getProfile(card.author),
+      isMe: card.isMe,
+      timestamp: card.timestamp,
+      status: card.status,
+      failureReason: card.failureReason,
+      attachment: _ReceiveAttachment(derivationIndex: card.derivationIndex),
+      text: card.memo,
+      onTap: canOpen ? () => h.onOpenReceive(card) : null,
+      onRetry: card.isMe ? () => h.onRetryReceive(card) : null,
+      onTapAvatar: card.isMe ? null : () => h.onShowMemberProfile(card.author),
+    );
+  }
 }
 
 class TimelineError extends TimelineItem {
@@ -544,7 +607,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         :final timestamp,
         :final pending,
         :final derivationIndex,
-        :final address,
         :final memo,
       ):
         final existing = _receiveCardById[messageId];
@@ -556,7 +618,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp * 1000),
           isMe: isMe,
           derivationIndex: derivationIndex,
-          address: address,
           memo: memo,
           status: pending ? MessageStatus.pending : MessageStatus.sent,
         );
@@ -896,35 +957,29 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         final showDateDivider =
             index == 0 ||
             !_isSameDay(item.timestamp, _timeline[index - 1].timestamp);
-        final child = switch (item) {
-          TimelineChat(:final message) => _MessageBubble(
-            key: _timelineKeys.putIfAbsent(
-              message.messageId.toHex(),
-              () => GlobalKey(),
+        final bubbleHandlers = ChatBubbleHandlers(
+          getProfile: _getProfile,
+          getReplyTarget: (id) => id == null ? null : _messageById[id],
+          myPubkey: _myPubkey,
+          highlightedId: _highlightedId,
+          timelineKeys: _timelineKeys,
+          onShowMemberProfile: _showMemberProfile,
+          onScrollToHighlight: _scrollToAndHighlight,
+          onReplyChat: (message) => _startReply(
+            ReplyTarget(
+              eventId: message.messageId,
+              author: message.author,
+              preview: message.content,
+              isMe: message.isMe,
             ),
-            message: message,
-            profile: _getProfile(message.author),
-            isHighlighted: _highlightedId == message.messageId.toHex(),
-            replyToMessage: message.replyTo != null
-                ? _messageById[message.replyTo]
-                : null,
-            onTapQuote: message.replyTo != null
-                ? () => _scrollToAndHighlight(message.replyTo!)
-                : null,
-            onTapAvatar: message.isMe
-                ? null
-                : () => _showMemberProfile(message.author),
-            onReply: () => _startReply(
-              ReplyTarget(
-                eventId: message.messageId,
-                author: message.author,
-                preview: message.content,
-                isMe: message.isMe,
-              ),
-            ),
-            onRetry: () => _retryMessage(message),
-            onCopy: () => _copyMessage(message),
           ),
+          onRetryChat: _retryMessage,
+          onCopyChat: _copyMessage,
+          onOpenReceive: (card) => unawaited(_openReceivePage(card)),
+          onRetryReceive: (card) => unawaited(_retryReceiveSend(card)),
+        );
+        final child = switch (item) {
+          ChatBubbleItem b => b.buildBubble(context, bubbleHandlers),
           TimelineSigning(
             event: final event,
             :final progressCount,
@@ -1000,22 +1055,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             onTapAvatar: item.author == _myPubkey
                 ? null
                 : () => _showMemberProfile(item.author),
-          ),
-          TimelineReceiveAddress(:final card) => _ReceiveAddressCard(
-            card: card,
-            profile: _getProfile(card.author),
-            verified: _verifyCard(card),
-            localNextIndex: WalletContext.of(context)?.superWallet
-                .nextAddress(
-                  masterAppkey: WalletContext.of(context)!.masterAppkey,
-                )
-                .index,
-            onApplyAnyway: () => unawaited(_markAddressSharedFor(card)),
-            onRetry: card.isMe ? () => _retryReceiveSend(card) : null,
-            onTapAvatar: card.isMe
-                ? null
-                : () => _showMemberProfile(card.author),
-            onOpen: () => _openReceivePage(card),
           ),
         };
         if (!showDateDivider) return child;
@@ -1529,21 +1568,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     }
   }
 
-  /// Verify a card's claimed address against the wallet descriptor.
-  /// Returns true if the address matches what's derived locally.
-  /// Falls back to true for self (we generated it).
-  bool _verifyCard(ReceiveAddressCardModel card) {
-    if (card.isMe) return true;
-    final walletCtx = WalletContext.of(context);
-    if (walletCtx == null) return false;
-    final info = walletCtx.superWallet.getAddressInfo(
-      masterAppkey: walletCtx.masterAppkey,
-      index: card.derivationIndex,
-    );
-    if (info == null) return false;
-    return info.address.toString() == card.address;
-  }
-
   Future<void> _retryReceiveSend(ReceiveAddressCardModel card) async {
     if (_client == null) return;
     final nsec = await NostrContext.of(context).ensureIdentity(context);
@@ -1553,7 +1577,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         accessStructureId: widget.accessStructureRef.accessStructureId,
         nsec: nsec,
         derivationIndex: card.derivationIndex,
-        address: card.address,
         memo: card.memo,
       );
     } catch (e) {
@@ -1564,32 +1587,19 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     }
   }
 
-  /// Receiver-side: verify the claimed address against the wallet
-  /// descriptor and call mark_address_shared only if verified AND
-  /// within the lookahead window.
+  /// Receiver-side: advance the local wallet's reveal cursor when
+  /// a peer publishes a usable index. Out-of-window indices (a
+  /// malicious or buggy peer pushing very far) are silently
+  /// ignored — the bubble still renders the derived address; we
+  /// just don't advance our cursor.
   void _maybeMarkAddressSharedForPeer(ReceiveAddressCardModel card) {
     if (card.markedShared) return;
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null) return;
-
-    final info = walletCtx.superWallet.getAddressInfo(
-      masterAppkey: walletCtx.masterAppkey,
-      index: card.derivationIndex,
-    );
-    if (info == null || info.address.toString() != card.address) {
-      // Verification failed — render verifies again at render time;
-      // do NOT advance the cursor here.
-      return;
-    }
-
     final localNext = walletCtx.superWallet
         .nextAddress(masterAppkey: walletCtx.masterAppkey)
         .index;
-    if (card.derivationIndex > localNext + _receiveIndexLookahead) {
-      // Out of safe window — require explicit user confirmation
-      // via the "Apply anyway" button on the card.
-      return;
-    }
+    if (card.derivationIndex > localNext + _receiveIndexLookahead) return;
     unawaited(_markAddressSharedFor(card));
   }
 
@@ -1692,7 +1702,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           accessStructureId: widget.accessStructureId,
           nsec: nsec,
           derivationIndex: pendingReceive.index,
-          address: pendingReceive.address,
           memo: content,
         );
       } else {
@@ -2147,9 +2156,8 @@ class _ChatPageBodyState extends State<ChatPageBody> {
                           ),
                           Text(
                             '#${_pendingReceiveAttachment!.index} · '
-                            '${_truncateAddress(_pendingReceiveAttachment!.address)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            '${_pendingReceiveAttachment!.address}',
+                            softWrap: true,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                               fontFamily: 'monospace',
@@ -2209,401 +2217,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         ),
       ),
     );
-  }
-}
-
-class _MessageBubble extends StatefulWidget {
-  final ChatMessage message;
-  final NostrProfile? profile;
-  final bool isHighlighted;
-  final ChatMessage? replyToMessage;
-  final VoidCallback? onTapQuote;
-  final VoidCallback? onTapAvatar;
-  final VoidCallback onReply;
-  final VoidCallback onRetry;
-  final VoidCallback onCopy;
-
-  const _MessageBubble({
-    super.key,
-    required this.message,
-    this.profile,
-    this.isHighlighted = false,
-    required this.replyToMessage,
-    this.onTapQuote,
-    this.onTapAvatar,
-    required this.onReply,
-    required this.onRetry,
-    required this.onCopy,
-  });
-
-  @override
-  State<_MessageBubble> createState() => _MessageBubbleState();
-}
-
-class _MessageBubbleState extends State<_MessageBubble> {
-  bool _isHovered = false;
-
-  bool _isMobile(BuildContext context) {
-    return MediaQuery.of(context).size.width < 600;
-  }
-
-  void _showMobileActions(BuildContext context) {
-    final theme = Theme.of(context);
-    final isFailed = widget.message.status == MessageStatus.failed;
-
-    showDialog(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (dialogContext) {
-        return GestureDetector(
-          onTap: () => Navigator.of(dialogContext).pop(),
-          behavior: HitTestBehavior.opaque,
-          child: Stack(
-            children: [
-              Center(
-                child: GestureDetector(
-                  onTap: () {},
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildBubbleContent(context, theme),
-                      const SizedBox(height: 8),
-                      Material(
-                        elevation: 8,
-                        borderRadius: BorderRadius.circular(12),
-                        color: theme.colorScheme.surface,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isFailed)
-                              _buildActionTile(
-                                icon: Icons.refresh,
-                                label: 'Retry',
-                                color: theme.colorScheme.error,
-                                onTap: () {
-                                  Navigator.of(dialogContext).pop();
-                                  widget.onRetry();
-                                },
-                              ),
-                            _buildActionTile(
-                              icon: Icons.copy,
-                              label: 'Copy',
-                              onTap: () {
-                                Navigator.of(dialogContext).pop();
-                                widget.onCopy();
-                              },
-                            ),
-                            _buildActionTile(
-                              icon: Icons.reply,
-                              label: 'Reply',
-                              onTap: () {
-                                Navigator.of(dialogContext).pop();
-                                widget.onReply();
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildActionTile({
-    required IconData icon,
-    required String label,
-    Color? color,
-    required VoidCallback onTap,
-  }) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: color ?? theme.colorScheme.onSurface),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: color ?? theme.colorScheme.onSurface,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBubbleContent(BuildContext context, ThemeData theme) {
-    final isMe = widget.message.isMe;
-    final isFailed = widget.message.status == MessageStatus.failed;
-
-    final baseColor = isFailed
-        ? theme.colorScheme.errorContainer
-        : isMe
-        ? theme.colorScheme.primaryContainer
-        : theme.colorScheme.surfaceContainerHighest;
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.7,
-      ),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: widget.isHighlighted
-              ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
-              : baseColor,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: widget.isHighlighted
-              ? [
-                  BoxShadow(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.4),
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  ),
-                ]
-              : [],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!isMe)
-              Text(
-                getDisplayName(widget.profile, widget.message.author),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            if (widget.replyToMessage != null) _buildReplyQuote(theme),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Flexible(child: Text(widget.message.content)),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 1),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _formatTime(widget.message.timestamp),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: 10,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      if (isMe) ...[
-                        const SizedBox(width: 3),
-                        _buildStatusIndicator(theme),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (isFailed)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Tap to retry',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.error,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isMe = widget.message.isMe;
-    final isFailed = widget.message.status == MessageStatus.failed;
-    final isMobile = _isMobile(context);
-    final bubble = _buildBubbleContent(context, theme);
-
-    final hoverActions = AnimatedOpacity(
-      opacity: _isHovered ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 150),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isFailed)
-            IconButton(
-              icon: Icon(
-                Icons.refresh,
-                size: 18,
-                color: theme.colorScheme.error,
-              ),
-              onPressed: widget.onRetry,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              splashRadius: 14,
-              tooltip: 'Retry',
-            ),
-          IconButton(
-            icon: Icon(
-              Icons.copy,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            onPressed: widget.onCopy,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            splashRadius: 14,
-            tooltip: 'Copy',
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.reply,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            onPressed: widget.onReply,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            splashRadius: 14,
-            tooltip: 'Reply',
-          ),
-        ],
-      ),
-    );
-
-    final avatar = !isMe
-        ? GestureDetector(
-            onTap: widget.onTapAvatar,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: NostrAvatar.small(
-                profile: widget.profile,
-                pubkey: widget.message.author,
-              ),
-            ),
-          )
-        : null;
-
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: MouseRegion(
-        onEnter: isMobile ? null : (_) => setState(() => _isHovered = true),
-        onExit: isMobile ? null : (_) => setState(() => _isHovered = false),
-        child: GestureDetector(
-          onTap: isFailed ? widget.onRetry : null,
-          onLongPress: isMobile ? () => _showMobileActions(context) : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: isMe
-                  ? [
-                      if (!isMobile) hoverActions,
-                      if (!isMobile) const SizedBox(width: 4),
-                      bubble,
-                    ]
-                  : [
-                      if (avatar != null) avatar,
-                      bubble,
-                      if (!isMobile) const SizedBox(width: 4),
-                      if (!isMobile) hoverActions,
-                    ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusIndicator(ThemeData theme) {
-    return switch (widget.message.status) {
-      MessageStatus.pending => Icon(
-        Icons.access_time,
-        size: 12,
-        color: theme.colorScheme.outline,
-      ),
-      MessageStatus.sent => Icon(
-        Icons.check,
-        size: 12,
-        color: theme.colorScheme.outline,
-      ),
-      MessageStatus.failed => Icon(
-        Icons.error_outline,
-        size: 12,
-        color: theme.colorScheme.error,
-      ),
-    };
-  }
-
-  Widget _buildReplyQuote(ThemeData theme) {
-    final replyTo = widget.replyToMessage!;
-    return GestureDetector(
-      onTap: widget.onTapQuote,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: theme.colorScheme.primary, width: 2),
-          ),
-          color: theme.colorScheme.surface.withValues(alpha: 0.5),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (replyTo.quoteIcon != null) ...[
-                  Icon(
-                    replyTo.quoteIcon,
-                    size: 12,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  replyTo.isMe ? 'You' : getDisplayName(null, replyTo.author),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              replyTo.content,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 }
 
@@ -3470,136 +3083,490 @@ class _NoDevicesCard extends StatelessWidget {
   }
 }
 
-class _ReceiveAddressCard extends StatelessWidget {
-  final ReceiveAddressCardModel card;
-  final NostrProfile? profile;
-  final bool verified;
-  final int? localNextIndex;
-  final VoidCallback onApplyAnyway;
+// =====================================================================
+// Canonical chat-bubble shape
+// =====================================================================
+
+/// Per-timeline-item callbacks the host provides to all chat-bubble
+/// variants. Each [ChatBubbleItem] subclass uses the subset it needs.
+class ChatBubbleHandlers {
+  /// Profile lookup for the bubble author / reply target avatar.
+  final NostrProfile? Function(PublicKey) getProfile;
+
+  /// Reply-target lookup so a bubble can render the quoted message
+  /// inline.
+  final ChatMessage? Function(EventId?) getReplyTarget;
+
+  /// The local user's pubkey — used to colour and align bubbles.
+  final PublicKey myPubkey;
+
+  /// IDs (hex) currently being scroll-highlighted.
+  final String? highlightedId;
+
+  /// Per-timeline-item GlobalKeys for scrollTo + highlight.
+  final Map<String, GlobalKey> timelineKeys;
+
+  /// Open another member's profile sheet.
+  final void Function(PublicKey) onShowMemberProfile;
+
+  /// Jump the timeline to a quoted message by id.
+  final void Function(EventId) onScrollToHighlight;
+
+  // ----- chat-text-specific -----
+  final void Function(ChatMessage) onReplyChat;
+  final void Function(ChatMessage) onRetryChat;
+  final void Function(ChatMessage) onCopyChat;
+
+  // ----- receive-specific -----
+  final void Function(ReceiveAddressCardModel) onOpenReceive;
+  final void Function(ReceiveAddressCardModel) onRetryReceive;
+
+  const ChatBubbleHandlers({
+    required this.getProfile,
+    required this.getReplyTarget,
+    required this.myPubkey,
+    required this.highlightedId,
+    required this.timelineKeys,
+    required this.onShowMemberProfile,
+    required this.onScrollToHighlight,
+    required this.onReplyChat,
+    required this.onRetryChat,
+    required this.onCopyChat,
+    required this.onOpenReceive,
+    required this.onRetryReceive,
+  });
+}
+
+/// Canonical chat-bubble widget. Owns ALL the bubble chrome —
+/// colors, alignment, max-width, author label, optional reply
+/// quote, optional attachment panel, body text + timestamp +
+/// status tick, optional action footer, hover/long-press actions
+/// rail, failed-state retry.
+///
+/// Content-agnostic: callers fill the `attachment` / `text` /
+/// `actions` slots; this widget never inspects them.
+class ChatBubble extends StatefulWidget {
+  final PublicKey author;
+  final NostrProfile? authorProfile;
+  final bool isMe;
+  final DateTime timestamp;
+  final MessageStatus status;
+  final String? failureReason;
+
+  /// Inline quoted message (chat-text only today; future variants
+  /// can use it too).
+  final Widget? replyQuote;
+
+  /// Optional attachment panel rendered above the text — nested
+  /// rounded container with `surface` color, distinct from the
+  /// bubble background. Caller decides the height/content.
+  final Widget? attachment;
+
+  /// Body text. Empty string is valid — timestamp + status still
+  /// render in their bottom-right slot.
+  final String text;
+
+  /// Optional action buttons rendered as a footer row inside the
+  /// bubble (e.g. "Apply anyway", "Verify on device").
+  final List<Widget> actions;
+
+  /// Bubble-level tap. Falls back to `onRetry` for failed bubbles
+  /// when null.
+  final VoidCallback? onTap;
+
+  // ----- standard hover / long-press actions -----
+  final VoidCallback? onReply;
+  final VoidCallback? onCopy;
   final VoidCallback? onRetry;
   final VoidCallback? onTapAvatar;
-  final VoidCallback? onOpen;
+  final VoidCallback? onTapQuote;
 
-  const _ReceiveAddressCard({
-    required this.card,
-    required this.profile,
-    required this.verified,
-    required this.localNextIndex,
-    required this.onApplyAnyway,
+  final bool isHighlighted;
+
+  const ChatBubble({
+    super.key,
+    required this.author,
+    required this.authorProfile,
+    required this.isMe,
+    required this.timestamp,
+    required this.status,
+    this.failureReason,
+    this.replyQuote,
+    this.attachment,
+    required this.text,
+    this.actions = const [],
+    this.onTap,
+    this.onReply,
+    this.onCopy,
     this.onRetry,
     this.onTapAvatar,
-    this.onOpen,
+    this.onTapQuote,
+    this.isHighlighted = false,
   });
 
-  bool get _outOfWindow =>
-      localNextIndex != null &&
-      card.derivationIndex > localNextIndex! + _receiveIndexLookahead;
+  @override
+  State<ChatBubble> createState() => _ChatBubbleState();
+}
 
-  /// Only deep-link when the message is sent (not pending or failed)
-  /// AND verifies locally. We don't want a tap to open ReceivePage at
-  /// a derivation index that doesn't actually belong to this wallet.
-  bool get _canOpen =>
-      onOpen != null && card.status == MessageStatus.sent && verified;
+class _ChatBubbleState extends State<ChatBubble> {
+  bool _isHovered = false;
+
+  bool _isMobile(BuildContext context) =>
+      MediaQuery.of(context).size.width < 600;
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildBubbleContent(BuildContext context, ThemeData theme) {
+    final isMe = widget.isMe;
+    final isFailed = widget.status == MessageStatus.failed;
+
+    final baseColor = isFailed
+        ? theme.colorScheme.errorContainer
+        : isMe
+        ? theme.colorScheme.primaryContainer
+        : theme.colorScheme.surfaceContainerHighest;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Cap at 70% of the chat's available width (not the whole
+        // screen — on desktop with a sidebar/tray, screen width is
+        // much wider than what the chat actually owns), and never
+        // exceed a comfortable reading width.
+        final available = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+        final maxBubble = math.min(available * 0.7, 560.0);
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxBubble),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 400),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: widget.isHighlighted
+                  ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+                  : baseColor,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: widget.isHighlighted
+                  ? [
+                      BoxShadow(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : [],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isMe)
+                  Text(
+                    getDisplayName(widget.authorProfile, widget.author),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                if (widget.replyQuote != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: widget.replyQuote!,
+                  ),
+                if (widget.attachment != null) ...[
+                  Container(
+                    margin: const EdgeInsets.only(top: 2, bottom: 6),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: widget.attachment!,
+                  ),
+                ],
+                // Body row: text + timestamp + status tick. Matches the
+                // original _MessageBubble layout so single-line text
+                // hugs the timestamp on its right.
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (widget.text.isNotEmpty)
+                      Flexible(child: Text(widget.text)),
+                    if (widget.text.isNotEmpty) const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 1),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _formatTime(widget.timestamp),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          if (isMe) ...[
+                            const SizedBox(width: 3),
+                            _buildStatusIndicator(theme),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (widget.actions.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: widget.actions,
+                    ),
+                  ),
+                if (isFailed)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Tap to retry',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusIndicator(ThemeData theme) {
+    return switch (widget.status) {
+      MessageStatus.pending => Icon(
+        Icons.access_time,
+        size: 12,
+        color: theme.colorScheme.outline,
+      ),
+      MessageStatus.sent => Icon(
+        Icons.check,
+        size: 12,
+        color: theme.colorScheme.outline,
+      ),
+      MessageStatus.failed => Icon(
+        Icons.error_outline,
+        size: 12,
+        color: theme.colorScheme.error,
+      ),
+    };
+  }
+
+  void _showMobileActions(BuildContext context) {
+    final theme = Theme.of(context);
+    final isFailed = widget.status == MessageStatus.failed;
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (dialogContext) {
+        return GestureDetector(
+          onTap: () => Navigator.of(dialogContext).pop(),
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            children: [
+              Center(
+                child: GestureDetector(
+                  onTap: () {},
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildBubbleContent(context, theme),
+                      const SizedBox(height: 8),
+                      Material(
+                        elevation: 8,
+                        borderRadius: BorderRadius.circular(12),
+                        color: theme.colorScheme.surface,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isFailed && widget.onRetry != null)
+                              _buildActionTile(
+                                icon: Icons.refresh,
+                                label: 'Retry',
+                                color: theme.colorScheme.error,
+                                onTap: () {
+                                  Navigator.of(dialogContext).pop();
+                                  widget.onRetry!();
+                                },
+                              ),
+                            if (widget.onCopy != null)
+                              _buildActionTile(
+                                icon: Icons.copy,
+                                label: 'Copy',
+                                onTap: () {
+                                  Navigator.of(dialogContext).pop();
+                                  widget.onCopy!();
+                                },
+                              ),
+                            if (widget.onReply != null)
+                              _buildActionTile(
+                                icon: Icons.reply,
+                                label: 'Reply',
+                                onTap: () {
+                                  Navigator.of(dialogContext).pop();
+                                  widget.onReply!();
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String label,
+    Color? color,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color ?? theme.colorScheme.onSurface),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: color ?? theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isMe = card.isMe;
-    final align = isMe ? Alignment.centerRight : Alignment.centerLeft;
-    final tileColor = theme.colorScheme.surfaceContainer;
+    final isMe = widget.isMe;
+    final isFailed = widget.status == MessageStatus.failed;
+    final isMobile = _isMobile(context);
+    final bubble = _buildBubbleContent(context, theme);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Align(
-        alignment: align,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Material(
-            color: tileColor,
-            borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: _canOpen ? onOpen : null,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        InkWell(
-                          onTap: onTapAvatar,
-                          child: NostrAvatar.small(
-                            profile: profile,
-                            pubkey: card.author,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            isMe
-                                ? 'You shared a receive address'
-                                : '${getDisplayName(profile, card.author)} shared a receive address',
-                            style: theme.textTheme.labelLarge,
-                          ),
-                        ),
-                        if (_canOpen)
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          '#${card.derivationIndex}',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          '  ·  ',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        Flexible(
-                          child: Text(
-                            _truncateAddress(card.address),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontFamily: 'monospace',
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (card.memo.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        card.memo,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontStyle: FontStyle.italic,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    _ReceiveStatusRow(
-                      card: card,
-                      verified: verified,
-                      outOfWindow: _outOfWindow,
-                      localNextIndex: localNextIndex,
-                      onApplyAnyway: onApplyAnyway,
-                      onRetry: onRetry,
-                    ),
-                  ],
-                ),
+    final hoverActions = AnimatedOpacity(
+      opacity: _isHovered ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 150),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isFailed && widget.onRetry != null)
+            IconButton(
+              icon: Icon(
+                Icons.refresh,
+                size: 18,
+                color: theme.colorScheme.error,
               ),
+              onPressed: widget.onRetry,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              splashRadius: 14,
+              tooltip: 'Retry',
+            ),
+          if (widget.onCopy != null)
+            IconButton(
+              icon: Icon(
+                Icons.copy,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              onPressed: widget.onCopy,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              splashRadius: 14,
+              tooltip: 'Copy',
+            ),
+          if (widget.onReply != null)
+            IconButton(
+              icon: Icon(
+                Icons.reply,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              onPressed: widget.onReply,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              splashRadius: 14,
+              tooltip: 'Reply',
+            ),
+        ],
+      ),
+    );
+
+    final avatar = !isMe
+        ? GestureDetector(
+            onTap: widget.onTapAvatar,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: NostrAvatar.small(
+                profile: widget.authorProfile,
+                pubkey: widget.author,
+              ),
+            ),
+          )
+        : null;
+
+    final tap = isFailed ? (widget.onRetry ?? widget.onTap) : widget.onTap;
+    // Only enable long-press when there's at least one action the
+    // menu would show — otherwise the user gets an empty popup.
+    final hasLongPressAction =
+        widget.onCopy != null ||
+        widget.onReply != null ||
+        (isFailed && widget.onRetry != null);
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: MouseRegion(
+        onEnter: isMobile ? null : (_) => setState(() => _isHovered = true),
+        onExit: isMobile ? null : (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: tap,
+          onLongPress: isMobile && hasLongPressAction
+              ? () => _showMobileActions(context)
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: isMe
+                  ? [
+                      if (!isMobile) hoverActions,
+                      if (!isMobile) const SizedBox(width: 4),
+                      Flexible(child: bubble),
+                    ]
+                  : [
+                      if (avatar != null) avatar,
+                      Flexible(child: bubble),
+                      if (!isMobile) const SizedBox(width: 4),
+                      if (!isMobile) hoverActions,
+                    ],
             ),
           ),
         ),
@@ -3608,146 +3575,148 @@ class _ReceiveAddressCard extends StatelessWidget {
   }
 }
 
-class _ReceiveStatusRow extends StatelessWidget {
-  final ReceiveAddressCardModel card;
-  final bool verified;
-  final bool outOfWindow;
-  final int? localNextIndex;
-  final VoidCallback onApplyAnyway;
-  final VoidCallback? onRetry;
+/// Attachment panel for a [TimelineReceiveAddress] bubble. Renders
+/// inside [ChatBubble.attachment]'s rounded container — its job is
+/// only the content: index, truncated address, verification badge.
+/// Attachment panel for [TimelineReceiveAddress]. Renders the
+/// derivation index and the locally-derived address — sender and
+/// receiver both see the same content. The address is computed
+/// from this wallet's descriptor; no "verified" claim is made
+/// (verifying an address is fundamentally an out-of-band action).
+class _ReceiveAttachment extends StatelessWidget {
+  final int derivationIndex;
 
-  const _ReceiveStatusRow({
-    required this.card,
-    required this.verified,
-    required this.outOfWindow,
-    required this.localNextIndex,
-    required this.onApplyAnyway,
-    this.onRetry,
+  const _ReceiveAttachment({required this.derivationIndex});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final walletCtx = WalletContext.of(context);
+    final info = walletCtx?.superWallet.getAddressInfo(
+      masterAppkey: walletCtx.masterAppkey,
+      index: derivationIndex,
+    );
+    final address = info?.address.toString();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.call_received_rounded,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Receive address',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: 14,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '#$derivationIndex',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Full address, allowed to wrap.
+          Text(
+            address ?? '…',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+            ),
+            softWrap: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Inline quoted reply for a chat-text bubble. Mirrors the original
+/// `_MessageBubble._buildReplyQuote` so the shape is preserved.
+class _ChatReplyQuote extends StatelessWidget {
+  final ChatMessage target;
+  final NostrProfile? targetProfile;
+  final VoidCallback onTap;
+
+  const _ChatReplyQuote({
+    required this.target,
+    required this.targetProfile,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    if (card.status == MessageStatus.failed) {
-      return Row(
-        children: [
-          Icon(Icons.error_outline, size: 16, color: theme.colorScheme.error),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              'Failed to share',
+    final label = target.isMe
+        ? 'You'
+        : getDisplayName(targetProfile, target.author);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: theme.colorScheme.primary, width: 2),
+          ),
+          color: theme.colorScheme.surface.withValues(alpha: 0.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
               style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-          ),
-          if (onRetry != null)
-            TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: const Text('Retry'),
-            ),
-        ],
-      );
-    }
-
-    if (card.status == MessageStatus.pending) {
-      return Row(
-        children: [
-          const SizedBox(
-            height: 14,
-            width: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Sharing…',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      );
-    }
-
-    // Sent — render verification state
-    if (card.isMe) {
-      return Row(
-        children: [
-          Icon(
-            Icons.check_circle_rounded,
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 6),
-          Text('Shared', style: theme.textTheme.labelSmall),
-        ],
-      );
-    }
-
-    if (!verified) {
-      return Row(
-        children: [
-          Icon(Icons.error_outline, size: 16, color: theme.colorScheme.error),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              'Address does not match this wallet',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (outOfWindow && !card.markedShared) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.verified_rounded,
-                size: 16,
                 color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Verified, but #${card.derivationIndex} is far ahead of your wallet (#$localNextIndex).',
-                  style: theme.textTheme.labelSmall,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: onApplyAnyway,
-              child: const Text('Apply anyway'),
             ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      children: [
-        Icon(
-          Icons.verified_rounded,
-          size: 16,
-          color: theme.colorScheme.primary,
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (target.quoteIcon != null) ...[
+                  Icon(
+                    target.quoteIcon,
+                    size: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Flexible(
+                  child: Text(
+                    target.content,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        const SizedBox(width: 6),
-        Text(
-          card.markedShared ? 'Verified · marked shared' : 'Verified',
-          style: theme.textTheme.labelSmall,
-        ),
-      ],
+      ),
     );
   }
 }
