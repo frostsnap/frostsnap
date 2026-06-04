@@ -30,6 +30,7 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_receive.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 
@@ -71,6 +72,12 @@ class ReplyTarget {
     required this.preview,
     required this.isMe,
   });
+}
+
+/// Compact display form for a bech32 address: first 6 + last 4.
+String _truncateAddress(String addr) {
+  if (addr.length <= 12) return addr;
+  return '${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}';
 }
 
 /// Safety cap on how far a peer's claimed receive index may be ahead
@@ -265,6 +272,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   _pendingSignRequest;
   ({AccessStructureRef asRef, UnsignedTx unsignedTx, List<DeviceId> devices})?
   _pendingTxSignRequest;
+  ({int index, String address})? _pendingReceiveAttachment;
 
   NostrContext? _nostrContext;
   PublicKey get _myPubkey => _nostrContext!.myPubkey;
@@ -1007,6 +1015,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             onTapAvatar: card.isMe
                 ? null
                 : () => _showMemberProfile(card.author),
+            onOpen: () => _openReceivePage(card),
           ),
         };
         if (!showDateDivider) return child;
@@ -1453,6 +1462,8 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     if (testMessage == null || testMessage.trim().isEmpty) return;
 
     setState(() {
+      _pendingTxSignRequest = null;
+      _pendingReceiveAttachment = null;
       _pendingSignRequest = (
         asRef: widget.accessStructureRef,
         testMessage: testMessage.trim(),
@@ -1462,95 +1473,42 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     _inputFocusNode.requestFocus();
   }
 
-  Future<void> _proposeReceiveAddress() async {
+  void _proposeReceiveAddress() {
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null || _client == null) return;
 
     final info = walletCtx.superWallet.nextAddress(
       masterAppkey: walletCtx.masterAppkey,
     );
-    final memoController = TextEditingController();
-
-    final share = await showBottomSheetOrDialog<bool>(
-      context,
-      title: const Text('Share a receive address'),
-      builder: (sheetContext, scrollController) {
-        final theme = Theme.of(sheetContext);
-        return ListView(
-          controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          children: [
-            Text(
-              'Address #${info.index}',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: SelectableText(
-                info.address.toString(),
-                style: const TextStyle(fontFamily: 'monospace'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: memoController,
-              decoration: const InputDecoration(
-                labelText: 'What is this for? (optional)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(sheetContext, false),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: () => Navigator.pop(sheetContext, true),
-                  icon: const Icon(Icons.send_rounded),
-                  label: const Text('Copy & share'),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-    if (share != true || !mounted) return;
-
-    final addressStr = info.address.toString();
-    copyToClipboard(addressStr);
-
-    final nsec = await NostrContext.of(context).ensureIdentity(context);
-    if (nsec == null || !mounted) return;
-
-    try {
-      await _client!.sendReceiveAddress(
-        accessStructureId: widget.accessStructureRef.accessStructureId,
-        nsec: nsec,
-        derivationIndex: info.index,
-        address: addressStr,
-        memo: memoController.text.trim(),
+    setState(() {
+      _pendingSignRequest = null;
+      _pendingTxSignRequest = null;
+      _pendingReceiveAttachment = (
+        index: info.index,
+        address: info.address.toString(),
       );
-      // Optimistic ReceiveAddress event already emitted by Rust;
-      // markAddressShared happens on MessageSent.
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to send: $e')));
-    }
+    });
+    _inputFocusNode.requestFocus();
+  }
+
+  /// Deep-link from a sent + verified receive card into the canonical
+  /// `ReceivePage` for that address index. Reuses local-receive UX
+  /// (copy, verify on device, tx history) instead of duplicating it.
+  Future<void> _openReceivePage(ReceiveAddressCardModel card) async {
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return;
+    await showBottomSheetOrDialog(
+      context,
+      title: const Text('Receive'),
+      builder: (_, scrollController) => walletCtx.wrap(
+        ReceivePage(
+          wallet: walletCtx.wallet,
+          txStream: walletCtx.txStream,
+          derivationIndex: card.derivationIndex,
+          scrollController: scrollController,
+        ),
+      ),
+    );
   }
 
   Future<void> _markAddressSharedFor(ReceiveAddressCardModel card) async {
@@ -1651,6 +1609,8 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           remoteSigning: true,
           onTxReady: (unsignedTx, selectedDevices) {
             setState(() {
+              _pendingSignRequest = null;
+              _pendingReceiveAttachment = null;
               _pendingTxSignRequest = (
                 asRef: asRef,
                 unsignedTx: unsignedTx,
@@ -1666,9 +1626,17 @@ class _ChatPageBodyState extends State<ChatPageBody> {
 
   Future<void> _sendMessage() async {
     final content = _messageController.text.trim();
+    // Single-attachment invariant: at most one of these is non-null;
+    // producers enforce mutual exclusion when they set their own.
     final pending = _pendingSignRequest;
     final pendingTx = _pendingTxSignRequest;
-    if (content.isEmpty && pending == null && pendingTx == null) return;
+    final pendingReceive = _pendingReceiveAttachment;
+    if (content.isEmpty &&
+        pending == null &&
+        pendingTx == null &&
+        pendingReceive == null) {
+      return;
+    }
     if (_client == null) return;
 
     final nsec = await NostrContext.of(context).ensureIdentity(context);
@@ -1679,6 +1647,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       _replyingTo = null;
       _pendingSignRequest = null;
       _pendingTxSignRequest = null;
+      _pendingReceiveAttachment = null;
     });
 
     try {
@@ -1718,6 +1687,14 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             nsec: nsec,
           );
         }
+      } else if (pendingReceive != null) {
+        await _client!.sendReceiveAddress(
+          accessStructureId: widget.accessStructureId,
+          nsec: nsec,
+          derivationIndex: pendingReceive.index,
+          address: pendingReceive.address,
+          memo: content,
+        );
       } else {
         await _client!.sendMessage(
           accessStructureId: widget.accessStructureId,
@@ -1940,7 +1917,8 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     final hasAttachment =
         _replyingTo != null ||
         _pendingSignRequest != null ||
-        _pendingTxSignRequest != null;
+        _pendingTxSignRequest != null ||
+        _pendingReceiveAttachment != null;
 
     return Container(
       color: hasAttachment ? theme.colorScheme.surface : Colors.transparent,
@@ -2121,6 +2099,69 @@ class _ChatPageBodyState extends State<ChatPageBody> {
                       icon: const Icon(Icons.close, size: 18),
                       onPressed: () =>
                           setState(() => _pendingTxSignRequest = null),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+            if (_pendingReceiveAttachment != null)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer.withValues(
+                    alpha: 0.5,
+                  ),
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 32,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const Icon(Icons.call_received_rounded, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Receive address',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.secondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '#${_pendingReceiveAttachment!.index} · '
+                            '${_truncateAddress(_pendingReceiveAttachment!.address)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () =>
+                          setState(() => _pendingReceiveAttachment = null),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                     ),
@@ -3437,6 +3478,7 @@ class _ReceiveAddressCard extends StatelessWidget {
   final VoidCallback onApplyAnyway;
   final VoidCallback? onRetry;
   final VoidCallback? onTapAvatar;
+  final VoidCallback? onOpen;
 
   const _ReceiveAddressCard({
     required this.card,
@@ -3446,11 +3488,18 @@ class _ReceiveAddressCard extends StatelessWidget {
     required this.onApplyAnyway,
     this.onRetry,
     this.onTapAvatar,
+    this.onOpen,
   });
 
   bool get _outOfWindow =>
       localNextIndex != null &&
       card.derivationIndex > localNextIndex! + _receiveIndexLookahead;
+
+  /// Only deep-link when the message is sent (not pending or failed)
+  /// AND verifies locally. We don't want a tap to open ReceivePage at
+  /// a derivation index that doesn't actually belong to this wallet.
+  bool get _canOpen =>
+      onOpen != null && card.status == MessageStatus.sent && verified;
 
   @override
   Widget build(BuildContext context) {
@@ -3468,95 +3517,88 @@ class _ReceiveAddressCard extends StatelessWidget {
           child: Material(
             color: tileColor,
             borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      InkWell(
-                        onTap: onTapAvatar,
-                        child: NostrAvatar.small(
-                          profile: profile,
-                          pubkey: card.author,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          isMe
-                              ? 'You shared a receive address'
-                              : '${getDisplayName(profile, card.author)} shared a receive address',
-                          style: theme.textTheme.labelLarge,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Chip(
-                        avatar: const Icon(Icons.tag_rounded, size: 14),
-                        label: Text('#${card.derivationIndex}'),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  InkWell(
-                    onTap: () => copyToClipboard(card.address),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: SelectableText(
-                              card.address,
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                              ),
-                            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: _canOpen ? onOpen : null,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        InkWell(
+                          onTap: onTapAvatar,
+                          child: NostrAvatar.small(
+                            profile: profile,
+                            pubkey: card.author,
                           ),
-                          const SizedBox(width: 6),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isMe
+                                ? 'You shared a receive address'
+                                : '${getDisplayName(profile, card.author)} shared a receive address',
+                            style: theme.textTheme.labelLarge,
+                          ),
+                        ),
+                        if (_canOpen)
                           Icon(
-                            Icons.copy_rounded,
-                            size: 16,
+                            Icons.chevron_right_rounded,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
-                        ],
-                      ),
+                      ],
                     ),
-                  ),
-                  if (card.memo.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      card.memo,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontStyle: FontStyle.italic,
-                        color: theme.colorScheme.onSurfaceVariant,
+                    Row(
+                      children: [
+                        Text(
+                          '#${card.derivationIndex}',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '  ·  ',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Flexible(
+                          child: Text(
+                            _truncateAddress(card.address),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontFamily: 'monospace',
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (card.memo.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        card.memo,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontStyle: FontStyle.italic,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
+                    ],
+                    const SizedBox(height: 8),
+                    _ReceiveStatusRow(
+                      card: card,
+                      verified: verified,
+                      outOfWindow: _outOfWindow,
+                      localNextIndex: localNextIndex,
+                      onApplyAnyway: onApplyAnyway,
+                      onRetry: onRetry,
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  _ReceiveStatusRow(
-                    card: card,
-                    verified: verified,
-                    outOfWindow: _outOfWindow,
-                    localNextIndex: localNextIndex,
-                    onApplyAnyway: onApplyAnyway,
-                    onRetry: onRetry,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
