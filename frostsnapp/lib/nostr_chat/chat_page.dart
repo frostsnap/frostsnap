@@ -243,6 +243,14 @@ class TimelineTransaction extends TimelineItem {
   final Transaction tx;
   final TxTimelineKind kind;
   final SigningRequestState? signingState;
+
+  /// When set, the tx pays to an address that was previously shared
+  /// via a receive-address message; the mempool tx card renders a
+  /// quote pointing back to that message. Only populated for the
+  /// `mempool` kind — confirmed renders a minimal pill that has no
+  /// room for a quote header, and needsBroadcast is outgoing.
+  final EventId? quotedReceiveMessageId;
+
   @override
   final DateTime timestamp;
   TimelineTransaction(
@@ -250,6 +258,7 @@ class TimelineTransaction extends TimelineItem {
     required this.kind,
     required int timestampSecs,
     this.signingState,
+    this.quotedReceiveMessageId,
   }) : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
 }
 
@@ -411,6 +420,10 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             tx,
             kind: TxTimelineKind.mempool,
             timestampSecs: lastSeen,
+            quotedReceiveMessageId: _resolveReceiveQuoteFor(
+              tx,
+              TxTimelineKind.mempool,
+            ),
           ),
         );
         changed = true;
@@ -1014,6 +1027,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             :final kind,
             :final timestamp,
             :final signingState,
+            :final quotedReceiveMessageId,
           ) =>
             switch (kind) {
               TxTimelineKind.needsBroadcast => _TransactionCard(
@@ -1031,6 +1045,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
                 timestamp: timestamp,
                 isHighlighted: _highlightedId == tx.txid,
                 onTap: () => _showTxDetails(tx),
+                quote: _buildReceiveQuoteFor(quotedReceiveMessageId),
               ),
               TxTimelineKind.confirmed => _TxConfirmedLine(
                 tx: tx,
@@ -1074,6 +1089,54 @@ class _ChatPageBodyState extends State<ChatPageBody> {
 
   void _scrollToAndHighlight(EventId eventId) {
     _scrollToByStringId(eventId.toHex());
+  }
+
+  /// Build a `_QuoteHeader` for a tx that quotes the receive-address
+  /// share message it pays to. Returns null when the resolved id is
+  /// null or the card model is no longer in the timeline (rare).
+  Widget? _buildReceiveQuoteFor(EventId? id) {
+    if (id == null) return null;
+    final card = _receiveCardById[id];
+    if (card == null) return null;
+    final label = card.isMe
+        ? 'You'
+        : getDisplayName(_getProfile(card.author), card.author);
+    final body = card.memo.isEmpty
+        ? 'Address #${card.derivationIndex}'
+        : card.memo;
+    return _QuoteHeader(
+      label: label,
+      body: body,
+      bodyIcon: Icons.call_received_rounded,
+      onTap: () => _scrollToAndHighlight(id),
+    );
+  }
+
+  /// Resolve the receive-address share message (if any) that announced
+  /// one of this tx's owned OUTPUTS. Only returns non-null for the
+  /// `mempool` kind — confirmed is a minimal pill that doesn't render
+  /// the quote, and `needsBroadcast` is outgoing-by-construction so
+  /// the filter already excludes it. Uses `tx.recipients()` (outputs
+  /// only) instead of `tx.isMine` (which mixes input and output
+  /// scripts). Scans the timeline in reverse for the MOST RECENT
+  /// receive-share whose derivation index matches an owned output.
+  EventId? _resolveReceiveQuoteFor(Transaction tx, TxTimelineKind kind) {
+    if (kind != TxTimelineKind.mempool) return null;
+    if ((tx.balanceDelta() ?? 0) <= 0) return null;
+    final myOutputIndices = <int>{};
+    for (final r in tx.recipients()) {
+      if (r.isMine && r.derivationIndex != null) {
+        myOutputIndices.add(r.derivationIndex!);
+      }
+    }
+    if (myOutputIndices.isEmpty) return null;
+    for (final item in _timeline.reversed) {
+      if (item is TimelineReceiveAddress &&
+          myOutputIndices.contains(item.card.derivationIndex)) {
+        return item.card.messageId;
+      }
+    }
+    return null;
   }
 
   void _scrollToByStringId(String id) {
@@ -2405,6 +2468,12 @@ class _TransactionCard extends StatefulWidget {
   final VoidCallback onTap;
   final Future<void> Function()? onBroadcast;
 
+  /// Optional quote header rendered above the tx body — used to
+  /// link an incoming tx back to the receive-address share message
+  /// that announced it. The card max-width is capped so a 2-line
+  /// memo doesn't balloon the card.
+  final Widget? quote;
+
   const _TransactionCard({
     super.key,
     required this.tx,
@@ -2412,6 +2481,7 @@ class _TransactionCard extends StatefulWidget {
     this.isHighlighted = false,
     required this.onTap,
     this.onBroadcast,
+    this.quote,
   });
 
   @override
@@ -2446,100 +2516,116 @@ class _TransactionCardState extends State<_TransactionCard> {
         : 'Receiving';
 
     final baseColor = theme.colorScheme.surfaceContainerHighest;
+    final body = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          isSend ? Icons.north_east : Icons.south_east,
+          size: 18,
+          color: accentColor,
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                statusText,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SatoshiText(
+                    value: txDetails.netValue,
+                    showSign: true,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                  const SizedBox(width: 12),
+                  if (widget.onBroadcast != null)
+                    _broadcasting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : FilledButton.tonal(
+                            onPressed: () async {
+                              setState(() => _broadcasting = true);
+                              try {
+                                await widget.onBroadcast!();
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _broadcasting = false);
+                                }
+                              }
+                            },
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              minimumSize: const Size(0, 28),
+                            ),
+                            child: const Text('Broadcast'),
+                          )
+                  else
+                    Text(
+                      _formatTime(widget.timestamp),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
     return Align(
       alignment: Alignment.center,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: widget.isHighlighted
-                  ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
-                  : baseColor,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: widget.isHighlighted
-                  ? [
-                      BoxShadow(
-                        color: theme.colorScheme.primary.withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : [],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  isSend ? Icons.north_east : Icons.south_east,
-                  size: 18,
-                  color: accentColor,
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        statusText,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SatoshiText(
-                            value: txDetails.netValue,
-                            showSign: true,
-                            style: theme.textTheme.bodyLarge,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: widget.isHighlighted
+                    ? Color.lerp(baseColor, theme.colorScheme.primary, 0.2)
+                    : baseColor,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: widget.isHighlighted
+                    ? [
+                        BoxShadow(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.4,
                           ),
-                          const SizedBox(width: 12),
-                          if (widget.onBroadcast != null)
-                            _broadcasting
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : FilledButton.tonal(
-                                    onPressed: () async {
-                                      setState(() => _broadcasting = true);
-                                      try {
-                                        await widget.onBroadcast!();
-                                      } finally {
-                                        if (mounted)
-                                          setState(() => _broadcasting = false);
-                                      }
-                                    },
-                                    style: FilledButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                      ),
-                                      minimumSize: const Size(0, 28),
-                                    ),
-                                    child: const Text('Broadcast'),
-                                  )
-                          else
-                            Text(
-                              _formatTime(widget.timestamp),
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontSize: 10,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                          blurRadius: 10,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : [],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.quote != null) ...[
+                    widget.quote!,
+                    const SizedBox(height: 6),
+                  ],
+                  body,
+                ],
+              ),
             ),
           ),
         ),
@@ -3653,23 +3739,25 @@ class _ReceiveAttachment extends StatelessWidget {
 
 /// Inline quoted reply for a chat-text bubble. Mirrors the original
 /// `_MessageBubble._buildReplyQuote` so the shape is preserved.
-class _ChatReplyQuote extends StatelessWidget {
-  final ChatMessage target;
-  final NostrProfile? targetProfile;
+/// Canonical "quoted-thing" header — left-bar accent, author label,
+/// 2-line body with optional leading icon. Used both for chat reply
+/// quotes and tx-card → receive-share quotes.
+class _QuoteHeader extends StatelessWidget {
+  final String label;
+  final String body;
+  final IconData? bodyIcon;
   final VoidCallback onTap;
 
-  const _ChatReplyQuote({
-    required this.target,
-    required this.targetProfile,
+  const _QuoteHeader({
+    required this.label,
+    required this.body,
+    this.bodyIcon,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label = target.isMe
-        ? 'You'
-        : getDisplayName(targetProfile, target.author);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -3694,9 +3782,9 @@ class _ChatReplyQuote extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (target.quoteIcon != null) ...[
+                if (bodyIcon != null) ...[
                   Icon(
-                    target.quoteIcon,
+                    bodyIcon,
                     size: 14,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -3704,7 +3792,7 @@ class _ChatReplyQuote extends StatelessWidget {
                 ],
                 Flexible(
                   child: Text(
-                    target.content,
+                    body,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -3717,6 +3805,28 @@ class _ChatReplyQuote extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ChatReplyQuote extends StatelessWidget {
+  final ChatMessage target;
+  final NostrProfile? targetProfile;
+  final VoidCallback onTap;
+
+  const _ChatReplyQuote({
+    required this.target,
+    required this.targetProfile,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _QuoteHeader(
+      label: target.isMe ? 'You' : getDisplayName(targetProfile, target.author),
+      body: target.content,
+      bodyIcon: target.quoteIcon,
+      onTap: onTap,
     );
   }
 }
