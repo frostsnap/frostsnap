@@ -373,7 +373,9 @@ class LobbyAndKeygenController extends ChangeNotifier {
     return const [];
   }
 
-  Future<RemoteKeygenResult?> confirmMatch({required SymmetricKey encryptionKey}) async {
+  Future<RemoteKeygenResult?> confirmMatch({
+    required SymmetricKey encryptionKey,
+  }) async {
     final session = _keygenSession;
     if (session == null || _confirming) return null;
     _confirming = true;
@@ -984,7 +986,11 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
       builder: (ctx) => ValueListenableBuilder<String>(
         valueListenable: status,
         builder: (ctx, text, _) => AlertDialog(
-          icon: const CircularProgressIndicator(),
+          icon: const SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(strokeWidth: 3),
+          ),
           title: const Text('Setting up signing channel…'),
           content: Text(text),
         ),
@@ -1009,12 +1015,10 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
               .firstWhere((event) => event is ChannelEvent_ChannelState)
               .timeout(const Duration(seconds: 30));
           status.value = 'Enabling remote mode…';
-          await NostrContext.of(context)
-              .nostrSettings
-              .setCoordinationUiEnabled(
-                accessStructureRef: asRef,
-                enabled: true,
-              );
+          await NostrContext.of(context).nostrSettings.setCoordinationUiEnabled(
+            accessStructureRef: asRef,
+            enabled: true,
+          );
           return;
         } catch (e) {
           debugPrint('Channel setup attempt failed: $e — retrying');
@@ -1112,7 +1116,10 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
       final result = await _ctrl.confirmMatch(encryptionKey: encryptionKey);
       if (result != null) {
-        await _dismissOverlayThenPop(result.accessStructureRef, result.participants);
+        await _dismissOverlayThenPop(
+          result.accessStructureRef,
+          result.participants,
+        );
       }
     } catch (e) {
       _remoteFinalizeInFlight = false;
