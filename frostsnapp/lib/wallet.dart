@@ -198,6 +198,7 @@ class WalletHome extends StatelessWidget {
       },
     );
 
+    final theme = Theme.of(context);
     return Row(
       children: [
         AnimatedSize(
@@ -205,6 +206,12 @@ class WalletHome extends StatelessWidget {
           curve: Curves.easeInOutCubicEmphasized,
           child: isNarrowDisplay ? const SizedBox.shrink() : drawer,
         ),
+        if (!isNarrowDisplay)
+          VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+          ),
         Flexible(child: scaffold),
       ],
     );
@@ -1050,7 +1057,12 @@ class WalletDrawer extends StatelessWidget {
           ),
         ]);
 
-        final drawerColor = theme.colorScheme.surface;
+        // surfaceContainerLow gives the sidebar a subtle tonal step
+        // away from the main content's `surface`, in line with M3's
+        // navigation-drawer recommendation. Distinguishes the
+        // navigation rail from the chat/wallet body without a heavy
+        // background shift.
+        final drawerColor = theme.colorScheme.surfaceContainerLow;
 
         final drawer = NavigationDrawer(
           backgroundColor: drawerColor,
