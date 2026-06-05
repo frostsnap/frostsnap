@@ -96,7 +96,7 @@ class _WalletMoreState extends State<WalletMore> {
             ListTile(
               contentPadding: contentPadding,
               tileColor: tileColor,
-              shape: tileShapeEnd,
+              shape: tileShape,
               title: Text('Message'),
               subtitle: Text('Sign an arbitrary message'),
               leading: Icon(Icons.edit_note),
@@ -108,6 +108,21 @@ class _WalletMoreState extends State<WalletMore> {
                         child: SignMessagePage(frostKey: frostKey),
                       );
                     },
+            ),
+          if (isDeveloperMode)
+            ListTile(
+              contentPadding: contentPadding,
+              tileColor: tileColor,
+              shape: tileShapeEnd,
+              title: Text('Verify message'),
+              subtitle: Text('Verify a BIP-322 signed message'),
+              leading: Icon(Icons.verified_outlined),
+              onTap: () async {
+                await MaybeFullscreenDialog.show(
+                  context: context,
+                  child: Bip322VerifyPage(),
+                );
+              },
             ),
         ],
       ),
@@ -157,6 +172,20 @@ class _WalletMoreState extends State<WalletMore> {
                       ),
                     );
                   },
+          ),
+          ListTile(
+            contentPadding: contentPadding,
+            tileColor: tileColor,
+            shape: tileShape,
+            title: Text('Addresses'),
+            subtitle: Text('Browse this wallet\'s addresses'),
+            leading: Icon(Icons.list_alt),
+            onTap: () async {
+              await MaybeFullscreenDialog.show(
+                context: context,
+                child: walletCtx.wrap(AddressesPage()),
+              );
+            },
           ),
           ListTile(
             contentPadding: contentPadding,

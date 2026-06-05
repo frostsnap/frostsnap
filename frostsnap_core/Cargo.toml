@@ -26,6 +26,10 @@ rusqlite = { workspace = true, optional = true }
 rand = "0.8"
 proptest-state-machine = "0.3"
 proptest = "=1.6.0"
+# Independent BIP-322 implementation used only to cross-verify our signatures in tests.
+# Dev-dependencies are never compiled into firmware, so this does not affect no_std/deterministic builds.
+bip322 = "0.0.10"
+bitcoin = { workspace = true, features = ["std", "rand-std"] }
 
 [features]
 std = ["tracing?/std", "schnorr_fun/std"]

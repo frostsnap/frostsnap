@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -10,6 +10,7 @@ import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'hex.dart';
@@ -294,6 +295,332 @@ Future<void> _showSignatureDialog(
       );
     },
   );
+}
+
+/// BIP-322 message signing under a specific wallet address.
+class Bip322SignPage extends StatelessWidget {
+  final FrostKey frostKey;
+  final AddressInfo address;
+
+  const Bip322SignPage({
+    super.key,
+    required this.frostKey,
+    required this.address,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Sign message'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(
+          child: Bip322SignForm(frostKey: frostKey, address: address),
+        ),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+
+    return SafeArea(child: scrollView);
+  }
+}
+
+class Bip322SignForm extends StatefulWidget {
+  final FrostKey frostKey;
+  final AddressInfo address;
+
+  const Bip322SignForm({
+    super.key,
+    required this.frostKey,
+    required this.address,
+  });
+
+  @override
+  State<Bip322SignForm> createState() => _Bip322SignFormState();
+}
+
+class _Bip322SignFormState extends State<Bip322SignForm> {
+  final _messageController = TextEditingController();
+  Set<DeviceId> selected = deviceIdSet([]);
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accessStructure = widget.frostKey.accessStructures()[0];
+    final threshold = accessStructure.threshold();
+    final buttonReady =
+        selected.length == threshold && _messageController.text.isNotEmpty;
+
+    Future<void> Function()? submitButtonOnPressed;
+    if (buttonReady) {
+      submitButtonOnPressed = () async {
+        final message = _messageController.text;
+        final signingStream = coord
+            .startSigningBip322(
+              accessStructureRef: accessStructure.accessStructureRef(),
+              devices: selected.toList(),
+              message: message,
+              addressIndex: widget.address.index,
+              external_: widget.address.external,
+            )
+            .toBehaviorSubject();
+
+        await signBip322WorkflowDialog(
+          context,
+          signingStream,
+          message,
+          widget.address.address.toString(),
+        );
+        if (context.mounted) {
+          Navigator.pop(context);
+        }
+      };
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 24,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Card.outlined(
+            child: ListTile(
+              leading: Text(
+                '#${widget.address.index}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontFamily: monospaceTextStyle.fontFamily,
+                ),
+              ),
+              title: Text(
+                spacedHex(widget.address.address.toString()),
+                style: monospaceTextStyle,
+              ),
+              subtitle: Text('Signing as this address'),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: _messageController,
+            minLines: 1,
+            maxLines: 4,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(labelText: 'Message to sign'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
+          ),
+        ),
+        SigningDeviceSelector(
+          frostKey: widget.frostKey,
+          onChanged: (selectedDevices) => setState(() {
+            selected = selectedDevices;
+          }),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: FilledButton(
+            onPressed: submitButtonOnPressed,
+            child: Text('Submit'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Future<bool> signBip322WorkflowDialog(
+  BuildContext context,
+  Stream<SigningState> signingStream,
+  String message,
+  String address,
+) async {
+  final signatures = await showSigningProgressDialog(
+    context,
+    signingStream,
+    Text("signing ‘$message’"),
+  );
+  if (signatures != null && context.mounted) {
+    final encoded = bip322SignatureToString(signature: signatures[0]);
+    await _showBip322SignatureDialog(context, address, message, encoded);
+  }
+  return signatures == null;
+}
+
+Future<void> _showBip322SignatureDialog(
+  BuildContext context,
+  String address,
+  String message,
+  String signature,
+) {
+  Widget field(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(label, style: Theme.of(context).textTheme.labelLarge),
+            ),
+            IconButton(
+              tooltip: 'Copy',
+              icon: Icon(Icons.copy_rounded, size: 18),
+              onPressed: () => Clipboard.setData(ClipboardData(text: value)),
+            ),
+          ],
+        ),
+        SelectableText(value, style: monospaceTextStyle),
+      ],
+    );
+  }
+
+  return showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text("Signing success"),
+        content: SizedBox(
+          width: Platform.isAndroid ? double.maxFinite : 400.0,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
+              children: [
+                field('Address', address),
+                field('Message', message),
+                field('Signature', signature),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Done'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// A tool to verify a BIP-322 signed message.
+class Bip322VerifyPage extends StatefulWidget {
+  const Bip322VerifyPage({super.key});
+
+  @override
+  State<Bip322VerifyPage> createState() => _Bip322VerifyPageState();
+}
+
+class _Bip322VerifyPageState extends State<Bip322VerifyPage> {
+  final _addressController = TextEditingController();
+  final _messageController = TextEditingController();
+  final _signatureController = TextEditingController();
+  bool? _result;
+
+  @override
+  void dispose() {
+    _addressController.dispose();
+    _messageController.dispose();
+    _signatureController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final body = Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 16,
+        children: [
+          Text('Verify a BIP-322 signed message'),
+          TextField(
+            controller: _addressController,
+            decoration: InputDecoration(labelText: 'Address'),
+          ),
+          TextField(
+            controller: _messageController,
+            minLines: 1,
+            maxLines: 4,
+            decoration: InputDecoration(labelText: 'Message'),
+          ),
+          TextField(
+            controller: _signatureController,
+            minLines: 1,
+            maxLines: 4,
+            decoration: InputDecoration(labelText: 'Signature (base64)'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final valid = bip322Verify(
+                address: _addressController.text.trim(),
+                message: _messageController.text,
+                signature: _signatureController.text.trim(),
+              );
+              setState(() => _result = valid);
+            },
+            child: Text('Verify'),
+          ),
+          if (_result != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              spacing: 8,
+              children: [
+                Icon(
+                  _result! ? Icons.check_circle : Icons.cancel,
+                  color: _result! ? Colors.green : theme.colorScheme.error,
+                ),
+                Text(
+                  _result! ? 'Valid signature' : 'Invalid signature',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Verify message'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(child: body),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+    return SafeArea(child: scrollView);
+  }
 }
 
 class DeviceSigningProgress extends StatelessWidget {

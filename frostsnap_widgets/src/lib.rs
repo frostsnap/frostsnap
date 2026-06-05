@@ -16,6 +16,7 @@ pub mod palette;
 
 // Widget modules
 pub mod address_display;
+pub mod bip322_confirm;
 pub mod animation_speed;
 pub mod backup;
 pub mod bitmap;
@@ -88,6 +89,7 @@ pub use tinybmp;
 
 // Re-export all widget items
 pub use address_display::{AddressDisplay, AddressWithIndex};
+pub use bip322_confirm::Bip322Confirm;
 pub use backup::*;
 pub use checkmark::*;
 pub use cursor::*;

@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
@@ -24,12 +27,18 @@ class AddressList extends StatefulWidget {
   final Function(BuildContext, AddressInfo) onTap;
   final int? scrollToDerivationIndex;
 
+  /// Whether to pop the current route before invoking [onTap]. This is the
+  /// behaviour wanted when the list is shown inside a picker bottom sheet, but
+  /// not when it is the content of a permanent page.
+  final bool popOnTap;
+
   const AddressList({
     super.key,
     required this.onTap,
     this.showUsed = false,
     this.scrollToDerivationIndex,
     this.scrollController,
+    this.popOnTap = true,
   });
 
   @override
@@ -113,7 +122,7 @@ class _AddressListState extends State<AddressList> {
     return ListTile(
       key: key,
       onTap: () {
-        Navigator.pop(context);
+        if (widget.popOnTap) Navigator.pop(context);
         widget.onTap(context, addr);
       },
       tileColor:
@@ -466,6 +475,29 @@ class _ReceiverPageState extends State<ReceivePage> {
             ],
           ),
         ),
+        if ((SettingsContext.of(context)?.settings.isInDeveloperMode() ??
+                false) &&
+            _address != null &&
+            wallet.frostKey() != null)
+          Padding(
+            padding: EdgeInsets.only(left: 20, right: 20, bottom: 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () async {
+                  await MaybeFullscreenDialog.show(
+                    context: context,
+                    child: Bip322SignPage(
+                      frostKey: wallet.frostKey()!,
+                      address: _address!,
+                    ),
+                  );
+                },
+                label: Text('Sign a message with this address'),
+                icon: Icon(Icons.edit_note),
+              ),
+            ),
+          ),
       ],
     );
     final activeCard = Card.outlined(

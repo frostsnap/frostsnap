@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_receive.dart';
@@ -61,6 +65,9 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
     ];
 
     if (result.address != null) {
+      final isDeveloperMode =
+          SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
+      final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
       children.addAll([
         Text(
           "This address belongs to us at ${result.address?.derivationPath ?? ""}",
@@ -81,6 +88,22 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
           ),
           child: const Text("Address info"),
         ),
+        if (isDeveloperMode && frostKey != null) ...[
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.edit_note),
+            onPressed: () async {
+              await MaybeFullscreenDialog.show(
+                context: context,
+                child: Bip322SignPage(
+                  frostKey: frostKey,
+                  address: result.address!,
+                ),
+              );
+            },
+            label: const Text('Sign message'),
+          ),
+        ],
       ]);
     } else {
       if (result.depth < 10000) {
@@ -194,4 +217,51 @@ class SearchResult {
   final AddressInfo? address;
 
   const SearchResult({required this.depth, required this.address});
+}
+
+/// A permanent, first-class view of the wallet's addresses. Tapping an address
+/// opens the receive view for it (copy / QR / verify / sign a message).
+class AddressesPage extends StatelessWidget {
+  const AddressesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Addresses'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(
+          child: AddressList(
+            showUsed: true,
+            popOnTap: false,
+            onTap: (context, addr) => _openReceive(context, addr),
+          ),
+        ),
+      ],
+    );
+    return SafeArea(child: scrollView);
+  }
+
+  void _openReceive(BuildContext context, AddressInfo addr) {
+    final walletCtx = WalletContext.of(context)!;
+    showBottomSheetOrDialog(
+      context,
+      title: Text('Receive'),
+      builder: (context, scrollController) => walletCtx.wrap(
+        ReceivePage(
+          wallet: walletCtx.wallet,
+          txStream: walletCtx.txStream,
+          scrollController: scrollController,
+          derivationIndex: addr.index,
+        ),
+      ),
+    );
+  }
 }

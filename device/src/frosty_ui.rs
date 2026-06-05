@@ -247,6 +247,34 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                     phase: Some(phase),
                                 }
                             }
+                            frostsnap_core::SignTask::Bip322 {
+                                message,
+                                bip32_path,
+                                network,
+                            } => {
+                                use frostsnap_core::bitcoin_transaction::LocalSpk;
+                                use frostsnap_widgets::Bip322Confirm;
+
+                                let spk = LocalSpk {
+                                    master_appkey: sign_task.master_appkey,
+                                    bip32_path: *bip32_path,
+                                }
+                                .spk();
+                                let address =
+                                    bitcoin::Address::from_script(spk.as_script(), *network)
+                                        .expect("p2tr spk has address form");
+
+                                let widget = Box::new(Bip322Confirm::new(
+                                    message.clone(),
+                                    &address,
+                                    bip32_path.index,
+                                ));
+
+                                WidgetTree::SignBip322Prompt {
+                                    widget,
+                                    phase: Some(phase),
+                                }
+                            }
                             frostsnap_core::SignTask::Nostr { .. } => {
                                 // Nostr signing not implemented yet
                                 let mut standby = Standby::new();
@@ -448,6 +476,16 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 }
             }
             WidgetTree::SignTestPrompt { widget, phase } => {
+                if widget.is_confirmed() {
+                    if let Some(phase_data) = phase.take() {
+                        return Some(UiEvent::SigningConfirm { phase: phase_data });
+                    }
+                }
+                if phase.is_none() && widget.is_finished() {
+                    self.go_to_default();
+                }
+            }
+            WidgetTree::SignBip322Prompt { widget, phase } => {
                 if widget.is_confirmed() {
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });

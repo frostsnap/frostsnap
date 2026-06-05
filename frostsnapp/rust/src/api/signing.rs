@@ -51,6 +51,10 @@ pub enum SigningDetails {
         content: String,
         hash_bytes: String,
     },
+    Bip322 {
+        message: String,
+        index: u32,
+    },
 }
 
 #[frb(mirror(SigningState), unignore)]
@@ -108,6 +112,13 @@ impl ActiveSignSessionExt for ActiveSignSession {
                 id: event.id,
                 content: event.content,
                 hash_bytes: event.hash_bytes.to_lower_hex_string(),
+            },
+            WireSignTask::Bip322 {
+                message,
+                bip32_path,
+            } => SigningDetails::Bip322 {
+                message,
+                index: bip32_path.index,
             },
             WireSignTask::BitcoinTransaction(tx_temp) => {
                 let raw_tx = tx_temp.to_rust_bitcoin_tx();
@@ -302,6 +313,37 @@ impl Coordinator {
         Ok(())
     }
 
+    /// Start a BIP-322 "simple" message-signing session under a specific address.
+    ///
+    /// `address_index` + `external` select the address (external = receive keychain,
+    /// internal = change keychain) whose key signs the message.
+    pub fn start_signing_bip322(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        devices: Vec<DeviceId>,
+        message: String,
+        address_index: u32,
+        external: bool,
+        sink: StreamSink<SigningState>,
+    ) -> Result<()> {
+        use frostsnap_core::tweak::BitcoinBip32Path;
+        let bip32_path = if external {
+            BitcoinBip32Path::external(address_index)
+        } else {
+            BitcoinBip32Path::internal(address_index)
+        };
+        self.0.start_signing(
+            access_structure_ref,
+            devices.into_iter().collect(),
+            WireSignTask::Bip322 {
+                message,
+                bip32_path,
+            },
+            SinkWrap(sink),
+        )?;
+        Ok(())
+    }
+
     pub fn start_signing_tx(
         &self,
         access_structure_ref: AccessStructureRef,
@@ -435,6 +477,28 @@ impl Coordinator {
     pub fn sub_signing_session_signals(&self, key_id: KeyId, sink: StreamSink<()>) {
         self.0.sub_signing_session_signals(key_id, SinkWrap(sink))
     }
+}
+
+/// Encode a finished FROST signature as a BIP-322 "simple" signature string
+/// (base64 of the consensus-encoded witness containing the single 65-byte
+/// Schnorr signature with its SIGHASH_ALL type byte).
+#[frb(sync)]
+pub fn bip322_signature_to_string(signature: &EncodedSignature) -> String {
+    use base64::Engine;
+    use bitcoin::consensus::Encodable;
+    let witness =
+        bitcoin::Witness::from_slice(&[frostsnap_core::bip322::witness_element(&signature.0)]);
+    let mut buffer = Vec::new();
+    witness
+        .consensus_encode(&mut buffer)
+        .expect("encoding to a Vec is infallible");
+    base64::engine::general_purpose::STANDARD.encode(buffer)
+}
+
+/// Verify a BIP-322 "simple" signature against an address and message.
+#[frb(sync)]
+pub fn bip322_verify(address: String, message: String, signature: String) -> bool {
+    bip322::verify_simple_encoded(&address, &message, &signature).is_ok()
 }
 
 #[derive(Clone, Debug)]

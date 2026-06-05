@@ -5,6 +5,7 @@
 extern crate std;
 #[cfg(feature = "coordinator")]
 pub mod coord_nonces;
+pub mod bip322;
 pub mod device_nonces;
 mod macros;
 mod map_ext;

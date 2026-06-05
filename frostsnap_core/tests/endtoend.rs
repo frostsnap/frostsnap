@@ -382,6 +382,85 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
 }
 
 #[test]
+fn signing_a_bip322_message_produces_an_externally_verifiable_signature() {
+    let n_parties = 3;
+    let threshold = 2;
+    let schnorr = Schnorr::<sha2::Sha256>::verify_only();
+    let mut test_rng = ChaCha20Rng::from_seed([7u8; 32]);
+    let mut env = TestEnv::default();
+    let mut run = Run::start_after_keygen_and_nonces(
+        n_parties,
+        threshold,
+        &mut env,
+        &mut test_rng,
+        1,
+        KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin),
+    );
+    let device_set = run.device_set();
+
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+    let key_data = run
+        .coordinator
+        .get_frost_key(access_structure_ref.key_id)
+        .unwrap();
+    let master_appkey = key_data.complete_key.master_appkey;
+
+    let message = "frostsnap signs bip322";
+    let bip32_path = BitcoinBip32Path::external(3);
+    let task = WireSignTask::Bip322 {
+        message: message.into(),
+        bip32_path,
+    };
+    let checked_task = task
+        .clone()
+        .check(master_appkey, KeyPurpose::Bitcoin(bitcoin::Network::Bitcoin))
+        .unwrap();
+
+    let set = device_set
+        .iter()
+        .choose_multiple(&mut test_rng, 2)
+        .into_iter()
+        .cloned()
+        .collect();
+
+    let session_id = run
+        .coordinator
+        .start_sign(access_structure_ref, task.clone(), &set, &mut test_rng)
+        .unwrap();
+
+    for &device_id in &set {
+        let sign_req =
+            run.coordinator
+                .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+        run.extend(sign_req);
+    }
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+
+    let signatures = env.signatures.get(&session_id).unwrap();
+    assert!(checked_task.verify_final_signatures(&schnorr, signatures));
+
+    // The FROST-produced signature must verify under an independent BIP-322
+    // implementation when wrapped in the simple witness format.
+    let spk = LocalSpk {
+        master_appkey,
+        bip32_path,
+    }
+    .spk();
+    let address = bitcoin::Address::from_script(&spk, bitcoin::Network::Bitcoin)
+        .expect("p2tr spk has address form");
+    let witness = bitcoin::Witness::from_slice(&[frostsnap_core::bip322::witness_element(
+        &signatures[0].to_bytes(),
+    )]);
+    bip322::verify_simple(&address, message, witness)
+        .expect("FROST BIP-322 signature must verify externally");
+}
+
+#[test]
 fn check_share_for_valid_share_works() {
     let n_parties = 3;
     let threshold = 2;

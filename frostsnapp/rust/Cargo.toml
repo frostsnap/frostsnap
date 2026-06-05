@@ -23,6 +23,8 @@ sha2.workspace = true
 rand = "0.8"
 time = { version = "0.3.36", features = ["formatting"] }
 bip21 = {version = "0.5.0", default-features = false}
+bip322 = "0.0.10"
+base64 = "0.22"
 futures.workspace = true
 
 [dependencies.flutter_rust_bridge]

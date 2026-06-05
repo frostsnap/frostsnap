@@ -1,4 +1,9 @@
-use crate::{bitcoin_transaction, device::KeyPurpose, tweak::AppTweak, MasterAppkey};
+use crate::{
+    bitcoin_transaction::{self, LocalSpk},
+    device::KeyPurpose,
+    tweak::{AppTweak, BitcoinBip32Path},
+    MasterAppkey,
+};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use bitcoin::hashes::Hash;
 use schnorr_fun::{Message, Schnorr, Signature};
@@ -13,6 +18,11 @@ pub enum WireSignTask {
         event: Box<crate::nostr::UnsignedEvent>,
     },
     BitcoinTransaction(bitcoin_transaction::TransactionTemplate),
+    /// Sign a human-readable message under a specific bitcoin address (BIP-322 "simple").
+    Bip322 {
+        message: String,
+        bip32_path: BitcoinBip32Path,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +35,12 @@ pub enum SignTask {
     },
     BitcoinTransaction {
         tx_template: bitcoin_transaction::TransactionTemplate,
+        network: bitcoin::Network,
+    },
+    Bip322 {
+        message: String,
+        bip32_path: BitcoinBip32Path,
+        /// Kept so the device can derive and display the address being signed under.
         network: bitcoin::Network,
     },
 }
@@ -89,6 +105,22 @@ impl WireSignTask {
                     network,
                 }
             }
+            WireSignTask::Bip322 {
+                message,
+                bip32_path,
+            } => {
+                let network = match purpose {
+                    KeyPurpose::Bitcoin(network) => network,
+                    _ => return Err(SignTaskError::WrongPurpose),
+                };
+                // No ownership check needed: the spk we sign is derived from
+                // `master_appkey` + `bip32_path`, so it is always our own key.
+                SignTask::Bip322 {
+                    message,
+                    bip32_path,
+                    network,
+                }
+            }
         };
         Ok(CheckedSignTask {
             master_appkey,
@@ -135,6 +167,21 @@ impl CheckedSignTask {
                     }
                 })
                 .collect(),
+            SignTask::Bip322 {
+                message,
+                bip32_path,
+                ..
+            } => {
+                let spk = LocalSpk {
+                    master_appkey: self.master_appkey,
+                    bip32_path: *bip32_path,
+                }
+                .spk();
+                vec![SignItem {
+                    message: crate::bip322::sighash_bytes(&spk, message).to_vec(),
+                    app_tweak: AppTweak::Bitcoin(*bip32_path),
+                }]
+            }
         }
     }
 }
