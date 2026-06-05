@@ -13,8 +13,8 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     layout::*,
     sign_prompt::SignTxPrompt,
-    AddressWithIndex, DeviceNameScreen, EraseDevice, EraseProgress, FirmwareUpgradeConfirm,
-    FirmwareUpgradeProgress, SignMessageConfirm, Standby,
+    AddressWithIndex, Bip322Confirm, DeviceNameScreen, EraseDevice, EraseProgress,
+    FirmwareUpgradeConfirm, FirmwareUpgradeProgress, SignMessageConfirm, Standby,
 };
 
 use crate::ui::FirmwareUpgradeStatus;
@@ -44,6 +44,12 @@ pub enum WidgetTree {
     /// Sign test message prompt screen
     SignTestPrompt {
         widget: Box<SignMessageConfirm>,
+        phase: Option<Box<SignPhase1>>,
+    },
+
+    /// Sign BIP-322 message prompt screen
+    SignBip322Prompt {
+        widget: Box<Bip322Confirm>,
         phase: Option<Box<SignPhase1>>,
     },
 
@@ -147,6 +153,22 @@ impl WidgetTree {
             SignTask::Test { message } => {
                 let widget = Box::new(SignMessageConfirm::new(message.clone()));
                 Self::SignTestPrompt {
+                    widget,
+                    phase: Some(phase),
+                }
+            }
+            SignTask::Bip322 {
+                message,
+                bip32_path,
+                address,
+            } => {
+                let widget = Box::new(Bip322Confirm::new(
+                    message.clone(),
+                    address.clone(),
+                    *bip32_path,
+                    rand_seed,
+                ));
+                Self::SignBip322Prompt {
                     widget,
                     phase: Some(phase),
                 }

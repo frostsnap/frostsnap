@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
@@ -382,6 +385,9 @@ class _ReceiverPageState extends State<ReceivePage> {
   Widget buildShareCard(BuildContext context) {
     final isFocused = focus == ReceivePageFocus.share;
     final theme = Theme.of(context);
+    final isDeveloperMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
+    final frostKey = wallet.frostKey();
 
     final header = ListTile(
       shape: tileShape,
@@ -468,6 +474,20 @@ class _ReceiverPageState extends State<ReceivePage> {
                   icon: Icon(Icons.qr_code_2_rounded),
                 ),
               ),
+              if (isDeveloperMode && frostKey != null && _address != null)
+                IconButton(
+                  tooltip: 'Sign message',
+                  onPressed: () async {
+                    final walletCtx = WalletContext.of(context)!;
+                    await MaybeFullscreenDialog.show(
+                      context: context,
+                      child: walletCtx.wrap(
+                        Bip322SignPage(frostKey: frostKey, address: _address!),
+                      ),
+                    );
+                  },
+                  icon: Icon(Icons.edit_note),
+                ),
             ],
           ),
         ),

@@ -15,8 +15,9 @@ pub use frostsnap_core::coordinator::ActiveSignSession;
 pub use frostsnap_core::coordinator::{SignSessionProgress, StartSign};
 use frostsnap_core::MasterAppkey;
 use frostsnap_core::{
-    message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
-    WireSignTask,
+    message::EncodedSignature,
+    tweak::{BitcoinBip32Path, NormalIndex},
+    AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey, WireSignTask,
 };
 use std::collections::HashSet;
 use tracing::{event, Level};
@@ -268,6 +269,38 @@ impl Coordinator {
         })
     }
 
+    /// Signs with the address at `address_index`, on the receive keychain when `external` and on
+    /// change otherwise.
+    pub fn start_signing_bip322(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        devices: Vec<DeviceId>,
+        message: String,
+        address_index: u32,
+        external: bool,
+        sink: StreamSink<SigningState>,
+    ) -> Result<()> {
+        report_start_failure(sink, |sink| {
+            let index = NormalIndex::new(address_index).ok_or_else(|| {
+                anyhow!("address index {address_index} is not a normal bip32 child")
+            })?;
+            let bip32_path = if external {
+                BitcoinBip32Path::external(index)
+            } else {
+                BitcoinBip32Path::internal(index)
+            };
+            self.0.start_signing(
+                access_structure_ref,
+                devices.into_iter().collect(),
+                WireSignTask::Bip322 {
+                    message,
+                    bip32_path,
+                },
+                sink,
+            )
+        })
+    }
+
     /// Borrows rather than takes: frb disposes the Dart handle for a value it moves, and the
     /// caller still needs this one — the same transaction answers for the review screen and
     /// receives the signatures when they arrive. Nothing here wants ownership; the template is
@@ -491,6 +524,19 @@ impl Coordinator {
     pub fn sub_signing_session_signals(&self, key_id: KeyId, sink: StreamSink<()>) {
         self.0.sub_signing_session_signals(key_id, SinkWrap(sink))
     }
+}
+
+/// Encodes in the BIP-322 "simple" format.
+#[frb(sync)]
+pub fn bip322_signature_to_string(signature: &EncodedSignature) -> String {
+    use base64::Engine;
+    use bitcoin::consensus::Encodable;
+    let witness = frostsnap_core::bip322::witness(&signature.0);
+    let mut buffer = Vec::new();
+    witness
+        .consensus_encode(&mut buffer)
+        .expect("encoding to a Vec is infallible");
+    base64::engine::general_purpose::STANDARD.encode(buffer)
 }
 
 #[derive(Clone, Debug)]

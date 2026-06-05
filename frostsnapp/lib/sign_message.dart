@@ -3,12 +3,16 @@ import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'hex.dart';
@@ -299,6 +303,316 @@ Future<void> _showSignatureDialog(
             ),
           ),
         ),
+      );
+    },
+  );
+}
+
+class Bip322SignPage extends StatelessWidget {
+  final FrostKey frostKey;
+  final AddressInfo address;
+
+  const Bip322SignPage({
+    super.key,
+    required this.frostKey,
+    required this.address,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scrollView = CustomScrollView(
+      shrinkWrap: true,
+      slivers: [
+        TopBarSliver(
+          title: Text('Sign message'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          showClose: false,
+        ),
+        SliverToBoxAdapter(
+          child: Bip322SignForm(frostKey: frostKey, address: address),
+        ),
+        SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ],
+    );
+
+    return SafeArea(child: scrollView);
+  }
+}
+
+class Bip322SignForm extends StatefulWidget {
+  final FrostKey frostKey;
+  final AddressInfo address;
+
+  const Bip322SignForm({
+    super.key,
+    required this.frostKey,
+    required this.address,
+  });
+
+  @override
+  State<Bip322SignForm> createState() => _Bip322SignFormState();
+}
+
+class _Bip322SignFormState extends State<Bip322SignForm> {
+  final _messageController = TextEditingController();
+  Set<DeviceId> selected = <DeviceId>{};
+  Stream<SigningState>? _signingStream;
+  StreamSubscription<SigningState>? _signingSub;
+  FullscreenActionDialogController<void>? _actionDialog;
+  SignSessionId? _sessionId;
+  bool _finished = false;
+  bool _errorHandled = false;
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _actionDialog?.dispose();
+    if (_signingSub != null && !_finished) {
+      _signingSub!.cancel();
+      final sessionId = _sessionId;
+      if (sessionId != null) coord.cancelSignSession(ssid: sessionId);
+      coord.cancelProtocol();
+    }
+    super.dispose();
+  }
+
+  void _startSigning(AccessStructureRef accessStructureRef) {
+    final message = _messageController.text;
+    final devices = selected.toList();
+    _actionDialog = FullscreenActionDialogController<void>(
+      context: context,
+      devices: devices,
+      title: 'Sign message with connected device',
+      actionButtons: [
+        OutlinedButton(onPressed: _cancel, child: Text('Cancel')),
+        DeviceActionHint(),
+      ],
+      onDismissed: () {},
+    );
+    final stream = coord
+        .startSigningBip322(
+          accessStructureRef: accessStructureRef,
+          devices: devices,
+          message: message,
+          addressIndex: widget.address.index,
+          external_: widget.address.external,
+        )
+        .toBehaviorSubject();
+    late final StreamSubscription<SigningState> sub;
+    sub = stream.listen((state) {
+      // Ensure `_onSigningState` is called sequentially.
+      sub.pause();
+      _onSigningState(
+        state,
+        accessStructureRef,
+        message,
+      ).whenComplete(sub.resume);
+    }, onError: _onSigningError);
+    setState(() {
+      _signingStream = stream;
+      _signingSub = sub;
+    });
+  }
+
+  Future<void> _onSigningState(
+    SigningState state,
+    AccessStructureRef accessStructureRef,
+    String message,
+  ) async {
+    _sessionId = state.sessionId;
+    final signatures = state.finishedSignatures;
+    if (signatures == null) {
+      final encryptionKey = await existingWalletKey(
+        context: mounted ? context : null,
+        accessStructureRef: accessStructureRef,
+        action: 'sign this message',
+      );
+      if (!mounted) return;
+      if (encryptionKey != null) {
+        for (final deviceId in state.connectedButNeedRequest) {
+          coord.requestDeviceSign(
+            deviceId: deviceId,
+            sessionId: state.sessionId,
+            encryptionKey: encryptionKey,
+          );
+        }
+      }
+    }
+    await _actionDialog?.batchRemoveActionNeeded(state.gotShares);
+    if (signatures == null || !mounted) return;
+
+    _finished = true;
+    final encoded = bip322SignatureToString(signature: signatures[0]);
+    await _showBip322SignatureDialog(
+      context,
+      widget.address.address.toString(),
+      message,
+      encoded,
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  void _cancel() async {
+    // Dismiss the fullscreen dialog first, otherwise the controller reshows it
+    // while a target device is still connected. `dispose()` cancels the session.
+    await _actionDialog?.clearAllActionsNeeded();
+    if (mounted) Navigator.pop(context);
+  }
+
+  void _onSigningError(Object error) {
+    if (_errorHandled) return;
+    _errorHandled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _actionDialog?.clearAllActionsNeeded();
+      if (!mounted) return;
+      showErrorSnackbar(
+        context,
+        'Signing failed: ${displayExceptionMessage(error)}',
+      );
+      Navigator.pop(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accessStructure = widget.frostKey.accessStructures()[0];
+    final threshold = accessStructure.threshold();
+    final signingStream = _signingStream;
+    final buttonReady =
+        selected.length == threshold && _messageController.text.isNotEmpty;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 24,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Card.outlined(
+            child: ListTile(
+              leading: Text(
+                '#${widget.address.index}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontFamily: monospaceTextStyle.fontFamily,
+                ),
+              ),
+              title: Text(
+                spacedHex(widget.address.address.toString()),
+                style: monospaceTextStyle,
+              ),
+              subtitle: Text('Signing with this address'),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: _messageController,
+            enabled: signingStream == null,
+            minLines: 1,
+            maxLines: 4,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(labelText: 'Message to sign'),
+          ),
+        ),
+        if (signingStream != null) ...[
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                title: Text('Signatures Needed'),
+                subtitle: Text('Connect a device to sign'),
+              ),
+              DeviceSigningProgress(stream: signingStream),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: OutlinedButton(onPressed: _cancel, child: Text('Cancel')),
+          ),
+        ] else ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
+            ),
+          ),
+          SigningDeviceSelector(
+            frostKey: widget.frostKey,
+            onChanged: (selectedDevices) => setState(() {
+              selected = selectedDevices;
+            }),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: FilledButton(
+              onPressed: buttonReady
+                  ? () => _startSigning(accessStructure.accessStructureRef())
+                  : null,
+              child: Text('Submit'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+Future<void> _showBip322SignatureDialog(
+  BuildContext context,
+  String address,
+  String message,
+  String signature,
+) {
+  Widget field(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(label, style: Theme.of(context).textTheme.labelLarge),
+            ),
+            CopyIconButton(data: value, size: 18),
+          ],
+        ),
+        SelectableText(value, style: monospaceTextStyle),
+      ],
+    );
+  }
+
+  return showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text("Signing success"),
+        content: SizedBox(
+          width: Platform.isAndroid ? double.maxFinite : 400.0,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
+              children: [
+                field('Address', address),
+                field('Message', message),
+                field('Signature', signature),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Done'),
+          ),
+        ],
       );
     },
   );

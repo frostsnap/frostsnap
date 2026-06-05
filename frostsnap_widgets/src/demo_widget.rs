@@ -695,6 +695,24 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
+            "bip322_confirm" => {
+                use $crate::Bip322Confirm;
+                use core::str::FromStr;
+                use frostsnap_core::tweak::{BitcoinBip32Path, NormalIndex};
+
+                let address = bitcoin::Address::from_str("bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297")
+                    .unwrap()
+                    .assume_checked();
+                let message = "I confirm that I’m the owner of this address for withdrawals from my exchange account. Account reference: 7f3a9c2e41b8d05f6a1e9c3b7d2f8a4e. Signed on 2026-10-07 for the travel rule check required before any withdrawal can be processed.";
+                let widget = Bip322Confirm::new(
+                    message.to_string(),
+                    address,
+                    BitcoinBip32Path::external(NormalIndex::new(1).unwrap()),
+                    42,
+                );
+
+                $run_macro!(widget);
+            }
             "all_words" => {
                 use $crate::backup::AllWordsPage;
 

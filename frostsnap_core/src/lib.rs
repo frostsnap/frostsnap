@@ -3,6 +3,7 @@
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
+pub mod bip322;
 #[cfg(feature = "coordinator")]
 pub mod coord_nonces;
 pub mod device_nonces;

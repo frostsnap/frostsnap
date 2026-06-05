@@ -1,7 +1,9 @@
 use crate::{
-    bitcoin_transaction,
+    bitcoin_transaction::{self, LocalSpk},
     device::KeyPurpose,
-    tweak::{AppTweak, BitcoinAccount, BitcoinAccountKeychain, Keychain, NormalIndex},
+    tweak::{
+        AppTweak, BitcoinAccount, BitcoinAccountKeychain, BitcoinBip32Path, Keychain, NormalIndex,
+    },
     MasterAppkey,
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -24,6 +26,11 @@ pub enum WireSignTask {
         event: Box<crate::nostr::UnsignedEvent>,
     },
     BitcoinTransaction(bitcoin_transaction::TransactionTemplate),
+    /// BIP-322 "simple" signature with the address at `bip32_path`.
+    Bip322 {
+        message: String,
+        bip32_path: BitcoinBip32Path,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +44,11 @@ pub enum SignTask {
     BitcoinTransaction {
         tx_template: bitcoin_transaction::TransactionTemplate<bitcoin_transaction::ScopedTo>,
         network: bitcoin::Network,
+    },
+    Bip322 {
+        message: String,
+        bip32_path: BitcoinBip32Path,
+        address: bitcoin::Address,
     },
 }
 
@@ -144,6 +156,34 @@ impl WireSignTask {
                     network,
                 }
             }
+            WireSignTask::Bip322 {
+                message,
+                bip32_path,
+            } => {
+                let network = match purpose {
+                    KeyPurpose::Bitcoin(network) => network,
+                    _ => return Err(SignTaskError::WrongPurpose),
+                };
+                if bip32_path.account_keychain.account != BitcoinAccount::default() {
+                    return Err(SignTaskError::UnwatchedAccount {
+                        account: bip32_path.account_keychain.account,
+                    });
+                }
+                // No ownership check: the spk is derived from `master_appkey` and
+                // `bip32_path`, so it is always our own key.
+                let spk = LocalSpk {
+                    master_appkey,
+                    bip32_path,
+                }
+                .spk();
+                let address = bitcoin::Address::from_script(spk.as_script(), network)
+                    .expect("p2tr spk has an address");
+                SignTask::Bip322 {
+                    message,
+                    bip32_path,
+                    address,
+                }
+            }
         };
         Ok(CheckedSignTask {
             master_appkey,
@@ -184,6 +224,16 @@ impl CheckedSignTask {
                     app_tweak: AppTweak::Bitcoin(owner.bip32_path),
                 })
                 .collect(),
+            SignTask::Bip322 {
+                message,
+                bip32_path,
+                address,
+            } => vec![SignItem {
+                message: crate::bip322::sighash(address.script_pubkey(), message)
+                    .to_byte_array()
+                    .to_vec(),
+                app_tweak: AppTweak::Bitcoin(*bip32_path),
+            }],
         }
     }
 }

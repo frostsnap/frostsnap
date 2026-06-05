@@ -26,6 +26,8 @@ rusqlite = { workspace = true, optional = true }
 rand = "0.8"
 proptest-state-machine = "0.3"
 proptest = "=1.6.0"
+# Tests cross-check our BIP-322 signatures against this independent implementation.
+bip322 = "0.0.10"
 
 [features]
 std = ["tracing?/std", "schnorr_fun/std"]

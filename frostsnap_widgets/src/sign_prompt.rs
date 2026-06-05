@@ -326,7 +326,7 @@ pub struct ConfirmationPage {
 
 impl ConfirmationPage {
     #[inline(never)]
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let sign_text = Text::new(
             "Hold to Sign".to_string(),
             Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
