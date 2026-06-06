@@ -6,6 +6,7 @@ use frostsnap_core::{
     hex,
     schnorr_fun::fun::{marker::EvenY, KeyPair, Point, Scalar},
 };
+pub mod batch_flash;
 pub mod cli;
 pub mod db;
 pub mod ds;
@@ -277,6 +278,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 signed.len(),
                 output.display()
             );
+        }
+        cli::Commands::BatchFlash {
+            concurrency,
+            env: env_name,
+            output,
+        } => {
+            batch_flash::run(concurrency, &env_name, output)?;
         }
         cli::Commands::Provision {
             color,

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 rsa.workspace = true
 frostsnap_core.workspace = true
@@ -18,5 +19,4 @@ frostsnap_coordinator.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 bincode.workspace = true
-
 mysql = "27.0"

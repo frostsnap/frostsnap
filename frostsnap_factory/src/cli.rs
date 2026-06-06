@@ -32,6 +32,18 @@ pub enum Commands {
         #[arg(short = 'n', long)]
         batch_note: Option<String>,
     },
+    /// Flash blank ESP32-C3 devices with production bootloader, partitions, and firmware
+    BatchFlash {
+        /// Maximum number of devices to flash at the same time
+        #[arg(short, long, default_value_t = 2)]
+        concurrency: usize,
+        /// Environment (dev or prod) — determines artifact paths
+        #[arg(long, default_value = "prod")]
+        env: String,
+        /// Output path for the merged flash image
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Generate an RSA-3072 signing key for ESP32 Secure Boot v2
     GenSecureBootKey {
         /// Output path for the PEM key file
