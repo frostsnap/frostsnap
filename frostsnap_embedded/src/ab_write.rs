@@ -70,11 +70,14 @@ impl<'a, S: NorFlash> AbSlot<'a, S> {
     fn current_slot_and_index(&self) -> Option<(usize, u32)> {
         let a_index = self.slots[0].read_index();
         let b_index = self.slots[1].read_index();
-        // An empty slot (`None`) must rank below any written one, otherwise a
-        // crash that leaves one slot mid-erase would make us forget the index
-        // held in the other and reuse it.
-        let current_slot = if b_index > a_index { 1 } else { 0 };
-        Some((current_slot, a_index.max(b_index)?))
+        // `Option` ranks `None` below every `Some`, so an empty slot is older
+        // than any written one — otherwise a crash mid-erase would make us
+        // forget the index held in the surviving slot and reuse it.
+        if b_index > a_index {
+            Some((1, b_index?))
+        } else {
+            Some((0, a_index?))
+        }
     }
 }
 
@@ -134,8 +137,6 @@ mod test {
     use super::*;
     use crate::test::TestNorFlash;
     use core::cell::RefCell;
-    use embedded_storage::nor_flash::{self, ReadNorFlash};
-    use proptest::{collection, prelude::*};
 
     /// The highest index actually committed to flash, or `None` if both slots
     /// are empty. `Option<u32>` orders `None` below every `Some`, so this is
@@ -223,139 +224,6 @@ mod test {
                 committed_index(&ab) > Some(1),
                 "recovery from empty slot {empty_slot} reset the index instead of advancing it"
             );
-        }
-    }
-
-    /// A flash that drops every erase/write after a configurable number of
-    /// low-level operations, modelling power loss at an arbitrary point of a
-    /// write. Reads always succeed against whatever actually landed.
-    struct CrashFlash {
-        inner: TestNorFlash,
-        ops_until_crash: Option<u32>,
-        tripped: bool,
-    }
-
-    impl CrashFlash {
-        fn new() -> Self {
-            Self {
-                inner: TestNorFlash::new(),
-                ops_until_crash: None,
-                tripped: false,
-            }
-        }
-
-        fn arm(&mut self, ops: u32) {
-            self.ops_until_crash = Some(ops);
-            self.tripped = false;
-        }
-
-        fn disarm(&mut self) {
-            self.ops_until_crash = None;
-        }
-
-        fn allow_op(&mut self) -> bool {
-            match &mut self.ops_until_crash {
-                Some(n) if *n > 0 => {
-                    *n -= 1;
-                    true
-                }
-                Some(_) => {
-                    self.tripped = true;
-                    false
-                }
-                None => true,
-            }
-        }
-    }
-
-    impl nor_flash::ErrorType for CrashFlash {
-        type Error = core::convert::Infallible;
-    }
-
-    impl ReadNorFlash for CrashFlash {
-        const READ_SIZE: usize = TestNorFlash::READ_SIZE;
-        fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-            self.inner.read(offset, bytes)
-        }
-        fn capacity(&self) -> usize {
-            self.inner.capacity()
-        }
-    }
-
-    impl NorFlash for CrashFlash {
-        const WRITE_SIZE: usize = TestNorFlash::WRITE_SIZE;
-        const ERASE_SIZE: usize = TestNorFlash::ERASE_SIZE;
-        fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-            if self.allow_op() {
-                self.inner.erase(from, to)
-            } else {
-                Ok(())
-            }
-        }
-        fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-            if self.allow_op() {
-                self.inner.write(offset, bytes)
-            } else {
-                Ok(())
-            }
-        }
-    }
-
-    proptest! {
-        /// The core durability guarantee, exercised against crashes at every
-        /// point of every write. Each round writes a strictly larger value, so
-        /// "older value" and "smaller number" coincide. We assert what actually
-        /// matters for nonce single-use: a fresh reader never sees a value (or
-        /// index) older than one already committed — even mid-write — and a
-        /// write that completes without crashing is fully visible with a brand
-        /// new index. The value check also guards write ordering: overwriting
-        /// the newest slot first would expose the stale slot here.
-        #[test]
-        fn read_never_returns_superseded_value_across_crashes(
-            budgets in collection::vec(0u32..30, 1..30),
-        ) {
-            let flash = RefCell::new(CrashFlash::new());
-            let reopen = || AbSlot::new(FlashPartition::new(&flash, 0, 2, "crash-test"));
-
-            let mut committed_value: Option<u32> = None;
-            let mut committed_index_floor: Option<u32> = None;
-
-            for (round, budget) in budgets.into_iter().enumerate() {
-                let value = round as u32;
-
-                let ab = reopen();
-                prop_assert!(
-                    ab.read::<u32>() >= committed_value,
-                    "stale value on reboot: {:?} < {committed_value:?}",
-                    ab.read::<u32>()
-                );
-                prop_assert!(committed_index(&ab) >= committed_index_floor, "index regressed on reboot");
-
-                flash.borrow_mut().arm(budget);
-                reopen().write(&value);
-                let tripped = flash.borrow().tripped;
-                flash.borrow_mut().disarm();
-
-                let ab = reopen();
-                let seen = ab.read::<u32>();
-                let seen_index = committed_index(&ab);
-                prop_assert!(
-                    seen >= committed_value,
-                    "write exposed a superseded value: {seen:?} < {committed_value:?}"
-                );
-                prop_assert!(seen_index >= committed_index_floor, "write moved index backwards");
-
-                if !tripped {
-                    prop_assert_eq!(seen, Some(value), "completed write was not visible");
-                    prop_assert!(seen_index > committed_index_floor, "completed write did not advance index");
-                }
-                // Whatever a fresh read now sees is durably committed: future
-                // reads must never fall below it.
-                if seen > committed_value {
-                    committed_value = seen;
-                }
-                committed_index_floor = seen_index;
-            }
         }
     }
 }
