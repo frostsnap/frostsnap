@@ -40,8 +40,8 @@ pub mod restoration;
 pub mod signing;
 pub use coordinator_to_user::*;
 pub use keys::BeginKeygen;
-pub use signing::{ParticipantBinonces, ParticipantSignatureShares};
 use signing::SigningMutation;
+pub use signing::{ParticipantBinonces, ParticipantSignatureShares};
 
 pub const MIN_NONCES_BEFORE_REQUEST: u32 = NONCE_BATCH_SIZE / 2;
 
@@ -1601,7 +1601,6 @@ impl FrostCoordinator {
         self.remote_keygen.clear_tmp_data();
     }
 
-
     pub fn knows_about_share(
         &self,
         device_id: DeviceId,
@@ -1926,10 +1925,19 @@ impl CoordAccessStructure {
 
 #[derive(Debug, Clone)]
 pub enum StartSignError {
-    UnknownKey { key_id: KeyId },
-    DeviceNotPartOfKey { device_id: DeviceId },
-    NotEnoughDevicesSelected { selected: usize, threshold: u16 },
-    CantSignInState { in_state: &'static str },
+    UnknownKey {
+        key_id: KeyId,
+    },
+    DeviceNotPartOfKey {
+        device_id: DeviceId,
+    },
+    NotEnoughDevicesSelected {
+        selected: usize,
+        threshold: u16,
+    },
+    CantSignInState {
+        in_state: &'static str,
+    },
     NotEnoughNoncesForDevice(NotEnoughNonces),
     SignTask(SignTaskError),
     NoSuchAccessStructure,

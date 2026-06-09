@@ -76,9 +76,9 @@ fn when_we_generate_a_key_we_should_be_able_to_sign_with_it_multiple_times() {
             .unwrap();
 
         for &device in &signing_set {
-            let sign_req = run
-                .coordinator
-                .request_device_sign(session_id, device, TEST_ENCRYPTION_KEY);
+            let sign_req =
+                run.coordinator
+                    .request_device_sign(session_id, device, TEST_ENCRYPTION_KEY);
             run.extend(sign_req);
         }
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
@@ -363,9 +363,9 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         .unwrap();
 
     for &device_id in &set {
-        let sign_req = run
-            .coordinator
-            .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+        let sign_req =
+            run.coordinator
+                .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
 
         run.extend(sign_req);
     }

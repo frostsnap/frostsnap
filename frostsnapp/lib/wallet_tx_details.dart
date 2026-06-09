@@ -243,15 +243,12 @@ class TxSentOrReceivedTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.max,
               children: [
                 Flexible(
-                  child: Text(
-                    switch (mode) {
-                      TxTileSigning(state: final s?) =>
-                        '${s.neededFrom.length - s.gotShares.length} signatures left',
-                      TxTileSigning(state: null) => 'Signing...',
-                      _ => txDetails.lastUpdateString,
-                    },
-                    overflow: TextOverflow.fade,
-                  ),
+                  child: Text(switch (mode) {
+                    TxTileSigning(state: final s?) =>
+                      '${s.neededFrom.length - s.gotShares.length} signatures left',
+                    TxTileSigning(state: null) => 'Signing...',
+                    _ => txDetails.lastUpdateString,
+                  }, overflow: TextOverflow.fade),
                 ),
                 if (!signingDone || needsBroadcast)
                   Flexible(
@@ -299,6 +296,7 @@ class TxDetailsPage extends StatefulWidget {
   final PsbtManager psbtMan;
   final Psbt? psbt;
   final TxSigningParams? signingParams;
+
   /// Typed broadcastable artifact for the already-signed-from-history
   /// path. `Some` when constructed via [`TxDetailsPage.needsBroadcast`];
   /// for active-signing pages this is `null` until signing completes
@@ -341,6 +339,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   StreamSubscription<SigningState>? signingSub;
   SigningSessionHandle? signingHandle;
   SigningState? signingState;
+
   /// The typed signed-tx artifact, set when `finishedSignatures` arrives
   /// on an active signing session or seeded from a finished session at
   /// mount time. Drives `signingDone` and `broadcast(...)` — no more
@@ -527,9 +526,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       // Sync-seed `signingState` from the active session before the
       // stream subscribes, so first-paint already shows real progress
       // instead of falling through the `signingState == null` guard.
-      final session = coord.activeSigningSession(
-        sessionId: handle.sessionId(),
-      );
+      final session = coord.activeSigningSession(sessionId: handle.sessionId());
       if (session != null) {
         signingState = session.state();
       }
@@ -980,32 +977,41 @@ Widget buildDetailsColumn(
           );
         }),
       if (!txDetails.isSend)
-        ...txDetails.tx.recipients().where((info) => info.isMine).map((info) {
-          final address = info.address(network: walletCtx.network)?.toString();
-          final idx = info.derivationIndex;
-          return Column(
-            children: [
-              CopyListTile(
-                data: address,
-                dense: dense,
-                contentPadding: contentPadding,
-                leading: Text('Received at${idx != null ? ' #$idx' : ''}'),
-                title: Text(
-                  spacedHex(address ?? '<unknown>'),
-                  style: monospaceTextStyle,
-                  textAlign: TextAlign.end,
-                ),
-              ),
-              CopyListTile(
-                data: '${info.amount}',
-                dense: dense,
-                contentPadding: contentPadding,
-                leading: Text('\u2570 Amount'),
-                title: SatoshiText(value: info.amount, showSign: false),
-              ),
-            ],
-          );
-        }),
+        // Filter to external owned outputs only (derivationIndex
+        // is populated for external receive scripts only — change
+        // outputs are isMine but have no derivationIndex, and
+        // shouldn't appear in the user-facing "Received at" list).
+        ...txDetails.tx
+            .recipients()
+            .where((info) => info.isMine && info.derivationIndex != null)
+            .map((info) {
+              final address = info
+                  .address(network: walletCtx.network)
+                  ?.toString();
+              final idx = info.derivationIndex;
+              return Column(
+                children: [
+                  CopyListTile(
+                    data: address,
+                    dense: dense,
+                    contentPadding: contentPadding,
+                    leading: Text('Received at${idx != null ? ' #$idx' : ''}'),
+                    title: Text(
+                      spacedHex(address ?? '<unknown>'),
+                      style: monospaceTextStyle,
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                  CopyListTile(
+                    data: '${info.amount}',
+                    dense: dense,
+                    contentPadding: contentPadding,
+                    leading: Text('\u2570 Amount'),
+                    title: SatoshiText(value: info.amount, showSign: false),
+                  ),
+                ],
+              );
+            }),
       if (txDetails.isSend)
         CopyListTile(
           data: '$fee',

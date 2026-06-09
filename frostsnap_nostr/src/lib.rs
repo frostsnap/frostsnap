@@ -11,7 +11,7 @@ pub use nostr_sdk::prelude::NostrDatabaseExt;
 pub use nostr_sdk::{Client, Keys, Metadata};
 pub use signing::{
     ChannelClient, ChannelEvent, ChannelHandle, ChannelParticipant, ConfirmedSubsetEntry,
-    ConnectionState, GroupMember, SigningEvent,
+    ConnectionState, GroupMember, ObservationKind, SigningEvent,
 };
 
 /// Owned x-only nostr public key — 32 bytes, value-typed, `Copy`. Same

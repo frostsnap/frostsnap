@@ -90,17 +90,11 @@ fn malicious_coordinator_replaces_device_input() {
     );
     run.start_remote_keygen(begin, &mut rng);
 
-    let coordinator_public_keys: Vec<schnorr_fun::fun::Point> = run
-        .coordinator_ids()
-        .iter()
-        .map(|id| id.pubkey())
-        .collect();
+    let coordinator_public_keys: Vec<schnorr_fun::fun::Point> =
+        run.coordinator_ids().iter().map(|id| id.pubkey()).collect();
     let receiver_keys: Vec<schnorr_fun::fun::Point> =
         device_ids.iter().map(|d| d.pubkey()).collect();
-    let receiver_index = device_ids
-        .iter()
-        .position(|d| *d == target_device)
-        .unwrap() as u32;
+    let receiver_index = device_ids.iter().position(|d| *d == target_device).unwrap() as u32;
 
     let schnorr = schnorr_fun::new_with_deterministic_nonces::<sha2::Sha256>();
     let (_fake_contributor, fake_input) = schnorr_fun::frost::chilldkg::certpedpop::Contributor::<

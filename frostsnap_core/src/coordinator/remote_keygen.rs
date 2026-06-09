@@ -151,8 +151,7 @@ fn process_remote_keygen_msg(
                 return Ok(vec![]);
             };
 
-            let (party, is_device) =
-                resolve_party(coordinator_ids, &state.devices_in_order, from)?;
+            let (party, is_device) = resolve_party(coordinator_ids, &state.devices_in_order, from)?;
 
             match input_aggregator.add_input(
                 &schnorr_fun::Schnorr::<Sha256>::verify_only(),
@@ -412,8 +411,7 @@ impl super::FrostCoordinator {
 
         let coordinator_public_keys: Vec<Point> =
             coordinator_ids.iter().map(|id| id.pubkey()).collect();
-        let receiver_keys: Vec<Point> =
-            devices_in_order.iter().map(|d| d.pubkey()).collect();
+        let receiver_keys: Vec<Point> = devices_in_order.iter().map(|d| d.pubkey()).collect();
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
         let mut input_aggregator = certpedpop::Coordinator::new(
             threshold.into(),
@@ -429,9 +427,7 @@ impl super::FrostCoordinator {
                 my_coordinator_index,
                 rng,
             )
-            .map_err(|e| {
-                ActionError::StateInconsistent(format!("gen_keygen_input failed: {e}"))
-            })?;
+            .map_err(|e| ActionError::StateInconsistent(format!("gen_keygen_input failed: {e}")))?;
         input_aggregator
             .add_input(
                 &schnorr,
@@ -641,9 +637,8 @@ impl super::FrostCoordinator {
             .iter()
             .enumerate()
             .map(|(i, device_id)| {
-                let share_index = ShareIndex::from(
-                    core::num::NonZeroU32::new((i as u32) + 1).expect("i+1 >= 1"),
-                );
+                let share_index =
+                    ShareIndex::from(core::num::NonZeroU32::new((i as u32) + 1).expect("i+1 >= 1"));
                 (*device_id, share_index)
             })
             .collect();

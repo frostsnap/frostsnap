@@ -182,9 +182,24 @@ pub struct Transaction {
     pub inner: RTransaction,
     pub txid: String,
     pub confirmation_time: Option<ConfirmationTime>,
+    /// First-observation timestamp (BDK's `tx_node.first_seen`).
+    /// Stable from first sighting — used as the chat timeline anchor.
+    pub first_seen: Option<u64>,
+    /// Last-observation timestamp. Shifts forward on every
+    /// re-sighting — useful for "mempool freshness" UI, NOT
+    /// suitable as a timeline anchor.
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
-    pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
+    /// Maps owned script pubkeys to (keychain, derivation_index).
+    /// Both external (receive) and internal (change) owned scripts
+    /// land here; consumers that care about the distinction (e.g.,
+    /// "is this a receive output the user announced in chat?")
+    /// MUST check the keychain. Consumers that just need
+    /// ownership (sum filters, contains_key checks) ignore it.
+    /// Not FRB-exposed — Dart sees ownership via `recipients()` /
+    /// balance helpers, not by reading this map directly.
+    #[frb(ignore)]
+    pub is_mine: HashMap<bitcoin::ScriptBuf, (frostsnap_core::tweak::BitcoinAccountKeychain, u32)>,
 }
 
 impl Transaction {
@@ -193,12 +208,18 @@ impl Transaction {
         let txid = tx_temp.txid();
         let is_mine = tx_temp
             .iter_locally_owned_inputs()
-            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index))
-            .chain(
-                tx_temp
-                    .iter_locally_owned_outputs()
-                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index)),
-            )
+            .map(|(_, _, spk)| {
+                (
+                    spk.spk(),
+                    (spk.bip32_path.account_keychain, spk.bip32_path.index),
+                )
+            })
+            .chain(tx_temp.iter_locally_owned_outputs().map(|(_, _, spk)| {
+                (
+                    spk.spk(),
+                    (spk.bip32_path.account_keychain, spk.bip32_path.index),
+                )
+            }))
             .collect::<HashMap<_, _>>();
         let prevouts = tx_temp
             .inputs()
@@ -209,6 +230,7 @@ impl Transaction {
             inner: raw_tx,
             txid: txid.to_string(),
             confirmation_time: None,
+            first_seen: None,
             last_seen: None,
             prevouts,
             is_mine,
@@ -280,7 +302,7 @@ impl Transaction {
 
     /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
     /// `filter`, if provided. The result is `None` if any input is missing a previous output.
-    fn _sum_inputs(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, u32>>) -> Option<u64> {
+    fn _sum_inputs<V>(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, V>>) -> Option<u64> {
         let prevouts = self
             .inner
             .input
@@ -304,7 +326,7 @@ impl Transaction {
 
     /// Computes the sum of all outputs, or only those whose script pubkey is in `filter`, if
     /// provided.
-    fn _sum_outputs(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, u32>>) -> u64 {
+    fn _sum_outputs<V>(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, V>>) -> u64 {
         self.inner
             .output
             .iter()
@@ -323,13 +345,13 @@ impl Transaction {
     /// output.
     #[frb(sync, type_64bit_int)]
     pub fn sum_inputs(&self) -> Option<u64> {
-        self._sum_inputs(None)
+        self._sum_inputs::<()>(None)
     }
 
     /// Computes the sum of all outputs.
     #[frb(sync, type_64bit_int)]
     pub fn sum_outputs(&self) -> u64 {
-        self._sum_outputs(None)
+        self._sum_outputs::<()>(None)
     }
 
     /// Computes the total value of inputs we own. Returns `None` if any owned input is missing a
@@ -381,8 +403,8 @@ impl Transaction {
     /// Returns `None` if any input is missing a previous output.
     #[frb(sync, type_64bit_int)]
     pub fn fee(&self) -> Option<u64> {
-        let inputs_sum = self._sum_inputs(None)?;
-        let outputs_sum = self._sum_outputs(None);
+        let inputs_sum = self._sum_inputs::<()>(None)?;
+        let outputs_sum = self._sum_outputs::<()>(None);
         Some(inputs_sum.saturating_sub(outputs_sum))
     }
 
@@ -407,12 +429,26 @@ impl Transaction {
             .iter()
             .zip(0_u32..)
             .map(|(txout, vout)| {
-                let derivation_index = self.is_mine.get(&txout.script_pubkey).copied();
+                let entry = self.is_mine.get(&txout.script_pubkey);
+                // `is_mine` is true for ALL wallet-owned outputs
+                // (external receive + internal change). Dart filters
+                // `!isMine` to list foreign send-recipients — change
+                // must NOT leak into that list.
+                let is_mine = entry.is_some();
+                // `derivation_index` is set ONLY for external owned
+                // outputs. Internal change outputs have
+                // `is_mine: true` but `derivation_index: None`, so
+                // the receive-flow UI (which lists `isMine &&
+                // derivationIndex != null`) hides them. This
+                // matches the "don't surface change addresses" policy.
+                let derivation_index = entry.and_then(|(keychain, idx)| {
+                    (keychain.keychain == frostsnap_core::tweak::Keychain::External).then_some(*idx)
+                });
                 TxOutInfo {
                     vout,
                     amount: txout.value.to_sat(),
                     script_pubkey: txout.script_pubkey.clone(),
-                    is_mine: derivation_index.is_some(),
+                    is_mine,
                     derivation_index,
                 }
             })
@@ -516,6 +552,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
             inner: (value.inner).deref().clone(),
             txid: value.txid.to_string(),
             confirmation_time: value.confirmation_time,
+            first_seen: value.first_seen,
             last_seen: value.last_seen,
             prevouts: value.prevouts,
             is_mine: value.is_mine,

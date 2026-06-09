@@ -3,7 +3,7 @@ mod tree;
 
 pub use events::{
     ChannelEvent, ChannelParticipant, ConfirmedSubsetEntry, ConnectionState, GroupMember,
-    SigningEvent,
+    ObservationKind, SigningEvent,
 };
 use events::{ReceiveAddressPayload, SigningMessage};
 
@@ -23,7 +23,7 @@ use frostsnap_core::{
     WireSignTask,
 };
 use nostr_sdk::{Client, Event, Keys, Kind};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::future::{self, Future};
 use std::pin::Pin;
 use std::time::Duration;
@@ -102,6 +102,7 @@ impl ChannelClient {
         tokio::spawn(async move {
             let mut tree = SigningEventTree::new(key_context, settling_window);
             let mut timers: HashMap<EventId, Instant> = HashMap::new();
+            let mut activity = ActivityState::default();
 
             loop {
                 tokio::select! {
@@ -136,6 +137,9 @@ impl ChannelClient {
                             }
                             Some(ChannelCommand::SendPreparedReceiveAddress(prepared, payload)) => {
                                 let message_id: EventId = prepared.id.into();
+                                activity
+                                    .address_announcements
+                                    .insert(payload.derivation_index, message_id);
                                 sink.send(ChannelEvent::ReceiveAddress {
                                     message_id,
                                     author: prepared.pubkey.into(),
@@ -166,6 +170,9 @@ impl ChannelClient {
                                     }
                                 }
                             }
+                            Some(ChannelCommand::NotifyTxObserved(tx)) => {
+                                handle_notify_tx_observed(&tx, &mut activity, &sink);
+                            }
                             None => break,
                         }
                     }
@@ -194,6 +201,7 @@ impl ChannelClient {
                                                 false,
                                                 &sink,
                                                 &mut timers,
+                                                &mut activity,
                                             );
                                         }
                                         Err(err_event) => sink.send(err_event),
@@ -201,6 +209,10 @@ impl ChannelClient {
                                 } else if inner_event.kind == KIND_FROSTSNAP_RECEIVE_ADDRESS {
                                     match crate::channel_runner::decode_bincode::<ReceiveAddressPayload>(&inner_event) {
                                         Ok(payload) => {
+                                            activity.address_announcements.insert(
+                                                payload.derivation_index,
+                                                inner_event.id.into(),
+                                            );
                                             sink.send(ChannelEvent::ReceiveAddress {
                                                 message_id: inner_event.id.into(),
                                                 author: inner_event.pubkey.into(),
@@ -297,6 +309,36 @@ enum ChannelCommand {
     /// (pending=true) on entry and `ReceiveAddressSendFailed` on
     /// failure. Success reuses `MessageSent { id }`.
     SendPreparedReceiveAddress(Event, ReceiveAddressPayload),
+    /// Dart pumps each wallet-stream tx through this to drive the
+    /// runner's tx-observation correlation fold. Local-only — no
+    /// relay traffic.
+    NotifyTxObserved(frostsnap_coordinator::bitcoin::wallet::Transaction),
+}
+
+/// Per-tx state held by the runner. Resolved correlation fields are
+/// set ONCE on first observation and never updated (chronology-only
+/// — no back-patching when later chat events arrive).
+struct ObservedTx {
+    /// BDK's `first_seen` — chat-timeline anchor for the Mempool
+    /// emission. Stable across re-observation.
+    first_seen: Option<u64>,
+    confirmation_time: Option<u64>,
+    address_reveal_event: Option<EventId>,
+    signing_start_event: Option<EventId>,
+    mempool_emitted: bool,
+    confirmation_emitted: bool,
+}
+
+/// Runner-internal correlation state. Folded from nostr events
+/// (`address_announcements`, `signing_starts_by_txid` — replay-
+/// derived) and Dart-pumped wallet observations (`observed_txs` —
+/// driven by local snapshots, not bitwise-identical across
+/// participants).
+#[derive(Default)]
+struct ActivityState {
+    address_announcements: BTreeMap<u32, EventId>,
+    signing_starts_by_txid: BTreeMap<String, EventId>,
+    observed_txs: BTreeMap<String, ObservedTx>,
 }
 
 /// Handle for sending messages to an active channel. Chat goes via
@@ -362,6 +404,21 @@ impl ChannelHandle {
     ) -> Result<EventId> {
         let signing_msg = SigningMessage::Request { sign_task, message };
         self.send_signing_event(keys, &signing_msg, None).await
+    }
+
+    /// Pump a wallet-stream tx into the runner. Drives the
+    /// tx-observation correlation fold. Local-only — no relay
+    /// traffic. Idempotent: repeated notifies of the same tx
+    /// don't re-emit events.
+    pub async fn notify_tx_observed(
+        &self,
+        tx: frostsnap_coordinator::bitcoin::wallet::Transaction,
+    ) -> Result<()> {
+        self.cmd_tx
+            .send(ChannelCommand::NotifyTxObserved(tx))
+            .await
+            .map_err(|_| anyhow!("channel closed"))?;
+        Ok(())
     }
 
     /// Publish a sign offer. Every offer's reply_to is the request's event
@@ -520,16 +577,135 @@ fn process_signing_inner_event(
     Ok(tree.ingest_wire(meta, wire))
 }
 
+/// Wallet observation → correlation fold + emit. Resolves the
+/// receive-address and signing-start correlations once at first
+/// observation (chronology-only — never back-patches). Emits
+/// Mempool / Confirmed events once each per tx.
+fn handle_notify_tx_observed(
+    tx: &frostsnap_coordinator::bitcoin::wallet::Transaction,
+    activity: &mut ActivityState,
+    sink: &impl Sink<ChannelEvent>,
+) {
+    use events::ObservationKind;
+
+    let txid = tx.txid.to_string();
+    let first_seen = tx.first_seen;
+    let confirmation_time = tx.confirmation_time.as_ref().map(|c| c.time);
+
+    let entry = activity
+        .observed_txs
+        .entry(txid.clone())
+        .or_insert_with(|| {
+            // Mine-EXTERNAL-output derivation indices: iterate
+            // `tx.inner.output` (NOT `tx.is_mine.values()` — that map
+            // mixes input + output owned scripts), and filter to the
+            // external keychain (receive addresses). Internal change
+            // outputs share the index space but are never the target
+            // of an `address_announcements` entry, so excluding them
+            // here prevents false-positive quote attachment on
+            // outgoing-with-change txs. Lowest index wins for receive
+            // correlation.
+            let mut mine_output_indices: Vec<u32> = tx
+                .inner
+                .output
+                .iter()
+                .filter_map(|txout| {
+                    tx.is_mine
+                        .get(&txout.script_pubkey)
+                        .and_then(|(keychain, idx)| {
+                            (keychain.keychain == frostsnap_core::tweak::Keychain::External)
+                                .then_some(*idx)
+                        })
+                })
+                .collect();
+            mine_output_indices.sort();
+            let address_reveal_event = mine_output_indices
+                .iter()
+                .find_map(|idx| activity.address_announcements.get(idx).copied());
+            let signing_start_event = activity.signing_starts_by_txid.get(&txid).copied();
+            ObservedTx {
+                first_seen,
+                confirmation_time,
+                address_reveal_event,
+                signing_start_event,
+                mempool_emitted: false,
+                confirmation_emitted: false,
+            }
+        });
+
+    // Refresh chain state fields — they can transition None→Some
+    // across notifies. `first_seen` may also shift EARLIER if BDK
+    // discovers an earlier sighting (`update_first_seen` only writes
+    // strictly-earlier values).
+    entry.first_seen = match (entry.first_seen, first_seen) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(a), None) => Some(a),
+        (None, b) => b,
+    };
+    if entry.confirmation_time.is_none() {
+        entry.confirmation_time = confirmation_time;
+    }
+
+    if let Some(fs) = entry.first_seen {
+        if !entry.mempool_emitted {
+            entry.mempool_emitted = true;
+            sink.send(ChannelEvent::TxObservation {
+                txid: txid.clone(),
+                kind: ObservationKind::Mempool,
+                timestamp: fs,
+                address_reveal_event: entry.address_reveal_event,
+                signing_start_event: entry.signing_start_event,
+            });
+        }
+    }
+    if let Some(ct) = entry.confirmation_time {
+        if !entry.confirmation_emitted {
+            entry.confirmation_emitted = true;
+            // Confirmed timestamp must not sort before the Mempool
+            // entry. Miner's block.time has ±2h fudge factor and can
+            // be earlier than our first_seen. Clamp to
+            // first_seen + 1 second so confirmed always lands
+            // strictly after the mempool card.
+            let timestamp = match entry.first_seen {
+                Some(fs) => ct.max(fs.saturating_add(1)),
+                None => ct,
+            };
+            sink.send(ChannelEvent::TxObservation {
+                txid,
+                kind: ObservationKind::Confirmed,
+                timestamp,
+                address_reveal_event: entry.address_reveal_event,
+                signing_start_event: entry.signing_start_event,
+            });
+        }
+    }
+}
+
 /// Send signing events + timer actions to sink/timers. The `pending` flag
-/// marks the first signing event as a local optimistic echo.
+/// marks the first signing event as a local optimistic echo. Folds
+/// `SigningEvent::Request` entries into `activity.signing_starts_by_txid`
+/// for chat→tx correlation on later wallet observations.
 fn dispatch_signing_output(
     signing_events: Vec<SigningEvent>,
     timer_actions: Vec<TimerAction>,
     pending: bool,
     sink: &impl Sink<ChannelEvent>,
     timers: &mut HashMap<EventId, Instant>,
+    activity: &mut ActivityState,
 ) {
     for (i, event) in signing_events.into_iter().enumerate() {
+        if let SigningEvent::Request {
+            event_id,
+            sign_task: frostsnap_core::WireSignTask::BitcoinTransaction(template),
+            ..
+        } = &event
+        {
+            let txid = template.txid().to_string();
+            activity
+                .signing_starts_by_txid
+                .entry(txid)
+                .or_insert(*event_id);
+        }
         sink.send(ChannelEvent::Signing {
             event,
             pending: pending && i == 0,

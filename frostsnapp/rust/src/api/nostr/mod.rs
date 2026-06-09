@@ -31,7 +31,7 @@ use std::{
 
 pub use frostsnap_nostr::{
     ChannelEvent, ChannelParticipant, ChannelSecret, ConfirmedSubsetEntry, ConnectionState,
-    EventId, GroupMember, ParticipantShares, PublicKey, SigningEvent,
+    EventId, GroupMember, ObservationKind, ParticipantShares, PublicKey, SigningEvent,
 };
 
 #[frb(opaque)]
@@ -570,6 +570,30 @@ impl NostrClient {
         self.channels.lock().unwrap().remove(&access_structure_id);
     }
 
+    /// Pump a wallet-stream tx into the channel runner so it can fold
+    /// chat→tx correlations (receive-address quotes, signing-start
+    /// back-links) and emit `ChannelEvent::TxObservation`. Builds a
+    /// `WalletTx` from the app `Transaction` fields and forwards to
+    /// `ChannelHandle::notify_tx_observed`. Local-only — no relay
+    /// traffic.
+    pub async fn notify_tx_observed(
+        &self,
+        access_structure_id: AccessStructureId,
+        tx: crate::api::bitcoin::Transaction,
+    ) -> Result<()> {
+        let handle = self.get_handle(access_structure_id)?;
+        let wallet_tx = frostsnap_coordinator::bitcoin::wallet::Transaction {
+            inner: std::sync::Arc::new(tx.inner.clone()),
+            txid: tx.inner.compute_txid(),
+            confirmation_time: tx.confirmation_time.clone(),
+            first_seen: tx.first_seen,
+            last_seen: tx.last_seen,
+            prevouts: tx.prevouts.clone(),
+            is_mine: tx.is_mine.clone(),
+        };
+        handle.notify_tx_observed(wallet_tx).await
+    }
+
     /// Open a remote keygen lobby at `channel_secret` as the initiator.
     /// Publishes the nostr `ChannelCreation` event — with the wallet
     /// name + purpose carried inline in its content — and returns a
@@ -816,6 +840,13 @@ pub enum _ConnectionState {
     Disconnected { reason: Option<String> },
 }
 
+/// Mirrors `frostsnap_nostr::ObservationKind`.
+#[frb(mirror(ObservationKind), non_opaque)]
+pub enum _ObservationKind {
+    Mempool,
+    Confirmed,
+}
+
 /// Mirrors `frostsnap_nostr::signing::ConfirmedSubsetEntry` — one entry
 /// in `SigningEvent::RoundConfirmed.subset`.
 #[frb(mirror(ConfirmedSubsetEntry), non_opaque)]
@@ -914,6 +945,13 @@ pub enum _ChannelEvent {
     ReceiveAddressSendFailed {
         message_id: EventId,
         reason: String,
+    },
+    TxObservation {
+        txid: String,
+        kind: ObservationKind,
+        timestamp: u64,
+        address_reveal_event: Option<EventId>,
+        signing_start_event: Option<EventId>,
     },
     ConnectionState(ConnectionState),
     GroupMetadata {

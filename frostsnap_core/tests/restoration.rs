@@ -531,9 +531,9 @@ fn delete_share_and_recover_then_sign() {
         .unwrap();
 
     for &device_id in &signing_set2 {
-        let sign_req = run
-            .coordinator
-            .request_device_sign(session_id2, device_id, TEST_ENCRYPTION_KEY);
+        let sign_req =
+            run.coordinator
+                .request_device_sign(session_id2, device_id, TEST_ENCRYPTION_KEY);
         run.extend(sign_req);
     }
     run.run_until_finished(&mut env, &mut test_rng).unwrap();

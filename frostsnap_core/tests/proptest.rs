@@ -828,9 +828,9 @@ impl StateMachineTest for HappyPathTest {
             } => {
                 let session_id = sign_sessions[session_index];
 
-                let req = run
-                    .coordinator
-                    .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+                let req =
+                    run.coordinator
+                        .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
                 run.extend(req);
             }
             Transition::CCancelSignSession { session_index } => {

@@ -363,7 +363,10 @@ impl FrostCoordinator {
             )
             .map_err(StartSignError::NotEnoughNoncesForDevice)?;
 
-        let nonce_sub_segment = local_nonces_map.into_values().next().expect("we asked for one");
+        let nonce_sub_segment = local_nonces_map
+            .into_values()
+            .next()
+            .expect("we asked for one");
         let binonces: Vec<schnorr_fun::binonce::Nonce> =
             nonce_sub_segment.segment.nonces.iter().copied().collect();
 

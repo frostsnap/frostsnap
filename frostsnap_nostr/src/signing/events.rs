@@ -61,6 +61,25 @@ pub enum ChannelEvent {
         message_id: EventId,
         reason: String,
     },
+    /// A tx that touches this group's wallet was observed (in
+    /// mempool or just confirmed). Carries identifiers + chat-side
+    /// correlations only; Dart fetches the tx data via
+    /// `SuperWallet::get_tx(txid)` at render time.
+    TxObservation {
+        txid: String,
+        kind: ObservationKind,
+        /// `last_seen` for `Mempool`, `confirmation_time.time` for
+        /// `Confirmed`. Used by Dart for chat-timeline ordering.
+        timestamp: u64,
+        /// Set when this tx pays to an address that was previously
+        /// announced via a `ReceiveAddress` chat message.
+        /// Chronology-only — resolved once on first observation,
+        /// no back-patching.
+        address_reveal_event: Option<EventId>,
+        /// Set when this tx is the signed result of a chat
+        /// `SigningEvent::Request`. Same chronology rule.
+        signing_start_event: Option<EventId>,
+    },
     ConnectionState(ConnectionState),
     GroupMetadata {
         members: Vec<GroupMember>,
@@ -130,6 +149,16 @@ pub enum ConnectionState {
     Connecting,
     Connected,
     Disconnected { reason: Option<String> },
+}
+
+/// Which moment-in-time a `TxObservation` event represents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservationKind {
+    /// Wallet has seen the tx (typically in mempool) but it
+    /// hasn't been confirmed in a block yet.
+    Mempool,
+    /// Wallet has seen a block containing the tx.
+    Confirmed,
 }
 
 // ============================================================================

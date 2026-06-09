@@ -127,10 +127,24 @@ impl CoordSuperWallet {
     }
 
     pub fn spk_index(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> Option<u32> {
+        self.spk_keychain_index(master_appkey, spk)
+            .map(|(_, idx)| idx)
+    }
+
+    /// Like [`spk_index`] but also returns the keychain (external
+    /// vs internal) — needed by consumers that must distinguish
+    /// receive-flow indices from change indices.
+    pub fn spk_keychain_index(
+        &self,
+        master_appkey: MasterAppkey,
+        spk: ScriptBuf,
+    ) -> Option<(BitcoinAccountKeychain, u32)> {
         self.tx_graph
             .index
             .index_of_spk(spk)
-            .and_then(|((key, _), index)| (*key == master_appkey).then_some(*index))
+            .and_then(|((key, keychain), index)| {
+                (*key == master_appkey).then_some((*keychain, *index))
+            })
     }
 
     fn descriptors_for_key(
@@ -334,48 +348,80 @@ impl CoordSuperWallet {
                 self.chain.tip().block_id(),
                 CanonicalizationParams::default(),
             )
-            .filter_map(|canonical_tx| {
-                let inner = canonical_tx.tx_node.tx.clone();
-                let txid = canonical_tx.tx_node.txid;
-                let confirmation_time = match canonical_tx.chain_position {
-                    ChainPosition::Confirmed { anchor, .. } => Some(ConfirmationTime {
-                        height: anchor.block_id.height,
-                        time: anchor.confirmation_time,
-                    }),
-                    _ => None,
-                };
-                let last_seen = canonical_tx.tx_node.last_seen;
-                let prevouts =
-                    self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
-                let is_mine = inner
-                    .output
-                    .iter()
-                    .chain(prevouts.values())
-                    .filter_map(|txout| {
-                        let spk = txout.script_pubkey.clone();
-                        self.tx_graph
-                            .index
-                            .index_of_spk(spk.clone())
-                            .filter(|((key, _), _)| *key == master_appkey)
-                            .map(|((_, _), index)| (spk, *index))
-                    })
-                    .collect::<HashMap<ScriptBuf, u32>>();
-                if is_mine.is_empty() {
-                    None
-                } else {
-                    Some(Transaction {
-                        inner,
-                        txid,
-                        confirmation_time,
-                        last_seen,
-                        prevouts,
-                        is_mine,
-                    })
-                }
-            })
+            .filter_map(|canonical_tx| self.build_transaction(canonical_tx, master_appkey))
             .collect::<Vec<_>>();
         txs.reverse();
         txs
+    }
+
+    /// Get the wallet-decorated `Transaction` for a single txid, if
+    /// the wallet knows about it and at least one of its inputs or
+    /// outputs is owned by `master_appkey`.
+    pub fn get_transaction(
+        &mut self,
+        master_appkey: MasterAppkey,
+        txid: Txid,
+    ) -> Option<Transaction> {
+        self.lazily_initialize_key(master_appkey);
+        let canonical = self
+            .tx_graph
+            .graph()
+            .list_ordered_canonical_txs(
+                self.chain.as_ref(),
+                self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
+            )
+            .find(|c| c.tx_node.txid == txid)?;
+        self.build_transaction(canonical, master_appkey)
+    }
+
+    fn build_transaction(
+        &self,
+        canonical_tx: bdk_chain::tx_graph::CanonicalTx<
+            '_,
+            Arc<bitcoin::Transaction>,
+            ConfirmationBlockTime,
+        >,
+        master_appkey: MasterAppkey,
+    ) -> Option<Transaction> {
+        let inner = canonical_tx.tx_node.tx.clone();
+        let txid = canonical_tx.tx_node.txid;
+        let confirmation_time = match canonical_tx.chain_position {
+            ChainPosition::Confirmed { anchor, .. } => Some(ConfirmationTime {
+                height: anchor.block_id.height,
+                time: anchor.confirmation_time,
+            }),
+            _ => None,
+        };
+        let first_seen = canonical_tx.tx_node.first_seen;
+        let last_seen = canonical_tx.tx_node.last_seen;
+        let prevouts = self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
+        let is_mine = inner
+            .output
+            .iter()
+            .chain(prevouts.values())
+            .filter_map(|txout| {
+                let spk = txout.script_pubkey.clone();
+                self.tx_graph
+                    .index
+                    .index_of_spk(spk.clone())
+                    .filter(|((key, _), _)| *key == master_appkey)
+                    .map(|((_, keychain), index)| (spk, (*keychain, *index)))
+            })
+            .collect::<HashMap<ScriptBuf, (BitcoinAccountKeychain, u32)>>();
+        if is_mine.is_empty() {
+            None
+        } else {
+            Some(Transaction {
+                inner,
+                txid,
+                confirmation_time,
+                first_seen,
+                last_seen,
+                prevouts,
+                is_mine,
+            })
+        }
     }
 
     pub fn apply_update(
@@ -906,11 +952,25 @@ pub struct Transaction {
     pub txid: Txid,
 
     pub confirmation_time: Option<ConfirmationTime>,
+    /// Earliest timestamp at which the wallet observed this tx
+    /// unconfirmed. Monotonically stable from first sighting (BDK's
+    /// `update_first_seen` only shifts earlier, never later). Used
+    /// as the chat-timeline anchor for the "we learned about this
+    /// tx" moment.
+    pub first_seen: Option<u64>,
+    /// Latest timestamp at which the wallet observed this tx
+    /// unconfirmed. Shifts forward on every re-sighting — NOT
+    /// suitable as a timeline anchor; useful for "mempool freshness"
+    /// indicators ("last seen N min ago").
     pub last_seen: Option<u64>,
 
     pub prevouts: HashMap<OutPoint, TxOut>,
-    /// Maps owned script pubkeys to their derivation index.
-    pub is_mine: HashMap<ScriptBuf, u32>,
+    /// Maps owned script pubkeys to (keychain, derivation_index).
+    /// Keychain distinguishes external (receive) from internal
+    /// (change); both keychains' owned scripts land here, so
+    /// derivation indices alone are ambiguous — consumers that
+    /// care must check the keychain.
+    pub is_mine: HashMap<ScriptBuf, (BitcoinAccountKeychain, u32)>,
 }
 
 #[derive(Clone, Debug)]

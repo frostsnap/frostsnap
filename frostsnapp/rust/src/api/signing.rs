@@ -181,12 +181,18 @@ impl WireSignTaskExt for WireSignTask {
                 let txid = raw_tx.compute_txid();
                 let is_mine = tx_temp
                     .iter_locally_owned_inputs()
-                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index))
-                    .chain(
-                        tx_temp
-                            .iter_locally_owned_outputs()
-                            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index)),
-                    )
+                    .map(|(_, _, spk)| {
+                        (
+                            spk.spk(),
+                            (spk.bip32_path.account_keychain, spk.bip32_path.index),
+                        )
+                    })
+                    .chain(tx_temp.iter_locally_owned_outputs().map(|(_, _, spk)| {
+                        (
+                            spk.spk(),
+                            (spk.bip32_path.account_keychain, spk.bip32_path.index),
+                        )
+                    }))
                     .collect::<HashMap<_, _>>();
                 let prevouts = tx_temp
                     .inputs()
@@ -198,6 +204,7 @@ impl WireSignTaskExt for WireSignTask {
                         inner: raw_tx,
                         txid: txid.to_string(),
                         confirmation_time: None,
+                        first_seen: None,
                         last_seen: None,
                         prevouts,
                         is_mine,
@@ -237,6 +244,7 @@ impl UnsignedTx {
         Transaction {
             txid: txid.to_string(),
             confirmation_time: None,
+            first_seen: None,
             last_seen: None,
             prevouts: super_wallet
                 .get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output)),
@@ -251,8 +259,8 @@ impl UnsignedTx {
                 .filter_map(|txout| {
                     let spk = txout.script_pubkey.clone();
                     super_wallet
-                        .spk_index(master_appkey, spk.clone())
-                        .map(|index| (spk, index))
+                        .spk_keychain_index(master_appkey, spk.clone())
+                        .map(|kc_idx| (spk, kc_idx))
                 })
                 .collect::<HashMap<_, _>>(),
             inner: raw_tx,

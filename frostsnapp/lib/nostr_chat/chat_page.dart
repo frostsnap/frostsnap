@@ -237,19 +237,17 @@ class TimelineSigningComplete extends TimelineItem {
     : timestamp = DateTime.fromMillisecondsSinceEpoch(completedAtSecs * 1000);
 }
 
-enum TxTimelineKind { needsBroadcast, mempool, confirmed }
+enum TxTimelineKind { needsBroadcast }
 
+/// Locally-signed tx awaiting broadcast. Owned entirely by the Dart
+/// signing flow — the wallet hasn't observed this tx yet so the
+/// runner can't emit a `TxObservation` for it. Removed from the
+/// timeline once the first `Mempool` `TxObservation` arrives for
+/// the txid.
 class TimelineTransaction extends TimelineItem {
   final Transaction tx;
   final TxTimelineKind kind;
   final SigningRequestState? signingState;
-
-  /// When set, the tx pays to an address that was previously shared
-  /// via a receive-address message; the mempool tx card renders a
-  /// quote pointing back to that message. Only populated for the
-  /// `mempool` kind — confirmed renders a minimal pill that has no
-  /// room for a quote header, and needsBroadcast is outgoing.
-  final EventId? quotedReceiveMessageId;
 
   @override
   final DateTime timestamp;
@@ -258,7 +256,27 @@ class TimelineTransaction extends TimelineItem {
     required this.kind,
     required int timestampSecs,
     this.signingState,
-    this.quotedReceiveMessageId,
+  }) : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
+}
+
+/// A wallet-observed tx (in mempool or just confirmed) emitted by the
+/// channel runner. Carries identifiers + chat-side correlations only;
+/// the renderer fetches the opaque `Transaction` via
+/// `walletCtx.superWallet.getTx(txid)` at build time.
+class TimelineTxObservation extends TimelineItem {
+  final String txid;
+  final ObservationKind kind;
+  @override
+  final DateTime timestamp;
+  final EventId? addressRevealEvent;
+  final EventId? signingStartEvent;
+
+  TimelineTxObservation({
+    required this.txid,
+    required this.kind,
+    required int timestampSecs,
+    this.addressRevealEvent,
+    this.signingStartEvent,
   }) : timestamp = DateTime.fromMillisecondsSinceEpoch(timestampSecs * 1000);
 }
 
@@ -336,7 +354,17 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   late List<PublicKey> _memberPubkeys;
   StreamSubscription<ChannelEvent>? _subscription;
   StreamSubscription<TxState>? _txSubscription;
+
+  /// Tracks the `TxTimelineKind.needsBroadcast` entries inserted
+  /// Dart-side after signing completion. Replaced by a
+  /// `TimelineTxObservation` once the wallet observes the tx.
   final Map<String, TxTimelineKind> _txTimelineState = {};
+
+  /// Upsert key for runner-emitted observations. `(txid, kind)` →
+  /// the currently-inserted timeline item. Lets repeat
+  /// notifications no-op and lets the kind transition coexist
+  /// (mempool item stays after a separate confirmed pill is added).
+  final Map<(String, ObservationKind), TimelineTxObservation> _txItemByKey = {};
   NostrClient? _client;
   ConnectionState _connectionState = const ConnectionState.connecting();
   ReplyTarget? _replyingTo;
@@ -402,48 +430,17 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   void _applyTxState(TxState state) {
-    bool changed = false;
+    final client = _client;
+    if (client == null) return;
     for (final tx in state.txs) {
-      final txid = tx.txid;
-      final lastSeen = tx.lastSeen;
-      final confirmTime = tx.confirmationTime;
-
-      final currentState = _txTimelineState[txid];
-
-      if (lastSeen != null &&
-          currentState != TxTimelineKind.mempool &&
-          currentState != TxTimelineKind.confirmed) {
-        _removeTxTimelineItem(txid, TxTimelineKind.needsBroadcast);
-        _txTimelineState[txid] = TxTimelineKind.mempool;
-        _insertTimelineItem(
-          TimelineTransaction(
-            tx,
-            kind: TxTimelineKind.mempool,
-            timestampSecs: lastSeen,
-            quotedReceiveMessageId: _resolveReceiveQuoteFor(
-              tx,
-              TxTimelineKind.mempool,
-            ),
-          ),
-        );
-        changed = true;
-      }
-
-      if (confirmTime != null &&
-          currentState != TxTimelineKind.confirmed &&
-          (lastSeen == null || confirmTime.time != lastSeen)) {
-        _txTimelineState[txid] = TxTimelineKind.confirmed;
-        _insertTimelineItem(
-          TimelineTransaction(
-            tx,
-            kind: TxTimelineKind.confirmed,
-            timestampSecs: confirmTime.time,
-          ),
-        );
-        changed = true;
-      }
+      // Local-only pump. Runner folds correlations against the
+      // chat-side maps it maintains and emits TxObservation events
+      // that drive timeline insertion.
+      client.notifyTxObserved(
+        accessStructureId: widget.accessStructureId,
+        tx: tx,
+      );
     }
-    if (changed) setState(() {});
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
@@ -649,6 +646,36 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           card.status = MessageStatus.failed;
           card.failureReason = reason;
         }
+
+      case ChannelEvent_TxObservation(
+        :final txid,
+        :final kind,
+        :final timestamp,
+        :final addressRevealEvent,
+        :final signingStartEvent,
+      ):
+        final key = (txid, kind);
+        final existing = _txItemByKey[key];
+        if (existing != null) break;
+        if (kind == ObservationKind.mempool) {
+          // First wallet observation for this txid — drop any
+          // pre-broadcast (locally-signed, awaiting broadcast) card.
+          _timeline.removeWhere(
+            (item) =>
+                item is TimelineTransaction &&
+                item.tx.txid == txid &&
+                item.kind == TxTimelineKind.needsBroadcast,
+          );
+        }
+        final item = TimelineTxObservation(
+          txid: txid,
+          kind: kind,
+          timestampSecs: timestamp.toInt(),
+          addressRevealEvent: addressRevealEvent,
+          signingStartEvent: signingStartEvent,
+        );
+        _txItemByKey[key] = item;
+        _insertTimelineItem(item);
 
       case ChannelEvent_ConnectionState(:final field0):
         _connectionState = field0;
@@ -898,15 +925,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     return accessStruct?.threshold() ?? 0;
   }
 
-  void _removeTxTimelineItem(String txid, TxTimelineKind kind) {
-    _timeline.removeWhere(
-      (item) =>
-          item is TimelineTransaction &&
-          item.kind == kind &&
-          item.tx.txid == txid,
-    );
-  }
-
   void _jumpToBottom() {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
@@ -1024,35 +1042,30 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           ),
           TimelineTransaction(
             :final tx,
-            :final kind,
             :final timestamp,
             :final signingState,
-            :final quotedReceiveMessageId,
           ) =>
-            switch (kind) {
-              TxTimelineKind.needsBroadcast => _TransactionCard(
-                key: _timelineKeys.putIfAbsent(tx.txid, () => GlobalKey()),
-                tx: tx,
-                timestamp: timestamp,
-                onTap: () => _showTxDetails(tx),
-                onBroadcast: signingState != null
-                    ? () => _broadcastTransaction(signingState)
-                    : null,
-              ),
-              TxTimelineKind.mempool => _TransactionCard(
-                key: _timelineKeys.putIfAbsent(tx.txid, () => GlobalKey()),
-                tx: tx,
-                timestamp: timestamp,
-                isHighlighted: _highlightedId == tx.txid,
-                onTap: () => _showTxDetails(tx),
-                quote: _buildReceiveQuoteFor(quotedReceiveMessageId),
-              ),
-              TxTimelineKind.confirmed => _TxConfirmedLine(
-                tx: tx,
-                timestamp: timestamp,
-                onTapPill: () => _scrollToByStringId(tx.txid),
-              ),
-            },
+            _TransactionCard(
+              key: _timelineKeys.putIfAbsent(tx.txid, () => GlobalKey()),
+              tx: tx,
+              timestamp: timestamp,
+              onTap: () => _showTxDetails(tx),
+              onBroadcast: signingState != null
+                  ? () => _broadcastTransaction(signingState)
+                  : null,
+            ),
+          TimelineTxObservation(
+            :final txid,
+            :final kind,
+            :final timestamp,
+            :final addressRevealEvent,
+          ) =>
+            _buildTxObservationCard(
+              txid: txid,
+              kind: kind,
+              timestamp: timestamp,
+              addressRevealEvent: addressRevealEvent,
+            ),
           TimelineError() => SigningErrorCard(
             text: item.reason,
             author: item.author,
@@ -1091,9 +1104,48 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     _scrollToByStringId(eventId.toHex());
   }
 
-  /// Build a `_QuoteHeader` for a tx that quotes the receive-address
-  /// share message it pays to. Returns null when the resolved id is
-  /// null or the card model is no longer in the timeline (rare).
+  /// Render a runner-emitted `TimelineTxObservation` item. Fetches
+  /// the opaque `Transaction` from the wallet via `getTx(txid)` at
+  /// build time. If the wallet doesn't know about it yet (race or
+  /// chain-sync gap), renders a minimal placeholder card so the
+  /// timeline doesn't jump on the next snapshot.
+  Widget _buildTxObservationCard({
+    required String txid,
+    required ObservationKind kind,
+    required DateTime timestamp,
+    required EventId? addressRevealEvent,
+  }) {
+    final walletCtx = WalletContext.of(context);
+    final tx = walletCtx?.superWallet.getTx(
+      masterAppkey: walletCtx.masterAppkey,
+      txid: txid,
+    );
+    if (tx == null) {
+      return _TxLookupPlaceholder(txid: txid, timestamp: timestamp);
+    }
+    switch (kind) {
+      case ObservationKind.mempool:
+        return _TransactionCard(
+          key: _timelineKeys.putIfAbsent(txid, () => GlobalKey()),
+          tx: tx,
+          timestamp: timestamp,
+          isHighlighted: _highlightedId == txid,
+          onTap: () => _showTxDetails(tx),
+          quote: _buildReceiveQuoteFor(addressRevealEvent),
+        );
+      case ObservationKind.confirmed:
+        return _TxConfirmedLine(
+          tx: tx,
+          timestamp: timestamp,
+          onTapPill: () => _scrollToByStringId(txid),
+        );
+    }
+  }
+
+  /// Build a `_QuoteHeader` for a tx-observation card that links back
+  /// to the receive-address share message announcing the address the
+  /// tx pays to. Returns null when the runner didn't resolve a quote
+  /// or the receive bubble is no longer in `_receiveCardById` (rare).
   Widget? _buildReceiveQuoteFor(EventId? id) {
     if (id == null) return null;
     final card = _receiveCardById[id];
@@ -1110,33 +1162,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       bodyIcon: Icons.call_received_rounded,
       onTap: () => _scrollToAndHighlight(id),
     );
-  }
-
-  /// Resolve the receive-address share message (if any) that announced
-  /// one of this tx's owned OUTPUTS. Only returns non-null for the
-  /// `mempool` kind — confirmed is a minimal pill that doesn't render
-  /// the quote, and `needsBroadcast` is outgoing-by-construction so
-  /// the filter already excludes it. Uses `tx.recipients()` (outputs
-  /// only) instead of `tx.isMine` (which mixes input and output
-  /// scripts). Scans the timeline in reverse for the MOST RECENT
-  /// receive-share whose derivation index matches an owned output.
-  EventId? _resolveReceiveQuoteFor(Transaction tx, TxTimelineKind kind) {
-    if (kind != TxTimelineKind.mempool) return null;
-    if ((tx.balanceDelta() ?? 0) <= 0) return null;
-    final myOutputIndices = <int>{};
-    for (final r in tx.recipients()) {
-      if (r.isMine && r.derivationIndex != null) {
-        myOutputIndices.add(r.derivationIndex!);
-      }
-    }
-    if (myOutputIndices.isEmpty) return null;
-    for (final item in _timeline.reversed) {
-      if (item is TimelineReceiveAddress &&
-          myOutputIndices.contains(item.card.derivationIndex)) {
-        return item.card.messageId;
-      }
-    }
-    return null;
   }
 
   void _scrollToByStringId(String id) {
@@ -3827,6 +3852,49 @@ class _ChatReplyQuote extends StatelessWidget {
       body: target.content,
       bodyIcon: target.quoteIcon,
       onTap: onTap,
+    );
+  }
+}
+
+class _TxLookupPlaceholder extends StatelessWidget {
+  final String txid;
+  final DateTime timestamp;
+  const _TxLookupPlaceholder({required this.txid, required this.timestamp});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final short = txid.length > 12 ? '${txid.substring(0, 12)}…' : txid;
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.history,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Syncing tx $short…',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

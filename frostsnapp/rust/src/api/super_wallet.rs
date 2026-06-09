@@ -103,6 +103,24 @@ impl SuperWallet {
         txs.into()
     }
 
+    /// Single-tx lookup by hex txid. Returns the FRB-opaque
+    /// `Transaction` (with `balance_delta`/`recipients`/`fee`
+    /// methods) built from the wallet's canonical view, or `None`
+    /// if the txid is unknown or doesn't touch `master_appkey`.
+    #[frb(sync)]
+    pub fn get_tx(
+        &self,
+        master_appkey: MasterAppkey,
+        txid: String,
+    ) -> Option<crate::api::bitcoin::Transaction> {
+        let parsed = bitcoin::Txid::from_str(&txid).ok()?;
+        self.inner
+            .lock()
+            .unwrap()
+            .get_transaction(master_appkey, parsed)
+            .map(Into::into)
+    }
+
     pub fn reconnect(&self) {
         self.chain_sync.reconnect();
     }
