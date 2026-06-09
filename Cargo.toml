@@ -8,6 +8,7 @@ members = [
     "frostsnapp/rust",
     "frostsnap_embedded",
     "frostsnap_factory",
+    "frostsnap_secure_boot",
     "frost_backup",
     "frostsnap_fonts",
     "frostsnap_widgets",
@@ -27,6 +28,7 @@ default-members = [
     "frostsnapp/rust",
     "frostsnap_embedded",
     "frostsnap_factory",
+    "frostsnap_secure_boot",
     "frost_backup",
     "frostsnap_fonts",
     "frostsnap_widgets",
@@ -57,6 +59,7 @@ frostsnap_macros = { path = "macros", default-features = false }
 frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
 frostsnap_cst816s = { path = "cst816s", default-features = false }
 frostsnap_desktop_camera = { path = "frostsnapp/desktop_camera" }
+frostsnap_secure_boot = { path = "frostsnap_secure_boot" }
 esp-hal = { git = "https://github.com/frostsnap/esp-hal", rev = "6ecaa2eb75d4d97de877c18d13bfd07d251da971" }
 embedded-hal = "1.0"
 tracing = { version = "0.1", default-features = false }

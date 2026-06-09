@@ -11,7 +11,8 @@ pub mod db;
 pub mod ds;
 pub mod genuine_check;
 pub mod process;
-pub mod secure_boot;
+
+use frostsnap_secure_boot as secure_boot;
 
 const BOARD_REVISION: &str = "2.7-1625";
 
@@ -269,7 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli::Commands::SignFirmware { input, output, key } => {
             let pem = std::fs::read(&key)?;
             let firmware = std::fs::read(&input)?;
-            let signed = secure_boot::sign_firmware(&firmware, &pem)?;
+            let signed = secure_boot::sign_firmware(&firmware, &pem, &mut rand::thread_rng())?;
             std::fs::write(&output, &signed)?;
             println!(
                 "Signed {} bytes -> {} bytes written to {}",
@@ -301,37 +302,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             require_known_version,
         } => {
             let signed = std::fs::read(&input)?;
-            secure_boot::verify_firmware(&signed)?;
+
+            // A valid signature only proves the image is *self-consistently* signed.
+            // Distinguish "not a signed image at all" from "signed but corrupt/tampered".
+            let verified = match secure_boot::verify_firmware(&signed) {
+                Ok(v) => v,
+                Err(e) if e.is_not_signed() => {
+                    eprintln!("⚠️  NOT SIGNED: {e}");
+                    eprintln!("   {} is not a Secure Boot v2 image.", input.display());
+                    return Err(format!("not signed: {e}").into());
+                }
+                Err(e) => {
+                    eprintln!("⚠️  SIGNATURE INVALID / CORRUPT: {e}");
+                    eprintln!(
+                        "   {} is signed but failed verification — possible tampering.",
+                        input.display()
+                    );
+                    return Err(format!("signature invalid: {e}").into());
+                }
+            };
+
+            let signer = classify_firmware_signer(&verified.key_digest)?;
 
             use sha2::{Digest, Sha256};
             let bytes: &'static [u8] = Box::leak(signed.into_boxed_slice());
             let firmware = frostsnap_coordinator::FirmwareBin::new(bytes);
-            let (firmware_size, total_size) =
-                frostsnap_comms::firmware_reader::firmware_size(&firmware)
-                    .map_err(|e| format!("Failed to parse firmware: {e}"))?;
-            let firmware_digest = Sha256::digest(&bytes[..firmware_size as usize]);
-            let digest = Sha256Digest(firmware_digest.into());
 
-            println!("Verified: {}", input.display());
-            println!(
-                "  Size: {} bytes ({} firmware + {} signature block)",
-                total_size,
-                firmware_size,
-                total_size - firmware_size
-            );
-            println!("  Firmware digest: {}", hex::encode(&firmware_digest));
+            // Signer comes from the already-verified signature block, so it is always
+            // known. Size/digest/version come from parsing the firmware *body*, which a
+            // corrupt image may lack — parse it best-effort so a malformed body can't
+            // hide the signer verdict (the case where you most want to know who signed it).
+            let body = frostsnap_comms::firmware_reader::firmware_size(&firmware)
+                .ok()
+                .map(|(firmware_size, total_size)| {
+                    let digest = Sha256::digest(&bytes[..firmware_size as usize]);
+                    (firmware_size, total_size, digest)
+                });
+            let version = body.as_ref().and_then(|(_, _, digest)| {
+                frostsnap_coordinator::VersionNumber::from_digest(&Sha256Digest((*digest).into()))
+            });
 
-            match frostsnap_coordinator::VersionNumber::from_digest(&digest) {
-                Some(version) => println!("  Known version: v{}", version),
-                None if require_known_version => {
+            println!("{}", input.display());
+            match &body {
+                Some((firmware_size, total_size, digest)) => {
+                    println!(
+                        "  Size: {} bytes ({} firmware + {} signature block)",
+                        total_size,
+                        firmware_size,
+                        total_size - firmware_size
+                    );
+                    println!("  Firmware digest:   {}", hex::encode(digest));
+                }
+                None => println!("  Firmware body:     unparseable (reporting signer only)"),
+            }
+            println!("  Signer key digest: {}", hex::encode(&verified.key_digest));
+            match version {
+                Some(version) => println!("  Version: v{} (known release)", version),
+                None => println!("  Version: unknown (not a tagged release)"),
+            }
+
+            match signer {
+                frostsnap_secure_boot::Signer::Prod => {
+                    println!("✅ Verified — signed by Frostsnap PROD key");
+                }
+                frostsnap_secure_boot::Signer::Dev => {
+                    println!("✅ Verified — signed by Frostsnap DEV key (not production!)");
+                }
+                frostsnap_secure_boot::Signer::Unknown => {
+                    eprintln!(
+                        "⚠️  SIGNED BY UNKNOWN KEY (digest {}) — not a Frostsnap factory key",
+                        hex::encode(&verified.key_digest)
+                    );
                     return Err(format!(
-                        "Firmware digest {} is not in KNOWN_FIRMWARE_VERSIONS. \
-                         Add an entry to frostsnap_coordinator/src/firmware.rs before releasing.",
-                        hex::encode(&firmware_digest)
+                        "unknown signer key {} — not a Frostsnap factory key",
+                        hex::encode(&verified.key_digest)
                     )
                     .into());
                 }
-                None => println!("  Known version: (not in KNOWN_FIRMWARE_VERSIONS)"),
+            }
+            if require_known_version && version.is_none() {
+                let what = match &body {
+                    Some((_, _, digest)) => format!("digest {}", hex::encode(digest)),
+                    None => "an unparseable firmware body".to_string(),
+                };
+                return Err(format!(
+                    "firmware is not a known release ({what}); \
+                     add an entry to frostsnap_coordinator/src/firmware.rs before releasing"
+                )
+                .into());
             }
         }
         cli::Commands::GenuineCheck => {
@@ -354,6 +412,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Classify a verified firmware's signer against the prod/dev keys committed at
+/// `frostsnap_factory/bootloader/{env}/secure-boot-key.pem`. Reads the same files
+/// the desktop `build.rs` uses, so build.rs and this CLI can't drift apart on
+/// what counts as the "Frostsnap prod/dev key".
+fn classify_firmware_signer(
+    key_digest: &[u8; 32],
+) -> Result<frostsnap_secure_boot::Signer, Box<dyn std::error::Error>> {
+    fn pinned_digest(env: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+        let path = format!("frostsnap_factory/bootloader/{env}/secure-boot-key.pem");
+        let pem = std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+        let pk = secure_boot::secure_boot_pubkey_from_pem(&pem)
+            .map_err(|e| format!("parse {path}: {e}"))?;
+        Ok(secure_boot::compute_key_digest(&pk))
+    }
+    let prod = pinned_digest("prod")?;
+    let dev = pinned_digest("dev")?;
+    Ok(secure_boot::classify_signer(key_digest, &prod, &dev))
 }
 
 fn load_known_genuine_keys() -> Vec<(&'static str, Point<EvenY>)> {
