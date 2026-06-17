@@ -65,7 +65,7 @@ fn verify_signed_firmware(source: &str, env_name: &str) {
         );
     }
 
-    let pem_path = format!("../../frostsnap_factory/bootloader/{env_name}/secure-boot-key.pem");
+    let pem_path = format!("../../frostsnap_factory/bootloader/{env_name}/secure-boot-pubkey.pem");
     println!("cargo:rerun-if-changed={pem_path}");
     let pem =
         fs::read(&pem_path).unwrap_or_else(|e| panic!("read secure-boot key {pem_path}: {e}"));
@@ -76,7 +76,7 @@ fn verify_signed_firmware(source: &str, env_name: &str) {
     let verified = frostsnap_secure_boot::verify_firmware(&bytes).unwrap_or_else(|e| {
         panic!("firmware at {source} failed secure-boot verification for env={env_name}: {e}")
     });
-    if verified.public_key != expected_pk {
+    if !verified.signed_by(&expected_pk) {
         panic!(
             "firmware at {source} is not signed by the env={env_name} secure-boot key. \
              You may have run the build with the wrong FROSTSNAP_ENV for the firmware on disk."

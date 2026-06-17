@@ -27,7 +27,8 @@ This creates two sets of keys:
 
 | File | Purpose |
 |------|---------|
-| `secure-boot-key.pem` | RSA-3072 private key for signing bootloader and firmware (ESP32 Secure Boot v2) |
+| `secure-boot-key.pem` | RSA-3072 **private** signing key (ESP32 Secure Boot v2). Dev: committed (not a secret). Prod: gitignored — the offline production secret, never committed |
+| `secure-boot-pubkey.pem` | RSA-3072 **public** verification key. Committed for both envs; the only key file `build.rs` and `verify-firmware` read to pin the signer |
 
 **`frostsnap_factory/genuine/dev/`** — Genuine device certificate keys:
 
@@ -143,11 +144,13 @@ frostsnap_factory/
     CMakeLists.txt          # Minimal ESP-IDF project (required by idf.py)
     main/                   # Empty stub component (required by ESP-IDF)
     dev/
-      secure-boot-key.pem   # Tracked (dev key, not a secret)
-      bootloader.bin         # Build artifact (gitignored)
-      signed-bootloader.bin  # Build artifact (gitignored)
+      secure-boot-key.pem     # Tracked (dev private signing key, not a secret)
+      secure-boot-pubkey.pem  # Tracked (public verification key)
+      bootloader.bin          # Build artifact (gitignored)
+      signed-bootloader.bin   # Build artifact (gitignored)
     prod/
-      secure-boot-key.pem    # Gitignored (production secret)
+      secure-boot-key.pem     # Gitignored (offline production signing secret)
+      secure-boot-pubkey.pem  # Tracked (public verification key)
       bootloader.bin          # Build artifact (gitignored)
       signed-bootloader.bin   # Tracked (migrated from old bootloader-frontier.bin)
   genuine/

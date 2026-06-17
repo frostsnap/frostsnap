@@ -63,6 +63,16 @@ pub struct Verified {
     pub image_digest: [u8; 32],
 }
 
+impl Verified {
+    /// Whether this image is signed by `expected`, compared via the ESP32
+    /// Secure Boot v2 eFuse key digest — the device's own trust anchor, which
+    /// covers the Montgomery constants too, not just the RSA modulus/exponent.
+    /// [`verify_firmware`] has already proven the signature; this answers *who*.
+    pub fn signed_by(&self, expected: &RsaPublicKey) -> bool {
+        self.key_digest == compute_key_digest(expected)
+    }
+}
+
 /// Verify the Secure Boot v2 signature block on a signed firmware image.
 ///
 /// Checks magic + CRC32 + image SHA-256 + Montgomery constants + RSA-PSS
@@ -204,17 +214,13 @@ pub enum Signer {
 }
 
 /// Classify a verified image's `key_digest` against the prod/dev digests the
-/// caller has computed from the committed `bootloader/{env}/secure-boot-key.pem`
+/// caller has computed from the committed `bootloader/{env}/secure-boot-pubkey.pem`
 /// files (via [`secure_boot_pubkey_from_pem`] + [`compute_key_digest`]).
 ///
 /// The pinned digests are passed in rather than read from disk so this crate
 /// imposes no filesystem layout on its callers — each consumer decides how to
 /// resolve the bootloader directory.
-pub fn classify_signer(
-    key_digest: &[u8; 32],
-    prod: &[u8; 32],
-    dev: &[u8; 32],
-) -> Signer {
+pub fn classify_signer(key_digest: &[u8; 32], prod: &[u8; 32], dev: &[u8; 32]) -> Signer {
     if key_digest == prod {
         Signer::Prod
     } else if key_digest == dev {
@@ -224,18 +230,16 @@ pub fn classify_signer(
     }
 }
 
-/// Load an RSA public key from a `bootloader/{env}/secure-boot-key.pem` file.
+/// Load an RSA public key from a `bootloader/{env}/secure-boot-pubkey.pem` file.
 ///
-/// Accepts either form: a PKCS#1/PKCS#8 *private* key PEM (dev's committed key)
-/// returns the derived public key, and a SubjectPublicKeyInfo *public* key PEM
-/// (prod's committed key — `openssl rsa -pubout` form) is parsed directly. The
-/// caller doesn't need to know which form a given env uses.
-pub fn secure_boot_pubkey_from_pem(
-    pem: &[u8],
-) -> Result<RsaPublicKey, Box<dyn std::error::Error>> {
+/// Both envs commit a SubjectPublicKeyInfo *public* key (`openssl rsa -pubout`
+/// form), parsed directly. A PKCS#1/PKCS#8 *private* key PEM is also accepted and
+/// reduced to its public key, so the same loader works if pointed at a private
+/// key file too.
+pub fn secure_boot_pubkey_from_pem(pem: &[u8]) -> Result<RsaPublicKey, Box<dyn std::error::Error>> {
     let pem_str = std::str::from_utf8(pem)?;
-    if let Ok(priv_key) = RsaPrivateKey::from_pkcs8_pem(pem_str)
-        .or_else(|_| RsaPrivateKey::from_pkcs1_pem(pem_str))
+    if let Ok(priv_key) =
+        RsaPrivateKey::from_pkcs8_pem(pem_str).or_else(|_| RsaPrivateKey::from_pkcs1_pem(pem_str))
     {
         return Ok(priv_key.to_public_key());
     }
@@ -366,9 +370,10 @@ mod tests {
         verify_firmware(&signed).unwrap();
     }
 
-    /// `secure_boot_pubkey_from_pem` must accept both committed forms — a
-    /// private key PEM (dev's `secure-boot-key.pem`) and a public key PEM
-    /// (prod's `secure-boot-key.pem`) — and return the same `RsaPublicKey`.
+    /// `secure_boot_pubkey_from_pem` must accept both PEM forms — a private key
+    /// PEM and a SubjectPublicKeyInfo public key PEM — and return the same
+    /// `RsaPublicKey`, so it works whether pointed at a `secure-boot-key.pem`
+    /// (private) or a `secure-boot-pubkey.pem` (public).
     #[test]
     fn pem_loader_accepts_private_and_public_forms() {
         use rsa::pkcs8::{EncodePublicKey, LineEnding};
@@ -399,40 +404,27 @@ mod tests {
         assert_eq!(classify_signer(&[0xFFu8; 32], &prod, &dev), Signer::Unknown);
     }
 
+    // Committed espsecure.py fixtures — the only cross-check that our block
+    // format matches the canonical ESP32 tool, and (since the signer check now
+    // rides on `compute_key_digest`) what keeps that digest layout honest.
+    // `include_bytes!` so a missing fixture is a compile error, never a silent skip.
+    const ESPSECURE_FIRMWARE: &[u8] = include_bytes!("../tests/fixtures/test-firmware.bin");
+    const ESPSECURE_SIGNED: &[u8] = include_bytes!("../tests/fixtures/test-firmware-signed.bin");
+    const ESPSECURE_KEY: &[u8] = include_bytes!("../tests/fixtures/test-signing-key.pem");
+
     #[test]
     fn matches_espsecure_format() {
-        let reference = match std::fs::read("tests/fixtures/test-firmware-signed.bin") {
-            Ok(data) => data,
-            Err(_) => {
-                eprintln!(
-                    "Skipping: tests/fixtures/test-firmware-signed.bin not found (generate with espsecure.py)"
-                );
-                return;
-            }
-        };
-        verify_firmware(&reference).unwrap();
+        verify_firmware(ESPSECURE_SIGNED).unwrap();
     }
 
     #[test]
     fn roundtrip_against_espsecure_input() {
-        let (firmware, reference, pem) = match (|| -> Option<_> {
-            let firmware = std::fs::read("tests/fixtures/test-firmware.bin").ok()?;
-            let reference = std::fs::read("tests/fixtures/test-firmware-signed.bin").ok()?;
-            let pem = std::fs::read("tests/fixtures/test-signing-key.pem").ok()?;
-            Some((firmware, reference, pem))
-        })() {
-            Some(v) => v,
-            None => {
-                eprintln!("Skipping: ../tmp/test-firmware*.bin or test-signing-key.pem not found");
-                return;
-            }
-        };
-
-        let signed = sign_firmware(&firmware, &pem, &mut rand::thread_rng()).unwrap();
-        assert_eq!(signed.len(), reference.len(), "output size mismatch");
+        let signed =
+            sign_firmware(ESPSECURE_FIRMWARE, ESPSECURE_KEY, &mut rand::thread_rng()).unwrap();
+        assert_eq!(signed.len(), ESPSECURE_SIGNED.len(), "output size mismatch");
 
         let our_block = &signed[signed.len() - SECTOR_SIZE..];
-        let ref_block = &reference[reference.len() - SECTOR_SIZE..];
+        let ref_block = &ESPSECURE_SIGNED[ESPSECURE_SIGNED.len() - SECTOR_SIZE..];
 
         assert_eq!(&our_block[0..4], &ref_block[0..4]);
         assert_eq!(&our_block[4..36], &ref_block[4..36]);

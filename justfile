@@ -8,6 +8,7 @@ env := "dev"
 bootloader_dir := "frostsnap_factory/bootloader"
 genuine_dir := "frostsnap_factory/genuine"
 secure_boot_key := bootloader_dir / env / "secure-boot-key.pem"
+secure_boot_pubkey := bootloader_dir / env / "secure-boot-pubkey.pem"
 bootloader_bin := bootloader_dir / env / "signed-bootloader.bin"
 firmware_bin := "target/riscv32imc-unknown-none-elf/release/" + env + "-frontier.bin"
 partitions_csv := "device/partitions.csv"
@@ -109,6 +110,8 @@ gen-keys:
     mkdir -p {{bootloader_dir}}/{{env}}
     mkdir -p {{genuine_dir}}/{{env}}
     cargo run -p frostsnap_factory -- gen-secure-boot-key -o {{secure_boot_key}}
+    # commit the public verification key; the private key stays out of git for prod
+    openssl rsa -in {{secure_boot_key}} -pubout -out {{secure_boot_pubkey}}
     cargo run -p frostsnap_factory -- gen-genuine-cert-key -o {{genuine_dir}}/{{env}}
 
 # Provision a single device (no database)

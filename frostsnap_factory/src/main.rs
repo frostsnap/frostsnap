@@ -415,14 +415,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Classify a verified firmware's signer against the prod/dev keys committed at
-/// `frostsnap_factory/bootloader/{env}/secure-boot-key.pem`. Reads the same files
+/// `frostsnap_factory/bootloader/{env}/secure-boot-pubkey.pem`. Reads the same files
 /// the desktop `build.rs` uses, so build.rs and this CLI can't drift apart on
 /// what counts as the "Frostsnap prod/dev key".
 fn classify_firmware_signer(
     key_digest: &[u8; 32],
 ) -> Result<frostsnap_secure_boot::Signer, Box<dyn std::error::Error>> {
     fn pinned_digest(env: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
-        let path = format!("frostsnap_factory/bootloader/{env}/secure-boot-key.pem");
+        let path = format!("frostsnap_factory/bootloader/{env}/secure-boot-pubkey.pem");
         let pem = std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
         let pk = secure_boot::secure_boot_pubkey_from_pem(&pem)
             .map_err(|e| format!("parse {path}: {e}"))?;
