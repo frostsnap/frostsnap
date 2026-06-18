@@ -90,6 +90,7 @@ class _EnterWalletNameViewState extends State<EnterWalletNameView> {
               controller: _walletNameController,
               maxLength: keyNameMaxLength(),
               inputFormatters: [nameInputFormatter],
+              textCapitalization: TextCapitalization.words,
               autofocus: true,
               decoration: const InputDecoration(
                 labelText: 'Wallet Name',

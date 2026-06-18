@@ -816,6 +816,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 ),
                 maxLength: DeviceName.maxLength(),
                 inputFormatters: [nameInputFormatter],
+                textCapitalization: TextCapitalization.sentences,
                 initialValue: _controller.form.deviceNames[device.id],
                 onChanged: (name) => _controller.setDeviceName(device.id, name),
                 onFieldSubmitted: (_) => Navigator.pop(context),
@@ -844,6 +845,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       style: monospaceTextStyle,
       maxLength: DeviceName.maxLength(),
       inputFormatters: [nameInputFormatter],
+      textCapitalization: TextCapitalization.sentences,
       decoration: InputDecoration(
         hintText: 'Enter device name',
         hintStyle: monospaceTextStyle.copyWith(color: cs.onSurfaceVariant),
