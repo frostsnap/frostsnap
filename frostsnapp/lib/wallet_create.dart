@@ -318,6 +318,7 @@ class WalletCreateController extends ChangeNotifier {
           !devicesNeedUpgrade &&
           !devicesUsed &&
           !devicesIncompatible &&
+          !hasDuplicateDeviceNames &&
           _deviceList.devices.every((d) => _form.deviceNames.containsKey(d.id)),
     WalletCreateStep.nonceReplenish => false, // Auto-advances, no manual next
     WalletCreateStep.threshold =>
@@ -327,6 +328,26 @@ class WalletCreateController extends ChangeNotifier {
           _form.threshold! <= _form.selectedDevices.length,
   };
   bool get canGoBack => _step.index != 0;
+
+  /// Device ids whose chosen name collides (case-insensitively, after
+  /// trimming) with another device being named in this keygen. Two devices in
+  /// the same wallet must not share a name, so these block advancing.
+  Set<DeviceId> get duplicateNamedDeviceIds {
+    final counts = <String, int>{};
+    for (final name in _form.deviceNames.values) {
+      final key = name.trim().toLowerCase();
+      if (key.isEmpty) continue;
+      counts.update(key, (c) => c + 1, ifAbsent: () => 1);
+    }
+    final dups = deviceIdSet([]);
+    _form.deviceNames.forEach((id, name) {
+      final key = name.trim().toLowerCase();
+      if (key.isNotEmpty && (counts[key] ?? 0) > 1) dups.add(id);
+    });
+    return dups;
+  }
+
+  bool get hasDuplicateDeviceNames => duplicateNamedDeviceIds.isNotEmpty;
 
   bool setNetwork(BitcoinNetwork network) {
     if (_asRef != null) return false;
@@ -839,6 +860,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       device.id,
       () => TextEditingController(text: currentName),
     );
+    final isDuplicate = _controller.duplicateNamedDeviceIds.contains(device.id);
     return TextField(
       controller: textController,
       focusNode: _nameFocusNodes.putIfAbsent(device.id, () => FocusNode()),
@@ -853,6 +875,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         isDense: true,
         contentPadding: EdgeInsets.zero,
         counterText: '',
+        errorText: isDuplicate ? 'Name already used in this wallet' : null,
       ),
       onChanged: (name) => _controller.setDeviceName(device.id, name),
     );
