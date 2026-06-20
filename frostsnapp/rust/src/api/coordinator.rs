@@ -166,10 +166,6 @@ impl Coordinator {
         self.0.update_name_preview(id, &name)
     }
 
-    pub fn finish_naming(&self, id: DeviceId, name: String) -> Result<()> {
-        self.0.finish_naming(id, &name)
-    }
-
     pub fn send_cancel(&self, id: DeviceId) {
         event!(Level::WARN, "dart sent cancel");
         self.0.send_cancel(id);
