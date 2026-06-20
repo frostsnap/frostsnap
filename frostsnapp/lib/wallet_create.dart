@@ -811,48 +811,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
   final Map<DeviceId, FocusNode> _nameFocusNodes = deviceIdMap();
 
-  void showRenameDeviceDialog(
-    BuildContext context,
-    ConnectedDevice device,
-  ) async {
-    await showBottomSheetOrDialog(
-      context,
-      title: Text("Name device"),
-      builder: (context, _) {
-        final mediaQuery = MediaQuery.of(context);
-        return SafeArea(
-          minimum: const EdgeInsets.symmetric(
-            horizontal: 20,
-          ).copyWith(bottom: 32 + mediaQuery.viewInsets.bottom, top: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 12,
-            children: [
-              TextFormField(
-                autofocus: true,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Device Name',
-                ),
-                maxLength: DeviceName.maxLength(),
-                inputFormatters: [nameInputFormatter],
-                textCapitalization: TextCapitalization.sentences,
-                initialValue: _controller.form.deviceNames[device.id],
-                onChanged: (name) => _controller.setDeviceName(device.id, name),
-                onFieldSubmitted: (_) => Navigator.pop(context),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Done'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _inlineNameField(BuildContext context, ConnectedDevice device) {
     final cs = Theme.of(context).colorScheme;
     final currentName = _controller.form.deviceNames[device.id] ?? '';

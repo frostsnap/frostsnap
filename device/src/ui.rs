@@ -114,10 +114,6 @@ pub enum Prompt {
         phase: Box<SignPhase1>,
         rand_seed: u32,
     },
-    NewName {
-        old_name: Option<DeviceName>,
-        new_name: DeviceName,
-    },
     ConfirmFirmwareUpgrade {
         firmware_digest: Sha256Digest,
         size: u32,
@@ -149,7 +145,6 @@ pub enum UiEvent {
     SigningConfirm {
         phase: Box<SignPhase1>,
     },
-    NameConfirm(frostsnap_comms::DeviceName),
     EnteredShareBackup {
         phase: EnterBackupPhase,
         share_backup: ShareBackup,

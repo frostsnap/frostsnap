@@ -10,7 +10,7 @@ use frostsnap_widgets::{
     layout::*,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, EraseDevice, EraseProgress, FirmwareUpgradeConfirm, FirmwareUpgradeProgress,
-    HoldToConfirm, SignMessageConfirm, Standby, Text,
+    SignMessageConfirm, Standby,
 };
 
 use crate::ui::FirmwareUpgradeStatus;
@@ -55,12 +55,6 @@ pub enum WidgetTree {
     FirmwareUpgradeProgress {
         widget: Box<FirmwareUpgradeProgress>,
         status: FirmwareUpgradeStatus,
-    },
-
-    /// New name confirmation prompt
-    NewNamePrompt {
-        widget: Box<HoldToConfirm<Text>>,
-        new_name: Option<frostsnap_comms::DeviceName>,
     },
 
     /// Device erase confirmation prompt
