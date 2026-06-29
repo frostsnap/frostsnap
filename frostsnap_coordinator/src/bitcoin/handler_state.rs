@@ -215,7 +215,7 @@ impl HandlerState {
                             Ok(())
                         })
                 {
-                    tracing::error!("Failed to trust certificate: {:?}", e);
+                    tracing::error!("Failed to trust certificate: {e:#}");
                 }
                 false
             }

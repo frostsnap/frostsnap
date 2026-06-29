@@ -131,18 +131,18 @@ impl Conn {
                 check_conn(&mut rh, &mut wh, genesis_hash)
                     .await
                     .map_err(TofuError::Other)
-                    .inspect_err(|e| tracing::error!("Network check failed: {:?}", e))?;
+                    .inspect_err(|e| tracing::error!(url, "Network check failed: {e}"))?;
                 Ok(Conn::Ssl((rh, wh)))
             } else {
                 let sock = happy_eyeballs_connect(&socket_addr).await.map_err(|e| {
-                    tracing::error!("TCP connection failed to {}: {}", socket_addr, e);
+                    tracing::error!(url, "TCP connection failed: {e}");
                     TofuError::Other(e.into())
                 })?;
                 let (mut rh, mut wh) = tokio::io::split(sock);
                 check_conn(&mut rh, &mut wh, genesis_hash)
                     .await
                     .map_err(TofuError::Other)
-                    .inspect_err(|e| tracing::error!("Network check failed: {:?}", e))?;
+                    .inspect_err(|e| tracing::error!(url, "Network check failed: {e}"))?;
                 Ok(Conn::Tcp((rh, wh)))
             }
         }
@@ -152,13 +152,17 @@ impl Conn {
         let timeout_fut = tokio::time::sleep(timeout).fuse();
         pin_mut!(timeout_fut);
 
-        select! {
+        let result = select! {
             conn_res = connect_fut => conn_res,
-            _ = timeout_fut => {
-                tracing::error!("Connection to {} timed out after {:?}", url, timeout);
-                Err(TofuError::Other(anyhow!("Timed out")))
-            },
-        }
+            _ = timeout_fut => Err(TofuError::Other(anyhow!("timed out after {timeout:?}"))),
+        };
+
+        // Attribute every failure to its server so the url travels with the error itself
+        // (not just the log line), regardless of which path produced it.
+        result.map_err(|err| match err {
+            TofuError::Other(e) => TofuError::Other(e.context(format!("connecting to {url}"))),
+            not_trusted => not_trusted,
+        })
     }
 }
 
@@ -292,6 +296,33 @@ pub struct TargetServerReq {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore] // requires network
+    async fn test_real_signet_server_via_our_stack() {
+        use crate::persist::Persisted;
+        use bdk_chain::bitcoin::{constants::genesis_block, params::Params, Network};
+
+        // Defaults to the shipped signet primary; override with SIGNET_URL to vet other servers.
+        let url = std::env::var("SIGNET_URL")
+            .unwrap_or_else(|_| "tcp://signet.musdomworks.com:50001".into());
+        let mut db = rusqlite::Connection::open_in_memory().unwrap();
+        let mut certs = Persisted::<TrustedCertificates>::new(&mut db, Network::Signet).unwrap();
+        let genesis = genesis_block(Params::new(Network::Signet)).block_hash();
+
+        match Conn::new(genesis, &url, Duration::from_secs(10), &mut certs).await {
+            Ok(_) => println!(
+                "OK: {url} connected, PKI-valid cert (no TOFU prompt), signet genesis matched"
+            ),
+            Err(TofuError::NotTrusted(c)) => {
+                panic!(
+                    "{url}: cert not PKI-valid, would TOFU-prompt (fingerprint {})",
+                    c.fingerprint
+                )
+            }
+            Err(TofuError::Other(e)) => panic!("{url}: FAILED via our stack: {e:?}"),
+        }
+    }
 
     #[tokio::test]
     #[ignore] // requires network
