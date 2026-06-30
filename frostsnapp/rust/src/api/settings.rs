@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
-use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, SUPPORTED_NETWORKS};
+use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, ElectrumConfig, SUPPORTED_NETWORKS};
 pub use frostsnap_coordinator::bitcoin::chain_sync::{
     ChainStatus, ChainStatusState, ConnectionResult,
 };
@@ -67,8 +67,11 @@ impl Settings {
         let mut chain_apis = HashMap::new();
 
         for network in SUPPORTED_NETWORKS {
-            let electrum_url = persisted.get_electrum_server(network);
-            let backup_electrum_url = persisted.get_backup_electrum_server(network);
+            let electrum_config = ElectrumConfig {
+                enabled: persisted.get_electrum_enabled(network),
+                primary: persisted.get_electrum_server(network),
+                backup: persisted.get_backup_electrum_server(network),
+            };
 
             let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
 
@@ -80,36 +83,35 @@ impl Settings {
                 Persisted::<TrustedCertificates>::new(&mut *db_, network)?
             };
 
-            let (chain_api, conn_handler) =
-                ChainClient::new(genesis_hash, trusted_certificates, db.clone());
+            let (chain_api, conn_handler) = ChainClient::new(
+                genesis_hash,
+                electrum_config,
+                trusted_certificates,
+                db.clone(),
+            );
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
             // FIXME: the dependency relationship here is overly convoluted.
             thread::spawn({
                 let super_wallet = super_wallet.clone();
                 move || {
-                    conn_handler.run(
-                        electrum_url,
-                        backup_electrum_url,
-                        super_wallet.inner.clone(),
-                        {
-                            let wallet_streams = super_wallet.wallet_streams.clone();
-                            move |master_appkey, txs| {
-                                let wallet_streams = wallet_streams.lock().unwrap();
-                                if let Some(stream) = wallet_streams.get(&master_appkey) {
-                                    if let Err(err) = stream.add(txs.into()) {
-                                        tracing::error!(
-                                            {
-                                                master_appkey = master_appkey.to_redacted_string(),
-                                                err = err.to_string(),
-                                            },
-                                            "Failed to add txs to stream"
-                                        );
-                                    }
+                    conn_handler.run(super_wallet.inner.clone(), {
+                        let wallet_streams = super_wallet.wallet_streams.clone();
+                        move |master_appkey, txs| {
+                            let wallet_streams = wallet_streams.lock().unwrap();
+                            if let Some(stream) = wallet_streams.get(&master_appkey) {
+                                if let Err(err) = stream.add(txs.into()) {
+                                    tracing::error!(
+                                        {
+                                            master_appkey = master_appkey.to_redacted_string(),
+                                            err = err.to_string(),
+                                        },
+                                        "Failed to add txs to stream"
+                                    );
                                 }
                             }
-                        },
-                    )
+                        }
+                    })
                 }
             });
             loaded_wallets.insert(network, super_wallet);
@@ -204,16 +206,22 @@ impl Settings {
 
         match chain_api.check_and_set_electrum_server_url(url.clone(), is_backup)? {
             ConnectionResult::Success => {
-                // Connection succeeded, persist the setting
-                let mut db = self.db.lock().unwrap();
-                self.settings.mutate2(&mut *db, |settings, update| {
-                    if is_backup {
-                        settings.set_backup_electrum_server(network, url, update);
-                    } else {
-                        settings.set_electrum_server(network, url, update);
-                    }
-                    Ok(())
-                })?;
+                // Persist first — the persisted config is authoritative — then push the new
+                // url into the live watch (which triggers a reconnect) and emit. Ordering it
+                // this way means a persistence failure never leaves the handler on a url that
+                // wasn't saved.
+                {
+                    let mut db = self.db.lock().unwrap();
+                    self.settings.mutate2(&mut *db, |settings, update| {
+                        if is_backup {
+                            settings.set_backup_electrum_server(network, url.clone(), update);
+                        } else {
+                            settings.set_electrum_server(network, url.clone(), update);
+                        }
+                        Ok(())
+                    })?;
+                }
+                chain_api.set_electrum_url(url, is_backup);
                 self.emit_electrum_settings();
                 Ok(ConnectionResult::Success)
             }
