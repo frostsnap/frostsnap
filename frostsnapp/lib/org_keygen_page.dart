@@ -12,6 +12,7 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/network_advanced_options.dart';
+import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
@@ -1008,7 +1009,7 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
             encryptionKey: encryptionKey,
             participants: participants,
           );
-          final client = await NostrClient.connect();
+          final client = await NostrContext.of(context).nostrClient;
           final stream = client.connectToChannel(params: params);
           status.value = 'Waiting for channel confirmation…';
           await stream
@@ -1891,6 +1892,31 @@ class _ParticipantRow extends StatefulWidget {
 class _ParticipantRowState extends State<_ParticipantRow> {
   bool _expanded = false;
 
+  /// Render the participant's name. For self, prefer the locally-known
+  /// identity name (read directly from settings — shows immediately,
+  /// without waiting for the in-channel publish to round-trip).
+  /// For peers, read the folded profile from `ParticipantInfo.profile`;
+  /// fall back to a short pubkey until that arrives.
+  String _displayTitle(BuildContext context, ParticipantInfo p) {
+    if (widget.isMe) {
+      final id = NostrContext.maybeOf(context)
+          ?.nostrSettings
+          .currentIdentity();
+      final name = switch (id) {
+        UserIdentity_Generated(:final name) => name,
+        UserIdentity_Imported(:final cachedPublicProfile) =>
+          cachedPublicProfile?.displayName ?? cachedPublicProfile?.name,
+        _ => null,
+      };
+      if (name != null && name.isNotEmpty) return '$name (You)';
+      return 'You';
+    }
+    final peerName =
+        p.profile?.displayName ?? p.profile?.name;
+    if (peerName != null && peerName.isNotEmpty) return peerName;
+    return _shortPubkey(p.pubkey);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -2013,20 +2039,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
               leading: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  CircleAvatar(
-                    backgroundColor: widget.isMe
-                        ? theme.colorScheme.surfaceContainerHighest
-                        : theme.colorScheme.secondaryContainer,
-                    child: Icon(
-                      widget.isMe
-                          ? Icons.person_rounded
-                          : Icons.person_outline_rounded,
-                      color: widget.isMe
-                          ? theme.colorScheme.onSurfaceVariant
-                          : theme.colorScheme.onSecondaryContainer,
-                      size: 20,
-                    ),
-                  ),
+                  NostrAvatar(pubkey: p.pubkey, profile: p.profile),
                   if (widget.isInitiator)
                     Positioned(
                       right: -2,
@@ -2050,7 +2063,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
                 ],
               ),
               title: Text(
-                widget.isMe ? 'You' : _shortPubkey(p.pubkey),
+                _displayTitle(context, p),
                 style: theme.textTheme.titleSmall,
                 overflow: TextOverflow.ellipsis,
               ),

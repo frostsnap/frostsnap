@@ -15,6 +15,7 @@ pub use frostsnap_nostr::keygen::{
     DeviceKind, DeviceRegistration, LobbyState, ParticipantInfo, ParticipantStatus, ResolvedKeygen,
     SelectedCoordinator, SelectedParticipant,
 };
+use frostsnap_nostr::channel_runner::NostrProfile;
 use frostsnap_nostr::keygen::{LobbyEvent, LobbyHandle};
 use frostsnap_nostr::{Client, EventId, Keys, PublicKey};
 use std::sync::{Arc, Mutex};
@@ -53,6 +54,7 @@ pub struct _ParticipantInfo {
     pub status: ParticipantStatus,
     pub devices: Vec<DeviceRegistration>,
     pub register_event_id: Option<EventId>,
+    pub profile: Option<NostrProfile>,
 }
 
 /// Mirrors `frostsnap_nostr::keygen::ResolvedKeygen`. Carries the

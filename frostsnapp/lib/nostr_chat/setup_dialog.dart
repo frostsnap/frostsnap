@@ -24,20 +24,34 @@ class _NostrSetupDialog extends StatefulWidget {
 
 class _NostrSetupDialogState extends State<_NostrSetupDialog> {
   bool _showImport = false;
+  bool _showGenerate = false;
   final _nsecController = TextEditingController();
+  final _nameController = TextEditingController();
   String? _errorText;
   bool _isLoading = false;
 
   @override
   void dispose() {
     _nsecController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
   void _generateIdentity() async {
-    setState(() => _isLoading = true);
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      setState(() => _errorText = 'Please enter a display name');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+    });
     try {
-      await NostrContext.of(context).nostrSettings.generate();
+      final nostr = NostrContext.of(context);
+      await nostr.nostrSettings.generateNewIdentity(name: name);
+      final client = await nostr.nostrClient;
+      nostr.refreshPublishCredentials(client);
       if (!mounted) return;
       Navigator.of(context).pop(NostrSetupResult.generated);
     } catch (e) {
@@ -62,13 +76,22 @@ class _NostrSetupDialogState extends State<_NostrSetupDialog> {
     });
 
     try {
-      await NostrContext.of(context).nostrSettings.setNsec(nsec: nsec);
+      final nostr = NostrContext.of(context);
+      // Gate: nsec must have a discoverable public kind 0.
+      final client = await nostr.nostrClient;
+      final cached = await client.fetchProfileForImport(nsec: nsec);
+      await nostr.nostrSettings.setImportedIdentity(
+        nsec: nsec,
+        cachedPublicProfile: cached,
+      );
+      // Mode A doesn't publish in-channel — wipe any prior snapshot.
+      nostr.refreshPublishCredentials(client);
       if (!mounted) return;
       Navigator.of(context).pop(NostrSetupResult.imported);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorText = 'Failed to import nsec: $e';
+        _errorText = '$e';
         _isLoading = false;
       });
     }
@@ -76,7 +99,65 @@ class _NostrSetupDialogState extends State<_NostrSetupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return _showImport ? _buildImport(context) : _buildWelcome(context);
+    if (_showImport) return _buildImport(context);
+    if (_showGenerate) return _buildGenerate(context);
+    return _buildWelcome(context);
+  }
+
+  Widget _buildGenerate(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Generate New Identity'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pick a display name. Other members of your groups will see '
+              'this name on your messages. It stays inside your encrypted '
+              'channels — it is not posted to the public Nostr network.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                labelText: 'Display name',
+                errorText: _errorText,
+                border: const OutlineInputBorder(),
+              ),
+              enabled: !_isLoading,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _generateIdentity(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading
+              ? null
+              : () => setState(() {
+                    _showGenerate = false;
+                    _errorText = null;
+                  }),
+          child: const Text('Back'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _generateIdentity,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Generate'),
+        ),
+      ],
+    );
   }
 
   Widget _buildImport(BuildContext context) {
@@ -169,14 +250,13 @@ class _NostrSetupDialogState extends State<_NostrSetupDialog> {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _isLoading ? null : _generateIdentity,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.add),
+                onPressed: _isLoading
+                    ? null
+                    : () => setState(() {
+                          _showGenerate = true;
+                          _errorText = null;
+                        }),
+                icon: const Icon(Icons.add),
                 label: const Text('Generate New Identity'),
               ),
             ),

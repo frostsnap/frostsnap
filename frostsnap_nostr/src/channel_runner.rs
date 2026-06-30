@@ -51,15 +51,23 @@ impl EventMeta {
 /// Nostr profile metadata (NIP-01 kind 0 event content). Lives with the
 /// channel runner because it's the runner that fetches and caches profiles
 /// as it sees author pubkeys go past.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NostrProfile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pubkey: Option<PublicKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub about: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub picture: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub banner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nip05: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub website: Option<String>,
 }
 
@@ -78,13 +86,37 @@ impl NostrProfile {
     }
 }
 
+/// How a member's profile arrived in `ChannelState.members`. Tracks
+/// the precedence rule: in-channel publications win over external
+/// public kind-0 fetches once they exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileSource {
+    /// Decrypted from an in-channel `Kind::Metadata` event.
+    InChannel,
+    /// Fetched via the channel runner's `spawn_profile_fetch` path
+    /// (cache → relay).
+    External,
+}
+
+/// Runner-internal wrapper around a member's `NostrProfile` that
+/// carries source / ordering metadata not part of the wire profile.
+#[derive(Debug, Clone)]
+pub struct MemberSlot {
+    pub profile: NostrProfile,
+    pub source: ProfileSource,
+    /// Set only when `source == InChannel`: the `created_at` of the
+    /// inner metadata event the profile came from. Used for the
+    /// strict-greater-wins fold rule during cache replay.
+    pub inchannel_created_at: Option<u64>,
+}
+
 // =============================================================================
 // Shared state
 // =============================================================================
 
 #[derive(Debug, Default)]
 pub struct ChannelState {
-    pub members: HashMap<PublicKey, Option<NostrProfile>>,
+    pub members: HashMap<PublicKey, Option<MemberSlot>>,
     pub creation_event: Option<Event>,
 }
 
@@ -134,6 +166,14 @@ pub enum ChannelRunnerEvent {
         ack: Option<oneshot::Sender<()>>,
     },
     MembersChanged,
+    /// A single member's profile entered or updated `state.members`.
+    /// Per-author granularity, complementing the coarser
+    /// `MembersChanged` event which only signals "set of members
+    /// changed."
+    MemberProfileUpdated {
+        pubkey: PublicKey,
+        profile: NostrProfile,
+    },
     CreationEventReceived,
 }
 
@@ -447,11 +487,33 @@ impl ChannelRunner {
                         }
                     }
                     Some((pubkey, profile)) = profile_rx.recv() => {
-                        {
+                        let updated = {
                             let mut s = state.lock().unwrap();
-                            s.members.insert(pubkey, Some(profile));
+                            // External fetches only write when the slot
+                            // is empty or already External — never
+                            // override an in-channel profile (precedence
+                            // rule: in-channel wins).
+                            match s.members.get(&pubkey) {
+                                Some(Some(slot)) if slot.source == ProfileSource::InChannel => {
+                                    None
+                                }
+                                _ => {
+                                    let slot = MemberSlot {
+                                        profile: profile.clone(),
+                                        source: ProfileSource::External,
+                                        inchannel_created_at: None,
+                                    };
+                                    s.members.insert(pubkey, Some(slot));
+                                    Some(profile)
+                                }
+                            }
+                        };
+                        if let Some(profile) = updated {
+                            let _ = event_tx.send(ChannelRunnerEvent::MembersChanged).await;
+                            let _ = event_tx
+                                .send(ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile })
+                                .await;
                         }
-                        let _ = event_tx.send(ChannelRunnerEvent::MembersChanged).await;
                     }
                     Some(()) = sync_done_rx.recv() => {
                         // Sync finished — query DB for any events we missed
@@ -646,8 +708,28 @@ impl ChannelRunnerHandle {
         self.publish_prepared(prepared).await
     }
 
+    /// Public, profile-only view of the channel membership. Slot
+    /// metadata (source, ordering) stays runner-internal.
     pub fn members(&self) -> HashMap<PublicKey, Option<NostrProfile>> {
-        self.state.lock().unwrap().members.clone()
+        self.state
+            .lock()
+            .unwrap()
+            .members
+            .iter()
+            .map(|(pk, slot_opt)| (*pk, slot_opt.as_ref().map(|s| s.profile.clone())))
+            .collect()
+    }
+
+    /// Single-author profile lookup — used by the publish path's
+    /// dedup check before sending a new in-channel kind 0.
+    pub fn member_profile(&self, pubkey: &PublicKey) -> Option<NostrProfile> {
+        self.state
+            .lock()
+            .unwrap()
+            .members
+            .get(pubkey)
+            .and_then(|slot_opt| slot_opt.as_ref())
+            .map(|slot| slot.profile.clone())
     }
 
     pub fn creation_event(&self) -> Option<Event> {
@@ -656,6 +738,62 @@ impl ChannelRunnerHandle {
 
     pub fn channel_keys(&self) -> &ChannelKeys {
         &self.channel_keys
+    }
+
+    /// Publish the local user's `NostrProfile` as an encrypted
+    /// kind 0 inside this channel. The same implementation is
+    /// used by both the chat wrapper and the lobby wrapper —
+    /// publish/dedup/fold all belong to the encrypted-channel
+    /// abstraction.
+    ///
+    /// Skips if the runner's view of the local user's profile
+    /// already matches `profile` (after populating
+    /// `profile.pubkey` from `keys`). On publish, the runner's
+    /// own fold updates `members[author]` when the event
+    /// echoes back from the relay subscription.
+    pub async fn publish_profile(
+        &self,
+        profile: NostrProfile,
+        keys: &Keys,
+    ) -> Result<Option<EventId>> {
+        let mut to_publish = profile;
+        let local_pubkey: PublicKey = keys.public_key().into();
+        to_publish.pubkey = Some(local_pubkey);
+        if let Some(existing) = self.member_profile(&local_pubkey) {
+            if existing == to_publish {
+                return Ok(None);
+            }
+        }
+        let metadata = nostr_sdk::Metadata {
+            name: to_publish.name.clone(),
+            display_name: to_publish.display_name.clone(),
+            about: to_publish.about.clone(),
+            picture: to_publish.picture.clone(),
+            banner: to_publish.banner.clone(),
+            nip05: to_publish.nip05.clone(),
+            website: to_publish.website.clone(),
+            ..Default::default()
+        };
+        let content = serde_json::to_string(&metadata)?;
+        let inner_event = nostr_sdk::EventBuilder::new(Kind::Metadata, content)
+            .build(keys.public_key())
+            .sign(keys)
+            .await?;
+        let outcome = self.dispatch_prepared(inner_event).await?;
+        Ok(Some(outcome.inner_event_id))
+    }
+
+    /// Fire-and-forget version of `publish_profile`. Spawns a
+    /// tokio task that publishes (or no-ops via the dedup
+    /// inside `publish_profile`); errors are logged at WARN
+    /// level. Use at connect time when the caller doesn't need
+    /// to await the result.
+    pub fn spawn_publish_profile(self, profile: NostrProfile, keys: Keys) {
+        tokio::spawn(async move {
+            if let Err(e) = self.publish_profile(profile, &keys).await {
+                tracing::warn!(error = %e, "spawn_publish_profile failed");
+            }
+        });
     }
 }
 
@@ -707,7 +845,54 @@ async fn process_inner_event(
         let _ = event_tx.send(ChannelRunnerEvent::MembersChanged).await;
     }
 
-    if inner.kind == Kind::ChannelCreation {
+    if inner.kind == Kind::Metadata {
+        let updated = match serde_json::from_str::<Metadata>(&inner.content)
+            .ok()
+            .map(|m| NostrProfile::from_metadata(author, m))
+        {
+            Some(profile) => {
+                let inner_created_at = inner.created_at.as_secs();
+                let mut s = state.lock().unwrap();
+                let should_replace = match s.members.get(&author).and_then(|o| o.as_ref()) {
+                    None => true,
+                    Some(slot) => match slot.source {
+                        ProfileSource::External => true,
+                        ProfileSource::InChannel => {
+                            // Strict-greater wins: out-of-order cache
+                            // replay must not let a stale v1 overwrite v2.
+                            slot.inchannel_created_at
+                                .map_or(true, |t| inner_created_at > t)
+                        }
+                    },
+                };
+                if should_replace {
+                    s.members.insert(
+                        author,
+                        Some(MemberSlot {
+                            profile: profile.clone(),
+                            source: ProfileSource::InChannel,
+                            inchannel_created_at: Some(inner_created_at),
+                        }),
+                    );
+                    Some(profile)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        if let Some(profile) = updated {
+            let _ = event_tx
+                .send(ChannelRunnerEvent::MemberProfileUpdated {
+                    pubkey: author,
+                    profile,
+                })
+                .await;
+        }
+        if let Some(ack) = ack {
+            let _ = ack.send(());
+        }
+    } else if inner.kind == Kind::ChannelCreation {
         {
             let mut s = state.lock().unwrap();
             if s.creation_event.is_none() {

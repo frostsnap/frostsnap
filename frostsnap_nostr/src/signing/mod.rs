@@ -8,12 +8,12 @@ pub use events::{
 use events::{ReceiveAddressPayload, SigningMessage};
 
 use self::tree::{SigningEventTree, TimerAction, WireEvent};
-use crate::EventId;
+use crate::{EventId, PublicKey};
 use crate::{
     channel::ChannelKeys,
     channel_runner::{
         decode_bincode, extract_e_tag, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
-        ChannelRunnerHandle, EventMeta,
+        ChannelRunnerHandle, EventMeta, NostrProfile,
     },
 };
 use anyhow::{anyhow, Result};
@@ -257,6 +257,9 @@ impl ChannelClient {
                                         .collect(),
                                 });
                             }
+                            Some(ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile }) => {
+                                sink.send(ChannelEvent::MemberProfileUpdated { pubkey, profile });
+                            }
                             Some(ChannelRunnerEvent::CreationEventReceived) => {
                                 if let Some(creation_event) = runner_handle_for_task.creation_event() {
                                     match crate::channel_runner::decode_bincode::<crate::ChannelInitData>(&creation_event) {
@@ -350,7 +353,7 @@ struct ActivityState {
 #[derive(Clone)]
 pub struct ChannelHandle {
     cmd_tx: mpsc::Sender<ChannelCommand>,
-    runner_handle: ChannelRunnerHandle,
+    pub runner_handle: ChannelRunnerHandle,
 }
 
 impl ChannelHandle {

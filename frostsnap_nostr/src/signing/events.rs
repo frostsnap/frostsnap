@@ -84,6 +84,13 @@ pub enum ChannelEvent {
     GroupMetadata {
         members: Vec<GroupMember>,
     },
+    /// A single member's profile entered or updated channel state.
+    /// Per-author granularity, complementing `GroupMetadata` which
+    /// refires on every membership change.
+    MemberProfileUpdated {
+        pubkey: PublicKey,
+        profile: NostrProfile,
+    },
     Signing {
         event: SigningEvent,
         pending: bool,

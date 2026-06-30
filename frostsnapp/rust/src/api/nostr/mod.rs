@@ -3,6 +3,7 @@ pub mod remote_keygen;
 
 use crate::api::broadcast::BehaviorBroadcast;
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
+pub use crate::nostr_settings_state::UserIdentity;
 use crate::nostr_settings_state::NostrSettingsState;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
@@ -26,8 +27,22 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock, RwLock},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Import-time public-kind-0 fetch timeout. Longer than the
+/// runtime peer-fetch timeout (5 s) because this is a one-time
+/// user-blocking operation and we'd rather wait than reject a
+/// valid nsec on a flaky network.
+const IMPORT_PROFILE_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
 
 pub use frostsnap_nostr::{
     ChannelEvent, ChannelParticipant, ChannelSecret, ConfirmedSubsetEntry, ConnectionState,
@@ -219,35 +234,83 @@ impl NostrSettings {
         self.settings.pubkey
     }
 
-    /// Set/import nsec. Persists and notifies subscribers.
-    pub fn set_nsec(&mut self, nsec: String) -> Result<()> {
+    /// Snapshot the current `UserIdentity` (Mode A imported / Mode B
+    /// generated) for the Dart layer to pattern-match on. `None` when
+    /// no identity is configured.
+    #[frb(sync)]
+    pub fn current_identity(&self) -> Option<UserIdentity> {
+        self.settings.identity.clone()
+    }
+
+    /// Internal: get the raw nsec for in-channel publishing. Not
+    /// FRB-exposed — Dart should use `get_nsec()` for export.
+    #[frb(ignore)]
+    pub(crate) fn get_nsec_internal(&self) -> Option<String> {
+        self.settings.nsec.clone()
+    }
+
+    /// Mode B — generate a fresh nsec and persist it as a `Generated`
+    /// identity with the supplied display name. The name is captured
+    /// here and immutable thereafter (renaming is out of scope for
+    /// this revision). Returns the new nsec for export. Rejects an
+    /// empty / whitespace-only name.
+    pub fn generate_new_identity(&mut self, name: String) -> Result<String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!("display name must not be empty"));
+        }
+        let keys = Keys::generate();
+        let nsec = keys.secret_key().to_bech32()?;
+        let pubkey: PublicKey = keys.public_key().into();
+        let identity = UserIdentity::Generated {
+            pubkey,
+            name: trimmed.to_string(),
+            created_at: now_secs(),
+        };
         let mut conn = self.db.lock().unwrap();
-        self.settings
-            .mutate2(&mut *conn, |st, update| st.set_nsec(Some(nsec), update))?;
+        self.settings.mutate2(&mut *conn, |st, update| {
+            st.set_identity(Some(identity), Some(nsec.clone()), update)
+        })?;
         drop(conn);
         self.emit_identity();
-        tracing::info!("Nostr identity configured");
+        tracing::info!("generated new Nostr identity");
+        Ok(nsec)
+    }
+
+    /// Mode A — store an imported nsec as an `Imported` identity with
+    /// the supplied cached public profile. The caller (NostrClient)
+    /// runs the public-kind-0 gate first.
+    pub fn set_imported_identity(
+        &mut self,
+        nsec: String,
+        cached_public_profile: Option<NostrProfile>,
+    ) -> Result<()> {
+        let keys = Keys::parse(&nsec)?;
+        let pubkey: PublicKey = keys.public_key().into();
+        let identity = UserIdentity::Imported {
+            pubkey,
+            cached_public_profile,
+        };
+        let mut conn = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *conn, |st, update| {
+            st.set_identity(Some(identity), Some(nsec), update)
+        })?;
+        drop(conn);
+        self.emit_identity();
+        tracing::info!("imported Nostr identity");
         Ok(())
     }
 
-    /// Remove the configured Nostr signing identity.
-    /// Does not delete chat history or per-access-structure settings.
-    pub fn clear_nsec(&mut self) -> Result<()> {
+    /// Clear the identity (and its nsec) entirely.
+    pub fn clear_identity(&mut self) -> Result<()> {
         let mut conn = self.db.lock().unwrap();
-        self.settings
-            .mutate2(&mut *conn, |st, update| st.set_nsec(None, update))?;
+        self.settings.mutate2(&mut *conn, |st, update| {
+            st.set_identity(None, None, update)
+        })?;
         drop(conn);
         self.emit_identity();
         tracing::info!("Nostr identity cleared");
         Ok(())
-    }
-
-    /// Generate new random identity.
-    pub fn generate(&mut self) -> Result<String> {
-        let keys = Keys::generate();
-        let nsec = keys.secret_key().to_bech32()?;
-        self.set_nsec(nsec.clone())?;
-        Ok(nsec)
     }
 
     /// Get nsec for export/backup. Returns an error if no identity is set.
@@ -302,6 +365,12 @@ pub struct NostrClient {
     /// consumes the params so we can build `SealedSigningData` on
     /// demand when a `RoundConfirmed` event lands.
     key_contexts: Mutex<HashMap<AccessStructureId, KeyContext>>,
+    /// Snapshot of the local Mode-B profile + nsec used by
+    /// `connect_to_channel` to auto-publish into each newly-joined
+    /// channel. `None` in Mode A or when no name is set. Updated by
+    /// `set_local_publish_credentials` whenever the identity / name
+    /// changes.
+    local_publish: Mutex<Option<(NostrProfile, String)>>,
 }
 
 impl NostrClient {
@@ -322,31 +391,72 @@ impl NostrClient {
             client,
             channels: Mutex::new(HashMap::new()),
             key_contexts: Mutex::new(HashMap::new()),
+            local_publish: Mutex::new(None),
         })
+    }
+
+    /// Refresh the Mode-B publish snapshot. `Some((profile, nsec))`
+    /// enables auto-publish on connect; `None` disables it (Mode A or
+    /// unset name). Callers refresh after `generate_new_identity`,
+    /// `set_imported_identity`, `set_generated_name`, and
+    /// `clear_identity`.
+    #[frb(sync)]
+    pub fn set_local_publish_credentials(
+        &self,
+        profile: Option<NostrProfile>,
+        nsec: Option<String>,
+    ) {
+        *self.local_publish.lock().unwrap() = profile.zip(nsec);
     }
 
     /// Fetch profile metadata for a public key.
     /// Checks the local cache first, then fetches from relays if not found.
     /// Returns None if the user has no profile.
     pub async fn fetch_profile(&self, pubkey: &PublicKey) -> Result<Option<NostrProfile>> {
+        self.fetch_profile_with_timeout(pubkey, Duration::from_secs(5))
+            .await
+    }
+
+    async fn fetch_profile_with_timeout(
+        &self,
+        pubkey: &PublicKey,
+        timeout: Duration,
+    ) -> Result<Option<NostrProfile>> {
         let nostr_pk = (*pubkey).into();
-        // 📦 Check cache first
         if let Ok(Some(metadata)) = self.client.database().metadata(nostr_pk).await {
             return Ok(Some(NostrProfile::from_metadata(*pubkey, metadata)));
         }
-
-        // 🌐 Fetch from relays
-        match self
-            .client
-            .fetch_metadata(nostr_pk, Duration::from_secs(5))
-            .await
-        {
+        match self.client.fetch_metadata(nostr_pk, timeout).await {
             Ok(Some(metadata)) => Ok(Some(NostrProfile::from_metadata(*pubkey, metadata))),
             Ok(None) => Ok(None),
             Err(e) => {
                 tracing::debug!(pubkey = %pubkey, error = %e, "failed to fetch profile");
                 Ok(None)
             }
+        }
+    }
+
+    /// Mode A — validate that an imported nsec has a discoverable
+    /// public NIP-01 kind 0, and return the fetched profile. Used by
+    /// the Dart layer's Import button before calling
+    /// `NostrSettings::set_imported_identity`. 30-second timeout
+    /// because this is a one-time user-blocking operation.
+    pub async fn fetch_profile_for_import(
+        &self,
+        nsec: String,
+    ) -> Result<NostrProfile> {
+        let keys = Keys::parse(&nsec)?;
+        let pubkey: PublicKey = keys.public_key().into();
+        match self
+            .fetch_profile_with_timeout(&pubkey, IMPORT_PROFILE_FETCH_TIMEOUT)
+            .await?
+        {
+            Some(profile) => Ok(profile),
+            None => Err(anyhow!(
+                "No public profile found for this nsec. \
+                 Set one up in your usual nostr client \
+                 (publish a kind 0 metadata event), then try importing again."
+            )),
         }
     }
 
@@ -373,11 +483,17 @@ impl NostrClient {
         self.channels
             .lock()
             .unwrap()
-            .insert(access_structure_id, handle);
+            .insert(access_structure_id, handle.clone());
         self.key_contexts
             .lock()
             .unwrap()
             .insert(access_structure_id, key_context);
+
+        if let Some((profile, nsec)) = self.local_publish.lock().unwrap().clone() {
+            if let Ok(keys) = Keys::parse(&nsec) {
+                handle.runner_handle.clone().spawn_publish_profile(profile, keys);
+            }
+        }
     }
 
     /// Build a `SealedSigningData` bundle on demand when Dart receives
@@ -614,6 +730,7 @@ impl NostrClient {
         let handle = lobby_client
             .run(self.client.clone(), keys.clone(), Some(init_event), sink)
             .await?;
+        self.spawn_lobby_publish_profile(handle.runner_handle());
         Ok(self::remote_keygen::RemoteLobbyHandle::new(
             handle,
             keys,
@@ -638,6 +755,7 @@ impl NostrClient {
         let handle = lobby_client
             .run(self.client.clone(), keys.clone(), None, sink)
             .await?;
+        self.spawn_lobby_publish_profile(handle.runner_handle());
         Ok(self::remote_keygen::RemoteLobbyHandle::new(
             handle,
             keys,
@@ -645,6 +763,16 @@ impl NostrClient {
             self.client.clone(),
             bridge,
         ))
+    }
+
+    /// Mode-B auto-publish-on-connect for a freshly-built lobby
+    /// runner handle. No-op in Mode A.
+    fn spawn_lobby_publish_profile(&self, runner_handle: &frostsnap_nostr::channel_runner::ChannelRunnerHandle) {
+        if let Some((profile, nsec)) = self.local_publish.lock().unwrap().clone() {
+            if let Ok(keys) = Keys::parse(&nsec) {
+                runner_handle.clone().spawn_publish_profile(profile, keys);
+            }
+        }
     }
 
     fn get_handle(&self, access_structure_id: AccessStructureId) -> Result<ChannelHandle> {
@@ -957,6 +1085,10 @@ pub enum _ChannelEvent {
     GroupMetadata {
         members: Vec<GroupMember>,
     },
+    MemberProfileUpdated {
+        pubkey: PublicKey,
+        profile: NostrProfile,
+    },
     Signing {
         event: SigningEvent,
         pending: bool,
@@ -976,6 +1108,21 @@ pub enum _ChannelEvent {
 pub struct _ChannelParticipant {
     pub pubkey: PublicKey,
     pub share_indices: Vec<u32>,
+}
+
+/// FRB mirror of the persisted identity record so Dart can
+/// pattern-match on mode.
+#[frb(mirror(UserIdentity), non_opaque)]
+pub enum _UserIdentity {
+    Imported {
+        pubkey: PublicKey,
+        cached_public_profile: Option<NostrProfile>,
+    },
+    Generated {
+        pubkey: PublicKey,
+        name: String,
+        created_at: u64,
+    },
 }
 
 /// Compute the UI-shape `SigningDetails` for a sign task. Dart calls

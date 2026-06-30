@@ -20,6 +20,28 @@ pub use signing::{
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, bincode::Encode, bincode::Decode)]
 pub struct PublicKey(pub [u8; 32]);
 
+impl serde::Serialize for PublicKey {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_hex())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PublicKey {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let s = <&str>::deserialize(d)?;
+        if s.len() != 64 {
+            return Err(D::Error::custom("pubkey hex must be 64 chars"));
+        }
+        let mut bytes = [0u8; 32];
+        for (i, b) in bytes.iter_mut().enumerate() {
+            *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+                .map_err(D::Error::custom)?;
+        }
+        Ok(PublicKey(bytes))
+    }
+}
+
 impl PublicKey {
     pub fn to_hex(&self) -> String {
         let mut out = String::with_capacity(64);

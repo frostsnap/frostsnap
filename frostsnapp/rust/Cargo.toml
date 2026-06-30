@@ -23,6 +23,8 @@ ur = { git = "https://github.com/nickfarrow/ur-rs", rev = "2e267e5e019b6c8129f66
 rusqlite = "0.31.0"
 sha2.workspace = true
 rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
 time = { version = "0.3.36", features = ["formatting"] }
 bip21 = {version = "0.5.0", default-features = false}
 futures.workspace = true

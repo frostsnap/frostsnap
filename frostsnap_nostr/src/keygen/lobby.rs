@@ -1,7 +1,7 @@
 use crate::channel::{ChannelKeys, ChannelSecret};
 use crate::channel_runner::{
     decode_bincode, extract_e_tags, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
-    ChannelRunnerHandle, SendOutcome, BINCODE_CONFIG,
+    ChannelRunnerHandle, NostrProfile, SendOutcome, BINCODE_CONFIG,
 };
 use crate::{EventId, PublicKey};
 use anyhow::Result;
@@ -141,6 +141,11 @@ pub struct ParticipantInfo {
     /// Consumed by `StartKeygen`'s e-tags for ordering + impersonation
     /// checks, so it stays sticky to the most recent `Register`.
     pub register_event_id: Option<EventId>,
+    /// Profile folded in from the runner's
+    /// `MemberProfileUpdated` events (in-channel kind 0 OR
+    /// external public kind 0 fetch via `spawn_profile_fetch`).
+    /// `None` until either source produces a value.
+    pub profile: Option<NostrProfile>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -256,6 +261,7 @@ impl LobbyState {
                 status: ParticipantStatus::Joining,
                 devices: Vec::new(),
                 register_event_id: None,
+                profile: None,
             });
     }
 
@@ -273,6 +279,7 @@ impl LobbyState {
                 status: ParticipantStatus::Joining,
                 devices: Vec::new(),
                 register_event_id: None,
+                profile: None,
             });
         entry.devices = devices;
         entry.register_event_id = Some(event_id);
@@ -540,6 +547,17 @@ impl LobbyClient {
                         }
                     }
                     ChannelRunnerEvent::MembersChanged => {}
+                    ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile } => {
+                        // Upsert: profile events are independent of
+                        // Presence/Register on the wire and can arrive
+                        // first. Create the slot if missing so the
+                        // profile isn't dropped.
+                        lobby.upsert_joining(pubkey);
+                        if let Some(entry) = lobby.participants.get_mut(&pubkey) {
+                            entry.profile = Some(profile);
+                        }
+                        sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+                    }
                     ChannelRunnerEvent::ChatMessage { .. } => {}
                 }
             }
@@ -567,6 +585,17 @@ impl LobbyClient {
 #[derive(Clone)]
 pub struct LobbyHandle {
     runner_handle: ChannelRunnerHandle,
+}
+
+impl LobbyHandle {
+    /// Expose the underlying runner handle so callers can drive
+    /// channel-level operations that aren't lobby-specific (e.g.
+    /// `publish_profile` for the Mode B name fold). Profile
+    /// publishing logic lives at the runner layer; the lobby
+    /// wrapper just hands the handle through.
+    pub fn runner_handle(&self) -> &ChannelRunnerHandle {
+        &self.runner_handle
+    }
 }
 
 impl LobbyHandle {

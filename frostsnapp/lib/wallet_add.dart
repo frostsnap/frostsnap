@@ -5,6 +5,7 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -191,7 +192,12 @@ class WalletAddColumn extends StatelessWidget {
   static void showWalletCreateDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
 
-    final nostrClient = await NostrClient.connect();
+    // Use the shared NostrContext client so OrgKeygenPage's lobby
+    // create/join paths reach the same `local_publish` snapshot that
+    // identity mutations push to — without this, the lobby's
+    // auto-publish-on-connect always sees None on a freshly-built
+    // per-page client.
+    final nostrClient = await NostrContext.of(context).nostrClient;
     if (!context.mounted) return;
     final choice = await MaybeFullscreenDialog.show<WalletTypeChoice>(
       context: context,
@@ -336,7 +342,7 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
     try {
       final channelSecret = _parseLink(link);
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-      final client = await NostrClient.connect();
+      final client = await NostrContext.of(context).nostrClient;
       final keyId = await client.joinFromLink(
         coord: coord,
         channelSecret: channelSecret,

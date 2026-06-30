@@ -1,14 +1,59 @@
 use anyhow::{anyhow, Result};
 use frostsnap_coordinator::persist::Persist;
 use frostsnap_core::{AccessStructureId, AccessStructureRef, KeyId};
-use frostsnap_nostr::{Keys, PublicKey};
+use frostsnap_nostr::{channel_runner::NostrProfile, Keys, PublicKey};
 use rusqlite::params;
 use std::collections::HashMap;
+
+/// Mode-tagged identity record. `Imported` is for a user who imported
+/// an existing nsec whose public NIP-01 kind 0 is discoverable on the
+/// network — the app never publishes kind 0 in this mode. `Generated`
+/// is for an app-generated nsec; the user sets a name (only) that's
+/// published encrypted inside each channel.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum UserIdentity {
+    Imported {
+        pubkey: PublicKey,
+        #[serde(default)]
+        cached_public_profile: Option<NostrProfile>,
+    },
+    Generated {
+        pubkey: PublicKey,
+        name: String,
+        created_at: u64,
+    },
+}
+
+impl UserIdentity {
+    pub fn pubkey(&self) -> PublicKey {
+        match self {
+            UserIdentity::Imported { pubkey, .. } | UserIdentity::Generated { pubkey, .. } => {
+                *pubkey
+            }
+        }
+    }
+
+    /// Construct the in-channel `NostrProfile` to publish for this
+    /// identity, or `None` for Imported mode (which never publishes
+    /// in-channel).
+    pub fn in_channel_profile(&self) -> Option<NostrProfile> {
+        match self {
+            UserIdentity::Generated { pubkey, name, .. } => Some(NostrProfile {
+                pubkey: Some(*pubkey),
+                name: Some(name.clone()),
+                ..Default::default()
+            }),
+            UserIdentity::Imported { .. } => None,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct NostrSettingsState {
     pub nsec: Option<String>,
     pub pubkey: Option<PublicKey>,
+    pub identity: Option<UserIdentity>,
     pub access_structure_settings: HashMap<AccessStructureId, AccessStructureSettings>,
 }
 
@@ -25,6 +70,13 @@ pub enum Mutation {
     /// silently leaves pubkey as `None` if the stored value is corrupt
     /// (only reachable on load — at that point the row was once valid).
     SetNsec { nsec: Option<String> },
+    /// Set the mode-tagged identity record alongside the nsec. The two
+    /// must move together: an identity without an nsec can't sign, and
+    /// an nsec without an identity has no associated UX mode.
+    SetIdentity {
+        identity: Option<UserIdentity>,
+        nsec: Option<String>,
+    },
     SetCoordinationUiEnabled {
         access_structure_id: AccessStructureId,
         key_id: KeyId,
@@ -40,6 +92,22 @@ impl NostrSettingsState {
             Keys::parse(n)?;
         }
         self.mutate(Mutation::SetNsec { nsec }, mutations);
+        Ok(())
+    }
+
+    /// Atomically replace the identity record and its associated nsec.
+    /// Both move together: an identity has exactly one nsec, and a
+    /// stored nsec belongs to exactly one identity mode.
+    pub fn set_identity(
+        &mut self,
+        identity: Option<UserIdentity>,
+        nsec: Option<String>,
+        mutations: &mut Vec<Mutation>,
+    ) -> Result<()> {
+        if let Some(n) = &nsec {
+            Keys::parse(n)?;
+        }
+        self.mutate(Mutation::SetIdentity { identity, nsec }, mutations);
         Ok(())
     }
 
@@ -78,6 +146,14 @@ impl NostrSettingsState {
                     .and_then(|n| Keys::parse(n).ok())
                     .map(|k| k.public_key().into());
                 self.nsec = nsec;
+            }
+            Mutation::SetIdentity { identity, nsec } => {
+                self.pubkey = nsec
+                    .as_deref()
+                    .and_then(|n| Keys::parse(n).ok())
+                    .map(|k| k.public_key().into());
+                self.nsec = nsec;
+                self.identity = identity;
             }
             Mutation::SetCoordinationUiEnabled {
                 access_structure_id,
@@ -139,7 +215,21 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
             // Validate at load time so a corrupt row surfaces early.
             Keys::parse(n).map_err(|e| anyhow!("stored nsec failed to parse: {e}"))?;
         }
-        state.apply_mutation(Mutation::SetNsec { nsec });
+        let identity_json: Option<String> = conn
+            .query_row(
+                "SELECT value FROM nostr_settings WHERE key = 'identity'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        let identity = match identity_json {
+            Some(s) => Some(
+                serde_json::from_str::<UserIdentity>(&s)
+                    .map_err(|e| anyhow!("stored identity failed to parse: {e}"))?,
+            ),
+            None => None,
+        };
+        state.apply_mutation(Mutation::SetIdentity { identity, nsec });
 
         // Per-access-structure rows → SetCoordinationUiEnabled mutations
         let mut stmt = conn.prepare(
@@ -184,6 +274,37 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
                 }
                 Mutation::SetNsec { nsec: None } => {
                     tx.execute("DELETE FROM nostr_settings WHERE key = 'nsec'", [])?;
+                }
+                Mutation::SetIdentity { identity, nsec } => {
+                    match nsec {
+                        Some(n) => {
+                            tx.execute(
+                                "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
+                                params![n],
+                            )?;
+                        }
+                        None => {
+                            tx.execute(
+                                "DELETE FROM nostr_settings WHERE key = 'nsec'",
+                                [],
+                            )?;
+                        }
+                    }
+                    match identity {
+                        Some(id) => {
+                            let json = serde_json::to_string(&id)?;
+                            tx.execute(
+                                "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('identity', ?1)",
+                                params![json],
+                            )?;
+                        }
+                        None => {
+                            tx.execute(
+                                "DELETE FROM nostr_settings WHERE key = 'identity'",
+                                [],
+                            )?;
+                        }
+                    }
                 }
                 Mutation::SetCoordinationUiEnabled {
                     access_structure_id,

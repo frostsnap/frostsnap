@@ -125,6 +125,52 @@ class NostrContext extends InheritedWidget {
     }
   }
 
+  /// Update the profile cache for a single member — used for
+  /// per-author `ChannelEvent.memberProfileUpdated` events folded
+  /// from in-channel kind 0 publications.
+  void updateMemberProfile(PublicKey pubkey, NostrProfile profile) {
+    final hex = pubkey.toHex();
+    if (!_profileCache.containsKey(hex)) {
+      _profileCache[hex] = BehaviorSubject.seeded(profile);
+    } else {
+      _profileCache[hex]!.add(profile);
+    }
+  }
+
+  /// Lazily-initialized shared `NostrClient` for profile fetches and
+  /// for callers that need to dispatch to channels (e.g. the profile
+  /// editor's publish-in-all-channels save). On first access, pushes
+  /// the current identity's publish credentials into the client so
+  /// auto-publish on channel-connect works without an explicit save
+  /// roundtrip after restart.
+  Future<NostrClient> get nostrClient async {
+    if (_client == null) {
+      _client = await NostrClient.connect();
+      refreshPublishCredentials(_client!);
+    }
+    return _client!;
+  }
+
+  /// Sync the client's auto-publish snapshot to whatever the current
+  /// identity looks like. Called after every identity mutation
+  /// (generate, import, clear) so the next channel-connect auto-publish
+  /// uses fresh credentials. No-op in Mode A (Imported) — Mode A never
+  /// publishes in-channel.
+  void refreshPublishCredentials(NostrClient client) {
+    final id = nostrSettings.currentIdentity();
+    NostrProfile? profile;
+    String? nsec;
+    if (id is UserIdentity_Generated) {
+      try {
+        nsec = nostrSettings.getNsec();
+        profile = NostrProfile(pubkey: id.pubkey, name: id.name);
+      } catch (_) {
+        // No nsec configured — nothing to publish.
+      }
+    }
+    client.setLocalPublishCredentials(profile: profile, nsec: nsec);
+  }
+
   @override
   bool updateShouldNotify(NostrContext oldWidget) => false;
 }

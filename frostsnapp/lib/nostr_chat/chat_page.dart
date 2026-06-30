@@ -454,7 +454,14 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   Future<void> _connect() async {
-    _client = await NostrClient.connect();
+    // Use the shared NostrContext client so every active channel
+    // lives in a single client's `channels` map. The profile editor
+    // also reaches into that same map via publishProfileInAllChannels;
+    // a per-page client would silo channels and the editor would
+    // publish into an empty map.
+    final nostr = _nostrContext!;
+    _client = await nostr.nostrClient;
+    nostr.refreshPublishCredentials(_client!);
     final stream = _client!.connectToChannel(params: widget.channelParams);
     _subscription = stream.listen(_handleEvent);
   }
@@ -691,6 +698,9 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           _memberPubkeys.add(_myPubkey);
         }
         _nostrContext!.updateProfilesFromChannel(members);
+
+      case ChannelEvent_MemberProfileUpdated(:final pubkey, :final profile):
+        _nostrContext!.updateMemberProfile(pubkey, profile);
 
       case ChannelEvent_Signing(:final event, :final pending):
         // Round decisions (RoundConfirmed, RoundAborted) are local
