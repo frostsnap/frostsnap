@@ -253,9 +253,16 @@ impl ChannelRunner {
         fetch_init_event_with_key(client, &channel_id_hex, &conversation_key).await
     }
 
+    /// Spawn the channel runner. The caller pre-creates a
+    /// `tokio::sync::watch::Sender<bool>` (so they can fire shutdown
+    /// regardless of whether `run` has finished setting up) and passes
+    /// the matching receiver in here. The runner observes the
+    /// receiver in its `select!` and exits cleanly when the sender
+    /// flips the channel to `true`.
     pub async fn run(
         self,
         client: Client,
+        shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(ChannelRunnerHandle, mpsc::Receiver<ChannelRunnerEvent>)> {
         let channel_id_hex = self.channel_keys.channel_id_hex();
         let conversation_key = ConversationKey::new(self.channel_keys.shared_secret);
@@ -381,11 +388,18 @@ impl ChannelRunner {
             });
         }
 
+        let mut shutdown_rx_task = shutdown_rx.clone();
         tokio::spawn(async move {
             let mut notifications = client.notifications();
 
             loop {
                 tokio::select! {
+                    biased;
+                    _ = shutdown_rx_task.changed() => {
+                        // close() (or Drop) was called on a handle —
+                        // exit cleanly.
+                        break;
+                    }
                     cmd = cmd_rx.recv() => {
                         match cmd {
                             Some(RunnerCmd::Publish { inner_event, done }) => {
@@ -583,6 +597,10 @@ impl ChannelRunner {
                     }
                 }
             }
+            // Unsubscribe from the relay so it stops sending events
+            // we'll never process.
+            client.unsubscribe(&channel_sub_id).await;
+            tracing::debug!(sub = %channel_sub_id, "channel runner exited");
         });
 
         let handle = ChannelRunnerHandle {

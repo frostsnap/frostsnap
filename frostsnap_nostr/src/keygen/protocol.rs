@@ -39,10 +39,16 @@ impl ProtocolClient {
         allowed_senders: BTreeMap<PublicKey, Vec<DeviceId>>,
         sink: impl Sink<RemoteKeygenMessage> + Clone + Sync,
     ) -> Result<ProtocolHandle> {
+        // Protocol-internal shutdown signal: never fired explicitly, but
+        // its `Sender` is kept alive in `ProtocolHandle._shutdown_keepalive`
+        // so that the watch channel only closes (and the runner exits)
+        // when the last `ProtocolHandle` clone drops.
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let (runner_handle, mut events) = ChannelRunner::new(channel_keys)
             .with_message_expiration(crate::keygen::KEYGEN_MESSAGE_TTL)
-            .run(client)
+            .run(client, shutdown_rx)
             .await?;
+        let shutdown_keepalive = std::sync::Arc::new(shutdown_tx);
         tokio::spawn(async move {
             while let Some(event) = events.recv().await {
                 let ChannelRunnerEvent::AppEvent { inner_event, ack } = event else {
@@ -93,6 +99,7 @@ impl ProtocolClient {
         Ok(ProtocolHandle {
             runner_handle,
             keygen_event_id,
+            _shutdown_keepalive: shutdown_keepalive,
         })
     }
 }
@@ -101,6 +108,7 @@ impl ProtocolClient {
 pub struct ProtocolHandle {
     runner_handle: ChannelRunnerHandle,
     keygen_event_id: EventId,
+    _shutdown_keepalive: std::sync::Arc<tokio::sync::watch::Sender<bool>>,
 }
 
 impl ProtocolHandle {

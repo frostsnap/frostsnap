@@ -21,7 +21,7 @@ class NostrSigningPage extends StatefulWidget {
   final int threshold;
   final NostrProfile? Function(PublicKey) getProfile;
   final PublicKey myPubkey;
-  final NostrClient client;
+  final ChannelHandle handle;
   final AccessStructureRef accessStructureRef;
   final String nsec;
 
@@ -33,7 +33,7 @@ class NostrSigningPage extends StatefulWidget {
     required this.threshold,
     required this.getProfile,
     required this.myPubkey,
-    required this.client,
+    required this.handle,
     required this.accessStructureRef,
     required this.nsec,
   });
@@ -143,8 +143,7 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
       for (final entry in completed) {
         if (!mounted || _iHaveSigned) break;
         try {
-          await widget.client.sendSignPartial(
-            accessStructureId: widget.accessStructureId,
+          await widget.handle.sendSignPartial(
             nsec: widget.nsec,
             requestId: widget.signingState.request.eventId,
             offerSubset: offerSubset,

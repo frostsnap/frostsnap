@@ -487,7 +487,12 @@ impl LobbyClient {
         if let Some(init) = init_event {
             runner = runner.with_init_event(init);
         }
-        let (runner_handle, mut events) = runner.run(client.clone()).await?;
+        // Lobby-internal shutdown signal: never fired explicitly; the
+        // `Sender` is parked in `LobbyHandle._shutdown_keepalive` so the
+        // runner exits only when the last `LobbyHandle` clone drops.
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (runner_handle, mut events) = runner.run(client.clone(), shutdown_rx).await?;
+        let shutdown_keepalive = std::sync::Arc::new(shutdown_tx);
 
         let runner_handle_for_task = runner_handle.clone();
         let channel_keys = self.channel_keys.clone();
@@ -563,7 +568,10 @@ impl LobbyClient {
             }
         });
 
-        let handle = LobbyHandle { runner_handle };
+        let handle = LobbyHandle {
+            runner_handle,
+            _shutdown_keepalive: shutdown_keepalive,
+        };
 
         // Joiners publish Presence so others see them in `Joining` state
         // before they've picked devices. Hosts skip — they're already
@@ -585,6 +593,7 @@ impl LobbyClient {
 #[derive(Clone)]
 pub struct LobbyHandle {
     runner_handle: ChannelRunnerHandle,
+    _shutdown_keepalive: std::sync::Arc<tokio::sync::watch::Sender<bool>>,
 }
 
 impl LobbyHandle {

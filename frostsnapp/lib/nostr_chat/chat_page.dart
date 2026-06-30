@@ -23,8 +23,7 @@ import 'package:frostsnap/src/rust/api/signing.dart'
         SigningDetails_Transaction,
         wireSignTaskBitcoinTransaction,
         wireSignTaskTest;
-import 'package:frostsnap/src/rust/lib.dart'
-    show WireSignTask, ParticipantBinonces;
+import 'package:frostsnap/src/rust/lib.dart' show WireSignTask;
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -366,6 +365,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   /// (mempool item stays after a separate confirmed pill is added).
   final Map<(String, ObservationKind), TimelineTxObservation> _txItemByKey = {};
   NostrClient? _client;
+  ChannelHandle? _handle;
   ConnectionState _connectionState = const ConnectionState.connecting();
   ReplyTarget? _replyingTo;
   ({AccessStructureRef asRef, String testMessage, List<DeviceId> devices})?
@@ -430,16 +430,13 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   void _applyTxState(TxState state) {
-    final client = _client;
-    if (client == null) return;
+    final handle = _handle;
+    if (handle == null) return;
     for (final tx in state.txs) {
       // Local-only pump. Runner folds correlations against the
       // chat-side maps it maintains and emits TxObservation events
       // that drive timeline insertion.
-      client.notifyTxObserved(
-        accessStructureId: widget.accessStructureId,
-        tx: tx,
-      );
+      handle.notifyTxObserved(tx: tx);
     }
   }
 
@@ -454,16 +451,15 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   Future<void> _connect() async {
-    // Use the shared NostrContext client so every active channel
-    // lives in a single client's `channels` map. The profile editor
-    // also reaches into that same map via publishProfileInAllChannels;
-    // a per-page client would silo channels and the editor would
-    // publish into an empty map.
     final nostr = _nostrContext!;
     _client = await nostr.nostrClient;
     nostr.refreshPublishCredentials(_client!);
-    final stream = _client!.connectToChannel(params: widget.channelParams);
+    _handle = await _client!.connectToChannel(params: widget.channelParams);
+    final stream = _handle!.events().watch();
     _subscription = stream.listen(_handleEvent);
+    // listen-then-start: attaches the broadcast sink before the runner
+    // emits Connecting/Connected and replays the cache.
+    await _handle!.start();
   }
 
   NostrProfile? _getProfile(PublicKey pubkey) {
@@ -709,10 +705,9 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         // directly to the SigningRequestState.
         if (event is SigningEvent_RoundConfirmed) {
           final state = _signingRequests[event.requestId];
-          if (state != null && _client != null) {
+          if (state != null && _handle != null) {
             final binonces = event.subset.expand((e) => e.binonces).toList();
-            final sealed = _client!.sealRoundConfirmed(
-              accessStructureId: widget.accessStructureId,
+            final sealed = _handle!.sealRoundConfirmed(
               requestId: event.requestId,
               signTask: event.signTask,
               binonces: binonces,
@@ -1353,8 +1348,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     if (nsec == null || !mounted) return;
     setState(() => state.cancelled = true);
     try {
-      await _client!.sendSignCancel(
-        accessStructureId: widget.accessStructureId,
+      await _handle!.sendSignCancel(
         nsec: nsec,
         requestId: state.request.eventId,
       );
@@ -1368,7 +1362,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
 
   Future<void> _onOfferToSign(SigningRequestState state) async {
     final frostKey = coord.getFrostKey(keyId: widget.keyId);
-    if (frostKey == null || _client == null) return;
+    if (frostKey == null || _handle == null) return;
     final walletCtx = WalletContext.of(context);
     final threshold = frostKey.accessStructures()[0].threshold();
 
@@ -1384,7 +1378,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
               builder: (ctx) => _OfferSignSheet(
                 state: state,
                 accessStructureRef: widget.accessStructureRef,
-                client: _client!,
+                handle: _handle!,
                 nostrContext: _nostrContext!,
                 threshold: threshold,
                 getProfile: _getProfile,
@@ -1397,7 +1391,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         return _OfferSignSheet(
           state: state,
           accessStructureRef: widget.accessStructureRef,
-          client: _client!,
+          handle: _handle!,
           nostrContext: _nostrContext!,
           threshold: threshold,
           getProfile: _getProfile,
@@ -1431,7 +1425,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           signingState: state,
           threshold: _getThreshold(state.request.eventId),
           getProfile: _getProfile,
-          client: _client!,
+          handle: _handle!,
           accessStructureRef: widget.accessStructureRef,
           nsec: nsec,
           myPubkey: _myPubkey,
@@ -1671,8 +1665,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
     try {
-      await _client!.sendReceiveAddress(
-        accessStructureId: widget.accessStructureRef.accessStructureId,
+      await _handle!.sendReceiveAddress(
         nsec: nsec,
         derivationIndex: card.derivationIndex,
         memo: card.memo,
@@ -1760,8 +1753,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
 
     try {
       if (pendingTx != null) {
-        final requestId = await _client!.sendSignRequest(
-          accessStructureRef: pendingTx.asRef,
+        final requestId = await _handle!.sendSignRequest(
           nsec: nsec,
           unsignedTx: pendingTx.unsignedTx,
           message: content,
@@ -1779,8 +1771,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           );
         }
       } else if (pending != null) {
-        final requestId = await _client!.sendTestSignRequest(
-          accessStructureRef: pending.asRef,
+        final requestId = await _handle!.sendTestSignRequest(
           nsec: nsec,
           testMessage: pending.testMessage,
           message: content,
@@ -1796,15 +1787,13 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           );
         }
       } else if (pendingReceive != null) {
-        await _client!.sendReceiveAddress(
-          accessStructureId: widget.accessStructureId,
+        await _handle!.sendReceiveAddress(
           nsec: nsec,
           derivationIndex: pendingReceive.index,
           memo: content,
         );
       } else {
-        await _client!.sendMessage(
-          accessStructureId: widget.accessStructureId,
+        await _handle!.sendMessage(
           nsec: nsec,
           content: content,
           replyTo: replyToId,
@@ -1836,8 +1825,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       );
       allBinonces.add(binonces);
     }
-    await _client!.sendSignOffer(
-      accessStructureId: widget.accessStructureId,
+    await _handle!.sendSignOffer(
       nsec: nsec,
       requestId: requestId,
       binonces: allBinonces,
@@ -1845,7 +1833,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   }
 
   Future<void> _retryMessage(ChatMessage message) async {
-    if (message.status != MessageStatus.failed || _client == null) return;
+    if (message.status != MessageStatus.failed || _handle == null) return;
 
     final nsec = await NostrContext.of(context).ensureIdentity(context);
     if (nsec == null || !mounted) return;
@@ -1856,8 +1844,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       _messageById.remove(message.messageId);
     });
 
-    await _client!.sendMessage(
-      accessStructureId: widget.accessStructureId,
+    await _handle!.sendMessage(
       nsec: nsec,
       content: message.content,
       replyTo: message.replyTo,
@@ -1952,7 +1939,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   void dispose() {
     _subscription?.cancel();
     _txSubscription?.cancel();
-    _client?.disconnectChannel(accessStructureId: widget.accessStructureId);
+    _handle?.close();
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -2840,7 +2827,7 @@ enum _NoDevicesReason {
 class _OfferSignSheet extends StatefulWidget {
   final SigningRequestState state;
   final AccessStructureRef accessStructureRef;
-  final NostrClient client;
+  final ChannelHandle handle;
   final NostrContext nostrContext;
   final int threshold;
   final NostrProfile? Function(PublicKey) getProfile;
@@ -2850,7 +2837,7 @@ class _OfferSignSheet extends StatefulWidget {
   const _OfferSignSheet({
     required this.state,
     required this.accessStructureRef,
-    required this.client,
+    required this.handle,
     required this.nostrContext,
     required this.threshold,
     required this.getProfile,
@@ -2943,8 +2930,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
         );
         allBinonces.add(binonces);
       }
-      await widget.client.sendSignOffer(
-        accessStructureId: widget.accessStructureId,
+      await widget.handle.sendSignOffer(
         nsec: nsec,
         requestId: widget.state.request.eventId,
         binonces: allBinonces,
@@ -3003,7 +2989,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
             signingState: widget.state,
             threshold: widget.threshold,
             getProfile: widget.getProfile,
-            client: widget.client,
+            handle: widget.handle,
             accessStructureRef: widget.accessStructureRef,
             nsec: nsec,
             myPubkey: widget.nostrContext.myPubkey,

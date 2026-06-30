@@ -1010,16 +1010,27 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
             participants: participants,
           );
           final client = await NostrContext.of(context).nostrClient;
-          final stream = client.connectToChannel(params: params);
-          status.value = 'Waiting for channel confirmation…';
-          await stream
-              .firstWhere((event) => event is ChannelEvent_ChannelState)
-              .timeout(const Duration(seconds: 30));
-          status.value = 'Enabling remote mode…';
-          await NostrContext.of(context).nostrSettings.setCoordinationUiEnabled(
-            accessStructureRef: asRef,
-            enabled: true,
-          );
+          final handle = await client.connectToChannel(params: params);
+          try {
+            status.value = 'Waiting for channel confirmation…';
+            // listen-then-start: invoking firstWhere subscribes to the
+            // stream synchronously, so the broadcast sink is attached
+            // before we call handle.start() and the runner emits.
+            final waitForConfirmation = handle
+                .events()
+                .watch()
+                .firstWhere((event) => event is ChannelEvent_ChannelState)
+                .timeout(const Duration(seconds: 30));
+            await handle.start();
+            await waitForConfirmation;
+            status.value = 'Enabling remote mode…';
+            await NostrContext.of(context).nostrSettings.setCoordinationUiEnabled(
+              accessStructureRef: asRef,
+              enabled: true,
+            );
+          } finally {
+            handle.close();
+          }
           return;
         } catch (e) {
           debugPrint('Channel setup attempt failed: $e — retrying');
