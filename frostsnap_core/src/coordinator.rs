@@ -35,6 +35,7 @@ use tracing::{event, Level};
 mod coordinator_to_user;
 pub mod keys;
 pub mod remote_keygen;
+pub mod remote_recovery;
 pub mod remote_signing;
 pub mod restoration;
 pub mod signing;

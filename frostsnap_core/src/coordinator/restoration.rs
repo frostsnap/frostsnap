@@ -1551,6 +1551,29 @@ impl RecoveringAccessStructure {
         )
     }
 
+    /// Fold a bundle of shares in one go. Equivalent to constructing
+    /// empty then calling `add_share` per input against the same
+    /// `fingerprint`. Convenience for batch callers (remote recovery,
+    /// tests); the local flow continues to accumulate via the mutation
+    /// stream. Production callers pass `Fingerprint::default()`
+    /// (i.e. `Fingerprint::FROST_V0`); tests may pass a weaker one to
+    /// avoid grinding cost.
+    pub fn new(
+        shares: &[RecoverShare],
+        starting_threshold: Option<u16>,
+        fingerprint: schnorr_fun::frost::Fingerprint,
+    ) -> Self {
+        let mut ras = Self {
+            starting_threshold,
+            held_shares: alloc::vec::Vec::new(),
+            shared_key: None,
+        };
+        for share in shares {
+            ras.add_share(share.clone(), fingerprint);
+        }
+        ras
+    }
+
     pub fn add_share(
         &mut self,
         recover_share: RecoverShare,
