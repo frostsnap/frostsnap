@@ -453,8 +453,14 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   Future<void> _connect() async {
     final nostr = _nostrContext!;
     _client = await nostr.nostrClient;
-    nostr.refreshPublishCredentials(_client!);
-    _handle = await _client!.connectToChannel(params: widget.channelParams);
+    final identity = nostr.nostrSettings.currentIdentity();
+    if (identity == null) {
+      throw StateError('nostr identity not configured');
+    }
+    _handle = await _client!.connectToChannel(
+      identity: identity,
+      params: widget.channelParams,
+    );
     final stream = _handle!.events().watch();
     _subscription = stream.listen(_handleEvent);
     // listen-then-start: attaches the broadcast sink before the runner
@@ -1349,7 +1355,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     setState(() => state.cancelled = true);
     try {
       await _handle!.sendSignCancel(
-        nsec: nsec,
         requestId: state.request.eventId,
       );
     } catch (e) {
@@ -1427,7 +1432,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           getProfile: _getProfile,
           handle: _handle!,
           accessStructureRef: widget.accessStructureRef,
-          nsec: nsec,
           myPubkey: _myPubkey,
         ),
       ),
@@ -1666,7 +1670,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     if (nsec == null || !mounted) return;
     try {
       await _handle!.sendReceiveAddress(
-        nsec: nsec,
         derivationIndex: card.derivationIndex,
         memo: card.memo,
       );
@@ -1754,7 +1757,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     try {
       if (pendingTx != null) {
         final requestId = await _handle!.sendSignRequest(
-          nsec: nsec,
           unsignedTx: pendingTx.unsignedTx,
           message: content,
         );
@@ -1767,12 +1769,10 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             pendingTx.asRef,
             pendingTx.devices,
             signTask,
-            nsec: nsec,
           );
         }
       } else if (pending != null) {
         final requestId = await _handle!.sendTestSignRequest(
-          nsec: nsec,
           testMessage: pending.testMessage,
           message: content,
         );
@@ -1783,18 +1783,15 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             pending.asRef,
             pending.devices,
             signTask,
-            nsec: nsec,
           );
         }
       } else if (pendingReceive != null) {
         await _handle!.sendReceiveAddress(
-          nsec: nsec,
           derivationIndex: pendingReceive.index,
           memo: content,
         );
       } else {
         await _handle!.sendMessage(
-          nsec: nsec,
           content: content,
           replyTo: replyToId,
         );
@@ -1811,9 +1808,8 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     EventId requestId,
     AccessStructureRef asRef,
     List<DeviceId> devices,
-    WireSignTask signTask, {
-    required String nsec,
-  }) async {
+    WireSignTask signTask,
+  ) async {
     final reservationId = RemoteSignSessionId(field0: requestId.field0);
     final allBinonces = <ParticipantBinonces>[];
     for (final device in devices) {
@@ -1826,7 +1822,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       allBinonces.add(binonces);
     }
     await _handle!.sendSignOffer(
-      nsec: nsec,
       requestId: requestId,
       binonces: allBinonces,
     );
@@ -1845,7 +1840,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     });
 
     await _handle!.sendMessage(
-      nsec: nsec,
       content: message.content,
       replyTo: message.replyTo,
     );
@@ -2931,7 +2925,6 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
         allBinonces.add(binonces);
       }
       await widget.handle.sendSignOffer(
-        nsec: nsec,
         requestId: widget.state.request.eventId,
         binonces: allBinonces,
       );
@@ -2951,7 +2944,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
         return;
       }
 
-      await _startSigning(nsec: nsec);
+      await _startSigning();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -2962,7 +2955,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     }
   }
 
-  Future<void> _startSigning({required String nsec}) async {
+  Future<void> _startSigning() async {
     final walletCtx = WalletContext.of(context);
     final fsCtx = FrostsnapContext.of(context);
     if (walletCtx == null || fsCtx == null) return;
@@ -2991,7 +2984,6 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
             getProfile: widget.getProfile,
             handle: widget.handle,
             accessStructureRef: widget.accessStructureRef,
-            nsec: nsec,
             myPubkey: widget.nostrContext.myPubkey,
           ),
         ),

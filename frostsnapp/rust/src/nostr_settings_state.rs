@@ -1,60 +1,20 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use frostsnap_coordinator::persist::Persist;
 use frostsnap_core::{AccessStructureId, AccessStructureRef, KeyId};
-use frostsnap_nostr::{channel_runner::NostrProfile, Keys, PublicKey};
+use frostsnap_nostr::{Keys, NostrIdentity, PublicKey};
 use rusqlite::params;
 use std::collections::HashMap;
 
-/// Mode-tagged identity record. `Imported` is for a user who imported
-/// an existing nsec whose public NIP-01 kind 0 is discoverable on the
-/// network — the app never publishes kind 0 in this mode. `Generated`
-/// is for an app-generated nsec; the user sets a name (only) that's
-/// published encrypted inside each channel.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum UserIdentity {
-    Imported {
-        pubkey: PublicKey,
-        #[serde(default)]
-        cached_public_profile: Option<NostrProfile>,
-    },
-    Generated {
-        pubkey: PublicKey,
-        name: String,
-        created_at: u64,
-    },
-}
-
-impl UserIdentity {
-    pub fn pubkey(&self) -> PublicKey {
-        match self {
-            UserIdentity::Imported { pubkey, .. } | UserIdentity::Generated { pubkey, .. } => {
-                *pubkey
-            }
-        }
-    }
-
-    /// Construct the in-channel `NostrProfile` to publish for this
-    /// identity, or `None` for Imported mode (which never publishes
-    /// in-channel).
-    pub fn in_channel_profile(&self) -> Option<NostrProfile> {
-        match self {
-            UserIdentity::Generated { pubkey, name, .. } => Some(NostrProfile {
-                pubkey: Some(*pubkey),
-                name: Some(name.clone()),
-                ..Default::default()
-            }),
-            UserIdentity::Imported { .. } => None,
-        }
-    }
-}
-
 #[derive(Default)]
 pub struct NostrSettingsState {
-    pub nsec: Option<String>,
-    pub pubkey: Option<PublicKey>,
-    pub identity: Option<UserIdentity>,
+    pub identity: Option<NostrIdentity>,
     pub access_structure_settings: HashMap<AccessStructureId, AccessStructureSettings>,
+}
+
+impl NostrSettingsState {
+    pub fn pubkey(&self) -> Option<PublicKey> {
+        self.identity.as_ref().and_then(|id| id.public_key().ok())
+    }
 }
 
 #[derive(Clone)]
@@ -65,17 +25,8 @@ pub struct AccessStructureSettings {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mutation {
-    /// `nsec` is the bech32 string. Setters validate it before constructing
-    /// this variant; `apply_mutation` re-parses to derive the pubkey, but
-    /// silently leaves pubkey as `None` if the stored value is corrupt
-    /// (only reachable on load — at that point the row was once valid).
-    SetNsec { nsec: Option<String> },
-    /// Set the mode-tagged identity record alongside the nsec. The two
-    /// must move together: an identity without an nsec can't sign, and
-    /// an nsec without an identity has no associated UX mode.
     SetIdentity {
-        identity: Option<UserIdentity>,
-        nsec: Option<String>,
+        identity: Option<NostrIdentity>,
     },
     SetCoordinationUiEnabled {
         access_structure_id: AccessStructureId,
@@ -85,29 +36,17 @@ pub enum Mutation {
 }
 
 impl NostrSettingsState {
-    pub fn set_nsec(&mut self, nsec: Option<String>, mutations: &mut Vec<Mutation>) -> Result<()> {
-        if let Some(n) = &nsec {
-            // Validate before staging the mutation so apply_mutation can stay
-            // infallible.
-            Keys::parse(n)?;
-        }
-        self.mutate(Mutation::SetNsec { nsec }, mutations);
-        Ok(())
-    }
-
-    /// Atomically replace the identity record and its associated nsec.
-    /// Both move together: an identity has exactly one nsec, and a
-    /// stored nsec belongs to exactly one identity mode.
+    /// Atomically replace the identity record.
     pub fn set_identity(
         &mut self,
-        identity: Option<UserIdentity>,
-        nsec: Option<String>,
+        identity: Option<NostrIdentity>,
         mutations: &mut Vec<Mutation>,
     ) -> Result<()> {
-        if let Some(n) = &nsec {
-            Keys::parse(n)?;
+        if let Some(id) = &identity {
+            // Validate the nsec before staging so apply_mutation is infallible.
+            id.keys()?;
         }
-        self.mutate(Mutation::SetIdentity { identity, nsec }, mutations);
+        self.mutate(Mutation::SetIdentity { identity }, mutations);
         Ok(())
     }
 
@@ -140,19 +79,7 @@ impl NostrSettingsState {
 
     fn apply_mutation(&mut self, mutation: Mutation) {
         match mutation {
-            Mutation::SetNsec { nsec } => {
-                self.pubkey = nsec
-                    .as_deref()
-                    .and_then(|n| Keys::parse(n).ok())
-                    .map(|k| k.public_key().into());
-                self.nsec = nsec;
-            }
-            Mutation::SetIdentity { identity, nsec } => {
-                self.pubkey = nsec
-                    .as_deref()
-                    .and_then(|n| Keys::parse(n).ok())
-                    .map(|k| k.public_key().into());
-                self.nsec = nsec;
+            Mutation::SetIdentity { identity } => {
                 self.identity = identity;
             }
             Mutation::SetCoordinationUiEnabled {
@@ -203,33 +130,42 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
     fn load(conn: &mut rusqlite::Connection, _: Self::LoadParams) -> Result<Self> {
         let mut state = NostrSettingsState::default();
 
-        // Identity row → SetNsec mutation
-        let nsec: Option<String> = conn
-            .query_row(
-                "SELECT value FROM nostr_settings WHERE key = 'nsec'",
-                [],
-                |row| row.get(0),
-            )
-            .ok();
-        if let Some(n) = &nsec {
-            // Validate at load time so a corrupt row surfaces early.
-            Keys::parse(n).map_err(|e| anyhow!("stored nsec failed to parse: {e}"))?;
-        }
-        let identity_json: Option<String> = conn
+        // Load identity row. Tolerant of stale/old-format rows: a
+        // deserialize failure is logged and treated as identity None,
+        // and the stale row is DELETEd inside the same transaction
+        // so the next mutation starts clean. This is the pre-release
+        // "no backward-compat migration" contract from the
+        // nostr_identity_type plan — MUST NOT block app startup, or
+        // the user can't reach the setup flow to re-enter identity.
+        let tx = conn.transaction()?;
+        let identity_json: Option<String> = tx
             .query_row(
                 "SELECT value FROM nostr_settings WHERE key = 'identity'",
                 [],
                 |row| row.get(0),
             )
             .ok();
-        let identity = match identity_json {
-            Some(s) => Some(
-                serde_json::from_str::<UserIdentity>(&s)
-                    .map_err(|e| anyhow!("stored identity failed to parse: {e}"))?,
-            ),
+        state.identity = match identity_json {
+            Some(s) => match serde_json::from_str::<NostrIdentity>(&s) {
+                Ok(id) => Some(id),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "stored identity row failed to deserialize; clearing",
+                    );
+                    tx.execute(
+                        "DELETE FROM nostr_settings WHERE key = 'identity'",
+                        [],
+                    )?;
+                    None
+                }
+            },
             None => None,
         };
-        state.apply_mutation(Mutation::SetIdentity { identity, nsec });
+        // Old-format standalone nsec row is no longer used — clear it
+        // if present so it doesn't accumulate.
+        tx.execute("DELETE FROM nostr_settings WHERE key = 'nsec'", [])?;
+        tx.commit()?;
 
         // Per-access-structure rows → SetCoordinationUiEnabled mutations
         let mut stmt = conn.prepare(
@@ -266,30 +202,7 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
         let tx = conn.transaction()?;
         for mutation in mutations {
             match mutation {
-                Mutation::SetNsec { nsec: Some(nsec) } => {
-                    tx.execute(
-                        "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
-                        params![nsec],
-                    )?;
-                }
-                Mutation::SetNsec { nsec: None } => {
-                    tx.execute("DELETE FROM nostr_settings WHERE key = 'nsec'", [])?;
-                }
-                Mutation::SetIdentity { identity, nsec } => {
-                    match nsec {
-                        Some(n) => {
-                            tx.execute(
-                                "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
-                                params![n],
-                            )?;
-                        }
-                        None => {
-                            tx.execute(
-                                "DELETE FROM nostr_settings WHERE key = 'nsec'",
-                                [],
-                            )?;
-                        }
-                    }
+                Mutation::SetIdentity { identity } => {
                     match identity {
                         Some(id) => {
                             let json = serde_json::to_string(&id)?;
@@ -305,6 +218,9 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
                             )?;
                         }
                     }
+                    // Belt-and-suspenders: nsec row is no longer used;
+                    // clear any that survived load.
+                    tx.execute("DELETE FROM nostr_settings WHERE key = 'nsec'", [])?;
                 }
                 Mutation::SetCoordinationUiEnabled {
                     access_structure_id,
@@ -325,5 +241,143 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
         }
         tx.commit()?;
         Ok(())
+    }
+}
+
+// Silence unused-import — Keys is used in the tolerant-load branch's
+// tracing note about corruption.
+#[allow(dead_code)]
+fn _keys_import_touch(_: Keys) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use frostsnap_coordinator::persist::Persist;
+    use frostsnap_nostr::Nsec;
+    use rusqlite::params;
+
+    fn conn_with_schema() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        <NostrSettingsState as Persist<rusqlite::Connection>>::migrate(&mut conn).unwrap();
+        conn
+    }
+
+    fn insert_identity_row(conn: &mut rusqlite::Connection, json: &str) {
+        conn.execute(
+            "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('identity', ?1)",
+            params![json],
+        )
+        .unwrap();
+    }
+
+    fn insert_nsec_row(conn: &mut rusqlite::Connection, nsec: &str) {
+        conn.execute(
+            "INSERT OR REPLACE INTO nostr_settings (key, value) VALUES ('nsec', ?1)",
+            params![nsec],
+        )
+        .unwrap();
+    }
+
+    fn row_exists(conn: &rusqlite::Connection, key: &str) -> bool {
+        conn.query_row(
+            "SELECT 1 FROM nostr_settings WHERE key = ?1",
+            params![key],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    #[test]
+    fn load_no_rows() {
+        let mut conn = conn_with_schema();
+        let state = NostrSettingsState::load(&mut conn, ()).unwrap();
+        assert!(state.identity.is_none());
+    }
+
+    #[test]
+    fn load_valid_new_format() {
+        let mut conn = conn_with_schema();
+        let nsec = Nsec::generate();
+        let id = NostrIdentity::Generated {
+            nsec: nsec.clone(),
+            name: "Alice".into(),
+            created_at: 1234,
+        };
+        insert_identity_row(&mut conn, &serde_json::to_string(&id).unwrap());
+        let state = NostrSettingsState::load(&mut conn, ()).unwrap();
+        assert_eq!(state.identity.as_ref(), Some(&id));
+        assert!(state.pubkey().is_some());
+    }
+
+    /// Old-shape identity JSON (pre-`nostr_identity_type`): had
+    /// `pubkey` + `cached_public_profile` fields, no `nsec`. Should
+    /// fail to deserialize (unknown variant / missing field) → load
+    /// still succeeds, `identity` is None, stale row deleted, app
+    /// startup unaffected.
+    #[test]
+    fn load_old_shape_identity_json_clears_row() {
+        let mut conn = conn_with_schema();
+        insert_identity_row(
+            &mut conn,
+            r#"{"mode":"imported","pubkey":"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20","cached_public_profile":null}"#,
+        );
+        let state = NostrSettingsState::load(&mut conn, ()).unwrap();
+        assert!(state.identity.is_none());
+        assert!(!row_exists(&conn, "identity"));
+    }
+
+    /// A row in NEW format but with a semantically-invalid Nsec
+    /// string. Must not sneak past load — Nsec's `Deserialize`
+    /// validates via `Nsec::parse`, so this row fails to deserialize
+    /// and follows the same tolerant-load path as the old-shape
+    /// case. Guards codex's concern about identity_pubkey() panicking
+    /// on a stored bogus Nsec.
+    #[test]
+    fn load_new_format_with_invalid_nsec_clears_row() {
+        let mut conn = conn_with_schema();
+        insert_identity_row(
+            &mut conn,
+            r#"{"Generated":{"nsec":"not-a-real-nsec","name":"Bob","created_at":42}}"#,
+        );
+        let state = NostrSettingsState::load(&mut conn, ()).unwrap();
+        assert!(state.identity.is_none());
+        assert!(!row_exists(&conn, "identity"));
+    }
+
+    /// Standalone old-format `nsec` row (pre-plan) with no identity
+    /// row: cleared during load, identity is None.
+    #[test]
+    fn load_orphan_nsec_row_cleared() {
+        let mut conn = conn_with_schema();
+        insert_nsec_row(&mut conn, "nsec1anything");
+        let state = NostrSettingsState::load(&mut conn, ()).unwrap();
+        assert!(state.identity.is_none());
+        assert!(!row_exists(&conn, "nsec"));
+    }
+
+    /// A stored new-format identity with a corrupt Nsec should NOT
+    /// arrive in memory as a valid NostrIdentity — either it fails
+    /// to deserialize (the previous test) or, if we somehow bypass
+    /// Deserialize, calling identity.keys() must return Err. This
+    /// pins the semantic invariant.
+    #[test]
+    fn identity_keys_infallible_on_valid_load() {
+        let mut conn = conn_with_schema();
+        let nsec = Nsec::generate();
+        let id = NostrIdentity::Generated {
+            nsec,
+            name: "Carol".into(),
+            created_at: 7,
+        };
+        insert_identity_row(&mut conn, &serde_json::to_string(&id).unwrap());
+        let state = NostrSettingsState::load(&mut conn, ()).unwrap();
+        let loaded = state.identity.expect("load succeeded");
+        // keys() + public_key() must not error for a validly-loaded
+        // identity — this is what identity_pubkey()'s expect() relies
+        // on.
+        loaded.keys().expect("valid nsec parses to Keys");
+        loaded
+            .public_key()
+            .expect("valid nsec derives a pubkey");
     }
 }

@@ -50,8 +50,6 @@ class _NostrSetupDialogState extends State<_NostrSetupDialog> {
     try {
       final nostr = NostrContext.of(context);
       await nostr.nostrSettings.generateNewIdentity(name: name);
-      final client = await nostr.nostrClient;
-      nostr.refreshPublishCredentials(client);
       if (!mounted) return;
       Navigator.of(context).pop(NostrSetupResult.generated);
     } catch (e) {
@@ -85,7 +83,6 @@ class _NostrSetupDialogState extends State<_NostrSetupDialog> {
         cachedPublicProfile: cached,
       );
       // Mode A doesn't publish in-channel — wipe any prior snapshot.
-      nostr.refreshPublishCredentials(client);
       if (!mounted) return;
       Navigator.of(context).pop(NostrSetupResult.imported);
     } catch (e) {

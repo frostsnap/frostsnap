@@ -1,10 +1,12 @@
 pub mod channel;
 pub mod channel_runner;
+pub mod identity;
 pub mod keygen;
 pub mod signing;
 
 pub use channel::{ChannelInitData, ChannelKeys, ChannelSecret, ParticipantShares};
 pub use channel_runner::{ChannelRunner, NostrProfile};
+pub use identity::{Nsec, NostrIdentity};
 pub use nostr_lmdb::NostrLMDB;
 pub use nostr_sdk::nips::nip19::ToBech32;
 pub use nostr_sdk::prelude::NostrDatabaseExt;

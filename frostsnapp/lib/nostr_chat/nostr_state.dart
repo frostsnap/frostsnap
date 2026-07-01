@@ -146,29 +146,8 @@ class NostrContext extends InheritedWidget {
   Future<NostrClient> get nostrClient async {
     if (_client == null) {
       _client = await NostrClient.connect();
-      refreshPublishCredentials(_client!);
     }
     return _client!;
-  }
-
-  /// Sync the client's auto-publish snapshot to whatever the current
-  /// identity looks like. Called after every identity mutation
-  /// (generate, import, clear) so the next channel-connect auto-publish
-  /// uses fresh credentials. No-op in Mode A (Imported) — Mode A never
-  /// publishes in-channel.
-  void refreshPublishCredentials(NostrClient client) {
-    final id = nostrSettings.currentIdentity();
-    NostrProfile? profile;
-    String? nsec;
-    if (id is UserIdentity_Generated) {
-      try {
-        nsec = nostrSettings.getNsec();
-        profile = NostrProfile(pubkey: id.pubkey, name: id.name);
-      } catch (_) {
-        // No nsec configured — nothing to publish.
-      }
-    }
-    client.setLocalPublishCredentials(profile: profile, nsec: nsec);
   }
 
   @override

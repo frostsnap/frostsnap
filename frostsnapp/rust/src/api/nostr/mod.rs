@@ -3,7 +3,6 @@ pub mod remote_keygen;
 
 use crate::api::broadcast::{BehaviorBroadcast, Broadcast};
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
-pub use crate::nostr_settings_state::UserIdentity;
 use crate::nostr_settings_state::NostrSettingsState;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
@@ -228,7 +227,7 @@ impl NostrSettings {
 
     fn emit_identity(&self) {
         if let Some(sink) = &self.identity_sink {
-            let _ = sink.add(self.settings.pubkey);
+            let _ = sink.add(self.settings.pubkey());
         }
     }
 
@@ -246,25 +245,18 @@ impl NostrSettings {
         self.broadcast_for(asref).add(&snapshot);
     }
 
-    /// Get current identity synchronously.
+    /// Get current identity pubkey synchronously.
     #[frb(sync)]
     pub fn current(&self) -> Option<PublicKey> {
-        self.settings.pubkey
+        self.settings.pubkey()
     }
 
-    /// Snapshot the current `UserIdentity` (Mode A imported / Mode B
+    /// Snapshot the current `NostrIdentity` (Mode A imported / Mode B
     /// generated) for the Dart layer to pattern-match on. `None` when
     /// no identity is configured.
     #[frb(sync)]
-    pub fn current_identity(&self) -> Option<UserIdentity> {
+    pub fn current_identity(&self) -> Option<NostrIdentity> {
         self.settings.identity.clone()
-    }
-
-    /// Internal: get the raw nsec for in-channel publishing. Not
-    /// FRB-exposed — Dart should use `get_nsec()` for export.
-    #[frb(ignore)]
-    pub(crate) fn get_nsec_internal(&self) -> Option<String> {
-        self.settings.nsec.clone()
     }
 
     /// Mode B — generate a fresh nsec and persist it as a `Generated`
@@ -277,22 +269,21 @@ impl NostrSettings {
         if trimmed.is_empty() {
             return Err(anyhow!("display name must not be empty"));
         }
-        let keys = Keys::generate();
-        let nsec = keys.secret_key().to_bech32()?;
-        let pubkey: PublicKey = keys.public_key().into();
-        let identity = UserIdentity::Generated {
-            pubkey,
+        let nsec = Nsec::generate();
+        let nsec_str = nsec.0.clone();
+        let identity = NostrIdentity::Generated {
+            nsec,
             name: trimmed.to_string(),
             created_at: now_secs(),
         };
         let mut conn = self.db.lock().unwrap();
         self.settings.mutate2(&mut *conn, |st, update| {
-            st.set_identity(Some(identity), Some(nsec.clone()), update)
+            st.set_identity(Some(identity), update)
         })?;
         drop(conn);
         self.emit_identity();
         tracing::info!("generated new Nostr identity");
-        Ok(nsec)
+        Ok(nsec_str)
     }
 
     /// Mode A — store an imported nsec as an `Imported` identity with
@@ -303,15 +294,14 @@ impl NostrSettings {
         nsec: String,
         cached_public_profile: Option<NostrProfile>,
     ) -> Result<()> {
-        let keys = Keys::parse(&nsec)?;
-        let pubkey: PublicKey = keys.public_key().into();
-        let identity = UserIdentity::Imported {
-            pubkey,
-            cached_public_profile,
+        let nsec = Nsec::parse(nsec)?;
+        let identity = NostrIdentity::Imported {
+            nsec,
+            cached_profile: cached_public_profile.unwrap_or_default(),
         };
         let mut conn = self.db.lock().unwrap();
         self.settings.mutate2(&mut *conn, |st, update| {
-            st.set_identity(Some(identity), Some(nsec), update)
+            st.set_identity(Some(identity), update)
         })?;
         drop(conn);
         self.emit_identity();
@@ -323,7 +313,7 @@ impl NostrSettings {
     pub fn clear_identity(&mut self) -> Result<()> {
         let mut conn = self.db.lock().unwrap();
         self.settings.mutate2(&mut *conn, |st, update| {
-            st.set_identity(None, None, update)
+            st.set_identity(None, update)
         })?;
         drop(conn);
         self.emit_identity();
@@ -335,15 +325,20 @@ impl NostrSettings {
     #[frb(sync)]
     pub fn get_nsec(&self) -> Result<String> {
         self.settings
-            .nsec
-            .clone()
+            .identity
+            .as_ref()
+            .map(|id| match id {
+                NostrIdentity::Imported { nsec, .. } | NostrIdentity::Generated { nsec, .. } => {
+                    nsec.0.clone()
+                }
+            })
             .ok_or_else(|| anyhow!("no Nostr identity configured"))
     }
 
     /// Check if identity exists.
     #[frb(sync)]
     pub fn has_identity(&self) -> bool {
-        self.settings.pubkey.is_some()
+        self.settings.identity.is_some()
     }
 
     /// Whether the wallet behind this access structure should render its
@@ -394,7 +389,7 @@ pub struct ChannelHandle {
     bcast: Broadcast<ChannelEvent>,
     key_context: KeyContext,
     nostr_client: Client,
-    local_publish: Option<(NostrProfile, String)>,
+    identity: NostrIdentity,
     /// `Some(client)` until the first successful `start()` takes it.
     pending: tokio::sync::Mutex<Option<ChannelClient>>,
     /// Set once `start()` finishes its inner `ChannelClient::run`.
@@ -433,20 +428,14 @@ impl ChannelHandle {
             bcast: self.bcast.clone(),
         };
         let inner = cc
-            .run(self.nostr_client.clone(), sink)
+            .run(self.nostr_client.clone(), sink, self.identity.clone())
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "failed to start channel runner");
                 e
             })?;
-        if let Some((profile, nsec)) = self.local_publish.clone() {
-            if let Ok(keys) = Keys::parse(&nsec) {
-                inner
-                    .runner_handle
-                    .clone()
-                    .spawn_publish_profile(profile, keys);
-            }
-        }
+        // Publish-after-fold is handled inside ChannelRunner::run via
+        // the identity's publish policy; no explicit call here.
         let _ = self.inner.set(inner);
         Ok(())
     }
@@ -457,28 +446,28 @@ impl ChannelHandle {
             .ok_or_else(|| anyhow!("channel handle not started — call start() first"))
     }
 
-    /// Send a chat message. `reply_to` is optional.
+    /// Send a chat message. `reply_to` is optional. Signs with the
+    /// identity captured at `connect_to_channel` time — see
+    /// [`NostrClient::connect_to_channel`].
     pub async fn send_message(
         &self,
-        nsec: String,
         content: String,
         reply_to: Option<EventId>,
     ) -> Result<EventId> {
-        let keys = Keys::parse(&nsec)?;
-        self.require_inner()?
-            .send_message(content, reply_to, &keys)
-            .await
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
+        inner.send_message(content, reply_to, &keys).await
     }
 
     /// Share a receive address in the channel.
     pub async fn send_receive_address(
         &self,
-        nsec: String,
         derivation_index: u32,
         memo: String,
     ) -> Result<EventId> {
-        let keys = Keys::parse(&nsec)?;
-        self.require_inner()?
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
+        inner
             .send_receive_address(&keys, derivation_index, memo)
             .await
     }
@@ -486,65 +475,56 @@ impl ChannelHandle {
     /// Propose a transaction for signing.
     pub async fn send_sign_request(
         &self,
-        nsec: String,
         unsigned_tx: super::signing::UnsignedTx,
         message: String,
     ) -> Result<EventId> {
-        let keys = Keys::parse(&nsec)?;
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
         let sign_task = WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone());
-        self.require_inner()?
-            .send_sign_request(&keys, sign_task, message)
-            .await
+        inner.send_sign_request(&keys, sign_task, message).await
     }
 
     /// Propose a test message for signing.
     pub async fn send_test_sign_request(
         &self,
-        nsec: String,
         test_message: String,
         message: String,
     ) -> Result<EventId> {
-        let keys = Keys::parse(&nsec)?;
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
         let sign_task = WireSignTask::Test {
             message: test_message,
         };
-        self.require_inner()?
-            .send_sign_request(&keys, sign_task, message)
-            .await
+        inner.send_sign_request(&keys, sign_task, message).await
     }
 
     pub async fn send_sign_offer(
         &self,
-        nsec: String,
         request_id: EventId,
         binonces: Vec<ParticipantBinonces>,
     ) -> Result<EventId> {
-        let keys = Keys::parse(&nsec)?;
-        self.require_inner()?
-            .send_sign_offer(&keys, request_id, binonces)
-            .await
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
+        inner.send_sign_offer(&keys, request_id, binonces).await
     }
 
     pub async fn send_sign_partial(
         &self,
-        nsec: String,
         request_id: EventId,
         offer_subset: Vec<EventId>,
         shares: frostsnap_core::coordinator::ParticipantSignatureShares,
     ) -> Result<EventId> {
-        let keys = Keys::parse(&nsec)?;
-        self.require_inner()?
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
+        inner
             .send_sign_partial(&keys, request_id, offer_subset, shares)
             .await
     }
 
-    pub async fn send_sign_cancel(
-        &self,
-        nsec: String,
-        request_id: EventId,
-    ) -> Result<EventId> {
-        let keys = Keys::parse(&nsec)?;
-        self.require_inner()?.send_sign_cancel(&keys, request_id).await
+    pub async fn send_sign_cancel(&self, request_id: EventId) -> Result<EventId> {
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
+        inner.send_sign_cancel(&keys, request_id).await
     }
 
     /// Pump a wallet-stream tx into the channel runner so it can fold
@@ -604,12 +584,6 @@ impl ChannelHandle {
 /// Create once and keep around - cloning shares the connection pool.
 pub struct NostrClient {
     client: Client,
-    /// Snapshot of the local Mode-B profile + nsec used by
-    /// `connect_to_channel` to auto-publish into each newly-joined
-    /// channel. `None` in Mode A or when no name is set. Updated by
-    /// `set_local_publish_credentials` whenever the identity / name
-    /// changes.
-    local_publish: Mutex<Option<(NostrProfile, String)>>,
 }
 
 impl NostrClient {
@@ -626,24 +600,7 @@ impl NostrClient {
 
         client.connect().await;
 
-        Ok(Self {
-            client,
-            local_publish: Mutex::new(None),
-        })
-    }
-
-    /// Refresh the Mode-B publish snapshot. `Some((profile, nsec))`
-    /// enables auto-publish on connect; `None` disables it (Mode A or
-    /// unset name). Callers refresh after `generate_new_identity`,
-    /// `set_imported_identity`, `set_generated_name`, and
-    /// `clear_identity`.
-    #[frb(sync)]
-    pub fn set_local_publish_credentials(
-        &self,
-        profile: Option<NostrProfile>,
-        nsec: Option<String>,
-    ) {
-        *self.local_publish.lock().unwrap() = profile.zip(nsec);
+        Ok(Self { client })
     }
 
     /// Fetch profile metadata for a public key.
@@ -709,10 +666,10 @@ impl NostrClient {
     /// gets the event stream via `handle.events().watch()`.
     pub async fn connect_to_channel(
         &self,
+        identity: NostrIdentity,
         params: &ChannelConnectionParams,
     ) -> Result<ChannelHandle> {
         let key_context = params.key_context.clone();
-        let local_publish = self.local_publish.lock().unwrap().clone();
         let channel_client =
             ChannelClient::new(params.key_context.clone(), params.init_data.clone());
 
@@ -720,7 +677,7 @@ impl NostrClient {
             bcast: Broadcast::<ChannelEvent>::default(),
             key_context,
             nostr_client: self.client.clone(),
-            local_publish,
+            identity,
             pending: tokio::sync::Mutex::new(Some(channel_client)),
             inner: tokio::sync::OnceCell::new(),
         })
@@ -774,21 +731,20 @@ impl NostrClient {
     /// handle the caller uses to register devices or cancel.
     pub async fn create_remote_lobby(
         &self,
+        identity: NostrIdentity,
         channel_secret: ChannelSecret,
-        nsec: String,
         key_name: String,
         purpose: KeyPurpose,
     ) -> Result<self::remote_keygen::RemoteLobbyHandle> {
-        let keys = Keys::parse(&nsec)?;
+        let keys = identity.keys()?;
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let invite_link = channel_secret.keygen_invite_link();
         let metadata = LobbyChannelMetadata { key_name, purpose };
         let init_event = lobby_client.build_creation_event(&keys, &metadata).await?;
         let (bridge, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
         let handle = lobby_client
-            .run(self.client.clone(), keys.clone(), Some(init_event), sink)
+            .run(self.client.clone(), identity, Some(init_event), sink)
             .await?;
-        self.spawn_lobby_publish_profile(handle.runner_handle());
         Ok(self::remote_keygen::RemoteLobbyHandle::new(
             handle,
             keys,
@@ -803,17 +759,16 @@ impl NostrClient {
     /// (see `ChannelSecret::from_invite_link`).
     pub async fn join_remote_lobby(
         &self,
+        identity: NostrIdentity,
         channel_secret: ChannelSecret,
-        nsec: String,
     ) -> Result<self::remote_keygen::RemoteLobbyHandle> {
-        let keys = Keys::parse(&nsec)?;
+        let keys = identity.keys()?;
         let lobby_client = LobbyClient::new(channel_secret.clone());
         let invite_link = channel_secret.keygen_invite_link();
         let (bridge, sink) = self::remote_keygen::RemoteLobbyHandle::build_bridge();
         let handle = lobby_client
-            .run(self.client.clone(), keys.clone(), None, sink)
+            .run(self.client.clone(), identity, None, sink)
             .await?;
-        self.spawn_lobby_publish_profile(handle.runner_handle());
         Ok(self::remote_keygen::RemoteLobbyHandle::new(
             handle,
             keys,
@@ -823,53 +778,54 @@ impl NostrClient {
         ))
     }
 
-    /// Mode-B auto-publish-on-connect for a freshly-built lobby
-    /// runner handle. No-op in Mode A.
-    fn spawn_lobby_publish_profile(&self, runner_handle: &frostsnap_nostr::channel_runner::ChannelRunnerHandle) {
-        if let Some((profile, nsec)) = self.local_publish.lock().unwrap().clone() {
-            if let Ok(keys) = Keys::parse(&nsec) {
-                runner_handle.clone().spawn_publish_profile(profile, keys);
-            }
-        }
-    }
-
 }
 
 // ============================================================================
 // Nsec - Our newtype wrapper for Nostr secret keys
 // ============================================================================
 
-/// A validated Nostr secret key (nsec).
-#[frb(non_opaque)]
-#[derive(Debug, Clone)]
-pub struct Nsec(pub String);
+pub use frostsnap_nostr::{Nsec, NostrIdentity};
 
+/// FRB mirror for `frostsnap_nostr::Nsec` (moved out of this crate;
+/// see the `nostr_identity_type` plan). The methods are re-exposed
+/// via `#[frb(external)]` below.
+#[frb(mirror(Nsec), non_opaque)]
+pub struct _Nsec(pub String);
+
+#[frb(external)]
 impl Nsec {
-    /// Generate a new random Nostr identity.
     #[frb(sync)]
-    pub fn generate() -> Self {
-        let keys = Keys::generate();
-        Nsec(keys.secret_key().to_bech32().expect("valid key"))
-    }
+    pub fn generate() -> Self {}
 
-    /// Parse and validate an nsec string.
     #[frb(sync)]
-    pub fn parse(s: String) -> Result<Self> {
-        Keys::parse(&s)?;
-        Ok(Nsec(s))
-    }
+    pub fn parse(_s: String) -> Result<Self> {}
+}
 
-    /// Get the nsec as a string (for storage/display).
-    #[frb(sync)]
-    pub fn as_str(&self) -> String {
-        self.0.clone()
-    }
+/// FRB mirror for `frostsnap_nostr::NostrIdentity`. Non-opaque
+/// so Dart can construct + pattern-match on the variant. All
+/// fields are FRB-safe (Nsec, NostrProfile, String, u64).
+#[frb(mirror(NostrIdentity), non_opaque)]
+pub enum _NostrIdentity {
+    Imported {
+        nsec: Nsec,
+        cached_profile: NostrProfile,
+    },
+    Generated {
+        nsec: Nsec,
+        name: String,
+        created_at: u64,
+    },
+}
 
-    /// Derive the public key from this secret key.
-    #[frb(sync)]
-    pub fn public_key(&self) -> PublicKey {
-        Keys::parse(&self.0).expect("validated").public_key().into()
-    }
+/// Dart-visible pubkey accessor on `NostrIdentity`. Signing keys
+/// stay Rust-internal; Dart only needs the pubkey for display. Sync
+/// getter — unwraps the Nsec parse since it was validated at
+/// construction time.
+#[frb(sync)]
+pub fn identity_pubkey(identity: &NostrIdentity) -> PublicKey {
+    identity
+        .public_key()
+        .expect("nsec must be valid — was validated at Nsec::parse time")
 }
 
 // ============================================================================
@@ -1160,20 +1116,6 @@ pub struct _ChannelParticipant {
     pub share_indices: Vec<u32>,
 }
 
-/// FRB mirror of the persisted identity record so Dart can
-/// pattern-match on mode.
-#[frb(mirror(UserIdentity), non_opaque)]
-pub enum _UserIdentity {
-    Imported {
-        pubkey: PublicKey,
-        cached_public_profile: Option<NostrProfile>,
-    },
-    Generated {
-        pubkey: PublicKey,
-        name: String,
-        created_at: u64,
-    },
-}
 
 /// Compute the UI-shape `SigningDetails` for a sign task. Dart calls
 /// this on demand; the field used to ride embedded on

@@ -39,8 +39,15 @@ impl ProtocolClient {
         allowed_senders: BTreeMap<PublicKey, Vec<DeviceId>>,
         sink: impl Sink<RemoteKeygenMessage> + Clone + Sync,
     ) -> Result<ProtocolHandle> {
+        // Protocol subchannel: no user profile publish. The dispatch
+        // path takes caller-provided Keys per call, so the ephemeral
+        // Keys stashed here are only there to satisfy
+        // `ChannelRunner::run`'s "signing must be configured" invariant
+        // — they are never used to sign anything.
+        let ephemeral = nostr_sdk::Keys::generate();
         let (runner_handle, mut events) = ChannelRunner::new(channel_keys)
             .with_message_expiration(crate::keygen::KEYGEN_MESSAGE_TTL)
+            .with_ephemeral_signing_keys(ephemeral)
             .run(client)
             .await?;
         tokio::spawn(async move {

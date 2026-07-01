@@ -23,7 +23,6 @@ class NostrSigningPage extends StatefulWidget {
   final PublicKey myPubkey;
   final ChannelHandle handle;
   final AccessStructureRef accessStructureRef;
-  final String nsec;
 
   const NostrSigningPage({
     super.key,
@@ -35,7 +34,6 @@ class NostrSigningPage extends StatefulWidget {
     required this.myPubkey,
     required this.handle,
     required this.accessStructureRef,
-    required this.nsec,
   });
 
   AccessStructureId get accessStructureId =>
@@ -144,7 +142,6 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
         if (!mounted || _iHaveSigned) break;
         try {
           await widget.handle.sendSignPartial(
-            nsec: widget.nsec,
             requestId: widget.signingState.request.eventId,
             offerSubset: offerSubset,
             shares: entry.$2,

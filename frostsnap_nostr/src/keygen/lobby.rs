@@ -475,15 +475,17 @@ impl LobbyClient {
     pub async fn run(
         self,
         client: Client,
-        local_nostr_keys: Keys,
+        identity: crate::NostrIdentity,
         init_event: Option<Event>,
         sink: impl Sink<LobbyEvent> + Clone + Sync,
     ) -> Result<LobbyHandle> {
         // Hosts identify themselves via the NIP-28 ChannelCreation event;
         // joiners need to publish an explicit Presence so others see them.
         let is_host = init_event.is_some();
+        let local_nostr_keys = identity.keys()?;
         let mut runner = ChannelRunner::new(self.channel_keys.clone())
-            .with_message_expiration(KEYGEN_MESSAGE_TTL);
+            .with_message_expiration(KEYGEN_MESSAGE_TTL)
+            .with_identity(identity)?;
         if let Some(init) = init_event {
             runner = runner.with_init_event(init);
         }

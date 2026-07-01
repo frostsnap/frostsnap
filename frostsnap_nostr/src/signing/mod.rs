@@ -74,6 +74,7 @@ impl ChannelClient {
         self,
         client: Client,
         sink: impl Sink<ChannelEvent> + Clone,
+        identity: crate::NostrIdentity,
     ) -> Result<ChannelHandle> {
         sink.send(ChannelEvent::ConnectionState(ConnectionState::Connecting));
 
@@ -83,6 +84,7 @@ impl ChannelClient {
             let init_inner = init_data.to_channel_creation_event()?;
             runner = runner.with_init_event(init_inner);
         }
+        runner = runner.with_identity(identity)?;
 
         let (runner_handle, mut events) = runner.run(client).await?;
 

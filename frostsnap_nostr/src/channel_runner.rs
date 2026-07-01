@@ -219,6 +219,22 @@ pub struct ChannelRunner {
     /// short-lived coordination channels (keygen lobby, keygen protocol
     /// subchannel) where stale events are useless after the round.
     message_expiration: Option<Duration>,
+    /// Signing keys + optional publish-profile policy. Set by exactly
+    /// one of [`ChannelRunner::with_identity`] (user-facing channels)
+    /// or [`ChannelRunner::with_ephemeral_signing_keys`] (keygen
+    /// subchannels). [`ChannelRunner::run`] panics if neither was
+    /// called — caller-bug guard, not a user-reachable path.
+    signing: Option<SigningConfig>,
+}
+
+pub(crate) struct SigningConfig {
+    pub keys: Keys,
+    pub pubkey: crate::PublicKey,
+    /// `Some` triggers the publish-after-fold check with this
+    /// profile (pubkey field normalised to the signing pubkey so
+    /// equality against fold-observed profiles is structural).
+    /// `None` skips publishing entirely (ephemeral protocol keys).
+    pub publish_profile: Option<NostrProfile>,
 }
 
 impl ChannelRunner {
@@ -228,6 +244,7 @@ impl ChannelRunner {
             state: Arc::new(Mutex::new(ChannelState::default())),
             init_event: None,
             message_expiration: None,
+            signing: None,
         }
     }
 
@@ -247,6 +264,42 @@ impl ChannelRunner {
         self
     }
 
+    /// User-facing channels: chat, keygen lobby, remote signing,
+    /// recovery lobby. Parses nsec once here — if the stored bech32
+    /// is corrupt, this fails and the whole channel spin-up bails
+    /// early. Captures `identity.in_channel_profile()` with its
+    /// pubkey field normalised for structural equality against the
+    /// fold-observed profile at publish-check time.
+    pub fn with_identity(mut self, identity: crate::NostrIdentity) -> Result<Self> {
+        let keys = identity.keys()?;
+        let pubkey = identity.public_key()?;
+        let publish_profile = identity.in_channel_profile().map(|mut p| {
+            p.pubkey = Some(pubkey);
+            p
+        });
+        self.signing = Some(SigningConfig {
+            keys,
+            pubkey,
+            publish_profile,
+        });
+        Ok(self)
+    }
+
+    /// Internal-only: keygen protocol subchannels sign with an
+    /// ephemeral protocol Keys and must not publish any user
+    /// profile. `pub(crate)` so downstream crates can't accidentally
+    /// reach for it — Dart-side construction always goes through
+    /// [`ChannelRunner::with_identity`].
+    pub(crate) fn with_ephemeral_signing_keys(mut self, keys: Keys) -> Self {
+        let pubkey = keys.public_key().into();
+        self.signing = Some(SigningConfig {
+            keys,
+            pubkey,
+            publish_profile: None,
+        });
+        self
+    }
+
     pub async fn fetch_init_event(&self, client: &Client) -> Result<Option<Event>> {
         let channel_id_hex = self.channel_keys.channel_id_hex();
         let conversation_key = ConversationKey::new(self.channel_keys.shared_secret);
@@ -254,9 +307,12 @@ impl ChannelRunner {
     }
 
     pub async fn run(
-        self,
+        mut self,
         client: Client,
     ) -> Result<(ChannelRunnerHandle, mpsc::Receiver<ChannelRunnerEvent>)> {
+        let signing = self.signing.take().expect(
+            "ChannelRunner::run called before with_identity or with_ephemeral_signing_keys",
+        );
         let channel_id_hex = self.channel_keys.channel_id_hex();
         let conversation_key = ConversationKey::new(self.channel_keys.shared_secret);
 
@@ -606,7 +662,34 @@ impl ChannelRunner {
             state: self.state,
             channel_keys: self.channel_keys,
             shutdown_tx,
+            signing_keys: signing.keys.clone(),
         };
+
+        // Publish-after-fold: if this runner has an in-channel
+        // profile policy, check whether the fold already reflects
+        // our current profile — if not, spawn a publish. Idempotent:
+        // steady state (post-own-publish echoing back into fold) is
+        // O(1) no-op.
+        if let Some(desired) = signing.publish_profile.clone() {
+            let signing_pubkey = signing.pubkey;
+            let observed = handle
+                .state
+                .lock()
+                .unwrap()
+                .members
+                .get(&signing_pubkey)
+                .and_then(|slot_opt| slot_opt.as_ref())
+                .map(|slot| {
+                    let mut p = slot.profile.clone();
+                    p.pubkey = Some(signing_pubkey);
+                    p
+                });
+            if observed.as_ref() != Some(&desired) {
+                handle
+                    .clone()
+                    .spawn_publish_profile(desired, signing.keys.clone());
+            }
+        }
 
         Ok((handle, event_rx))
     }
@@ -622,6 +705,12 @@ pub struct ChannelRunnerHandle {
     state: Arc<Mutex<ChannelState>>,
     channel_keys: ChannelKeys,
     shutdown_tx: tokio::sync::watch::Sender<bool>,
+    /// Signing keys snapshotted from the runner's `SigningConfig` at
+    /// spawn time. Send methods that don't take an explicit `Keys`
+    /// argument use this — supersedes the pre-plan pattern where
+    /// every FFI caller passed `nsec: String` down through
+    /// `Keys::parse(&nsec)?` on each call.
+    signing_keys: Keys,
 }
 
 #[derive(Clone, Debug)]
@@ -693,6 +782,28 @@ impl ChannelRunnerHandle {
     ) -> Result<SendOutcome> {
         let prepared = draft.prepare(user_keys).await?;
         self.dispatch_prepared(prepared).await
+    }
+
+    /// Dispatch signed with the runner's stashed signing keys (from
+    /// `with_identity` / `with_ephemeral_signing_keys`). The new
+    /// no-nsec-param send methods on `ChannelHandle` / lobby handles
+    /// route through this.
+    pub async fn dispatch_signed(&self, draft: ChannelMessageDraft) -> Result<SendOutcome> {
+        self.dispatch(&self.signing_keys, draft).await
+    }
+
+    /// Publish signed with the runner's stashed signing keys —
+    /// counterpart to [`Self::dispatch_signed`] on the publish
+    /// (relays-only, no local fold) path.
+    pub async fn publish_signed(&self, draft: ChannelMessageDraft) -> Result<SendOutcome> {
+        self.publish(&self.signing_keys, draft).await
+    }
+
+    /// Access to the stashed signing keys — for callers that need to
+    /// build a signed event by hand (chat's optimistic-local-echo
+    /// path) rather than through `dispatch_signed`.
+    pub fn signing_keys(&self) -> &Keys {
+        &self.signing_keys
     }
 
     /// Pure transport — publish to relays, don't apply locally.

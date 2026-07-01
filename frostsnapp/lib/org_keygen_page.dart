@@ -129,12 +129,11 @@ class OrgKeygenController extends ChangeNotifier {
   }
 
   /// Awaits `createRemoteLobby`. Returns the handle on success; sets
-  /// `connectError` and returns null on failure. The caller is expected
-  /// to navigate to [LobbyAndKeygenPage] when this returns non-null.
-  ///
-  /// Caller must obtain `nsec` via `ensureIdentity` first —
-  /// this is the publish point for the lobby-create event.
-  Future<RemoteLobbyHandle?> openLobbyAsHost({required String nsec}) async {
+  /// `connectError` and returns null on failure. Caller passes the
+  /// current `NostrIdentity` from settings.
+  Future<RemoteLobbyHandle?> openLobbyAsHost({
+    required NostrIdentity identity,
+  }) async {
     if (!nameValid) return null;
     _connecting = true;
     _connectError = null;
@@ -142,8 +141,8 @@ class OrgKeygenController extends ChangeNotifier {
     try {
       final secret = ChannelSecret.generate();
       final handle = await nostrClient.createRemoteLobby(
+        identity: identity,
         channelSecret: secret,
-        nsec: nsec,
         keyName: walletName,
         purpose: keyPurposeBitcoin(network: _network),
       );
@@ -157,9 +156,10 @@ class OrgKeygenController extends ChangeNotifier {
     }
   }
 
-  /// Joiner counterpart to [openLobbyAsHost]. Caller passes a fresh
-  /// nsec acquired via `ensureIdentity`.
-  Future<RemoteLobbyHandle?> openLobbyAsJoiner({required String nsec}) async {
+  /// Joiner counterpart to [openLobbyAsHost].
+  Future<RemoteLobbyHandle?> openLobbyAsJoiner({
+    required NostrIdentity identity,
+  }) async {
     if (!joinLinkValid) return null;
     _connecting = true;
     _connectError = null;
@@ -169,8 +169,8 @@ class OrgKeygenController extends ChangeNotifier {
         link: joinLinkController.text.trim(),
       );
       final handle = await nostrClient.joinRemoteLobby(
+        identity: identity,
         channelSecret: secret,
-        nsec: nsec,
       );
       return handle;
     } catch (e) {
@@ -548,9 +548,12 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   }
 
   Future<void> _submitName() async {
-    final nsec = await NostrContext.of(context).ensureIdentity(context);
-    if (nsec == null || !mounted) return;
-    final handle = await _ctrl.openLobbyAsHost(nsec: nsec);
+    final nostr = NostrContext.of(context);
+    final ensured = await nostr.ensureIdentity(context);
+    if (ensured == null || !mounted) return;
+    final identity = nostr.nostrSettings.currentIdentity();
+    if (identity == null || !mounted) return;
+    final handle = await _ctrl.openLobbyAsHost(identity: identity);
     if (handle == null || !mounted) return;
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
@@ -568,9 +571,12 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
   }
 
   Future<void> _submitJoinLink() async {
-    final nsec = await NostrContext.of(context).ensureIdentity(context);
-    if (nsec == null || !mounted) return;
-    final handle = await _ctrl.openLobbyAsJoiner(nsec: nsec);
+    final nostr = NostrContext.of(context);
+    final ensured = await nostr.ensureIdentity(context);
+    if (ensured == null || !mounted) return;
+    final identity = nostr.nostrSettings.currentIdentity();
+    if (identity == null || !mounted) return;
+    final handle = await _ctrl.openLobbyAsJoiner(identity: identity);
     if (handle == null || !mounted) return;
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
@@ -1009,8 +1015,16 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
             encryptionKey: encryptionKey,
             participants: participants,
           );
-          final client = await NostrContext.of(context).nostrClient;
-          final handle = await client.connectToChannel(params: params);
+          final nostr = NostrContext.of(context);
+          final client = await nostr.nostrClient;
+          final identity = nostr.nostrSettings.currentIdentity();
+          if (identity == null) {
+            throw StateError('nostr identity not configured');
+          }
+          final handle = await client.connectToChannel(
+            identity: identity,
+            params: params,
+          );
           try {
             status.value = 'Waiting for channel confirmation…';
             // listen-then-start: invoking firstWhere subscribes to the
@@ -1914,9 +1928,9 @@ class _ParticipantRowState extends State<_ParticipantRow> {
           ?.nostrSettings
           .currentIdentity();
       final name = switch (id) {
-        UserIdentity_Generated(:final name) => name,
-        UserIdentity_Imported(:final cachedPublicProfile) =>
-          cachedPublicProfile?.displayName ?? cachedPublicProfile?.name,
+        NostrIdentity_Generated(:final name) => name,
+        NostrIdentity_Imported(:final cachedProfile) =>
+          cachedProfile.displayName ?? cachedProfile.name,
         _ => null,
       };
       if (name != null && name.isNotEmpty) return '$name (You)';

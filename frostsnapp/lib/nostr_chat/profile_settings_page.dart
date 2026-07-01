@@ -23,15 +23,15 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
           return ListView(
             padding: const EdgeInsets.all(24),
             children: [
-              if (identity is UserIdentity_Imported)
+              if (identity is NostrIdentity_Imported)
                 _ImportedModeSection(
-                  key: ValueKey(('imported', identity.pubkey.toHex())),
+                  key: ValueKey(('imported', identityPubkey(identity: identity).toHex())),
                   identity: identity,
                   onRefreshed: () => setState(() {}),
                 )
-              else if (identity is UserIdentity_Generated)
+              else if (identity is NostrIdentity_Generated)
                 _GeneratedModeSection(
-                  key: ValueKey(('generated', identity.pubkey.toHex())),
+                  key: ValueKey(('generated', identityPubkey(identity: identity).toHex())),
                   identity: identity,
                 )
               else
@@ -51,7 +51,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
 // =============================================================================
 
 class _ImportedModeSection extends StatefulWidget {
-  final UserIdentity_Imported identity;
+  final NostrIdentity_Imported identity;
   final VoidCallback onRefreshed;
   const _ImportedModeSection({
     super.key,
@@ -74,7 +74,7 @@ class _ImportedModeSectionState extends State<_ImportedModeSection> {
       final client = await nostr.nostrClient;
       // Re-fetch the public kind 0 from relays (5s runtime timeout)
       // and re-persist it as the new cached_public_profile.
-      final fresh = await client.fetchProfile(pubkey: widget.identity.pubkey);
+      final fresh = await client.fetchProfile(pubkey: identityPubkey(identity: widget.identity));
       if (!mounted) return;
       if (fresh == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -105,25 +105,24 @@ class _ImportedModeSectionState extends State<_ImportedModeSection> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final profile = widget.identity.cachedPublicProfile;
-    final npub = widget.identity.pubkey.toNpub();
+    final profile = widget.identity.cachedProfile;
+    final npub = identityPubkey(identity: widget.identity).toNpub();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Center(
           child: NostrAvatar.large(
-            pubkey: widget.identity.pubkey,
+            pubkey: identityPubkey(identity: widget.identity),
             profile: profile,
           ),
         ),
         const SizedBox(height: 12),
-        if (profile != null)
-          Center(
-            child: Text(
-              getDisplayName(profile, widget.identity.pubkey),
-              style: theme.textTheme.titleLarge,
-            ),
+        Center(
+          child: Text(
+            getDisplayName(profile, identityPubkey(identity: widget.identity)),
+            style: theme.textTheme.titleLarge,
           ),
+        ),
         const SizedBox(height: 8),
         Center(
           child: Text(
@@ -165,18 +164,18 @@ class _ImportedModeSectionState extends State<_ImportedModeSection> {
 // =============================================================================
 
 class _GeneratedModeSection extends StatelessWidget {
-  final UserIdentity_Generated identity;
+  final NostrIdentity_Generated identity;
   const _GeneratedModeSection({super.key, required this.identity});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final npub = identity.pubkey.toNpub();
+    final npub = identityPubkey(identity: identity).toNpub();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Center(
-          child: NostrAvatar.large(pubkey: identity.pubkey, profile: null),
+          child: NostrAvatar.large(pubkey: identityPubkey(identity: identity), profile: null),
         ),
         const SizedBox(height: 12),
         Center(
@@ -440,7 +439,6 @@ class _AdvancedSection extends StatelessWidget {
                         );
                         // Mode A doesn't publish in-channel — wipe
                         // any prior Mode-B publish snapshot.
-                        nostr.refreshPublishCredentials(client);
                         if (!dialogContext.mounted) return;
                         Navigator.of(dialogContext).pop(true);
                       } catch (e) {
@@ -528,8 +526,6 @@ class _AdvancedSection extends StatelessWidget {
                       try {
                         final nostr = NostrContext.of(context);
                         await nostr.nostrSettings.generateNewIdentity(name: name);
-                        final client = await nostr.nostrClient;
-                        nostr.refreshPublishCredentials(client);
                         if (!dialogContext.mounted) return;
                         Navigator.of(dialogContext).pop(true);
                       } catch (e) {
@@ -587,8 +583,6 @@ class _AdvancedSection extends StatelessWidget {
     try {
       final nostr = NostrContext.of(context);
       await nostr.nostrSettings.clearIdentity();
-      final client = await nostr.nostrClient;
-      nostr.refreshPublishCredentials(client);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nostr signing identity removed')),
