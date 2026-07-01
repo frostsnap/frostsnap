@@ -47,6 +47,13 @@ impl ChannelSecret {
     pub fn keygen_invite_link(&self) -> String {
         format!("frostsnap://keygen/{}", hex::encode(self.0))
     }
+
+    /// Invite link for a *recovery lobby* — visually distinct
+    /// (`frostsnap://recovery/<hex>`) so the receiver UI can route
+    /// to the recovery-join flow.
+    pub fn recovery_invite_link(&self) -> String {
+        format!("frostsnap://recovery/{}", hex::encode(self.0))
+    }
 }
 
 /// Identifier for a nostr channel — the `h` tag value that relays index for
@@ -208,6 +215,12 @@ pub fn parse_frostsnap_link(url: &str) -> Result<ChannelSecret, String> {
 /// Used for joining a remote keygen lobby.
 pub fn parse_keygen_link(url: &str) -> Result<ChannelSecret, String> {
     parse_with_prefix(url, "frostsnap://keygen/")
+}
+
+/// Parse a `frostsnap://recovery/<channel_secret_hex>` link into a ChannelSecret.
+/// Used for joining a remote recovery lobby.
+pub fn parse_recovery_link(url: &str) -> Result<ChannelSecret, String> {
+    parse_with_prefix(url, "frostsnap://recovery/")
 }
 
 fn parse_with_prefix(url: &str, prefix: &str) -> Result<ChannelSecret, String> {

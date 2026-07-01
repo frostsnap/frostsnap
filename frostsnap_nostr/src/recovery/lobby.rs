@@ -1,0 +1,732 @@
+use crate::channel::{ChannelKeys, ChannelSecret};
+use crate::channel_runner::{
+    decode_bincode, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent, ChannelRunnerHandle,
+    NostrProfile, SendOutcome, BINCODE_CONFIG,
+};
+use crate::keygen::DeviceKind;
+use crate::{EventId, PublicKey};
+use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use frostsnap_coordinator::Sink;
+use frostsnap_core::{
+    coordinator::restoration::{RecoverShare, RecoveringAccessStructure},
+    device::KeyPurpose,
+    message::HeldShare2,
+    schnorr_fun::frost::{Fingerprint, ShareImage, SharedKey},
+    AccessStructureRef, DeviceId,
+};
+use nostr_sdk::{Client, Event, EventBuilder, Kind};
+use std::collections::HashMap;
+
+/// NIP-based custom kind for recovery-lobby wire messages.
+/// (Keygen uses 9002; recovery follows in the same range.)
+pub const KIND_FROSTSNAP_RECOVERY_LOBBY: Kind = Kind::Custom(9003);
+
+// =============================================================================
+// Wire types
+// =============================================================================
+
+/// Payloads carried on the recovery-lobby channel.
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub enum RecoveryLobbyMessage {
+    /// Explicit "I am here" — parallels keygen's `Presence`.
+    Presence,
+    /// Contribute a share to the pool.
+    Share(SharePost),
+    /// Leader-only. Locks in the winning share subset. `share_refs`
+    /// point at the `EventId`s of prior `Share` events.
+    Finish { share_refs: Vec<EventId> },
+    /// Idempotent departure — parallels keygen's `Leave`.
+    Leave,
+    /// Leader-only. Aborts the lobby.
+    CancelLobby,
+}
+
+/// Flat wire payload for one contributed share. Deliberately NOT the
+/// `frostsnap_core::coordinator::restoration::RecoverShare` type —
+/// keeps the wire schema stable while core evolves the internal
+/// representation. Same trick keygen uses with `DeviceRegistration`.
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct SharePost {
+    pub device_id: DeviceId,
+    pub device_name: String,
+    pub device_kind: DeviceKind,
+    pub share_image: ShareImage,
+    pub needs_consolidation: bool,
+}
+
+impl SharePost {
+    /// Lift the wire payload into a `RecoverShare` for `fuzzy_recovery`.
+    /// The `HeldShare2::{access_structure_ref, threshold, key_name,
+    /// purpose}` fields are set to `None` — the wire schema doesn't
+    /// carry them, and we don't want the transport to be a path for
+    /// forged "trusted" metadata.
+    pub fn to_recover_share(&self) -> RecoverShare {
+        RecoverShare {
+            held_by: self.device_id,
+            held_share: HeldShare2 {
+                access_structure_ref: None,
+                share_image: self.share_image,
+                threshold: None,
+                key_name: None,
+                purpose: None,
+                needs_consolidation: self.needs_consolidation,
+            },
+        }
+    }
+}
+
+/// Leader-authored, bincode-encoded and base64-wrapped into the
+/// NIP-28 `ChannelCreation` event's `content` field. Same pattern as
+/// keygen's `LobbyChannelMetadata`. Immutable for the life of the
+/// channel.
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct RecoveryChannelMetadata {
+    pub key_name: String,
+    pub purpose: KeyPurpose,
+    pub threshold_hint: Option<u16>,
+}
+
+impl RecoveryChannelMetadata {
+    pub fn encode_content(&self) -> Result<String> {
+        let bytes = bincode::encode_to_vec(self, BINCODE_CONFIG)?;
+        Ok(BASE64.encode(bytes))
+    }
+
+    pub fn decode_content(content: &str) -> Result<Self> {
+        let bytes = BASE64.decode(content)?;
+        let (val, _) = bincode::decode_from_slice(&bytes, BINCODE_CONFIG)?;
+        Ok(val)
+    }
+}
+
+// =============================================================================
+// Fold state
+// =============================================================================
+
+/// One `SharePost` as observed in the fold — payload plus its
+/// nostr envelope for downstream references.
+#[derive(Clone, Debug)]
+pub struct ObservedShare {
+    pub event_id: EventId,
+    pub author: PublicKey,
+    pub post: SharePost,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoveryParticipantInfo {
+    pub pubkey: PublicKey,
+    pub joined_at_secs: u64,
+    pub profile: Option<NostrProfile>,
+    pub posted_shares: Vec<EventId>,
+    pub left: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecoveryLobbyState {
+    pub metadata: RecoveryChannelMetadata,
+    pub participants: HashMap<PublicKey, RecoveryParticipantInfo>,
+    pub shares: Vec<ObservedShare>,
+    pub current_recovery: Option<RecoveredKey>,
+    pub finished: Option<FinishedRecovery>,
+    pub cancelled: bool,
+}
+
+/// Fuzzy-recovery result — the current "if everyone posted their
+/// share, this is what we'd get" snapshot. Leader UIs use this to
+/// know when it's safe to publish `Finish`.
+#[derive(Clone, Debug)]
+pub struct RecoveredKey {
+    pub access_structure_ref: AccessStructureRef,
+    pub winning_share_refs: Vec<EventId>,
+}
+
+/// Latched post-`Finish` recovery outcome, as seen by consumers.
+/// The `SharedKey` is NOT part of this — it never crosses the FRB
+/// boundary, and lives beside this value in the runtime handle's
+/// `finished_slot`, consumed by `persist_recovered`.
+#[derive(Clone, Debug)]
+pub struct FinishedRecovery {
+    pub access_structure_ref: AccessStructureRef,
+    pub share_refs: Vec<EventId>,
+}
+
+// =============================================================================
+// Sink event stream
+// =============================================================================
+
+#[derive(Clone, Debug)]
+pub enum RecoveryLobbyEvent {
+    StateChanged(RecoveryLobbyState),
+    RecoveryAvailable(RecoveredKey),
+    /// The `RecoveringAccessStructure` + metadata ride here so the
+    /// FRB layer can stash them in its finished_slot alongside the
+    /// FRB-safe `FinishedRecovery`. They never cross the FRB boundary.
+    Finished(
+        FinishedRecovery,
+        RecoveringAccessStructure,
+        String,
+        KeyPurpose,
+    ),
+    FinishVerificationFailed,
+    Cancelled,
+}
+
+// =============================================================================
+// Client
+// =============================================================================
+
+pub struct RecoveryLobbyClient {
+    channel_keys: ChannelKeys,
+    channel_secret: ChannelSecret,
+    metadata: Option<RecoveryChannelMetadata>,
+    /// FROST fingerprint used to verify reconstructed shared keys.
+    /// Production callers stick with the default; tests use a
+    /// cheaper fingerprint to avoid grinding cost.
+    fingerprint: Fingerprint,
+}
+
+impl RecoveryLobbyClient {
+    pub fn new(channel_secret: ChannelSecret) -> Self {
+        let channel_keys = ChannelKeys::from_channel_secret(&channel_secret);
+        Self {
+            channel_keys,
+            channel_secret,
+            metadata: None,
+            fingerprint: Fingerprint::default(),
+        }
+    }
+
+    /// Stash the metadata for `build_creation_event`. Leader-only.
+    pub fn with_metadata(mut self, meta: RecoveryChannelMetadata) -> Self {
+        self.metadata = Some(meta);
+        self
+    }
+
+    /// Override the fuzzy-recovery fingerprint. Tests pass a cheap
+    /// fingerprint (e.g. `TEST_FINGERPRINT`); production sticks with
+    /// `Fingerprint::default()`.
+    pub fn with_fingerprint(mut self, fingerprint: Fingerprint) -> Self {
+        self.fingerprint = fingerprint;
+        self
+    }
+
+    /// `frostsnap://recovery/<hex>` invite link.
+    pub fn invite_link(&self) -> String {
+        self.channel_secret.recovery_invite_link()
+    }
+
+    /// Build the NIP-28 `ChannelCreation` event carrying the stashed
+    /// `RecoveryChannelMetadata`. Leader-only; requires `with_metadata`.
+    pub async fn build_creation_event(
+        &self,
+        identity: &crate::NostrIdentity,
+    ) -> Result<Event> {
+        let metadata = self.metadata.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("build_creation_event requires with_metadata first")
+        })?;
+        let keys = identity.keys()?;
+        let content = metadata.encode_content()?;
+        let inner_event = EventBuilder::new(Kind::ChannelCreation, content)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await?;
+        Ok(inner_event)
+    }
+
+    /// Spawn the per-lobby runner. Forwards `identity` to
+    /// `ChannelRunner::with_identity(identity)?` — that call
+    /// captures the signing Keys AND the in-channel profile publish
+    /// policy. `init_event` is the leader's `ChannelCreation`; joiners
+    /// pass `None`.
+    pub async fn run(
+        self,
+        client: Client,
+        identity: crate::NostrIdentity,
+        init_event: Option<Event>,
+        sink: impl Sink<RecoveryLobbyEvent> + Clone + Sync,
+    ) -> Result<RecoveryLobbyHandle> {
+        let _is_leader = init_event.is_some();
+        let mut runner = ChannelRunner::new(self.channel_keys.clone())
+            .with_message_expiration(super::RECOVERY_MESSAGE_TTL)
+            .with_identity(identity)?;
+        if let Some(init) = init_event {
+            runner = runner.with_init_event(init);
+        }
+        let (runner_handle, mut events) = runner.run(client.clone()).await?;
+
+        // Share only the folded state with the wrapper task — NOT a full
+        // `ChannelRunnerHandle` clone. Keeping shutdown_tx alive here
+        // would defeat the drop-of-last-handle-clone teardown chain.
+        let state_for_task = runner_handle.state_arc();
+        let channel_keys = self.channel_keys.clone();
+        let fingerprint = self.fingerprint;
+        tokio::spawn(async move {
+            // Wrapper state — see plan §"Emission gate". Everything
+            // held here is pre-gate scratch: we can't build a
+            // `RecoveryLobbyState` before `RecoveryChannelMetadata`
+            // arrives, so we buffer wire events until it does.
+            let mut pre_gate_buffer: Vec<Event> = Vec::new();
+            let mut fold: Option<RecoveryLobbyState> = None;
+
+            while let Some(event) = events.recv().await {
+                match event {
+                    ChannelRunnerEvent::CreationEventReceived => {
+                        // Metadata decoded here → fold created →
+                        // buffered events replayed → first StateChanged.
+                        let creation = state_for_task.lock().unwrap().creation_event.clone();
+                        let Some(creation) = creation else { continue };
+                        if fold.is_some() {
+                            // Re-emit shouldn't happen (creation is
+                            // once-latched inside the runner state);
+                            // if it does, be idempotent.
+                            continue;
+                        }
+                        match RecoveryChannelMetadata::decode_content(&creation.content) {
+                            Ok(metadata) => {
+                                let mut state = RecoveryLobbyState {
+                                    metadata,
+                                    participants: HashMap::new(),
+                                    shares: Vec::new(),
+                                    current_recovery: None,
+                                    finished: None,
+                                    cancelled: false,
+                                };
+                                // Leader is a participant from t=0.
+                                let leader: PublicKey = creation.pubkey.into();
+                                upsert_participant(&mut state, leader, creation.created_at.as_u64());
+
+                                // Drain buffered events into the fold.
+                                for ev in pre_gate_buffer.drain(..) {
+                                    process_event(&ev, &mut state, &state_for_task, &sink, fingerprint);
+                                }
+                                sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+                                fold = Some(state);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    event_id = %creation.id,
+                                    error = %e,
+                                    "malformed RecoveryChannelMetadata; emitting Cancelled",
+                                );
+                                sink.send(RecoveryLobbyEvent::Cancelled);
+                                return;
+                            }
+                        }
+                    }
+                    ChannelRunnerEvent::AppEvent { inner_event, ack } => {
+                        if inner_event.kind == KIND_FROSTSNAP_RECOVERY_LOBBY {
+                            match &mut fold {
+                                Some(state) => {
+                                    process_event(&inner_event, state, &state_for_task, &sink, fingerprint);
+                                }
+                                None => {
+                                    pre_gate_buffer.push(inner_event);
+                                }
+                            }
+                        }
+                        // Signal the dispatch ack AFTER processing so a
+                        // local `dispatch` caller only resolves once
+                        // the sink has fired for it.
+                        if let Some(ack) = ack {
+                            let _ = ack.send(());
+                        }
+                    }
+                    ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile } => {
+                        // Profile updates are independent of Presence
+                        // on the wire — upsert so the profile isn't
+                        // dropped if it arrives first.
+                        if let Some(state) = &mut fold {
+                            upsert_participant(state, pubkey, 0);
+                            if let Some(entry) = state.participants.get_mut(&pubkey) {
+                                entry.profile = Some(profile);
+                            }
+                            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+                        }
+                    }
+                    ChannelRunnerEvent::MembersChanged => {}
+                    ChannelRunnerEvent::ChatMessage { .. } => {}
+                }
+            }
+            // silences unused; channel_keys was kept in case future
+            // fetch-inner-event lookups land here (mirrors keygen).
+            let _ = &channel_keys;
+        });
+
+        Ok(RecoveryLobbyHandle { runner_handle })
+    }
+}
+
+// =============================================================================
+// Handle
+// =============================================================================
+
+#[derive(Clone)]
+pub struct RecoveryLobbyHandle {
+    runner_handle: ChannelRunnerHandle,
+}
+
+impl RecoveryLobbyHandle {
+    pub fn runner_handle(&self) -> &ChannelRunnerHandle {
+        &self.runner_handle
+    }
+
+    pub async fn announce_presence(&self) -> Result<SendOutcome> {
+        self.send(&RecoveryLobbyMessage::Presence, &[]).await
+    }
+
+    pub async fn post_share(&self, post: SharePost) -> Result<SendOutcome> {
+        self.send(&RecoveryLobbyMessage::Share(post), &[]).await
+    }
+
+    /// Leader-only. Non-leader publishes are dropped receiver-side.
+    pub async fn finish(&self, share_refs: Vec<EventId>) -> Result<SendOutcome> {
+        self.send(&RecoveryLobbyMessage::Finish { share_refs }, &[])
+            .await
+    }
+
+    pub async fn leave(&self) -> Result<SendOutcome> {
+        self.send(&RecoveryLobbyMessage::Leave, &[]).await
+    }
+
+    /// Leader-only. Non-leader publishes are dropped receiver-side.
+    pub async fn cancel_lobby(&self) -> Result<SendOutcome> {
+        self.send(&RecoveryLobbyMessage::CancelLobby, &[]).await
+    }
+
+    async fn send(
+        &self,
+        msg: &RecoveryLobbyMessage,
+        e_tags: &[EventId],
+    ) -> Result<SendOutcome> {
+        let draft =
+            ChannelMessageDraft::app(KIND_FROSTSNAP_RECOVERY_LOBBY, msg, e_tags.to_vec())?;
+        self.runner_handle.dispatch_signed(draft).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn pk(byte: u8) -> PublicKey {
+        PublicKey([byte; 32])
+    }
+    fn eid(byte: u8) -> EventId {
+        EventId([byte; 32])
+    }
+    fn did(byte: u8) -> DeviceId {
+        DeviceId([byte; 33])
+    }
+
+    fn base_state() -> RecoveryLobbyState {
+        RecoveryLobbyState {
+            metadata: RecoveryChannelMetadata {
+                key_name: "t".into(),
+                purpose: KeyPurpose::Test,
+                threshold_hint: Some(2),
+            },
+            participants: HashMap::new(),
+            shares: Vec::new(),
+            current_recovery: None,
+            finished: None,
+            cancelled: false,
+        }
+    }
+
+    fn add_participant(state: &mut RecoveryLobbyState, who: PublicKey, posted: Vec<EventId>) {
+        state.participants.insert(
+            who,
+            RecoveryParticipantInfo {
+                pubkey: who,
+                joined_at_secs: 0,
+                profile: None,
+                posted_shares: posted,
+                left: false,
+            },
+        );
+    }
+
+    fn dummy_share_image(idx: u16) -> frostsnap_core::schnorr_fun::frost::ShareImage {
+        use frostsnap_core::schnorr_fun::fun::{marker::Zero, G, Point};
+        use core::num::NonZeroU32;
+        frostsnap_core::schnorr_fun::frost::ShareImage {
+            index: frostsnap_core::schnorr_fun::frost::ShareIndex::from(
+                NonZeroU32::new(u32::from(idx) + 1).unwrap(),
+            ),
+            image: Point::<_, _, Zero>::zero(),
+        }
+    }
+
+    fn push_share(
+        state: &mut RecoveryLobbyState,
+        event_id: EventId,
+        author: PublicKey,
+        device_id: DeviceId,
+    ) {
+        state.shares.push(ObservedShare {
+            event_id,
+            author,
+            post: SharePost {
+                device_id,
+                device_name: format!("d-{:?}", device_id.0[0]),
+                device_kind: DeviceKind::Frostsnap,
+                share_image: dummy_share_image(u16::from(device_id.0[0])),
+                needs_consolidation: true,
+            },
+        });
+    }
+
+    #[test]
+    fn my_local_devices_empty_when_participant_absent() {
+        let state = base_state();
+        assert!(my_local_devices(&state, pk(1)).is_empty());
+    }
+
+    #[test]
+    fn my_local_devices_empty_when_no_shares_posted() {
+        let mut state = base_state();
+        add_participant(&mut state, pk(1), vec![]);
+        assert!(my_local_devices(&state, pk(1)).is_empty());
+    }
+
+    #[test]
+    fn my_local_devices_returns_devices_of_own_posted_shares() {
+        let mut state = base_state();
+        let me = pk(1);
+        let peer = pk(2);
+        add_participant(&mut state, me, vec![eid(0xA1), eid(0xA2)]);
+        add_participant(&mut state, peer, vec![eid(0xB1)]);
+        push_share(&mut state, eid(0xA1), me, did(0x11));
+        push_share(&mut state, eid(0xA2), me, did(0x22));
+        push_share(&mut state, eid(0xB1), peer, did(0x33));
+
+        let expected: BTreeSet<_> = [did(0x11), did(0x22)].into_iter().collect();
+        assert_eq!(my_local_devices(&state, me), expected);
+        // Peer sees a different set.
+        assert_eq!(
+            my_local_devices(&state, peer),
+            [did(0x33)].into_iter().collect(),
+        );
+    }
+
+    /// Ghost posted_shares (event_id present on the participant but
+    /// no matching ObservedShare) get silently dropped. This is
+    /// defensive against fold/state drift; must not panic.
+    #[test]
+    fn my_local_devices_drops_ghost_posted_share_refs() {
+        let mut state = base_state();
+        let me = pk(1);
+        // Participant claims to have posted eid(0xA1), but no
+        // matching ObservedShare in `shares`.
+        add_participant(&mut state, me, vec![eid(0xA1)]);
+        assert!(my_local_devices(&state, me).is_empty());
+    }
+}
+
+// =============================================================================
+// Local-device derivation
+// =============================================================================
+
+/// Compute the set of local `DeviceId`s for a participant, by
+/// walking the fold's `shares` for entries the participant
+/// authored. A device is "mine" iff I posted a `SharePost` bearing
+/// its DeviceId — the wire-level participants + shares view is the
+/// single source of truth for what's local at persistence time.
+///
+/// Extracted so tests can exercise the derivation directly without
+/// standing up the full FRB handle harness. Consumed by the FRB
+/// wrapper's `persist_recovered`.
+pub fn my_local_devices(
+    state: &RecoveryLobbyState,
+    me: PublicKey,
+) -> std::collections::BTreeSet<DeviceId> {
+    let Some(info) = state.participants.get(&me) else {
+        return Default::default();
+    };
+    info.posted_shares
+        .iter()
+        .filter_map(|id| {
+            state
+                .shares
+                .iter()
+                .find(|obs| obs.event_id == *id)
+                .map(|obs| obs.post.device_id)
+        })
+        .collect()
+}
+
+// =============================================================================
+// Fold helpers
+// =============================================================================
+
+fn upsert_participant(state: &mut RecoveryLobbyState, pubkey: PublicKey, joined_at_secs: u64) {
+    state.participants.entry(pubkey).or_insert(RecoveryParticipantInfo {
+        pubkey,
+        joined_at_secs,
+        profile: None,
+        posted_shares: Vec::new(),
+        left: false,
+    });
+}
+
+fn process_event(
+    inner_event: &Event,
+    state: &mut RecoveryLobbyState,
+    state_arc: &std::sync::Arc<std::sync::Mutex<crate::channel_runner::ChannelState>>,
+    sink: &impl Sink<RecoveryLobbyEvent>,
+    fingerprint: Fingerprint,
+) {
+    let event_id: EventId = inner_event.id.into();
+    let author: PublicKey = inner_event.pubkey.into();
+
+    let msg: RecoveryLobbyMessage = match decode_bincode(inner_event) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(%event_id, error = %e, "failed to decode recovery lobby message");
+            return;
+        }
+    };
+
+    // Leader identity comes from the runner's ChannelState — plan
+    // invariant: don't duplicate it into our fold.
+    let leader: Option<PublicKey> = state_arc
+        .lock()
+        .unwrap()
+        .creation_event
+        .as_ref()
+        .map(|e| PublicKey::from(e.pubkey));
+
+    match msg {
+        RecoveryLobbyMessage::Presence => {
+            upsert_participant(state, author, inner_event.created_at.as_u64());
+            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+        }
+        RecoveryLobbyMessage::Share(post) => {
+            upsert_participant(state, author, inner_event.created_at.as_u64());
+            let observed = ObservedShare {
+                event_id,
+                author,
+                post,
+            };
+            state.shares.push(observed);
+            if let Some(entry) = state.participants.get_mut(&author) {
+                entry.posted_shares.push(event_id);
+            }
+            recompute_current_recovery(state, fingerprint);
+            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+            if let Some(recovered) = &state.current_recovery {
+                sink.send(RecoveryLobbyEvent::RecoveryAvailable(recovered.clone()));
+            }
+        }
+        RecoveryLobbyMessage::Finish { share_refs } => {
+            let Some(leader) = leader else {
+                tracing::warn!(%event_id, "Finish before ChannelCreation landed; ignoring");
+                return;
+            };
+            if author != leader {
+                tracing::warn!(%event_id, %author, "Finish from non-leader; ignoring");
+                return;
+            }
+            if state.finished.is_some() {
+                return;
+            }
+            let mut selected = Vec::with_capacity(share_refs.len());
+            for ref_id in &share_refs {
+                let Some(observed) = state.shares.iter().find(|o| o.event_id == *ref_id) else {
+                    tracing::warn!(%event_id, %ref_id, "Finish references unknown share");
+                    sink.send(RecoveryLobbyEvent::FinishVerificationFailed);
+                    return;
+                };
+                selected.push(observed.post.to_recover_share());
+            }
+            let ras = RecoveringAccessStructure::new(
+                &selected,
+                Some(state.metadata.threshold_hint.unwrap_or(0)),
+                fingerprint,
+            );
+            match ras.shared_key.clone() {
+                Some(shared_key) => {
+                    let asr = AccessStructureRef::from_root_shared_key(&shared_key);
+                    let finished = FinishedRecovery {
+                        access_structure_ref: asr,
+                        share_refs: share_refs.clone(),
+                    };
+                    let key_name = state.metadata.key_name.clone();
+                    let purpose = state.metadata.purpose;
+                    state.finished = Some(finished.clone());
+                    sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+                    sink.send(RecoveryLobbyEvent::Finished(
+                        finished, ras, key_name, purpose,
+                    ));
+                }
+                None => {
+                    sink.send(RecoveryLobbyEvent::FinishVerificationFailed);
+                }
+            }
+        }
+        RecoveryLobbyMessage::Leave => {
+            if let Some(entry) = state.participants.get_mut(&author) {
+                entry.left = true;
+            }
+            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+        }
+        RecoveryLobbyMessage::CancelLobby => {
+            let Some(leader) = leader else {
+                tracing::warn!(%event_id, "CancelLobby before ChannelCreation; ignoring");
+                return;
+            };
+            if author != leader {
+                tracing::warn!(%event_id, %author, "CancelLobby from non-leader; ignoring");
+                return;
+            }
+            if state.cancelled {
+                return;
+            }
+            state.cancelled = true;
+            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+            sink.send(RecoveryLobbyEvent::Cancelled);
+        }
+    }
+}
+
+/// Recompute the fuzzy-recovery snapshot over the full bundle of
+/// observed shares. Called after every `Share` fold.
+fn recompute_current_recovery(state: &mut RecoveryLobbyState, fingerprint: Fingerprint) {
+    let shares: Vec<RecoverShare> = state
+        .shares
+        .iter()
+        .map(|obs| obs.post.to_recover_share())
+        .collect();
+    let ras = RecoveringAccessStructure::new(
+        &shares,
+        Some(state.metadata.threshold_hint.unwrap_or(0)),
+        fingerprint,
+    );
+    state.current_recovery = match ras.shared_key {
+        Some(shared_key) => {
+            let asr = AccessStructureRef::from_root_shared_key(&shared_key);
+            let expected_images: Vec<_> = shares
+                .iter()
+                .filter(|s| {
+                    shared_key.share_image(s.held_share.share_image.index)
+                        == s.held_share.share_image
+                })
+                .map(|s| s.held_share.share_image)
+                .collect();
+            let winning_share_refs = state
+                .shares
+                .iter()
+                .filter(|obs| expected_images.contains(&obs.post.share_image))
+                .map(|obs| obs.event_id)
+                .collect();
+            Some(RecoveredKey {
+                access_structure_ref: asr,
+                winning_share_refs,
+            })
+        }
+        None => None,
+    };
+}
+

@@ -371,4 +371,28 @@ impl Coordinator {
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.0.get_device_name(id)
     }
+
+    /// FFI-internal — used by remote_recovery::persist_recovered.
+    /// Wraps `FrostCoordinator::finalize_remote_recovery` behind
+    /// `Persisted::staged_mutate` and re-emits key state so the UI
+    /// updates.
+    #[frb(ignore)]
+    pub(crate) fn call_finalize_remote_recovery(
+        &self,
+        ras: &frostsnap_core::coordinator::restoration::RecoveringAccessStructure,
+        key_name: String,
+        purpose: KeyPurpose,
+        my_local_devices: &std::collections::BTreeSet<DeviceId>,
+        encryption_key: SymmetricKey,
+        rng: &mut impl frostsnap_core::schnorr_fun::fun::rand_core::RngCore,
+    ) -> Result<AccessStructureRef> {
+        self.0.finalize_remote_recovery_from_transport(
+            ras,
+            key_name,
+            purpose,
+            my_local_devices,
+            encryption_key,
+            rng,
+        )
+    }
 }

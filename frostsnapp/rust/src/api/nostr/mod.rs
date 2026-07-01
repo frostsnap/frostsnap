@@ -1,5 +1,6 @@
 pub mod keygen_run;
 pub mod remote_keygen;
+pub mod remote_recovery;
 
 use crate::api::broadcast::{BehaviorBroadcast, Broadcast};
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
@@ -778,6 +779,104 @@ impl NostrClient {
         ))
     }
 
+    /// Leader entry: creates a remote recovery lobby, publishes the
+    /// NIP-28 `ChannelCreation` with encoded metadata, and returns a
+    /// handle whose `invite_link()` is what the leader shares with
+    /// joiners.
+    pub async fn create_remote_recovery_lobby(
+        &self,
+        identity: NostrIdentity,
+        channel_secret: ChannelSecret,
+        key_name: String,
+        purpose: KeyPurpose,
+        threshold_hint: Option<u16>,
+    ) -> Result<self::remote_recovery::RemoteRecoveryLobbyHandle> {
+        use self::remote_recovery::{RecoveryBridge, RemoteRecoveryLobbyHandle};
+        use frostsnap_nostr::recovery::{RecoveryChannelMetadata, RecoveryLobbyClient};
+
+        let metadata = RecoveryChannelMetadata {
+            key_name,
+            purpose,
+            threshold_hint,
+        };
+        let client = RecoveryLobbyClient::new(channel_secret.clone()).with_metadata(metadata);
+        let invite_link = client.invite_link();
+        let init_event = client.build_creation_event(&identity).await?;
+        let bridge = RecoveryBridge::new();
+        let sink = bridge.sink();
+        let inner = client
+            .run(self.client.clone(), identity, Some(init_event), sink)
+            .await?;
+
+        // Leader: broadcast can't seed synchronously because the ChannelCreation
+        // hasn't been folded yet at this instant. Await the sink's first
+        // StateChanged (matches the joiner arm-then-check pattern for symmetry
+        // and gives the same guarantee: the handed-out handle carries a
+        // populated broadcast).
+        let broadcast = await_first_state(&bridge).await?;
+        Ok(RemoteRecoveryLobbyHandle::from_bridge(
+            inner,
+            invite_link,
+            self.client.clone(),
+            broadcast,
+            &bridge,
+        ))
+    }
+
+    /// Joiner entry: awaits the leader's `ChannelCreation` (30s timeout)
+    /// so the returned handle carries a broadcast seeded with real
+    /// metadata.
+    pub async fn join_remote_recovery_lobby(
+        &self,
+        identity: NostrIdentity,
+        channel_secret: ChannelSecret,
+    ) -> Result<self::remote_recovery::RemoteRecoveryLobbyHandle> {
+        use self::remote_recovery::{RecoveryBridge, RemoteRecoveryLobbyHandle};
+        use frostsnap_nostr::recovery::RecoveryLobbyClient;
+
+        let client = RecoveryLobbyClient::new(channel_secret.clone());
+        let invite_link = client.invite_link();
+        let bridge = RecoveryBridge::new();
+        let sink = bridge.sink();
+        let inner = client
+            .run(self.client.clone(), identity, None, sink)
+            .await?;
+
+        let broadcast = await_first_state(&bridge).await?;
+        Ok(RemoteRecoveryLobbyHandle::from_bridge(
+            inner,
+            invite_link,
+            self.client.clone(),
+            broadcast,
+            &bridge,
+        ))
+    }
+}
+
+/// Arm-then-check wait pattern: poll the shared broadcast slot,
+/// arming the Notify's `notified()` before each read so a
+/// concurrently-firing `notify_waiters` isn't missed. See plan
+/// §"Emission gate" for the rationale.
+async fn await_first_state(
+    bridge: &self::remote_recovery::RecoveryBridge,
+) -> Result<BehaviorBroadcast<frostsnap_nostr::recovery::RecoveryLobbyState>> {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            let notified = bridge.ready.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            if *bridge.cancelled_pre_state.lock().unwrap() {
+                return Err(anyhow!("recovery channel malformed — metadata decode failed"));
+            }
+            if let Some(bcast) = bridge.broadcast.lock().unwrap().as_ref().cloned() {
+                return Ok(bcast);
+            }
+            notified.await;
+        }
+    })
+    .await
+    .map_err(|_| anyhow!("ChannelCreation didn't arrive within 30s"))?
 }
 
 // ============================================================================
@@ -849,6 +948,12 @@ impl ChannelSecret {
     /// lobby-join flow rather than the already-completed-wallet flow.
     #[frb(sync)]
     pub fn keygen_invite_link(&self) -> String {}
+
+    /// `frostsnap://recovery/<hex>` — visually distinct scheme used
+    /// for remote recovery lobby invites so the receiver UI can
+    /// route to the recovery-join flow.
+    #[frb(sync)]
+    pub fn recovery_invite_link(&self) -> String {}
 }
 
 pub trait ChannelSecretExt {
@@ -857,6 +962,9 @@ pub trait ChannelSecretExt {
 
     #[frb(sync)]
     fn from_keygen_link(link: &str) -> Result<ChannelSecret>;
+
+    #[frb(sync)]
+    fn from_recovery_link(link: &str) -> Result<ChannelSecret>;
 
     /// Generate a fresh random `ChannelSecret`. Named `generate` to avoid
     /// colliding with the native `ChannelSecret::random(rng)` (which Dart
@@ -874,6 +982,11 @@ impl ChannelSecretExt for ChannelSecret {
     #[frb(sync)]
     fn from_keygen_link(link: &str) -> Result<ChannelSecret> {
         parse_keygen_link(link).map_err(|e| anyhow!("{e}"))
+    }
+
+    #[frb(sync)]
+    fn from_recovery_link(link: &str) -> Result<ChannelSecret> {
+        frostsnap_nostr::channel::parse_recovery_link(link).map_err(|e| anyhow!("{e}"))
     }
 
     #[frb(sync)]

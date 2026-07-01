@@ -2,6 +2,7 @@ pub mod channel;
 pub mod channel_runner;
 pub mod identity;
 pub mod keygen;
+pub mod recovery;
 pub mod signing;
 
 pub use channel::{ChannelInitData, ChannelKeys, ChannelSecret, ParticipantShares};
@@ -101,7 +102,7 @@ impl std::fmt::Debug for PublicKey {
 /// Conversion to/from the `nostr-sdk` type happens only at the
 /// boundary where we hand off to `nostr_sdk::Client` / `Event` /
 /// `EventBuilder`. Inside this crate, always use `EventId` directly.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, bincode::Encode, bincode::Decode)]
 pub struct EventId(pub [u8; 32]);
 
 impl EventId {

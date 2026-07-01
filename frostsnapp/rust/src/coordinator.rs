@@ -1268,6 +1268,37 @@ impl FfiCoordinator {
         BackupRun { devices }
     }
 
+    /// Wraps `FrostCoordinator::finalize_remote_recovery` behind
+    /// staged_mutate so the persist happens atomically. Emits key
+    /// state afterward so the UI updates. Called from the FRB
+    /// wrapper `RemoteRecoveryLobbyHandle::persist_recovered`.
+    pub(crate) fn finalize_remote_recovery_from_transport(
+        &self,
+        ras: &frostsnap_core::coordinator::restoration::RecoveringAccessStructure,
+        key_name: String,
+        purpose: frostsnap_core::device::KeyPurpose,
+        my_local_devices: &std::collections::BTreeSet<DeviceId>,
+        encryption_key: SymmetricKey,
+        rng: &mut impl frostsnap_core::schnorr_fun::fun::rand_core::RngCore,
+    ) -> Result<AccessStructureRef> {
+        let asr = {
+            let mut coord = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
+            coord.staged_mutate(&mut *db, |coord| {
+                Ok(coord.finalize_remote_recovery(
+                    ras,
+                    key_name.clone(),
+                    purpose,
+                    my_local_devices,
+                    encryption_key,
+                    rng,
+                )?)
+            })?
+        };
+        self.emit_key_state();
+        Ok(asr)
+    }
+
     /// Remote-keygen finalize + shared post-finalize side effects.
     /// Returns (AccessStructureRef, full device→share map).
     /// Does NOT build ChannelParticipant (no nostr pubkeys here).
