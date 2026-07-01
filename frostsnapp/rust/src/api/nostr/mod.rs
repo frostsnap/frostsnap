@@ -399,18 +399,6 @@ pub struct ChannelHandle {
     pending: tokio::sync::Mutex<Option<ChannelClient>>,
     /// Set once `start()` finishes its inner `ChannelClient::run`.
     inner: tokio::sync::OnceCell<InnerChannelHandle>,
-    /// Shutdown signal pre-created at `connect_to_channel` time so
-    /// `close()` / `Drop` can fire it whether or not `start()` has
-    /// finished spawning the runner. The runner subscribes to it
-    /// inside `start()` and exits on its next `select!` poll once
-    /// the watch flips to `true`.
-    shutdown_tx: tokio::sync::watch::Sender<bool>,
-}
-
-impl Drop for ChannelHandle {
-    fn drop(&mut self) {
-        let _ = self.shutdown_tx.send(true);
-    }
 }
 
 impl ChannelHandle {
@@ -445,11 +433,7 @@ impl ChannelHandle {
             bcast: self.bcast.clone(),
         };
         let inner = cc
-            .run(
-                self.nostr_client.clone(),
-                sink,
-                self.shutdown_tx.subscribe(),
-            )
+            .run(self.nostr_client.clone(), sink)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "failed to start channel runner");
@@ -600,18 +584,15 @@ impl ChannelHandle {
     }
 
     /// Signal the runner to shut down. Returns immediately
-    /// (fire-and-forget). The watch send is independent of
-    /// `start()` state: if the runner is already spinning, it
-    /// observes the signal on its next `select!` poll, unsubscribes
-    /// from the relay, and exits; if `start()` is currently mid-way
-    /// through `cc.run().await`, the receiver fires the moment the
-    /// runner task enters its select; if `start()` was never called,
-    /// the next subscriber would still see the latched value. Drop
-    /// fires the same signal as a safety net. Call from Flutter
-    /// `State.dispose()` since dispose can't be `async`.
+    /// (fire-and-forget). No-op if `start()` was never called
+    /// (nothing to tear down yet). Call from Flutter `State.dispose()`
+    /// since dispose can't be `async`. Forget to call it and the
+    /// runner leaks to process exit — the caller owns the handle.
     #[frb(sync)]
     pub fn close(&self) {
-        let _ = self.shutdown_tx.send(true);
+        if let Some(inner) = self.inner.get() {
+            inner.runner_handle.shutdown();
+        }
     }
 }
 
@@ -735,7 +716,6 @@ impl NostrClient {
         let channel_client =
             ChannelClient::new(params.key_context.clone(), params.init_data.clone());
 
-        let (shutdown_tx, _) = tokio::sync::watch::channel(false);
         Ok(ChannelHandle {
             bcast: Broadcast::<ChannelEvent>::default(),
             key_context,
@@ -743,7 +723,6 @@ impl NostrClient {
             local_publish,
             pending: tokio::sync::Mutex::new(Some(channel_client)),
             inner: tokio::sync::OnceCell::new(),
-            shutdown_tx,
         })
     }
 

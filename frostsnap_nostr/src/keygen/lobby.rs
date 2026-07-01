@@ -487,14 +487,14 @@ impl LobbyClient {
         if let Some(init) = init_event {
             runner = runner.with_init_event(init);
         }
-        // Lobby-internal shutdown signal: never fired explicitly; the
-        // `Sender` is parked in `LobbyHandle._shutdown_keepalive` so the
-        // runner exits only when the last `LobbyHandle` clone drops.
-        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let (runner_handle, mut events) = runner.run(client.clone(), shutdown_rx).await?;
-        let shutdown_keepalive = std::sync::Arc::new(shutdown_tx);
+        let (runner_handle, mut events) = runner.run(client.clone()).await?;
 
-        let runner_handle_for_task = runner_handle.clone();
+        // Share only the folded state with the wrapper task — NOT a full
+        // `ChannelRunnerHandle` clone. A full clone would keep
+        // `shutdown_tx` alive across the task lifetime and defeat the
+        // drop-of-last-handle-clone teardown chain (LobbyHandle drops →
+        // runner should exit).
+        let state_for_task = runner_handle.state_arc();
         let channel_keys = self.channel_keys.clone();
         let event_loop_keys = local_nostr_keys.clone();
         tokio::spawn(async move {
@@ -503,7 +503,8 @@ impl LobbyClient {
             while let Some(event) = events.recv().await {
                 match event {
                     ChannelRunnerEvent::CreationEventReceived => {
-                        if let Some(creation) = runner_handle_for_task.creation_event() {
+                        let creation = state_for_task.lock().unwrap().creation_event.clone();
+                        if let Some(creation) = creation {
                             // The NIP-28 ChannelCreation event is the
                             // host's implicit "I'm in the lobby" signal
                             // AND carries the wallet name + purpose
@@ -568,10 +569,7 @@ impl LobbyClient {
             }
         });
 
-        let handle = LobbyHandle {
-            runner_handle,
-            _shutdown_keepalive: shutdown_keepalive,
-        };
+        let handle = LobbyHandle { runner_handle };
 
         // Joiners publish Presence so others see them in `Joining` state
         // before they've picked devices. Hosts skip — they're already
@@ -593,7 +591,6 @@ impl LobbyClient {
 #[derive(Clone)]
 pub struct LobbyHandle {
     runner_handle: ChannelRunnerHandle,
-    _shutdown_keepalive: std::sync::Arc<tokio::sync::watch::Sender<bool>>,
 }
 
 impl LobbyHandle {

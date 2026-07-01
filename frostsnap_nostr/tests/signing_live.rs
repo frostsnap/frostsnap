@@ -85,7 +85,6 @@ impl Env for SigningEnv {
 struct NostrSide {
     keys: Keys,
     handle: frostsnap_nostr::ChannelHandle,
-    _shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 #[tokio::test]
@@ -486,16 +485,8 @@ async fn spawn_sides(
             index: i,
             tx: event_tx.clone(),
         };
-        let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let handle = channel_client
-            .run(client, sink, shutdown_rx)
-            .await
-            .unwrap();
-        sides.push(NostrSide {
-            keys,
-            handle,
-            _shutdown_tx,
-        });
+        let handle = channel_client.run(client, sink).await.unwrap();
+        sides.push(NostrSide { keys, handle });
     }
     drop(event_tx);
     sides

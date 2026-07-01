@@ -74,7 +74,6 @@ impl ChannelClient {
         self,
         client: Client,
         sink: impl Sink<ChannelEvent> + Clone,
-        shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ) -> Result<ChannelHandle> {
         sink.send(ChannelEvent::ConnectionState(ConnectionState::Connecting));
 
@@ -85,7 +84,7 @@ impl ChannelClient {
             runner = runner.with_init_event(init_inner);
         }
 
-        let (runner_handle, mut events) = runner.run(client, shutdown_rx).await?;
+        let (runner_handle, mut events) = runner.run(client).await?;
 
         // Chat keeps the existing cmd_tx flow (optimistic ChatMessage
         // emit + `publish_prepared` + `MessageSent`/`MessageSendFailed`

@@ -253,16 +253,9 @@ impl ChannelRunner {
         fetch_init_event_with_key(client, &channel_id_hex, &conversation_key).await
     }
 
-    /// Spawn the channel runner. The caller pre-creates a
-    /// `tokio::sync::watch::Sender<bool>` (so they can fire shutdown
-    /// regardless of whether `run` has finished setting up) and passes
-    /// the matching receiver in here. The runner observes the
-    /// receiver in its `select!` and exits cleanly when the sender
-    /// flips the channel to `true`.
     pub async fn run(
         self,
         client: Client,
-        shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(ChannelRunnerHandle, mpsc::Receiver<ChannelRunnerEvent>)> {
         let channel_id_hex = self.channel_keys.channel_id_hex();
         let conversation_key = ConversationKey::new(self.channel_keys.shared_secret);
@@ -317,6 +310,11 @@ impl ChannelRunner {
         let (event_tx, event_rx) = mpsc::channel::<ChannelRunnerEvent>(64);
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<RunnerCmd>(32);
         let (profile_tx, mut profile_rx) = mpsc::channel::<(PublicKey, NostrProfile)>(32);
+        // Shutdown signal held by every `ChannelRunnerHandle` clone.
+        // Explicit `shutdown()` flips it; last handle-clone drop closes
+        // the channel (Err on `changed()`) — either path breaks the
+        // runner's select loop.
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
         // Step 1: Replay cached events from local database immediately.
         // This ensures the UI shows historical events even without internet.
@@ -607,6 +605,7 @@ impl ChannelRunner {
             cmd_tx,
             state: self.state,
             channel_keys: self.channel_keys,
+            shutdown_tx,
         };
 
         Ok((handle, event_rx))
@@ -622,6 +621,7 @@ pub struct ChannelRunnerHandle {
     cmd_tx: mpsc::Sender<RunnerCmd>,
     state: Arc<Mutex<ChannelState>>,
     channel_keys: ChannelKeys,
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -754,8 +754,23 @@ impl ChannelRunnerHandle {
         self.state.lock().unwrap().creation_event.clone()
     }
 
+    /// Shared handle to the folded channel state. Wrapper tasks that
+    /// only need to read state should use this instead of cloning the
+    /// full `ChannelRunnerHandle` — a full clone drags `shutdown_tx`
+    /// with it and would defeat the drop-based teardown chain.
+    pub fn state_arc(&self) -> Arc<Mutex<ChannelState>> {
+        Arc::clone(&self.state)
+    }
+
     pub fn channel_keys(&self) -> &ChannelKeys {
         &self.channel_keys
+    }
+
+    /// Signal the runner to shut down. Returns immediately. The runner
+    /// task observes the signal on its next `select!` poll, breaks out
+    /// of its loop, unsubscribes from the relay, and exits. Idempotent.
+    pub fn shutdown(&self) {
+        let _ = self.shutdown_tx.send(true);
     }
 
     /// Publish the local user's `NostrProfile` as an encrypted
