@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/async_action_button.dart';
-import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_setup_step.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
@@ -38,7 +37,7 @@ extension _ResolvedKeygenDeviceCount on ResolvedKeygen {
 // Steps
 // =============================================================================
 
-enum OrgKeygenStep { walletType, sessionRole, joinSession, nameWallet }
+enum OrgKeygenStep { walletType, nameWallet }
 
 enum LobbyAndKeygenStep {
   lobby,
@@ -47,8 +46,6 @@ enum LobbyAndKeygenStep {
   acceptKeygenAwaiting,
   acceptKeygenVerify,
 }
-
-enum OrgKeygenRole { host, participant }
 
 /// Result popped by `OrgKeygenPage`; `null` means cancelled/backed out.
 sealed class WalletTypeChoice {
@@ -64,7 +61,9 @@ final class WalletTypeChoiceOrganisation extends WalletTypeChoice {
   final AccessStructureRef accessStructureRef;
 }
 
-/// Pre-lobby controller. Produces a [RemoteLobbyHandle] on submit.
+/// Pre-lobby controller. Host-only after the joiner path moved to
+/// the universal `JoinLinkPage` in `wallet_add.dart` — participants
+/// enter via that page, not through this one.
 class OrgKeygenController extends ChangeNotifier {
   OrgKeygenController({required this.nostrClient});
 
@@ -76,17 +75,10 @@ class OrgKeygenController extends ChangeNotifier {
   bool _isAnimationForward = true;
   bool get isAnimationForward => _isAnimationForward;
 
-  OrgKeygenRole _role = OrgKeygenRole.host;
-  OrgKeygenRole get role => _role;
-  bool get isHost => _role == OrgKeygenRole.host;
-
   final nameController = TextEditingController();
-  final joinLinkController = TextEditingController();
 
   String get walletName => nameController.text.trim();
   bool get nameValid => walletName.isNotEmpty && walletName.length <= 15;
-  bool get joinLinkValid =>
-      joinLinkController.text.trim().startsWith('frostsnap://keygen/');
 
   /// Host-side network selection (developer-mode only). Defaults to
   /// mainnet; feeds into `key_purpose_bitcoin(network)` when creating
@@ -98,87 +90,32 @@ class OrgKeygenController extends ChangeNotifier {
     notifyListeners();
   }
 
-  String? _connectError;
-  String? get connectError => _connectError;
-
-  bool _connecting = false;
-  bool get connecting => _connecting;
-
   void chosePersonal(BuildContext context) {
     Navigator.of(context).pop(const WalletTypeChoicePersonal());
   }
 
   void choseOrganisation() {
     _isAnimationForward = true;
-    _step = OrgKeygenStep.sessionRole;
-    notifyListeners();
-  }
-
-  void chooseCreateSession() {
-    _isAnimationForward = true;
-    _role = OrgKeygenRole.host;
     _step = OrgKeygenStep.nameWallet;
     notifyListeners();
   }
 
-  void chooseJoinSession() {
-    _isAnimationForward = true;
-    _role = OrgKeygenRole.participant;
-    _step = OrgKeygenStep.joinSession;
-    notifyListeners();
-  }
-
-  /// Awaits `createRemoteLobby`. Returns the handle on success; sets
-  /// `connectError` and returns null on failure. Caller passes the
-  /// current `NostrIdentity` from settings.
+  /// Awaits `createRemoteLobby`. Returns the handle on success; null
+  /// on failure (caller decides whether to surface the error).
   Future<RemoteLobbyHandle?> openLobbyAsHost({
     required NostrIdentity identity,
   }) async {
     if (!nameValid) return null;
-    _connecting = true;
-    _connectError = null;
-    notifyListeners();
     try {
       final secret = ChannelSecret.generate();
-      final handle = await nostrClient.createRemoteLobby(
+      return await nostrClient.createRemoteLobby(
         identity: identity,
         channelSecret: secret,
         keyName: walletName,
         purpose: keyPurposeBitcoin(network: _network),
       );
-      return handle;
-    } catch (e) {
-      _connectError = '$e';
+    } catch (_) {
       return null;
-    } finally {
-      _connecting = false;
-      notifyListeners();
-    }
-  }
-
-  /// Joiner counterpart to [openLobbyAsHost].
-  Future<RemoteLobbyHandle?> openLobbyAsJoiner({
-    required NostrIdentity identity,
-  }) async {
-    if (!joinLinkValid) return null;
-    _connecting = true;
-    _connectError = null;
-    notifyListeners();
-    try {
-      final secret = ChannelSecret.fromKeygenLink(
-        link: joinLinkController.text.trim(),
-      );
-      final handle = await nostrClient.joinRemoteLobby(
-        identity: identity,
-        channelSecret: secret,
-      );
-      return handle;
-    } catch (e) {
-      _connectError = '$e';
-      return null;
-    } finally {
-      _connecting = false;
-      notifyListeners();
     }
   }
 
@@ -187,12 +124,8 @@ class OrgKeygenController extends ChangeNotifier {
       case OrgKeygenStep.walletType:
         Navigator.of(context).pop();
         return;
-      case OrgKeygenStep.sessionRole:
-        _step = OrgKeygenStep.walletType;
-      case OrgKeygenStep.joinSession:
-        _step = OrgKeygenStep.sessionRole;
       case OrgKeygenStep.nameWallet:
-        _step = OrgKeygenStep.sessionRole;
+        _step = OrgKeygenStep.walletType;
     }
     _isAnimationForward = false;
     notifyListeners();
@@ -201,7 +134,6 @@ class OrgKeygenController extends ChangeNotifier {
   @override
   void dispose() {
     nameController.dispose();
-    joinLinkController.dispose();
     super.dispose();
   }
 }
@@ -499,24 +431,51 @@ class OrgKeygenPage extends StatefulWidget {
 
   @override
   State<OrgKeygenPage> createState() => _OrgKeygenPageState();
+
+  /// Joiner entrypoint used by the universal `JoinLinkPage` dispatcher
+  /// in `wallet_add.dart`. Handles the identity gate, keygen
+  /// `ChannelSecret` parse, `NostrClient.joinRemoteLobby`, and pushes
+  /// [LobbyAndKeygenPage] as joiner. Returns the popped
+  /// [AccessStructureRef], or null on cancellation.
+  ///
+  /// Progress state (spinner / error text) stays on the caller's
+  /// `JoinLinkPage`; this method only owns the ceremony wiring.
+  static Future<AccessStructureRef?> dispatchKeygenJoin({
+    required BuildContext context,
+    required NostrClient nostrClient,
+    required String link,
+  }) async {
+    final nostr = NostrContext.of(context);
+    final ensured = await nostr.ensureIdentity(context);
+    if (ensured == null || !context.mounted) return null;
+    final identity = nostr.nostrSettings.currentIdentity();
+    if (identity == null || !context.mounted) return null;
+    final secret = ChannelSecret.fromKeygenLink(link: link);
+    final handle = await nostrClient.joinRemoteLobby(
+      identity: identity,
+      channelSecret: secret,
+    );
+    if (!context.mounted) return null;
+    return MaybeFullscreenDialog.show<AccessStructureRef>(
+      context: context,
+      barrierDismissible: false,
+      child: LobbyAndKeygenPage(handle: handle, isHost: false, walletName: ''),
+    );
+  }
 }
 
 class _OrgKeygenPageState extends State<OrgKeygenPage> {
   late final OrgKeygenController _ctrl;
-
-  bool _joinLinkAttempted = false;
 
   @override
   void initState() {
     super.initState();
     _ctrl = OrgKeygenController(nostrClient: widget.nostrClient);
     _ctrl.addListener(_onUpdate);
-    _ctrl.joinLinkController.addListener(_onJoinLinkTextChanged);
   }
 
   @override
   void dispose() {
-    _ctrl.joinLinkController.removeListener(_onJoinLinkTextChanged);
     _ctrl.removeListener(_onUpdate);
     _ctrl.dispose();
     super.dispose();
@@ -524,27 +483,6 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
 
   void _onUpdate() {
     if (mounted) setState(() {});
-  }
-
-  void _onJoinLinkTextChanged() {
-    if (!mounted) return;
-    if (_joinLinkAttempted) {
-      setState(() => _joinLinkAttempted = false);
-    } else {
-      setState(() {});
-    }
-  }
-
-  /// Re-entry must be gated by `_ctrl.connecting` because the
-  /// TextField's `onSubmitted` (Enter key) routes here too and the
-  /// keyboard isn't blocked while the footer button is.
-  void _trySubmitJoinLink() {
-    if (_ctrl.connecting) return;
-    if (_ctrl.joinLinkValid) {
-      unawaited(_submitJoinLink());
-    } else {
-      setState(() => _joinLinkAttempted = true);
-    }
   }
 
   Future<void> _submitName() async {
@@ -570,29 +508,6 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
     ).pop(asRef == null ? null : WalletTypeChoiceOrganisation(asRef));
   }
 
-  Future<void> _submitJoinLink() async {
-    final nostr = NostrContext.of(context);
-    final ensured = await nostr.ensureIdentity(context);
-    if (ensured == null || !mounted) return;
-    final identity = nostr.nostrSettings.currentIdentity();
-    if (identity == null || !mounted) return;
-    final handle = await _ctrl.openLobbyAsJoiner(identity: identity);
-    if (handle == null || !mounted) return;
-    final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
-      context: context,
-      barrierDismissible: false,
-      child: LobbyAndKeygenPage(
-        handle: handle,
-        isHost: false,
-        walletName: '', // joiner learns it via state.keyName
-      ),
-    );
-    if (!mounted) return;
-    Navigator.of(
-      context,
-    ).pop(asRef == null ? null : WalletTypeChoiceOrganisation(asRef));
-  }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -608,10 +523,6 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
     switch (_ctrl.step) {
       case OrgKeygenStep.walletType:
         return _buildWalletTypeStep(context);
-      case OrgKeygenStep.sessionRole:
-        return _buildSessionRoleStep(context);
-      case OrgKeygenStep.joinSession:
-        return _buildJoinSessionStep(context);
       case OrgKeygenStep.nameWallet:
         return _buildNameStep(context);
     }
@@ -654,76 +565,10 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
     );
   }
 
-  MultiStepDialogScaffold _buildSessionRoleStep(BuildContext context) {
-    return MultiStepDialogScaffold(
-      stepKey: OrgKeygenStep.sessionRole,
-      title: const Text('Start or join a session'),
-      leading: _backLeading(),
-      forward: _ctrl.isAnimationForward,
-      body: SliverToBoxAdapter(
-        child: Column(
-          spacing: 12,
-          children: [
-            _ChoiceCard(
-              icon: Icons.add_circle_outline_rounded,
-              title: 'Start a new session',
-              subtitle: 'Invite others to join a wallet you\'re creating.',
-              emphasized: true,
-              onTap: _ctrl.chooseCreateSession,
-            ),
-            _ChoiceCard(
-              icon: Icons.link_rounded,
-              title: 'Join an existing session',
-              subtitle: 'Accept an invite link from someone else.',
-              onTap: _ctrl.chooseJoinSession,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  MultiStepDialogScaffold _buildJoinSessionStep(BuildContext context) {
-    final errorText = (_joinLinkAttempted && !_ctrl.joinLinkValid)
-        ? 'Not a valid invite link'
-        : _ctrl.connectError;
-    return MultiStepDialogScaffold(
-      stepKey: OrgKeygenStep.joinSession,
-      title: const Text('Join session'),
-      leading: _backLeading(),
-      forward: _ctrl.isAnimationForward,
-      body: SliverToBoxAdapter(
-        child: _JoinSessionInput(
-          ctrl: _ctrl,
-          errorText: errorText,
-          onSubmit: _trySubmitJoinLink,
-        ),
-      ),
-      footer: Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          icon: _ctrl.connecting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.arrow_forward_rounded),
-          iconAlignment: IconAlignment.end,
-          onPressed:
-              (_ctrl.connecting || _ctrl.joinLinkController.text.trim().isEmpty)
-              ? null
-              : _trySubmitJoinLink,
-          label: const Text('Join'),
-        ),
-      ),
-    );
-  }
-
   MultiStepDialogScaffold _buildNameStep(BuildContext context) {
     final devMode =
         SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
-    final canSubmit = _ctrl.nameValid && !_ctrl.connecting;
+    final canSubmit = _ctrl.nameValid;
     return MultiStepDialogScaffold(
       stepKey: OrgKeygenStep.nameWallet,
       title: const Text('Name this wallet'),
@@ -737,10 +582,9 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
             TextField(
               autofocus: true,
               controller: _ctrl.nameController,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
                 hintText: 'e.g. Acme Treasury',
-                errorText: _ctrl.connectError,
                 errorMaxLines: 2,
               ),
               maxLength: 15,
@@ -762,13 +606,7 @@ class _OrgKeygenPageState extends State<OrgKeygenPage> {
         alignment: Alignment.centerRight,
         child: FilledButton.icon(
           onPressed: canSubmit ? () => unawaited(_submitName()) : null,
-          icon: _ctrl.connecting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.arrow_forward_rounded),
+          icon: const Icon(Icons.arrow_forward_rounded),
           iconAlignment: IconAlignment.end,
           label: const Text('Next'),
         ),
@@ -1038,7 +876,9 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
             await handle.start();
             await waitForConfirmation;
             status.value = 'Enabling remote mode…';
-            await NostrContext.of(context).nostrSettings.setCoordinationUiEnabled(
+            await NostrContext.of(
+              context,
+            ).nostrSettings.setCoordinationUiEnabled(
               accessStructureRef: asRef,
               enabled: true,
             );
@@ -1726,121 +1566,6 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
   }
 }
 
-// =============================================================================
-// Step 3a body: join-link input
-// =============================================================================
-
-class _JoinSessionInput extends StatefulWidget {
-  const _JoinSessionInput({
-    required this.ctrl,
-    required this.errorText,
-    required this.onSubmit,
-  });
-  final OrgKeygenController ctrl;
-
-  final String? errorText;
-
-  final VoidCallback onSubmit;
-
-  @override
-  State<_JoinSessionInput> createState() => _JoinSessionInputState();
-}
-
-class _JoinSessionInputState extends State<_JoinSessionInput> {
-  OrgKeygenController get ctrl => widget.ctrl;
-  bool _prefilled = false;
-  final _focusNode = FocusNode();
-  static const _prefix = 'frostsnap://keygen/';
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(_onFocus);
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocus);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _onFocus() {
-    if (!_focusNode.hasFocus) return;
-    if (_prefilled || ctrl.joinLinkController.text.isNotEmpty) return;
-    _prefilled = true;
-    ctrl.joinLinkController.text = _prefix;
-    ctrl.joinLinkController.selection = TextSelection.collapsed(
-      offset: _prefix.length,
-    );
-  }
-
-  Future<void> _paste() async {
-    final data = await Clipboard.getData('text/plain');
-    if (data?.text != null) {
-      ctrl.joinLinkController.text = data!.text!;
-    }
-  }
-
-  Future<void> _scan() async {
-    final scanned = await MaybeFullscreenDialog.show<String>(
-      context: context,
-      child: const QrStringScanner(title: 'Scan invite'),
-    );
-    if (!mounted || scanned == null) return;
-    ctrl.joinLinkController.text = scanned.trim();
-    widget.onSubmit();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card.outlined(
-      color: theme.colorScheme.surfaceContainerHigh,
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              autofocus: true,
-              focusNode: _focusNode,
-              controller: ctrl.joinLinkController,
-              decoration: InputDecoration(
-                filled: false,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-                hintText: _prefix,
-                errorText: widget.errorText,
-                errorMaxLines: 2,
-              ),
-              onSubmitted: (_) => widget.onSubmit(),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: _paste,
-                  icon: const Icon(Icons.paste),
-                  label: const Text('Paste'),
-                ),
-                TextButton.icon(
-                  onPressed: _scan,
-                  icon: const Icon(Icons.qr_code_scanner_rounded),
-                  label: const Text('Scan'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _LobbyPrimaryButton extends StatelessWidget {
   const _LobbyPrimaryButton({required this.ctrl});
   final LobbyAndKeygenController ctrl;
@@ -1924,9 +1649,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
   /// fall back to a short pubkey until that arrives.
   String _displayTitle(BuildContext context, ParticipantInfo p) {
     if (widget.isMe) {
-      final id = NostrContext.maybeOf(context)
-          ?.nostrSettings
-          .currentIdentity();
+      final id = NostrContext.maybeOf(context)?.nostrSettings.currentIdentity();
       final name = switch (id) {
         NostrIdentity_Generated(:final name) => name,
         NostrIdentity_Imported(:final cachedProfile) =>
@@ -1936,8 +1659,7 @@ class _ParticipantRowState extends State<_ParticipantRow> {
       if (name != null && name.isNotEmpty) return '$name (You)';
       return 'You';
     }
-    final peerName =
-        p.profile?.displayName ?? p.profile?.name;
+    final peerName = p.profile?.displayName ?? p.profile?.name;
     if (peerName != null && peerName.isNotEmpty) return peerName;
     return _shortPubkey(p.pubkey);
   }

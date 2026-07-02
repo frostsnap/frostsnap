@@ -284,26 +284,15 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _handleDeepLink(Uri uri) {
     if (uri.scheme != 'frostsnap') return;
-    final path = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '';
-    if (path.isEmpty) return;
-    switch (uri.host) {
-      case 'channel':
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          WalletAddColumn.showJoinFromLinkDialog(
-            context,
-            initialLink: 'frostsnap://channel/$path',
-          );
-        });
-      case 'recovery':
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          WalletAddColumn.showRemoteRecoveryDialog(
-            context,
-            initialJoinLink: 'frostsnap://recovery/$path',
-          );
-        });
-    }
+    // The universal `JoinLinkPage` (behind `showJoinFromLinkDialog`)
+    // classifies the URL by `frostsnap://<host>/…` prefix and picks
+    // the right downstream flow, so this handler just forwards.
+    // Unknown hosts surface an "invalid link" error inside the page.
+    final link = uri.toString();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      WalletAddColumn.showJoinFromLinkDialog(context, initialLink: link);
+    });
   }
 
   @override

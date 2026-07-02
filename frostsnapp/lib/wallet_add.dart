@@ -5,8 +5,10 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/invite_link_input.dart';
+import 'package:frostsnap/join_link.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
-import 'package:frostsnap/recovery/remote_recovery_entry_page.dart';
+import 'package:frostsnap/recovery/remote_recovery_create_page.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -78,16 +80,16 @@ class WalletAddColumn extends StatelessWidget {
           groupPosition: VerticalButtonGroupPosition.bottom,
           isThreeLine: true,
           icon: Icon(Icons.groups_rounded, size: iconSize),
-          title: 'Restore wallet with participants',
-          subtitle: 'Combine your share with others over nostr',
+          title: 'Start a recovery lobby',
+          subtitle: 'Invite share holders to help recover a wallet over nostr',
         ),
         buildCard(
           context,
           action: () => onPressed(AddType.joinFromLink),
           isThreeLine: true,
           icon: Icon(Icons.link_rounded, size: iconSize),
-          title: 'Join wallet from link',
-          subtitle: 'Join an existing wallet using a shared nostr link',
+          title: 'Join with invite link',
+          subtitle: 'Wallet, keygen, or recovery — the link tells us which',
         ),
       ],
     );
@@ -255,21 +257,14 @@ class WalletAddColumn extends StatelessWidget {
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
   }
 
-  static Future<void> showRemoteRecoveryDialog(
-    BuildContext context, {
-    String? initialJoinLink,
-  }) async {
+  static Future<void> showRemoteRecoveryDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
     final nostrClient = await NostrContext.of(context).nostrClient;
     if (!context.mounted) return;
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
       barrierDismissible: false,
-      child: RemoteRecoveryEntryPage(
-        coord: coord,
-        nostrClient: nostrClient,
-        initialJoinLink: initialJoinLink,
-      ),
+      child: RemoteRecoveryCreatePage(coord: coord, nostrClient: nostrClient),
     );
     if (asRef == null || !context.mounted) return;
     await showUnplugDevicesDialog(context);
@@ -284,7 +279,7 @@ class WalletAddColumn extends StatelessWidget {
     final homeCtx = HomeContext.of(context)!;
     final keyId = await MaybeFullscreenDialog.show<KeyId>(
       context: context,
-      child: JoinFromLinkPage(initialLink: initialLink),
+      child: JoinLinkPage(initialLink: initialLink),
     );
     if (keyId != null && context.mounted) {
       homeCtx.openNewlyCreatedWallet(keyId);
@@ -324,28 +319,33 @@ Function(AddType) makeOnPressed(BuildContext context) {
 
 enum _JoinState { input, loading, success, error }
 
-class JoinFromLinkPage extends StatefulWidget {
+/// Universal join-via-link entry point. Accepts any `frostsnap://…`
+/// invite URL — wallet channel, remote keygen lobby, or remote
+/// recovery lobby — and dispatches to the matching downstream flow
+/// via the classifier in `join_link.dart`.
+class JoinLinkPage extends StatefulWidget {
   final String? initialLink;
 
-  const JoinFromLinkPage({super.key, this.initialLink});
+  const JoinLinkPage({super.key, this.initialLink});
 
   @override
-  State<JoinFromLinkPage> createState() => _JoinFromLinkPageState();
+  State<JoinLinkPage> createState() => _JoinLinkPageState();
 }
 
-class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
+class _JoinLinkPageState extends State<JoinLinkPage> {
   late final TextEditingController _controller;
   _JoinState _state = _JoinState.input;
   String? _error;
-  KeyId? _keyId;
   String? _walletName;
+  KeyId? _keyId;
+  String? _invalidLinkError;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialLink ?? '');
     if (widget.initialLink != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _join());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _submit());
     }
   }
 
@@ -355,7 +355,7 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
     super.dispose();
   }
 
-  ChannelSecret _parseLink(String link) {
+  ChannelSecret _parseChannelSecret(String link) {
     final hexStr = link.replaceFirst('frostsnap://channel/', '');
     if (hexStr.length != 32) throw 'Invalid link: expected 32 hex characters';
     final bytes = Uint8List(16);
@@ -365,24 +365,42 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
     return ChannelSecret(field0: U8Array16(bytes));
   }
 
-  Future<void> _join() async {
+  Future<void> _submit() async {
     final link = _controller.text.trim();
     if (link.isEmpty) return;
+
+    final kind = classifyJoinLink(link);
+    if (kind == LinkKind.unknown) {
+      setState(
+        () => _invalidLinkError = 'Not a valid frostsnap:// invite link',
+      );
+      return;
+    }
 
     setState(() {
       _state = _JoinState.loading;
       _error = null;
+      _invalidLinkError = null;
     });
 
     try {
-      final channelSecret = _parseLink(link);
-      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-      final client = await NostrContext.of(context).nostrClient;
-      final keyId = await client.joinFromLink(
-        coord: coord,
-        channelSecret: channelSecret,
-        encryptionKey: encryptionKey,
-      );
+      final KeyId? keyId;
+      switch (kind) {
+        case LinkKind.channel:
+          keyId = await _joinChannel(link);
+        case LinkKind.keygen:
+          keyId = await _joinKeygen(link);
+        case LinkKind.recovery:
+          keyId = await _joinRecovery(link);
+        case LinkKind.unknown:
+          throw StateError('unreachable — filtered above');
+      }
+      if (keyId == null) {
+        // User cancelled mid-dispatch (recovery/keygen returned null).
+        // Return to input so they can try a different link or exit.
+        if (mounted) setState(() => _state = _JoinState.input);
+        return;
+      }
       _keyId = keyId;
       _walletName = coord.getFrostKey(keyId: keyId)?.keyName() ?? 'Wallet';
       if (!mounted) return;
@@ -396,6 +414,42 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
         _error = e.toString();
       });
     }
+  }
+
+  Future<KeyId?> _joinChannel(String link) async {
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    if (!mounted) return null;
+    final client = await NostrContext.of(context).nostrClient;
+    if (!mounted) return null;
+    final secret = _parseChannelSecret(link);
+    return client.joinFromLink(
+      coord: coord,
+      channelSecret: secret,
+      encryptionKey: encryptionKey,
+    );
+  }
+
+  Future<KeyId?> _joinKeygen(String link) async {
+    final client = await NostrContext.of(context).nostrClient;
+    if (!mounted) return null;
+    final asRef = await OrgKeygenPage.dispatchKeygenJoin(
+      context: context,
+      nostrClient: client,
+      link: link,
+    );
+    return asRef?.keyId;
+  }
+
+  Future<KeyId?> _joinRecovery(String link) async {
+    final client = await NostrContext.of(context).nostrClient;
+    if (!mounted) return null;
+    final asRef = await RemoteRecoveryCreatePage.dispatchJoin(
+      context: context,
+      coord: coord,
+      nostrClient: client,
+      link: link,
+    );
+    return asRef?.keyId;
   }
 
   @override
@@ -412,7 +466,7 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
     final theme = Theme.of(context);
     return MultiStepDialogScaffold(
       stepKey: _JoinState.input,
-      title: const Text('Join Wallet'),
+      title: const Text('Join with invite link'),
       showClose: true,
       body: SliverToBoxAdapter(
         child: Column(
@@ -425,20 +479,17 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Paste an invite link to join an existing wallet.',
+              'Paste or scan any frostsnap invite — a wallet, a keygen '
+              'session, or a recovery lobby.',
               style: theme.textTheme.bodyLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            TextField(
+            InviteLinkInput(
               controller: _controller,
-              decoration: const InputDecoration(
-                hintText: 'frostsnap://channel/...',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.link),
-              ),
-              autofocus: true,
-              onSubmitted: (_) => _join(),
+              onSubmit: _submit,
+              errorText: _invalidLinkError,
+              hintText: 'frostsnap://…',
             ),
           ],
         ),
@@ -446,7 +497,7 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
       footer: Align(
         alignment: Alignment.centerRight,
         child: FilledButton.icon(
-          onPressed: _join,
+          onPressed: _submit,
           icon: const Icon(Icons.login_rounded),
           label: const Text('Join'),
         ),
@@ -471,15 +522,12 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Joining wallet…',
+              'Joining session…',
               style: theme.textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Fetching wallet data from relays',
-              textAlign: TextAlign.center,
-            ),
+            const Text('Contacting nostr relays', textAlign: TextAlign.center),
           ],
         ),
       ),
@@ -503,10 +551,7 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Wallet joined successfully',
-              textAlign: TextAlign.center,
-            ),
+            const Text('Joined successfully', textAlign: TextAlign.center),
           ],
         ),
       ),
@@ -536,7 +581,7 @@ class _JoinFromLinkPageState extends State<JoinFromLinkPage> {
               ),
               const SizedBox(height: 24),
               Text(
-                'Failed to join wallet',
+                'Failed to join',
                 style: theme.textTheme.headlineSmall?.copyWith(
                   color: theme.colorScheme.onErrorContainer,
                 ),

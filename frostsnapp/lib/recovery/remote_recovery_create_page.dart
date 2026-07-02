@@ -12,36 +12,28 @@ import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/nostr/remote_recovery.dart';
 
-/// Entry page for the remote recovery flow. Two paths:
+/// Leader-side entry point for the remote recovery flow. Collects
+/// wallet name + optional threshold hint + network, opens a
+/// recovery lobby via `NostrClient.createRemoteRecoveryLobby`, and
+/// pushes the lobby page.
 ///
-/// - **Create**: caller supplies a wallet name (and optional
-///   threshold hint) → `NostrClient.createRemoteRecoveryLobby` →
-///   navigate to [RemoteRecoveryLobbyPage] as leader.
-/// - **Join**: caller pastes a `frostsnap://recovery/<hex>` link →
-///   `ChannelSecret.fromRecoveryLink` → `joinRemoteRecoveryLobby`
-///   → navigate to [RemoteRecoveryLobbyPage] as joiner.
-///
-/// Both paths require a configured `NostrIdentity` (via
-/// `NostrContext.ensureIdentity`); the entry page triggers the
-/// nostr setup dialog if it's missing.
-class RemoteRecoveryEntryPage extends StatefulWidget {
+/// Joiners no longer land here — they arrive through
+/// `wallet_add.dart`'s universal `JoinLinkPage`. The [dispatchJoin]
+/// static exposed on this class is the seam the join dispatcher
+/// calls into.
+class RemoteRecoveryCreatePage extends StatefulWidget {
   final Coordinator coord;
   final NostrClient nostrClient;
 
-  /// Deep-link entry: if non-null, the page auto-triggers the join flow
-  /// with this link prefilled after first mount.
-  final String? initialJoinLink;
-
-  const RemoteRecoveryEntryPage({
+  const RemoteRecoveryCreatePage({
     super.key,
     required this.coord,
     required this.nostrClient,
-    this.initialJoinLink,
   });
 
   @override
-  State<RemoteRecoveryEntryPage> createState() =>
-      _RemoteRecoveryEntryPageState();
+  State<RemoteRecoveryCreatePage> createState() =>
+      _RemoteRecoveryCreatePageState();
 
   /// The single call site that maps a leader's [CreateLobbyResult] onto
   /// [NostrClient.createRemoteRecoveryLobby]. Extracted (`@visibleForTesting`)
@@ -63,22 +55,49 @@ class RemoteRecoveryEntryPage extends StatefulWidget {
       thresholdHint: result.thresholdHint,
     );
   }
+
+  /// Joiner entrypoint used by the universal `JoinLinkPage` dispatcher
+  /// in `wallet_add.dart`. Handles the identity gate,
+  /// `NostrClient.joinRemoteRecoveryLobby`, encryption-key fetch, and
+  /// pushes [RemoteRecoveryLobbyPage] as joiner. Returns the popped
+  /// [AccessStructureRef] on success, or null if the user cancelled
+  /// mid-flow (unmounted, identity setup cancelled, lobby popped
+  /// without recovery).
+  static Future<AccessStructureRef?> dispatchJoin({
+    required BuildContext context,
+    required Coordinator coord,
+    required NostrClient nostrClient,
+    required String link,
+  }) async {
+    final nostr = NostrContext.of(context);
+    final ensured = await nostr.ensureIdentity(context);
+    if (ensured == null || !context.mounted) return null;
+    final identity = nostr.nostrSettings.currentIdentity();
+    if (identity == null || !context.mounted) return null;
+    final secret = ChannelSecret.fromRecoveryLink(link: link);
+    final handle = await nostrClient.joinRemoteRecoveryLobby(
+      identity: identity,
+      channelSecret: secret,
+    );
+    if (!context.mounted) return null;
+    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    if (!context.mounted) return null;
+    return Navigator.of(context).push<AccessStructureRef>(
+      MaterialPageRoute(
+        builder: (_) => RemoteRecoveryLobbyPage(
+          handle: handle,
+          isLeader: false,
+          coord: coord,
+          encryptionKey: encryptionKey,
+        ),
+      ),
+    );
+  }
 }
 
-class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
+class _RemoteRecoveryCreatePageState extends State<RemoteRecoveryCreatePage> {
   bool _busy = false;
   String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialJoinLink != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _joinLobby(prefilledLink: widget.initialJoinLink);
-      });
-    }
-  }
 
   Future<void> _createLobby() async {
     final result = await showDialog<CreateLobbyResult>(
@@ -86,41 +105,6 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
       builder: (ctx) => const CreateLobbyDialog(),
     );
     if (result == null || !mounted) return;
-    await _connect(
-      leader: true,
-      identityGate: (identity) => RemoteRecoveryEntryPage.dispatchCreate(
-        client: widget.nostrClient,
-        identity: identity,
-        result: result,
-      ),
-    );
-  }
-
-  Future<void> _joinLobby({String? prefilledLink}) async {
-    final link =
-        prefilledLink ??
-        await showDialog<String>(
-          context: context,
-          builder: (ctx) => const _JoinLinkDialog(),
-        );
-    if (link == null || !mounted) return;
-    await _connect(
-      leader: false,
-      identityGate: (identity) async {
-        final secret = ChannelSecret.fromRecoveryLink(link: link);
-        return widget.nostrClient.joinRemoteRecoveryLobby(
-          identity: identity,
-          channelSecret: secret,
-        );
-      },
-    );
-  }
-
-  Future<void> _connect({
-    required bool leader,
-    required Future<RemoteRecoveryLobbyHandle> Function(NostrIdentity)
-    identityGate,
-  }) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -131,7 +115,11 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
       if (ensured == null || !mounted) return;
       final identity = nostr.nostrSettings.currentIdentity();
       if (identity == null || !mounted) return;
-      final handle = await identityGate(identity);
+      final handle = await RemoteRecoveryCreatePage.dispatchCreate(
+        client: widget.nostrClient,
+        identity: identity,
+        result: result,
+      );
       if (!mounted) return;
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
       if (!mounted) return;
@@ -139,7 +127,7 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
         MaterialPageRoute(
           builder: (_) => RemoteRecoveryLobbyPage(
             handle: handle,
-            isLeader: leader,
+            isLeader: true,
             coord: widget.coord,
             encryptionKey: encryptionKey,
           ),
@@ -159,14 +147,15 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Remote recovery')),
+      appBar: AppBar(title: const Text('Start recovery lobby')),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Recover a wallet with participants over nostr.',
+              'Invite participants to help recover a wallet over nostr. '
+              'Share the invite link so others can join with their shares.',
               style: theme.textTheme.bodyLarge,
             ),
             const SizedBox(height: 32),
@@ -174,12 +163,6 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
               icon: const Icon(Icons.add),
               label: const Text('Create recovery lobby'),
               onPressed: _busy ? null : _createLobby,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.login),
-              label: const Text('Join with invite link'),
-              onPressed: _busy ? null : _joinLobby,
             ),
             if (_error != null) ...[
               const SizedBox(height: 24),
@@ -291,67 +274,6 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(onPressed: _submit, child: const Text('Create')),
-      ],
-    );
-  }
-}
-
-class _JoinLinkDialog extends StatefulWidget {
-  const _JoinLinkDialog();
-
-  @override
-  State<_JoinLinkDialog> createState() => _JoinLinkDialogState();
-}
-
-class _JoinLinkDialogState extends State<_JoinLinkDialog> {
-  final _link = TextEditingController();
-  String? _err;
-
-  @override
-  void dispose() {
-    _link.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final raw = _link.text.trim();
-    if (!raw.startsWith('frostsnap://recovery/')) {
-      setState(() => _err = 'Must be a frostsnap://recovery/… link');
-      return;
-    }
-    Navigator.of(context).pop(raw);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Join recovery lobby'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _link,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Invite link',
-              hintText: 'frostsnap://recovery/…',
-            ),
-          ),
-          if (_err != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              _err!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('Join')),
       ],
     );
   }

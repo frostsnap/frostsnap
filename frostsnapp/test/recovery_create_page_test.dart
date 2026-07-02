@@ -5,7 +5,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show ExternalLibraryLoaderConfig;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:frostsnap/recovery/remote_recovery_entry_page.dart';
+import 'package:frostsnap/recovery/remote_recovery_create_page.dart';
 import 'package:frostsnap/src/rust/api.dart' show keyPurposeBitcoin;
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
@@ -17,7 +17,7 @@ import 'package:frostsnap/src/rust/lib.dart';
 // out before `NostrClient.createRemoteRecoveryLobby` gets called.
 // The dialog's job is to collect wallet name + optional threshold
 // hint + `BitcoinNetwork`, validate, and return a `CreateLobbyResult`.
-// The dialog is the only piece of `RemoteRecoveryEntryPage` that
+// The dialog is the only piece of `RemoteRecoveryCreatePage` that
 // carries non-trivial logic; the surrounding page is straight-line
 // glue we cover by `flutter analyze` + the manual acceptance run.
 //
@@ -180,7 +180,7 @@ void main() {
     expect(result!.thresholdHint, 3);
   });
 
-  test('RemoteRecoveryEntryPage.dispatchCreate hands NostrClient a KeyPurpose '
+  test('RemoteRecoveryCreatePage.dispatchCreate hands NostrClient a KeyPurpose '
       'whose bitcoinNetwork matches CreateLobbyResult.network', () async {
     // Full-lobby regression scenario per plan acceptance: a stub
     // `NostrClient` captures the `createRemoteRecoveryLobby` call and we
@@ -209,7 +209,7 @@ void main() {
     // real `RemoteRecoveryLobbyHandle`. `unawaited`-style: swallow the
     // marker error, then assert on the capture.
     try {
-      await RemoteRecoveryEntryPage.dispatchCreate(
+      await RemoteRecoveryCreatePage.dispatchCreate(
         client: stub,
         identity: identity,
         result: result,
