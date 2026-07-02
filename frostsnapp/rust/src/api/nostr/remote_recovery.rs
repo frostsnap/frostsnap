@@ -7,17 +7,17 @@ use crate::api::broadcast::BehaviorBroadcast;
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::Sink;
+use frostsnap_core::coordinator::restoration::RecoveringAccessStructure;
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::{AccessStructureRef, DeviceId, SymmetricKey};
 use frostsnap_core::schnorr_fun::frost::ShareImage;
+use frostsnap_core::{AccessStructureRef, DeviceId, SymmetricKey};
 use frostsnap_macros::broadcast_handle;
-use frostsnap_nostr::channel_runner::NostrProfile;
 use frostsnap_nostr::keygen::DeviceKind;
 pub use frostsnap_nostr::recovery::{
-    FinishedRecovery, ObservedShare, RecoveryParticipantInfo, RecoveredKey, RecoveryChannelMetadata,
-    RecoveryLobbyClient, RecoveryLobbyEvent, RecoveryLobbyHandle, RecoveryLobbyState, SharePost,
+    FinishedRecovery, ObservedShare, RecoveredKey, RecoveryChannelMetadata, RecoveryLobbyClient,
+    RecoveryLobbyEvent, RecoveryLobbyHandle, RecoveryLobbySnapshot, RecoveryLobbyState,
+    RecoveryParticipantInfo, SharePost,
 };
-use frostsnap_core::coordinator::restoration::RecoveringAccessStructure;
 use frostsnap_nostr::{Client, EventId, PublicKey};
 
 /// Rust-internal bundle stashed alongside the FRB-safe
@@ -63,7 +63,6 @@ pub struct _ObservedShare {
 pub struct _RecoveryParticipantInfo {
     pub pubkey: PublicKey,
     pub joined_at_secs: u64,
-    pub profile: Option<NostrProfile>,
     pub posted_shares: Vec<EventId>,
     pub left: bool,
 }
@@ -102,6 +101,26 @@ pub struct _RecoveryLobbyState {
     pub cancelled: bool,
 }
 
+/// Mirrors `frostsnap_nostr::recovery::RecoveryLobbySnapshot` — the
+/// single stream payload: app fold in `state`, runner-owned member
+/// block (names/avatars, keyed by pubkey) in `members`.
+#[frb(
+    mirror(RecoveryLobbySnapshot),
+    non_opaque,
+    dart_code = "
+  NostrProfile? profileOf(PublicKey pubkey) {
+    for (final m in members) {
+      if (m.pubkey == pubkey) return m.profile;
+    }
+    return null;
+  }
+"
+)]
+pub struct _RecoveryLobbySnapshot {
+    pub state: RecoveryLobbyState,
+    pub members: Vec<crate::api::nostr::GroupMember>,
+}
+
 // ============================================================================
 // Sink: RecoveryLobbyEvent → shared bridge state
 // ============================================================================
@@ -113,9 +132,8 @@ pub struct _RecoveryLobbyState {
 /// `Arc<Mutex<Option<BehaviorBroadcast<_>>>>` and lazily populated.
 #[frb(ignore)]
 pub(crate) struct RecoveryBridge {
-    pub broadcast: Arc<Mutex<Option<BehaviorBroadcast<RecoveryLobbyState>>>>,
-    pub finished_slot:
-        Arc<Mutex<Option<FinishedSlotInner>>>,
+    pub broadcast: Arc<Mutex<Option<BehaviorBroadcast<RecoveryLobbySnapshot>>>>,
+    pub finished_slot: Arc<Mutex<Option<FinishedSlotInner>>>,
     pub verification_failed: Arc<Mutex<bool>>,
     pub cancelled_pre_state: Arc<Mutex<bool>>,
     pub ready: Arc<Notify>,
@@ -148,9 +166,8 @@ impl RecoveryBridge {
 
 #[derive(Clone)]
 pub(crate) struct RecoveryBridgeSink {
-    broadcast: Arc<Mutex<Option<BehaviorBroadcast<RecoveryLobbyState>>>>,
-    finished_slot:
-        Arc<Mutex<Option<FinishedSlotInner>>>,
+    broadcast: Arc<Mutex<Option<BehaviorBroadcast<RecoveryLobbySnapshot>>>>,
+    finished_slot: Arc<Mutex<Option<FinishedSlotInner>>>,
     verification_failed: Arc<Mutex<bool>>,
     cancelled_pre_state: Arc<Mutex<bool>>,
     ready: Arc<Notify>,
@@ -206,17 +223,16 @@ impl Sink<RecoveryLobbyEvent> for RecoveryBridgeSink {
 // RemoteRecoveryLobbyHandle
 // ============================================================================
 
-broadcast_handle! { pub struct RecoveryLobbyStateBcast(pub BehaviorBroadcast<RecoveryLobbyState>); }
+broadcast_handle! { pub struct RecoveryLobbyStateBcast(pub BehaviorBroadcast<RecoveryLobbySnapshot>); }
 
 #[frb(opaque)]
 pub struct RemoteRecoveryLobbyHandle {
     inner: RecoveryLobbyHandle,
     invite_link: String,
-    state_broadcast: BehaviorBroadcast<RecoveryLobbyState>,
+    state_broadcast: BehaviorBroadcast<RecoveryLobbySnapshot>,
     #[allow(dead_code)]
     client: Client,
-    finished_slot:
-        Arc<Mutex<Option<FinishedSlotInner>>>,
+    finished_slot: Arc<Mutex<Option<FinishedSlotInner>>>,
     verification_failed: Arc<Mutex<bool>>,
     state_changed: Arc<Notify>,
 }
@@ -227,7 +243,7 @@ impl RemoteRecoveryLobbyHandle {
         inner: RecoveryLobbyHandle,
         invite_link: String,
         client: Client,
-        broadcast: BehaviorBroadcast<RecoveryLobbyState>,
+        broadcast: BehaviorBroadcast<RecoveryLobbySnapshot>,
         bridge: &RecoveryBridge,
     ) -> Self {
         Self {
@@ -325,12 +341,17 @@ impl RemoteRecoveryLobbyHandle {
             })
             .ok_or_else(|| anyhow!("recovery not finished yet"))?;
 
-        let me: PublicKey = self.inner.runner_handle().signing_keys().public_key().into();
+        let me: PublicKey = self
+            .inner
+            .runner_handle()
+            .signing_keys()
+            .public_key()
+            .into();
         let my_local_devices = self
             .state_broadcast
             .latest()
             .as_ref()
-            .map(|state| frostsnap_nostr::recovery::my_local_devices(state, me))
+            .map(|snapshot| frostsnap_nostr::recovery::my_local_devices(&snapshot.state, me))
             .unwrap_or_default();
 
         let mut rng = rand::thread_rng();

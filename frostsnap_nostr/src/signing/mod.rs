@@ -8,12 +8,12 @@ pub use events::{
 use events::{ReceiveAddressPayload, SigningMessage};
 
 use self::tree::{SigningEventTree, TimerAction, WireEvent};
-use crate::{EventId, PublicKey};
+use crate::EventId;
 use crate::{
     channel::ChannelKeys,
     channel_runner::{
-        decode_bincode, extract_e_tag, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
-        ChannelRunnerHandle, EventMeta, NostrProfile,
+        decode_bincode, extract_e_tag, ChannelInfraEvent, ChannelMessageDraft, ChannelRunner,
+        ChannelRunnerEvent, ChannelRunnerHandle, EventMeta,
     },
 };
 use anyhow::{anyhow, Result};
@@ -247,20 +247,13 @@ impl ChannelClient {
                                     let _ = ack.send(());
                                 }
                             }
-                            Some(ChannelRunnerEvent::MembersChanged) => {
-                                let members = runner_handle_for_task.members();
-                                sink.send(ChannelEvent::GroupMetadata {
-                                    members: members
-                                        .iter()
-                                        .map(|(pubkey, profile)| GroupMember {
-                                            pubkey: *pubkey,
-                                            profile: profile.clone(),
-                                        })
-                                        .collect(),
-                                });
-                            }
-                            Some(ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile }) => {
-                                sink.send(ChannelEvent::MemberProfileUpdated { pubkey, profile });
+                            Some(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+                                members,
+                                ..
+                            })) => {
+                                // Block pattern: forward the full member
+                                // state unperturbed on every change.
+                                sink.send(ChannelEvent::GroupMetadata { members });
                             }
                             Some(ChannelRunnerEvent::CreationEventReceived) => {
                                 if let Some(creation_event) = runner_handle_for_task.creation_event() {

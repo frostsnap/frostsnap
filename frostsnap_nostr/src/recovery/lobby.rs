@@ -1,7 +1,7 @@
 use crate::channel::{ChannelKeys, ChannelSecret};
 use crate::channel_runner::{
-    decode_bincode, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent, ChannelRunnerHandle,
-    NostrProfile, SendOutcome, BINCODE_CONFIG,
+    decode_bincode, ChannelInfraEvent, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
+    ChannelRunnerHandle, GroupMember, SendOutcome, BINCODE_CONFIG,
 };
 use crate::keygen::DeviceKind;
 use crate::{EventId, PublicKey};
@@ -12,7 +12,7 @@ use frostsnap_core::{
     coordinator::restoration::{RecoverShare, RecoveringAccessStructure},
     device::KeyPurpose,
     message::HeldShare2,
-    schnorr_fun::frost::{Fingerprint, ShareImage, SharedKey},
+    schnorr_fun::frost::{Fingerprint, ShareImage},
     AccessStructureRef, DeviceId,
 };
 use nostr_sdk::{Client, Event, EventBuilder, Kind};
@@ -117,7 +117,6 @@ pub struct ObservedShare {
 pub struct RecoveryParticipantInfo {
     pub pubkey: PublicKey,
     pub joined_at_secs: u64,
-    pub profile: Option<NostrProfile>,
     pub posted_shares: Vec<EventId>,
     pub left: bool,
 }
@@ -130,6 +129,20 @@ pub struct RecoveryLobbyState {
     pub current_recovery: Option<RecoveredKey>,
     pub finished: Option<FinishedRecovery>,
     pub cancelled: bool,
+}
+
+/// The consumer-facing snapshot: the lobby's app fold plus the
+/// channel's member block (runner-owned; see
+/// [`ChannelInfraEvent::Members`]). One stream, one payload — names
+/// and avatars come from `members`, protocol facts from `state`.
+/// The wrapper stashes the latest member block unconditionally (no
+/// metadata gate on that slot), so profile events arriving before
+/// the creation event ride out with the first snapshot instead of
+/// being dropped.
+#[derive(Clone, Debug)]
+pub struct RecoveryLobbySnapshot {
+    pub state: RecoveryLobbyState,
+    pub members: Vec<GroupMember>,
 }
 
 /// Fuzzy-recovery result — the current "if everyone posted their
@@ -157,7 +170,7 @@ pub struct FinishedRecovery {
 
 #[derive(Clone, Debug)]
 pub enum RecoveryLobbyEvent {
-    StateChanged(RecoveryLobbyState),
+    StateChanged(RecoveryLobbySnapshot),
     RecoveryAvailable(RecoveredKey),
     /// The `RecoveringAccessStructure` + metadata ride here so the
     /// FRB layer can stash them in its finished_slot alongside the
@@ -218,13 +231,11 @@ impl RecoveryLobbyClient {
 
     /// Build the NIP-28 `ChannelCreation` event carrying the stashed
     /// `RecoveryChannelMetadata`. Leader-only; requires `with_metadata`.
-    pub async fn build_creation_event(
-        &self,
-        identity: &crate::NostrIdentity,
-    ) -> Result<Event> {
-        let metadata = self.metadata.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("build_creation_event requires with_metadata first")
-        })?;
+    pub async fn build_creation_event(&self, identity: &crate::NostrIdentity) -> Result<Event> {
+        let metadata = self
+            .metadata
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("build_creation_event requires with_metadata first"))?;
         let keys = identity.keys()?;
         let content = metadata.encode_content()?;
         let inner_event = EventBuilder::new(Kind::ChannelCreation, content)
@@ -267,6 +278,11 @@ impl RecoveryLobbyClient {
             // `RecoveryLobbyState` before `RecoveryChannelMetadata`
             // arrives, so we buffer wire events until it does.
             let mut pre_gate_buffer: Vec<Event> = Vec::new();
+            // Latest member block from the runner (block pattern).
+            // Stashed unconditionally — NOT behind the metadata gate —
+            // so early profile events ride out with the first
+            // snapshot instead of being dropped.
+            let mut members: Vec<GroupMember> = Vec::new();
             let mut fold: Option<RecoveryLobbyState> = None;
 
             while let Some(event) = events.recv().await {
@@ -294,13 +310,24 @@ impl RecoveryLobbyClient {
                                 };
                                 // Leader is a participant from t=0.
                                 let leader: PublicKey = creation.pubkey.into();
-                                upsert_participant(&mut state, leader, creation.created_at.as_u64());
+                                upsert_participant(
+                                    &mut state,
+                                    leader,
+                                    creation.created_at.as_u64(),
+                                );
 
                                 // Drain buffered events into the fold.
                                 for ev in pre_gate_buffer.drain(..) {
-                                    process_event(&ev, &mut state, &state_for_task, &sink, fingerprint);
+                                    process_event(
+                                        &ev,
+                                        &mut state,
+                                        &members,
+                                        &state_for_task,
+                                        &sink,
+                                        fingerprint,
+                                    );
                                 }
-                                sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+                                sink.send(snapshot(&state, &members));
                                 fold = Some(state);
                             }
                             Err(e) => {
@@ -318,7 +345,14 @@ impl RecoveryLobbyClient {
                         if inner_event.kind == KIND_FROSTSNAP_RECOVERY_LOBBY {
                             match &mut fold {
                                 Some(state) => {
-                                    process_event(&inner_event, state, &state_for_task, &sink, fingerprint);
+                                    process_event(
+                                        &inner_event,
+                                        state,
+                                        &members,
+                                        &state_for_task,
+                                        &sink,
+                                        fingerprint,
+                                    );
                                 }
                                 None => {
                                     pre_gate_buffer.push(inner_event);
@@ -332,19 +366,15 @@ impl RecoveryLobbyClient {
                             let _ = ack.send(());
                         }
                     }
-                    ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile } => {
-                        // Profile updates are independent of Presence
-                        // on the wire — upsert so the profile isn't
-                        // dropped if it arrives first.
-                        if let Some(state) = &mut fold {
-                            upsert_participant(state, pubkey, 0);
-                            if let Some(entry) = state.participants.get_mut(&pubkey) {
-                                entry.profile = Some(profile);
-                            }
-                            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+                    ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+                        members: new_members,
+                        ..
+                    }) => {
+                        members = new_members;
+                        if let Some(state) = &fold {
+                            sink.send(snapshot(state, &members));
                         }
                     }
-                    ChannelRunnerEvent::MembersChanged => {}
                     ChannelRunnerEvent::ChatMessage { .. } => {}
                 }
             }
@@ -394,13 +424,8 @@ impl RecoveryLobbyHandle {
         self.send(&RecoveryLobbyMessage::CancelLobby, &[]).await
     }
 
-    async fn send(
-        &self,
-        msg: &RecoveryLobbyMessage,
-        e_tags: &[EventId],
-    ) -> Result<SendOutcome> {
-        let draft =
-            ChannelMessageDraft::app(KIND_FROSTSNAP_RECOVERY_LOBBY, msg, e_tags.to_vec())?;
+    async fn send(&self, msg: &RecoveryLobbyMessage, e_tags: &[EventId]) -> Result<SendOutcome> {
+        let draft = ChannelMessageDraft::app(KIND_FROSTSNAP_RECOVERY_LOBBY, msg, e_tags.to_vec())?;
         self.runner_handle.dispatch_signed(draft).await
     }
 }
@@ -441,7 +466,6 @@ mod tests {
             RecoveryParticipantInfo {
                 pubkey: who,
                 joined_at_secs: 0,
-                profile: None,
                 posted_shares: posted,
                 left: false,
             },
@@ -449,8 +473,8 @@ mod tests {
     }
 
     fn dummy_share_image(idx: u16) -> frostsnap_core::schnorr_fun::frost::ShareImage {
-        use frostsnap_core::schnorr_fun::fun::{marker::Zero, G, Point};
         use core::num::NonZeroU32;
+        use frostsnap_core::schnorr_fun::fun::{marker::Zero, Point, G};
         frostsnap_core::schnorr_fun::frost::ShareImage {
             index: frostsnap_core::schnorr_fun::frost::ShareIndex::from(
                 NonZeroU32::new(u32::from(idx) + 1).unwrap(),
@@ -562,18 +586,28 @@ pub fn my_local_devices(
 // =============================================================================
 
 fn upsert_participant(state: &mut RecoveryLobbyState, pubkey: PublicKey, joined_at_secs: u64) {
-    state.participants.entry(pubkey).or_insert(RecoveryParticipantInfo {
-        pubkey,
-        joined_at_secs,
-        profile: None,
-        posted_shares: Vec::new(),
-        left: false,
-    });
+    state
+        .participants
+        .entry(pubkey)
+        .or_insert(RecoveryParticipantInfo {
+            pubkey,
+            joined_at_secs,
+            posted_shares: Vec::new(),
+            left: false,
+        });
+}
+
+fn snapshot(state: &RecoveryLobbyState, members: &[GroupMember]) -> RecoveryLobbyEvent {
+    RecoveryLobbyEvent::StateChanged(RecoveryLobbySnapshot {
+        state: state.clone(),
+        members: members.to_vec(),
+    })
 }
 
 fn process_event(
     inner_event: &Event,
     state: &mut RecoveryLobbyState,
+    members: &[GroupMember],
     state_arc: &std::sync::Arc<std::sync::Mutex<crate::channel_runner::ChannelState>>,
     sink: &impl Sink<RecoveryLobbyEvent>,
     fingerprint: Fingerprint,
@@ -601,7 +635,7 @@ fn process_event(
     match msg {
         RecoveryLobbyMessage::Presence => {
             upsert_participant(state, author, inner_event.created_at.as_u64());
-            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+            sink.send(snapshot(state, members));
         }
         RecoveryLobbyMessage::Share(post) => {
             upsert_participant(state, author, inner_event.created_at.as_u64());
@@ -615,7 +649,7 @@ fn process_event(
                 entry.posted_shares.push(event_id);
             }
             recompute_current_recovery(state, fingerprint);
-            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+            sink.send(snapshot(state, members));
             if let Some(recovered) = &state.current_recovery {
                 sink.send(RecoveryLobbyEvent::RecoveryAvailable(recovered.clone()));
             }
@@ -656,7 +690,7 @@ fn process_event(
                     let key_name = state.metadata.key_name.clone();
                     let purpose = state.metadata.purpose;
                     state.finished = Some(finished.clone());
-                    sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+                    sink.send(snapshot(state, members));
                     sink.send(RecoveryLobbyEvent::Finished(
                         finished, ras, key_name, purpose,
                     ));
@@ -670,7 +704,7 @@ fn process_event(
             if let Some(entry) = state.participants.get_mut(&author) {
                 entry.left = true;
             }
-            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+            sink.send(snapshot(state, members));
         }
         RecoveryLobbyMessage::CancelLobby => {
             let Some(leader) = leader else {
@@ -685,7 +719,7 @@ fn process_event(
                 return;
             }
             state.cancelled = true;
-            sink.send(RecoveryLobbyEvent::StateChanged(state.clone()));
+            sink.send(snapshot(state, members));
             sink.send(RecoveryLobbyEvent::Cancelled);
         }
     }
@@ -729,4 +763,3 @@ fn recompute_current_recovery(state: &mut RecoveryLobbyState, fingerprint: Finge
         None => None,
     };
 }
-

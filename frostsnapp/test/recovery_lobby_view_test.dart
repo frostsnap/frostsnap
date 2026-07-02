@@ -69,16 +69,22 @@ NostrProfile _profile(String displayName) =>
 
 RecoveryParticipantInfo _participant({
   required int seed,
-  String? name,
   List<EventId> posted = const [],
   bool left = false,
 }) => RecoveryParticipantInfo(
   pubkey: _pk(seed),
   joinedAtSecs: seed,
-  profile: name == null ? null : _profile(name),
   postedShares: posted,
   left: left,
 );
+
+GroupMember _member(int seed, String name) =>
+    GroupMember(pubkey: _pk(seed), profile: _profile(name));
+
+RecoveryLobbySnapshot _snap(
+  RecoveryLobbyState state, {
+  List<GroupMember> members = const [],
+}) => RecoveryLobbySnapshot(state: state, members: members);
 
 class _FakeShareImage implements ShareImage {
   @override
@@ -132,7 +138,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: null,
+          snapshot: null,
           isLeader: true,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -155,7 +161,7 @@ void main() {
   ) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
-      participants: {me: _participant(seed: 0x11, name: 'me')},
+      participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
       finished: null,
@@ -164,7 +170,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: true,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -192,9 +198,9 @@ void main() {
     final state = RecoveryLobbyState(
       metadata: _meta(),
       participants: {
-        me: _participant(seed: 0x11, name: 'me', posted: [_eid(1)]),
-        peer1: _participant(seed: 0x22, name: 'peer 1', posted: [_eid(2)]),
-        peer2: _participant(seed: 0x33, name: 'peer 2', posted: [_eid(3)]),
+        me: _participant(seed: 0x11, posted: [_eid(1)]),
+        peer1: _participant(seed: 0x22, posted: [_eid(2)]),
+        peer2: _participant(seed: 0x33, posted: [_eid(3)]),
       },
       shares: const [],
       currentRecovery: RecoveredKey(
@@ -207,7 +213,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: true,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -238,7 +244,7 @@ void main() {
     (tester) async {
       final state = RecoveryLobbyState(
         metadata: _meta(),
-        participants: {me: _participant(seed: 0x11, name: 'me')},
+        participants: {me: _participant(seed: 0x11)},
         shares: const [],
         currentRecovery: RecoveredKey(
           accessStructureRef: _asref(),
@@ -250,7 +256,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           RecoveryLobbyView(
-            state: state,
+            snapshot: _snap(state),
             isLeader: true,
             myPubkey: me,
             inviteLink: 'frostsnap://recovery/deadbeef',
@@ -275,7 +281,7 @@ void main() {
   testWidgets('finished + persisting shows Persisting banner', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
-      participants: {me: _participant(seed: 0x11, name: 'me')},
+      participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
       finished: FinishedRecovery(
@@ -287,7 +293,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: true,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -312,7 +318,7 @@ void main() {
   testWidgets('recovered state shows Recovered banner', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
-      participants: {me: _participant(seed: 0x11, name: 'me')},
+      participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
       finished: FinishedRecovery(
@@ -324,7 +330,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: false,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -345,7 +351,7 @@ void main() {
   testWidgets('cancelled state shows cancellation notice', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
-      participants: {me: _participant(seed: 0x11, name: 'me')},
+      participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
       finished: null,
@@ -354,7 +360,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: false,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -380,7 +386,7 @@ void main() {
     var leaves = 0;
     final state = RecoveryLobbyState(
       metadata: _meta(),
-      participants: {me: _participant(seed: 0x11, name: 'me')},
+      participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
       finished: null,
@@ -389,7 +395,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: false,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -417,7 +423,7 @@ void main() {
     var cancels = 0;
     final state = RecoveryLobbyState(
       metadata: _meta(),
-      participants: {me: _participant(seed: 0x11, name: 'me')},
+      participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
       finished: null,
@@ -426,7 +432,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: true,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -453,7 +459,7 @@ void main() {
     final state = RecoveryLobbyState(
       metadata: _meta(),
       participants: {
-        me: _participant(seed: 0x11, name: 'me', posted: [_eid(1), _eid(2)]),
+        me: _participant(seed: 0x11, posted: [_eid(1), _eid(2)]),
       },
       shares: [
         _observedShare(eid: 1, author: 0x11, deviceName: 'kitchen frostsnap'),
@@ -466,7 +472,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: true,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',
@@ -502,7 +508,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           RecoveryLobbyView(
-            state: state,
+            snapshot: _snap(state),
             isLeader: false,
             myPubkey: me,
             inviteLink: 'frostsnap://recovery/deadbeef',
@@ -523,6 +529,46 @@ void main() {
     },
   );
 
+  testWidgets('names resolve from the snapshot member block', (tester) async {
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      participants: {
+        me: _participant(seed: 0x11),
+        peer1: _participant(seed: 0x22),
+      },
+      shares: const [],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          snapshot: _snap(
+            state,
+            members: [_member(0x11, 'floyd2'), _member(0x22, 'floyd')],
+          ),
+          isLeader: false,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {},
+          onLeave: () async {},
+        ),
+      ),
+    );
+    // Names come from the runner-owned member block on the snapshot —
+    // the walkthrough bug (joiners seeing pubkeys) is structurally
+    // impossible now that the lobby fold never carries profiles.
+    expect(find.text('floyd2 (You)'), findsOneWidget);
+    expect(find.text('floyd'), findsOneWidget);
+  });
+
   testWidgets('self shows You even without any profile', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
@@ -535,7 +581,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         RecoveryLobbyView(
-          state: state,
+          snapshot: _snap(state),
           isLeader: false,
           myPubkey: me,
           inviteLink: 'frostsnap://recovery/deadbeef',

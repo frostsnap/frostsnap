@@ -12,10 +12,9 @@ use frostsnap_core::DeviceId;
 use frostsnap_macros::broadcast_handle;
 use frostsnap_nostr::channel::ChannelKeys;
 pub use frostsnap_nostr::keygen::{
-    DeviceKind, DeviceRegistration, LobbyState, ParticipantInfo, ParticipantStatus, ResolvedKeygen,
-    SelectedCoordinator, SelectedParticipant,
+    DeviceKind, DeviceRegistration, LobbySnapshot, LobbyState, ParticipantInfo, ParticipantStatus,
+    ResolvedKeygen, SelectedCoordinator, SelectedParticipant,
 };
-use frostsnap_nostr::channel_runner::NostrProfile;
 use frostsnap_nostr::keygen::{LobbyEvent, LobbyHandle};
 use frostsnap_nostr::{Client, EventId, Keys, PublicKey};
 use std::sync::{Arc, Mutex};
@@ -54,7 +53,6 @@ pub struct _ParticipantInfo {
     pub status: ParticipantStatus,
     pub devices: Vec<DeviceRegistration>,
     pub register_event_id: Option<EventId>,
-    pub profile: Option<NostrProfile>,
 }
 
 /// Mirrors `frostsnap_nostr::keygen::ResolvedKeygen`. Carries the
@@ -156,8 +154,28 @@ pub struct _SelectedCoordinator {
     pub pubkey: PublicKey,
 }
 
+/// Mirrors `frostsnap_nostr::keygen::LobbySnapshot` — the single
+/// stream payload: app fold in `state`, runner-owned member block
+/// (names/avatars, keyed by pubkey) in `members`.
+#[frb(
+    mirror(LobbySnapshot),
+    non_opaque,
+    dart_code = "
+  NostrProfile? profileOf(PublicKey pubkey) {
+    for (final m in members) {
+      if (m.pubkey == pubkey) return m.profile;
+    }
+    return null;
+  }
+"
+)]
+pub struct _LobbySnapshot {
+    pub state: LobbyState,
+    pub members: Vec<crate::api::nostr::GroupMember>,
+}
+
 // ============================================================================
-// Sink: LobbyEvent → BehaviorBroadcast<LobbyState>
+// Sink: LobbyEvent → BehaviorBroadcast<LobbySnapshot>
 // ============================================================================
 
 /// Encrypted-subchannel keys + the resolved keygen, captured from
@@ -172,7 +190,7 @@ pub(crate) struct SessionInit {
 
 #[derive(Clone)]
 struct LobbyBridgeSink {
-    broadcast: BehaviorBroadcast<LobbyState>,
+    broadcast: BehaviorBroadcast<LobbySnapshot>,
     session_init: Arc<Mutex<Option<SessionInit>>>,
     state_changed: Arc<Notify>,
 }
@@ -208,8 +226,8 @@ impl Sink<LobbyEvent> for LobbyBridgeSink {
                 // `CancelLobby` arriving with no participant change),
                 // synthesise a final snapshot so Dart sees the latch.
                 if let Some(mut snapshot) = self.broadcast.latest() {
-                    if !snapshot.cancelled {
-                        snapshot.cancelled = true;
+                    if !snapshot.state.cancelled {
+                        snapshot.state.cancelled = true;
                         self.broadcast.add(&snapshot);
                     }
                 }
@@ -239,7 +257,7 @@ pub struct KeygenStartArgs {
 // RemoteLobbyHandle
 // ============================================================================
 
-broadcast_handle! { pub struct LobbyStateBcast(pub BehaviorBroadcast<LobbyState>); }
+broadcast_handle! { pub struct LobbyStateBcast(pub BehaviorBroadcast<LobbySnapshot>); }
 
 /// Opaque handle returned by `NostrClient::{create,join}_remote_lobby`.
 /// Drives the lobby round: state subscription plus the async methods
@@ -249,7 +267,7 @@ pub struct RemoteLobbyHandle {
     handle: LobbyHandle,
     keys: Keys,
     invite_link: String,
-    state_broadcast: BehaviorBroadcast<LobbyState>,
+    state_broadcast: BehaviorBroadcast<LobbySnapshot>,
     client: Client,
     session_init: Arc<Mutex<Option<SessionInit>>>,
     state_changed: Arc<Notify>,
@@ -260,7 +278,7 @@ pub struct RemoteLobbyHandle {
 /// `Arc`s.
 #[frb(ignore)]
 pub(crate) struct LobbyBridge {
-    pub broadcast: BehaviorBroadcast<LobbyState>,
+    pub broadcast: BehaviorBroadcast<LobbySnapshot>,
     pub session_init: Arc<Mutex<Option<SessionInit>>>,
     pub state_changed: Arc<Notify>,
 }
@@ -288,7 +306,7 @@ impl RemoteLobbyHandle {
     /// (`NostrClient::{create,join}_remote_lobby`) passes the sink into
     /// `LobbyClient::run` and hands the bridge back to `new`.
     pub(crate) fn build_bridge() -> (LobbyBridge, impl Sink<LobbyEvent> + Clone) {
-        let broadcast = BehaviorBroadcast::seeded(LobbyState::default());
+        let broadcast = BehaviorBroadcast::seeded(LobbySnapshot::default());
         let session_init: Arc<Mutex<Option<SessionInit>>> = Default::default();
         let state_changed: Arc<Notify> = Arc::new(Notify::new());
         let sink = LobbyBridgeSink {
@@ -409,7 +427,8 @@ impl RemoteLobbyHandle {
             tokio::pin!(notified);
             notified.as_mut().enable();
 
-            if let Some(state) = self.state_broadcast.latest() {
+            if let Some(snapshot) = self.state_broadcast.latest() {
+                let state = &snapshot.state;
                 if state.cancelled {
                     return Err(anyhow!("lobby was cancelled"));
                 }

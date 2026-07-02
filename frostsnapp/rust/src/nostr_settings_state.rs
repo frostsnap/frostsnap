@@ -153,10 +153,7 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
                         error = %e,
                         "stored identity row failed to deserialize; clearing",
                     );
-                    tx.execute(
-                        "DELETE FROM nostr_settings WHERE key = 'identity'",
-                        [],
-                    )?;
+                    tx.execute("DELETE FROM nostr_settings WHERE key = 'identity'", [])?;
                     None
                 }
             },
@@ -212,10 +209,7 @@ impl Persist<rusqlite::Connection> for NostrSettingsState {
                             )?;
                         }
                         None => {
-                            tx.execute(
-                                "DELETE FROM nostr_settings WHERE key = 'identity'",
-                                [],
-                            )?;
+                            tx.execute("DELETE FROM nostr_settings WHERE key = 'identity'", [])?;
                         }
                     }
                     // Belt-and-suspenders: nsec row is no longer used;
@@ -376,8 +370,6 @@ mod tests {
         // identity — this is what identity_pubkey()'s expect() relies
         // on.
         loaded.keys().expect("valid nsec parses to Keys");
-        loaded
-            .public_key()
-            .expect("valid nsec derives a pubkey");
+        loaded.public_key().expect("valid nsec derives a pubkey");
     }
 }

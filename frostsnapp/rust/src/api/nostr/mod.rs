@@ -20,7 +20,7 @@ use frostsnap_nostr::{
     channel::{parse_frostsnap_link, parse_keygen_link},
     keygen::{LobbyChannelMetadata, LobbyClient},
     ChannelClient, ChannelHandle as InnerChannelHandle, ChannelInitData, ChannelKeys,
-    ChannelRunner, Client, Keys, NostrDatabaseExt, NostrLMDB, ToBech32,
+    ChannelRunner, Client, Keys, NostrDatabaseExt, NostrLMDB,
 };
 use rusqlite::Connection;
 use std::{
@@ -42,7 +42,6 @@ fn now_secs() -> u64 {
 /// user-blocking operation and we'd rather wait than reject a
 /// valid nsec on a flaky network.
 const IMPORT_PROFILE_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
-
 
 pub use frostsnap_nostr::{
     ChannelEvent, ChannelParticipant, ChannelSecret, ConfirmedSubsetEntry, ConnectionState,
@@ -313,9 +312,8 @@ impl NostrSettings {
     /// Clear the identity (and its nsec) entirely.
     pub fn clear_identity(&mut self) -> Result<()> {
         let mut conn = self.db.lock().unwrap();
-        self.settings.mutate2(&mut *conn, |st, update| {
-            st.set_identity(None, update)
-        })?;
+        self.settings
+            .mutate2(&mut *conn, |st, update| st.set_identity(None, update))?;
         drop(conn);
         self.emit_identity();
         tracing::info!("Nostr identity cleared");
@@ -530,10 +528,7 @@ impl ChannelHandle {
 
     /// Pump a wallet-stream tx into the channel runner so it can fold
     /// chat→tx correlations.
-    pub async fn notify_tx_observed(
-        &self,
-        tx: crate::api::bitcoin::Transaction,
-    ) -> Result<()> {
+    pub async fn notify_tx_observed(&self, tx: crate::api::bitcoin::Transaction) -> Result<()> {
         let wallet_tx = frostsnap_coordinator::bitcoin::wallet::Transaction {
             inner: std::sync::Arc::new(tx.inner.clone()),
             txid: tx.inner.compute_txid(),
@@ -636,10 +631,7 @@ impl NostrClient {
     /// the Dart layer's Import button before calling
     /// `NostrSettings::set_imported_identity`. 30-second timeout
     /// because this is a one-time user-blocking operation.
-    pub async fn fetch_profile_for_import(
-        &self,
-        nsec: String,
-    ) -> Result<NostrProfile> {
+    pub async fn fetch_profile_for_import(&self, nsec: String) -> Result<NostrProfile> {
         let keys = Keys::parse(&nsec)?;
         let pubkey: PublicKey = keys.public_key().into();
         match self
@@ -859,7 +851,7 @@ impl NostrClient {
 /// §"Emission gate" for the rationale.
 async fn await_first_state(
     bridge: &self::remote_recovery::RecoveryBridge,
-) -> Result<BehaviorBroadcast<frostsnap_nostr::recovery::RecoveryLobbyState>> {
+) -> Result<BehaviorBroadcast<frostsnap_nostr::recovery::RecoveryLobbySnapshot>> {
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             let notified = bridge.ready.notified();
@@ -867,7 +859,9 @@ async fn await_first_state(
             notified.as_mut().enable();
 
             if *bridge.cancelled_pre_state.lock().unwrap() {
-                return Err(anyhow!("recovery channel malformed — metadata decode failed"));
+                return Err(anyhow!(
+                    "recovery channel malformed — metadata decode failed"
+                ));
             }
             if let Some(bcast) = bridge.broadcast.lock().unwrap().as_ref().cloned() {
                 return Ok(bcast);
@@ -883,7 +877,7 @@ async fn await_first_state(
 // Nsec - Our newtype wrapper for Nostr secret keys
 // ============================================================================
 
-pub use frostsnap_nostr::{Nsec, NostrIdentity};
+pub use frostsnap_nostr::{NostrIdentity, Nsec};
 
 /// FRB mirror for `frostsnap_nostr::Nsec` (moved out of this crate;
 /// see the `nostr_identity_type` plan). The methods are re-exposed
@@ -1204,10 +1198,6 @@ pub enum _ChannelEvent {
     GroupMetadata {
         members: Vec<GroupMember>,
     },
-    MemberProfileUpdated {
-        pubkey: PublicKey,
-        profile: NostrProfile,
-    },
     Signing {
         event: SigningEvent,
         pending: bool,
@@ -1228,7 +1218,6 @@ pub struct _ChannelParticipant {
     pub pubkey: PublicKey,
     pub share_indices: Vec<u32>,
 }
-
 
 /// Compute the UI-shape `SigningDetails` for a sign task. Dart calls
 /// this on demand; the field used to ride embedded on

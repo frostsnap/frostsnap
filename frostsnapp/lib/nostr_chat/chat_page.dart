@@ -701,9 +701,6 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         }
         _nostrContext!.updateProfilesFromChannel(members);
 
-      case ChannelEvent_MemberProfileUpdated(:final pubkey, :final profile):
-        _nostrContext!.updateMemberProfile(pubkey, profile);
-
       case ChannelEvent_Signing(:final event, :final pending):
         // Round decisions (RoundConfirmed, RoundAborted) are local
         // decisions derived from the settling timer; they don't carry a
@@ -1354,9 +1351,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     if (nsec == null || !mounted) return;
     setState(() => state.cancelled = true);
     try {
-      await _handle!.sendSignCancel(
-        requestId: state.request.eventId,
-      );
+      await _handle!.sendSignCancel(requestId: state.request.eventId);
     } catch (e) {
       if (mounted) {
         setState(() => state.cancelled = false);
@@ -1791,10 +1786,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
           memo: content,
         );
       } else {
-        await _handle!.sendMessage(
-          content: content,
-          replyTo: replyToId,
-        );
+        await _handle!.sendMessage(content: content, replyTo: replyToId);
       }
     } catch (e) {
       if (mounted) {
@@ -1821,10 +1813,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
       );
       allBinonces.add(binonces);
     }
-    await _handle!.sendSignOffer(
-      requestId: requestId,
-      binonces: allBinonces,
-    );
+    await _handle!.sendSignOffer(requestId: requestId, binonces: allBinonces);
   }
 
   Future<void> _retryMessage(ChatMessage message) async {

@@ -145,8 +145,8 @@ class LobbyAndKeygenController extends ChangeNotifier {
     required this.walletName,
   }) : _myPubkey = handle.myPubkey() {
     deviceSetup.addListener(notifyListeners);
-    _stateSub = handle.subState().watch().listen((state) {
-      _state = state;
+    _stateSub = handle.subState().watch().listen((snapshot) {
+      _snapshot = snapshot;
       notifyListeners();
     });
   }
@@ -167,9 +167,13 @@ class LobbyAndKeygenController extends ChangeNotifier {
   /// Async keygen work can resume after the page has been dismissed.
   bool _disposed = false;
 
-  LobbyState? _state;
-  LobbyState? get lobbyState => _state;
-  StreamSubscription<LobbyState>? _stateSub;
+  LobbySnapshot? _snapshot;
+  LobbyState? get lobbyState => _snapshot?.state;
+  StreamSubscription<LobbySnapshot>? _stateSub;
+
+  /// Names/avatars from the snapshot's runner-owned member block —
+  /// the lobby state deliberately carries no profiles.
+  NostrProfile? profileOf(PublicKey pk) => _snapshot?.profileOf(pk);
 
   /// Shared with `_DeviceSetupDialog` so typed names + upgrade state
   /// survive across dialog close / reopen. Owned by this controller —
@@ -193,7 +197,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
   }
 
   int get totalDevices {
-    final s = _state;
+    final s = _snapshot?.state;
     if (s == null) return 0;
     return s.participants.values.fold(0, (sum, p) {
       if (_excludedHex.contains(p.pubkey.toHex())) return sum;
@@ -215,7 +219,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
   }
 
   bool get meIsReady {
-    final s = _state;
+    final s = _snapshot?.state;
     if (s == null) return false;
     return s.participants.values.any(
       (p) => p.pubkey == _myPubkey && p.status == ParticipantStatus.ready,
@@ -236,7 +240,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
   }
 
   void goToReview() {
-    final s = _state;
+    final s = _snapshot?.state;
     if (s == null || !s.allReady()) return;
     _pendingThreshold ??= recommendedThreshold;
     _isAnimationForward = true;
@@ -294,7 +298,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
   List<DeviceId> get localDevices => _localDevices;
 
   List<DeviceId> _computeLocalDevices() {
-    final s = _state;
+    final s = _snapshot?.state;
     final pending = s?.keygen;
     if (pending == null) return const [];
     for (final p in pending.participants) {
@@ -327,7 +331,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
 
   /// Host-only. Publish `StartKeygen`.
   Future<void> startKeygen() async {
-    final s = _state;
+    final s = _snapshot?.state;
     if (s == null) throw StateError('no lobby state yet');
     final threshold = _pendingThreshold ?? recommendedThreshold;
     final selected = <SelectedCoordinator>[];
@@ -347,7 +351,7 @@ class LobbyAndKeygenController extends ChangeNotifier {
   }
 
   Future<void> ackKeygen() async {
-    final s = _state;
+    final s = _snapshot?.state;
     if (s == null || s.keygen == null) {
       throw StateError('no pending keygen to ack');
     }
@@ -1659,7 +1663,8 @@ class _ParticipantRowState extends State<_ParticipantRow> {
       if (name != null && name.isNotEmpty) return '$name (You)';
       return 'You';
     }
-    final peerName = p.profile?.displayName ?? p.profile?.name;
+    final profile = widget.ctrl.profileOf(p.pubkey);
+    final peerName = profile?.displayName ?? profile?.name;
     if (peerName != null && peerName.isNotEmpty) return peerName;
     return _shortPubkey(p.pubkey);
   }
@@ -1786,7 +1791,10 @@ class _ParticipantRowState extends State<_ParticipantRow> {
               leading: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  NostrAvatar(pubkey: p.pubkey, profile: p.profile),
+                  NostrAvatar(
+                    pubkey: p.pubkey,
+                    profile: widget.ctrl.profileOf(p.pubkey),
+                  ),
                   if (widget.isInitiator)
                     Positioned(
                       right: -2,

@@ -10,7 +10,6 @@
 //!   `ChannelEvent::Signing { event, pending }`.
 
 use crate::channel::ParticipantShares;
-use crate::channel_runner::NostrProfile;
 use crate::{EventId, PublicKey};
 use frostsnap_core::{
     coordinator::{ParticipantBinonces, ParticipantSignatureShares},
@@ -22,12 +21,10 @@ use nostr_sdk::{Event, TagKind};
 // Channel events (top-level sink stream)
 // ============================================================================
 
-/// A member of the channel group with their profile.
-#[derive(Debug, Clone)]
-pub struct GroupMember {
-    pub pubkey: PublicKey,
-    pub profile: Option<NostrProfile>,
-}
+/// Re-exported: member state is owned by the channel runner (block
+/// pattern — see `ChannelInfraEvent::Members`); this alias keeps the
+/// established `frostsnap_nostr::GroupMember` path stable.
+pub use crate::channel_runner::GroupMember;
 
 /// Events emitted by ChannelClient through the Sink.
 /// Dart receives these and builds the chat + signing state.
@@ -81,15 +78,12 @@ pub enum ChannelEvent {
         signing_start_event: Option<EventId>,
     },
     ConnectionState(ConnectionState),
+    /// The channel's full member block (runner-owned; block pattern).
+    /// Emitted unperturbed on every membership/profile change —
+    /// consumers display it, they never reconstruct member state
+    /// from deltas.
     GroupMetadata {
         members: Vec<GroupMember>,
-    },
-    /// A single member's profile entered or updated channel state.
-    /// Per-author granularity, complementing `GroupMetadata` which
-    /// refires on every membership change.
-    MemberProfileUpdated {
-        pubkey: PublicKey,
-        profile: NostrProfile,
     },
     Signing {
         event: SigningEvent,

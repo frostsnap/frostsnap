@@ -1,7 +1,7 @@
 use crate::channel::{ChannelKeys, ChannelSecret};
 use crate::channel_runner::{
-    decode_bincode, extract_e_tags, ChannelMessageDraft, ChannelRunner, ChannelRunnerEvent,
-    ChannelRunnerHandle, NostrProfile, SendOutcome, BINCODE_CONFIG,
+    decode_bincode, extract_e_tags, ChannelInfraEvent, ChannelMessageDraft, ChannelRunner,
+    ChannelRunnerEvent, ChannelRunnerHandle, GroupMember, SendOutcome, BINCODE_CONFIG,
 };
 use crate::{EventId, PublicKey};
 use anyhow::Result;
@@ -141,11 +141,16 @@ pub struct ParticipantInfo {
     /// Consumed by `StartKeygen`'s e-tags for ordering + impersonation
     /// checks, so it stays sticky to the most recent `Register`.
     pub register_event_id: Option<EventId>,
-    /// Profile folded in from the runner's
-    /// `MemberProfileUpdated` events (in-channel kind 0 OR
-    /// external public kind 0 fetch via `spawn_profile_fetch`).
-    /// `None` until either source produces a value.
-    pub profile: Option<NostrProfile>,
+}
+
+/// The consumer-facing snapshot: the lobby's app fold plus the
+/// channel's member block (runner-owned; see
+/// `ChannelInfraEvent::Members`). One stream, one payload — names
+/// and avatars come from `members`, protocol facts from `state`.
+#[derive(Clone, Debug, Default)]
+pub struct LobbySnapshot {
+    pub state: LobbyState,
+    pub members: Vec<GroupMember>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -261,7 +266,6 @@ impl LobbyState {
                 status: ParticipantStatus::Joining,
                 devices: Vec::new(),
                 register_event_id: None,
-                profile: None,
             });
     }
 
@@ -279,7 +283,6 @@ impl LobbyState {
                 status: ParticipantStatus::Joining,
                 devices: Vec::new(),
                 register_event_id: None,
-                profile: None,
             });
         entry.devices = devices;
         entry.register_event_id = Some(event_id);
@@ -308,7 +311,7 @@ impl LobbyState {
 #[derive(Clone, Debug)]
 pub enum LobbyEvent {
     /// Lobby state changed.
-    LobbyChanged(LobbyState),
+    LobbyChanged(LobbySnapshot),
     /// A `StartKeygen` event has been received, its references resolved, and —
     /// because this coordinator is in the selected set — the private subchannel
     /// secret has been decrypted. The caller should now spin up a
@@ -501,6 +504,8 @@ impl LobbyClient {
         let event_loop_keys = local_nostr_keys.clone();
         tokio::spawn(async move {
             let mut lobby = LobbyState::default();
+            // Latest member block from the runner (block pattern).
+            let mut members: Vec<GroupMember> = Vec::new();
             let mut events_by_id: HashMap<EventId, Event> = HashMap::new();
             while let Some(event) = events.recv().await {
                 match event {
@@ -529,7 +534,7 @@ impl LobbyClient {
                                     );
                                 }
                             }
-                            sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+                            sink.send(snapshot(&lobby, &members));
                         }
                     }
                     ChannelRunnerEvent::AppEvent { inner_event, ack } => {
@@ -537,6 +542,7 @@ impl LobbyClient {
                             process_event(
                                 &inner_event,
                                 &mut lobby,
+                                &members,
                                 &mut events_by_id,
                                 &sink,
                                 &client,
@@ -554,17 +560,12 @@ impl LobbyClient {
                             let _ = ack.send(());
                         }
                     }
-                    ChannelRunnerEvent::MembersChanged => {}
-                    ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile } => {
-                        // Upsert: profile events are independent of
-                        // Presence/Register on the wire and can arrive
-                        // first. Create the slot if missing so the
-                        // profile isn't dropped.
-                        lobby.upsert_joining(pubkey);
-                        if let Some(entry) = lobby.participants.get_mut(&pubkey) {
-                            entry.profile = Some(profile);
-                        }
-                        sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+                    ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+                        members: new_members,
+                        ..
+                    }) => {
+                        members = new_members;
+                        sink.send(snapshot(&lobby, &members));
                     }
                     ChannelRunnerEvent::ChatMessage { .. } => {}
                 }
@@ -692,9 +693,17 @@ impl LobbyHandle {
 // =============================================================================
 
 #[allow(clippy::too_many_arguments)]
+fn snapshot(state: &LobbyState, members: &[GroupMember]) -> LobbyEvent {
+    LobbyEvent::LobbyChanged(LobbySnapshot {
+        state: state.clone(),
+        members: members.to_vec(),
+    })
+}
+
 async fn process_event(
     inner_event: &Event,
     lobby: &mut LobbyState,
+    members: &[GroupMember],
     events_by_id: &mut HashMap<EventId, Event>,
     sink: &impl Sink<LobbyEvent>,
     client: &Client,
@@ -719,11 +728,11 @@ async fn process_event(
     match msg {
         KeygenLobbyMessage::Presence => {
             lobby.upsert_joining(author);
-            sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+            sink.send(snapshot(lobby, members));
         }
         KeygenLobbyMessage::Register { devices } => {
             lobby.process_register(author, event_id, devices);
-            sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+            sink.send(snapshot(lobby, members));
         }
         KeygenLobbyMessage::StartKeygen { invites, threshold } => {
             if !is_initiator {
@@ -817,7 +826,7 @@ async fn process_event(
                 acked: vec![author],
             };
             lobby.keygen = Some(resolved.clone());
-            sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+            sink.send(snapshot(lobby, members));
 
             // Selected receivers also get `KeygenResolved` (carrying
             // the decrypted subchannel keys) so they can spin up the
@@ -860,7 +869,7 @@ async fn process_event(
             }
             resolved.acked.push(author);
             let now_all_acked = resolved.all_acked();
-            sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+            sink.send(snapshot(lobby, members));
             if now_all_acked {
                 sink.send(LobbyEvent::AllAcked);
             }
@@ -879,7 +888,7 @@ async fn process_event(
                 lobby.cancelled = true;
                 sink.send(LobbyEvent::Cancelled);
             } else if removed {
-                sink.send(LobbyEvent::LobbyChanged(lobby.clone()));
+                sink.send(snapshot(lobby, members));
             }
         }
         KeygenLobbyMessage::CancelLobby => {

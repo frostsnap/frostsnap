@@ -146,6 +146,45 @@ impl SendOutcome {
 // Events emitted by the runner
 // =============================================================================
 
+/// A member of the channel with their profile (`None` until either
+/// an in-channel kind-0 or an external fetch produces one).
+#[derive(Debug, Clone)]
+pub struct GroupMember {
+    pub pubkey: PublicKey,
+    pub profile: Option<NostrProfile>,
+}
+
+/// Channel-infrastructure events — everything about the CHANNEL
+/// (membership, profiles) rather than the app protocol running over
+/// it. `Clone` and self-contained so app wrappers (keygen lobby,
+/// recovery lobby, chat) forward them verbatim in a single match arm
+/// and never fold them.
+///
+/// Block pattern: every emission carries the FULL current member
+/// state (snapshotted from the runner's fold — the only fold), plus
+/// a [`MembersChange`] describing what changed relative to the
+/// previous emission for consumers that animate insertions/updates.
+/// Downstream layers hold no member state of their own; the latest
+/// event IS the state.
+#[derive(Debug, Clone)]
+pub enum ChannelInfraEvent {
+    Members {
+        members: Vec<GroupMember>,
+        change: MembersChange,
+    },
+}
+
+/// What changed in [`ChannelInfraEvent::Members`] relative to the
+/// previous emission.
+#[derive(Debug, Clone)]
+pub enum MembersChange {
+    /// A pubkey was seen in the channel for the first time (profile
+    /// not yet known).
+    MemberAdded(PublicKey),
+    /// A member's profile entered or updated the runner's fold.
+    ProfileUpdated(PublicKey),
+}
+
 #[derive(Debug)]
 pub enum ChannelRunnerEvent {
     ChatMessage {
@@ -165,15 +204,8 @@ pub enum ChannelRunnerEvent {
         inner_event: Event,
         ack: Option<oneshot::Sender<()>>,
     },
-    MembersChanged,
-    /// A single member's profile entered or updated `state.members`.
-    /// Per-author granularity, complementing the coarser
-    /// `MembersChanged` event which only signals "set of members
-    /// changed."
-    MemberProfileUpdated {
-        pubkey: PublicKey,
-        profile: NostrProfile,
-    },
+    /// Channel-infrastructure pass-through — see [`ChannelInfraEvent`].
+    Channel(ChannelInfraEvent),
     CreationEventReceived,
 }
 
@@ -576,10 +608,12 @@ impl ChannelRunner {
                                 }
                             }
                         };
-                        if let Some(profile) = updated {
-                            let _ = event_tx.send(ChannelRunnerEvent::MembersChanged).await;
+                        if updated.is_some() {
                             let _ = event_tx
-                                .send(ChannelRunnerEvent::MemberProfileUpdated { pubkey, profile })
+                                .send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+                                    members: members_snapshot(&state),
+                                    change: MembersChange::ProfileUpdated(pubkey),
+                                }))
                                 .await;
                         }
                     }
@@ -837,18 +871,6 @@ impl ChannelRunnerHandle {
         self.publish_prepared(prepared).await
     }
 
-    /// Public, profile-only view of the channel membership. Slot
-    /// metadata (source, ordering) stays runner-internal.
-    pub fn members(&self) -> HashMap<PublicKey, Option<NostrProfile>> {
-        self.state
-            .lock()
-            .unwrap()
-            .members
-            .iter()
-            .map(|(pk, slot_opt)| (*pk, slot_opt.as_ref().map(|s| s.profile.clone())))
-            .collect()
-    }
-
     /// Single-author profile lookup — used by the publish path's
     /// dedup check before sending a new in-channel kind 0.
     pub fn member_profile(&self, pubkey: &PublicKey) -> Option<NostrProfile> {
@@ -859,6 +881,14 @@ impl ChannelRunnerHandle {
             .get(pubkey)
             .and_then(|slot_opt| slot_opt.as_ref())
             .map(|slot| slot.profile.clone())
+    }
+
+    /// Snapshot of the runner's member fold — same payload shape as
+    /// [`ChannelInfraEvent::Members`]. The runner owns precedence
+    /// (in-channel beats external fetch, newest wins on replay);
+    /// consumers display this, they don't re-fold it.
+    pub fn group_members(&self) -> Vec<GroupMember> {
+        members_snapshot(&self.state)
     }
 
     pub fn creation_event(&self) -> Option<Event> {
@@ -945,6 +975,22 @@ impl ChannelRunnerHandle {
 // Helpers
 // =============================================================================
 
+/// Snapshot the runner's member fold for a
+/// [`ChannelInfraEvent::Members`] emission — the block-pattern
+/// payload downstream layers display without folding.
+fn members_snapshot(state: &Arc<Mutex<ChannelState>>) -> Vec<GroupMember> {
+    state
+        .lock()
+        .unwrap()
+        .members
+        .iter()
+        .map(|(pk, slot_opt)| GroupMember {
+            pubkey: *pk,
+            profile: slot_opt.as_ref().map(|slot| slot.profile.clone()),
+        })
+        .collect()
+}
+
 async fn process_inner_event_once(
     inner: &Event,
     seen_inner_ids: &mut HashSet<nostr_sdk::EventId>,
@@ -986,7 +1032,12 @@ async fn process_inner_event(
     };
     if is_new_member {
         spawn_profile_fetch(author, client.clone(), profile_tx.clone());
-        let _ = event_tx.send(ChannelRunnerEvent::MembersChanged).await;
+        let _ = event_tx
+            .send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+                members: members_snapshot(state),
+                change: MembersChange::MemberAdded(author),
+            }))
+            .await;
     }
 
     if inner.kind == Kind::Metadata {
@@ -1025,12 +1076,12 @@ async fn process_inner_event(
             }
             None => None,
         };
-        if let Some(profile) = updated {
+        if updated.is_some() {
             let _ = event_tx
-                .send(ChannelRunnerEvent::MemberProfileUpdated {
-                    pubkey: author,
-                    profile,
-                })
+                .send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+                    members: members_snapshot(state),
+                    change: MembersChange::ProfileUpdated(author),
+                }))
                 .await;
         }
         if let Some(ack) = ack {

@@ -121,8 +121,8 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
   SymmetricKey? _encryptionKey;
   bool _isLeader = true;
   PublicKey? _myPubkey;
-  StreamSubscription<RecoveryLobbyState>? _sub;
-  RecoveryLobbyState? _state;
+  StreamSubscription<RecoveryLobbySnapshot>? _sub;
+  RecoveryLobbySnapshot? _snapshot;
   bool _finishing = false;
   bool _persisting = false;
   String? _error;
@@ -221,10 +221,10 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
     }
   }
 
-  void _onState(RecoveryLobbyState state) {
+  void _onState(RecoveryLobbySnapshot snapshot) {
     if (!mounted) return;
-    setState(() => _state = state);
-    if (state.finished != null &&
+    setState(() => _snapshot = snapshot);
+    if (snapshot.state.finished != null &&
         _recoveredRef == null &&
         !_persisting &&
         _error == null) {
@@ -254,7 +254,7 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
   }
 
   Future<void> _finish() async {
-    final winning = _state?.currentRecovery?.winningShareRefs;
+    final winning = _snapshot?.state.currentRecovery?.winningShareRefs;
     if (winning == null || winning.isEmpty) return;
     setState(() {
       _finishing = true;
@@ -322,7 +322,7 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
   /// both work.
   bool get _lobbyLive {
     if (_handle == null) return false;
-    final s = _state;
+    final s = _snapshot?.state;
     if (s != null && (s.cancelled || s.finished != null)) return false;
     return true;
   }
@@ -350,7 +350,7 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
               : KeyedSubtree(
                   key: const ValueKey('lobbyStep'),
                   child: RecoveryLobbyView(
-                    state: _state,
+                    snapshot: _snapshot,
                     isLeader: _isLeader,
                     myPubkey: _myPubkey!,
                     inviteLink: handle.inviteLink(),

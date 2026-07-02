@@ -4,21 +4,23 @@
 //! same `AccessStructureRef` the original keygen produced.
 
 use frostsnap_coordinator::Sink;
-use frostsnap_core::coordinator::FrostCoordinator;
 use frostsnap_core::coordinator::restoration::RecoveringAccessStructure;
+use frostsnap_core::coordinator::FrostCoordinator;
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::test::{RunSingleCoordinator as Run, TestEnv, TEST_ENCRYPTION_KEY, TEST_FINGERPRINT};
+use frostsnap_core::test::{
+    RunSingleCoordinator as Run, TestEnv, TEST_ENCRYPTION_KEY, TEST_FINGERPRINT,
+};
 use frostsnap_core::DeviceId;
-use std::collections::BTreeSet;
 use frostsnap_nostr::keygen::DeviceKind;
 use frostsnap_nostr::recovery::{
     RecoveryChannelMetadata, RecoveryLobbyClient, RecoveryLobbyEvent, RecoveryLobbyHandle,
     SharePost,
 };
-use frostsnap_nostr::{channel::ChannelSecret, EventId, Nsec, NostrIdentity, PublicKey};
+use frostsnap_nostr::{channel::ChannelSecret, EventId, NostrIdentity, Nsec, PublicKey};
 use nostr_relay_builder::prelude::*;
 use nostr_sdk::Client;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -147,6 +149,9 @@ async fn three_participant_recovery_convergence() {
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // --- Step 4: leader observes RecoveryAvailable → publishes Finish.
+    // Track each participant's latest member block (rides every
+    // StateChanged snapshot) for the Step-7 profile regression.
+    let mut latest_members: Vec<Vec<frostsnap_nostr::GroupMember>> = vec![Vec::new(); 3];
     let winning: Arc<Mutex<Option<Vec<EventId>>>> = Default::default();
     let winning_clone = winning.clone();
 
@@ -159,6 +164,9 @@ async fn three_participant_recovery_convergence() {
         else {
             continue;
         };
+        if let RecoveryLobbyEvent::StateChanged(snapshot) = &ev {
+            latest_members[idx] = snapshot.members.clone();
+        }
         if idx == 0 {
             if let RecoveryLobbyEvent::RecoveryAvailable(recovered) = ev {
                 *winning_clone.lock().unwrap() = Some(recovered.winning_share_refs);
@@ -192,10 +200,7 @@ async fn three_participant_recovery_convergence() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while std::time::Instant::now() < deadline && bundles.len() < 3 {
         match tokio::time::timeout(std::time::Duration::from_millis(500), event_rx.recv()).await {
-            Ok(Some((
-                idx,
-                RecoveryLobbyEvent::Finished(finished, ras, key_name, purpose),
-            ))) => {
+            Ok(Some((idx, RecoveryLobbyEvent::Finished(finished, ras, key_name, purpose)))) => {
                 let (device_id, _) = &fixture_backups[idx];
                 bundles.push((
                     idx,
@@ -208,11 +213,18 @@ async fn three_participant_recovery_convergence() {
                     },
                 ));
             }
+            Ok(Some((idx, RecoveryLobbyEvent::StateChanged(snapshot)))) => {
+                latest_members[idx] = snapshot.members;
+            }
             Ok(Some(_)) => {}
             _ => {}
         }
     }
-    assert_eq!(bundles.len(), 3, "all 3 participants should observe Finished");
+    assert_eq!(
+        bundles.len(),
+        3,
+        "all 3 participants should observe Finished"
+    );
     for (_, b) in &bundles {
         assert_eq!(
             b.finished.access_structure_ref, asref,
@@ -250,6 +262,44 @@ async fn three_participant_recovery_convergence() {
             "fresh coordinator {idx} missing access structure after finalize",
         );
     }
+    // --- Step 7 (regression): every participant's member surface
+    // carries BOTH the leader's profile and its own — the walkthrough
+    // bug (joiners rendering pubkeys because pre-creation profile
+    // events were dropped by the lobby's metadata gate) is
+    // structurally impossible under the block pattern: the member
+    // block rides every snapshot and the stash has no gate.
+    let has_name = |members: &[frostsnap_nostr::GroupMember], name: &str| {
+        members
+            .iter()
+            .any(|m| m.profile.as_ref().and_then(|p| p.name.as_deref()) == Some(name))
+    };
+    let names_settled = |latest: &[Vec<frostsnap_nostr::GroupMember>]| {
+        (0..3).all(|i| {
+            has_name(&latest[i], "participant-0")
+                && has_name(&latest[i], &format!("participant-{i}"))
+        })
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while std::time::Instant::now() < deadline && !names_settled(&latest_members) {
+        match tokio::time::timeout(std::time::Duration::from_millis(500), event_rx.recv()).await {
+            Ok(Some((idx, RecoveryLobbyEvent::StateChanged(snapshot)))) => {
+                latest_members[idx] = snapshot.members;
+            }
+            Ok(Some(_)) => {}
+            _ => {}
+        }
+    }
+    for i in 0..3 {
+        assert!(
+            has_name(&latest_members[i], "participant-0"),
+            "participant {i} never saw the leader's profile in its member block",
+        );
+        assert!(
+            has_name(&latest_members[i], &format!("participant-{i}")),
+            "participant {i} never saw its OWN profile in its member block",
+        );
+    }
+
     // Sanity: identity of each participant is not empty (touches the
     // NostrIdentity field so it's clearly load-bearing).
     for p in &participants {

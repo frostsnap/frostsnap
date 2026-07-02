@@ -51,7 +51,9 @@ SharePost sharePostFromRemoteResult(
 /// the ceremony chrome (sizing, header, pinned footer) with the
 /// keygen lobby.
 class RecoveryLobbyView extends StatelessWidget {
-  final RecoveryLobbyState? state;
+  /// The single stream payload: app fold in `.state`, runner-owned
+  /// member block (names/avatars, keyed by pubkey) in `.members`.
+  final RecoveryLobbySnapshot? snapshot;
   final bool isLeader;
   final PublicKey myPubkey;
   final String inviteLink;
@@ -73,7 +75,7 @@ class RecoveryLobbyView extends StatelessWidget {
 
   const RecoveryLobbyView({
     super.key,
-    required this.state,
+    required this.snapshot,
     required this.isLeader,
     required this.myPubkey,
     required this.inviteLink,
@@ -91,7 +93,7 @@ class RecoveryLobbyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final s = state;
+    final s = snapshot?.state;
     final canRecover =
         s != null &&
         s.currentRecovery != null &&
@@ -238,6 +240,7 @@ class RecoveryLobbyView extends StatelessWidget {
       for (final p in entries)
         _ParticipantRow(
           info: p,
+          profile: snapshot?.profileOf(p.pubkey),
           isMe: p.pubkey == myPubkey,
           devices: [
             for (final ref in p.postedShares)
@@ -274,6 +277,7 @@ class _LoadShareTile extends StatelessWidget {
 
 class _ParticipantRow extends StatelessWidget {
   final RecoveryParticipantInfo info;
+  final NostrProfile? profile;
   final bool isMe;
 
   /// Device names of the key shares this participant has posted
@@ -282,21 +286,17 @@ class _ParticipantRow extends StatelessWidget {
 
   const _ParticipantRow({
     required this.info,
+    required this.profile,
     required this.isMe,
     required this.devices,
   });
 
+  // The channel-member surface is the ONLY name source — including
+  // for self. Showing the locally-known settings name would let a
+  // broken in-channel profile publish go unnoticed: you'd see your
+  // name while peers see your pubkey.
   @override
   Widget build(BuildContext context) {
-    // The fold is the ONLY name source — including for self. Showing
-    // the locally-known settings name here would let a broken
-    // in-channel profile publish go unnoticed: you'd see your name
-    // while peers see your pubkey. If a name is missing, the fix
-    // belongs in the fold, not a display-side fallback.
-    return _row(context, info.profile);
-  }
-
-  Widget _row(BuildContext context, NostrProfile? profile) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),

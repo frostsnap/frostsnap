@@ -17,7 +17,7 @@ use frostsnap_nostr::{
         DeviceKind, DeviceRegistration, LobbyChannelMetadata, LobbyClient, LobbyEvent, LobbyHandle,
         LobbyState, ParticipantStatus, ProtocolClient, ProtocolHandle, SelectedCoordinator,
     },
-    EventId, PublicKey,
+    EventId, NostrIdentity, Nsec, PublicKey, ToBech32,
 };
 use nostr_relay_builder::prelude::*;
 use nostr_sdk::{Client, Keys};
@@ -75,6 +75,17 @@ async fn three_coordinators_one_with_two_devices() {
 #[tokio::test]
 async fn three_coordinators_two_selected_private_protocol() {
     run_keygen_test(&[1, 1, 1], &[0, 1], 2, 999).await;
+}
+
+/// Wrap raw nostr `Keys` in a `NostrIdentity` for `run()` — tests
+/// derive protocol scalars from these exact keys, so we can't just
+/// `Nsec::generate()` a fresh identity.
+fn identity_from_keys(keys: &Keys, name: &str) -> NostrIdentity {
+    NostrIdentity::Generated {
+        nsec: Nsec(keys.secret_key().to_bech32().expect("valid key")),
+        name: name.to_string(),
+        created_at: 1_700_000_000,
+    }
 }
 
 async fn run_keygen_test(
@@ -136,7 +147,12 @@ async fn run_keygen_test(
         };
 
         let lobby_handle = lobby_client
-            .run(client.clone(), nostr_keys.clone(), init_event, sink)
+            .run(
+                client.clone(),
+                identity_from_keys(nostr_keys, &format!("coord-{i}")),
+                init_event,
+                sink,
+            )
             .await
             .unwrap();
         nostr_sides.push(NostrSide {
@@ -323,7 +339,12 @@ async fn host_sees_self_on_open() {
     };
 
     let _handle = lobby_client
-        .run(client, nostr_keys.clone(), Some(init_event), sink)
+        .run(
+            client,
+            identity_from_keys(&nostr_keys, "host"),
+            Some(init_event),
+            sink,
+        )
         .await
         .unwrap();
 
@@ -336,7 +357,8 @@ async fn host_sees_self_on_open() {
             break;
         }
         match tokio::time::timeout(remaining, event_rx.recv()).await {
-            Ok(Some((_, TestEvent::Lobby(LobbyEvent::LobbyChanged(state))))) => {
+            Ok(Some((_, TestEvent::Lobby(LobbyEvent::LobbyChanged(snapshot))))) => {
+                let state = snapshot.state;
                 // Invariant: initiator set ⇒ participants non-empty.
                 if state.initiator.is_some() {
                     assert!(
@@ -402,7 +424,12 @@ async fn lobby_full_lifecycle() {
             tx: event_tx.clone(),
         };
         let handle = lobby_client
-            .run(client.clone(), keys.clone(), init_event, sink)
+            .run(
+                client.clone(),
+                identity_from_keys(keys, &format!("p-{i}")),
+                init_event,
+                sink,
+            )
             .await
             .unwrap();
         clients.push(client);
@@ -531,7 +558,12 @@ async fn setup_post_start_keygen(
             tx: event_tx.clone(),
         };
         let handle = lobby_client
-            .run(client.clone(), keys.clone(), init_event, sink)
+            .run(
+                client.clone(),
+                identity_from_keys(keys, &format!("p-{i}")),
+                init_event,
+                sink,
+            )
             .await
             .unwrap();
         clients.push(client);
@@ -643,8 +675,8 @@ async fn ack_round_completes() {
         }
         match tokio::time::timeout(remaining, event_rx.recv()).await {
             Ok(Some((i, TestEvent::Lobby(LobbyEvent::AllAcked)))) => saw_all_acked[i] = true,
-            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(state))))) => {
-                latest_states[i] = Some(state);
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(snapshot))))) => {
+                latest_states[i] = Some(snapshot.state);
             }
             Ok(Some(_)) => continue,
             Ok(None) | Err(_) => break,
@@ -727,8 +759,8 @@ async fn ack_with_wrong_etag_ignored() {
     while tokio::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         match tokio::time::timeout(remaining, event_rx.recv()).await {
-            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(state))))) => {
-                latest_states[i] = Some(state);
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(snapshot))))) => {
+                latest_states[i] = Some(snapshot.state);
             }
             Ok(Some((_, TestEvent::Lobby(LobbyEvent::AllAcked)))) => {
                 panic!("AllAcked fired despite bogus e-tag")
@@ -775,8 +807,8 @@ where
             return latest;
         }
         match tokio::time::timeout(remaining, event_rx.recv()).await {
-            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(state))))) => {
-                latest[i] = Some(state);
+            Ok(Some((i, TestEvent::Lobby(LobbyEvent::LobbyChanged(snapshot))))) => {
+                latest[i] = Some(snapshot.state);
             }
             Ok(Some(_)) => continue,
             Ok(None) | Err(_) => return latest,

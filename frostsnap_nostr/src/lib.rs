@@ -7,7 +7,7 @@ pub mod signing;
 
 pub use channel::{ChannelInitData, ChannelKeys, ChannelSecret, ParticipantShares};
 pub use channel_runner::{ChannelRunner, NostrProfile};
-pub use identity::{Nsec, NostrIdentity};
+pub use identity::{NostrIdentity, Nsec};
 pub use nostr_lmdb::NostrLMDB;
 pub use nostr_sdk::nips::nip19::ToBech32;
 pub use nostr_sdk::prelude::NostrDatabaseExt;
@@ -38,8 +38,7 @@ impl<'de> serde::Deserialize<'de> for PublicKey {
         }
         let mut bytes = [0u8; 32];
         for (i, b) in bytes.iter_mut().enumerate() {
-            *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
-                .map_err(D::Error::custom)?;
+            *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).map_err(D::Error::custom)?;
         }
         Ok(PublicKey(bytes))
     }

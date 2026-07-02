@@ -18,6 +18,7 @@ use frostsnap_core::{SignSessionId, WireSignTask};
 use frostsnap_nostr::channel::ChannelInitData;
 use frostsnap_nostr::signing::{ChannelClient, ChannelEvent, ConfirmedSubsetEntry, SigningEvent};
 use frostsnap_nostr::EventId;
+use frostsnap_nostr::{NostrIdentity, Nsec, ToBech32};
 use nostr_relay_builder::prelude::*;
 use nostr_sdk::{Client, Keys};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
@@ -485,11 +486,23 @@ async fn spawn_sides(
             index: i,
             tx: event_tx.clone(),
         };
-        let handle = channel_client.run(client, sink).await.unwrap();
+        let identity = identity_from_keys(&keys, &format!("signer-{i}"));
+        let handle = channel_client.run(client, sink, identity).await.unwrap();
         sides.push(NostrSide { keys, handle });
     }
     drop(event_tx);
     sides
+}
+
+/// Wrap raw nostr `Keys` in a `NostrIdentity` for `run()` — tests
+/// derive protocol scalars from these exact keys, so we can't just
+/// `Nsec::generate()` a fresh identity.
+fn identity_from_keys(keys: &Keys, name: &str) -> NostrIdentity {
+    NostrIdentity::Generated {
+        nsec: Nsec(keys.secret_key().to_bech32().expect("valid key")),
+        name: name.to_string(),
+        created_at: 1_700_000_000,
+    }
 }
 
 async fn wait_for_request(
