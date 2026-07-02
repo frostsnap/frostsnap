@@ -1295,6 +1295,15 @@ impl FfiCoordinator {
                 )?)
             })?
         };
+
+        // Mirror `finish_restoring`: drive the queued PendingConsolidation
+        // mutations to the USB layer. No-op for devices that aren't
+        // connected or have nothing pending (e.g. a participant who
+        // posted no local shares).
+        for device_id in my_local_devices.iter().copied() {
+            self.exit_recovery_mode(device_id, encryption_key);
+        }
+
         self.emit_key_state();
         Ok(asr)
     }

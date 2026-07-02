@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/recovery/remote_recovery_lobby_page.dart';
 import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/settings.dart' show BitcoinNetworkChooser;
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -27,47 +28,81 @@ class RemoteRecoveryEntryPage extends StatefulWidget {
   final Coordinator coord;
   final NostrClient nostrClient;
 
+  /// Deep-link entry: if non-null, the page auto-triggers the join flow
+  /// with this link prefilled after first mount.
+  final String? initialJoinLink;
+
   const RemoteRecoveryEntryPage({
     super.key,
     required this.coord,
     required this.nostrClient,
+    this.initialJoinLink,
   });
 
   @override
   State<RemoteRecoveryEntryPage> createState() =>
       _RemoteRecoveryEntryPageState();
+
+  /// The single call site that maps a leader's [CreateLobbyResult] onto
+  /// [NostrClient.createRemoteRecoveryLobby]. Extracted (`@visibleForTesting`)
+  /// so a regression that hard-codes `BitcoinNetwork.bitcoin` — bypassing
+  /// [CreateLobbyResult.network] — is caught by a page-independent unit
+  /// test rather than requiring the full lobby handle to stand up.
+  @visibleForTesting
+  static Future<RemoteRecoveryLobbyHandle> dispatchCreate({
+    required NostrClient client,
+    required NostrIdentity identity,
+    required CreateLobbyResult result,
+  }) {
+    final secret = ChannelSecret.generate();
+    return client.createRemoteRecoveryLobby(
+      identity: identity,
+      channelSecret: secret,
+      keyName: result.keyName,
+      purpose: keyPurposeBitcoin(network: result.network),
+      thresholdHint: result.thresholdHint,
+    );
+  }
 }
 
 class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
   bool _busy = false;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialJoinLink != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _joinLobby(prefilledLink: widget.initialJoinLink);
+      });
+    }
+  }
+
   Future<void> _createLobby() async {
-    final result = await showDialog<_CreateFormResult>(
+    final result = await showDialog<CreateLobbyResult>(
       context: context,
-      builder: (ctx) => const _CreateLobbyDialog(),
+      builder: (ctx) => const CreateLobbyDialog(),
     );
     if (result == null || !mounted) return;
     await _connect(
       leader: true,
-      identityGate: (identity) async {
-        final secret = ChannelSecret.generate();
-        return widget.nostrClient.createRemoteRecoveryLobby(
-          identity: identity,
-          channelSecret: secret,
-          keyName: result.keyName,
-          purpose: keyPurposeBitcoin(network: BitcoinNetwork.bitcoin),
-          thresholdHint: result.thresholdHint,
-        );
-      },
+      identityGate: (identity) => RemoteRecoveryEntryPage.dispatchCreate(
+        client: widget.nostrClient,
+        identity: identity,
+        result: result,
+      ),
     );
   }
 
-  Future<void> _joinLobby() async {
-    final link = await showDialog<String>(
-      context: context,
-      builder: (ctx) => const _JoinLinkDialog(),
-    );
+  Future<void> _joinLobby({String? prefilledLink}) async {
+    final link =
+        prefilledLink ??
+        await showDialog<String>(
+          context: context,
+          builder: (ctx) => const _JoinLinkDialog(),
+        );
     if (link == null || !mounted) return;
     await _connect(
       leader: false,
@@ -100,7 +135,7 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
       if (!mounted) return;
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
       if (!mounted) return;
-      await Navigator.of(context).push(
+      final asRef = await Navigator.of(context).push<AccessStructureRef>(
         MaterialPageRoute(
           builder: (_) => RemoteRecoveryLobbyPage(
             handle: handle,
@@ -110,6 +145,8 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
           ),
         ),
       );
+      if (asRef == null || !mounted) return;
+      Navigator.of(context).pop(asRef);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
@@ -155,23 +192,29 @@ class _RemoteRecoveryEntryPageState extends State<RemoteRecoveryEntryPage> {
   }
 }
 
-class _CreateFormResult {
+class CreateLobbyResult {
   final String keyName;
   final int? thresholdHint;
+  final BitcoinNetwork network;
 
-  const _CreateFormResult({required this.keyName, required this.thresholdHint});
+  const CreateLobbyResult({
+    required this.keyName,
+    required this.thresholdHint,
+    required this.network,
+  });
 }
 
-class _CreateLobbyDialog extends StatefulWidget {
-  const _CreateLobbyDialog();
+class CreateLobbyDialog extends StatefulWidget {
+  const CreateLobbyDialog({super.key});
 
   @override
-  State<_CreateLobbyDialog> createState() => _CreateLobbyDialogState();
+  State<CreateLobbyDialog> createState() => _CreateLobbyDialogState();
 }
 
-class _CreateLobbyDialogState extends State<_CreateLobbyDialog> {
+class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
   final _keyName = TextEditingController();
   final _threshold = TextEditingController();
+  BitcoinNetwork _network = BitcoinNetwork.bitcoin;
   String? _err;
 
   @override
@@ -197,44 +240,50 @@ class _CreateLobbyDialogState extends State<_CreateLobbyDialog> {
       }
       hint = parsed;
     }
-    Navigator.of(
-      context,
-    ).pop(_CreateFormResult(keyName: name, thresholdHint: hint));
+    Navigator.of(context).pop(
+      CreateLobbyResult(keyName: name, thresholdHint: hint, network: _network),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Create recovery lobby'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _keyName,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Wallet name',
-              helperText: 'The name of the wallet being recovered',
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _keyName,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Wallet name',
+                helperText: 'The name of the wallet being recovered',
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _threshold,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(
-              labelText: 'Threshold hint (optional)',
-              helperText: 'How many shares are needed to recover',
-            ),
-          ),
-          if (_err != null) ...[
             const SizedBox(height: 16),
-            Text(
-              _err!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            TextField(
+              controller: _threshold,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Threshold hint (optional)',
+                helperText: 'How many shares are needed to recover',
+              ),
             ),
+            BitcoinNetworkChooser(
+              value: _network,
+              onChanged: (n) => setState(() => _network = n),
+            ),
+            if (_err != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                _err!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(

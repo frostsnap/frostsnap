@@ -101,6 +101,10 @@ class _RemoteRecoveryLobbyPageState extends State<RemoteRecoveryLobbyPage> {
       );
       if (!mounted) return;
       setState(() => _recoveredRef = asref);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pop(asref);
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');

@@ -283,16 +283,27 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _handleDeepLink(Uri uri) {
-    if (uri.scheme != 'frostsnap' || uri.host != 'channel') return;
+    if (uri.scheme != 'frostsnap') return;
     final path = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '';
     if (path.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      WalletAddColumn.showJoinFromLinkDialog(
-        context,
-        initialLink: 'frostsnap://channel/$path',
-      );
-    });
+    switch (uri.host) {
+      case 'channel':
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          WalletAddColumn.showJoinFromLinkDialog(
+            context,
+            initialLink: 'frostsnap://channel/$path',
+          );
+        });
+      case 'recovery':
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          WalletAddColumn.showRemoteRecoveryDialog(
+            context,
+            initialJoinLink: 'frostsnap://recovery/$path',
+          );
+        });
+    }
   }
 
   @override
@@ -447,12 +458,7 @@ class _DevUsbOverlay extends StatelessWidget {
       builder: (context, snap) {
         final devMode = snap.data?.developerMode ?? false;
         if (!devMode) return child;
-        return Stack(
-          children: [
-            child,
-            _DraggableDevButton(),
-          ],
-        );
+        return Stack(children: [child, _DraggableDevButton()]);
       },
     );
   }

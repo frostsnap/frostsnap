@@ -128,6 +128,15 @@ fn end_to_end_local_device_consolidates_share() {
     run.extend(consolidate_msgs);
     run.run_until_finished(&mut env, &mut rng).unwrap();
 
+    // Consolidation drained the pending queue — the FRB wrapper's
+    // post-finalize `exit_recovery_mode` loop depends on this to
+    // become a no-op after the USB round-trip completes.
+    assert!(
+        !run.coordinator
+            .has_backups_that_need_to_be_consolidated(local_device),
+        "pending consolidation drained after Consolidate ack"
+    );
+
     // Coordinator now tracks the local device as a share holder for
     // the recovered access structure.
     assert!(

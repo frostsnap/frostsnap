@@ -6,6 +6,7 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
+import 'package:frostsnap/recovery/remote_recovery_entry_page.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -14,7 +15,7 @@ import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/org_keygen_page.dart';
 import 'package:frostsnap/wallet_create.dart';
 
-enum AddType { newWallet, recoverWallet, joinFromLink }
+enum AddType { newWallet, recoverWallet, remoteRecoverWallet, joinFromLink }
 
 enum VerticalButtonGroupPosition { top, bottom, middle, single }
 
@@ -65,10 +66,20 @@ class WalletAddColumn extends StatelessWidget {
         buildCard(
           context,
           action: () => onPressed(AddType.recoverWallet),
+          groupPosition: VerticalButtonGroupPosition.top,
           isThreeLine: true,
           icon: Icon(Icons.restore_rounded, size: iconSize),
           title: 'Restore wallet',
           subtitle: 'Use an existing device key or load a physical backup',
+        ),
+        buildCard(
+          context,
+          action: () => onPressed(AddType.remoteRecoverWallet),
+          groupPosition: VerticalButtonGroupPosition.bottom,
+          isThreeLine: true,
+          icon: Icon(Icons.groups_rounded, size: iconSize),
+          title: 'Restore wallet with participants',
+          subtitle: 'Combine your share with others over nostr',
         ),
         buildCard(
           context,
@@ -244,6 +255,28 @@ class WalletAddColumn extends StatelessWidget {
     homeCtx.walletListController.selectRecoveringWallet(restorationId);
   }
 
+  static Future<void> showRemoteRecoveryDialog(
+    BuildContext context, {
+    String? initialJoinLink,
+  }) async {
+    final homeCtx = HomeContext.of(context)!;
+    final nostrClient = await NostrContext.of(context).nostrClient;
+    if (!context.mounted) return;
+    final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
+      context: context,
+      barrierDismissible: false,
+      child: RemoteRecoveryEntryPage(
+        coord: coord,
+        nostrClient: nostrClient,
+        initialJoinLink: initialJoinLink,
+      ),
+    );
+    if (asRef == null || !context.mounted) return;
+    await showUnplugDevicesDialog(context);
+    if (!context.mounted) return;
+    homeCtx.openNewlyCreatedWallet(asRef.keyId);
+  }
+
   static void showJoinFromLinkDialog(
     BuildContext context, {
     String? initialLink,
@@ -281,6 +314,8 @@ Function(AddType) makeOnPressed(BuildContext context) {
         WalletAddColumn.showWalletCreateDialog(context);
       case AddType.recoverWallet:
         WalletAddColumn.showWalletRecoverDialog(context);
+      case AddType.remoteRecoverWallet:
+        WalletAddColumn.showRemoteRecoveryDialog(context);
       case AddType.joinFromLink:
         WalletAddColumn.showJoinFromLinkDialog(context);
     }
