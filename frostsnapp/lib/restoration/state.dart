@@ -29,6 +29,41 @@ sealed class RecoveryContext with _$RecoveryContext {
   const factory RecoveryContext.addingToWallet({
     required AccessStructureRef accessStructureRef,
   }) = AddingToWalletContext;
+
+  /// Collecting a share to post into a remote recovery lobby.
+  ///
+  /// Unlike the local contexts, this one never writes coordinator
+  /// state: the flow terminates by completing with a
+  /// [RemoteShareResult] which the lobby converts to a `SharePost`.
+  /// Wallet name / network / threshold stages are skipped — the
+  /// lobby's channel metadata owns those.
+  const factory RecoveryContext.remoteLobby() = RemoteLobbyContext;
+}
+
+/// What the recovery flow hands back to the remote lobby when run
+/// with [RemoteLobbyContext]. Either arm carries what a `SharePost`
+/// needs.
+sealed class RemoteShareResult {
+  const RemoteShareResult();
+}
+
+/// A share entered as a physical (seed-word) backup on a blank
+/// device. Posts with `needsConsolidation: true` — the device holds
+/// the backup in recovery mode until the wallet is finalized.
+final class RemoteShareResultPhysicalBackup extends RemoteShareResult {
+  const RemoteShareResultPhysicalBackup({
+    required this.phase,
+    required this.deviceName,
+  });
+  final PhysicalBackupPhase phase;
+  final String deviceName;
+}
+
+/// A share read from a device that already holds it.
+/// `needsConsolidation` comes from the share itself.
+final class RemoteShareResultDeviceShare extends RemoteShareResult {
+  const RemoteShareResultDeviceShare({required this.share});
+  final RecoverShare share;
 }
 
 /// Composite state representing the recovery flow

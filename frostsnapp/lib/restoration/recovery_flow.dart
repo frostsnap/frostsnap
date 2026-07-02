@@ -22,7 +22,6 @@ import 'package:frostsnap/restoration/state.dart';
 import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/restoration/wait_reconnect_device_view.dart';
 import 'package:frostsnap/secure_key_provider.dart';
-import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
 
@@ -65,8 +64,12 @@ class RecoveryFlowController extends ChangeNotifier {
 
   bool _completed = false;
   bool get completed => _completed;
-  RestorationId? _completedRestorationId;
-  RestorationId? get completedRestorationId => _completedRestorationId;
+
+  /// Popped as the flow's dialog result. `RestorationId?` for the
+  /// restoration contexts (null for AddingToWallet), a
+  /// [RemoteShareResult] for [RemoteLobbyContext].
+  Object? _completionResult;
+  Object? get completionResult => _completionResult;
 
   /// Set in the EnterPhysicalBackup stream listener and consumed by
   /// the State, which must dismiss `_backupController` before calling
@@ -449,6 +452,18 @@ class RecoveryFlowController extends ChangeNotifier {
           transitionTo(
             RecoveryFlowStage.physicalBackupSuccess(deviceName: deviceName),
           );
+
+        case RemoteLobbyContext():
+          // No coordinator write and no local validation — the lobby
+          // fold rejects incompatible shares at Finish. The device
+          // stays in recovery mode holding the entered backup until
+          // post-finalize consolidation.
+          _completionResult = RemoteShareResultPhysicalBackup(
+            phase: phase,
+            deviceName: deviceName,
+          );
+          _completed = true;
+          notifyListeners();
       }
     } catch (e, stackTrace) {
       _popOnError(
@@ -473,7 +488,6 @@ class RecoveryFlowController extends ChangeNotifier {
   Future<void> _completeDeviceShareEnrollment(RecoverShare candidate) async {
     _shareEnrollmentInFlight = true;
     try {
-      RestorationId? restorationId;
       final encryptionKey = await SecureKeyProvider.getEncryptionKey();
       switch (_recoveryContext) {
         case ContinuingRestorationContext(:final restorationId):
@@ -489,11 +503,14 @@ class RecoveryFlowController extends ChangeNotifier {
             encryptionKey: encryptionKey,
           );
         case NewRestorationContext():
-          restorationId = await coord.startRestoringWalletFromDeviceShare(
+          _completionResult = await coord.startRestoringWalletFromDeviceShare(
             recoverShare: candidate,
           );
+        case RemoteLobbyContext():
+          // No enrollment — the share goes to the lobby, not the
+          // local coordinator.
+          _completionResult = RemoteShareResultDeviceShare(share: candidate);
       }
-      _completedRestorationId = restorationId;
       _completed = true;
       _shareEnrollmentInFlight = false;
       notifyListeners();
@@ -637,7 +654,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
 
     if (_ctrl.completed) {
       _popped = true;
-      final result = _ctrl.completedRestorationId;
+      final result = _ctrl.completionResult;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).pop(result);
       });
@@ -814,10 +831,14 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
       ContinuingRestorationContext() => true,
       AddingToWalletContext() => true,
       NewRestorationContext() => false,
+      RemoteLobbyContext() => false,
     };
+    final isRemote = _ctrl.recoveryContext is RemoteLobbyContext;
     return MultiStepDialogScaffold(
       stepKey: 'candidateReady',
-      title: const Text('Restore with existing key'),
+      title: Text(
+        isRemote ? 'Found a key on this device' : 'Restore with existing key',
+      ),
       leading: _backLeading(),
       forward: _ctrl.isAnimationForward,
       reverseDuration: Duration.zero,
@@ -831,7 +852,11 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
         alignment: Alignment.centerRight,
         child: FilledButton(
           onPressed: () => _ctrl.confirmCandidate(candidate),
-          child: Text(addingToExisting ? 'Add to wallet' : 'Restore'),
+          child: Text(
+            isRemote
+                ? 'Contribute key share'
+                : (addingToExisting ? 'Add to wallet' : 'Restore'),
+          ),
         ),
       ),
     );

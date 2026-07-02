@@ -8,7 +8,7 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/invite_link_input.dart';
 import 'package:frostsnap/join_link.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
-import 'package:frostsnap/recovery/remote_recovery_create_page.dart';
+import 'package:frostsnap/recovery/remote_recovery_page.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -264,7 +264,7 @@ class WalletAddColumn extends StatelessWidget {
     final asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
       context: context,
       barrierDismissible: false,
-      child: RemoteRecoveryCreatePage(coord: coord, nostrClient: nostrClient),
+      child: RemoteRecoveryPage.create(coord: coord, nostrClient: nostrClient),
     );
     if (asRef == null || !context.mounted) return;
     await showUnplugDevicesDialog(context);
@@ -443,7 +443,7 @@ class _JoinLinkPageState extends State<JoinLinkPage> {
   Future<KeyId?> _joinRecovery(String link) async {
     final client = await NostrContext.of(context).nostrClient;
     if (!mounted) return null;
-    final asRef = await RemoteRecoveryCreatePage.dispatchJoin(
+    final asRef = await RemoteRecoveryPage.dispatchJoin(
       context: context,
       coord: coord,
       nostrClient: client,

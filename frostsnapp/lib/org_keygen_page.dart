@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/async_action_button.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/invite_widgets.dart';
 import 'package:frostsnap/device_setup_step.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/global.dart';
@@ -25,7 +25,6 @@ import 'package:frostsnap/src/rust/api/nostr/remote_keygen.dart';
 import 'package:frostsnap/threshold_selector.dart';
 import 'package:frostsnap/wallet_create.dart'
     show LargeCircularProgressIndicator;
-import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 
 extension _ResolvedKeygenDeviceCount on ResolvedKeygen {
@@ -1115,8 +1114,9 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
               ..._participantRows(ctrl: _ctrl, state: state, readOnly: false),
               const SizedBox(height: 12),
               if (_ctrl.isHost)
-                _InviteTile(
-                  onTap: () => _showInviteDialog(context, _ctrl.handle),
+                InviteTile(
+                  onTap: () =>
+                      showInviteDialog(context, _ctrl.handle.inviteLink()),
                 ),
             ],
           ],
@@ -1951,168 +1951,6 @@ List<Widget> _participantRows({
     );
   }
   return rows;
-}
-
-class _InviteTile extends StatelessWidget {
-  const _InviteTile({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: CustomPaint(
-          painter: _DashedBorderPainter(
-            color: theme.colorScheme.outline,
-            radius: 12,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.person_add_rounded,
-                  size: 20,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Invite participants',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter({required this.color, this.radius = 12});
-
-  final Color color;
-  final double radius;
-
-  static const double _dash = 6;
-  static const double _gap = 4;
-  static const double _stroke = 1.5;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = _stroke
-      ..style = PaintingStyle.stroke;
-
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
-    );
-    final path = Path()..addRRect(rrect);
-
-    for (final metric in path.computeMetrics()) {
-      double distance = 0;
-      while (distance < metric.length) {
-        final end = distance + _dash;
-        canvas.drawPath(
-          metric.extractPath(distance, end.clamp(0, metric.length)),
-          paint,
-        );
-        distance = end + _gap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedBorderPainter old) =>
-      old.color != color || old.radius != radius;
-}
-
-void _showInviteDialog(BuildContext context, RemoteLobbyHandle handle) {
-  MaybeFullscreenDialog.show<void>(
-    context: context,
-    barrierDismissible: true,
-    child: _InviteDialog(inviteLink: handle.inviteLink()),
-  );
-}
-
-class _InviteDialog extends StatelessWidget {
-  const _InviteDialog({required this.inviteLink});
-  final String inviteLink;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return FullscreenDialogScaffold(
-      title: const Text('Invite participants'),
-      body: SliverList.list(
-        children: [
-          Center(
-            child: Container(
-              width: 220,
-              height: 220,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: PrettyQrView.data(
-                data: inviteLink,
-                decoration: const PrettyQrDecoration(
-                  shape: PrettyQrSmoothSymbol(),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SelectableText(
-            inviteLink,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-      footer: Row(
-        spacing: 12,
-        children: [
-          Expanded(
-            child: FilledButton.tonalIcon(
-              icon: const Icon(Icons.copy_rounded, size: 18),
-              label: const Text('Copy'),
-              onPressed: () => copyToClipboard(inviteLink),
-            ),
-          ),
-          Expanded(
-            child: FilledButton.tonalIcon(
-              icon: const Icon(Icons.share_rounded, size: 18),
-              label: const Text('Share invite'),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Share not wired up yet'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // =============================================================================

@@ -5,7 +5,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show ExternalLibraryLoaderConfig;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:frostsnap/recovery/remote_recovery_create_page.dart';
+import 'package:frostsnap/recovery/remote_recovery_page.dart';
 import 'package:frostsnap/src/rust/api.dart' show keyPurposeBitcoin;
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
@@ -13,34 +13,17 @@ import 'package:frostsnap/src/rust/api/nostr/remote_recovery.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
 import 'package:frostsnap/src/rust/lib.dart';
 
-// Widget tests for `CreateLobbyDialog` — the form the leader fills
-// out before `NostrClient.createRemoteRecoveryLobby` gets called.
-// The dialog's job is to collect wallet name + optional threshold
-// hint + `BitcoinNetwork`, validate, and return a `CreateLobbyResult`.
-// The dialog is the only piece of `RemoteRecoveryCreatePage` that
-// carries non-trivial logic; the surrounding page is straight-line
-// glue we cover by `flutter analyze` + the manual acceptance run.
+// Widget tests for `CreateLobbyForm` — the ceremony step the leader
+// fills out before `NostrClient.createRemoteRecoveryLobby` gets
+// called. The form's job is to collect wallet name + optional
+// threshold hint + `BitcoinNetwork`, validate, and surface a
+// `CreateLobbyResult` through `onSubmit`.
 //
 // `setUpAll` loads the real Rust dylib because
-// `BitcoinNetworkChooser` calls `BitcoinNetwork.name()` (FFI) at
+// `NetworkAdvancedOptions` calls `BitcoinNetwork.name()` (FFI) at
 // build time. Same pattern as `recovery_lobby_view_test.dart`.
 
-Widget _wrap(GlobalKey<NavigatorState> nav) => MaterialApp(
-  navigatorKey: nav,
-  home: const Scaffold(body: SizedBox.shrink()),
-);
-
-Future<Future<CreateLobbyResult?>> _openDialog(
-  WidgetTester tester,
-  GlobalKey<NavigatorState> nav,
-) async {
-  final future = showDialog<CreateLobbyResult>(
-    context: nav.currentContext!,
-    builder: (_) => const CreateLobbyDialog(),
-  );
-  await tester.pumpAndSettle();
-  return future;
-}
+Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
 void main() {
   setUpAll(() async {
@@ -57,40 +40,35 @@ void main() {
     );
   });
 
-  testWidgets('empty name shows an error and does not pop', (tester) async {
-    final nav = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(_wrap(nav));
-    final future = await _openDialog(tester, nav);
+  testWidgets('empty name shows an error and does not submit', (tester) async {
+    CreateLobbyResult? submitted;
+    await tester.pumpWidget(
+      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
+    );
 
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
 
     expect(find.text('Wallet name is required'), findsOneWidget);
-    // Future is still pending — dialog didn't pop.
-    expect(find.byType(AlertDialog), findsOneWidget);
-
-    // Clean up: cancel so the future completes.
-    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-    await tester.pumpAndSettle();
-    expect(await future, isNull);
+    expect(submitted, isNull);
   });
 
   testWidgets('valid submit returns entered name + default network', (
     tester,
   ) async {
-    final nav = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(_wrap(nav));
-    final future = await _openDialog(tester, nav);
+    CreateLobbyResult? submitted;
+    await tester.pumpWidget(
+      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
+    );
 
     await tester.enterText(find.byType(TextField).first, 'Family wallet');
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    final result = await future;
-    expect(result, isNotNull);
-    expect(result!.keyName, 'Family wallet');
-    expect(result.thresholdHint, isNull);
-    expect(result.network.name(), BitcoinNetwork.bitcoin.name());
+    expect(submitted, isNotNull);
+    expect(submitted!.keyName, 'Family wallet');
+    expect(submitted!.thresholdHint, isNull);
+    expect(submitted!.network.name(), BitcoinNetwork.bitcoin.name());
   });
 
   testWidgets(
@@ -103,54 +81,45 @@ void main() {
         (n) => n.name() != BitcoinNetwork.bitcoin.name(),
       );
 
-      final nav = GlobalKey<NavigatorState>();
-      await tester.pumpWidget(_wrap(nav));
-      final future = await _openDialog(tester, nav);
+      CreateLobbyResult? submitted;
+      await tester.pumpWidget(
+        _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
+      );
 
       await tester.enterText(find.byType(TextField).first, 'w');
 
-      // Open the network dropdown and pick `alt`. The chooser renders a
-      // `DropdownButton<String>` keyed on `BitcoinNetwork.name()`, and the
-      // menu items display "Bitcoin (BTC)" for bitcoin and the raw name
-      // otherwise (settings.dart:1270).
-      await tester.tap(find.byType(DropdownButton<String>));
+      // Reveal the network picker (NetworkAdvancedOptions hides the
+      // SegmentedButton behind the 'Developer' toggle) and pick `alt`.
+      await tester.tap(find.text('Developer'));
       await tester.pumpAndSettle();
       await tester.tap(find.text(alt.name()).last);
       await tester.pumpAndSettle();
 
       await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-      await tester.pumpAndSettle();
+      await tester.pump();
 
-      final result = await future;
-      expect(result, isNotNull);
+      expect(submitted, isNotNull);
       expect(
-        result!.network.name(),
+        submitted!.network.name(),
         alt.name(),
         reason:
             'Regression guard: if `_submit` hard-codes `BitcoinNetwork.bitcoin` again '
             'this assertion fires. `result.network` must reflect the picked value.',
       );
 
-      // Call-site plumbing check: the entry page hands
-      // `keyPurposeBitcoin(network: result.network)` to
-      // `NostrClient.createRemoteRecoveryLobby`. Constructing the purpose
-      // with the picked network should succeed for a supported network;
-      // this guards against a future refactor dropping the `network` arg
-      // and reverting to a purpose-less or mainnet-only call.
-      final purpose = keyPurposeBitcoin(network: result.network);
+      final purpose = keyPurposeBitcoin(network: submitted!.network);
       expect(purpose, isNotNull);
     },
   );
 
-  testWidgets('non-numeric threshold shows an error', (tester) async {
-    final nav = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(_wrap(nav));
-    final future = await _openDialog(tester, nav);
+  testWidgets('zero threshold shows an error', (tester) async {
+    CreateLobbyResult? submitted;
+    await tester.pumpWidget(
+      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
+    );
 
     await tester.enterText(find.byType(TextField).at(0), 'ok');
-    // digitsOnly formatter strips 'abc' — the field stays empty, so
-    // we simulate an invalid value by driving the state directly via
-    // negative number: use "0" which is a valid parse but < 1.
+    // digitsOnly formatter strips letters; "0" is a valid parse but < 1.
     await tester.enterText(find.byType(TextField).at(1), '0');
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
@@ -159,37 +128,45 @@ void main() {
       find.text('Threshold hint must be a positive integer'),
       findsOneWidget,
     );
-
-    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-    await tester.pumpAndSettle();
-    expect(await future, isNull);
+    expect(submitted, isNull);
   });
 
   testWidgets('valid threshold hint is returned', (tester) async {
-    final nav = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(_wrap(nav));
-    final future = await _openDialog(tester, nav);
+    CreateLobbyResult? submitted;
+    await tester.pumpWidget(
+      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
+    );
 
     await tester.enterText(find.byType(TextField).at(0), 'w');
     await tester.enterText(find.byType(TextField).at(1), '3');
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    final result = await future;
-    expect(result, isNotNull);
-    expect(result!.thresholdHint, 3);
+    expect(submitted, isNotNull);
+    expect(submitted!.thresholdHint, 3);
   });
 
-  test('RemoteRecoveryCreatePage.dispatchCreate hands NostrClient a KeyPurpose '
+  testWidgets('busy form does not submit', (tester) async {
+    CreateLobbyResult? submitted;
+    await tester.pumpWidget(
+      _wrap(CreateLobbyForm(busy: true, onSubmit: (r) => submitted = r)),
+    );
+
+    await tester.enterText(find.byType(TextField).first, 'w');
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Create'),
+    );
+    expect(button.onPressed, isNull);
+    expect(submitted, isNull);
+  });
+
+  test('RemoteRecoveryPage.dispatchCreate hands NostrClient a KeyPurpose '
       'whose bitcoinNetwork matches CreateLobbyResult.network', () async {
     // Full-lobby regression scenario per plan acceptance: a stub
     // `NostrClient` captures the `createRemoteRecoveryLobby` call and we
     // assert `purpose.bitcoinNetwork()` reflects the picked network. If
-    // the entry page reverts to `keyPurposeBitcoin(network:
-    // BitcoinNetwork.bitcoin)`, this test fires. Uses `dispatchCreate`
-    // (the extracted call site) rather than the full page pump because
-    // `NostrContext` + `NostrSettings` are opaque and standing them up
-    // in a widget test would dwarf the assertion.
+    // the create page reverts to `keyPurposeBitcoin(network:
+    // BitcoinNetwork.bitcoin)`, this test fires.
     final stub = _CapturingNostrClient();
     final alt = BitcoinNetwork.supportedNetworks().firstWhere(
       (n) => n.name() != BitcoinNetwork.bitcoin.name(),
@@ -206,10 +183,9 @@ void main() {
     );
 
     // The stub throws after capturing so we don't have to construct a
-    // real `RemoteRecoveryLobbyHandle`. `unawaited`-style: swallow the
-    // marker error, then assert on the capture.
+    // real `RemoteRecoveryLobbyHandle`.
     try {
-      await RemoteRecoveryCreatePage.dispatchCreate(
+      await RemoteRecoveryPage.dispatchCreate(
         client: stub,
         identity: identity,
         result: result,
@@ -228,7 +204,7 @@ void main() {
       reason:
           'Regression guard: the KeyPurpose handed to '
           '`NostrClient.createRemoteRecoveryLobby` must reflect the '
-          'network picked in the create dialog, not the mainnet default.',
+          'network picked in the create form, not the mainnet default.',
     );
   });
 }

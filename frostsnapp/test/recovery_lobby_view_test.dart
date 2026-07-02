@@ -10,12 +10,14 @@ import 'package:frostsnap/recovery/remote_recovery_lobby_page.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
+import 'package:frostsnap/src/rust/api/nostr/remote_keygen.dart'
+    show DeviceKind;
 import 'package:frostsnap/src/rust/api/nostr/remote_recovery.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
 import 'package:frostsnap/src/rust/lib.dart';
 
 // Widget test drives `RecoveryLobbyView` directly. The pure-UI
-// widget was extracted from `RemoteRecoveryLobbyPage` precisely so
+// widget is kept separate from `RemoteRecoveryPage` precisely so
 // the state → UI mapping can be tested without a live
 // `RemoteRecoveryLobbyHandle` (a RustOpaqueInterface).
 //
@@ -67,18 +69,44 @@ NostrProfile _profile(String displayName) =>
 
 RecoveryParticipantInfo _participant({
   required int seed,
-  required String name,
+  String? name,
   List<EventId> posted = const [],
   bool left = false,
 }) => RecoveryParticipantInfo(
   pubkey: _pk(seed),
   joinedAtSecs: seed,
-  profile: _profile(name),
+  profile: name == null ? null : _profile(name),
   postedShares: posted,
   left: left,
 );
 
-Widget _wrap(Widget child) => MaterialApp(home: child);
+class _FakeShareImage implements ShareImage {
+  @override
+  void dispose() {}
+
+  @override
+  bool get isDisposed => false;
+}
+
+ObservedShare _observedShare({
+  required int eid,
+  required int author,
+  required String deviceName,
+}) => ObservedShare(
+  eventId: _eid(eid),
+  author: _pk(author),
+  post: SharePost(
+    deviceId: DeviceId(field0: U8Array33(Uint8List(33))),
+    deviceName: deviceName,
+    deviceKind: DeviceKind.frostsnap,
+    shareImage: _FakeShareImage(),
+    needsConsolidation: true,
+  ),
+);
+
+// Scaffold stands in for the Material surface MaybeFullscreenDialog
+// provides in production (Chip/ListTile require a Material ancestor).
+Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
 void main() {
   setUpAll(() async {
@@ -115,6 +143,7 @@ void main() {
           verificationFailed: false,
           onFinish: () async {},
           onCancel: () async {},
+          onLeave: () async {},
         ),
       ),
     );
@@ -146,6 +175,7 @@ void main() {
           verificationFailed: false,
           onFinish: () async {},
           onCancel: () async {},
+          onLeave: () async {},
         ),
       ),
     );
@@ -190,6 +220,7 @@ void main() {
             pressed += 1;
           },
           onCancel: () async {},
+          onLeave: () async {},
         ),
       ),
     );
@@ -230,6 +261,7 @@ void main() {
             verificationFailed: true,
             onFinish: () async {},
             onCancel: () async {},
+            onLeave: () async {},
           ),
         ),
       );
@@ -266,6 +298,7 @@ void main() {
           verificationFailed: false,
           onFinish: () async {},
           onCancel: () async {},
+          onLeave: () async {},
         ),
       ),
     );
@@ -302,6 +335,7 @@ void main() {
           verificationFailed: false,
           onFinish: () async {},
           onCancel: () async {},
+          onLeave: () async {},
         ),
       ),
     );
@@ -331,9 +365,193 @@ void main() {
           verificationFailed: false,
           onFinish: () async {},
           onCancel: () async {},
+          onLeave: () async {},
         ),
       ),
     );
     expect(find.textContaining('cancelled by leader'), findsOneWidget);
+    // Nothing left to announce on a cancelled lobby — plain Close,
+    // no Leave.
+    expect(find.text('Close'), findsOneWidget);
+    expect(find.text('Leave lobby'), findsNothing);
+  });
+
+  testWidgets('joiner Leave lobby publishes leave via onLeave', (tester) async {
+    var leaves = 0;
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      participants: {me: _participant(seed: 0x11, name: 'me')},
+      shares: const [],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          state: state,
+          isLeader: false,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {},
+          onLeave: () async {
+            leaves += 1;
+          },
+        ),
+      ),
+    );
+    // Joiners must announce their exit, not silently close.
+    expect(find.text('Close'), findsNothing);
+    await tester.tap(find.text('Leave lobby'));
+    await tester.pump();
+    expect(leaves, 1);
+  });
+
+  testWidgets('leader footer offers Cancel lobby, not Leave', (tester) async {
+    var cancels = 0;
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      participants: {me: _participant(seed: 0x11, name: 'me')},
+      shares: const [],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          state: state,
+          isLeader: true,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {
+            cancels += 1;
+          },
+          onLeave: () async {},
+        ),
+      ),
+    );
+    expect(find.text('Leave lobby'), findsNothing);
+    await tester.tap(find.text('Cancel lobby'));
+    await tester.pump();
+    expect(cancels, 1);
+  });
+
+  testWidgets('posted key shares list their device names', (tester) async {
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      participants: {
+        me: _participant(seed: 0x11, name: 'me', posted: [_eid(1), _eid(2)]),
+      },
+      shares: [
+        _observedShare(eid: 1, author: 0x11, deviceName: 'kitchen frostsnap'),
+        _observedShare(eid: 2, author: 0x11, deviceName: 'office frostsnap'),
+      ],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          state: state,
+          isLeader: true,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {},
+          onLeave: () async {},
+        ),
+      ),
+    );
+    // Device names replace the old share-count chip: users think in
+    // devices, not share counts.
+    expect(find.text('kitchen frostsnap'), findsOneWidget);
+    expect(find.text('office frostsnap'), findsOneWidget);
+    expect(find.byType(Chip), findsNothing);
+  });
+
+  testWidgets(
+    'peer without profile falls back to short pubkey, not full npub',
+    (tester) async {
+      final state = RecoveryLobbyState(
+        metadata: _meta(),
+        participants: {peer1: _participant(seed: 0x22)},
+        shares: const [],
+        currentRecovery: null,
+        finished: null,
+        cancelled: false,
+      );
+      await tester.pumpWidget(
+        _wrap(
+          RecoveryLobbyView(
+            state: state,
+            isLeader: false,
+            myPubkey: me,
+            inviteLink: 'frostsnap://recovery/deadbeef',
+            finishing: false,
+            persisting: false,
+            error: null,
+            recoveredRef: null,
+            verificationFailed: false,
+            onFinish: () async {},
+            onCancel: () async {},
+            onLeave: () async {},
+          ),
+        ),
+      );
+      // 0x22 repeated = '2222…'; the row shows only the first 8 hex
+      // chars instead of an unreadable full npub string.
+      expect(find.text('22222222'), findsOneWidget);
+    },
+  );
+
+  testWidgets('self shows You even without any profile', (tester) async {
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      participants: {me: _participant(seed: 0x11)},
+      shares: const [],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          state: state,
+          isLeader: false,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {},
+          onLeave: () async {},
+        ),
+      ),
+    );
+    // No NostrContext in the test tree, so the identity-name path is
+    // unavailable — but self must never render as a pubkey.
+    expect(find.text('You'), findsOneWidget);
   });
 }

@@ -167,6 +167,11 @@ class _DeviceDiscoveryWidgetState extends State<DeviceDiscoveryWidget> {
           encryptionKey: encryptionKey,
         );
         return error?.toString();
+
+      case RemoteLobbyContext():
+        // Nothing local to validate against — the lobby fold rejects
+        // incompatible shares at Finish.
+        return null;
     }
   }
 
@@ -186,6 +191,8 @@ class _DeviceDiscoveryWidgetState extends State<DeviceDiscoveryWidget> {
       }(),
       NewRestorationContext() =>
         'Plug in a Frostsnap device to begin wallet restoration.',
+      RemoteLobbyContext() =>
+        'Plug in a Frostsnap to load a key share into the recovery.',
     };
   }
 
