@@ -214,7 +214,23 @@ run-dual INSTANCE="": maybe-gen
         b) cd frostsnapp && exec env FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 flutter run -d "$FLUTTER_TARGET" $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-b" ;;
         *)
             "$BG_BINARY" --data-dir="$HOME/tmp/frostsnap-b" &
-            cd frostsnapp && exec env FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 flutter run -d "$FLUTTER_TARGET" $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-a"
+            BG_PID=$!
+            # Reap instance B (and any strays a previously-killed
+            # session leaked) when this session ends — Ctrl-C or a
+            # normal `flutter run` quit. The pkill patterns match only
+            # the data-dir argument so nothing unrelated can be hit;
+            # by trap time the foreground `flutter run` has already
+            # exited (sh runs traps after the foreground command), so
+            # the -a sweep only catches an orphaned app instance.
+            cleanup() {
+                kill "$BG_PID" 2>/dev/null || true
+                pkill -f -- "--data-dir=$HOME/tmp/frostsnap-b" 2>/dev/null || true
+                pkill -f -- "--data-dir=$HOME/tmp/frostsnap-a" 2>/dev/null || true
+            }
+            trap cleanup EXIT INT TERM
+            # No `exec` here: the trap needs this shell to outlive
+            # `flutter run`.
+            (cd frostsnapp && env FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 flutter run -d "$FLUTTER_TARGET" $DART_DEFINES -a "--data-dir=$HOME/tmp/frostsnap-a")
             ;;
     esac
 
