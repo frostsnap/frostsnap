@@ -9,6 +9,7 @@ import 'package:frostsnap/invite_link_input.dart';
 import 'package:frostsnap/join_link.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/recovery/remote_recovery_page.dart';
+import 'package:frostsnap/recovery/restore_chooser.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -17,7 +18,7 @@ import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/org_keygen_page.dart';
 import 'package:frostsnap/wallet_create.dart';
 
-enum AddType { newWallet, recoverWallet, remoteRecoverWallet, joinFromLink }
+enum AddType { newWallet, recoverWallet, joinFromLink }
 
 enum VerticalButtonGroupPosition { top, bottom, middle, single }
 
@@ -54,7 +55,7 @@ class WalletAddColumn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (showNewToFrostsnap) buildTitle(context, text: 'Create wallet'),
+        if (showNewToFrostsnap) buildTitle(context, text: 'Add a wallet'),
         buildCard(
           context,
           action: () => onPressed(AddType.newWallet),
@@ -64,24 +65,13 @@ class WalletAddColumn extends StatelessWidget {
           title: 'Create a multi-sig wallet',
           subtitle: 'Set up a secure wallet using multiple Frostsnap devices',
         ),
-        buildTitle(context, text: 'Restore wallet'),
         buildCard(
           context,
           action: () => onPressed(AddType.recoverWallet),
-          groupPosition: VerticalButtonGroupPosition.top,
           isThreeLine: true,
           icon: Icon(Icons.restore_rounded, size: iconSize),
-          title: 'Restore wallet',
-          subtitle: 'Use an existing device key or load a physical backup',
-        ),
-        buildCard(
-          context,
-          action: () => onPressed(AddType.remoteRecoverWallet),
-          groupPosition: VerticalButtonGroupPosition.bottom,
-          isThreeLine: true,
-          icon: Icon(Icons.groups_rounded, size: iconSize),
-          title: 'Start a recovery lobby',
-          subtitle: 'Invite share holders to help recover a wallet over nostr',
+          title: 'Restore a wallet',
+          subtitle: 'Bring a wallet back from keys, backups, or other people',
         ),
         buildCard(
           context,
@@ -241,6 +231,24 @@ class WalletAddColumn extends StatelessWidget {
     homeCtx.openNewlyCreatedWallet(asRef.keyId);
   }
 
+  /// The Restore verb: intent first, mechanism second. The chooser
+  /// pops with a branch, then the branch's existing flow runs —
+  /// nothing behind the fork changes.
+  static Future<void> showRestoreChooserDialog(BuildContext context) async {
+    final choice = await MaybeFullscreenDialog.show<RestoreChoice>(
+      context: context,
+      barrierDismissible: true,
+      child: const RestoreChooser(),
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case RestoreChoice.local:
+        showWalletRecoverDialog(context);
+      case RestoreChoice.remote:
+        await showRemoteRecoveryDialog(context);
+    }
+  }
+
   static void showWalletRecoverDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
 
@@ -308,9 +316,7 @@ Function(AddType) makeOnPressed(BuildContext context) {
       case AddType.newWallet:
         WalletAddColumn.showWalletCreateDialog(context);
       case AddType.recoverWallet:
-        WalletAddColumn.showWalletRecoverDialog(context);
-      case AddType.remoteRecoverWallet:
-        WalletAddColumn.showRemoteRecoveryDialog(context);
+        WalletAddColumn.showRestoreChooserDialog(context);
       case AddType.joinFromLink:
         WalletAddColumn.showJoinFromLinkDialog(context);
     }
