@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
@@ -112,8 +113,8 @@ class EnterWalletNameViewState extends State<EnterWalletNameView> {
           ),
           if (developerMode) ...[
             const SizedBox(height: 16),
-            BitcoinNetworkChooser(
-              value: bitcoinNetwork,
+            NetworkAdvancedOptions(
+              selected: bitcoinNetwork,
               onChanged: (network) {
                 setState(() => bitcoinNetwork = network);
               },

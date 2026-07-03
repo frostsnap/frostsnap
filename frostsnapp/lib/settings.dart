@@ -1235,47 +1235,6 @@ class KeysSettings extends StatelessWidget {
   }
 }
 
-class BitcoinNetworkChooser extends StatelessWidget {
-  final BitcoinNetwork value;
-  final ValueChanged<BitcoinNetwork> onChanged;
-
-  const BitcoinNetworkChooser({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 20),
-        const Text("(developer) Choose the network:"),
-        const SizedBox(height: 10),
-        DropdownButton<String>(
-          hint: const Text('Choose a network'),
-          value: value.name(),
-          onChanged: (String? newValue) {
-            if (newValue != null) {
-              final network = BitcoinNetwork.fromString(string: newValue)!;
-              onChanged(network);
-            }
-          },
-          items: BitcoinNetwork.supportedNetworks().map((network) {
-            final name = network.name();
-            return DropdownMenuItem<String>(
-              value: name,
-              child: Text(name == "bitcoin" ? "Bitcoin (BTC)" : network.name()),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
 Future<void> _showEraseAllDialog(BuildContext context) async {
   final currentUpdate = await GlobalStreams.deviceListSubject.first;
   final devicesToErase = currentUpdate.state.devices
