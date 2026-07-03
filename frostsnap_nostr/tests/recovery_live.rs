@@ -450,3 +450,135 @@ async fn bogus_finish_yields_verification_failed() {
         "expected FinishVerificationFailed within 10s",
     );
 }
+
+/// Regression: a lobby created with "I don't know the threshold"
+/// (`threshold_hint: None`) must still recover — the hint has to
+/// reach `find_valid_subset` as `None` (threshold-inference mode),
+/// not be collapsed to a pinned threshold of 0, which can never
+/// reconstruct. Covers both call sites: the fold's
+/// `recompute_current_recovery` (RecoveryAvailable) and the
+/// leader's Finish verification.
+#[tokio::test]
+async fn recovery_completes_without_threshold_hint() {
+    let _ = tracing_subscriber::fmt::try_init();
+    let mut rng = ChaCha20Rng::from_seed([29u8; 32]);
+    let mut env = TestEnv::default();
+
+    let mut run = Run::start_after_keygen_and_nonces(3, 3, &mut env, &mut rng, 2, KeyPurpose::Test);
+    let asref = run
+        .coordinator
+        .iter_keys()
+        .next()
+        .unwrap()
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+    for &device_id in &run.device_set() {
+        let msgs = run
+            .coordinator
+            .request_device_display_backup(device_id, asref, TEST_ENCRYPTION_KEY)
+            .unwrap();
+        run.extend(msgs);
+    }
+    run.run_until_finished(&mut env, &mut rng).unwrap();
+    let mut fixture_backups: Vec<_> = env
+        .backups
+        .iter()
+        .map(|(dev, (_name, backup))| (*dev, backup.clone()))
+        .collect();
+    fixture_backups.sort_by_key(|(_, b)| b.share_image().index);
+
+    let relay = MockRelay::run().await.expect("mock relay");
+    let relay_url = relay.url().await;
+    let channel_secret = ChannelSecret::random(&mut rng);
+    let (event_tx, mut event_rx) = mpsc::channel::<(usize, RecoveryLobbyEvent)>(256);
+
+    let mut participants: Vec<Participant> = Vec::with_capacity(2);
+    for i in 0..2 {
+        let client = Client::builder().build();
+        client.add_relay(&relay_url).await.unwrap();
+        client.connect().await;
+        let identity = NostrIdentity::Generated {
+            nsec: Nsec::generate(),
+            name: format!("p-{i}"),
+            created_at: 1_700_000_000 + i as u64,
+        };
+        let lobby_client =
+            RecoveryLobbyClient::new(channel_secret.clone()).with_fingerprint(TEST_FINGERPRINT);
+        let (lobby_client, init_event) = if i == 0 {
+            let meta = RecoveryChannelMetadata {
+                key_name: "no-hint-test".into(),
+                purpose: KeyPurpose::Test,
+                threshold_hint: None,
+            };
+            let with_meta = lobby_client.with_metadata(meta);
+            let init = with_meta.build_creation_event(&identity).await.unwrap();
+            (with_meta, Some(init))
+        } else {
+            (lobby_client, None)
+        };
+        let sink = TaggedSink {
+            index: i,
+            tx: event_tx.clone(),
+        };
+        let handle = lobby_client
+            .run(client.clone(), identity.clone(), init_event, sink)
+            .await
+            .unwrap();
+        participants.push(Participant {
+            client,
+            identity,
+            handle,
+        });
+    }
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // Leader posts two shares, joiner posts the third — all real.
+    for (i, poster) in [0usize, 0, 1].into_iter().enumerate() {
+        let (device_id, backup) = &fixture_backups[i];
+        let post = SharePost {
+            device_id: *device_id,
+            device_name: format!("d-{i}"),
+            device_kind: DeviceKind::Frostsnap,
+            share_image: backup.share_image(),
+            needs_consolidation: true,
+        };
+        participants[poster].handle.post_share(post).await.unwrap();
+    }
+
+    // The leader's fold must surface RecoveryAvailable via threshold
+    // inference alone.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut winning_refs: Option<Vec<EventId>> = None;
+    while std::time::Instant::now() < deadline && winning_refs.is_none() {
+        match tokio::time::timeout(std::time::Duration::from_millis(500), event_rx.recv()).await {
+            Ok(Some((0, RecoveryLobbyEvent::RecoveryAvailable(recovered)))) => {
+                winning_refs = Some(recovered.winning_share_refs);
+            }
+            _ => {}
+        }
+    }
+    let winning_refs = winning_refs
+        .expect("RecoveryAvailable must fire without a threshold hint (fuzzy inference)");
+    assert_eq!(winning_refs.len(), 3);
+
+    // Finish verification (the second call site) must also infer.
+    participants[0].handle.finish(winning_refs).await.unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut finished_count = 0;
+    while std::time::Instant::now() < deadline && finished_count < 2 {
+        match tokio::time::timeout(std::time::Duration::from_millis(500), event_rx.recv()).await {
+            Ok(Some((_, RecoveryLobbyEvent::Finished(..)))) => finished_count += 1,
+            Ok(Some((_, RecoveryLobbyEvent::FinishVerificationFailed))) => {
+                panic!("legitimate no-hint finish must verify");
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(
+        finished_count, 2,
+        "both participants must see Finished within 10s"
+    );
+}

@@ -540,6 +540,65 @@ mod tests {
         );
     }
 
+    /// Regression: "I don't know the threshold" must reach
+    /// `find_valid_subset` as `None` (inference mode), not `Some(0)`
+    /// (a pinned threshold of zero — no zero-share subset ever
+    /// reconstructs, so recovery could never complete).
+    #[test]
+    fn recompute_finds_recovery_without_threshold_hint() {
+        use core::num::NonZeroU32;
+        use frostsnap_core::schnorr_fun::frost::ShareIndex;
+        use frostsnap_core::schnorr_fun::fun::{g, marker::*, s, Scalar, G};
+
+        // Real share images on f(x) = 5 + 3x (a threshold-2 poly);
+        // a zero-bit fingerprint accepts the first reconstruction.
+        let poly_share_image = |idx: u32| {
+            let x = Scalar::<Public, Zero>::from(idx + 1);
+            let a0 = Scalar::<Public, Zero>::from(5_u32);
+            let a1 = Scalar::<Public, Zero>::from(3_u32);
+            let v = s!(a0 + a1 * x);
+            ShareImage {
+                index: ShareIndex::from(NonZeroU32::new(idx + 1).unwrap()),
+                image: g!(v * G).normalize(),
+            }
+        };
+        let zero_fp = Fingerprint {
+            bits_per_coeff: 0,
+            max_bits_total: 0,
+            tag: "test",
+        };
+
+        let mut state = base_state();
+        state.metadata.threshold_hint = None;
+        for i in 0..3_u32 {
+            let author = pk(i as u8 + 1);
+            let event_id = eid(0xA0 + i as u8);
+            add_participant(&mut state, author, vec![event_id]);
+            state.shares.push(ObservedShare {
+                event_id,
+                author,
+                post: SharePost {
+                    device_id: did(i as u8 + 1),
+                    device_name: format!("d-{i}"),
+                    device_kind: DeviceKind::Frostsnap,
+                    share_image: poly_share_image(i),
+                    needs_consolidation: true,
+                },
+            });
+        }
+
+        recompute_current_recovery(&mut state, zero_fp);
+
+        let recovered = state
+            .current_recovery
+            .as_ref()
+            .expect("fuzzy recovery must infer the threshold when the hint is None");
+        // All three shares lie on the recovered polynomial.
+        let winning: BTreeSet<_> = recovered.winning_share_refs.iter().copied().collect();
+        let expected: BTreeSet<_> = [eid(0xA0), eid(0xA1), eid(0xA2)].into_iter().collect();
+        assert_eq!(winning, expected);
+    }
+
     /// Ghost posted_shares (event_id present on the participant but
     /// no matching ObservedShare) get silently dropped. This is
     /// defensive against fold/state drift; must not panic.
@@ -682,7 +741,7 @@ fn process_event(
             }
             let ras = RecoveringAccessStructure::new(
                 &selected,
-                Some(state.metadata.threshold_hint.unwrap_or(0)),
+                state.metadata.threshold_hint,
                 fingerprint,
             );
             match ras.shared_key.clone() {
@@ -738,11 +797,7 @@ fn recompute_current_recovery(state: &mut RecoveryLobbyState, fingerprint: Finge
         .iter()
         .map(|obs| obs.post.to_recover_share())
         .collect();
-    let ras = RecoveringAccessStructure::new(
-        &shares,
-        Some(state.metadata.threshold_hint.unwrap_or(0)),
-        fingerprint,
-    );
+    let ras = RecoveringAccessStructure::new(&shares, state.metadata.threshold_hint, fingerprint);
     state.current_recovery = match ras.shared_key {
         Some(shared_key) => {
             let asr = AccessStructureRef::from_root_shared_key(&shared_key);
