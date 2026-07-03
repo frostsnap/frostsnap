@@ -124,6 +124,9 @@ pub struct RecoveryParticipantInfo {
 #[derive(Clone, Debug)]
 pub struct RecoveryLobbyState {
     pub metadata: RecoveryChannelMetadata,
+    /// The channel creator (authorized to publish Finish/CancelLobby).
+    /// Mirrors keygen's `LobbyState.initiator` — UIs badge this row.
+    pub leader: PublicKey,
     pub participants: HashMap<PublicKey, RecoveryParticipantInfo>,
     pub shares: Vec<ObservedShare>,
     pub current_recovery: Option<RecoveredKey>,
@@ -300,8 +303,10 @@ impl RecoveryLobbyClient {
                         }
                         match RecoveryChannelMetadata::decode_content(&creation.content) {
                             Ok(metadata) => {
+                                let leader: PublicKey = creation.pubkey.into();
                                 let mut state = RecoveryLobbyState {
                                     metadata,
+                                    leader,
                                     participants: HashMap::new(),
                                     shares: Vec::new(),
                                     current_recovery: None,
@@ -309,7 +314,6 @@ impl RecoveryLobbyClient {
                                     cancelled: false,
                                 };
                                 // Leader is a participant from t=0.
-                                let leader: PublicKey = creation.pubkey.into();
                                 upsert_participant(
                                     &mut state,
                                     leader,
@@ -452,6 +456,7 @@ mod tests {
                 purpose: KeyPurpose::Test,
                 threshold_hint: Some(2),
             },
+            leader: pk(0),
             participants: HashMap::new(),
             shares: Vec::new(),
             current_recovery: None,

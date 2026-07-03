@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
+import 'package:frostsnap/restoration/enter_threshold_view.dart';
+import 'package:frostsnap/restoration/enter_wallet_name_view.dart';
 import 'package:frostsnap/recovery/remote_recovery_lobby_page.dart';
 import 'package:frostsnap/restoration/device_discovery.dart';
 import 'package:frostsnap/restoration/state.dart';
@@ -110,10 +110,21 @@ class RemoteRecoveryPage extends StatefulWidget {
   }
 }
 
+enum _CreateStep { walletName, threshold }
+
 class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
-  // Create-step state.
+  // Create-phase state: two steps reusing local recovery's views
+  // (wallet name + network, then the threshold "I'm not sure" /
+  // "I know" selector) before the lobby handle exists.
   bool _creating = false;
   String? _createError;
+  _CreateStep _createStep = _CreateStep.walletName;
+  bool _createForward = true;
+  String? _pendingName;
+  BitcoinNetwork? _pendingNetwork;
+  bool _nameCanSubmit = false;
+  final _nameKey = GlobalKey<EnterWalletNameViewState>();
+  final _thresholdKey = GlobalKey<EnterThresholdViewState>();
 
   // Lobby-step state — live once [_handle] is set (immediately for
   // joiners, after the create form submits for the leader).
@@ -172,6 +183,37 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  void _submitWalletName(String walletName, BitcoinNetwork network) {
+    setState(() {
+      _pendingName = walletName;
+      _pendingNetwork = network;
+      _createForward = true;
+      _createStep = _CreateStep.threshold;
+    });
+  }
+
+  void _submitThreshold(int? threshold) {
+    final name = _pendingName;
+    final network = _pendingNetwork;
+    if (name == null || network == null) return;
+    unawaited(
+      _submitCreate(
+        CreateLobbyResult(
+          keyName: name,
+          thresholdHint: threshold,
+          network: network,
+        ),
+      ),
+    );
+  }
+
+  void _createStepBack() {
+    setState(() {
+      _createForward = false;
+      _createStep = _CreateStep.walletName;
+    });
   }
 
   Future<void> _submitCreate(CreateLobbyResult result) async {
@@ -327,11 +369,121 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
     return true;
   }
 
+  MultiStepDialogScaffold _buildCreateStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final errorText = _createError == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Text(
+              _createError!,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          );
+    switch (_createStep) {
+      case _CreateStep.walletName:
+        return MultiStepDialogScaffold(
+          stepKey: 'recoveryWalletName',
+          title: const Text('Wallet name'),
+          showClose: true,
+          forward: _createForward,
+          reverseDuration: Duration.zero,
+          body: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                EnterWalletNameView(
+                  key: _nameKey,
+                  initialWalletName: _pendingName,
+                  initialBitcoinNetwork: _pendingNetwork,
+                  intro:
+                      'Enter the name of the wallet being recovered. '
+                      "It's written on physical backups — if it's missing "
+                      'or unreadable, choose another name.',
+                  onChanged: (canSubmit) {
+                    if (canSubmit != _nameCanSubmit) {
+                      setState(() => _nameCanSubmit = canSubmit);
+                    }
+                  },
+                  onSubmit: _submitWalletName,
+                ),
+                if (errorText != null) errorText,
+              ],
+            ),
+          ),
+          footer: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: _nameCanSubmit
+                  ? () => _nameKey.currentState?.submit()
+                  : null,
+              child: const Text('Continue'),
+            ),
+          ),
+        );
+      case _CreateStep.threshold:
+        return MultiStepDialogScaffold(
+          stepKey: 'recoveryThreshold',
+          title: const Text('Wallet Threshold (Optional)'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: _creating ? null : _createStepBack,
+            tooltip: 'Back',
+          ),
+          forward: _createForward,
+          reverseDuration: Duration.zero,
+          body: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                EnterThresholdView(
+                  key: _thresholdKey,
+                  onSubmit: _submitThreshold,
+                ),
+                if (errorText != null) errorText,
+              ],
+            ),
+          ),
+          footer: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: _creating
+                  ? null
+                  : () => _thresholdKey.currentState?.submit(),
+              icon: _creating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.arrow_forward_rounded),
+              iconAlignment: IconAlignment.end,
+              label: const Text('Create'),
+            ),
+          ),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final handle = _handle;
+    final onThresholdStep =
+        handle == null && _createStep == _CreateStep.threshold;
     return PopScope(
-      canPop: !_creating && !_finishing && !_persisting && !_lobbyLive,
+      canPop:
+          !_creating &&
+          !_finishing &&
+          !_persisting &&
+          !_lobbyLive &&
+          !onThresholdStep,
+      onPopInvokedWithResult: (didPop, _) {
+        // System back on the threshold step steps back to the name
+        // step instead of dismissing the ceremony.
+        if (!didPop && onThresholdStep && !_creating) {
+          _createStepBack();
+        }
+      },
       child: SafeArea(
         // One dialog, two steps: the create form hands off to the
         // lobby in place (cross-fade) instead of stacking a second
@@ -341,11 +493,7 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
           child: handle == null
               ? KeyedSubtree(
                   key: const ValueKey('createStep'),
-                  child: CreateLobbyForm(
-                    busy: _creating,
-                    connectError: _createError,
-                    onSubmit: (result) => unawaited(_submitCreate(result)),
-                  ),
+                  child: _buildCreateStep(context),
                 )
               : KeyedSubtree(
                   key: const ValueKey('lobbyStep'),
@@ -381,125 +529,4 @@ class CreateLobbyResult {
     required this.thresholdHint,
     required this.network,
   });
-}
-
-/// The leader's create-lobby form as a ceremony dialog step. Pure —
-/// validation + collected values surface through [onSubmit] so
-/// widget tests can drive it without a live `NostrClient`.
-class CreateLobbyForm extends StatefulWidget {
-  const CreateLobbyForm({
-    super.key,
-    required this.onSubmit,
-    this.busy = false,
-    this.connectError,
-  });
-
-  final void Function(CreateLobbyResult) onSubmit;
-  final bool busy;
-
-  /// Failure from the lobby-create call, rendered on the name field.
-  final String? connectError;
-
-  @override
-  State<CreateLobbyForm> createState() => _CreateLobbyFormState();
-}
-
-class _CreateLobbyFormState extends State<CreateLobbyForm> {
-  final _keyName = TextEditingController();
-  final _threshold = TextEditingController();
-  BitcoinNetwork _network = BitcoinNetwork.bitcoin;
-  String? _err;
-
-  @override
-  void dispose() {
-    _keyName.dispose();
-    _threshold.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    if (widget.busy) return;
-    final name = _keyName.text.trim();
-    if (name.isEmpty) {
-      setState(() => _err = 'Wallet name is required');
-      return;
-    }
-    int? hint;
-    final rawHint = _threshold.text.trim();
-    if (rawHint.isNotEmpty) {
-      final parsed = int.tryParse(rawHint);
-      if (parsed == null || parsed < 1) {
-        setState(() => _err = 'Threshold hint must be a positive integer');
-        return;
-      }
-      hint = parsed;
-    }
-    setState(() => _err = null);
-    widget.onSubmit(
-      CreateLobbyResult(keyName: name, thresholdHint: hint, network: _network),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiStepDialogScaffold(
-      stepKey: 'createRecoveryLobby',
-      title: const Text('Start a recovery lobby'),
-      subtitle:
-          'Name the wallet being recovered, then invite the other '
-          'share holders.',
-      showClose: true,
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _keyName,
-              autofocus: true,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: 'Wallet name',
-                helperText: 'The name of the wallet being recovered',
-                errorText: _err ?? widget.connectError,
-                errorMaxLines: 2,
-              ),
-              textCapitalization: TextCapitalization.words,
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _threshold,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Threshold hint (optional)',
-                helperText: 'How many shares are needed to recover',
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
-            NetworkAdvancedOptions(
-              selected: _network,
-              onChanged: (n) => setState(() => _network = n),
-            ),
-          ],
-        ),
-      ),
-      footer: Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          onPressed: widget.busy ? null : _submit,
-          icon: widget.busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.arrow_forward_rounded),
-          iconAlignment: IconAlignment.end,
-          label: const Text('Create'),
-        ),
-      ),
-    );
-  }
 }

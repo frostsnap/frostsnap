@@ -94,11 +94,9 @@ class RecoveryLobbyView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final s = snapshot?.state;
-    final canRecover =
-        s != null &&
-        s.currentRecovery != null &&
-        s.finished == null &&
-        !verificationFailed;
+    final live = s != null && !s.cancelled && s.finished == null;
+    final mePosted =
+        s?.participants[myPubkey]?.postedShares.isNotEmpty ?? false;
 
     return MultiStepDialogScaffold(
       stepKey: 'recoveryLobby',
@@ -128,6 +126,11 @@ class RecoveryLobbyView extends StatelessWidget {
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Status board reads top-down: what the ceremony
+                  // needs right now, then who's here and what they
+                  // gave, then how to grow the room.
+                  _ShareProgress(state: s),
+                  const SizedBox(height: 24),
                   Row(
                     children: [
                       Expanded(
@@ -142,56 +145,38 @@ class RecoveryLobbyView extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  ..._participantRows(s),
-                  const SizedBox(height: 12),
-                  if (isLeader && s.finished == null && !s.cancelled) ...[
+                  const SizedBox(height: 8),
+                  ..._participantCards(s),
+                  if (isLeader && live) ...[
+                    const SizedBox(height: 12),
                     InviteTile(
                       onTap: () => showInviteDialog(context, inviteLink),
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                  _ShareProgress(state: s),
-                  const SizedBox(height: 16),
-                  if (onLoadShare != null &&
-                      s.finished == null &&
-                      !s.cancelled) ...[
-                    // NOT a glowy card — in this app's design
-                    // language a glowing border means "you can plug
-                    // in a device right now", which only the
-                    // discovery screen behind this button offers.
-                    if (s.currentRecovery == null)
-                      _LoadShareTile(onTap: () => onLoadShare!())
-                    else
-                      TextButton.icon(
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add another key share'),
-                        onPressed: () => onLoadShare!(),
-                      ),
-                    const SizedBox(height: 16),
                   ],
                   if (s.finished != null) ...[
+                    const SizedBox(height: 16),
                     _FinishedBanner(
                       persisting: persisting,
                       recoveredRef: recoveredRef,
                       error: error,
                     ),
-                    const SizedBox(height: 16),
                   ],
                   if (s.cancelled) ...[
+                    const SizedBox(height: 16),
                     Text(
                       'Recovery lobby cancelled by leader.',
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: theme.colorScheme.error,
                       ),
                     ),
-                    const SizedBox(height: 16),
                   ],
-                  if (error != null)
+                  if (error != null) ...[
+                    const SizedBox(height: 16),
                     Text(
                       error!,
                       style: TextStyle(color: theme.colorScheme.error),
                     ),
+                  ],
                 ],
               ),
       ),
@@ -201,7 +186,7 @@ class RecoveryLobbyView extends StatelessWidget {
           // leave it (publishing Leave so peers see them go). Once
           // it's cancelled or finished there's nothing to announce —
           // just Close.
-          if (s != null && !s.cancelled && s.finished == null)
+          if (live)
             AsyncActionButton(
               onPressed: isLeader ? onCancel : onLeave,
               style: FilledButton.styleFrom(
@@ -216,141 +201,280 @@ class RecoveryLobbyView extends StatelessWidget {
               child: const Text('Close'),
             ),
           const Spacer(),
-          if (isLeader)
-            FilledButton.icon(
-              icon: finishing
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(finishing ? 'Finalizing…' : 'Recover'),
-              onPressed: canRecover && !finishing ? () => onFinish() : null,
-            ),
+          _primaryButton(s, live: live, mePosted: mePosted),
         ],
       ),
     );
   }
 
-  List<Widget> _participantRows(RecoveryLobbyState s) {
+  /// Phase-aware primary — always the single most useful action,
+  /// mirroring keygen's `_LobbyPrimaryButton`: contribute first,
+  /// then recover (leader) or wait (joiner).
+  Widget _primaryButton(
+    RecoveryLobbyState? s, {
+    required bool live,
+    required bool mePosted,
+  }) {
+    if (s == null) {
+      return const FilledButton(onPressed: null, child: Text('Connecting…'));
+    }
+    if (!live) return const SizedBox.shrink();
+    if (!mePosted && onLoadShare != null) {
+      return FilledButton.icon(
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Load key share'),
+        onPressed: () => onLoadShare!(),
+      );
+    }
+    if (isLeader) {
+      final canRecover = s.currentRecovery != null && !verificationFailed;
+      return FilledButton.icon(
+        icon: finishing
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.check),
+        label: Text(
+          finishing
+              ? 'Finalizing…'
+              : (canRecover ? 'Recover' : 'Waiting for key shares'),
+        ),
+        onPressed: canRecover && !finishing ? () => onFinish() : null,
+      );
+    }
+    return const FilledButton(
+      onPressed: null,
+      child: Text('Waiting for recovery'),
+    );
+  }
+
+  List<Widget> _participantCards(RecoveryLobbyState s) {
     final entries = s.participants.values.toList()
       ..sort((a, b) => a.joinedAtSecs.compareTo(b.joinedAtSecs));
+    final live = !s.cancelled && s.finished == null;
     return [
       for (final p in entries)
-        _ParticipantRow(
+        _ParticipantCard(
           info: p,
           profile: snapshot?.profileOf(p.pubkey),
           isMe: p.pubkey == myPubkey,
+          isLeader: p.pubkey == s.leader,
           devices: [
             for (final ref in p.postedShares)
               for (final share in s.shares)
                 if (share.eventId == ref) share.post.deviceName,
           ],
+          // Own-card affordance: post ANOTHER key share (the first
+          // one goes through the footer primary, like keygen's "Add
+          // your devices").
+          onAddShare:
+              p.pubkey == myPubkey &&
+                  live &&
+                  p.postedShares.isNotEmpty &&
+                  onLoadShare != null
+              ? () => onLoadShare!()
+              : null,
         ),
     ];
   }
 }
 
-class _LoadShareTile extends StatelessWidget {
-  final VoidCallback onTap;
-  const _LoadShareTile({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Icon(Icons.usb_rounded, color: theme.colorScheme.primary),
-        title: const Text('Load key share'),
-        subtitle: const Text('Plug in a Frostsnap or enter a seed-word backup'),
-        trailing: const Icon(Icons.chevron_right_rounded),
-      ),
-    );
-  }
-}
-
-class _ParticipantRow extends StatelessWidget {
+/// Keygen-dialect participant card: avatar (+ leader badge), name,
+/// status on the right, chevron-expandable list of the key shares
+/// this participant contributed.
+class _ParticipantCard extends StatefulWidget {
   final RecoveryParticipantInfo info;
   final NostrProfile? profile;
   final bool isMe;
+  final bool isLeader;
 
   /// Device names of the key shares this participant has posted
   /// (resolved from the state's share list by event ref).
   final List<String> devices;
 
-  const _ParticipantRow({
+  /// Non-null only on the caller's own card while the lobby is live
+  /// and they've already contributed at least one share.
+  final VoidCallback? onAddShare;
+
+  const _ParticipantCard({
     required this.info,
     required this.profile,
     required this.isMe,
+    required this.isLeader,
     required this.devices,
+    this.onAddShare,
   });
+
+  @override
+  State<_ParticipantCard> createState() => _ParticipantCardState();
+}
+
+class _ParticipantCardState extends State<_ParticipantCard> {
+  bool _expanded = false;
 
   // The channel-member surface is the ONLY name source — including
   // for self. Showing the locally-known settings name would let a
   // broken in-channel profile publish go unnoticed: you'd see your
   // name while peers see your pubkey.
+  String _displayName() {
+    final name = widget.profile?.displayName ?? widget.profile?.name;
+    if (widget.isMe) {
+      return (name != null && name.isNotEmpty) ? '$name (You)' : 'You';
+    }
+    return (name != null && name.isNotEmpty)
+        ? name
+        : widget.info.pubkey.toHex().substring(0, 8);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    final p = widget.info;
+    final hasShares = widget.devices.isNotEmpty;
+
+    final Widget statusLabel;
+    if (p.left) {
+      statusLabel = Text(
+        'Left',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    } else if (hasShares) {
+      statusLabel = Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [
+          Text(
+            'Ready',
+            style: theme.textTheme.labelMedium?.copyWith(color: Colors.green),
+          ),
+          const Icon(Icons.verified_rounded, size: 18, color: Colors.green),
+        ],
+      );
+    } else {
+      statusLabel = Text(
+        widget.isMe ? 'Waiting for you' : 'Joined',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+
+    return Card.filled(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      color: theme.colorScheme.surfaceContainerHigh,
+      clipBehavior: Clip.hardEdge,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                NostrAvatar.small(pubkey: p.pubkey, profile: widget.profile),
+                if (widget.isLeader)
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Tooltip(
+                      message: 'Leader',
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHigh,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.star_rounded,
+                          size: 12,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            title: Text(_displayName(), overflow: TextOverflow.ellipsis),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: [
+                statusLabel,
+                if (widget.onAddShare != null)
+                  IconButton(
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    tooltip: 'Load another key share',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    onPressed: widget.onAddShare,
+                  ),
+                if (hasShares)
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0.0,
+                    duration: Durations.short3,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+            onTap: hasShares
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: _KeyShareList(devices: widget.devices),
+            crossFadeState: _expanded && hasShares
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: Durations.short4,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Contributed key shares under an expanded participant card —
+/// keygen's `_DeviceList` shape.
+class _KeyShareList extends StatelessWidget {
+  const _KeyShareList({required this.devices});
+  final List<String> devices;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.fromLTRB(72, 4, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              NostrAvatar.small(pubkey: info.pubkey, profile: profile),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _displayName(context, profile),
-                  style: theme.textTheme.bodyLarge,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Text(
-                info.left ? 'Left' : (devices.isEmpty ? 'Joined' : 'Ready'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          if (devices.isNotEmpty)
+          for (final name in devices)
             Padding(
-              padding: const EdgeInsets.only(left: 48, top: 2),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
                 children: [
-                  for (final name in devices)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.key,
-                            size: 16,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              name,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
+                  Icon(
+                    Icons.key,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: theme.textTheme.bodyMedium,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                  ),
                 ],
               ),
             ),
@@ -358,21 +482,6 @@ class _ParticipantRow extends StatelessWidget {
       ),
     );
   }
-
-  static String? _profileName(NostrProfile? profile) {
-    final name = profile?.displayName ?? profile?.name;
-    return (name != null && name.isNotEmpty) ? name : null;
-  }
-
-  String _displayName(BuildContext context, NostrProfile? profile) {
-    final name = _profileName(profile);
-    if (isMe) {
-      return name != null ? '$name (You)' : 'You';
-    }
-    return name ?? _shortPubkey(info.pubkey);
-  }
-
-  static String _shortPubkey(PublicKey pk) => pk.toHex().substring(0, 8);
 }
 
 class _ShareProgress extends StatelessWidget {

@@ -6,24 +6,30 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show ExternalLibraryLoaderConfig;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frostsnap/recovery/remote_recovery_page.dart';
-import 'package:frostsnap/src/rust/api.dart' show keyPurposeBitcoin;
+import 'package:frostsnap/restoration/enter_threshold_view.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/nostr/remote_recovery.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
 import 'package:frostsnap/src/rust/lib.dart';
 
-// Widget tests for `CreateLobbyForm` — the ceremony step the leader
-// fills out before `NostrClient.createRemoteRecoveryLobby` gets
-// called. The form's job is to collect wallet name + optional
-// threshold hint + `BitcoinNetwork`, validate, and surface a
-// `CreateLobbyResult` through `onSubmit`.
+// The create flow reuses local recovery's step views. This file
+// covers the remote-specific seams:
 //
-// `setUpAll` loads the real Rust dylib because
-// `NetworkAdvancedOptions` calls `BitcoinNetwork.name()` (FFI) at
-// build time. Same pattern as `recovery_lobby_view_test.dart`.
-
-Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
+// - `EnterThresholdView` interaction (context-free, so driven
+//   directly): the "I'm not sure" / "I know the threshold" selector
+//   maps to `thresholdHint = null` / N. The view is the same widget
+//   local recovery renders; the wallet-name step
+//   (`EnterWalletNameView`) needs a live `SettingsContext` for its
+//   dev-mode network gate and is already exercised by local
+//   recovery, so it isn't re-pumped here.
+// - `RemoteRecoveryPage.dispatchCreate`: a stub `NostrClient`
+//   captures the `createRemoteRecoveryLobby` call, guarding that
+//   `CreateLobbyResult.network` flows into the `KeyPurpose` (not a
+//   mainnet hard-code).
+//
+// `setUpAll` loads the real Rust dylib for the FFI types
+// (`keyPurposeBitcoin`, `Nsec.generate`).
 
 void main() {
   setUpAll(() async {
@@ -40,133 +46,65 @@ void main() {
     );
   });
 
-  testWidgets('empty name shows an error and does not submit', (tester) async {
-    CreateLobbyResult? submitted;
-    await tester.pumpWidget(
-      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
-    );
+  Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-    await tester.pump();
-
-    expect(find.text('Wallet name is required'), findsOneWidget);
-    expect(submitted, isNull);
-  });
-
-  testWidgets('valid submit returns entered name + default network', (
+  testWidgets("threshold step defaults to I'm-not-sure → null hint", (
     tester,
   ) async {
-    CreateLobbyResult? submitted;
+    int? submitted = -1; // sentinel: distinguish "null" from "not called"
+    var called = false;
     await tester.pumpWidget(
-      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
+      wrap(
+        EnterThresholdView(
+          onSubmit: (threshold) {
+            called = true;
+            submitted = threshold;
+          },
+        ),
+      ),
     );
-
-    await tester.enterText(find.byType(TextField).first, 'Family wallet');
-    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-    await tester.pump();
-
-    expect(submitted, isNotNull);
-    expect(submitted!.keyName, 'Family wallet');
-    expect(submitted!.thresholdHint, isNull);
-    expect(submitted!.network.name(), BitcoinNetwork.bitcoin.name());
-  });
-
-  testWidgets(
-    'selecting a non-default network flows through to the result and its KeyPurpose',
-    (tester) async {
-      // Pick a supported network other than the default. Failing this
-      // assumption would mean the platform build stripped alternates; the
-      // whole point of the chooser is dead in that case.
-      final alt = BitcoinNetwork.supportedNetworks().firstWhere(
-        (n) => n.name() != BitcoinNetwork.bitcoin.name(),
-      );
-
-      CreateLobbyResult? submitted;
-      await tester.pumpWidget(
-        _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
-      );
-
-      await tester.enterText(find.byType(TextField).first, 'w');
-
-      // Reveal the network picker (NetworkAdvancedOptions hides the
-      // SegmentedButton behind the 'Developer' toggle) and pick `alt`.
-      await tester.tap(find.text('Developer'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(alt.name()).last);
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-      await tester.pump();
-
-      expect(submitted, isNotNull);
-      expect(
-        submitted!.network.name(),
-        alt.name(),
-        reason:
-            'Regression guard: if `_submit` hard-codes `BitcoinNetwork.bitcoin` again '
-            'this assertion fires. `result.network` must reflect the picked value.',
-      );
-
-      final purpose = keyPurposeBitcoin(network: submitted!.network);
-      expect(purpose, isNotNull);
-    },
-  );
-
-  testWidgets('zero threshold shows an error', (tester) async {
-    CreateLobbyResult? submitted;
-    await tester.pumpWidget(
-      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
-    );
-
-    await tester.enterText(find.byType(TextField).at(0), 'ok');
-    // digitsOnly formatter strips letters; "0" is a valid parse but < 1.
-    await tester.enterText(find.byType(TextField).at(1), '0');
-    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-    await tester.pump();
-
-    expect(
-      find.text('Threshold hint must be a positive integer'),
-      findsOneWidget,
-    );
+    tester
+        .state<EnterThresholdViewState>(find.byType(EnterThresholdView))
+        .submit();
+    expect(called, isTrue);
     expect(submitted, isNull);
   });
 
-  testWidgets('valid threshold hint is returned', (tester) async {
-    CreateLobbyResult? submitted;
+  testWidgets('threshold step with I-know-the-threshold returns N', (
+    tester,
+  ) async {
+    int? submitted;
     await tester.pumpWidget(
-      _wrap(CreateLobbyForm(onSubmit: (r) => submitted = r)),
+      wrap(EnterThresholdView(onSubmit: (threshold) => submitted = threshold)),
     );
-
-    await tester.enterText(find.byType(TextField).at(0), 'w');
-    await tester.enterText(find.byType(TextField).at(1), '3');
-    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
-    await tester.pump();
-
-    expect(submitted, isNotNull);
-    expect(submitted!.thresholdHint, 3);
+    await tester.tap(find.text('I know the threshold'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '3');
+    tester
+        .state<EnterThresholdViewState>(find.byType(EnterThresholdView))
+        .submit();
+    expect(submitted, 3);
   });
 
-  testWidgets('busy form does not submit', (tester) async {
-    CreateLobbyResult? submitted;
+  testWidgets('threshold step blocks empty value when I-know is selected', (
+    tester,
+  ) async {
+    var called = false;
     await tester.pumpWidget(
-      _wrap(CreateLobbyForm(busy: true, onSubmit: (r) => submitted = r)),
+      wrap(EnterThresholdView(onSubmit: (_) => called = true)),
     );
-
-    await tester.enterText(find.byType(TextField).first, 'w');
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Create'),
-    );
-    expect(button.onPressed, isNull);
-    expect(submitted, isNull);
+    await tester.tap(find.text('I know the threshold'));
+    await tester.pumpAndSettle();
+    tester
+        .state<EnterThresholdViewState>(find.byType(EnterThresholdView))
+        .submit();
+    await tester.pump();
+    expect(called, isFalse);
+    expect(find.text('Please enter a threshold'), findsOneWidget);
   });
 
   test('RemoteRecoveryPage.dispatchCreate hands NostrClient a KeyPurpose '
       'whose bitcoinNetwork matches CreateLobbyResult.network', () async {
-    // Full-lobby regression scenario per plan acceptance: a stub
-    // `NostrClient` captures the `createRemoteRecoveryLobby` call and we
-    // assert `purpose.bitcoinNetwork()` reflects the picked network. If
-    // the create page reverts to `keyPurposeBitcoin(network:
-    // BitcoinNetwork.bitcoin)`, this test fires.
     final stub = _CapturingNostrClient();
     final alt = BitcoinNetwork.supportedNetworks().firstWhere(
       (n) => n.name() != BitcoinNetwork.bitcoin.name(),
@@ -204,7 +142,7 @@ void main() {
       reason:
           'Regression guard: the KeyPurpose handed to '
           '`NostrClient.createRemoteRecoveryLobby` must reflect the '
-          'network picked in the create form, not the mainnet default.',
+          'network picked in the create flow, not the mainnet default.',
     );
   });
 }

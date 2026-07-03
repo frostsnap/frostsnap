@@ -12,12 +12,18 @@ class EnterWalletNameView extends StatefulWidget {
   final void Function(bool canSubmit)? onChanged;
   final void Function(String walletName, BitcoinNetwork network) onSubmit;
 
+  /// Overrides the intro copy — the default text is restoration-
+  /// specific ("from your physical backup"); remote recovery passes
+  /// its own.
+  final String? intro;
+
   const EnterWalletNameView({
     super.key,
     required this.onSubmit,
     this.onChanged,
     this.initialWalletName,
     this.initialBitcoinNetwork,
+    this.intro,
   });
 
   @override
@@ -80,8 +86,9 @@ class EnterWalletNameViewState extends State<EnterWalletNameView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            "Enter the wallet name from your physical backup. If it's missing "
-            "or unreadable, choose another name.",
+            widget.intro ??
+                "Enter the wallet name from your physical backup. If it's "
+                    "missing or unreadable, choose another name.",
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 24),

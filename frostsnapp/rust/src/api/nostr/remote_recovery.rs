@@ -94,6 +94,7 @@ pub struct _FinishedRecovery {
 #[frb(mirror(RecoveryLobbyState), non_opaque)]
 pub struct _RecoveryLobbyState {
     pub metadata: RecoveryChannelMetadata,
+    pub leader: PublicKey,
     pub participants: HashMap<PublicKey, RecoveryParticipantInfo>,
     pub shares: Vec<ObservedShare>,
     pub current_recovery: Option<RecoveredKey>,

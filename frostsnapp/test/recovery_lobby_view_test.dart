@@ -156,12 +156,15 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('leader Recover button disabled with no currentRecovery', (
+  testWidgets('leader who posted sees disabled Waiting-for-key-shares', (
     tester,
   ) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
-      participants: {me: _participant(seed: 0x11)},
+      leader: _pk(0x11),
+      participants: {
+        me: _participant(seed: 0x11, posted: [_eid(1)]),
+      },
       shares: const [],
       currentRecovery: null,
       finished: null,
@@ -186,9 +189,10 @@ void main() {
       ),
     );
     final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Recover'),
+      find.widgetWithText(FilledButton, 'Waiting for key shares'),
     );
     expect(button.onPressed, isNull);
+    expect(find.text('Recover'), findsNothing);
   });
 
   testWidgets('leader Recover enables when currentRecovery is present', (
@@ -197,6 +201,7 @@ void main() {
     var pressed = 0;
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {
         me: _participant(seed: 0x11, posted: [_eid(1)]),
         peer1: _participant(seed: 0x22, posted: [_eid(2)]),
@@ -244,7 +249,10 @@ void main() {
     (tester) async {
       final state = RecoveryLobbyState(
         metadata: _meta(),
-        participants: {me: _participant(seed: 0x11)},
+        leader: _pk(0x11),
+        participants: {
+          me: _participant(seed: 0x11, posted: [_eid(1)]),
+        },
         shares: const [],
         currentRecovery: RecoveredKey(
           accessStructureRef: _asref(),
@@ -272,15 +280,17 @@ void main() {
         ),
       );
       final button = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Recover'),
+        find.widgetWithText(FilledButton, 'Waiting for key shares'),
       );
       expect(button.onPressed, isNull);
+      expect(find.text('Recover'), findsNothing);
     },
   );
 
   testWidgets('finished + persisting shows Persisting banner', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
@@ -308,16 +318,17 @@ void main() {
         ),
       ),
     );
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Recover'),
-    );
-    expect(button.onPressed, isNull, reason: 'Recover disabled once finished');
+    // Terminal state: the phase-aware primary disappears — the
+    // banner carries the story and Close is the only exit.
+    expect(find.text('Recover'), findsNothing);
+    expect(find.text('Load key share'), findsNothing);
     expect(find.textContaining('Persisting'), findsOneWidget);
   });
 
   testWidgets('recovered state shows Recovered banner', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
@@ -351,6 +362,7 @@ void main() {
   testWidgets('cancelled state shows cancellation notice', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
@@ -386,6 +398,7 @@ void main() {
     var leaves = 0;
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
@@ -423,6 +436,7 @@ void main() {
     var cancels = 0;
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
@@ -458,6 +472,7 @@ void main() {
   testWidgets('posted key shares list their device names', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {
         me: _participant(seed: 0x11, posted: [_eid(1), _eid(2)]),
       },
@@ -487,8 +502,12 @@ void main() {
         ),
       ),
     );
-    // Device names replace the old share-count chip: users think in
-    // devices, not share counts.
+    // Key shares live behind the card's chevron (keygen style) —
+    // tapping the row expands the list. (AnimatedCrossFade keeps the
+    // hidden child in the tree, so we assert presence post-expand
+    // rather than absence pre-expand.)
+    await tester.tap(find.text('You'));
+    await tester.pumpAndSettle();
     expect(find.text('kitchen frostsnap'), findsOneWidget);
     expect(find.text('office frostsnap'), findsOneWidget);
     expect(find.byType(Chip), findsNothing);
@@ -499,6 +518,7 @@ void main() {
     (tester) async {
       final state = RecoveryLobbyState(
         metadata: _meta(),
+        leader: _pk(0x11),
         participants: {peer1: _participant(seed: 0x22)},
         shares: const [],
         currentRecovery: null,
@@ -529,9 +549,131 @@ void main() {
     },
   );
 
+  testWidgets('unposted participant gets Load key share primary', (
+    tester,
+  ) async {
+    var loads = 0;
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      leader: _pk(0x22),
+      participants: {me: _participant(seed: 0x11)},
+      shares: const [],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          snapshot: _snap(state),
+          isLeader: false,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {},
+          onLeave: () async {},
+          onLoadShare: () async {
+            loads += 1;
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Load key share'));
+    await tester.pump();
+    expect(loads, 1);
+  });
+
+  testWidgets('posted joiner waits; own card offers + for another share', (
+    tester,
+  ) async {
+    var loads = 0;
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      leader: _pk(0x22),
+      participants: {
+        me: _participant(seed: 0x11, posted: [_eid(1)]),
+      },
+      shares: const [],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          snapshot: _snap(state),
+          isLeader: false,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {},
+          onLeave: () async {},
+          onLoadShare: () async {
+            loads += 1;
+          },
+        ),
+      ),
+    );
+    // Footer flips to a disabled wait once you've contributed…
+    final waiting = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Waiting for recovery'),
+    );
+    expect(waiting.onPressed, isNull);
+    // …and posting ANOTHER share moves onto your own card (keygen's
+    // edit-pencil placement).
+    await tester.tap(find.byTooltip('Load another key share'));
+    await tester.pump();
+    expect(loads, 1);
+  });
+
+  testWidgets('leader row wears the Leader badge', (tester) async {
+    final state = RecoveryLobbyState(
+      metadata: _meta(),
+      leader: _pk(0x22),
+      participants: {
+        me: _participant(seed: 0x11),
+        peer1: _participant(seed: 0x22),
+      },
+      shares: const [],
+      currentRecovery: null,
+      finished: null,
+      cancelled: false,
+    );
+    await tester.pumpWidget(
+      _wrap(
+        RecoveryLobbyView(
+          snapshot: _snap(state),
+          isLeader: false,
+          myPubkey: me,
+          inviteLink: 'frostsnap://recovery/deadbeef',
+          finishing: false,
+          persisting: false,
+          error: null,
+          recoveredRef: null,
+          verificationFailed: false,
+          onFinish: () async {},
+          onCancel: () async {},
+          onLeave: () async {},
+        ),
+      ),
+    );
+    expect(find.byTooltip('Leader'), findsOneWidget);
+  });
+
   testWidgets('names resolve from the snapshot member block', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {
         me: _participant(seed: 0x11),
         peer1: _participant(seed: 0x22),
@@ -572,6 +714,7 @@ void main() {
   testWidgets('self shows You even without any profile', (tester) async {
     final state = RecoveryLobbyState(
       metadata: _meta(),
+      leader: _pk(0x11),
       participants: {me: _participant(seed: 0x11)},
       shares: const [],
       currentRecovery: null,
