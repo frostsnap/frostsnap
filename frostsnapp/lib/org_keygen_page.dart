@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/async_action_button.dart';
 import 'package:frostsnap/choice_card.dart';
+import 'package:frostsnap/nostr_chat/channel_setup.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/invite_widgets.dart';
 import 'package:frostsnap/device_setup_step.dart';
@@ -821,88 +822,14 @@ class _LobbyAndKeygenPageState extends State<LobbyAndKeygenPage> {
     Navigator.of(context).pop(result);
   }
 
-  /// Retry channel creation until it succeeds. Shows a persistent
-  /// dialog so the user sees progress. Never falls back to local mode.
   Future<void> _connectSigningChannel(
     AccessStructureRef asRef,
     List<ChannelParticipant> participants,
-  ) async {
-    final status = ValueNotifier<String>('Connecting…');
-    // Show a persistent dialog that stays up for the entire setup.
-    final dialogRoute = DialogRoute(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => ValueListenableBuilder<String>(
-        valueListenable: status,
-        builder: (ctx, text, _) => AlertDialog(
-          icon: const SizedBox(
-            width: 32,
-            height: 32,
-            child: CircularProgressIndicator(strokeWidth: 3),
-          ),
-          title: const Text('Setting up signing channel…'),
-          content: Text(text),
-        ),
-      ),
-    );
-    Navigator.of(context).push(dialogRoute);
-
-    try {
-      while (mounted) {
-        try {
-          status.value = 'Connecting to relay…';
-          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-          final params = coord.connectMaybeCreateChannel(
-            accessStructureRef: asRef,
-            encryptionKey: encryptionKey,
-            participants: participants,
-          );
-          final nostr = NostrContext.of(context);
-          final client = await nostr.nostrClient;
-          final identity = nostr.nostrSettings.currentIdentity();
-          if (identity == null) {
-            throw StateError('nostr identity not configured');
-          }
-          final handle = await client.connectToChannel(
-            identity: identity,
-            params: params,
-          );
-          try {
-            status.value = 'Waiting for channel confirmation…';
-            // listen-then-start: invoking firstWhere subscribes to the
-            // stream synchronously, so the broadcast sink is attached
-            // before we call handle.start() and the runner emits.
-            final waitForConfirmation = handle
-                .events()
-                .watch()
-                .firstWhere((event) => event is ChannelEvent_ChannelState)
-                .timeout(const Duration(seconds: 30));
-            await handle.start();
-            await waitForConfirmation;
-            status.value = 'Enabling remote mode…';
-            await NostrContext.of(
-              context,
-            ).nostrSettings.setCoordinationUiEnabled(
-              accessStructureRef: asRef,
-              enabled: true,
-            );
-          } finally {
-            handle.close();
-          }
-          return;
-        } catch (e) {
-          debugPrint('Channel setup attempt failed: $e — retrying');
-          status.value = 'Retrying… ($e)';
-          await Future.delayed(const Duration(seconds: 3));
-        }
-      }
-    } finally {
-      status.dispose();
-      if (mounted && dialogRoute.isActive) {
-        Navigator.of(context).removeRoute(dialogRoute);
-      }
-    }
-  }
+  ) => setupCoordinationChannel(
+    context,
+    asRef: asRef,
+    participants: participants,
+  );
 
   Future<void> _declineKeygen() async {
     final confirm = await showDialog<bool>(

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/nostr_chat/channel_setup.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/restoration/enter_threshold_view.dart';
 import 'package:frostsnap/restoration/enter_wallet_name_view.dart';
@@ -283,6 +284,17 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
       );
       if (!mounted) return;
       setState(() => _recoveredRef = asref);
+      // A wallet recovered over nostr IS a remote wallet: connect
+      // its coordination channel (rejoining the original — the
+      // channel secret derives from the AccessStructureId — or
+      // creating it stamped with the recovered share assignment)
+      // and enable the remote shell before handing the asRef back.
+      await setupCoordinationChannel(
+        context,
+        asRef: asref,
+        participants: _handle!.channelParticipants(),
+      );
+      if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Navigator.of(context).pop(asref);

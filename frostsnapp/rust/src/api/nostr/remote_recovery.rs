@@ -269,6 +269,19 @@ impl RemoteRecoveryLobbyHandle {
         keys.public_key().into()
     }
 
+    /// The recovered wallet's pubkey → share-index assignment
+    /// (winning shares only; empty until the recovery finishes).
+    /// Feeds `connectMaybeCreateChannel` so a freshly created
+    /// coordination channel's creation event carries the correct
+    /// assignment.
+    #[frb(sync)]
+    pub fn channel_participants(&self) -> Vec<frostsnap_nostr::ChannelParticipant> {
+        self.state_broadcast
+            .latest()
+            .map(|snapshot| snapshot.state.channel_participants())
+            .unwrap_or_default()
+    }
+
     #[frb(sync)]
     pub fn sub_state(&self) -> RecoveryLobbyStateBcast {
         RecoveryLobbyStateBcast::new(self.state_broadcast.clone())

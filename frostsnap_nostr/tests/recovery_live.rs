@@ -14,7 +14,7 @@ use frostsnap_core::DeviceId;
 use frostsnap_nostr::keygen::DeviceKind;
 use frostsnap_nostr::recovery::{
     RecoveryChannelMetadata, RecoveryLobbyClient, RecoveryLobbyEvent, RecoveryLobbyHandle,
-    SharePost,
+    RecoveryLobbyState, SharePost,
 };
 use frostsnap_nostr::{channel::ChannelSecret, EventId, NostrIdentity, Nsec, PublicKey};
 use nostr_relay_builder::prelude::*;
@@ -152,6 +152,7 @@ async fn three_participant_recovery_convergence() {
     // Track each participant's latest member block (rides every
     // StateChanged snapshot) for the Step-7 profile regression.
     let mut latest_members: Vec<Vec<frostsnap_nostr::GroupMember>> = vec![Vec::new(); 3];
+    let mut latest_state: Vec<Option<RecoveryLobbyState>> = vec![None; 3];
     let winning: Arc<Mutex<Option<Vec<EventId>>>> = Default::default();
     let winning_clone = winning.clone();
 
@@ -166,6 +167,7 @@ async fn three_participant_recovery_convergence() {
         };
         if let RecoveryLobbyEvent::StateChanged(snapshot) = &ev {
             latest_members[idx] = snapshot.members.clone();
+            latest_state[idx] = Some(snapshot.state.clone());
         }
         if idx == 0 {
             if let RecoveryLobbyEvent::RecoveryAvailable(recovered) = ev {
@@ -215,6 +217,7 @@ async fn three_participant_recovery_convergence() {
             }
             Ok(Some((idx, RecoveryLobbyEvent::StateChanged(snapshot)))) => {
                 latest_members[idx] = snapshot.members;
+                latest_state[idx] = Some(snapshot.state);
             }
             Ok(Some(_)) => {}
             _ => {}
@@ -225,6 +228,32 @@ async fn three_participant_recovery_convergence() {
         3,
         "all 3 participants should observe Finished"
     );
+
+    // Every participant's finished fold yields the same channel-
+    // creation share assignment (pubkey -> winning share indices) —
+    // the metadata a recovered wallet stamps on its coordination
+    // channel if it has to (re)create it.
+    let mut expected_assignment: Vec<(PublicKey, Vec<u32>)> = (0..3)
+        .map(|i| {
+            let pubkey = participants[i].identity.public_key().unwrap();
+            let index =
+                u32::try_from(fixture_backups[i].1.share_image().index).expect("index fits u32");
+            (pubkey, vec![index])
+        })
+        .collect();
+    expected_assignment.sort_by_key(|(pubkey, _)| *pubkey);
+    for i in 0..3 {
+        let state = latest_state[i]
+            .as_ref()
+            .expect("participant captured a finished snapshot");
+        assert!(state.finished.is_some(), "participant {i} state finished");
+        let got: Vec<_> = state
+            .channel_participants()
+            .into_iter()
+            .map(|p| (p.pubkey, p.share_indices))
+            .collect();
+        assert_eq!(got, expected_assignment, "participant {i} assignment");
+    }
     for (_, b) in &bundles {
         assert_eq!(
             b.finished.access_structure_ref, asref,

@@ -4,6 +4,7 @@ use crate::channel_runner::{
     ChannelRunnerHandle, GroupMember, SendOutcome, BINCODE_CONFIG,
 };
 use crate::keygen::DeviceKind;
+use crate::signing::ChannelParticipant;
 use crate::{EventId, PublicKey};
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -142,6 +143,35 @@ pub struct RecoveryLobbyState {
 /// metadata gate on that slot), so profile events arriving before
 /// the creation event ride out with the first snapshot instead of
 /// being dropped.
+impl RecoveryLobbyState {
+    /// The recovered wallet's pubkey -> share-index assignment,
+    /// derived from the leader-verified winning subset only (the
+    /// assignment must describe the recovered access structure, not
+    /// every posted share). Feeds the coordination channel's
+    /// creation metadata when recovery has to (re)create it.
+    pub fn channel_participants(&self) -> Vec<ChannelParticipant> {
+        let Some(finished) = &self.finished else {
+            return Vec::new();
+        };
+        let mut by_author: std::collections::BTreeMap<PublicKey, std::collections::BTreeSet<u32>> =
+            Default::default();
+        for share_ref in &finished.share_refs {
+            if let Some(obs) = self.shares.iter().find(|o| o.event_id == *share_ref) {
+                let index =
+                    u32::try_from(obs.post.share_image.index).expect("share index fits u32");
+                by_author.entry(obs.author).or_default().insert(index);
+            }
+        }
+        by_author
+            .into_iter()
+            .map(|(pubkey, indices)| ChannelParticipant {
+                pubkey,
+                share_indices: indices.into_iter().collect(),
+            })
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RecoveryLobbySnapshot {
     pub state: RecoveryLobbyState,
@@ -537,6 +567,44 @@ mod tests {
         assert_eq!(
             my_local_devices(&state, peer),
             [did(0x33)].into_iter().collect(),
+        );
+    }
+
+    /// The channel-creation assignment comes from WINNING shares
+    /// only, grouped by author — a posted-but-losing share must not
+    /// appear in the recovered wallet's metadata.
+    #[test]
+    fn channel_participants_groups_winning_shares_by_author() {
+        let mut state = base_state();
+        let alice = pk(1);
+        let bob = pk(2);
+        add_participant(&mut state, alice, vec![eid(0xA1), eid(0xA2)]);
+        add_participant(&mut state, bob, vec![eid(0xB1), eid(0xB2)]);
+        push_share(&mut state, eid(0xA1), alice, did(1));
+        push_share(&mut state, eid(0xA2), alice, did(2));
+        push_share(&mut state, eid(0xB1), bob, did(3));
+        // Bob also posted a share that did NOT make the winning subset.
+        push_share(&mut state, eid(0xB2), bob, did(5));
+
+        // No finished recovery yet -> no assignment.
+        assert!(state.channel_participants().is_empty());
+
+        state.finished = Some(FinishedRecovery {
+            access_structure_ref: AccessStructureRef {
+                key_id: frostsnap_core::KeyId([0; 32]),
+                access_structure_id: frostsnap_core::AccessStructureId([0; 32]),
+            },
+            share_refs: vec![eid(0xA1), eid(0xA2), eid(0xB1)],
+        });
+
+        let participants = state.channel_participants();
+        // dummy_share_image(i) has index i + 1.
+        assert_eq!(
+            participants
+                .iter()
+                .map(|p| (p.pubkey, p.share_indices.clone()))
+                .collect::<Vec<_>>(),
+            vec![(alice, vec![2, 3]), (bob, vec![4])],
         );
     }
 
