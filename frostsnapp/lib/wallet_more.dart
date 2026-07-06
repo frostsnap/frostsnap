@@ -274,6 +274,10 @@ class _CoordinateOverNostrTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Converting a wallet to remote mode is developer-only.
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
+    if (!devMode) return const SizedBox.shrink();
     final asRef = frostKey.accessStructures()[0].accessStructureRef();
     final nostr = NostrContext.of(context);
     if (nostr.isCoordinationUiEnabled(asRef)) {

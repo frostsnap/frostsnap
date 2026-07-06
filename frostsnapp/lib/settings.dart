@@ -140,6 +140,9 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final walletCtx = WalletContext.of(context);
     final logCtx = FrostsnapContext.of(context);
+    // Remote (nostr) coordination surfaces are developer-only.
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
 
     return Scaffold(
       appBar: AppBar(title: Text('Settings')),
@@ -188,39 +191,40 @@ class SettingsPage extends StatelessWidget {
                       return CheckAddressPage();
                     },
                   ),
-                  SettingsItem(
-                    title: Text('Coordinate over Nostr'),
-                    icon: Icons.chat_bubble_outline,
-                    builder: (context, title, icon) {
-                      final frostKey = walletCtx.wallet.frostKey();
-                      if (frostKey == null) return const SizedBox.shrink();
-                      final asRef = frostKey
-                          .accessStructures()[0]
-                          .accessStructureRef();
-                      final nostr = NostrContext.of(context);
-                      return StreamBuilder<bool>(
-                        stream: nostr.watchCoordinationUi(asRef),
-                        initialData: nostr.isCoordinationUiEnabled(asRef),
-                        builder: (context, snap) {
-                          return Tooltip(
-                            message:
-                                'Sign with co-signers over the internet using Nostr',
-                            child: SwitchListTile(
-                              title: title,
-                              value: snap.data ?? false,
-                              onChanged: (value) async {
-                                await nostr.nostrSettings
-                                    .setCoordinationUiEnabled(
-                                      accessStructureRef: asRef,
-                                      enabled: value,
-                                    );
-                              },
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
+                  if (devMode)
+                    SettingsItem(
+                      title: Text('Coordinate over Nostr'),
+                      icon: Icons.chat_bubble_outline,
+                      builder: (context, title, icon) {
+                        final frostKey = walletCtx.wallet.frostKey();
+                        if (frostKey == null) return const SizedBox.shrink();
+                        final asRef = frostKey
+                            .accessStructures()[0]
+                            .accessStructureRef();
+                        final nostr = NostrContext.of(context);
+                        return StreamBuilder<bool>(
+                          stream: nostr.watchCoordinationUi(asRef),
+                          initialData: nostr.isCoordinationUiEnabled(asRef),
+                          builder: (context, snap) {
+                            return Tooltip(
+                              message:
+                                  'Sign with co-signers over the internet using Nostr',
+                              child: SwitchListTile(
+                                title: title,
+                                value: snap.data ?? false,
+                                onChanged: (value) async {
+                                  await nostr.nostrSettings
+                                      .setCoordinationUiEnabled(
+                                        accessStructureRef: asRef,
+                                        enabled: value,
+                                      );
+                                },
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
                   SettingsItem(
                     title: Text(
                       "Delete wallet",
@@ -248,13 +252,14 @@ class SettingsPage extends StatelessWidget {
                     return AboutPage();
                   },
                 ),
-                SettingsItem(
-                  title: Text('Nostr profile'),
-                  icon: Icons.person,
-                  bodyBuilder: (context) {
-                    return ProfileSettingsPage();
-                  },
-                ),
+                if (devMode)
+                  SettingsItem(
+                    title: Text('Nostr profile'),
+                    icon: Icons.person,
+                    bodyBuilder: (context) {
+                      return ProfileSettingsPage();
+                    },
+                  ),
                 SettingsItem(
                   title: Text('Electrum server'),
                   icon: Icons.cloud,

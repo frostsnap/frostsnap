@@ -11,6 +11,8 @@ import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/recovery/remote_recovery_page.dart';
 import 'package:frostsnap/recovery/restore_chooser.dart';
 import 'package:frostsnap/restoration.dart';
+import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
@@ -52,36 +54,55 @@ class WalletAddColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (showNewToFrostsnap) buildTitle(context, text: 'Add a wallet'),
-        buildCard(
-          context,
-          action: () => onPressed(AddType.newWallet),
-          emphasize: true,
-          isThreeLine: true,
-          icon: Icon(Icons.add_rounded, size: iconSize),
-          title: 'Create a multi-sig wallet',
-          subtitle: 'Set up a secure wallet using multiple Frostsnap devices',
-        ),
-        buildCard(
-          context,
-          action: () => onPressed(AddType.recoverWallet),
-          isThreeLine: true,
-          icon: Icon(Icons.restore_rounded, size: iconSize),
-          title: 'Restore a wallet',
-          subtitle: 'Bring a wallet back from keys, backups, or other people',
-        ),
-        buildCard(
-          context,
-          action: () => onPressed(AddType.joinFromLink),
-          isThreeLine: true,
-          icon: Icon(Icons.link_rounded, size: iconSize),
-          title: 'Join with invite link',
-          subtitle: 'Wallet, keygen, or recovery — the link tells us which',
-        ),
-      ],
+    // Remote (nostr) coordination is developer-only for now: the
+    // Join card exists solely for remote sessions, so it renders
+    // only in developer mode — reactively, so toggling the setting
+    // updates the homepage without a restart.
+    final settingsCtx = SettingsContext.of(context);
+    return StreamBuilder<DeveloperSettings>(
+      stream: settingsCtx?.developerSettings,
+      initialData: DeveloperSettings(
+        developerMode: settingsCtx?.settings.isInDeveloperMode() ?? false,
+      ),
+      builder: (context, snap) {
+        final devMode = snap.data?.developerMode ?? false;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showNewToFrostsnap) buildTitle(context, text: 'Add a wallet'),
+            buildCard(
+              context,
+              action: () => onPressed(AddType.newWallet),
+              emphasize: true,
+              isThreeLine: true,
+              icon: Icon(Icons.add_rounded, size: iconSize),
+              title: 'Create a multi-sig wallet',
+              subtitle:
+                  'Set up a secure wallet using multiple Frostsnap devices',
+            ),
+            buildCard(
+              context,
+              action: () => onPressed(AddType.recoverWallet),
+              isThreeLine: true,
+              icon: Icon(Icons.restore_rounded, size: iconSize),
+              title: 'Restore a wallet',
+              subtitle: devMode
+                  ? 'Bring a wallet back from keys, backups, or other people'
+                  : 'Use an existing device key or load a physical backup',
+            ),
+            if (devMode)
+              buildCard(
+                context,
+                action: () => onPressed(AddType.joinFromLink),
+                isThreeLine: true,
+                icon: Icon(Icons.link_rounded, size: iconSize),
+                title: 'Join with invite link',
+                subtitle:
+                    'Wallet, keygen, or recovery — the link tells us which',
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -194,33 +215,45 @@ class WalletAddColumn extends StatelessWidget {
 
   static void showWalletCreateDialog(BuildContext context) async {
     final homeCtx = HomeContext.of(context)!;
-
-    // Use the shared NostrContext client so OrgKeygenPage's lobby
-    // create/join paths reach the same `local_publish` snapshot that
-    // identity mutations push to — without this, the lobby's
-    // auto-publish-on-connect always sees None on a freshly-built
-    // per-page client.
-    final nostrClient = await NostrContext.of(context).nostrClient;
-    if (!context.mounted) return;
-    final choice = await MaybeFullscreenDialog.show<WalletTypeChoice>(
-      context: context,
-      // tap-outside would silently drop an in-progress lobby without
-      // telling peers; force users through explicit back/cancel.
-      barrierDismissible: false,
-      child: OrgKeygenPage(nostrClient: nostrClient),
-    );
-    if (!context.mounted || choice == null) return;
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
 
     AccessStructureRef? asRef;
-    switch (choice) {
-      case WalletTypeChoicePersonal():
-        asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
-          context: context,
-          barrierDismissible: false,
-          child: WalletCreatePage(),
-        );
-      case WalletTypeChoiceOrganisation(:final accessStructureRef):
-        asRef = accessStructureRef;
+    if (!devMode) {
+      // Remote keygen is developer-only: skip the "Who is this for?"
+      // fork and go straight to device keygen.
+      asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
+        context: context,
+        barrierDismissible: false,
+        child: WalletCreatePage(),
+      );
+    } else {
+      // Use the shared NostrContext client so OrgKeygenPage's lobby
+      // create/join paths reach the same `local_publish` snapshot that
+      // identity mutations push to — without this, the lobby's
+      // auto-publish-on-connect always sees None on a freshly-built
+      // per-page client.
+      final nostrClient = await NostrContext.of(context).nostrClient;
+      if (!context.mounted) return;
+      final choice = await MaybeFullscreenDialog.show<WalletTypeChoice>(
+        context: context,
+        // tap-outside would silently drop an in-progress lobby without
+        // telling peers; force users through explicit back/cancel.
+        barrierDismissible: false,
+        child: OrgKeygenPage(nostrClient: nostrClient),
+      );
+      if (!context.mounted || choice == null) return;
+
+      switch (choice) {
+        case WalletTypeChoicePersonal():
+          asRef = await MaybeFullscreenDialog.show<AccessStructureRef>(
+            context: context,
+            barrierDismissible: false,
+            child: WalletCreatePage(),
+          );
+        case WalletTypeChoiceOrganisation(:final accessStructureRef):
+          asRef = accessStructureRef;
+      }
     }
 
     if (!context.mounted || asRef == null) return;
@@ -235,6 +268,14 @@ class WalletAddColumn extends StatelessWidget {
   /// pops with a branch, then the branch's existing flow runs —
   /// nothing behind the fork changes.
   static Future<void> showRestoreChooserDialog(BuildContext context) async {
+    // Remote recovery is developer-only: skip the "Where are the
+    // keys?" fork and go straight to the local restore flow.
+    final devMode =
+        SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
+    if (!devMode) {
+      showWalletRecoverDialog(context);
+      return;
+    }
     final choice = await MaybeFullscreenDialog.show<RestoreChoice>(
       context: context,
       barrierDismissible: true,
