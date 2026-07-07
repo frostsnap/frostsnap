@@ -30,6 +30,9 @@ impl<'a> Partitions<'a> {
         }
     }
 
+    /// Never inlined: the partition-table buffer is stack-heavy and merging it
+    /// into the init functions' frames pushes them over the CI stack-check limit.
+    #[inline(never)]
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
         let mut self_ = Self::new(flash);
         let mut pt_mem = [0u8; partitions::PARTITION_TABLE_MAX_LEN];
