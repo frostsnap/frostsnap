@@ -35,10 +35,11 @@ impl<'a> Partitions<'a> {
     #[inline(never)]
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
         let mut self_ = Self::new(flash);
-        let mut pt_mem = [0u8; partitions::PARTITION_TABLE_MAX_LEN];
+        // Boxed: ~3KB, too big for the stack of a boot-time function.
+        let mut pt_mem = alloc::boxed::Box::new([0u8; partitions::PARTITION_TABLE_MAX_LEN]);
         // Partition table offset in .cargo/config.toml env
         // ESP_BOOTLOADER_ESP_IDF_CONFIG_PARTITION_TABLE_OFFSET = "0xD000"
-        let pt = partitions::read_partition_table(&mut *flash.borrow_mut(), &mut pt_mem)
+        let pt = partitions::read_partition_table(&mut *flash.borrow_mut(), &mut *pt_mem)
             .expect("unable to read partition table");
 
         for i in 0..pt.len() {
