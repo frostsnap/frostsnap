@@ -51,7 +51,10 @@ pub struct FrostyUi<'a> {
 }
 
 impl<'a> FrostyUi<'a> {
-    /// Create a new FrostyUi instance
+    /// Create a new FrostyUi instance. Never inlined: the widget-tree
+    /// construction is stack-heavy and merging it into the init functions'
+    /// frames pushes them over the CI stack-check limit.
+    #[inline(never)]
     pub fn new(display: DeviceDisplay<'a>, touch_receiver: TouchReceiver) -> Self {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;

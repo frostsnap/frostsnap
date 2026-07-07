@@ -100,6 +100,7 @@ impl<'a> DeviceLoop<'a> {
             ref mut downstream_detect,
             ref mut rsa,
         } = resources;
+        let ui = &mut **ui;
 
         let full_nvs = *nvs;
 
