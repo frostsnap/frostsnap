@@ -2,6 +2,7 @@ use crate::DefaultTextStyle;
 use crate::{
     icons::IconWidget, palette::PALETTE, prelude::*, touch_listener::TouchListener, Key, FONT_MED,
 };
+use alloc::boxed::Box;
 use alloc::string::String;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::StrokeAlignment};
 use embedded_iconoir::prelude::*;
@@ -179,7 +180,18 @@ type BottomRow = Row<(
 #[derive(Widget)]
 pub struct NumericKeyboard {
     #[widget_delegate]
-    keyboard: Padding<Column<alloc::boxed::Box<(NumericRow, NumericRow, NumericRow, BottomRow)>>>,
+    // Each row is boxed individually so NumericKeyboard::new only ever holds
+    // one row's temporary on the stack; building all four inline made its
+    // frame the largest in the firmware.
+    #[allow(clippy::type_complexity)]
+    keyboard: Padding<
+        Column<(
+            Box<NumericRow>,
+            Box<NumericRow>,
+            Box<NumericRow>,
+            Box<BottomRow>,
+        )>,
+    >,
 }
 
 impl NumericKeyboard {
@@ -192,43 +204,43 @@ impl NumericKeyboard {
         // _ 0 ✓
         let gap = 4;
 
-        let mut row1 = Row::new((
+        let mut row1 = Box::new(Row::new((
             NumericButton::new('1', true),
             NumericButton::new('2', true),
             NumericButton::new('3', true),
-        ));
+        )));
         row1.set_all_flex(1);
         row1.set_uniform_gap(gap);
 
-        let mut row2 = Row::new((
+        let mut row2 = Box::new(Row::new((
             NumericButton::new('4', true),
             NumericButton::new('5', true),
             NumericButton::new('6', true),
-        ));
+        )));
         row2.set_all_flex(1);
         row2.set_uniform_gap(gap);
 
-        let mut row3 = Row::new((
+        let mut row3 = Box::new(Row::new((
             NumericButton::new('7', true),
             NumericButton::new('8', true),
             NumericButton::new('9', true),
-        ));
+        )));
         row3.set_all_flex(1);
         row3.set_uniform_gap(gap);
 
         // Bottom row with empty space, 0, and checkmark
         // Start with 0 and checkmark disabled (no digits entered yet)
         let empty_button = Container::new(()).with_expanded(); // Placeholder button (always disabled)
-        let mut row4 = Row::new((
+        let mut row4 = Box::new(Row::new((
             empty_button,
             NumericButton::new('0', false), // Initially disabled
             CheckmarkButton::new(false),    // Initially disabled
-        ));
+        )));
         row4.set_all_flex(1);
         row4.set_uniform_gap(gap);
 
         // Create the column with all rows (boxed to move to heap)
-        let mut keyboard = Column::new(alloc::boxed::Box::new((row1, row2, row3, row4)));
+        let mut keyboard = Column::new((row1, row2, row3, row4));
         keyboard.set_all_flex(1);
         keyboard.set_uniform_gap(gap);
 
