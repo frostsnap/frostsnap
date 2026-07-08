@@ -4,21 +4,23 @@ use alloc::boxed::Box;
 use core::cell::RefCell;
 use esp_storage::FlashStorage;
 use frostsnap_comms::{Downstream, Upstream};
+use frostsnap_embedded::framed_serial::FramedSerial;
 use rand_chacha::ChaCha20Rng;
 
 use crate::{
     ds::HardwareDs,
     efuse::EfuseHmacKeys,
+    esp_ui::{EspClock, EspFrostyUi, EspTouch},
     flash::VersionedFactoryData,
     frosty_ui::FrostyUi,
-    io::SerialInterface,
+    io::{EspRefClock, SerialIo},
     ota::OtaPartitions,
     partitions::{EspFlashPartition, Partitions},
     peripherals::DevicePeripherals,
 };
 
 /// Type alias for serial interfaces
-type Serial<'a, D> = SerialInterface<'a, Timer<Timer0<TIMG0>, Blocking>, D>;
+type Serial<'a, D> = FramedSerial<SerialIo<'a>, EspRefClock<'a, Timer<Timer0<TIMG0>, Blocking>>, D>;
 use esp_hal::{
     gpio::{AnyPin, Input},
     peripherals::TIMG0,
@@ -54,7 +56,7 @@ pub struct Resources<'a> {
     pub ota: OtaPartitions<'a>,
 
     /// User interface
-    pub ui: FrostyUi<'a>,
+    pub ui: EspFrostyUi<'a>,
 
     // Runtime peripherals needed by esp32_run
     pub timer: &'a Timer<Timer0<TIMG0>, Blocking>,
@@ -77,16 +79,18 @@ impl<'a> Resources<'a> {
         let upstream_serial = if detect_device_upstream {
             log!("upstream set to uart");
             let uart = uart_upstream.expect("upstream UART should exist when detected");
-            SerialInterface::new_uart(uart, crate::uart_interrupt::UartNum::Uart1, timer)
+            FramedSerial::new(
+                SerialIo::new_uart(uart, crate::uart_interrupt::UartNum::Uart1),
+                EspRefClock(timer),
+            )
         } else {
             log!("upstream set to jtag");
-            SerialInterface::new_jtag(jtag, timer)
+            FramedSerial::new(SerialIo::new_jtag(jtag), EspRefClock(timer))
         };
 
-        let downstream_serial = SerialInterface::new_uart(
-            uart_downstream,
-            crate::uart_interrupt::UartNum::Uart0,
-            timer,
+        let downstream_serial = FramedSerial::new(
+            SerialIo::new_uart(uart_downstream, crate::uart_interrupt::UartNum::Uart0),
+            EspRefClock(timer),
         );
 
         (upstream_serial, downstream_serial)
@@ -133,7 +137,11 @@ impl<'a> Resources<'a> {
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
         // Create UI with display and touch receiver (using ui_timer)
-        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
+        let ui = FrostyUi::new(
+            display,
+            EspClock::new(ui_timer),
+            EspTouch::new(touch_receiver),
+        );
 
         // Extract factory data
         let factory = factory_data.into_factory_data();
@@ -211,7 +219,11 @@ impl<'a> Resources<'a> {
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
         // Create UI with display and touch receiver (using ui_timer)
-        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
+        let ui = FrostyUi::new(
+            display,
+            EspClock::new(ui_timer),
+            EspTouch::new(touch_receiver),
+        );
 
         // Create HardwareDs if factory data is present (dev devices might have it)
         let (ds, certificate) = if let Some(factory_data) = factory_data {

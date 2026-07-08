@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use esp_hal::efuse::{self as hal_efuse, Efuse};
 use esp_hal::peripherals::EFUSE;
-use frostsnap_core::AccessStructureRef;
 use rand_chacha::rand_core::RngCore;
 use rand_core::SeedableRng;
 use reed_solomon;
@@ -384,7 +383,7 @@ impl<'a> EfuseKeyWriter<'a> {
 }
 
 pub struct EfuseHmacKeys<'a> {
-    pub share_encryption: EfuseHmacKey<'a>,
+    pub share_encryption: frostsnap_embedded::ShareEncryptionSecrets<EfuseHmacKey<'a>>,
     pub fixed_entropy: EfuseHmacKey<'a>,
 }
 
@@ -410,7 +409,10 @@ impl<'a> EfuseHmacKeys<'a> {
 
         // Create and return the key handles with discovered slots
         Ok(EfuseHmacKeys {
-            share_encryption: EfuseHmacKey::new(hmac.clone(), share_encryption_id),
+            share_encryption: frostsnap_embedded::ShareEncryptionSecrets(EfuseHmacKey::new(
+                hmac.clone(),
+                share_encryption_id,
+            )),
             fixed_entropy: EfuseHmacKey::new(hmac, fixed_entropy_id),
         })
     }
@@ -507,40 +509,13 @@ impl<'a> EfuseHmacKey<'a> {
     }
 }
 
-impl frostsnap_core::device::DeviceSecretDerivation for EfuseHmacKey<'_> {
-    fn get_share_encryption_key(
-        &mut self,
-        access_structure_ref: AccessStructureRef,
-        party_index: frostsnap_core::schnorr_fun::frost::ShareIndex,
-        coord_key: frostsnap_core::CoordShareDecryptionContrib,
-    ) -> frostsnap_core::SymmetricKey {
-        let mut src = [0u8; 128];
-        src[..32].copy_from_slice(access_structure_ref.key_id.to_bytes().as_slice());
-        src[32..64].copy_from_slice(
-            access_structure_ref
-                .access_structure_id
-                .to_bytes()
-                .as_slice(),
-        );
-        src[64..96].copy_from_slice(party_index.to_bytes().as_slice());
-        src[96..128].copy_from_slice(coord_key.to_bytes().as_slice());
-
-        let output = self.hash("share-encryption", &src).unwrap();
-
-        frostsnap_core::SymmetricKey(output)
-    }
-
-    fn derive_nonce_seed(
-        &mut self,
-        nonce_stream_id: frostsnap_core::nonce_stream::NonceStreamId,
-        index: u32,
-        seed_material: &[u8; 32],
-    ) -> [u8; 32] {
-        let mut input = [0u8; 52]; // 16 (stream_id) + 4 (index) + 32 (seed_material)
-        input[..16].copy_from_slice(nonce_stream_id.to_bytes().as_slice());
-        input[16..20].copy_from_slice(&index.to_be_bytes());
-        input[20..52].copy_from_slice(seed_material);
-
-        self.hash("nonce-seed", &input).unwrap()
+impl frostsnap_embedded::KeyedHash for EfuseHmacKey<'_> {
+    fn keyed_hash(&mut self, domain: &str, input: &[u8]) -> [u8; 32] {
+        self.hash(domain, input).expect("efuse hmac")
     }
 }
+
+// `DeviceSecretDerivation` is portable and lives once in
+// `frostsnap_embedded::ShareEncryptionSecrets<H: KeyedHash>`; `EfuseHmacKey`
+// provides only the `KeyedHash` primitive above and is wrapped in
+// `ShareEncryptionSecrets` by `EfuseHmacKeys::load`.

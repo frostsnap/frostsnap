@@ -7,11 +7,12 @@ edition = "2021"
 [features]
 default = ["stack_guard"]
 mem_debug = []
-debug_fps = []
-debug_mem = []
-debug_log = []
+# Forward to frostsnap_embedded so the moved FrostyUi overlay/prefill gates stay live.
+debug_fps = ["frostsnap_embedded/debug_fps"]
+debug_mem = ["frostsnap_embedded/debug_mem"]
+debug_log = ["frostsnap_embedded/debug_log"]
 debug = [ "debug_fps", "debug_mem", "debug_log" ]
-prefill-words = []
+prefill-words = ["frostsnap_embedded/prefill-words"]
 # turns on the esp32c3 hardware stack guard
 stack_guard = []
 # FIXME: remove this feature when v2.rs is deleted (only used in legacy factory code)
@@ -20,7 +21,7 @@ genuine_device = []
 [dependencies]
 frostsnap_core = { workspace = true }
 frostsnap_comms = { workspace = true }
-frostsnap_embedded = { workspace = true }
+frostsnap_embedded = { workspace = true, features = ["ui"] }
 frost_backup = { workspace = true, features = ["bincode"] }
 bitcoin.workspace = true
 esp-hal = { workspace = true, features = ["esp32c3", "digest"] }

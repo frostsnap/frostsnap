@@ -1,7 +1,7 @@
 use crate::ui::{self, UserInteraction};
+use crate::FlashPartition;
 use alloc::boxed::Box;
 use frostsnap_comms::{CommsMisc, DeviceSendBody};
-use frostsnap_embedded::FlashPartition;
 use frostsnap_widgets::Frac;
 
 const CHUNK_SIZE: u32 = 16; // 64KB chunks

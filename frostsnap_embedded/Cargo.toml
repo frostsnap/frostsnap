@@ -9,6 +9,14 @@ embedded-storage.workspace = true
 frostsnap_comms.workspace = true
 frostsnap_core.workspace = true
 rand_core.workspace = true
+fugit = "0.3.7"
+# `ui` feature: the lifted device run-loop + UI (esp-free, but pulls the widget stack)
+frostsnap_widgets = { workspace = true, optional = true }
+frost_backup = { workspace = true, features = ["bincode"], optional = true }
+bitcoin = { workspace = true, optional = true }
+embedded-graphics = { version = "0.8.1", optional = true }
+frostsnap_macros = { workspace = true, optional = true }
+embedded-io = { version = "0.6", optional = true }
 
 [dev-dependencies]
 proptest = {  version = "1.6", features = ["std"] }
@@ -16,3 +24,8 @@ proptest = {  version = "1.6", features = ["std"] }
 [features]
 default = ["std"]
 std = []
+ui = ["dep:frostsnap_widgets", "dep:frost_backup", "dep:bitcoin", "dep:embedded-graphics", "dep:frostsnap_macros", "dep:embedded-io"]
+debug_log = ["ui"]
+debug_mem = ["ui"]
+debug_fps = ["ui"]
+prefill-words = ["ui"]
