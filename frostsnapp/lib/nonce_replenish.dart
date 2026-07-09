@@ -3,7 +3,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
+import 'package:frostsnap/stream_ext.dart';
 import 'package:rxdart/rxdart.dart';
 
 sealed class NonceReplenishTerminal {
@@ -626,6 +629,103 @@ class _NonceReplenishDialogState extends State<NonceReplenishDialog> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Runs the nonce top-up protocol for [devices] before the caller
+/// proceeds, rendering the "Preparing devices" progress indicator
+/// while it runs. Fires exactly one of [onComplete] / [onFailed].
+/// When every device already has its streams, completes on the first
+/// frame without showing any progress UI. Unmounting after the
+/// protocol started but before a terminal cancels the protocol.
+class PreparingDevicesStep extends StatefulWidget {
+  const PreparingDevicesStep({
+    super.key,
+    required this.devices,
+    required this.onComplete,
+    required this.onFailed,
+    this.noncesNeeded,
+    this.replenishNonces,
+    this.cancelProtocol,
+  });
+
+  final List<DeviceId> devices;
+  final VoidCallback onComplete;
+  final ValueChanged<String> onFailed;
+
+  /// Test seams — default to the live coordinator.
+  final bool Function(List<DeviceId> devices)? noncesNeeded;
+  final Stream<NonceReplenishState> Function(List<DeviceId> devices)?
+  replenishNonces;
+  final VoidCallback? cancelProtocol;
+
+  @override
+  State<PreparingDevicesStep> createState() => _PreparingDevicesStepState();
+}
+
+class _PreparingDevicesStepState extends State<PreparingDevicesStep> {
+  ValueStream<NonceReplenishState>? _stream;
+  bool _terminal = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final needed =
+        widget.noncesNeeded?.call(widget.devices) ??
+        coord.createNonceRequest(devices: widget.devices).someNoncesRequested();
+    if (needed) {
+      final replenish =
+          widget.replenishNonces?.call(widget.devices) ??
+          coord.replenishNonces(
+            nonceRequest: coord.createNonceRequest(devices: widget.devices),
+            devices: widget.devices,
+          );
+      _stream = replenish.toBehaviorSubject();
+    } else {
+      _terminal = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onComplete();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_stream != null && !_terminal) {
+      final cancel = widget.cancelProtocol;
+      if (cancel != null) {
+        cancel();
+      } else {
+        coord.cancelProtocol();
+      }
+    }
+    super.dispose();
+  }
+
+  void _onTerminal(NonceReplenishTerminal terminal) {
+    if (_terminal) return;
+    _terminal = true;
+    switch (terminal) {
+      case NonceReplenishCompleted():
+        widget.onComplete();
+      case NonceReplenishAborted():
+        widget.onFailed('A device disconnected while preparing devices.');
+      case NonceReplenishFailed(:final error):
+        widget.onFailed('Failed to prepare devices: $error');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = _stream;
+    if (stream == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: NonceReplenishIndicator(stream: stream, onTerminal: _onTerminal),
+      ),
     );
   }
 }

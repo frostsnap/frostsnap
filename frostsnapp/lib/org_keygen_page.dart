@@ -13,6 +13,7 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/network_advanced_options.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/secure_key_provider.dart';
@@ -1921,6 +1922,11 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
   bool _submitting = false;
   String? _submitError;
 
+  /// Non-null while the "Preparing devices" (nonce top-up) step runs;
+  /// holds the device snapshot that will be posted as ready once the
+  /// devices have their signing nonces.
+  List<({DeviceId id, String name})>? _preparing;
+
   @override
   void initState() {
     super.initState();
@@ -1937,18 +1943,23 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _submit() async {
+  void _submit() {
+    // Snapshot synchronously so a device plug/unplug during the nonce
+    // step can't desync the list from the names we just validated via
+    // `_setup.ready`.
+    final devices = _setup.devices
+        .map((d) => (id: d.id, name: _setup.deviceNames[d.id]!))
+        .toList();
     setState(() {
-      _submitting = true;
       _submitError = null;
+      _preparing = devices;
     });
+  }
+
+  Future<void> _postReady() async {
+    final devices = _preparing!;
+    setState(() => _submitting = true);
     try {
-      // Snapshot synchronously before the async gap so a device
-      // plug/unplug mid-`markReady` can't desync the list from the
-      // names we just validated via `_setup.ready`.
-      final devices = _setup.devices
-          .map((d) => (id: d.id, name: _setup.deviceNames[d.id]!))
-          .toList();
       await widget.ctrl.markReady(devices);
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -1956,9 +1967,17 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
+        _preparing = null;
         _submitError = '$e';
       });
     }
+  }
+
+  void _prepFailed(String message) {
+    setState(() {
+      _preparing = null;
+      _submitError = message;
+    });
   }
 
   @override
@@ -1988,41 +2007,73 @@ class _DeviceSetupDialogState extends State<_DeviceSetupDialog> {
             ),
           );
 
+    final preparing = _preparing;
+    final busy = preparing != null || _submitting;
+
     return FullscreenDialogScaffold(
-      title: const Text('Add your devices'),
-      subtitle: 'Each device you add will hold one key in the wallet.',
+      title: Text(preparing == null ? 'Add your devices' : 'Preparing devices'),
+      subtitle: preparing == null
+          ? 'Each device you add will hold one key in the wallet.'
+          : 'Generating signing material on your devices.',
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: () => Navigator.of(context).pop(),
+        // Back during the nonce step returns to the device list;
+        // unmounting the step cancels the running protocol.
+        onPressed: _submitting
+            ? null
+            : () {
+                if (_preparing != null) {
+                  setState(() => _preparing = null);
+                } else {
+                  Navigator.of(context).pop();
+                }
+              },
         tooltip: 'Back',
       ),
-      body: MultiSliver(
+      body: preparing != null
+          ? SliverToBoxAdapter(
+              child: PreparingDevicesStep(
+                devices: [for (final d in preparing) d.id],
+                onComplete: _postReady,
+                onFailed: _prepFailed,
+              ),
+            )
+          : MultiSliver(
+              children: [
+                if (errorBanner != null) errorBanner,
+                DeviceSetupView(
+                  controller: _setup,
+                  onSubmitted: () {
+                    if (_setup.ready && !busy) _submit();
+                  },
+                ),
+              ],
+            ),
+      footer: Row(
         children: [
-          if (errorBanner != null) errorBanner,
-          DeviceSetupView(
-            controller: _setup,
-            onSubmitted: () {
-              if (_setup.ready && !_submitting) _submit();
-            },
+          if (preparing != null && !_submitting)
+            TextButton(
+              onPressed: () => setState(() => _preparing = null),
+              child: const Text('Cancel'),
+            ),
+          const Spacer(),
+          FilledButton.icon(
+            onPressed: (_setup.ready && !busy) ? _submit : null,
+            icon: busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.arrow_forward_rounded),
+            iconAlignment: IconAlignment.end,
+            label: Text(
+              busy
+                  ? 'Please wait…'
+                  : 'Continue with $count ${count == 1 ? "device" : "devices"}',
+            ),
           ),
         ],
-      ),
-      footer: Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          onPressed: (_setup.ready && !_submitting) ? _submit : null,
-          icon: _submitting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.arrow_forward_rounded),
-          iconAlignment: IconAlignment.end,
-          label: Text(
-            'Continue with $count ${count == 1 ? "device" : "devices"}',
-          ),
-        ),
       ),
     );
   }
