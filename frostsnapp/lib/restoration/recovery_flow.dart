@@ -6,6 +6,7 @@ import 'package:frostsnap/device_action_upgrade.dart' as device_action_upgrade;
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/nonce_replenish.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:rxdart/rxdart.dart';
@@ -44,10 +45,47 @@ class RecoveryFlowController extends ChangeNotifier {
   RecoveryFlowController({
     required RecoveryContext recoveryContext,
     required RecoveryFlowState flowState,
+    bool Function(List<DeviceId> devices)? noncesNeeded,
+    Stream<NonceReplenishState> Function(List<DeviceId> devices)?
+    replenishNonces,
+    VoidCallback? cancelProtocol,
+    Stream<EnterPhysicalBackupState> Function(DeviceId deviceId)?
+    enterPhysicalBackup,
   }) : _recoveryContext = recoveryContext,
-       _flowState = flowState {
+       _flowState = flowState,
+       _noncesNeeded = noncesNeeded ?? _defaultNoncesNeeded,
+       _replenishNonces = replenishNonces ?? _defaultReplenishNonces,
+       _cancelProtocol = cancelProtocol ?? _defaultCancelProtocol,
+       _enterPhysicalBackup = enterPhysicalBackup ?? _defaultEnterBackup {
     _enterStage(_flowState.stage);
   }
+
+  /// Protocol seams, injectable so tests can drive the stage machine
+  /// without a live coordinator.
+  final bool Function(List<DeviceId> devices) _noncesNeeded;
+  final Stream<NonceReplenishState> Function(List<DeviceId> devices)
+  _replenishNonces;
+  final VoidCallback _cancelProtocol;
+  final Stream<EnterPhysicalBackupState> Function(DeviceId deviceId)
+  _enterPhysicalBackup;
+
+  static bool _defaultNoncesNeeded(List<DeviceId> devices) =>
+      coord.createNonceRequest(devices: devices).someNoncesRequested();
+
+  static Stream<NonceReplenishState> _defaultReplenishNonces(
+    List<DeviceId> devices,
+  ) => coord.replenishNonces(
+    nonceRequest: coord.createNonceRequest(devices: devices),
+    devices: devices,
+  );
+
+  static void _defaultCancelProtocol() {
+    coord.cancelProtocol();
+  }
+
+  static Stream<EnterPhysicalBackupState> _defaultEnterBackup(
+    DeviceId deviceId,
+  ) => coord.tellDeviceToEnterPhysicalBackup(deviceId: deviceId);
 
   RecoveryContext _recoveryContext;
   RecoveryContext get recoveryContext => _recoveryContext;
@@ -140,16 +178,8 @@ class RecoveryFlowController extends ChangeNotifier {
   void _enterStage(RecoveryFlowStage stage) {
     switch (stage) {
       case GeneratingNoncesStage(:final nextStage):
-        final nonceRequest = coord.createNonceRequest(
-          devices: [targetDevice.id],
-        );
         _nonceTerminalHandled = false;
-        _nonceStream = coord
-            .replenishNonces(
-              nonceRequest: nonceRequest,
-              devices: [targetDevice.id],
-            )
-            .toBehaviorSubject();
+        _nonceStream = _replenishNonces([targetDevice.id]).toBehaviorSubject();
         _nextStageAfterNonce = nextStage;
         targetDevice.onDisconnected().then((_) {
           if (_disposed) return;
@@ -158,9 +188,9 @@ class RecoveryFlowController extends ChangeNotifier {
           }
         });
       case EnterBackupStage():
-        _backupSubscription = coord
-            .tellDeviceToEnterPhysicalBackup(deviceId: targetDevice.id)
-            .listen(_onBackupStreamEvent);
+        _backupSubscription = _enterPhysicalBackup(
+          targetDevice.id,
+        ).listen(_onBackupStreamEvent);
       case FirmwareUpgradeStage():
         // During-upgrade disconnects are handled by `_runFirmwareUpgrade`.
         targetDevice.onDisconnected().then((_) {
@@ -244,8 +274,7 @@ class RecoveryFlowController extends ChangeNotifier {
   }
 
   void submitDeviceName(String deviceName) {
-    final nonceRequest = coord.createNonceRequest(devices: [targetDevice.id]);
-    if (nonceRequest.someNoncesRequested()) {
+    if (_noncesNeeded([targetDevice.id])) {
       pushAndTransitionTo(
         RecoveryFlowStage.generatingNonces(
           nextStage: RecoveryFlowStage.enterBackup(deviceName: deviceName),
@@ -328,7 +357,7 @@ class RecoveryFlowController extends ChangeNotifier {
   }
 
   void cancelGeneratingNonces() {
-    coord.cancelProtocol();
+    _cancelProtocol();
     tryPopPrevState();
   }
 
@@ -488,19 +517,18 @@ class RecoveryFlowController extends ChangeNotifier {
   Future<void> _completeDeviceShareEnrollment(RecoverShare candidate) async {
     _shareEnrollmentInFlight = true;
     try {
-      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
       switch (_recoveryContext) {
         case ContinuingRestorationContext(:final restorationId):
           await coord.continueRestoringWalletFromDeviceShare(
             restorationId: restorationId,
             recoverShare: candidate,
-            encryptionKey: encryptionKey,
+            encryptionKey: await SecureKeyProvider.getEncryptionKey(),
           );
         case AddingToWalletContext(:final accessStructureRef):
           await coord.recoverShare(
             accessStructureRef: accessStructureRef,
             recoverShare: candidate,
-            encryptionKey: encryptionKey,
+            encryptionKey: await SecureKeyProvider.getEncryptionKey(),
           );
         case NewRestorationContext():
           _completionResult = await coord.startRestoringWalletFromDeviceShare(
@@ -532,7 +560,7 @@ class RecoveryFlowController extends ChangeNotifier {
     // Dismiss-while-protocol-running: cancel before tearing down so
     // the device doesn't keep a stale protocol session open.
     if (_flowState.stage is GeneratingNoncesStage) {
-      coord.cancelProtocol();
+      _cancelProtocol();
     }
     _backupSubscription?.cancel();
     _backupSubscription = null;

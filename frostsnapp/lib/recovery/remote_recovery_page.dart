@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/nostr_chat/channel_setup.dart';
 import 'package:frostsnap/nostr_chat/nostr_state.dart';
 import 'package:frostsnap/restoration/enter_threshold_view.dart';
@@ -16,6 +17,16 @@ import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/nostr/remote_recovery.dart';
+import 'package:frostsnap/stream_ext.dart';
+
+/// Devices to nonce-top-up after a remote recovery persists: only the
+/// recovered access structure's devices that are physically present.
+/// The rest belong to other participants — a replenish scoped to them
+/// would wait forever for hardware that never connects to this app.
+List<DeviceId> nonceTopUpDevices({
+  required List<DeviceId> accessStructureDevices,
+  required Set<DeviceId> locallyConnected,
+}) => accessStructureDevices.where(locallyConnected.contains).toList();
 
 /// The remote-recovery ceremony as ONE stepped dialog: the leader's
 /// create form hands off to the lobby inside the same
@@ -284,6 +295,12 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
       );
       if (!mounted) return;
       setState(() => _recoveredRef = asref);
+      // Load-time replenishment (the recovery flow's generatingNonces
+      // stage) covers every share loaded here; this heals streams
+      // consumed between load and finish — a lobby can sit open for
+      // days while the same device signs in other wallets.
+      await _topUpNonces(asref);
+      if (!mounted) return;
       // A wallet recovered over nostr IS a remote wallet: connect
       // its coordination channel (rejoining the original — the
       // channel secret derives from the AccessStructureId — or
@@ -305,6 +322,35 @@ class _RemoteRecoveryPageState extends State<RemoteRecoveryPage> {
     } finally {
       if (mounted) setState(() => _persisting = false);
     }
+  }
+
+  Future<void> _topUpNonces(AccessStructureRef asref) async {
+    final accessStructure = widget.coord.getAccessStructure(asRef: asref);
+    if (accessStructure == null) return;
+    final devices = nonceTopUpDevices(
+      accessStructureDevices: accessStructure.devices(),
+      locallyConnected: widget.coord
+          .deviceListState()
+          .devices
+          .map((d) => d.id)
+          .toSet(),
+    );
+    if (devices.isEmpty) return;
+    final nonceRequest = widget.coord.createNonceRequest(devices: devices);
+    if (!nonceRequest.someNoncesRequested()) return;
+    if (!mounted) return;
+    await MaybeFullscreenDialog.show<bool>(
+      context: context,
+      child: NonceReplenishDialog(
+        stream: widget.coord
+            .replenishNonces(nonceRequest: nonceRequest, devices: devices)
+            .toBehaviorSubject(),
+        onCancel: () {
+          widget.coord.cancelProtocol();
+          Navigator.pop(context, false);
+        },
+      ),
+    );
   }
 
   Future<void> _finish() async {
