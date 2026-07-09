@@ -23,3 +23,6 @@ runs:
     - name: Build App Windows
       shell: bash
       run: just env=${{ inputs.env }} build windows --release
+    - name: Verify no checked-out files drifted during build
+      shell: bash
+      run: git diff --exit-code

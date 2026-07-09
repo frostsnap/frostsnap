@@ -53,3 +53,6 @@ runs:
     - name: Build appbundle
       shell: bash
       run: just env=${{ inputs.env }} build appbundle --release --flavor playstore
+    - name: Verify no checked-out files drifted during build
+      shell: bash
+      run: git diff --exit-code

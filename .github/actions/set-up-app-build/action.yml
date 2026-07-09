@@ -20,6 +20,10 @@ runs:
         cache: true
     - uses: "./.github/actions/fetch-cargo-deps"
     - uses: "./.github/actions/fetch-dart-deps"
+    - name: Enforce cargokit lockfile
+      working-directory: frostsnapp/rust_builder/cargokit/build_tool
+      shell: bash
+      run: dart pub get --enforce-lockfile
     - uses: "./.github/actions/generate-frb"
     - uses: "./.github/actions/install-cargo-bins"
     - name: Place firmware at conventional path

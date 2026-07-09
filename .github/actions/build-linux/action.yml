@@ -27,3 +27,6 @@ runs:
     - name: Build App Linux
       shell: bash
       run: just env=${{ inputs.env }} build linux --release
+    - name: Verify no checked-out files drifted during build
+      shell: bash
+      run: git diff --exit-code

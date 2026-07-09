@@ -31,3 +31,6 @@ runs:
     - name: Build macOS App
       shell: bash
       run: just env=${{ inputs.env }} build macos --release
+    - name: Verify no checked-out files drifted during build
+      shell: bash
+      run: git diff --exit-code
