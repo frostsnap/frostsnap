@@ -908,8 +908,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                       child: Text(
                         'With a 1-of-$totalDevices wallet, if anyone finds '
                         'any single one of your devices or backups, they '
-                        'will instantly be able to access all the bitcoin '
-                        'protected by this wallet.',
+                        'can spend all the bitcoin protected by this wallet.',
                         style: TextStyle(
                           color: theme.colorScheme.onErrorContainer,
                         ),
