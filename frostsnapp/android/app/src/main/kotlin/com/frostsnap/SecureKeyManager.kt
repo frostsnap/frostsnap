@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
@@ -78,6 +79,16 @@ class SecureKeyManager : FlutterPlugin, MethodCallHandler, ActivityAware, Plugin
     
     private fun getOrCreateKey(result: Result) {
         try {
+            // Debug-only escape hatch so tests can force the key-creation-failed
+            // fallback on emulators where hardware key creation succeeds:
+            //   adb shell settings put global frostsnap_force_empty_key 1
+            val debuggable = (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            if (debuggable && Settings.Global.getInt(appContext.contentResolver, "frostsnap_force_empty_key", 0) != 0) {
+                Log.w(TAG, "frostsnap_force_empty_key set, reporting key creation failure")
+                result.error("KEY_CREATION_FAILED", "forced by frostsnap_force_empty_key", null)
+                return
+            }
+
             // Fail fast if there's no device lock screen. KeyGenParameterSpec
             // with setUserAuthenticationRequired(true) cannot bind a key without
             // device credentials, and the resulting low-level exception is opaque,
@@ -94,7 +105,16 @@ class SecureKeyManager : FlutterPlugin, MethodCallHandler, ActivityAware, Plugin
 
             // Create key if it doesn't exist
             if (!keyStore.containsAlias(KEY_ALIAS)) {
-                createKey()
+                try {
+                    createKey()
+                } catch (e: Exception) {
+                    // Old keymasters (e.g. Pixel 2 XL / Android 11) can fail to
+                    // generate this key even in the TEE. Surface a typed error so
+                    // the Dart side can fall back instead of failing keygen.
+                    Log.w(TAG, "Hardware key creation failed", e)
+                    result.error("KEY_CREATION_FAILED", "Failed to create hardware-backed key: ${e.message}", null)
+                    return
+                }
             }
             
             // Try to access the key
