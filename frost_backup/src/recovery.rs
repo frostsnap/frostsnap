@@ -127,13 +127,9 @@ pub fn recover_secret_fuzzy(
     // Find the ShareBackups that correspond to the compatible images
     let mut compatible_shares = Vec::new();
     for image in &compatible_images {
-        // Find the first share that has this image
-        if let Some(share) = shares.iter().find(|s| &s.share_image() == image) {
-            compatible_shares.push(share.clone());
-        } else {
-            // This shouldn't happen since we got the images from the shares
-            return None;
-        }
+        // Find the first share that has this image (guaranteed present — the images came from the shares)
+        let share = shares.iter().find(|s| &s.share_image() == image)?;
+        compatible_shares.push(share.clone());
     }
 
     // Extract secret shares
