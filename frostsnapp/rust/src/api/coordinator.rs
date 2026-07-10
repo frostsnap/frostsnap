@@ -10,7 +10,7 @@ use frostsnap_core::{
     coordinator::CoordFrostKey,
     schnorr_fun::frost::{ShareIndex, SharedKey},
     tweak::Xpub,
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SymmetricKey,
 };
 use std::collections::BTreeMap;
 use tracing::{event, Level};
@@ -160,6 +160,24 @@ pub struct Coordinator(pub(crate) FfiCoordinator);
 impl Coordinator {
     pub fn start_thread(&self) -> Result<()> {
         self.0.start()
+    }
+
+    /// Whether `encryption_key` can decrypt this wallet's data. A quick,
+    /// deliberately brittle pre-check for operations that must decrypt an
+    /// existing wallet, so the app can show delete-and-recover up front instead
+    /// of letting the operation fail opaquely. Wraps the existing
+    /// `root_shared_key` (None on the wrong key) — no core changes. The
+    /// wallet-locking migration removes the whole per-key encryption concern.
+    #[frb(sync)]
+    pub fn can_decrypt_wallet(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) -> bool {
+        self.0
+            .inner()
+            .root_shared_key(access_structure_ref, encryption_key)
+            .is_some()
     }
 
     pub fn update_name_preview(&self, id: DeviceId, name: String) -> Result<()> {
