@@ -877,9 +877,65 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   /// threshold case; the button skips `next()` and calls this instead.
   Future<void> _beginThresholdKeygen(BuildContext context) async {
     if (_keygenInFlight) return;
+
+    final form = _controller.form;
+
+    // Warn loudly before creating a 1-of-N wallet: a single threshold means
+    // any one device or backup is enough to spend everything.
+    final totalDevices = form.selectedDevices.length;
+    if (form.threshold == 1 && totalDevices > 1) {
+      final proceed =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              final theme = Theme.of(context);
+              return BackdropFilter(
+                filter: blurFilter,
+                child: AlertDialog(
+                  icon: Icon(
+                    Icons.warning_rounded,
+                    color: theme.colorScheme.error,
+                  ),
+                  title: Text('Create a 1-of-$totalDevices wallet?'),
+                  content: Card.filled(
+                    margin: EdgeInsets.zero,
+                    color: theme.colorScheme.errorContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Text(
+                        'With a 1-of-$totalDevices wallet, if anyone finds '
+                        'any single one of your devices or backups, they '
+                        'can spend all the bitcoin protected by this wallet.',
+                        style: TextStyle(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                  ),
+                  actionsAlignment: MainAxisAlignment.spaceBetween,
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Continue'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Reconsider'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ) ??
+          false;
+      if (proceed != true || !context.mounted) return;
+    }
+
     setState(() => _keygenInFlight = true);
     try {
-      final form = _controller.form;
       final selectedDevices = form.selectedDevices.toList();
       final stream = coord
           .generateNewKey(
