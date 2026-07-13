@@ -51,6 +51,34 @@ class WalletCreateForm {
       selectedDevices.every((id) => deviceNames.containsKey(id));
 }
 
+/// The ids in [names] whose chosen name collides (case-insensitively, after
+/// trimming) with another named device, considering only devices in
+/// [participants].
+///
+/// [names] is retained across disconnects, so an entry may name a device that is
+/// no longer part of the keygen. Restricting the comparison to [participants]
+/// (the currently connected devices) means a name freed by a disconnected device
+/// can be reused by a remaining device without a false collision.
+Set<DeviceId> duplicateNamedDeviceIdsAmong(
+  Set<DeviceId> participants,
+  Map<DeviceId, String> names,
+) {
+  final counts = <String, int>{};
+  for (final entry in names.entries) {
+    if (!participants.contains(entry.key)) continue;
+    final key = entry.value.trim().toLowerCase();
+    if (key.isEmpty) continue;
+    counts.update(key, (c) => c + 1, ifAbsent: () => 1);
+  }
+  final dups = deviceIdSet([]);
+  names.forEach((id, name) {
+    if (!participants.contains(id)) return;
+    final key = name.trim().toLowerCase();
+    if (key.isNotEmpty && (counts[key] ?? 0) > 1) dups.add(id);
+  });
+  return dups;
+}
+
 class WalletCreateController extends ChangeNotifier {
   WalletCreateStep _step = WalletCreateStep.values.first;
   final WalletCreateForm _form = WalletCreateForm();
@@ -331,21 +359,13 @@ class WalletCreateController extends ChangeNotifier {
 
   /// Device ids whose chosen name collides (case-insensitively, after
   /// trimming) with another device being named in this keygen. Two devices in
-  /// the same wallet must not share a name, so these block advancing.
-  Set<DeviceId> get duplicateNamedDeviceIds {
-    final counts = <String, int>{};
-    for (final name in _form.deviceNames.values) {
-      final key = name.trim().toLowerCase();
-      if (key.isEmpty) continue;
-      counts.update(key, (c) => c + 1, ifAbsent: () => 1);
-    }
-    final dups = deviceIdSet([]);
-    _form.deviceNames.forEach((id, name) {
-      final key = name.trim().toLowerCase();
-      if (key.isNotEmpty && (counts[key] ?? 0) > 1) dups.add(id);
-    });
-    return dups;
-  }
+  /// the same wallet must not share a name, so these block advancing. Only the
+  /// currently connected devices ([_deviceList]) participate — a name retained
+  /// from a since-disconnected device must not block a remaining device.
+  Set<DeviceId> get duplicateNamedDeviceIds => duplicateNamedDeviceIdsAmong(
+    deviceIdSet(_deviceList.devices.map((dev) => dev.id)),
+    _form.deviceNames,
+  );
 
   bool get hasDuplicateDeviceNames => duplicateNamedDeviceIds.isNotEmpty;
 
