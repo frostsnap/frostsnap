@@ -364,12 +364,6 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    pub fn finish_naming(&self, id: DeviceId, name: &str) -> anyhow::Result<()> {
-        let device_name: frostsnap_coordinator::frostsnap_comms::DeviceName = name.try_into()?;
-        self.usb_sender.finish_naming(id, device_name);
-        Ok(())
-    }
-
     pub fn send_cancel(&self, id: DeviceId) {
         self.usb_sender.send_cancel(id)
     }

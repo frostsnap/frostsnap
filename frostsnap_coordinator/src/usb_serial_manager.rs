@@ -776,21 +776,6 @@ impl UsbSender {
             .expect("receiver exists");
     }
 
-    pub fn finish_naming(&self, device_id: DeviceId, name: DeviceName) {
-        event!(
-            Level::INFO,
-            name = %name,
-            device_id = device_id.to_string(),
-            "Named device"
-        );
-        self.sender
-            .send(CoordinatorSendMessage::to(
-                device_id,
-                CoordinatorSendBody::Naming(frostsnap_comms::NameCommand::Prompt(name)),
-            ))
-            .expect("receiver exists");
-    }
-
     pub fn send(&self, message: CoordinatorSendMessage) {
         self.sender.send(message).expect("receiver exists")
     }

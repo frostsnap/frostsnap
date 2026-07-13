@@ -51,6 +51,34 @@ class WalletCreateForm {
       selectedDevices.every((id) => deviceNames.containsKey(id));
 }
 
+/// The ids in [names] whose chosen name collides (case-insensitively, after
+/// trimming) with another named device, considering only devices in
+/// [participants].
+///
+/// [names] is retained across disconnects, so an entry may name a device that is
+/// no longer part of the keygen. Restricting the comparison to [participants]
+/// (the currently connected devices) means a name freed by a disconnected device
+/// can be reused by a remaining device without a false collision.
+Set<DeviceId> duplicateNamedDeviceIdsAmong(
+  Set<DeviceId> participants,
+  Map<DeviceId, String> names,
+) {
+  final counts = <String, int>{};
+  for (final entry in names.entries) {
+    if (!participants.contains(entry.key)) continue;
+    final key = entry.value.trim().toLowerCase();
+    if (key.isEmpty) continue;
+    counts.update(key, (c) => c + 1, ifAbsent: () => 1);
+  }
+  final dups = deviceIdSet([]);
+  names.forEach((id, name) {
+    if (!participants.contains(id)) return;
+    final key = name.trim().toLowerCase();
+    if (key.isNotEmpty && (counts[key] ?? 0) > 1) dups.add(id);
+  });
+  return dups;
+}
+
 class WalletCreateController extends ChangeNotifier {
   WalletCreateStep _step = WalletCreateStep.values.first;
   final WalletCreateForm _form = WalletCreateForm();
@@ -318,6 +346,7 @@ class WalletCreateController extends ChangeNotifier {
           !devicesNeedUpgrade &&
           !devicesUsed &&
           !devicesIncompatible &&
+          !hasDuplicateDeviceNames &&
           _deviceList.devices.every((d) => _form.deviceNames.containsKey(d.id)),
     WalletCreateStep.nonceReplenish => false, // Auto-advances, no manual next
     WalletCreateStep.threshold =>
@@ -327,6 +356,18 @@ class WalletCreateController extends ChangeNotifier {
           _form.threshold! <= _form.selectedDevices.length,
   };
   bool get canGoBack => _step.index != 0;
+
+  /// Device ids whose chosen name collides (case-insensitively, after
+  /// trimming) with another device being named in this keygen. Two devices in
+  /// the same wallet must not share a name, so these block advancing. Only the
+  /// currently connected devices ([_deviceList]) participate — a name retained
+  /// from a since-disconnected device must not block a remaining device.
+  Set<DeviceId> get duplicateNamedDeviceIds => duplicateNamedDeviceIdsAmong(
+    deviceIdSet(_deviceList.devices.map((dev) => dev.id)),
+    _form.deviceNames,
+  );
+
+  bool get hasDuplicateDeviceNames => duplicateNamedDeviceIds.isNotEmpty;
 
   bool setNetwork(BitcoinNetwork network) {
     if (_asRef != null) return false;
@@ -790,48 +831,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
   final Map<DeviceId, FocusNode> _nameFocusNodes = deviceIdMap();
 
-  void showRenameDeviceDialog(
-    BuildContext context,
-    ConnectedDevice device,
-  ) async {
-    await showBottomSheetOrDialog(
-      context,
-      title: Text("Name device"),
-      builder: (context, _) {
-        final mediaQuery = MediaQuery.of(context);
-        return SafeArea(
-          minimum: const EdgeInsets.symmetric(
-            horizontal: 20,
-          ).copyWith(bottom: 32 + mediaQuery.viewInsets.bottom, top: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 12,
-            children: [
-              TextFormField(
-                autofocus: true,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Device Name',
-                ),
-                maxLength: DeviceName.maxLength(),
-                inputFormatters: [nameInputFormatter],
-                textCapitalization: TextCapitalization.sentences,
-                initialValue: _controller.form.deviceNames[device.id],
-                onChanged: (name) => _controller.setDeviceName(device.id, name),
-                onFieldSubmitted: (_) => Navigator.pop(context),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Done'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _inlineNameField(BuildContext context, ConnectedDevice device) {
     final cs = Theme.of(context).colorScheme;
     final currentName = _controller.form.deviceNames[device.id] ?? '';
@@ -839,6 +838,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       device.id,
       () => TextEditingController(text: currentName),
     );
+    final isDuplicate = _controller.duplicateNamedDeviceIds.contains(device.id);
     return TextField(
       controller: textController,
       focusNode: _nameFocusNodes.putIfAbsent(device.id, () => FocusNode()),
@@ -853,6 +853,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         isDense: true,
         contentPadding: EdgeInsets.zero,
         counterText: '',
+        errorText: isDuplicate ? 'Name already used in this wallet' : null,
       ),
       onChanged: (name) => _controller.setDeviceName(device.id, name),
     );

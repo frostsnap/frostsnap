@@ -504,13 +504,8 @@ impl<'a> DeviceLoop<'a> {
                             new_name: preview_name.clone(),
                         });
                     }
-                    frostsnap_comms::NameCommand::Prompt(new_name) => {
-                        self.ui
-                            .set_workflow(ui::Workflow::prompt(ui::Prompt::NewName {
-                                old_name: self.name.clone(),
-                                new_name: new_name.clone(),
-                            }));
-                    }
+                    // Retired rename command, kept only to reserve its wire slot.
+                    frostsnap_comms::NameCommand::_Prompt(_) => {}
                 },
                 CoordinatorSendBody::Core(core_message) => {
                     if matches!(
@@ -731,21 +726,6 @@ impl<'a> DeviceLoop<'a> {
                             .sign_ack(*phase, &mut self.hmac_keys.share_encryption)
                             .expect("state changed while acking sign"),
                     );
-                }
-                UiEvent::NameConfirm(ref new_name) => {
-                    self.mutation_log
-                        .push(Mutation::Name(new_name.to_string()))
-                        .expect("flash write fail");
-                    self.name = Some(new_name.clone());
-                    self.update_default_workflow();
-                    self.pending_device_name = Some(new_name.clone());
-                    self.ui.set_workflow(ui::Workflow::NamingDevice {
-                        new_name: new_name.clone(),
-                    });
-                    self.upstream_connection
-                        .send_to_coordinator([DeviceSendBody::SetName {
-                            name: new_name.clone(),
-                        }]);
                 }
                 UiEvent::BackupRecorded => {
                     self.upstream_connection

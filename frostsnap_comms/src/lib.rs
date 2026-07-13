@@ -297,7 +297,10 @@ pub enum CoordinatorUpgradeMessage {
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum NameCommand {
     Preview(DeviceName),
-    Prompt(DeviceName),
+    /// Retired standalone-rename command. Never deleted or reordered: keeping it
+    /// reserves this bincode index so a future variant can't take the slot and be
+    /// misdecoded as a rename by old firmware. Nothing sends it; devices ignore it.
+    _Prompt(DeviceName),
 }
 
 impl Gist for CoordinatorSendBody {

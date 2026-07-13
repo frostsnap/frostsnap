@@ -10,7 +10,6 @@ use frostsnap_widgets::{
     keygen_check::KeygenCheck,
     sign_prompt::SignTxPrompt,
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Widget,
-    HOLD_TO_CONFIRM_TIME_MS,
 };
 
 use crate::touch_handler;
@@ -270,32 +269,6 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             confirmed: false,
                         }
                     }
-                    Prompt::NewName { old_name, new_name } => {
-                        use frostsnap_widgets::DefaultTextStyle;
-                        use frostsnap_widgets::{HoldToConfirm, Text, FONT_MED};
-
-                        // Create text for the prompt
-                        let prompt_text = if let Some(old_name) = old_name {
-                            format!("Rename device\nfrom '{}'\nto '{}'?", old_name, new_name)
-                        } else {
-                            format!("Name device\n'{}'?", new_name)
-                        };
-
-                        let text_widget = Text::new(
-                            prompt_text,
-                            DefaultTextStyle::new(FONT_MED, PALETTE.on_background),
-                        )
-                        .with_alignment(embedded_graphics::text::Alignment::Center);
-
-                        // Create HoldToConfirm widget with 2 second hold time
-                        let hold_to_confirm =
-                            HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_MS, text_widget);
-
-                        WidgetTree::NewNamePrompt {
-                            widget: Box::new(hold_to_confirm),
-                            new_name: Some(new_name.clone()),
-                        }
-                    }
                     Prompt::EraseDevice => {
                         use frostsnap_widgets::EraseDevice;
 
@@ -497,11 +470,6 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     phase,
                     share_backup,
                 });
-            }
-            WidgetTree::NewNamePrompt { widget, new_name } if widget.is_confirmed() => {
-                if let Some(name) = new_name.take() {
-                    return Some(UiEvent::NameConfirm(name));
-                }
             }
             WidgetTree::EraseDevicePrompt { widget, confirmed } => {
                 if !widget.is_confirmed() || *confirmed {
