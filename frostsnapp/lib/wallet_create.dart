@@ -561,6 +561,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     for (final c in _nameControllers.values) {
       c.dispose();
     }
+    for (final n in _nameFocusNodes.values) {
+      n.dispose();
+    }
     _upgradeController.dispose();
     _controller.dispose();
     super.dispose();
@@ -618,10 +621,16 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               upToDate: () => _deviceRow(
                 context: context,
                 title: _inlineNameField(context, device),
-                trailing: Icon(
-                  Icons.edit_rounded,
-                  color: cs.onSurfaceVariant,
-                  size: 20,
+                trailing: IconButton(
+                  icon: Icon(
+                    Icons.edit_rounded,
+                    color: cs.onSurfaceVariant,
+                    size: 20,
+                  ),
+                  tooltip: 'Edit device name',
+                  onPressed: () => _nameFocusNodes
+                      .putIfAbsent(device.id, () => FocusNode())
+                      .requestFocus(),
                 ),
               ),
               canUpgrade: () => _deviceRow(
@@ -779,6 +788,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   );
 
   final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
+  final Map<DeviceId, FocusNode> _nameFocusNodes = deviceIdMap();
 
   void showRenameDeviceDialog(
     BuildContext context,
@@ -806,6 +816,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 ),
                 maxLength: DeviceName.maxLength(),
                 inputFormatters: [nameInputFormatter],
+                textCapitalization: TextCapitalization.sentences,
                 initialValue: _controller.form.deviceNames[device.id],
                 onChanged: (name) => _controller.setDeviceName(device.id, name),
                 onFieldSubmitted: (_) => Navigator.pop(context),
@@ -830,9 +841,11 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
     return TextField(
       controller: textController,
+      focusNode: _nameFocusNodes.putIfAbsent(device.id, () => FocusNode()),
       style: monospaceTextStyle,
       maxLength: DeviceName.maxLength(),
       inputFormatters: [nameInputFormatter],
+      textCapitalization: TextCapitalization.sentences,
       decoration: InputDecoration(
         hintText: 'Enter device name',
         hintStyle: monospaceTextStyle.copyWith(color: cs.onSurfaceVariant),
