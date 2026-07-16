@@ -18,6 +18,7 @@ import 'package:frostsnap/src/rust/api/keygen.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
 import 'package:frostsnap/nonce_replenish.dart';
+import 'package:frostsnap/progress_indicator.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:rxdart/rxdart.dart';
@@ -354,6 +355,7 @@ class WalletCreateController extends ChangeNotifier {
           _form.threshold != null &&
           _form.threshold! > 0 &&
           _form.threshold! <= _form.selectedDevices.length,
+    WalletCreateStep.saving => false,
   };
   bool get canGoBack => _step.index != 0;
 
@@ -408,6 +410,9 @@ class WalletCreateController extends ChangeNotifier {
         // directly from the Next button, not through `next()`. Assert so
         // we trip in debug if someone wires it back up, then no-op.
         assert(false, 'threshold keygen is driven by the page, not next()');
+        return false;
+      case WalletCreateStep.saving:
+        assert(false, 'saving is not a user-navigable step');
         return false;
     }
   }
@@ -516,6 +521,7 @@ class WalletCreateController extends ChangeNotifier {
     },
     WalletCreateStep.nonceReplenish => null,
     WalletCreateStep.threshold => 'Generate keys',
+    WalletCreateStep.saving => null,
   };
 
   String get title => switch (_step) {
@@ -523,6 +529,7 @@ class WalletCreateController extends ChangeNotifier {
     WalletCreateStep.devices => 'Add devices',
     WalletCreateStep.nonceReplenish => "Preparing devices",
     WalletCreateStep.threshold => 'Choose threshold',
+    WalletCreateStep.saving => 'Saving wallet',
   };
 
   String get subtitle => switch (_step) {
@@ -531,6 +538,7 @@ class WalletCreateController extends ChangeNotifier {
       'Connect all devices you want to hold a key in "${form.name ?? ''}".\nGive each a name you will recognise later.',
     WalletCreateStep.nonceReplenish => '',
     WalletCreateStep.threshold => '',
+    WalletCreateStep.saving => '',
   };
 
   void setDeviceName(DeviceId id, String name) async {
@@ -547,7 +555,7 @@ class WalletCreateController extends ChangeNotifier {
   }
 }
 
-enum WalletCreateStep { name, devices, nonceReplenish, threshold }
+enum WalletCreateStep { name, devices, nonceReplenish, threshold, saving }
 
 /// Shows a fullscreen dialog instructing the user to unplug all currently
 /// connected devices. Returns when every device that was connected at call
@@ -1066,33 +1074,24 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     name: _controller.form.deviceNames[id]!,
                   ),
             ];
-            final result = await showDialog<_KeygenFinalizeResult>(
-              context: context,
-              barrierDismissible: false,
-              builder: (dialogContext) => _KeygenSavingDialog(
-                finalize: () async {
-                  final encryptionKey =
-                      await SecureKeyProvider.getEncryptionKey();
-                  final asRef = await coord.finalizeKeygen(
-                    keygenId: state.keygenId,
-                    encryptionKey: encryptionKey,
-                    deviceNames: deviceNames,
-                  );
-                  await Future<void>.delayed(const Duration(seconds: 1));
-                  return asRef;
-                },
-              ),
+            _controller._isAnimationForward = true;
+            _controller._step = WalletCreateStep.saving;
+            _controller.notifyListeners();
+            final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+            final asRef = await coord.finalizeKeygen(
+              keygenId: state.keygenId,
+              encryptionKey: encryptionKey,
+              deviceNames: deviceNames,
             );
-            if (result == null) return;
-            switch (result) {
-              case _KeygenFinalizeSuccess(:final asRef):
-                _controller._asRef = asRef;
-                if (context.mounted) Navigator.pop(context, asRef);
-              case _KeygenFinalizeFailure(:final error):
-                throw error;
-            }
+            // Keep the saving state visible long enough to be perceptible
+            // (and for the slide-in to finish) before popping.
+            await Future<void>.delayed(const Duration(seconds: 1));
+            _controller._asRef = asRef;
+            if (context.mounted) Navigator.pop(context, asRef);
           } catch (e) {
             _controller._keygenState = null;
+            _controller._isAnimationForward = false;
+            _controller._step = WalletCreateStep.threshold;
             _controller.notifyListeners();
             if (context.mounted) {
               showErrorSnackbar(context, 'Failed to finalize keygen: $e');
@@ -1201,7 +1200,36 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         return buildNonceReplenish(context);
       case WalletCreateStep.threshold:
         return buildThresholdBody(context);
+      case WalletCreateStep.saving:
+        return buildSavingBody(context);
     }
+  }
+
+  Widget buildSavingBody(BuildContext context) {
+    final theme = Theme.of(context);
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Semantics(
+          label: 'Saving wallet to devices',
+          container: true,
+          liveRegion: true,
+          child: ExcludeSemantics(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FsProgressIndicator(),
+                SizedBox(height: 24),
+                Text(
+                  'Saving wallet to devices',
+                  style: theme.textTheme.bodyLarge,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -1218,11 +1246,13 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
     final header = TopBarSliver(
       title: Text('${_controller.title}$appBarTrailingText'),
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back_rounded),
-        onPressed: () => goBackOrClose(context),
-        tooltip: 'Back',
-      ),
+      leading: _controller.step == WalletCreateStep.saving
+          ? null
+          : IconButton(
+              icon: Icon(Icons.arrow_back_rounded),
+              onPressed: () => goBackOrClose(context),
+              tooltip: 'Back',
+            ),
     );
 
     final column = Column(
@@ -1275,7 +1305,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             ),
           ),
         ),
-        if (_controller.step != WalletCreateStep.nonceReplenish)
+        if (_controller.step != WalletCreateStep.nonceReplenish &&
+            _controller.step != WalletCreateStep.saving)
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1329,6 +1360,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
   }
 
   void goBackOrClose(BuildContext context) {
+    // Never back out or dismiss the page while the wallet is being saved to
+    // devices — the fallthrough below would pop the whole page mid-finalize.
+    if (_controller.step == WalletCreateStep.saving) return;
     if (_controller.canGoBack) {
       _controller.back(context);
     } else {
@@ -1433,76 +1467,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           ),
         );
       },
-    );
-  }
-}
-
-abstract class _KeygenFinalizeResult {
-  const _KeygenFinalizeResult();
-}
-
-class _KeygenFinalizeSuccess extends _KeygenFinalizeResult {
-  final AccessStructureRef asRef;
-
-  const _KeygenFinalizeSuccess(this.asRef);
-}
-
-class _KeygenFinalizeFailure extends _KeygenFinalizeResult {
-  final Object error;
-
-  const _KeygenFinalizeFailure(this.error);
-}
-
-class _KeygenSavingDialog extends StatefulWidget {
-  final Future<AccessStructureRef> Function() finalize;
-
-  const _KeygenSavingDialog({required this.finalize});
-
-  @override
-  State<_KeygenSavingDialog> createState() => _KeygenSavingDialogState();
-}
-
-class _KeygenSavingDialogState extends State<_KeygenSavingDialog> {
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_run());
-  }
-
-  Future<void> _run() async {
-    try {
-      final asRef = await widget.finalize();
-      if (mounted) Navigator.of(context).pop(_KeygenFinalizeSuccess(asRef));
-    } catch (e) {
-      if (mounted) Navigator.of(context).pop(_KeygenFinalizeFailure(e));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      child: AlertDialog(
-        title: const Text('Saving wallet to devices'),
-        content: Semantics(
-          label: 'Saving wallet to devices',
-          container: true,
-          liveRegion: true,
-          child: ExcludeSemantics(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                SizedBox.square(
-                  dimension: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                SizedBox(width: 16),
-                Flexible(child: Text('Saving wallet to devices')),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
