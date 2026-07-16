@@ -167,12 +167,12 @@ impl CoordSuperWallet {
                     .index
                     .insert_descriptor(keychain_id, descriptor)
                     .expect("two keychains must not have the same spks");
-                let lookahead = self.lookahead();
+                // the spk tracker already applies lookahead on top of this
                 let next_index = self
                     .tx_graph
                     .index
                     .last_revealed_index(keychain_id)
-                    .map_or(lookahead, |lr| lr + lookahead + 1);
+                    .map_or(0, |lr| lr + 1);
                 self.chain_client.monitor_keychain(keychain_id, next_index);
             }
             let all_txs = self
