@@ -291,7 +291,24 @@ lint-device +ARGS="":
 dart-format-check-app:
     ( cd frostsnapp; dart format --set-exit-if-changed --output=none  $(find ./lib -type f -name "*.dart" -not -path "./lib/src/rust/*" -not -name "*.freezed.dart") )
 
-lint-app +ARGS="": maybe-gen dart-format-check-app
+# Bottom safe-area insets are owned by surface helpers (showAppBottomSheet,
+# MaybeFullscreenDialog, BottomActionBar). Forbid the raw surface APIs elsewhere
+# so the inset can't be forgotten on a new screen.
+check-safe-area-surfaces:
+    #!/bin/sh
+    cd frostsnapp/lib
+    fail=0
+    if grep -rnE --include='*.dart' 'showModalBottomSheet(<[^>]*>)?\(' . | grep -v '^\./theme\.dart:'; then
+        echo "error: use showAppBottomSheet() (theme.dart) instead of raw showModalBottomSheet()" >&2
+        fail=1
+    fi
+    if grep -rnE --include='*.dart' 'Dialog\.fullscreen\(' . | grep -v '^\./maybe_fullscreen_dialog\.dart:'; then
+        echo "error: use MaybeFullscreenDialog instead of raw Dialog.fullscreen()" >&2
+        fail=1
+    fi
+    exit $fail
+
+lint-app +ARGS="": maybe-gen dart-format-check-app check-safe-area-surfaces
     ( cd frostsnapp; flutter analyze {{ARGS}} )
 
 fix-dart: maybe-gen

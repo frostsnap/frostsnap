@@ -696,8 +696,8 @@ class ChainStatusIcon extends StatelessWidget {
       },
     );
 
-    showModalBottomSheet(
-      context: context,
+    showAppBottomSheet(
+      context,
       builder: (sheetContext) => StreamBuilder(
         stream: combinedStream,
         builder: (context, snapshot) {
@@ -706,73 +706,71 @@ class ChainStatusIcon extends StatelessWidget {
           final primaryEnabled = enabled != ElectrumEnabled.none;
           final backupEnabled = enabled == ElectrumEnabled.all;
 
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Server Status',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  'Server Status',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                _ServerStatusTile(
-                  label: 'Primary Server',
-                  url: status.primaryUrl,
-                  status: _getServerStatusFor(status, false),
-                  enabled: primaryEnabled,
-                  onTap: primaryEnabled
-                      ? () {
-                          Navigator.pop(sheetContext);
-                          settingsCtx.settings.connectTo(
-                            network: network,
-                            useBackup: false,
-                          );
-                        }
-                      : null,
-                  onEnabledChanged: (value) async {
-                    final newEnabled = value
-                        ? ElectrumEnabled.primaryOnly
-                        : ElectrumEnabled.none;
-                    await settingsCtx.settings.setElectrumEnabled(
-                      network: network,
-                      enabled: newEnabled,
-                    );
-                  },
-                ),
-                _ServerStatusTile(
-                  label: 'Backup Server',
-                  url: status.backupUrl,
-                  status: _getServerStatusFor(status, true),
-                  enabled: backupEnabled,
-                  onTap: backupEnabled
-                      ? () {
-                          Navigator.pop(sheetContext);
-                          settingsCtx.settings.connectTo(
-                            network: network,
-                            useBackup: true,
-                          );
-                        }
-                      : null,
-                  onEnabledChanged: primaryEnabled
-                      ? (value) async {
-                          final newEnabled = value
-                              ? ElectrumEnabled.all
-                              : ElectrumEnabled.primaryOnly;
-                          await settingsCtx.settings.setElectrumEnabled(
-                            network: network,
-                            enabled: newEnabled,
-                          );
-                        }
-                      : null,
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
+              ),
+              _ServerStatusTile(
+                label: 'Primary Server',
+                url: status.primaryUrl,
+                status: _getServerStatusFor(status, false),
+                enabled: primaryEnabled,
+                onTap: primaryEnabled
+                    ? () {
+                        Navigator.pop(sheetContext);
+                        settingsCtx.settings.connectTo(
+                          network: network,
+                          useBackup: false,
+                        );
+                      }
+                    : null,
+                onEnabledChanged: (value) async {
+                  final newEnabled = value
+                      ? ElectrumEnabled.primaryOnly
+                      : ElectrumEnabled.none;
+                  await settingsCtx.settings.setElectrumEnabled(
+                    network: network,
+                    enabled: newEnabled,
+                  );
+                },
+              ),
+              _ServerStatusTile(
+                label: 'Backup Server',
+                url: status.backupUrl,
+                status: _getServerStatusFor(status, true),
+                enabled: backupEnabled,
+                onTap: backupEnabled
+                    ? () {
+                        Navigator.pop(sheetContext);
+                        settingsCtx.settings.connectTo(
+                          network: network,
+                          useBackup: true,
+                        );
+                      }
+                    : null,
+                onEnabledChanged: primaryEnabled
+                    ? (value) async {
+                        final newEnabled = value
+                            ? ElectrumEnabled.all
+                            : ElectrumEnabled.primaryOnly;
+                        await settingsCtx.settings.setElectrumEnabled(
+                          network: network,
+                          enabled: newEnabled,
+                        );
+                      }
+                    : null,
+              ),
+              const SizedBox(height: 8),
+            ],
           );
         },
       ),
@@ -1365,43 +1363,41 @@ class AboutPage extends StatelessWidget {
                     : null,
                 onTap: buildCommit != 'unknown'
                     ? () {
-                        showModalBottomSheet(
-                          context: context,
-                          builder: (context) => SafeArea(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CopyTapTarget(
-                                  data: buildCommit,
-                                  builder: (ctx, onCopy, checked) => ListTile(
-                                    leading: CopyIcon(checked: checked),
-                                    title: Text('Copy commit hash'),
-                                    onTap: onCopy == null
-                                        ? null
-                                        : () {
-                                            onCopy();
-                                            Navigator.pop(context);
-                                          },
-                                  ),
+                        showAppBottomSheet(
+                          context,
+                          builder: (context) => Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CopyTapTarget(
+                                data: buildCommit,
+                                builder: (ctx, onCopy, checked) => ListTile(
+                                  leading: CopyIcon(checked: checked),
+                                  title: Text('Copy commit hash'),
+                                  onTap: onCopy == null
+                                      ? null
+                                      : () {
+                                          onCopy();
+                                          Navigator.pop(context);
+                                        },
                                 ),
-                                ListTile(
-                                  leading: Icon(Icons.open_in_new),
-                                  title: Text('View on GitHub'),
-                                  onTap: () async {
-                                    Navigator.pop(context);
-                                    final url = Uri.parse(
-                                      'https://github.com/frostsnap/frostsnap/commit/$commitHash',
+                              ),
+                              ListTile(
+                                leading: Icon(Icons.open_in_new),
+                                title: Text('View on GitHub'),
+                                onTap: () async {
+                                  Navigator.pop(context);
+                                  final url = Uri.parse(
+                                    'https://github.com/frostsnap/frostsnap/commit/$commitHash',
+                                  );
+                                  if (await canLaunchUrl(url)) {
+                                    await launchUrl(
+                                      url,
+                                      mode: LaunchMode.externalApplication,
                                     );
-                                    if (await canLaunchUrl(url)) {
-                                      await launchUrl(
-                                        url,
-                                        mode: LaunchMode.externalApplication,
-                                      );
-                                    }
-                                  },
-                                ),
-                              ],
-                            ),
+                                  }
+                                },
+                              ),
+                            ],
                           ),
                         );
                       }

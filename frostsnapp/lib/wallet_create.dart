@@ -1269,29 +1269,26 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 padding: EdgeInsets.all(
                   16,
                 ).add(EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom)),
-                child: SafeArea(
-                  top: false,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton(
-                      onPressed:
-                          !_controller.canGoNext ||
-                              (_controller.step == WalletCreateStep.threshold &&
-                                  _keygenInFlight)
-                          ? null
-                          : () {
-                              if (_controller.step ==
-                                  WalletCreateStep.threshold) {
-                                _beginThresholdKeygen(context);
-                              } else {
-                                _controller.next(context);
-                              }
-                            },
-                      child: Text(
-                        _controller.nextText ?? 'Next',
-                        softWrap: false,
-                        overflow: TextOverflow.fade,
-                      ),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed:
+                        !_controller.canGoNext ||
+                            (_controller.step == WalletCreateStep.threshold &&
+                                _keygenInFlight)
+                        ? null
+                        : () {
+                            if (_controller.step ==
+                                WalletCreateStep.threshold) {
+                              _beginThresholdKeygen(context);
+                            } else {
+                              _controller.next(context);
+                            }
+                          },
+                    child: Text(
+                      _controller.nextText ?? 'Next',
+                      softWrap: false,
+                      overflow: TextOverflow.fade,
                     ),
                   ),
                 ),

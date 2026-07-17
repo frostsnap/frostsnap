@@ -790,7 +790,7 @@ class WalletBottomBar extends StatelessWidget {
     return SizedBox(
       // Arbitary height to bound the bottom bar.
       height: 200,
-      child: SafeArea(
+      child: BottomActionBar(
         child: Align(
           alignment: Alignment.bottomCenter,
           child: Padding(

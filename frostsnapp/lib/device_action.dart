@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/theme.dart';
 import 'dart:async';
 
 Future<T?> showDeviceActionDialog<T>({
@@ -27,9 +28,8 @@ Future<T?> showDeviceActionDialog<T>({
       });
 
   final theme = Theme.of(context);
-  final result = await showModalBottomSheet<T>(
-    context: context,
-    isScrollControlled: true,
+  final result = await showAppBottomSheet<T>(
+    context,
     isDismissible: false,
     backgroundColor: Colors.transparent,
     builder: (BuildContext dialogContext_) {

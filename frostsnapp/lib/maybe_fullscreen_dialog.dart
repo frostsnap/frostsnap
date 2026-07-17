@@ -161,9 +161,14 @@ class _MaybeFullscreenDialogState extends State<MaybeFullscreenDialog>
           //   _ => blurFilter,
           // },
           child: switch (_sizeClass.value) {
+            // Compact = fullscreen on mobile, where the Android gesture/nav bar
+            // overlaps the bottom edge. This is the single owner of the bottom
+            // inset for every fullscreen dialog; leaves must not re-add it
+            // (SafeArea is idempotent, so a stray nested one is a harmless
+            // no-op). Top stays edge-to-edge so top bars reach the status bar.
             WindowSizeClass.compact => Dialog.fullscreen(
               backgroundColor: widget.backgroundColor,
-              child: child,
+              child: SafeArea(top: false, child: child!),
             ),
             WindowSizeClass.medium || WindowSizeClass.expanded => Dialog(
               insetPadding: EdgeInsets.zero,

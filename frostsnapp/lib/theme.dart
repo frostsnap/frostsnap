@@ -45,6 +45,59 @@ Color tintOnSurface(
   elevation,
 );
 
+/// A bottom-anchored bar (toolbar / action row) that owns its safe-area inset.
+///
+/// Use this — or `Scaffold.persistentFooterButtons` — for any custom
+/// bottom-anchored controls. A plain `Scaffold.bottomNavigationBar` child is NOT
+/// auto-inset by Flutter, so hand-building one is exactly how bottom controls end
+/// up under the Android gesture bar.
+class BottomActionBar extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  const BottomActionBar({
+    super.key,
+    required this.child,
+    this.padding = EdgeInsets.zero,
+  });
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: Padding(padding: padding, child: child),
+  );
+}
+
+/// Shows a modal bottom sheet that owns its bottom safe-area inset.
+///
+/// Flutter's `showModalBottomSheet(useSafeArea: true)` is `SafeArea(bottom:
+/// false)` — it never insets the bottom, so action content would sit under the
+/// Android gesture/navigation bar. This is the only sanctioned way to open a
+/// bottom sheet; raw `showModalBottomSheet` is rejected by the lint guard so the
+/// bottom inset can't be forgotten.
+Future<T?> showAppBottomSheet<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+  Color? backgroundColor,
+  bool isScrollControlled = true,
+  bool isDismissible = true,
+  bool showDragHandle = false,
+  Clip? clipBehavior,
+}) {
+  // This is the one sanctioned showModalBottomSheet call; the
+  // `check-safe-area-surfaces` lint guard forbids it everywhere else.
+  return showModalBottomSheet<T>(
+    context: context,
+    backgroundColor: backgroundColor,
+    isScrollControlled: isScrollControlled,
+    isDismissible: isDismissible,
+    showDragHandle: showDragHandle,
+    clipBehavior: clipBehavior,
+    useSafeArea: true,
+    builder: (context) => SafeArea(top: false, child: builder(context)),
+  );
+}
+
 Future<T?> showBottomSheetOrDialog<T>(
   BuildContext context, {
   required Widget Function(BuildContext, ScrollController) builder,
@@ -83,14 +136,10 @@ Future<T?> showBottomSheetOrDialog<T>(
             child: column,
           ),
         )
-      : showModalBottomSheet<T>(
-          context: context,
+      : showAppBottomSheet<T>(
+          context,
           clipBehavior: Clip.hardEdge,
           backgroundColor: backgroundColor,
-          isScrollControlled: true,
-          useSafeArea: true,
-          isDismissible: true,
-          showDragHandle: false,
           builder: (context) => column,
         );
 

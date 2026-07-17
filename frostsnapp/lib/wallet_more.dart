@@ -56,7 +56,7 @@ class _WalletMoreState extends State<WalletMore> {
       slivers: [
         if (walletCtx != null)
           SliverToBoxAdapter(child: buildColumn(context, walletCtx)),
-        SliverSafeArea(sliver: SliverToBoxAdapter(child: SizedBox(height: 12))),
+        SliverToBoxAdapter(child: SizedBox(height: 12)),
       ],
     );
   }
