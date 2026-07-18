@@ -31,16 +31,28 @@ Future<SymmetricKey?> existingWalletKey({
   showRecovery ??= () =>
       showWalletKeyMismatchDialog(context: context, action: action);
 
+  // The empty-key fallback (see AndroidSecureKeyProvider) isn't persisted, so
+  // a wallet established under it must keep working: probe the empty key
+  // before giving up.
+  SymmetricKey? emptyKeyIfDecrypts() {
+    final emptyKey = SecureKeyProvider.emptyKey;
+    return canDecrypt!(emptyKey) ? emptyKey : null;
+  }
+
   final SymmetricKey key;
   try {
     key = await getKey();
   } on WalletKeyUnavailable {
+    final emptyKey = emptyKeyIfDecrypts();
+    if (emptyKey != null) return emptyKey;
     // Await so a null return means the dialog has been shown AND dismissed —
     // callers that pop their own flow afterwards then can't race it away.
     await showRecovery();
     return null;
   }
   if (!canDecrypt(key)) {
+    final emptyKey = emptyKeyIfDecrypts();
+    if (emptyKey != null) return emptyKey;
     await showRecovery();
     return null;
   }
