@@ -96,7 +96,8 @@ Future<void> _show(BuildContext context, String action) async {
         "so it can't $action.\n\n"
         'This usually means the wallet was protected by a key this phone '
         'no longer has. To keep using the wallet, delete it from this app '
-        'and recover it from its Frostsnap devices.',
+        'and recover it from its Frostsnap devices.'
+        '${walletCtx == null ? "\n\nYou can delete it from the wallet's settings." : ''}',
       ),
       actions: [
         TextButton(
