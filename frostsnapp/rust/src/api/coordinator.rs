@@ -166,7 +166,8 @@ impl Coordinator {
     /// deliberately brittle pre-check for operations that must decrypt an
     /// existing wallet, so the app can show delete-and-recover up front instead
     /// of letting the operation fail opaquely. Wraps the existing
-    /// `root_shared_key` (None on the wrong key) — no core changes. The
+    /// `root_shared_key` — `false` also covers a missing key/access
+    /// structure, not just the wrong key. No core changes. The
     /// wallet-locking migration removes the whole per-key encryption concern.
     #[frb(sync)]
     pub fn can_decrypt_wallet(
