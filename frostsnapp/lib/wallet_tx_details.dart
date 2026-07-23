@@ -1008,7 +1008,8 @@ void showExportPsbtDialog(BuildContext context, Psbt psbt) async {
       if (fileName == null) return;
       final file = File(fileName);
       try {
-        await file.writeAsBytes(psbtBytes);
+        // Write base64 text so Liana and other wallets can read the file.
+        await file.writeAsBytes(psbtFileBytes(psbt));
       } catch (e) {
         showErrorSnackbar(context, 'Failed to save PSBT file: $e');
         return;

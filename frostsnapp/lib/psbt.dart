@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,6 +21,50 @@ import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+
+/// PSBT files come in a few flavours: raw binary (starts with the `psbt\xff`
+/// magic bytes), base64 text (how Liana and most wallets save `.psbt` files), or
+/// hex text. `Psbt.deserialize` only accepts raw binary, so detect the encoding
+/// and decode to bytes first. If we can't tell, return the input unchanged and
+/// let `deserialize` surface a proper "invalid PSBT" error.
+Uint8List normalizePsbtBytes(Uint8List raw) {
+  // Binary PSBT magic: 0x70 0x73 0x62 0x74 0xff ("psbt\xff").
+  final looksBinary =
+      raw.length >= 5 &&
+      raw[0] == 0x70 &&
+      raw[1] == 0x73 &&
+      raw[2] == 0x62 &&
+      raw[3] == 0x74 &&
+      raw[4] == 0xff;
+  if (looksBinary) return raw;
+
+  final text = utf8
+      .decode(raw, allowMalformed: true)
+      .replaceAll(RegExp(r'\s'), '');
+
+  try {
+    return base64.decode(base64.normalize(text));
+  } catch (_) {}
+
+  if (text.isNotEmpty &&
+      text.length.isEven &&
+      RegExp(r'^[0-9a-fA-F]+$').hasMatch(text)) {
+    final out = Uint8List(text.length ~/ 2);
+    for (var i = 0; i < out.length; i++) {
+      out[i] = int.parse(text.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+    return out;
+  }
+
+  return raw;
+}
+
+/// Encode a [Psbt] as the bytes to write to a `.psbt` file. Liana and most
+/// Bitcoin wallets read/write `.psbt` files as a single-line base64 string of
+/// the binary PSBT, not raw binary, so we write base64 text. This round-trips
+/// with [normalizePsbtBytes] on import.
+Uint8List psbtFileBytes(Psbt psbt) =>
+    utf8.encode(base64.encode(psbt.serialize()));
 
 class LoadPsbtPage extends StatefulWidget {
   final Wallet wallet;
@@ -50,7 +95,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final UnsignedTx unsignedTx;
 
     try {
-      psbt = Psbt.deserialize(bytes: psbtBytes);
+      psbt = Psbt.deserialize(bytes: normalizePsbtBytes(psbtBytes));
     } catch (e) {
       if (context.mounted) {
         await showExceptionDialog(
@@ -271,8 +316,7 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
             // user canceled the picker
           } else {
             final newFile = File(outputFile);
-            final psbtBytes = psbt.serialize();
-            await newFile.writeAsBytes(psbtBytes);
+            await newFile.writeAsBytes(psbtFileBytes(psbt));
           }
         },
         child: Text("Save PSBT"),
@@ -336,10 +380,8 @@ Future<void> savePsbt(BuildContext context, Psbt psbt) async {
 
     final file = File(outputFile);
 
-    final psbtBytes = psbt.serialize();
-
-    // Write the bytes to the selected file
-    await file.writeAsBytes(psbtBytes);
+    // Write the PSBT as base64 text (how Liana and other wallets read `.psbt`).
+    await file.writeAsBytes(psbtFileBytes(psbt));
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(
