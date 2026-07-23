@@ -9,7 +9,7 @@ use crate::{
     widget_list::{WidgetList, WidgetListItem},
     GrayToAlpha, HoldToConfirm, Image,
 };
-use alloc::{boxed::Box, format, string::ToString};
+use alloc::{boxed::Box, format, string::ToString, vec::Vec};
 use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
@@ -30,6 +30,15 @@ const FONT_CAUTION_TEXT: &Gray4Font = &NOTO_SANS_17_REGULAR;
 const HIGH_FEE_ABSOLUTE_THRESHOLD_SATS: u64 = 100_000;
 const HIGH_FEE_PERCENTAGE_THRESHOLD: u64 = 5;
 const HOLD_TO_SIGN_TIME_MS: u32 = 3000;
+
+/// A caution page shown between the recipient pages and the fee/confirmation pages.
+#[derive(Clone, Copy, PartialEq)]
+enum SignWarning {
+    /// This transaction key-spends a taproot output that also commits to a script tree.
+    ScriptPath,
+    /// The fee is unusually high (absolute or relative to the amount sent).
+    HighFee,
+}
 
 /// Widget list that generates sign prompt pages
 #[derive(Clone)]
@@ -174,7 +183,7 @@ pub struct WarningPage {
 
 impl WarningPage {
     #[inline(never)]
-    fn new(fee_sats: u64, _total_sent: u64) -> Self {
+    fn new(warning: SignWarning, fee_sats: u64) -> Self {
         let warning_bmp =
             Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
         let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
@@ -192,19 +201,28 @@ impl WarningPage {
         let caution_row = Row::new((warning_icon, icon_spacer, text_with_spacer))
             .with_main_axis_alignment(MainAxisAlignment::Center);
 
+        let (title, line1, line2) = match warning {
+            SignWarning::HighFee => {
+                let (line1, line2) = if fee_sats > HIGH_FEE_ABSOLUTE_THRESHOLD_SATS {
+                    ("Fee is greater", "than 0.001 BTC")
+                } else {
+                    ("Fee exceeds 5% of the", "amount being sent")
+                };
+                ("High Fee", line1, line2)
+            }
+            SignWarning::ScriptPath => (
+                "Script Path",
+                "Spends an output with",
+                "extra script conditions",
+            ),
+        };
+
         let title_text = Text::new(
-            "High Fee".to_string(),
+            title.to_string(),
             Gray4TextStyle::new(FONT_CAUTION_TITLE, PALETTE.on_background),
         );
 
-        let (line1, line2) = if fee_sats > HIGH_FEE_ABSOLUTE_THRESHOLD_SATS {
-            ("Fee is greater".to_string(), "than 0.001 BTC".to_string())
-        } else {
-            (
-                "Fee exceeds 5% of the".to_string(),
-                "amount being sent".to_string(),
-            )
-        };
+        let (line1, line2) = (line1.to_string(), line2.to_string());
 
         let warning_text = Column::new((
             Text::new(
@@ -291,15 +309,28 @@ type SignPromptPage = AnyOf<(
 impl SignPromptPageList {
     fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
         let num_recipients = prompt.foreign_recipients.len();
-        let has_warning = Self::has_high_fee(&prompt);
+        let warning_pages = Self::warnings(&prompt).len();
 
-        let total_pages = num_recipients * 2 + 1 + if has_warning { 1 } else { 0 } + 1;
+        // recipient pages (amount + address each) + warnings + fee + confirmation
+        let total_pages = num_recipients * 2 + warning_pages + 1 + 1;
 
         Self {
             prompt,
             total_pages,
             rand_seed,
         }
+    }
+
+    /// The caution pages to show, in display order, for this transaction.
+    fn warnings(prompt: &PromptSignBitcoinTx) -> Vec<SignWarning> {
+        let mut warnings = Vec::new();
+        if prompt.spends_script_path {
+            warnings.push(SignWarning::ScriptPath);
+        }
+        if Self::has_high_fee(prompt) {
+            warnings.push(SignWarning::HighFee);
+        }
+        warnings
     }
 
     fn has_high_fee(prompt: &PromptSignBitcoinTx) -> bool {
@@ -336,7 +367,7 @@ impl WidgetList for SignPromptPageList {
 
         let num_recipients = self.prompt.foreign_recipients.len();
         let recipient_pages = num_recipients * 2;
-        let has_warning = Self::has_high_fee(&self.prompt);
+        let warnings = Self::warnings(&self.prompt);
 
         let (page, use_fb) = if index < recipient_pages {
             let recipient_idx = index / 2;
@@ -359,20 +390,13 @@ impl WidgetList for SignPromptPageList {
                     true,
                 )
             }
-        } else if has_warning && index == recipient_pages {
-            let total_sent: u64 = self
-                .prompt
-                .foreign_recipients
-                .iter()
-                .map(|(_, amount)| amount.to_sat())
-                .sum();
+        } else if index < recipient_pages + warnings.len() {
+            let warning = warnings[index - recipient_pages];
             (
-                SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent)),
+                SignPromptPage::new(WarningPage::new(warning, self.prompt.fee.to_sat())),
                 false,
             )
-        } else if (has_warning && index == recipient_pages + 1)
-            || (!has_warning && index == recipient_pages)
-        {
+        } else if index == recipient_pages + warnings.len() {
             (
                 SignPromptPage::new(FeePage::new(
                     self.prompt.fee.to_sat(),

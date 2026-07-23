@@ -109,34 +109,9 @@ impl ActiveSignSessionExt for ActiveSignSession {
                 content: event.content,
                 hash_bytes: event.hash_bytes.to_lower_hex_string(),
             },
-            WireSignTask::BitcoinTransaction(tx_temp) => {
-                let raw_tx = tx_temp.to_rust_bitcoin_tx();
-                let txid = raw_tx.compute_txid();
-                let is_mine = tx_temp
-                    .iter_locally_owned_inputs()
-                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index))
-                    .chain(
-                        tx_temp
-                            .iter_locally_owned_outputs()
-                            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index)),
-                    )
-                    .collect::<HashMap<_, _>>();
-                let prevouts = tx_temp
-                    .inputs()
-                    .iter()
-                    .map(|input| (input.outpoint(), input.txout()))
-                    .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-                SigningDetails::Transaction {
-                    transaction: Transaction {
-                        inner: raw_tx,
-                        txid: txid.to_string(),
-                        confirmation_time: None,
-                        last_seen: None,
-                        prevouts,
-                        is_mine,
-                    },
-                }
-            }
+            WireSignTask::BitcoinTransaction(tx_temp) => SigningDetails::Transaction {
+                transaction: Transaction::from_template(&tx_temp),
+            },
         };
         res
     }
@@ -195,24 +170,20 @@ impl UnsignedTx {
                 })
                 .collect::<HashMap<_, _>>(),
             inner: raw_tx,
+            owned_spends: Transaction::owned_spends_from_template(&self.template_tx),
         }
     }
 
     #[frb(sync)]
     pub fn complete(&self, signatures: Vec<EncodedSignature>) -> SignedTx {
-        let mut tx = self.template_tx.to_rust_bitcoin_tx();
-        for (txin, signature) in tx.input.iter_mut().zip(signatures) {
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
-                    .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            txin.witness = witness;
-        }
+        // Build the witnesses via the shared logic that handles both key-path and script-path
+        // spends (and maps signatures to the correct input), rather than assuming a single-element
+        // key-spend witness for every input.
+        let mut tx = Transaction::from_template(&self.template_tx);
+        tx.fill_signatures(&signatures);
 
         SignedTx {
-            signed_tx: tx,
+            signed_tx: tx.inner,
             unsigned_tx: self.clone(),
         }
     }

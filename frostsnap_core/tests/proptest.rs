@@ -794,10 +794,7 @@ impl StateMachineTest for HappyPathTest {
                     let amount = 100_000 + (rng.next_u64() % 900_000); // 100k to 1M sats
                     total_in += amount;
                     tx_template.push_imaginary_owned_input(
-                        LocalSpk {
-                            master_appkey,
-                            bip32_path: BitcoinBip32Path::external(i as u32),
-                        },
+                        LocalSpk::key_spend(master_appkey, BitcoinBip32Path::external(i as u32)),
                         bitcoin::Amount::from_sat(amount),
                     );
                 }
@@ -808,10 +805,7 @@ impl StateMachineTest for HappyPathTest {
                 if change > 0 {
                     tx_template.push_owned_output(
                         bitcoin::Amount::from_sat(change),
-                        LocalSpk {
-                            master_appkey,
-                            bip32_path: BitcoinBip32Path::internal(0),
-                        },
+                        LocalSpk::key_spend(master_appkey, BitcoinBip32Path::internal(0)),
                     );
                 }
 

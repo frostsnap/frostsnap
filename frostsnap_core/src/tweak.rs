@@ -1,7 +1,9 @@
 use bitcoin::{
     bip32::*,
     hashes::{sha512, Hash, HashEngine, Hmac, HmacEngine},
-    secp256k1, NetworkKind,
+    secp256k1,
+    taproot::TapNodeHash,
+    NetworkKind,
 };
 use schnorr_fun::{
     frost::{PairedSecretShare, SharedKey},
@@ -32,8 +34,29 @@ pub enum Keychain {
 #[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, PartialOrd, Ord)]
 pub enum AppTweak {
     TestMessage,
-    Bitcoin(BitcoinBip32Path),
+    Bitcoin(BitcoinTweak),
     Nostr,
+}
+
+/// How to derive the key we sign with for a bitcoin taproot input.
+#[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, PartialOrd, Ord)]
+pub struct BitcoinTweak {
+    pub bip32_path: BitcoinBip32Path,
+    pub kind: BitcoinTweakKind,
+}
+
+#[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, PartialOrd, Ord)]
+pub enum BitcoinTweakKind {
+    /// Key-path spend: apply the BIP341 taproot tweak. `merkle_root` is `None` for a plain
+    /// BIP86 `tr(KEY)` output, or `Some` when the output also commits to a script tree (e.g.
+    /// Liana-style recovery leaves held by other keys) — the tweak must commit to that root.
+    KeySpend {
+        #[bincode(with_serde)]
+        merkle_root: Option<TapNodeHash>,
+    },
+    /// Script-path spend: sign as the raw BIP32-derived key that appears *inside* a tapscript
+    /// leaf. No taproot tweak is applied — the tweak only applies to the internal key.
+    ScriptSpend,
 }
 
 #[derive(
@@ -169,7 +192,7 @@ impl BitcoinBip32Path {
 impl AppTweak {
     pub fn kind(&self) -> AppTweakKind {
         match self {
-            AppTweak::Bitcoin { .. } => AppTweakKind::Bitcoin,
+            AppTweak::Bitcoin(_) => AppTweakKind::Bitcoin,
             AppTweak::Nostr => AppTweakKind::Nostr,
             AppTweak::TestMessage => AppTweakKind::TestMessage,
         }
@@ -179,20 +202,27 @@ impl AppTweak {
         let appkey = master_appkey.derive_bip32([self.kind() as u32]);
 
         match &self {
-            AppTweak::Bitcoin(bip32_path) => {
-                let concrete_internal_key =
-                    appkey.derive_bip32(bip32_path.path_segments_from_bitcoin_appkey());
-                let derived_key = concrete_internal_key.into_key();
-                let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
-                    derived_key.to_libsecp_xonly(),
-                    None,
-                )
-                .to_scalar();
-                derived_key.into_xonly_with_tweak(
-                    Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
-                        .non_zero()
-                        .expect("computationally unreachable"),
-                )
+            AppTweak::Bitcoin(BitcoinTweak { bip32_path, kind }) => {
+                let derived_key = appkey
+                    .derive_bip32(bip32_path.path_segments_from_bitcoin_appkey())
+                    .into_key();
+                match kind {
+                    // Key-path: apply the taproot tweak (committing to the script tree, if any).
+                    BitcoinTweakKind::KeySpend { merkle_root } => {
+                        let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
+                            derived_key.to_libsecp_xonly(),
+                            *merkle_root,
+                        )
+                        .to_scalar();
+                        derived_key.into_xonly_with_tweak(
+                            Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
+                                .non_zero()
+                                .expect("computationally unreachable"),
+                        )
+                    }
+                    // Script-path: the leaf key is used untweaked.
+                    BitcoinTweakKind::ScriptSpend => derived_key.into_xonly(),
+                }
             }
             AppTweak::Nostr => appkey.into_key().into_xonly(),
             AppTweak::TestMessage => appkey.into_key().into_xonly(),

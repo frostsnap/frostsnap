@@ -630,10 +630,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     account_keychain: tweak::BitcoinAccountKeychain::external(),
                     index: derivation_index,
                 };
-                let spk = bitcoin_transaction::LocalSpk {
-                    master_appkey,
-                    bip32_path,
-                };
+                let spk = bitcoin_transaction::LocalSpk::key_spend(master_appkey, bip32_path);
 
                 let network = self
                     .wallet_network(key_id)

@@ -22,10 +22,7 @@ fn test_feerate_estimation_accuracy() {
     let master_appkey = MasterAppkey::derive_from_rootkey(G.normalize());
 
     // Create dummy local SPK for the inputs
-    let local_spk = LocalSpk {
-        master_appkey,
-        bip32_path: BitcoinBip32Path::external(0),
-    };
+    let local_spk = LocalSpk::key_spend(master_appkey, BitcoinBip32Path::external(0));
 
     // Add 2 owned inputs matching the real transaction amounts
     template.push_imaginary_owned_input(local_spk.clone(), Amount::from_sat(5_000));

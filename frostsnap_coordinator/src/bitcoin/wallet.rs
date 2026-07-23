@@ -550,10 +550,7 @@ impl CoordSuperWallet {
             template_tx
                 .push_owned_input(
                     PushInput::spend_tx_output(prev_tx.as_ref(), selected_utxo.outpoint.vout),
-                    LocalSpk {
-                        master_appkey,
-                        bip32_path,
-                    },
+                    LocalSpk::key_spend(master_appkey, bip32_path),
                 )
                 .expect("must be able to add input");
         }
@@ -576,13 +573,13 @@ impl CoordSuperWallet {
 
             template_tx.push_owned_output(
                 Amount::from_sat(value),
-                LocalSpk {
+                LocalSpk::key_spend(
                     master_appkey,
-                    bip32_path: BitcoinBip32Path {
+                    BitcoinBip32Path {
                         account_keychain: BitcoinAccountKeychain::internal(),
                         index: i,
                     },
-                },
+                ),
             );
         }
 
@@ -738,58 +735,17 @@ impl CoordSuperWallet {
                 );
             }
 
-            let tap_internal_key = match &input.tap_internal_key {
-                Some(tap_internal_key) => tap_internal_key,
-                None => bail!(foreign_count, "it doesn't have an tap_internal_key"),
-            };
-
-            let (fingerprint, derivation_path) = match input.tap_key_origins.get(tap_internal_key) {
-                Some(origin) => origin.1.clone(),
+            // Work out how (if at all) we can spend this input: as the taproot internal key
+            // (key path), or via one of our keys inside a tapscript leaf (script path).
+            let owner = match owned_taproot_spend(input, master_appkey, our_fingerprint, txout) {
+                Some(owner) => owner,
                 None => bail!(
                     foreign_count,
-                    "it doesn't provide a source for the tap_internal_key"
+                    "we are neither its internal key nor a key in a leaf we can sign"
                 ),
             };
 
-            if fingerprint != our_fingerprint {
-                bail!(
-                    foreign_count,
-                    "it's key fingerprint doesn't match our root key"
-                );
-            }
-
-            let normal_derivation_path = derivation_path
-                .into_iter()
-                .map(|child_number| match child_number {
-                    bip32::ChildNumber::Normal { index } => Ok(*index),
-                    _ => Err(anyhow!("can't sign with hardened derivation")),
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            let bip32_path = match BitcoinBip32Path::from_u32_slice(&normal_derivation_path) {
-                Some(bip32_path) => bip32_path,
-                None => {
-                    bail!(
-                        foreign_count,
-                        format!(
-                            "it has an unusual derivation path {:?}",
-                            normal_derivation_path
-                                .into_iter()
-                                .map(|n| n.to_string())
-                                .collect::<Vec<String>>()
-                                .join("/")
-                        )
-                    );
-                }
-            };
-
-            template.push_owned_input(
-                input_push,
-                frostsnap_core::bitcoin_transaction::LocalSpk {
-                    master_appkey,
-                    bip32_path,
-                },
-            )?;
+            template.push_owned_input(input_push, owner)?;
             owned_count += 1;
         }
 
@@ -802,13 +758,13 @@ impl CoordSuperWallet {
             {
                 Some(&((_, account_keychain), index)) => template.push_owned_output(
                     txout.value,
-                    LocalSpk {
+                    LocalSpk::key_spend(
                         master_appkey,
-                        bip32_path: BitcoinBip32Path {
+                        BitcoinBip32Path {
                             account_keychain,
                             index,
                         },
-                    },
+                    ),
                 ),
                 None => {
                     template.push_foreign_output(txout.clone());
@@ -827,6 +783,83 @@ impl CoordSuperWallet {
 
         Ok(template)
     }
+}
+
+/// Classify a PSBT taproot input: how (if at all) can this wallet spend it?
+///
+/// Prefers the key path — we are the taproot internal key — and otherwise looks for one of our
+/// keys inside a tapscript leaf and spends that leaf (script path). Returns `None` if neither
+/// applies (a foreign input).
+fn owned_taproot_spend(
+    input: &bitcoin::psbt::Input,
+    master_appkey: MasterAppkey,
+    our_fingerprint: bip32::Fingerprint,
+    txout: &TxOut,
+) -> Option<LocalSpk> {
+    // Key path: are we the taproot internal key?
+    if let Some(internal_key) = &input.tap_internal_key {
+        if let Some((_leaf_hashes, (fingerprint, path))) = input.tap_key_origins.get(internal_key) {
+            if *fingerprint == our_fingerprint {
+                if let Some(bip32_path) = frostsnap_bip32_path(path) {
+                    return Some(LocalSpk::key_spend_with_merkle_root(
+                        master_appkey,
+                        bip32_path,
+                        input.tap_merkle_root,
+                    ));
+                }
+            }
+        }
+    }
+
+    // Script path: does one of our keys appear inside a leaf we're given the script for?
+    for (leaf_hashes, (fingerprint, path)) in input.tap_key_origins.values() {
+        if *fingerprint != our_fingerprint || leaf_hashes.is_empty() {
+            continue;
+        }
+        let Some(bip32_path) = frostsnap_bip32_path(path) else {
+            continue;
+        };
+        for (control_block, (script, leaf_version)) in &input.tap_scripts {
+            if !leaf_hashes.contains(&bitcoin::taproot::TapLeafHash::from_script(
+                script,
+                *leaf_version,
+            )) {
+                continue;
+            }
+            let owner = LocalSpk::script_spend(
+                master_appkey,
+                bip32_path,
+                txout.script_pubkey.clone(),
+                script.clone(),
+                leaf_version.to_consensus(),
+                control_block.serialize(),
+            );
+            // Sanity: our derived key really does appear in this leaf script.
+            let key_bytes = owner.signing_xonly().serialize();
+            if script
+                .as_bytes()
+                .windows(32)
+                .any(|w| w == key_bytes.as_slice())
+            {
+                return Some(owner);
+            }
+        }
+    }
+
+    None
+}
+
+/// Parse a PSBT key-origin path into Frostsnap's 4-element unhardened bitcoin path, or `None` if
+/// it isn't in that form (hardened, or the wrong length — i.e. not one of our keys).
+fn frostsnap_bip32_path(path: &bip32::DerivationPath) -> Option<BitcoinBip32Path> {
+    let segments = path
+        .into_iter()
+        .map(|child| match child {
+            bip32::ChildNumber::Normal { index } => Some(*index),
+            bip32::ChildNumber::Hardened { .. } => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    BitcoinBip32Path::from_u32_slice(&segments)
 }
 
 #[derive(Debug, Clone)]
@@ -923,7 +956,10 @@ pub struct ConfirmationTime {
 mod test {
     use super::*;
     use bitcoin::key::{Secp256k1, TweakedPublicKey};
-    use frostsnap_core::{schnorr_fun::fun::Point, tweak::AppTweak};
+    use frostsnap_core::{
+        schnorr_fun::fun::Point,
+        tweak::{AppTweak, BitcoinTweak, BitcoinTweakKind},
+    };
 
     #[test]
     fn wallet_descriptors_match_our_tweaking() {
@@ -933,9 +969,12 @@ mod test {
             CoordSuperWallet::descriptors_for_key(master_appkey, bitcoin::NetworkKind::Main);
 
         let (account_keychain, external_descriptor) = &descriptors[0];
-        let xonly = AppTweak::Bitcoin(BitcoinBip32Path {
-            account_keychain: *account_keychain,
-            index: 42,
+        let xonly = AppTweak::Bitcoin(BitcoinTweak {
+            bip32_path: BitcoinBip32Path {
+                account_keychain: *account_keychain,
+                index: 42,
+            },
+            kind: BitcoinTweakKind::KeySpend { merkle_root: None },
         })
         .derive_xonly_key(&master_appkey.to_xpub());
 

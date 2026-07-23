@@ -468,6 +468,7 @@ macro_rules! demo_widget {
                     ],
                     fee: bitcoin::Amount::from_sat(80_000), // 0.00080 BTC (>5% fee triggers warning)
                     fee_rate_sats_per_vbyte: Some(12.5), // Example: 12.5 sats/vB fee rate
+                    spends_script_path: false,
                 };
 
                 // Create the sign prompt widget

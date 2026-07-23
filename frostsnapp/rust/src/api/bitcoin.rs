@@ -185,6 +185,28 @@ pub struct Transaction {
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
     pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
+    /// One entry per locally-owned input, in signing order, describing how to attach its
+    /// signature (key-path vs script-path). Empty for confirmed/display txs. Not exposed to Dart.
+    #[frb(ignore)]
+    pub(crate) owned_spends: Vec<OwnedSpend>,
+}
+
+/// How a locally-owned input contributes its signature to the finalized tx / PSBT.
+#[derive(Debug, Clone)]
+pub(crate) struct OwnedSpend {
+    /// Index of this input in the transaction.
+    vin: usize,
+    /// The x-only key our signature is for.
+    xonly: bitcoin::XOnlyPublicKey,
+    /// `None` for a key-path spend; `Some` for a script-path (leaf) spend.
+    script: Option<ScriptSpendInfo>,
+}
+
+#[derive(Debug, Clone)]
+struct ScriptSpendInfo {
+    leaf_hash: bitcoin::taproot::TapLeafHash,
+    leaf_script: bitcoin::ScriptBuf,
+    control_block: Vec<u8>,
 }
 
 impl Transaction {
@@ -212,18 +234,53 @@ impl Transaction {
             last_seen: None,
             prevouts,
             is_mine,
+            owned_spends: Self::owned_spends_from_template(tx_temp),
+        }
+    }
+
+    /// One [`OwnedSpend`] per locally-owned input, in the same order the signatures are produced
+    /// (owned inputs, in input order).
+    pub(crate) fn owned_spends_from_template(tx_temp: &TransactionTemplate) -> Vec<OwnedSpend> {
+        tx_temp
+            .iter_locally_owned_inputs()
+            .map(|(vin, _, spk)| OwnedSpend {
+                vin,
+                xonly: spk.signing_xonly(),
+                script: spk.leaf_hash().map(|leaf_hash| {
+                    let (leaf_script, control_block) = spk
+                        .script_path_witness()
+                        .expect("script-path spend has a leaf");
+                    ScriptSpendInfo {
+                        leaf_hash,
+                        leaf_script: leaf_script.to_owned(),
+                        control_block: control_block.to_vec(),
+                    }
+                }),
+            })
+            .collect()
+    }
+
+    fn taproot_sig(signature: &EncodedSignature) -> bitcoin::taproot::Signature {
+        bitcoin::taproot::Signature {
+            signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0).unwrap(),
+            sighash_type: bitcoin::sighash::TapSighashType::Default,
         }
     }
 
     pub(crate) fn fill_signatures(&mut self, signatures: &[EncodedSignature]) {
-        for (txin, signature) in self.inner.input.iter_mut().zip(signatures) {
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
-                    .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
+        for (owned, signature) in self.owned_spends.iter().zip(signatures) {
+            let sig = Self::taproot_sig(signature);
+            let witness = match &owned.script {
+                // Key-path: witness is just the signature.
+                None => bitcoin::Witness::from_slice(&[sig.to_vec()]),
+                // Script-path: witness is [signature, leaf_script, control_block].
+                Some(s) => bitcoin::Witness::from_slice(&[
+                    sig.to_vec(),
+                    s.leaf_script.to_bytes(),
+                    s.control_block.clone(),
+                ]),
             };
-            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            txin.witness = witness;
+            self.inner.input[owned.vin].witness = witness;
         }
     }
 
@@ -232,47 +289,29 @@ impl Transaction {
         self.inner.compute_txid()
     }
 
-    fn owned_input_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.inner
-            .input
-            .iter()
-            .enumerate()
-            .filter(|(_, txin)| {
-                let prev_txout = match self.prevouts.get(&txin.previous_output) {
-                    Some(txout) => txout,
-                    None => return false,
-                };
-                self.is_mine.contains_key(&prev_txout.script_pubkey)
-            })
-            .map(|(vin, _)| vin)
-    }
-
     #[frb(sync)]
     pub fn attach_signatures_to_psbt(
         &self,
         signatures: Vec<EncodedSignature>,
         psbt: &Psbt,
     ) -> Option<Psbt> {
-        let owned_indices = self.owned_input_indices().collect::<Vec<_>>();
-        if signatures.len() != owned_indices.len() {
+        if signatures.len() != self.owned_spends.len() {
             return None;
         }
 
         let mut psbt = psbt.clone();
-        let mut signatures = signatures.into_iter();
-
-        for i in owned_indices {
-            let signature = signatures.next();
-            // we are assuming the signatures are correct here.
-            let input = &mut psbt.inputs[i];
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
-                    &signature.unwrap().0,
-                )
-                .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            input.tap_key_sig = Some(schnorr_sig);
+        // we are assuming the signatures are correct here.
+        for (owned, signature) in self.owned_spends.iter().zip(signatures) {
+            let sig = Self::taproot_sig(&signature);
+            let input = &mut psbt.inputs[owned.vin];
+            match &owned.script {
+                None => input.tap_key_sig = Some(sig),
+                Some(s) => {
+                    input
+                        .tap_script_sigs
+                        .insert((owned.xonly, s.leaf_hash), sig);
+                }
+            }
         }
 
         Some(psbt)
@@ -419,19 +458,11 @@ impl Transaction {
             .collect()
     }
 
-    /// Return a transaction with the following signatures added.
+    /// Return a transaction with the following signatures added (key-path or script-path).
     pub fn with_signatures(&self, signatures: Vec<EncodedSignature>) -> RTransaction {
-        let mut tx = self.inner.clone();
-        for (txin, signature) in tx.input.iter_mut().zip(signatures) {
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
-                    .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            txin.witness = witness;
-        }
-        tx
+        let mut tx = self.clone();
+        tx.fill_signatures(&signatures);
+        tx.inner
     }
 }
 
@@ -519,6 +550,8 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
             last_seen: value.last_seen,
             prevouts: value.prevouts,
             is_mine: value.is_mine,
+            // A confirmed/scanned tx we're only displaying — nothing to sign.
+            owned_spends: Vec::new(),
         }
     }
 }

@@ -331,18 +331,12 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     let master_appkey = key_data.complete_key.master_appkey;
 
     tx_template.push_imaginary_owned_input(
-        LocalSpk {
-            master_appkey,
-            bip32_path: BitcoinBip32Path::external(7),
-        },
+        LocalSpk::key_spend(master_appkey, BitcoinBip32Path::external(7)),
         bitcoin::Amount::from_sat(42_000),
     );
 
     tx_template.push_imaginary_owned_input(
-        LocalSpk {
-            master_appkey,
-            bip32_path: BitcoinBip32Path::internal(42),
-        },
+        LocalSpk::key_spend(master_appkey, BitcoinBip32Path::internal(42)),
         bitcoin::Amount::from_sat(1_337_000),
     );
 
