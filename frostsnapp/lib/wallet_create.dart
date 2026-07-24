@@ -1058,7 +1058,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           }
 
           try {
-            final encryptionKey = await SecureKeyProvider.getEncryptionKey();
             final deviceNames = [
               for (final id in state.devices)
                 if (_controller.form.deviceNames[id] != null)
@@ -1067,13 +1066,31 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     name: _controller.form.deviceNames[id]!,
                   ),
             ];
-            final asRef = await coord.finalizeKeygen(
-              keygenId: state.keygenId,
-              encryptionKey: encryptionKey,
-              deviceNames: deviceNames,
+            final result = await showDialog<_KeygenFinalizeResult>(
+              context: context,
+              barrierDismissible: false,
+              builder: (dialogContext) => _KeygenSavingDialog(
+                finalize: () async {
+                  final encryptionKey =
+                      await SecureKeyProvider.getEncryptionKey();
+                  final asRef = await coord.finalizeKeygen(
+                    keygenId: state.keygenId,
+                    encryptionKey: encryptionKey,
+                    deviceNames: deviceNames,
+                  );
+                  await Future<void>.delayed(const Duration(seconds: 1));
+                  return asRef;
+                },
+              ),
             );
-            _controller._asRef = asRef;
-            if (context.mounted) Navigator.pop(context, asRef);
+            if (result == null) return;
+            switch (result) {
+              case _KeygenFinalizeSuccess(:final asRef):
+                _controller._asRef = asRef;
+                if (context.mounted) Navigator.pop(context, asRef);
+              case _KeygenFinalizeFailure(:final error):
+                throw error;
+            }
           } catch (e) {
             _controller._keygenState = null;
             _controller.notifyListeners();
@@ -1413,6 +1430,76 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           ),
         );
       },
+    );
+  }
+}
+
+abstract class _KeygenFinalizeResult {
+  const _KeygenFinalizeResult();
+}
+
+class _KeygenFinalizeSuccess extends _KeygenFinalizeResult {
+  final AccessStructureRef asRef;
+
+  const _KeygenFinalizeSuccess(this.asRef);
+}
+
+class _KeygenFinalizeFailure extends _KeygenFinalizeResult {
+  final Object error;
+
+  const _KeygenFinalizeFailure(this.error);
+}
+
+class _KeygenSavingDialog extends StatefulWidget {
+  final Future<AccessStructureRef> Function() finalize;
+
+  const _KeygenSavingDialog({required this.finalize});
+
+  @override
+  State<_KeygenSavingDialog> createState() => _KeygenSavingDialogState();
+}
+
+class _KeygenSavingDialogState extends State<_KeygenSavingDialog> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_run());
+  }
+
+  Future<void> _run() async {
+    try {
+      final asRef = await widget.finalize();
+      if (mounted) Navigator.of(context).pop(_KeygenFinalizeSuccess(asRef));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(_KeygenFinalizeFailure(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: const Text('Saving wallet to devices'),
+        content: Semantics(
+          label: 'Saving wallet to devices',
+          container: true,
+          liveRegion: true,
+          child: ExcludeSemantics(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Flexible(child: Text('Saving wallet to devices')),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
