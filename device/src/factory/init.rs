@@ -12,7 +12,11 @@ use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
 
-use crate::{efuse::EfuseKeyWriter, io::SerialInterface};
+use crate::{
+    efuse::EfuseKeyWriter,
+    io::{EspRefClock, SerialIo},
+};
+use frostsnap_embedded::framed_serial::FramedSerial;
 
 /// Configuration for device provisioning
 pub struct ProvisioningConfig {
@@ -143,7 +147,8 @@ pub fn run_factory_provisioning(
     display = crate::screen_test::run(display, &mut touch_receiver, timer);
 
     // Initialize serial interface for factory communication
-    let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(jtag, timer);
+    let mut upstream =
+        FramedSerial::<_, _, FactoryUpstream>::new(SerialIo::new_jtag(jtag), EspRefClock(timer));
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);

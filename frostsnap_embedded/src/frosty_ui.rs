@@ -1,9 +1,16 @@
+use crate::device_hal::{Clock, TouchSource};
+use crate::touch_handler;
+use crate::ui::FirmwareUpgradeStatus;
 use crate::DISPLAY_REFRESH_MS;
+use crate::{
+    root_widget::RootWidget, ui::*, widget_tree::WidgetTree, DownstreamConnectionState,
+    UpstreamConnectionState,
+};
 use alloc::{boxed::Box, string::ToString};
+use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use esp_hal::prelude::*;
-use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
+use frostsnap_widgets::SuperDrawTarget;
 use frostsnap_widgets::{
     backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     debug::OverlayDebug,
@@ -12,57 +19,28 @@ use frostsnap_widgets::{
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Widget,
 };
 
-use crate::touch_handler;
-use crate::ui::FirmwareUpgradeStatus;
-use crate::{
-    root_widget::RootWidget, ui::*, widget_tree::WidgetTree, DownstreamConnectionState, Instant,
-    UpstreamConnectionState,
-};
-
-// Type alias for the display to match factory
-type DeviceDisplay<'a> = mipidsi::Display<
-    display_interface_spi::SPIInterface<
-        embedded_hal_bus::spi::ExclusiveDevice<
-            esp_hal::spi::master::Spi<'a, esp_hal::Blocking>,
-            crate::peripherals::NoCs,
-            embedded_hal_bus::spi::NoDelay,
-        >,
-        esp_hal::gpio::Output<'a>,
-    >,
-    mipidsi::models::ST7789,
-    esp_hal::gpio::Output<'a>,
->;
-
-pub struct FrostyUi<'a> {
-    pub display: frostsnap_widgets::SuperDrawTarget<
-        DeviceDisplay<'a>,
-        embedded_graphics::pixelcolor::Rgb565,
-    >,
+pub struct FrostyUi<D: DrawTarget<Color = Rgb565>, C, T> {
+    pub display: SuperDrawTarget<D, Rgb565>,
     pub widget: OverlayDebug<RootWidget>,
-    pub touch_receiver: TouchReceiver,
+    pub touch: T,
+    pub clock: C,
     pub last_touch: Option<Point>,
-    pub last_redraw_time: Instant,
+    pub last_redraw_ms: u64,
     pub downstream_connection_state: DownstreamConnectionState,
     pub upstream_connection_state: Option<UpstreamConnectionState>,
-    pub timer: esp_hal::timer::timg::Timer<
-        esp_hal::timer::timg::Timer0<esp_hal::peripherals::TIMG1>,
-        esp_hal::Blocking,
-    >,
     pub busy_task: Option<BusyTask>,
     pub current_widget_index: usize,
     default_workflow: Option<Workflow>,
 }
 
-impl<'a> FrostyUi<'a> {
-    /// Create a new FrostyUi instance
-    pub fn new(
-        display: DeviceDisplay<'a>,
-        touch_receiver: TouchReceiver,
-        timer: esp_hal::timer::timg::Timer<
-            esp_hal::timer::timg::Timer0<esp_hal::peripherals::TIMG1>,
-            esp_hal::Blocking,
-        >,
-    ) -> Self {
+impl<D, C, T> FrostyUi<D, C, T>
+where
+    D: DrawTarget<Color = Rgb565>,
+    C: Clock,
+    T: TouchSource,
+{
+    /// Create a new FrostyUi instance over a display, clock, and touch source.
+    pub fn new(display: D, clock: C, touch: T) -> Self {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
@@ -76,22 +54,27 @@ impl<'a> FrostyUi<'a> {
         widget_with_debug.set_constraints(Size::new(240, 280));
 
         Self {
-            display: frostsnap_widgets::SuperDrawTarget::new(display, PALETTE.background),
+            display: SuperDrawTarget::new(display, PALETTE.background),
             widget: widget_with_debug,
-            touch_receiver,
+            touch,
+            clock,
             downstream_connection_state: DownstreamConnectionState::Disconnected,
             upstream_connection_state: None,
             last_touch: None,
-            last_redraw_time: Instant::from_ticks(0),
+            last_redraw_ms: 0,
             current_widget_index: 0,
-            timer,
             busy_task: Default::default(),
             default_workflow: None,
         }
     }
 }
 
-impl<'a> UserInteraction for FrostyUi<'a> {
+impl<D, C, T> UserInteraction for FrostyUi<D, C, T>
+where
+    D: DrawTarget<Color = Rgb565>,
+    C: Clock,
+    T: TouchSource,
+{
     fn set_downstream_connection_state(&mut self, state: crate::DownstreamConnectionState) {
         if state != self.downstream_connection_state {
             self.downstream_connection_state = state;
@@ -373,25 +356,24 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
-        let now = self.timer.now();
-        let now_ms =
-            frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().to_millis());
+        let now_ms_u64 = self.clock.now_ms();
+        let now_ms = frostsnap_widgets::Instant::from_millis(now_ms_u64);
 
-        // Handle touch input
-        touch_handler::process_all_touch_events(
-            &mut self.touch_receiver,
-            &mut self.widget,
-            &mut self.last_touch,
-            &mut self.current_widget_index,
-            now_ms,
-        );
+        // Handle touch input (drain the touch source, apply each decoded event)
+        while let Some(ev) = self.touch.next_touch() {
+            touch_handler::apply_touch_event(
+                ev,
+                &mut self.widget,
+                &mut self.last_touch,
+                &mut self.current_widget_index,
+                now_ms,
+            );
+        }
 
         // Only redraw if enough time has passed since last redraw
-        let elapsed_ms = (now - self.last_redraw_time).to_millis();
+        let elapsed_ms = now_ms_u64.saturating_sub(self.last_redraw_ms);
         if elapsed_ms >= DISPLAY_REFRESH_MS {
-            // Update last redraw time
-            self.last_redraw_time = now;
-            // Draw the widget tree
+            self.last_redraw_ms = now_ms_u64;
             // Draw the UI stack (includes debug stats overlay)
             let _ = self.widget.draw(&mut self.display, now_ms);
         }
@@ -496,10 +478,11 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     }
 
     fn force_redraw(&mut self) {
-        let now = self.timer.now();
-        let now_ms =
-            frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().to_millis());
-        self.last_redraw_time = now;
-        let _ = self.widget.draw(&mut self.display, now_ms);
+        let now_ms_u64 = self.clock.now_ms();
+        self.last_redraw_ms = now_ms_u64;
+        let _ = self.widget.draw(
+            &mut self.display,
+            frostsnap_widgets::Instant::from_millis(now_ms_u64),
+        );
     }
 }

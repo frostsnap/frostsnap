@@ -37,10 +37,10 @@ fn main() -> ! {
         frostsnap_device::factory::run_factory_provisioning(device, config);
     } else {
         // Device is already provisioned - proceed with normal boot
-        let mut resources = Resources::init_production(device, &flash);
+        let resources = Resources::init_production(device, &flash);
 
         // Run main event loop
-        esp32_run::run(&mut resources);
+        esp32_run::run(resources);
     }
 }
 

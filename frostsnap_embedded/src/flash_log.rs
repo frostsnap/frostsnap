@@ -1,7 +1,7 @@
+use crate::{AbSlot, FlashPartition, NorFlashLog};
 use alloc::{boxed::Box, string::String};
 use embedded_storage::nor_flash::NorFlash;
 use frostsnap_core::device::{self, SaveShareMutation};
-use frostsnap_embedded::{AbSlot, FlashPartition, NorFlashLog};
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub enum Mutation {
