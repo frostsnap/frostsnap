@@ -70,7 +70,6 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         mut display,
         efuse,
         mut initial_rng,
-        timer,
         ..
     } = *peripherals;
 
@@ -79,7 +78,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         pixelcolor::Rgb565,
         prelude::*,
     };
-    use esp_hal::{time::Duration, timer::Timer};
+    use esp_hal::time::{Duration, Instant};
 
     // Warning countdown before burning efuses
     const COUNTDOWN_SECONDS: u32 = 30;
@@ -91,8 +90,8 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
         text_display!(&mut display, &text);
 
         // Wait 1 second
-        let start = timer.now();
-        while timer.now().checked_duration_since(start).unwrap() < Duration::millis(1000) {}
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(1000) {}
     }
 
     // Show provisioning message
@@ -119,8 +118,7 @@ pub fn run_dev_provisioning(peripherals: Box<DevicePeripherals<'_>>) -> ! {
     text_display!(&mut display, "Dev device initialized!\n\nRestarting...");
 
     // Reset the device
-    esp_hal::reset::software_reset();
-    unreachable!()
+    esp_hal::system::software_reset()
 }
 
 /// Run factory provisioning for a device that needs provisioning
@@ -135,15 +133,14 @@ pub fn run_factory_provisioning(
         mut touch_receiver,
         efuse,
         jtag,
-        timer,
         ..
     } = *peripherals;
 
     // Run screen test
-    display = crate::screen_test::run(display, &mut touch_receiver, timer);
+    display = crate::screen_test::run(display, &mut touch_receiver);
 
     // Initialize serial interface for factory communication
-    let mut upstream = SerialInterface::<_, FactoryUpstream>::new_jtag(jtag, timer);
+    let mut upstream = SerialInterface::<FactoryUpstream>::new_jtag(jtag);
     // Initialize flash and partitions
     let flash = RefCell::new(FlashStorage::new());
     let mut partitions = crate::partitions::Partitions::load(&flash);
@@ -222,6 +219,5 @@ pub fn run_factory_provisioning(
     );
 
     // Reset the device
-    esp_hal::reset::software_reset();
-    unreachable!()
+    esp_hal::system::software_reset()
 }
