@@ -326,7 +326,10 @@ impl CoordSuperWallet {
 
     pub fn list_transactions(&mut self, master_appkey: MasterAppkey) -> Vec<Transaction> {
         self.lazily_initialize_key(master_appkey);
-        let mut txs = self
+        // bdk's canonical order is topological (spend-depth), not by time, so reverse it to
+        // get child-before-parent, then sort newest-first by chain position (pending first,
+        // then confirmed by height). Stable sort keeps the child-before-parent tiebreak.
+        let mut canonical = self
             .tx_graph
             .graph()
             .list_ordered_canonical_txs(
@@ -334,6 +337,11 @@ impl CoordSuperWallet {
                 self.chain.tip().block_id(),
                 CanonicalizationParams::default(),
             )
+            .collect::<Vec<_>>();
+        canonical.reverse();
+        canonical.sort_by_key(|tx| std::cmp::Reverse(tx.chain_position));
+        canonical
+            .into_iter()
             .filter_map(|canonical_tx| {
                 let inner = canonical_tx.tx_node.tx.clone();
                 let txid = canonical_tx.tx_node.txid;
@@ -373,9 +381,7 @@ impl CoordSuperWallet {
                     })
                 }
             })
-            .collect::<Vec<_>>();
-        txs.reverse();
-        txs
+            .collect()
     }
 
     pub fn apply_update(
