@@ -333,43 +333,106 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
       appBar: AppBar(title: Text('Startup Error')),
       body: Padding(
         padding: EdgeInsets.all(16.0),
-        child: Center(
-          child: SingleChildScrollView(
-            // To handle overflow if logs are extensive
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  'STARTUP ERROR',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.error,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Text(
+                'STARTUP ERROR',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Sorry! Something has gone wrong with the app. Please report this directly to the frostsnap team.",
+                style: theme.textTheme.titleMedium,
+              ),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12.0),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "Try upgrading to the latest version of Frostsnap. This may resolve the issue.",
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text("Contact support: ", style: theme.textTheme.bodyMedium),
+                  InkWell(
+                    onTap: () {
+                      Clipboard.setData(
+                        ClipboardData(text: "support@frostsnap.com"),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Email copied to clipboard"),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      "support@frostsnap.com",
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
                   ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Builder(
+                builder: (context) {
+                  const buildVersion = String.fromEnvironment(
+                    'BUILD_VERSION',
+                    defaultValue: 'unknown',
+                  );
+                  return Text(
+                    "Current version: $buildVersion",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  );
+                },
+              ),
+              SizedBox(height: 20),
+              Container(
+                width: double.infinity, // Ensure the container takes full width
+                padding: EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(4.0),
+                  border: Border.all(),
                 ),
-                SizedBox(height: 8),
-                Text(
-                  "Sorry! Something has gone wrong with the app. Please report this directly to the frostsnap team.",
-                  style: theme.textTheme.titleMedium,
-                ),
-                SizedBox(height: 20),
-                Container(
-                  width:
-                      double.infinity, // Ensure the container takes full width
-                  padding: EdgeInsets.all(8.0),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(4.0),
-                    border: Border.all(),
-                  ),
-                  child: SelectableText(_combinedErrorWithLogs),
-                ),
-                SizedBox(height: 20),
-                CopyIconButton(
-                  data: _combinedErrorWithLogs,
-                  icon: Icons.content_copy,
-                ),
-              ],
-            ),
+                child: SelectableText(_combinedErrorWithLogs),
+              ),
+              SizedBox(height: 20),
+              CopyIconButton(
+                data: _combinedErrorWithLogs,
+                icon: Icons.content_copy,
+              ),
+            ],
           ),
         ),
       ),
