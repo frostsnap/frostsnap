@@ -1,3 +1,4 @@
+use bitcoin::hashes::Hash;
 use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
@@ -331,19 +332,70 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     let master_appkey = key_data.complete_key.master_appkey;
 
     tx_template.push_imaginary_owned_input(
-        LocalSpk {
-            master_appkey,
-            bip32_path: BitcoinBip32Path::external(7),
-        },
+        LocalSpk::key_spend(master_appkey, BitcoinBip32Path::external(7)),
         bitcoin::Amount::from_sat(42_000),
     );
 
     tx_template.push_imaginary_owned_input(
-        LocalSpk {
-            master_appkey,
-            bip32_path: BitcoinBip32Path::internal(42),
-        },
+        LocalSpk::key_spend(master_appkey, BitcoinBip32Path::internal(42)),
         bitcoin::Amount::from_sat(1_337_000),
+    );
+
+    // A key-spend of an output that also commits to a script tree.
+    tx_template.push_imaginary_owned_input(
+        LocalSpk::key_spend_with_merkle_root(
+            master_appkey,
+            BitcoinBip32Path::external(8),
+            Some(bitcoin::taproot::TapNodeHash::from_byte_array([13u8; 32])),
+        ),
+        bitcoin::Amount::from_sat(21_000),
+    );
+
+    // A script-path spend of a tapscript leaf `<our key> OP_CHECKSIG` under an unrelated
+    // internal key.
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let leaf_path = BitcoinBip32Path::external(9);
+    let leaf_xonly = LocalSpk::script_spend(
+        master_appkey,
+        leaf_path,
+        bitcoin::ScriptBuf::new(),
+        bitcoin::ScriptBuf::new(),
+        bitcoin::taproot::LeafVersion::TapScript,
+        vec![],
+    )
+    .signing_xonly();
+    let leaf_script = bitcoin::script::Builder::new()
+        .push_slice(leaf_xonly.serialize())
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+        .into_script();
+    let internal_key = bitcoin::secp256k1::Keypair::from_secret_key(
+        &secp,
+        &bitcoin::secp256k1::SecretKey::from_slice(&[9u8; 32]).unwrap(),
+    )
+    .x_only_public_key()
+    .0;
+    let spend_info = bitcoin::taproot::TaprootBuilder::new()
+        .add_leaf(0, leaf_script.clone())
+        .unwrap()
+        .finalize(&secp, internal_key)
+        .unwrap();
+    let control_block = spend_info
+        .control_block(&(
+            leaf_script.clone(),
+            bitcoin::taproot::LeafVersion::TapScript,
+        ))
+        .unwrap()
+        .serialize();
+    tx_template.push_imaginary_owned_input(
+        LocalSpk::script_spend(
+            master_appkey,
+            leaf_path,
+            bitcoin::ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
+            leaf_script,
+            bitcoin::taproot::LeafVersion::TapScript,
+            control_block,
+        ),
+        bitcoin::Amount::from_sat(31_337),
     );
 
     let task = WireSignTask::BitcoinTransaction(tx_template);

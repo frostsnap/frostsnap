@@ -86,7 +86,10 @@ fn peek_spk(approot: MasterAppkey, path: BitcoinBip32Path) -> ScriptBuf {
 mod test {
     use bitcoin::Network;
     use core::str::FromStr;
-    use frostsnap_core::tweak::{AccountKind, AppTweak, BitcoinAccountKeychain, BitcoinBip32Path};
+    use frostsnap_core::tweak::{
+        AccountKind, AppTweak, BitcoinAccountKeychain, BitcoinBip32Path, BitcoinTweak,
+        BitcoinTweakKind,
+    };
 
     use super::*;
 
@@ -98,19 +101,25 @@ mod test {
             index: 0,
         };
 
-        let internal_tweak = AppTweak::Bitcoin(BitcoinBip32Path {
-            account_keychain: BitcoinAccountKeychain {
-                account,
-                keychain: Keychain::Internal,
+        let internal_tweak = AppTweak::Bitcoin(BitcoinTweak {
+            bip32_path: BitcoinBip32Path {
+                account_keychain: BitcoinAccountKeychain {
+                    account,
+                    keychain: Keychain::Internal,
+                },
+                index: 84,
             },
-            index: 84,
+            kind: BitcoinTweakKind::KeySpend { merkle_root: None },
         });
-        let external_tweak = AppTweak::Bitcoin(BitcoinBip32Path {
-            account_keychain: BitcoinAccountKeychain {
-                account,
-                keychain: Keychain::External,
+        let external_tweak = AppTweak::Bitcoin(BitcoinTweak {
+            bip32_path: BitcoinBip32Path {
+                account_keychain: BitcoinAccountKeychain {
+                    account,
+                    keychain: Keychain::External,
+                },
+                index: 42,
             },
-            index: 42,
+            kind: BitcoinTweakKind::KeySpend { merkle_root: None },
         });
 
         let multi_x_descriptor =

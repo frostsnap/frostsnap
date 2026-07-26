@@ -131,7 +131,7 @@ impl CheckedSignTask {
                     );
                     SignItem {
                         message: sighash.as_raw_hash().to_byte_array().to_vec(),
-                        app_tweak: AppTweak::Bitcoin(owner.bip32_path),
+                        app_tweak: owner.app_tweak(),
                     }
                 })
                 .collect(),
