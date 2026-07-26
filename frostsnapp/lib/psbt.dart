@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,6 +21,64 @@ import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+
+/// PSBT files come in a few flavours: raw binary, base64 text, or hex text.
+/// `Psbt.deserialize` only accepts raw binary, so try each decoding and keep
+/// the first that yields the `psbt\xff` magic bytes. Hex must be checked via
+/// the magic rather than by pattern, since hex strings are usually also valid
+/// base64. If nothing matches, return the input unchanged and let
+/// `deserialize` surface a proper "invalid PSBT" error.
+Uint8List normalizePsbtBytes(Uint8List raw) {
+  bool hasPsbtMagic(Uint8List bytes) =>
+      bytes.length >= 5 &&
+      bytes[0] == 0x70 &&
+      bytes[1] == 0x73 &&
+      bytes[2] == 0x62 &&
+      bytes[3] == 0x74 &&
+      bytes[4] == 0xff;
+
+  if (hasPsbtMagic(raw)) return raw;
+
+  final text = utf8
+      .decode(raw, allowMalformed: true)
+      .replaceAll(RegExp(r'\s'), '');
+
+  try {
+    final decoded = base64.decode(base64.normalize(text));
+    if (hasPsbtMagic(decoded)) return decoded;
+  } catch (_) {}
+
+  if (text.length.isEven && RegExp(r'^[0-9a-fA-F]+$').hasMatch(text)) {
+    final out = Uint8List(text.length ~/ 2);
+    for (var i = 0; i < out.length; i++) {
+      out[i] = int.parse(text.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+    if (hasPsbtMagic(out)) return out;
+  }
+
+  return raw;
+}
+
+/// Prompt for a location and save [psbt] to a file. Binary is the `.psbt`
+/// format Bitcoin Core and Coldcard read; base64 text is what Liana and some
+/// other wallets expect. [normalizePsbtBytes] accepts either on import.
+/// Returns false if the user cancelled the picker.
+Future<bool> savePsbtToFile(
+  Psbt psbt, {
+  required bool asBase64,
+  String baseName = 'signed',
+}) async {
+  final outputFile = await FilePicker.platform.saveFile(
+    dialogTitle: 'Please select where to save the PSBT file:',
+    fileName: asBase64 ? '$baseName-base64.psbt' : '$baseName.psbt',
+  );
+  if (outputFile == null) return false;
+  final List<int> bytes = asBase64
+      ? utf8.encode(base64.encode(psbt.serialize()))
+      : psbt.serialize();
+  await File(outputFile).writeAsBytes(bytes);
+  return true;
+}
 
 class LoadPsbtPage extends StatefulWidget {
   final Wallet wallet;
@@ -50,7 +109,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final UnsignedTx unsignedTx;
 
     try {
-      psbt = Psbt.deserialize(bytes: psbtBytes);
+      psbt = Psbt.deserialize(bytes: normalizePsbtBytes(psbtBytes));
     } catch (e) {
       if (context.mounted) {
         await showExceptionDialog(
@@ -261,21 +320,13 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
       );
 
       final saveToFileButton = ElevatedButton(
-        onPressed: () async {
-          final outputFile = await FilePicker.platform.saveFile(
-            dialogTitle: 'Please select where to save the PSBT file:',
-            fileName: 'signed.psbt',
-          );
-
-          if (outputFile == null) {
-            // user canceled the picker
-          } else {
-            final newFile = File(outputFile);
-            final psbtBytes = psbt.serialize();
-            await newFile.writeAsBytes(psbtBytes);
-          }
-        },
+        onPressed: () => savePsbtToFile(psbt, asBase64: false),
         child: Text("Save PSBT"),
+      );
+
+      final saveBase64Button = ElevatedButton(
+        onPressed: () => savePsbtToFile(psbt, asBase64: true),
+        child: Text("Save PSBT (base64)"),
       );
 
       return AlertDialog(
@@ -290,6 +341,8 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
                 SizedBox(height: 20),
                 if (!Platform.isAndroid) ...[
                   saveToFileButton,
+                  SizedBox(height: 20),
+                  saveBase64Button,
                   SizedBox(height: 20),
                 ],
                 SizedBox(height: 20),
@@ -321,25 +374,13 @@ Future<void> saveOrBroadcastSignedPsbtDialog(
   );
 }
 
-Future<void> savePsbt(BuildContext context, Psbt psbt) async {
+Future<void> savePsbt(
+  BuildContext context,
+  Psbt psbt, {
+  bool asBase64 = false,
+}) async {
   try {
-    // Pick a file to save the PSBT
-    String? outputFile = await FilePicker.platform.saveFile(
-      dialogTitle: 'Please select where to save the PSBT file:',
-      fileName: "signed.psbt",
-    );
-
-    if (outputFile == null) {
-      // User canceled the file picker
-      return;
-    }
-
-    final file = File(outputFile);
-
-    final psbtBytes = psbt.serialize();
-
-    // Write the bytes to the selected file
-    await file.writeAsBytes(psbtBytes);
+    await savePsbtToFile(psbt, asBase64: asBase64);
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(

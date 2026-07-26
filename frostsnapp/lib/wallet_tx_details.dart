@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/contexts.dart';
@@ -87,6 +85,11 @@ class TxSigningParams {
 class TxDetailsModel {
   /// The raw transaction.
   Transaction tx;
+
+  /// The transaction as originally constructed. [tx] may be replaced via [update] with the
+  /// synced wallet's view of the same txid, which lacks the per-input spend info needed to
+  /// attach signatures, so signature operations must use this one.
+  final Transaction signingTx;
   final int chainTipHeight;
   final DateTime now;
 
@@ -94,7 +97,7 @@ class TxDetailsModel {
     required this.tx,
     required this.chainTipHeight,
     required this.now,
-  });
+  }) : signingTx = tx;
 
   update(Transaction tx) => this.tx = tx;
 
@@ -344,7 +347,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     var psbt = this.psbt;
     if (psbt != null) {
       if (signatures != null) {
-        psbt = txDetails.tx.attachSignaturesToPsbt(
+        psbt = txDetails.signingTx.attachSignaturesToPsbt(
           signatures: signatures,
           psbt: psbt,
         );
@@ -763,7 +766,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   broadcast(BuildContext context) async {
     if (mounted) setState(() => isBroadcasting = true);
     final walletCtx = WalletContext.of(context)!;
-    final tx = await txDetails.tx.withSignatures(
+    final tx = await txDetails.signingTx.withSignatures(
       signatures: signingState?.finishedSignatures ?? [],
     );
     var broadcastError = '';
@@ -998,25 +1001,31 @@ void showExportPsbtDialog(BuildContext context, Psbt psbt) async {
   final psbtBytes = psbt.serialize();
 
   final animatedQr = AnimatedQr(input: psbtBytes);
-  final saveButton = TextButton(
-    onPressed: () async {
-      final shortTxid = txid.substring(0, 8);
-      final fileName = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save PSBT file',
-        fileName: 'signed_$shortTxid.psbt',
+  final shortTxid = txid.substring(0, 8);
+  Future<void> save(BuildContext context, {required bool asBase64}) async {
+    final bool saved;
+    try {
+      saved = await savePsbtToFile(
+        psbt,
+        asBase64: asBase64,
+        baseName: 'signed_$shortTxid',
       );
-      if (fileName == null) return;
-      final file = File(fileName);
-      try {
-        await file.writeAsBytes(psbtBytes);
-      } catch (e) {
-        showErrorSnackbar(context, 'Failed to save PSBT file: $e');
-        return;
-      }
-      Navigator.pop(context);
-      showMessageSnackbar(context, 'Saved PSBT file');
-    },
+    } catch (e) {
+      showErrorSnackbar(context, 'Failed to save PSBT file: $e');
+      return;
+    }
+    if (!saved) return;
+    Navigator.pop(context);
+    showMessageSnackbar(context, 'Saved PSBT file');
+  }
+
+  final saveButton = TextButton(
+    onPressed: () => save(context, asBase64: false),
     child: Text('Save PSBT'),
+  );
+  final saveBase64Button = TextButton(
+    onPressed: () => save(context, asBase64: true),
+    child: Text('Save PSBT (base64)'),
   );
   final doneButton = FilledButton(
     onPressed: () => Navigator.pop(context),
@@ -1040,6 +1049,7 @@ void showExportPsbtDialog(BuildContext context, Psbt psbt) async {
               children: [
                 AspectRatio(aspectRatio: 1, child: animatedQr),
                 saveButton,
+                saveBase64Button,
                 doneButton,
               ],
             ),
