@@ -31,11 +31,67 @@ pub enum Keychain {
     Internal = 1,
 }
 
-#[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AppTweak {
     TestMessage,
     Bitcoin(BitcoinTweak),
     Nostr,
+}
+
+/// `AppTweak` is persisted (inside signing session mutations) and its encoding must stay
+/// stable. Plain BIP86 key-spends keep the pre-scripted-taproot layout
+/// (`Bitcoin(BitcoinBip32Path)` at variant 1) so old databases still decode and old firmware
+/// still understands plain spends; scripted spends use an appended variant 3.
+impl bincode::Encode for AppTweak {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        match self {
+            AppTweak::TestMessage => 0u32.encode(encoder),
+            AppTweak::Bitcoin(BitcoinTweak {
+                bip32_path,
+                kind: BitcoinTweakKind::KeySpend { merkle_root: None },
+            }) => {
+                1u32.encode(encoder)?;
+                bip32_path.encode(encoder)
+            }
+            AppTweak::Nostr => 2u32.encode(encoder),
+            AppTweak::Bitcoin(tweak) => {
+                3u32.encode(encoder)?;
+                tweak.encode(encoder)
+            }
+        }
+    }
+}
+
+impl<Context> bincode::Decode<Context> for AppTweak {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(match u32::decode(decoder)? {
+            0 => AppTweak::TestMessage,
+            1 => AppTweak::Bitcoin(BitcoinTweak {
+                bip32_path: bincode::Decode::decode(decoder)?,
+                kind: BitcoinTweakKind::KeySpend { merkle_root: None },
+            }),
+            2 => AppTweak::Nostr,
+            3 => AppTweak::Bitcoin(bincode::Decode::decode(decoder)?),
+            variant => {
+                return Err(bincode::error::DecodeError::OtherString(alloc::format!(
+                    "unknown AppTweak variant {variant}"
+                )))
+            }
+        })
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for AppTweak {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        bincode::Decode::decode(decoder)
+    }
 }
 
 /// How to derive the key we sign with for a bitcoin taproot input.
@@ -449,6 +505,58 @@ mod test {
     use alloc::vec::Vec;
     use bitcoin::secp256k1::Secp256k1;
     use schnorr_fun::frost::chilldkg::certpedpop;
+
+    /// The layout `AppTweak` had before scripted taproot spends. Encodings of this must decode
+    /// as `AppTweak`, and plain key-spend `AppTweak`s must encode identically, so that old
+    /// persisted signing sessions and old firmware stay compatible.
+    #[derive(bincode::Encode, bincode::Decode)]
+    enum LegacyAppTweak {
+        TestMessage,
+        Bitcoin(BitcoinBip32Path),
+        Nostr,
+    }
+
+    #[test]
+    fn app_tweak_encoding_is_backwards_compatible() {
+        let config = bincode::config::standard();
+        let bip32_path = BitcoinBip32Path {
+            account_keychain: BitcoinAccountKeychain::external(),
+            index: 42,
+        };
+
+        let legacy_bytes =
+            bincode::encode_to_vec(LegacyAppTweak::Bitcoin(bip32_path), config).unwrap();
+        let key_spend = AppTweak::Bitcoin(BitcoinTweak {
+            bip32_path,
+            kind: BitcoinTweakKind::KeySpend { merkle_root: None },
+        });
+        assert_eq!(
+            bincode::encode_to_vec(&key_spend, config).unwrap(),
+            legacy_bytes
+        );
+        let (decoded, _) =
+            bincode::decode_from_slice::<AppTweak, _>(&legacy_bytes, config).unwrap();
+        assert_eq!(decoded, key_spend);
+
+        for variant in [
+            AppTweak::TestMessage,
+            AppTweak::Nostr,
+            AppTweak::Bitcoin(BitcoinTweak {
+                bip32_path,
+                kind: BitcoinTweakKind::KeySpend {
+                    merkle_root: Some(TapNodeHash::from_byte_array([7u8; 32])),
+                },
+            }),
+            AppTweak::Bitcoin(BitcoinTweak {
+                bip32_path,
+                kind: BitcoinTweakKind::ScriptSpend,
+            }),
+        ] {
+            let bytes = bincode::encode_to_vec(&variant, config).unwrap();
+            let (decoded, _) = bincode::decode_from_slice::<AppTweak, _>(&bytes, config).unwrap();
+            assert_eq!(decoded, variant);
+        }
+    }
 
     #[test]
     pub fn bip32_derivation_matches_rust_bitcoin() {

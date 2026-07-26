@@ -412,7 +412,9 @@ impl Input {
     }
 }
 
-#[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
+/// Encoded as part of [`SpkOwner`], which has a hand-written bincode encoding to stay
+/// compatible with old databases and firmware.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalSpk {
     pub master_appkey: MasterAppkey,
     pub bip32_path: BitcoinBip32Path,
@@ -437,7 +439,7 @@ pub enum LocalSpend {
         script_pubkey: ScriptBuf,
         #[bincode(with_serde)]
         leaf_script: ScriptBuf,
-        /// Always a valid [`LeafVersion`]: checked at construction.
+        /// Always a valid [`LeafVersion`]: checked at construction and decode.
         leaf_version: u8,
         control_block: Vec<u8>,
     },
@@ -518,8 +520,8 @@ impl LocalSpk {
                 leaf_version,
                 ..
             } => {
-                let version =
-                    LeafVersion::from_consensus(*leaf_version).expect("checked at construction");
+                let version = LeafVersion::from_consensus(*leaf_version)
+                    .expect("checked at construction and decode");
                 Some(TapLeafHash::from_script(leaf_script, version))
             }
         }
@@ -574,10 +576,86 @@ impl Output {
     }
 }
 
-#[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SpkOwner {
-    Foreign(#[bincode(with_serde)] ScriptBuf),
+    Foreign(ScriptBuf),
     Local(LocalSpk),
+}
+
+/// `SpkOwner` crosses the device wire (inside [`TransactionTemplate`]) and is persisted in
+/// signing session mutations, so its encoding must stay stable. Plain BIP86 key-spends keep
+/// the pre-scripted-taproot layout (`Local { master_appkey, bip32_path }` at variant 1) so old
+/// databases still decode and old firmware still understands plain spends; scripted spends use
+/// an appended variant 2 that also carries the [`LocalSpend`].
+impl bincode::Encode for SpkOwner {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        match self {
+            SpkOwner::Foreign(spk) => {
+                0u32.encode(encoder)?;
+                bincode::serde::Compat(spk).encode(encoder)
+            }
+            SpkOwner::Local(local) => {
+                match &local.spend {
+                    LocalSpend::KeySpend { merkle_root: None } => 1u32.encode(encoder)?,
+                    _ => 2u32.encode(encoder)?,
+                }
+                local.master_appkey.encode(encoder)?;
+                local.bip32_path.encode(encoder)?;
+                match &local.spend {
+                    LocalSpend::KeySpend { merkle_root: None } => Ok(()),
+                    spend => spend.encode(encoder),
+                }
+            }
+        }
+    }
+}
+
+impl<Context> bincode::Decode<Context> for SpkOwner {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(match u32::decode(decoder)? {
+            0 => SpkOwner::Foreign(bincode::serde::Compat::<ScriptBuf>::decode(decoder)?.0),
+            variant @ (1 | 2) => {
+                let master_appkey = bincode::Decode::decode(decoder)?;
+                let bip32_path = bincode::Decode::decode(decoder)?;
+                let spend = if variant == 1 {
+                    LocalSpend::KeySpend { merkle_root: None }
+                } else {
+                    let spend: LocalSpend = bincode::Decode::decode(decoder)?;
+                    if let LocalSpend::ScriptSpend { leaf_version, .. } = &spend {
+                        if LeafVersion::from_consensus(*leaf_version).is_err() {
+                            return Err(bincode::error::DecodeError::OtherString(alloc::format!(
+                                "invalid taproot leaf version {leaf_version}"
+                            )));
+                        }
+                    }
+                    spend
+                };
+                SpkOwner::Local(LocalSpk {
+                    master_appkey,
+                    bip32_path,
+                    spend,
+                })
+            }
+            variant => {
+                return Err(bincode::error::DecodeError::OtherString(alloc::format!(
+                    "unknown SpkOwner variant {variant}"
+                )))
+            }
+        })
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for SpkOwner {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        bincode::Decode::decode(decoder)
+    }
 }
 
 impl SpkOwner {
@@ -615,6 +693,78 @@ mod test {
     use crate::tweak::{AppTweakKind, TweakableKey};
     use bitcoin::{hashes::Hash, secp256k1::Secp256k1, taproot::TapNodeHash};
     use schnorr_fun::fun::Point;
+
+    /// The layout `SpkOwner` had before scripted taproot spends. Encodings of this must decode
+    /// as `SpkOwner`, and plain key-spend owners must encode identically, so that old persisted
+    /// signing sessions and old firmware stay compatible.
+    #[derive(bincode::Encode, bincode::Decode)]
+    enum LegacySpkOwner {
+        Foreign(#[bincode(with_serde)] ScriptBuf),
+        Local(LegacyLocalSpk),
+    }
+
+    #[derive(bincode::Encode, bincode::Decode)]
+    struct LegacyLocalSpk {
+        master_appkey: MasterAppkey,
+        bip32_path: BitcoinBip32Path,
+    }
+
+    #[test]
+    fn spk_owner_encoding_is_backwards_compatible() {
+        let config = bincode::config::standard();
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let bip32_path = BitcoinBip32Path::external(7);
+
+        let legacy_bytes = bincode::encode_to_vec(
+            LegacySpkOwner::Local(LegacyLocalSpk {
+                master_appkey,
+                bip32_path,
+            }),
+            config,
+        )
+        .unwrap();
+        let key_spend = SpkOwner::Local(LocalSpk::key_spend(master_appkey, bip32_path));
+        assert_eq!(
+            bincode::encode_to_vec(&key_spend, config).unwrap(),
+            legacy_bytes
+        );
+        let (decoded, _) =
+            bincode::decode_from_slice::<SpkOwner, _>(&legacy_bytes, config).unwrap();
+        assert_eq!(decoded, key_spend);
+
+        let foreign_spk = ScriptBuf::new_op_return([1u8; 4]);
+        let legacy_foreign =
+            bincode::encode_to_vec(LegacySpkOwner::Foreign(foreign_spk.clone()), config).unwrap();
+        let foreign = SpkOwner::Foreign(foreign_spk);
+        assert_eq!(
+            bincode::encode_to_vec(&foreign, config).unwrap(),
+            legacy_foreign
+        );
+        let (decoded, _) =
+            bincode::decode_from_slice::<SpkOwner, _>(&legacy_foreign, config).unwrap();
+        assert_eq!(decoded, foreign);
+
+        for owner in [
+            SpkOwner::Local(LocalSpk::key_spend_with_merkle_root(
+                master_appkey,
+                bip32_path,
+                Some(TapNodeHash::from_byte_array([7u8; 32])),
+            )),
+            SpkOwner::Local(LocalSpk::script_spend(
+                master_appkey,
+                bip32_path,
+                ScriptBuf::new_op_return([2u8; 4]),
+                ScriptBuf::new_op_return([3u8; 4]),
+                LeafVersion::TapScript,
+                vec![8u8; 33],
+            )),
+        ] {
+            let bytes = bincode::encode_to_vec(&owner, config).unwrap();
+            let (decoded, _) = bincode::decode_from_slice::<SpkOwner, _>(&bytes, config).unwrap();
+            assert_eq!(decoded, owner);
+        }
+    }
 
     /// The output key we derive for a key-spend of a taproot output committing to a script tree
     /// must match what rust-bitcoin builds from `internal_key + merkle_root`.
