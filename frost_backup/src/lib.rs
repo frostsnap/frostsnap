@@ -53,7 +53,13 @@ pub fn generate_descriptor(
     network: bitcoin::NetworkKind,
 ) -> alloc::string::String {
     use alloc::format;
+
     let xpriv = generate_xpriv(secret, network);
-    // Include the rootkey_to_master_appkey [0] derivation in the path
-    format!("tr({}/0/0/0/0/<0;1>/*)", xpriv)
+
+    let descriptor = format!("tr({xpriv}/0/0/0/0/<0;1>/*)");
+
+    let checksum = miniscript::descriptor::checksum::desc_checksum(&descriptor)
+        .expect("generated descriptor should always be valid");
+
+    format!("{descriptor}#{checksum}")
 }
