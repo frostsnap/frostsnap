@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -112,6 +113,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
 
   Widget _buildColumn(BuildContext context, ConnectedDevice device) {
     final theme = Theme.of(context);
+    final colors = DeviceColorScheme.fromDevice(context, device);
     final homeCtx = HomeContext.of(context)!;
     final deviceName = device.name;
     final wallet = coord
@@ -127,7 +129,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Fresh Device'),
         subtitle: Text('Can be used to create a wallet'),
-        leading: Icon(Icons.ac_unit_rounded),
+        leading: Icon(Icons.ac_unit_rounded, color: colors.accent),
         enabled: false,
       ),
     ];
@@ -143,7 +145,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
             color: device.name == null ? theme.disabledColor : null,
           ),
         ),
-        leading: Icon(Icons.label_rounded),
+        leading: Icon(Icons.label_rounded, color: colors.accent),
       ),
       ListTile(
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
@@ -154,7 +156,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
             color: hasWallet ? null : theme.disabledColor,
           ),
         ),
-        leading: Icon(Icons.wallet_rounded),
+        leading: Icon(Icons.wallet_rounded, color: colors.accent),
         trailing: hasWallet ? Icon(Icons.chevron_right_rounded) : null,
         onTap: hasWallet
             ? () {
@@ -175,7 +177,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
           overflow: TextOverflow.ellipsis,
           style: monospaceTextStyle,
         ),
-        leading: Icon(Icons.fingerprint_rounded),
+        leading: Icon(Icons.fingerprint_rounded, color: colors.accent),
       ),
       if (!isEmpty)
         CopyListTile(
@@ -183,14 +185,14 @@ class _DeviceDetailsState extends State<DeviceDetails> {
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
           title: Text('Nonces'),
           subtitle: Text('$noncesAvailable'),
-          leading: Icon(Icons.numbers_rounded),
+          leading: Icon(Icons.numbers_rounded, color: colors.accent),
         ),
       if (!isEmpty)
         ListTile(
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
           title: Text('Erase device'),
           subtitle: Text('Delete everything from this device'),
-          leading: Icon(Icons.delete_forever_rounded),
+          leading: Icon(Icons.delete_forever_rounded, color: colors.accent),
           trailing: TextButton(
             onPressed: () => showEraseDialog(context, device.id),
             child: Text('Erase'),
@@ -231,7 +233,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         CopyListTile(
           data: device.firmware.digest.toString(),
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
-          leading: Icon(Icons.system_update_rounded),
+          leading: Icon(Icons.system_update_rounded, color: colors.accent),
           title: Row(
             children: [
               Text('Firmware'),

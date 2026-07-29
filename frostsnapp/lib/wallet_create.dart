@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
@@ -641,6 +642,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             if (device.name != null) {
               return _deviceRow(
                 context: context,
+                device: device,
                 title: Text(
                   device.name!,
                   style: monospaceTextStyle.copyWith(
@@ -661,6 +663,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             return device.firmwareUpgradeEligibility().when(
               upToDate: () => _deviceRow(
                 context: context,
+                device: device,
                 title: _inlineNameField(context, device),
                 trailing: IconButton(
                   icon: Icon(
@@ -676,6 +679,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               ),
               canUpgrade: () => _deviceRow(
                 context: context,
+                device: device,
                 title: const SizedBox.shrink(),
                 trailing: buildDeviceTrailingInfo(
                   context,
@@ -688,6 +692,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               ),
               cannotUpgrade: (reason) => _deviceRow(
                 context: context,
+                device: device,
                 title: const SizedBox.shrink(),
                 trailing: buildDeviceTrailingInfo(
                   context,
@@ -768,23 +773,23 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     required BuildContext context,
     required Widget title,
     required Widget trailing,
+    ConnectedDevice? device,
     VoidCallback? onTap,
     bool enabled = true,
   }) {
     final cs = Theme.of(context).colorScheme;
-    return Card.filled(
+    final colors = DeviceColorScheme.fromDevice(context, device);
+    final iconColor =
+        colors.accent ??
+        (enabled
+            ? cs.onSurfaceVariant
+            : cs.onSurfaceVariant.withValues(alpha: 0.5));
+    return colors.buildGlowCard(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: cs.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
       child: ListTile(
         onTap: onTap,
         enabled: enabled,
-        leading: Icon(
-          Icons.key,
-          color: enabled
-              ? cs.onSurfaceVariant
-              : cs.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
+        leading: Icon(Icons.key, color: iconColor),
         title: title,
         trailing: trailing,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16),

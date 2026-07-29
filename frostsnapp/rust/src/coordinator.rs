@@ -196,6 +196,18 @@ impl FfiCoordinator {
                     for change in device_changes {
                         device_list.consume_manager_event(change.clone());
                         match change {
+                            DeviceChange::Connected { id, .. } => {
+                                // Pre-populate persisted case color so known
+                                // devices show their color immediately without
+                                // waiting for the genuine challenge round-trip.
+                                if let Some(color_str) =
+                                    device_names.lock().unwrap().get_case_color(id)
+                                {
+                                    if let Some(color) = parse_case_color_str(&color_str) {
+                                        device_list.set_case_color(id, color);
+                                    }
+                                }
+                            }
                             DeviceChange::Registered { id, .. } => {
                                 if coordinator.has_backups_that_need_to_be_consolidated(id) {
                                     device_list.set_recovery_mode(id, true);
@@ -261,6 +273,15 @@ impl FfiCoordinator {
                                     serial = certificate.serial_number(),
                                     "device passed genuine check"
                                 );
+                                // Set color in memory only — can't persist yet
+                                // because the DB row requires a name and the
+                                // genuine check fires before naming. The color
+                                // gets written to DB when the name is persisted.
+                                device_names
+                                    .lock()
+                                    .unwrap()
+                                    .MUTATE_NO_PERSIST()
+                                    .set_case_color(id, certificate.case_color().to_string());
                             }
                             _ => { /* ignore rest */ }
                         }
@@ -639,6 +660,14 @@ impl FfiCoordinator {
 
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.device_names.lock().unwrap().get(id)
+    }
+
+    pub fn get_device_case_color(
+        &self,
+        id: DeviceId,
+    ) -> Option<crate::api::device_list::CaseColor> {
+        let color_str = self.device_names.lock().unwrap().get_case_color(id)?;
+        parse_case_color_str(&color_str)
     }
 
     /// Persist a user-typed device name into the coord's local `device_names` store without
@@ -1372,6 +1401,13 @@ impl FfiCoordinator {
             .unwrap();
         Ok(())
     }
+}
+
+fn parse_case_color_str(color_str: &str) -> Option<crate::api::device_list::CaseColor> {
+    let comms_color =
+        frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor::from_str(color_str)
+            .ok()?;
+    Some(crate::api::device_list::CaseColor::from_comms(comms_color))
 }
 
 fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {

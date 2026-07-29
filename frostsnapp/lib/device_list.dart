@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_device_list.dart';
@@ -48,6 +49,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
   Widget _buildDevice(BuildContext context, ConnectedDevice device) {
     final theme = Theme.of(context);
     final homeCtx = HomeContext.of(context)!;
+    final colors = DeviceColorScheme.fromDevice(context, device);
     final upgradeEligibility = device.firmwareUpgradeEligibility();
     final walletName = coord
         .frostKeysInvolvingDevice(deviceId: device.id)
@@ -56,28 +58,26 @@ class _DeviceListPageState extends State<DeviceListPage> {
     final hasWallet = walletName != null;
     final hasKey = device.name != null;
 
-    return Card.filled(
+    return colors.buildGlowCard(
       margin: EdgeInsets.symmetric(vertical: 8),
-      color: theme.colorScheme.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
       child: ListTile(
         title: Text(
           device.name ?? 'Unnamed',
-          style: monospaceTextStyle.copyWith(
-            color: hasKey ? null : theme.disabledColor,
-          ),
+          style: hasKey
+              ? monospaceTextStyle
+              : monospaceTextStyle.copyWith(color: theme.disabledColor),
         ),
         subtitle: Text(
           device.name == null
               ? '~'
               : walletName == null
-              ? 'Wallet available for recovery'
-              : walletName,
+                  ? 'Wallet available for recovery'
+                  : walletName,
           style: TextStyle(
             color: hasKey && hasWallet ? null : theme.disabledColor,
           ),
         ),
-        leading: Icon(Icons.key),
+        leading: Icon(Icons.key, color: colors.accent),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           spacing: 8,
