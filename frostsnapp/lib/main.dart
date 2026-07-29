@@ -14,10 +14,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
-import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
@@ -87,40 +86,17 @@ Future<void> main() async {
     runApp(MyApp(startupError: startupError));
   } else {
     GlobalStreams.deviceListSubject.forEach((update) {
-      // If we detect a device that's in recovery mode we should tell it to exit
-      // ASAP. Right now we don't confirm with the user this action but maybe in
-      // the future we will.
+      // A device that turned up in recovery mode with pending consolidations
+      // should be taken back out — but only with a key that can decrypt every
+      // wallet it has pending work for (the event carries that set). The empty
+      // set (mid-flow / clearing transitions) is a no-op here.
       for (var change in update.changes) {
         if (change.kind == DeviceListChangeKind.recoveryMode &&
             change.device.recoveryMode) {
-          final deviceId = change.device.id;
-          () async {
-            final SymmetricKey encryptionKey;
-            try {
-              encryptionKey = await SecureKeyProvider.getEncryptionKey();
-            } on PlatformException catch (e) {
-              final expected = e.code == 'NO_LOCK_SCREEN';
-              log(
-                level: expected ? LogLevel.info : LogLevel.error,
-                message:
-                    "skipping exitRecoveryMode for $deviceId: ${e.code} (${e.message})",
-              );
-              final ctx = rootNavKey.currentContext;
-              if (ctx != null) {
-                showErrorSnackbar(
-                  ctx,
-                  expected
-                      ? "Couldn't take device out of recovery mode: screen lock required."
-                      : "Couldn't take device out of recovery mode: ${e.message ?? e.code}",
-                );
-              }
-              return;
-            }
-            coord.exitRecoveryMode(
-              deviceId: deviceId,
-              encryptionKey: encryptionKey,
-            );
-          }();
+          exitRecoveryModeForDevice(
+            deviceId: change.device.id,
+            pendingConsolidations: change.pendingConsolidations,
+          );
         }
       }
 

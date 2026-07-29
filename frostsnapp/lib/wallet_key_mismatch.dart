@@ -59,6 +59,59 @@ Future<SymmetricKey?> existingWalletKey({
   return key;
 }
 
+/// Reacts to a device turning up in recovery mode with pending physical-backup
+/// consolidations (the deferred re-plug auto-exit) by taking it back out — but
+/// only with a key that can decrypt EVERY wallet it has pending work for.
+///
+/// [pendingConsolidations] is the wallet set carried on the recovery event; an
+/// empty set means there's nothing for the background path to do. A candidate
+/// key is obtained the same guarded way as every other existing-wallet
+/// operation (via [existingWalletKey]). Because a single device can hold pending
+/// work across wallets from different key-eras, the candidate must decrypt all
+/// of them: if any fails we send nothing (the coordinator would refuse a partial
+/// batch anyway) and surface the delete-and-recover dialog.
+Future<void> exitRecoveryModeForDevice({
+  required DeviceId deviceId,
+  required List<AccessStructureRef> pendingConsolidations,
+  BuildContext? context,
+  @visibleForTesting
+  Future<SymmetricKey?> Function(AccessStructureRef ref)? getKey,
+  @visibleForTesting
+  bool Function(AccessStructureRef ref, SymmetricKey key)? canDecrypt,
+  @visibleForTesting void Function(SymmetricKey key)? exit,
+  @visibleForTesting Future<void> Function()? onMismatch,
+}) async {
+  if (pendingConsolidations.isEmpty) return;
+
+  getKey ??= (ref) => existingWalletKey(
+    context: context,
+    accessStructureRef: ref,
+    action: 'take this device out of recovery mode',
+  );
+  canDecrypt ??= (ref, key) =>
+      coord.canDecryptWallet(accessStructureRef: ref, encryptionKey: key);
+  exit ??= (key) => coord.exitRecoveryMode(deviceId: deviceId, encryptionKey: key);
+  onMismatch ??= () => showWalletKeyMismatchDialog(
+    context: context,
+    action: 'take this device out of recovery mode',
+  );
+
+  final key = await getKey(pendingConsolidations.first);
+  // Null means the key was unavailable or couldn't decrypt the first wallet —
+  // existingWalletKey has already surfaced that. Don't auto-exit.
+  if (key == null) return;
+
+  // The candidate decrypted the first wallet; it must decrypt the rest too, or
+  // this is a genuine whole-set mismatch: send nothing and show the dialog.
+  for (final ref in pendingConsolidations) {
+    if (!canDecrypt(ref, key)) {
+      await onMismatch();
+      return;
+    }
+  }
+  exit(key);
+}
+
 Future<void>? _pendingDialog;
 
 /// Tells the user the app's encryption key can't unlock this wallet's data

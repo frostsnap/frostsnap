@@ -9,10 +9,14 @@ import 'package:frostsnap/wallet_key_mismatch.dart';
 SymmetricKey _key(int fill) =>
     SymmetricKey(field0: U8Array32(Uint8List(32)..fillRange(0, 32, fill)));
 
-AccessStructureRef _asRef() => AccessStructureRef(
-  keyId: KeyId(field0: U8Array32(Uint8List(32))),
-  accessStructureId: AccessStructureId(field0: U8Array32(Uint8List(32))),
+AccessStructureRef _asRef([int fill = 0]) => AccessStructureRef(
+  keyId: KeyId(field0: U8Array32(Uint8List(32)..fillRange(0, 32, fill))),
+  accessStructureId: AccessStructureId(
+    field0: U8Array32(Uint8List(32)..fillRange(0, 32, fill)),
+  ),
 );
+
+DeviceId _deviceId() => DeviceId(field0: U8Array33(Uint8List(33)));
 
 void main() {
   group('existingWalletKey routing', () {
@@ -117,6 +121,86 @@ void main() {
 
       expect(result, same(goodKey));
       expect(recoveryShown, 0);
+    });
+  });
+
+  group('exitRecoveryModeForDevice', () {
+    test('empty set -> no key fetch, no exit', () async {
+      var gotKey = 0;
+      var exited = 0;
+      await exitRecoveryModeForDevice(
+        deviceId: _deviceId(),
+        pendingConsolidations: const [],
+        getKey: (_) async {
+          gotKey++;
+          return _key(1);
+        },
+        canDecrypt: (_, _) => true,
+        exit: (_) => exited++,
+        onMismatch: () async {},
+      );
+      expect(gotKey, 0);
+      expect(exited, 0);
+    });
+
+    test('key decrypts every wallet -> exits with that key', () async {
+      final key = _key(7);
+      SymmetricKey? exitedWith;
+      var mismatchShown = 0;
+      final checked = <AccessStructureRef>[];
+      await exitRecoveryModeForDevice(
+        deviceId: _deviceId(),
+        pendingConsolidations: [_asRef(1), _asRef(2)],
+        getKey: (_) async => key,
+        canDecrypt: (ref, _) {
+          checked.add(ref);
+          return true;
+        },
+        exit: (k) => exitedWith = k,
+        onMismatch: () async => mismatchShown++,
+      );
+      expect(exitedWith, same(key));
+      expect(mismatchShown, 0);
+      // Every wallet was verified before exiting.
+      expect(checked.length, 2);
+    });
+
+    test(
+      'key decrypts the first wallet but not a later one -> no exit, shows mismatch',
+      () async {
+        final key = _key(7);
+        final refA = _asRef(1);
+        final refB = _asRef(2);
+        var exited = 0;
+        var mismatchShown = 0;
+        await exitRecoveryModeForDevice(
+          deviceId: _deviceId(),
+          pendingConsolidations: [refA, refB],
+          getKey: (_) async => key,
+          // Decrypts wallet A but not wallet B: a genuine whole-set mismatch.
+          canDecrypt: (ref, _) => ref == refA,
+          exit: (_) => exited++,
+          onMismatch: () async => mismatchShown++,
+        );
+        expect(exited, 0);
+        expect(mismatchShown, 1);
+      },
+    );
+
+    test('no candidate key (null) -> no exit, no mismatch dialog here', () async {
+      var exited = 0;
+      var mismatchShown = 0;
+      await exitRecoveryModeForDevice(
+        deviceId: _deviceId(),
+        pendingConsolidations: [_asRef(1)],
+        // existingWalletKey returning null means it already surfaced the problem.
+        getKey: (_) async => null,
+        canDecrypt: (_, _) => true,
+        exit: (_) => exited++,
+        onMismatch: () async => mismatchShown++,
+      );
+      expect(exited, 0);
+      expect(mismatchShown, 0);
     });
   });
 }
