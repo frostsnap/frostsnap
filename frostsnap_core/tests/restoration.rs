@@ -349,10 +349,20 @@ fn consolidate_with_mixed_key_eras_is_fail_safe() {
     // the backup is extracted out as a plain value, so nothing is lost.
     let mut run = Run::generate(2, &mut rng);
     let devices: Vec<_> = run.device_set().into_iter().collect();
-    let backup_a =
-        keygen_and_backup(&mut run, &mut TestEnv::default(), &mut rng, devices[0], [1u8; 32]);
-    let backup_b =
-        keygen_and_backup(&mut run, &mut TestEnv::default(), &mut rng, devices[1], [2u8; 32]);
+    let backup_a = keygen_and_backup(
+        &mut run,
+        &mut TestEnv::default(),
+        &mut rng,
+        devices[0],
+        [1u8; 32],
+    );
+    let backup_b = keygen_and_backup(
+        &mut run,
+        &mut TestEnv::default(),
+        &mut rng,
+        devices[1],
+        [2u8; 32],
+    );
 
     // One fresh device recovers both wallets, each finished under a different key.
     let mut env = TestEnv::default();

@@ -90,7 +90,8 @@ Future<void> exitRecoveryModeForDevice({
   );
   canDecrypt ??= (ref, key) =>
       coord.canDecryptWallet(accessStructureRef: ref, encryptionKey: key);
-  exit ??= (key) => coord.exitRecoveryMode(deviceId: deviceId, encryptionKey: key);
+  exit ??= (key) =>
+      coord.exitRecoveryMode(deviceId: deviceId, encryptionKey: key);
   onMismatch ??= () => showWalletKeyMismatchDialog(
     context: context,
     action: 'take this device out of recovery mode',
