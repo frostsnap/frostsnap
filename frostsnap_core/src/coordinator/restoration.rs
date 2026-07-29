@@ -958,18 +958,35 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn has_backups_that_need_to_be_consolidated(&self, device_id: DeviceId) -> bool {
+    /// The pending physical backups `device_id` still needs to consolidate — one
+    /// per share it recovered by entering a physical backup during restoration.
+    /// The unique wallet work set is `.map(|c| c.access_structure_ref)` deduped.
+    pub fn backups_that_need_to_be_consolidated(
+        &self,
+        device_id: DeviceId,
+    ) -> Vec<PendingConsolidation> {
         self.restoration
             .pending_physical_consolidations
             .iter()
-            .any(|consolidation| consolidation.device_id == device_id)
+            .filter(|consolidation| consolidation.device_id == device_id)
+            .cloned()
+            .collect()
     }
 
+    /// Builds the messages telling `device_id` to consolidate its pending physical
+    /// backups, or fails without emitting anything.
+    ///
+    /// A single device can hold pending consolidations across access structures
+    /// from different global-key eras, so `encryption_key` is not guaranteed to
+    /// decrypt every wallet in the set. Each ref is decrypt-checked while the batch
+    /// is built and the batch is only returned once all succeed, so a key that
+    /// can't decrypt one wallet abandons the whole batch (`ConsolidateError`)
+    /// rather than telling the device to consolidate only some of its shares.
     pub fn consolidate_pending_physical_backups(
         &self,
         device_id: DeviceId,
         encryption_key: SymmetricKey,
-    ) -> impl IntoIterator<Item = CoordinatorSend> {
+    ) -> Result<Vec<CoordinatorSend>, ConsolidateError> {
         let consolidations = self
             .restoration
             .pending_physical_consolidations
@@ -979,12 +996,17 @@ impl FrostCoordinator {
         let mut messages = vec![];
 
         for consolidation in consolidations {
+            let access_structure_ref = consolidation.access_structure_ref;
             let root_shared_key = self
-                .root_shared_key(consolidation.access_structure_ref, encryption_key)
-                .expect("invariant");
-            let frost_key = self
-                .get_frost_key(consolidation.access_structure_ref.key_id)
-                .expect("invariant");
+                .root_shared_key(access_structure_ref, encryption_key)
+                .ok_or(ConsolidateError::CannotDecrypt {
+                    access_structure_ref,
+                })?;
+            let frost_key = self.get_frost_key(access_structure_ref.key_id).ok_or(
+                ConsolidateError::CannotDecrypt {
+                    access_structure_ref,
+                },
+            )?;
 
             messages.push(CoordinatorSend::ToDevice {
                 message: CoordinatorToDeviceMessage::Restoration(
@@ -999,7 +1021,7 @@ impl FrostCoordinator {
             });
         }
 
-        messages
+        Ok(messages)
     }
 
     pub fn request_device_display_backup(
@@ -1302,6 +1324,33 @@ impl fmt::Display for CheckBackupError {
 }
 
 impl std::error::Error for CheckBackupError {}
+
+/// Consolidating a device's pending physical backups failed before anything was
+/// sent, because the supplied key couldn't decrypt one of the wallets involved.
+#[derive(Debug, Clone)]
+pub enum ConsolidateError {
+    /// The supplied key can't decrypt this access structure, so its consolidation
+    /// message can't be built. Returned before any message is emitted, so the
+    /// whole batch is abandoned rather than partially sent.
+    CannotDecrypt {
+        access_structure_ref: AccessStructureRef,
+    },
+}
+
+impl fmt::Display for ConsolidateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConsolidateError::CannotDecrypt {
+                access_structure_ref,
+            } => write!(
+                f,
+                "the encryption key can't decrypt wallet {access_structure_ref:?} to consolidate its physical backup"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConsolidateError {}
 
 #[derive(Debug, Clone)]
 pub enum RestorationError {

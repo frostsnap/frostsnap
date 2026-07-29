@@ -1,6 +1,8 @@
 use common::TEST_ENCRYPTION_KEY;
+use frostsnap_core::coordinator::restoration::ConsolidateError;
+use frostsnap_core::coordinator::BeginKeygen;
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::{EnterPhysicalId, WireSignTask};
+use frostsnap_core::{AccessStructureRef, DeviceId, EnterPhysicalId, SymmetricKey, WireSignTask};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use schnorr_fun::Schnorr;
@@ -197,13 +199,15 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
 
     // Now consolidate the physical backups on all devices
     for &device_id in &devices {
-        if run
+        if !run
             .coordinator
-            .has_backups_that_need_to_be_consolidated(device_id)
+            .backups_that_need_to_be_consolidated(device_id)
+            .is_empty()
         {
             let consolidate_messages = run
                 .coordinator
-                .consolidate_pending_physical_backups(device_id, TEST_ENCRYPTION_KEY);
+                .consolidate_pending_physical_backups(device_id, TEST_ENCRYPTION_KEY)
+                .expect("the test key decrypts every pending wallet");
             run.extend(consolidate_messages);
         }
     }
@@ -213,8 +217,9 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
     // Verify all devices now have properly encrypted shares
     for (i, &device_id) in devices.iter().enumerate() {
         assert!(
-            !run.coordinator
-                .has_backups_that_need_to_be_consolidated(device_id),
+            run.coordinator
+                .backups_that_need_to_be_consolidated(device_id)
+                .is_empty(),
             "Device {:?} should have all backups consolidated",
             device_id
         );
@@ -236,6 +241,167 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
     assert_eq!(
         restored_access_structure_ref, access_structure_ref,
         "Restored access structure should match original"
+    );
+}
+
+/// Keygen a single-device wallet and return that device's displayed backup, so
+/// it can be restored onto a different device later.
+fn keygen_and_backup(
+    run: &mut Run,
+    env: &mut TestEnv,
+    rng: &mut ChaCha20Rng,
+    device_id: DeviceId,
+    coordinator_seed: [u8; 32],
+) -> frost_backup::ShareBackup {
+    let keygen_init = run
+        .coordinator
+        .begin_keygen(
+            BeginKeygen::new(
+                vec![device_id],
+                1,
+                "wallet".to_string(),
+                KeyPurpose::Test,
+                rng,
+            ),
+            &mut ChaCha20Rng::from_seed(coordinator_seed),
+        )
+        .unwrap();
+    run.extend(keygen_init);
+    run.run_until_finished(env, rng).unwrap();
+
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .find(|access_structure| access_structure.contains_device(device_id))
+        .expect("keygen created an access structure for the device")
+        .access_structure_ref();
+
+    let display_backup = run
+        .coordinator
+        .request_device_display_backup(device_id, access_structure_ref, TEST_ENCRYPTION_KEY)
+        .unwrap();
+    run.extend(display_backup);
+    run.run_until_finished(env, rng).unwrap();
+
+    env.backups
+        .get(&device_id)
+        .expect("device displayed its backup")
+        .1
+        .clone()
+}
+
+/// Recover `backup` onto `device_id` and finish the restoration under
+/// `encryption_key`, leaving the device with a pending consolidation whose
+/// wallet is encrypted under that key.
+fn restore_backup_onto_device(
+    run: &mut Run,
+    env: &mut TestEnv,
+    rng: &mut ChaCha20Rng,
+    device_id: DeviceId,
+    backup: frost_backup::ShareBackup,
+    encryption_key: SymmetricKey,
+) -> AccessStructureRef {
+    env.backup_to_enter.insert(device_id, backup);
+
+    let restoration_id = frostsnap_core::RestorationId::new(rng);
+    // These wallets are 1-of-1, so state the threshold explicitly — a single
+    // recovered share is then immediately restorable.
+    run.coordinator.start_restoring_key(
+        "Restored".to_string(),
+        Some(1),
+        KeyPurpose::Test,
+        restoration_id,
+    );
+
+    let enter_physical_id = EnterPhysicalId::new(rng);
+    let enter_backup = run
+        .coordinator
+        .tell_device_to_load_physical_backup(enter_physical_id, device_id);
+    run.extend(enter_backup);
+    run.run_until_finished(env, rng).unwrap();
+
+    let phase = *env
+        .physical_backups_entered
+        .last()
+        .expect("device entered its physical backup");
+
+    let save = run
+        .coordinator
+        .tell_device_to_save_physical_backup(phase, restoration_id);
+    run.extend(save);
+    run.run_until_finished(env, rng).unwrap();
+
+    run.coordinator
+        .finish_restoring(restoration_id, encryption_key, rng)
+        .expect("restoration is complete")
+}
+
+/// A device can hold pending consolidations for wallets from different app
+/// key-eras (#511), so no single key is guaranteed to decrypt them all.
+/// Consolidation must then refuse the whole batch — a typed error, no panic, no
+/// messages — rather than telling the device to consolidate only some shares.
+#[test]
+fn consolidate_with_mixed_key_eras_is_fail_safe() {
+    const OTHER_KEY: SymmetricKey = SymmetricKey([7u8; 32]);
+    let mut rng = ChaCha20Rng::from_seed([77u8; 32]);
+
+    // Each keygen gets its own env: the env's keygen tracking is one-shot, and
+    // the backup is extracted out as a plain value, so nothing is lost.
+    let mut run = Run::generate(2, &mut rng);
+    let devices: Vec<_> = run.device_set().into_iter().collect();
+    let backup_a =
+        keygen_and_backup(&mut run, &mut TestEnv::default(), &mut rng, devices[0], [1u8; 32]);
+    let backup_b =
+        keygen_and_backup(&mut run, &mut TestEnv::default(), &mut rng, devices[1], [2u8; 32]);
+
+    // One fresh device recovers both wallets, each finished under a different key.
+    let mut env = TestEnv::default();
+    run.clear_coordinator();
+    let device_id = run.new_device(&mut rng);
+    let ref_a = restore_backup_onto_device(
+        &mut run,
+        &mut env,
+        &mut rng,
+        device_id,
+        backup_a,
+        TEST_ENCRYPTION_KEY,
+    );
+    let ref_b =
+        restore_backup_onto_device(&mut run, &mut env, &mut rng, device_id, backup_b, OTHER_KEY);
+    assert_ne!(ref_a, ref_b);
+
+    let pending = run
+        .coordinator
+        .backups_that_need_to_be_consolidated(device_id);
+    assert_eq!(
+        pending.len(),
+        2,
+        "one pending consolidation per recovered wallet"
+    );
+
+    // The key that decrypts wallet A can't decrypt wallet B, so the batch is
+    // abandoned with a typed error (previously this panicked via `.expect`).
+    let with_key_a = run
+        .coordinator
+        .consolidate_pending_physical_backups(device_id, TEST_ENCRYPTION_KEY);
+    assert!(
+        matches!(
+            with_key_a,
+            Err(ConsolidateError::CannotDecrypt { access_structure_ref }) if access_structure_ref == ref_b
+        ),
+        "the key for wallet A must not be able to consolidate wallet B"
+    );
+
+    // ...and symmetrically for the other key: neither key produces any messages.
+    let with_key_b = run
+        .coordinator
+        .consolidate_pending_physical_backups(device_id, OTHER_KEY);
+    assert!(
+        matches!(
+            with_key_b,
+            Err(ConsolidateError::CannotDecrypt { access_structure_ref }) if access_structure_ref == ref_a
+        ),
+        "the key for wallet B must not be able to consolidate wallet A"
     );
 }
 
