@@ -197,8 +197,21 @@ impl FfiCoordinator {
                         device_list.consume_manager_event(change.clone());
                         match change {
                             DeviceChange::Registered { id, .. } => {
-                                if coordinator.has_backups_that_need_to_be_consolidated(id) {
-                                    device_list.set_recovery_mode(id, true);
+                                // The device turned up with pending physical-backup
+                                // consolidations, so it's in recovery mode. Carry the
+                                // full unique wallet set on the event: the app must
+                                // hold a key that decrypts *all* of them before the
+                                // background auto-exit acts (a device can hold pending
+                                // work across wallets from different key-eras).
+                                let pending_consolidations: Vec<_> = coordinator
+                                    .backups_that_need_to_be_consolidated(id)
+                                    .into_iter()
+                                    .map(|consolidation| consolidation.access_structure_ref)
+                                    .collect::<BTreeSet<_>>()
+                                    .into_iter()
+                                    .collect();
+                                if !pending_consolidations.is_empty() {
+                                    device_list.set_recovery_mode(id, true, pending_consolidations);
                                 }
 
                                 ui_stack.connected(
@@ -1084,10 +1097,12 @@ impl FfiCoordinator {
                 // When/if the physical backup has been saved on the device this means the device
                 // has entered recovery mode. We need to set recovery mode so that the device can be
                 // brought out of recovery mode when the time comes.
+                // Mid-flow: this flow threads the key itself, so the background
+                // auto-exit must not act — carry an empty set.
                 device_list
                     .lock()
                     .unwrap()
-                    .set_recovery_mode(device_id, true);
+                    .set_recovery_mode(device_id, true, vec![]);
 
                 let coordinator = coordinator.lock().unwrap();
                 // We need to update the recovering key's state the ui gets updated
@@ -1170,10 +1185,12 @@ impl FfiCoordinator {
             false
         });
         if success {
+            // Mid-flow: this flow threads the key itself, so the background
+            // auto-exit must not act — carry an empty set.
             self.device_list
                 .lock()
                 .unwrap()
-                .set_recovery_mode(phase.from, true);
+                .set_recovery_mode(phase.from, true, vec![]);
 
             self.emit_key_state();
         }
@@ -1251,10 +1268,22 @@ impl FfiCoordinator {
 
         let msgs = {
             let coord = self.coordinator.lock().unwrap();
-            coord
-                .consolidate_pending_physical_backups(device_id, encryption_key)
-                .into_iter()
-                .collect::<Vec<_>>()
+            match coord.consolidate_pending_physical_backups(device_id, encryption_key) {
+                Ok(msgs) => msgs,
+                // The key can't decrypt one of the device's pending wallets, so
+                // there's nothing safe to send. Leave the device in recovery
+                // mode; a later attempt with the right key can consolidate it.
+                Err(e) => {
+                    event!(
+                        Level::WARN,
+                        id = device_id.to_string(),
+                        name = device.name,
+                        error = %e,
+                        "not taking device out of recovery mode: key can't decrypt a pending wallet"
+                    );
+                    return;
+                }
+            }
         };
 
         if msgs.is_empty() {
@@ -1286,10 +1315,11 @@ impl FfiCoordinator {
                 "device exited recovery mode"
             );
 
+            // Clearing transition — never triggers the background auto-exit.
             self.device_list
                 .lock()
                 .unwrap()
-                .set_recovery_mode(device_id, false);
+                .set_recovery_mode(device_id, false, vec![]);
 
             self.ui_stack
                 .lock()

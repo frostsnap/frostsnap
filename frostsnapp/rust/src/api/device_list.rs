@@ -2,7 +2,7 @@ pub use crate::api::firmware::{FirmwareUpgradeEligibility, FirmwareVersion};
 use anyhow::Result;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::DeviceMode;
-use frostsnap_core::DeviceId;
+use frostsnap_core::{AccessStructureRef, DeviceId};
 
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 
@@ -19,6 +19,12 @@ pub struct DeviceListChange {
     pub kind: DeviceListChangeKind,
     pub index: u32,
     pub device: ConnectedDevice,
+    /// On a re-plug `RecoveryMode` change, the wallets this device has pending
+    /// physical-backup consolidations for (deduped). A non-empty set means the
+    /// background auto-exit should act; the app must hold a key that decrypts
+    /// *every* one of these before taking the device out of recovery mode.
+    /// Empty for all other changes.
+    pub pending_consolidations: Vec<AccessStructureRef>,
 }
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,9 @@
 #![allow(unused)]
 use crate::api::device_list as api;
-use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange};
+use frostsnap_coordinator::{
+    frostsnap_core::{AccessStructureRef, DeviceId},
+    DeviceChange,
+};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Default)]
@@ -105,6 +108,7 @@ impl DeviceList {
                         kind: api::DeviceListChangeKind::Named,
                         index: index as u32,
                         device: connected.clone(),
+                        pending_consolidations: vec![],
                     });
                 }
             }
@@ -132,6 +136,7 @@ impl DeviceList {
                                 kind: api::DeviceListChangeKind::Named,
                                 index: index as u32,
                                 device: connected.clone(),
+                                pending_consolidations: vec![],
                             });
                         }
                     }
@@ -149,6 +154,7 @@ impl DeviceList {
                         kind: api::DeviceListChangeKind::Removed,
                         index: index as u32,
                         device: device.expect("invariant"),
+                        pending_consolidations: vec![],
                     })
                 }
             }
@@ -175,11 +181,23 @@ impl DeviceList {
                 kind: api::DeviceListChangeKind::Added,
                 index: (self.devices.len() - 1) as u32,
                 device: self.get_device(id).expect("invariant"),
+                pending_consolidations: vec![],
             });
         }
     }
 
-    pub fn set_recovery_mode(&mut self, id: DeviceId, recovery_mode: bool) {
+    /// `pending_consolidations` is the deduped set of wallets the device has
+    /// pending physical-backup consolidations for. It should be non-empty only
+    /// for the deferred re-plug auto-exit (`recovery_mode == true` because the
+    /// device turned up with pending work); every other transition — mid-flow
+    /// entries and the clearing exit — passes an empty set so the background
+    /// auto-exit stays out of it.
+    pub fn set_recovery_mode(
+        &mut self,
+        id: DeviceId,
+        recovery_mode: bool,
+        pending_consolidations: Vec<AccessStructureRef>,
+    ) {
         if let Some(connected_device) = self.connected.get_mut(&id) {
             if connected_device.recovery_mode != recovery_mode {
                 connected_device.recovery_mode = recovery_mode;
@@ -188,6 +206,7 @@ impl DeviceList {
                     kind: api::DeviceListChangeKind::RecoveryMode,
                     index: self.index_of(id).expect("invariant") as u32,
                     device: connected_device,
+                    pending_consolidations,
                 })
             }
         }
