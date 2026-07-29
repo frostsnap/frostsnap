@@ -302,7 +302,13 @@ class WalletRecoveryPage extends StatelessWidget {
           margin: EdgeInsets.zero,
           child: ListTile(
             contentPadding: EdgeInsets.symmetric(horizontal: 16),
-            leading: Icon(Icons.key, color: DeviceColorScheme.fromDeviceId(context, share.deviceId).accent),
+            leading: Icon(
+              Icons.key,
+              color: DeviceColorScheme.fromDeviceId(
+                context,
+                share.deviceId,
+              ).accent,
+            ),
             trailing: deleteButton,
             subtitle: !showCompatibility
                 ? null

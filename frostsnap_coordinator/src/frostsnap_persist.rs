@@ -175,7 +175,6 @@ impl TakeStaged<Option<ActiveSignSession>> for Option<ActiveSignSession> {
 #[derive(Default)]
 pub struct DeviceNames {
     names: HashMap<DeviceId, String>,
-    case_colors: HashMap<DeviceId, String>,
     mutations: VecDeque<(DeviceId, String)>,
 }
 
@@ -186,19 +185,8 @@ impl DeviceNames {
         }
     }
 
-    /// Sets case color in memory only. The color gets persisted to DB when the
-    /// device name is next written (see `persist_update`), since `name` is NOT
-    /// NULL and the genuine check fires before the device has a name.
-    pub fn set_case_color(&mut self, device_id: DeviceId, case_color: String) {
-        self.case_colors.insert(device_id, case_color);
-    }
-
     pub fn get(&self, device_id: DeviceId) -> Option<String> {
         self.names.get(&device_id).cloned()
-    }
-
-    pub fn get_case_color(&self, device_id: DeviceId) -> Option<String> {
-        self.case_colors.get(&device_id).cloned()
     }
 }
 
@@ -224,8 +212,6 @@ impl Persist<rusqlite::Connection> for DeviceNames {
                 id BLOB PRIMARY KEY, \
                 name TEXT NOT NULL \
             )",
-            // Version 1: persist genuine device info
-            "ALTER TABLE fs_devices ADD COLUMN case_color TEXT",
         ];
 
         let db_tx = conn.transaction()?;
@@ -238,22 +224,18 @@ impl Persist<rusqlite::Connection> for DeviceNames {
     where
         Self: Sized,
     {
-        let mut stmt = conn.prepare("SELECT id, name, case_color FROM fs_devices")?;
+        let mut stmt = conn.prepare("SELECT id, name FROM fs_devices")?;
         let mut device_names = DeviceNames::default();
 
         let row_iter = stmt.query_map([], |row| {
             let device_id = row.get::<_, DeviceId>(0)?;
             let name = row.get::<_, String>(1)?;
-            let case_color = row.get::<_, Option<String>>(2)?;
-            Ok((device_id, name, case_color))
+            Ok((device_id, name))
         })?;
 
         for row in row_iter {
-            let (device_id, name, case_color) = row?;
+            let (device_id, name) = row?;
             device_names.names.insert(device_id, name);
-            if let Some(color) = case_color {
-                device_names.case_colors.insert(device_id, color);
-            }
         }
 
         Ok(device_names)
@@ -265,15 +247,122 @@ impl Persist<rusqlite::Connection> for DeviceNames {
         update: Self::Update,
     ) -> anyhow::Result<()> {
         for (id, name) in update {
-            // Also persist any known case_color from memory alongside the name.
-            // Case color is set via `MUTATE_NO_PERSIST` when the genuine check
-            // completes, because the genuine check fires before the device has
-            // a name (so we can't create the DB row yet). The color lives in
-            // memory until this name write carries it to the DB.
-            let case_color = self.case_colors.get(&id);
             conn.execute(
-                "INSERT OR REPLACE INTO fs_devices (id, name, case_color) VALUES (?1, ?2, ?3)",
-                params![id, name, case_color],
+                "INSERT OR REPLACE INTO fs_devices (id, name) VALUES (?1, ?2)",
+                params![id, name],
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+/// A genuine device's attested info, extracted from its verified certificate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GenuineRecord {
+    pub case_color: String,
+    pub serial: String,
+    pub revision: String,
+}
+
+/// Persisted genuine-device info keyed by [`DeviceId`], written the instant a
+/// device passes the genuine check.
+///
+/// Decoupled from [`DeviceNames`] on purpose: the check fires before a device is
+/// named (and it may never be named), so storing this with the name would drop
+/// the colour for unnamed devices. Its own table means a known device shows its
+/// colour on reconnect and while disconnected.
+#[derive(Default)]
+pub struct GenuineDeviceInfo {
+    info: HashMap<DeviceId, GenuineRecord>,
+    mutations: VecDeque<(DeviceId, GenuineRecord)>,
+}
+
+impl GenuineDeviceInfo {
+    pub fn set(&mut self, device_id: DeviceId, record: GenuineRecord) {
+        if self.info.get(&device_id) != Some(&record) {
+            self.info.insert(device_id, record.clone());
+            self.mutations.push_back((device_id, record));
+        }
+    }
+
+    pub fn get(&self, device_id: DeviceId) -> Option<&GenuineRecord> {
+        self.info.get(&device_id)
+    }
+
+    pub fn get_case_color(&self, device_id: DeviceId) -> Option<String> {
+        self.info.get(&device_id).map(|r| r.case_color.clone())
+    }
+}
+
+impl TakeStaged<VecDeque<(DeviceId, GenuineRecord)>> for GenuineDeviceInfo {
+    fn take_staged_update(&mut self) -> Option<VecDeque<(DeviceId, GenuineRecord)>> {
+        if self.mutations.is_empty() {
+            None
+        } else {
+            Some(core::mem::take(&mut self.mutations))
+        }
+    }
+}
+
+impl Persist<rusqlite::Connection> for GenuineDeviceInfo {
+    type Update = VecDeque<(DeviceId, GenuineRecord)>;
+    type LoadParams = ();
+
+    fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
+        const SCHEMA_NAME: &str = "frostsnap_genuine_devices";
+        const MIGRATIONS: &[&str] = &[
+            // Version 0
+            "CREATE TABLE IF NOT EXISTS fs_genuine_devices ( \
+                id BLOB PRIMARY KEY, \
+                case_color TEXT NOT NULL, \
+                serial TEXT NOT NULL, \
+                revision TEXT NOT NULL \
+            )",
+        ];
+
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    fn load(conn: &mut rusqlite::Connection, _params: Self::LoadParams) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut stmt =
+            conn.prepare("SELECT id, case_color, serial, revision FROM fs_genuine_devices")?;
+        let mut genuine = GenuineDeviceInfo::default();
+
+        let row_iter = stmt.query_map([], |row| {
+            let device_id = row.get::<_, DeviceId>(0)?;
+            let record = GenuineRecord {
+                case_color: row.get::<_, String>(1)?,
+                serial: row.get::<_, String>(2)?,
+                revision: row.get::<_, String>(3)?,
+            };
+            Ok((device_id, record))
+        })?;
+
+        for row in row_iter {
+            let (device_id, record) = row?;
+            genuine.info.insert(device_id, record);
+        }
+
+        Ok(genuine)
+    }
+
+    fn persist_update(
+        &self,
+        conn: &mut rusqlite::Connection,
+        update: Self::Update,
+    ) -> anyhow::Result<()> {
+        for (id, record) in update {
+            conn.execute(
+                "INSERT OR REPLACE INTO fs_genuine_devices (id, case_color, serial, revision) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![id, record.case_color, record.serial, record.revision],
             )?;
         }
 

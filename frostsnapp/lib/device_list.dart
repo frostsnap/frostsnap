@@ -58,8 +58,10 @@ class _DeviceListPageState extends State<DeviceListPage> {
     final hasWallet = walletName != null;
     final hasKey = device.name != null;
 
+    final genuineWarning = colors.genuineWarning(context);
     return colors.buildGlowCard(
       margin: EdgeInsets.symmetric(vertical: 8),
+      errorColor: theme.colorScheme.error,
       child: ListTile(
         title: Text(
           device.name ?? 'Unnamed',
@@ -67,17 +69,22 @@ class _DeviceListPageState extends State<DeviceListPage> {
               ? monospaceTextStyle
               : monospaceTextStyle.copyWith(color: theme.disabledColor),
         ),
-        subtitle: Text(
-          device.name == null
-              ? '~'
-              : walletName == null
+        subtitle:
+            genuineWarning ??
+            Text(
+              device.name == null
+                  ? '~'
+                  : walletName == null
                   ? 'Wallet available for recovery'
                   : walletName,
-          style: TextStyle(
-            color: hasKey && hasWallet ? null : theme.disabledColor,
-          ),
+              style: TextStyle(
+                color: hasKey && hasWallet ? null : theme.disabledColor,
+              ),
+            ),
+        leading: Icon(
+          colors.genuineFailed ? Icons.gpp_bad_rounded : Icons.key,
+          color: colors.genuineFailed ? theme.colorScheme.error : colors.accent,
         ),
-        leading: Icon(Icons.key, color: colors.accent),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           spacing: 8,

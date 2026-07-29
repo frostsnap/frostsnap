@@ -95,6 +95,7 @@ impl DeviceList {
                         id,
                         recovery_mode: false,
                         case_color: None,
+                        genuine: api::GenuineStatus::Unknown,
                     },
                 );
             }
@@ -157,7 +158,23 @@ impl DeviceList {
             DeviceChange::GenuineDevice { id, certificate } => {
                 let index = self.index_of(id);
                 if let Some(connected) = self.connected.get_mut(&id) {
-                    connected.case_color = Some(api::CaseColor::from_comms(certificate.case_color()));
+                    connected.case_color =
+                        Some(api::CaseColor::from_comms(certificate.case_color()));
+                    connected.genuine = api::GenuineStatus::Genuine;
+                    if let Some(index) = index {
+                        self.outbox.push(api::DeviceListChange {
+                            kind: api::DeviceListChangeKind::GenuineCheck,
+                            index: index as u32,
+                            device: connected.clone(),
+                        });
+                    }
+                }
+            }
+            DeviceChange::GenuineCheckFailed { id } => {
+                let index = self.index_of(id);
+                if let Some(connected) = self.connected.get_mut(&id) {
+                    connected.genuine = api::GenuineStatus::Failed;
+                    connected.case_color = None;
                     if let Some(index) = index {
                         self.outbox.push(api::DeviceListChange {
                             kind: api::DeviceListChangeKind::GenuineCheck,
